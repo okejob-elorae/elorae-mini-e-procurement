@@ -1,5 +1,6 @@
 import { hitungPph, TARIF_PAJAK_BAWAAN, type TarifPajakKreatif } from "@/lib/creative/pph";
 import type { PostingRole } from "@/lib/constants/journal-roles";
+import { formatDateOnlyJakarta } from "@/lib/date-only";
 
 /**
  * Potongan PPh atas pembayaran ke PEMASOK (`Supplier.taxWithholding`) — murni,
@@ -87,4 +88,78 @@ export function hitungPotongPemasok(
   }
   const r = hitungPph(bruto, { jenis: jenis === "PPH23" ? "BADAN" : "ORANG_PRIBADI", adaNpwp: opsi.adaNpwp }, tarif);
   return { jenis, bruto: r.bruto, pph: r.pph, neto: r.neto, tarifEfektifPersen: r.tarifEfektifPersen };
+}
+
+// ── SKB (Surat Keterangan Bebas) ────────────────────────────────────────────
+
+/**
+ * SKB pemasok: penjahit yang BUKAN badan usaha diminta SKB (pemilik,
+ * 2026-10-08). Punya SKB yang masih berlaku pada hari bayar → tidak dipotong;
+ * tidak punya / sudah habis → dipotong normal sesuai jenisnya (PPh 21 bukan
+ * pegawai = 50% × 5% = 2,5% di lapisan pertama).
+ *
+ * `berlakuSampai` = hari WIB "YYYY-MM-DD", INKLUSIF.
+ */
+export type SkbPemasok = { nomor: string | null; berlakuSampai: string | null };
+export type SkbTercatat = { nomor: string; berlakuSampai: string };
+export type PembebasanSkb = SkbTercatat & { jenis: JenisPotongPemasok; keterangan: string };
+
+export type KeputusanPotongPemasok = {
+  /** Jenis yang benar-benar dipotong; null = tidak dipotong. */
+  jenis: JenisPotongPemasok | null;
+  /** Potongan `jenis` asal yang dibebaskan SKB (dicatat di jejak pembayaran). */
+  dibebaskanSkb: PembebasanSkb | null;
+  /** SKB ada tetapi sudah habis sebelum hari bayar — potongan normal, layar memperingatkan. */
+  skbHabis: SkbTercatat | null;
+};
+
+const POLA_HARI = /^\d{4}-\d{2}-\d{2}$/;
+
+function skbLengkap(skb: SkbPemasok | null | undefined): SkbTercatat | null {
+  const nomor = skb?.nomor?.trim();
+  const sampai = skb?.berlakuSampai?.trim();
+  if (!nomor || !sampai || !POLA_HARI.test(sampai)) return null;
+  return { nomor, berlakuSampai: sampai };
+}
+
+export function teksDibebaskanSkb(nomor: string): string {
+  return `Dibebaskan SKB ${nomor}`;
+}
+
+/** SKB berlaku pada hari bayar `tanggal` ("YYYY-MM-DD" WIB)? */
+export function skbBerlaku(skb: SkbPemasok | null | undefined, tanggal: string): boolean {
+  const s = skbLengkap(skb);
+  return s !== null && POLA_HARI.test(tanggal) && s.berlakuSampai >= tanggal;
+}
+
+/**
+ * SATU penentu potongan PPh pemasok untuk semua jalur (pratinjau formulir
+ * pembayaran, penulis pembayaran, penerapan uang muka, voucher kas keluar ke
+ * pemasok): `jenis` = jenis yang diminta/bawaan pemasok, `tanggal` = hari bayar.
+ * SKB berlaku → tidak dipotong apa pun jenisnya.
+ */
+export function tentukanPotongPemasok(p: {
+  jenis: JenisPotongPemasok | null;
+  skb: SkbPemasok | null | undefined;
+  tanggal: string;
+}): KeputusanPotongPemasok {
+  const s = skbLengkap(p.skb);
+  if (!p.jenis || !s) return { jenis: p.jenis, dibebaskanSkb: null, skbHabis: null };
+  if (skbBerlaku(s, p.tanggal)) {
+    return { jenis: null, dibebaskanSkb: { ...s, jenis: p.jenis, keterangan: teksDibebaskanSkb(s.nomor) }, skbHabis: null };
+  }
+  return { jenis: p.jenis, dibebaskanSkb: null, skbHabis: POLA_HARI.test(p.tanggal) ? s : null };
+}
+
+/** Kolom `Supplier.skbNumber`/`skbValidUntil` → SKB (tanggal sebagai hari WIB). null = tanpa SKB. */
+export function bacaSkbPemasok(p: { skbNumber: string | null; skbValidUntil: Date | null }): SkbPemasok | null {
+  const nomor = p.skbNumber?.trim();
+  if (!nomor) return null;
+  return { nomor, berlakuSampai: p.skbValidUntil ? formatDateOnlyJakarta(p.skbValidUntil) : null };
+}
+
+/** SKB untuk label daftar master: "SKB s/d <tgl>" atau "SKB habis <tgl>" menurut hari ini (WIB). null = tanpa SKB lengkap. */
+export function keadaanSkb(skb: SkbPemasok | null | undefined, hariIni: string): (SkbTercatat & { habis: boolean }) | null {
+  const s = skbLengkap(skb);
+  return s ? { ...s, habis: s.berlakuSampai < hariIni } : null;
 }

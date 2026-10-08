@@ -6,7 +6,7 @@ import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { rekeningKasBank } from "@/lib/finance/pajak/setoran-queries";
 import { bacaTarifPajakKreatif } from "@/lib/creative/pajak-pengaturan";
-import { bacaJenisPotongPemasok, INFO_POTONG_PEMASOK, type JenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
+import { bacaJenisPotongPemasok, bacaSkbPemasok, INFO_POTONG_PEMASOK, tentukanPotongPemasok, type JenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
 import { lepasMutasiDariJurnal } from "@/lib/finance/kas/voucher-writer";
 import { catatJejakKas, JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import {
@@ -55,6 +55,14 @@ import { adaJurnalTandaiLunasBerdiri } from "./supplier-payment-journal";
  * jejaknya mencatat cakupan itu (`uangMukaDipotong`) serta bagian uang mukanya
  * sendiri yang sudah dipotong (`uangMukaTerpotong`). Uang muka yang melunasi
  * dokumen jasa dipotong saat diterapkan lewat pembayaran potongan tersendiri.
+ *
+ * SKB pemasok (`tentukanPotongPemasok`, satu penentu untuk semua jalur): SKB
+ * yang berlaku pada hari bayar membebaskan potongan apa pun jenisnya — juga
+ * jenis yang diketik di formulir. Pembebasannya dicatat di jejak
+ * (`dibebaskanSkb`: nomor, berlaku sampai, jenis yang dibebaskan, dasarnya).
+ * Uang muka yang dibayar selagi SKB berlaku dianggap SUDAH diselesaikan
+ * (`uangMukaTerpotong` = seluruh uang muka), dan uang muka tertunda dokumen
+ * yang dibayar ikut tercakup — keduanya tidak dipotong lagi sesudah SKB habis.
  */
 
 export type HasilPembayaranPemasok =
@@ -219,7 +227,10 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
         const lama = await denganKunci(tx, kunci);
         if (lama) return lama;
       }
-      const pemasok = await tx.supplier.findUnique({ where: { id: p.pemasokId }, select: { id: true, name: true, taxWithholding: true, hasNpwp: true } });
+      const pemasok = await tx.supplier.findUnique({
+        where: { id: p.pemasokId },
+        select: { id: true, name: true, taxWithholding: true, hasNpwp: true, skbNumber: true, skbValidUntil: true },
+      });
       if (!pemasok) throw new Tolak("PEMASOK_TIDAK_DITEMUKAN");
       const rekening = await rekeningKasBank(tx);
       if (!rekening.some((r) => r.id === p.rekeningId)) throw new Tolak("REKENING_TIDAK_SAH");
@@ -233,16 +244,24 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
       const poPerGrn = await poDariAlokasi(tx, p.alokasi);
       await tolakPoDitandaiLunas(tx, p.alokasi, poPerGrn);
 
-      const jenisPotong = p.jenisPotong === undefined ? bacaJenisPotongPemasok(pemasok.taxWithholding) : p.jenisPotong;
+      const diminta = p.jenisPotong === undefined ? bacaJenisPotongPemasok(pemasok.taxWithholding) : p.jenisPotong;
+      // SKB yang berlaku pada hari bayar membebaskan potongan apa pun jenisnya.
+      const keputusan = tentukanPotongPemasok({ jenis: diminta, skb: bacaSkbPemasok(pemasok), tanggal: p.tanggal });
+      const jenisPotong = keputusan.jenis;
+      const bebas = keputusan.dibebaskanSkb;
       // Dasar yang diketik paling banyak bruto + uang muka belum dipotong dokumen yang dibayar.
       if (p.dasarPotongSen != null && p.dasarPotongSen > batasDasarPotongSen(p.alokasi, sisa, p.brutoSen)) throw new Tolak("DASAR_POTONG_TIDAK_SAH");
       const dasar = p.dasarPotongSen ?? dasarPotongBawaanSen(jenisPotong, p.alokasi, sisa, p.brutoSen);
       const tarif = jenisPotong === "PPH21" || jenisPotong === "PPH23" ? await bacaTarifPajakKreatif(tx) : undefined;
       const hitung = hitungPembayaran(p.brutoSen, jenisPotong, dasar, pemasok.hasNpwp, tarif);
       // Jejak PPh atas uang muka: tertunda yang ditutup pembayaran ini, dan bagian uang mukanya sendiri yang sudah dipotong.
+      // Dibebaskan SKB: keduanya dianggap selesai (dibebaskan), tidak dipotong lagi kemudian.
       const faktor = faktorPotongPenuh(hitung, jenisPotong, pemasok.hasNpwp, tarif);
-      const cakupan = hitung.potongSen > 0 ? cakupanUangMukaDipotong(jenisPotong, p.alokasi, sisa, faktor) : [];
-      const terpotongUangMuka = hitung.potongSen > 0 ? uangMukaTerpotongSen(jenisPotong, p.alokasi, sisa, p.uangMukaSen, hitung.dasarPotongSen, faktor) : 0;
+      const cakupan =
+        hitung.potongSen > 0 ? cakupanUangMukaDipotong(jenisPotong, p.alokasi, sisa, faktor) : bebas ? cakupanUangMukaDipotong(bebas.jenis, p.alokasi, sisa) : [];
+      const terpotongUangMuka =
+        hitung.potongSen > 0 ? uangMukaTerpotongSen(jenisPotong, p.alokasi, sisa, p.uangMukaSen, hitung.dasarPotongSen, faktor) : bebas ? p.uangMukaSen : 0;
+      const dasarDibebaskan = bebas ? (p.dasarPotongSen ?? dasarPotongBawaanSen(bebas.jenis, p.alokasi, sisa, p.brutoSen)) : 0;
       // Peran wajib dipetakan SEBELUM menulis apa pun.
       await peranAkun("AP", tx);
       if (hitung.potongSen > 0 && jenisPotong) await peranAkun(INFO_POTONG_PEMASOK[jenisPotong].peranHutang, tx);
@@ -322,6 +341,7 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
           jenisPotong,
           uangMukaDipotong: cakupan.map((c) => ({ jenis: c.jenis, id: c.id, jumlah: c.sen / 100 })),
           uangMukaTerpotong: terpotongUangMuka / 100,
+          ...(bebas ? { dibebaskanSkb: { ...bebas, dasar: dasarDibebaskan / 100 } } : {}),
         },
       });
       await selaraskanLunasPo(tx, [...new Set(poPerGrn.values())], input.olehUserId, nomor, tanggal);
@@ -475,7 +495,10 @@ export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: u
       const sudah = new Set(b.allocations.map((a) => `${a.targetType}|${a.targetId}`));
       const ganda = alokasi.findIndex((a) => sudah.has(`${a.jenis}|${a.id}`));
       if (ganda >= 0) return { ok: false, kode: "ALOKASI_GANDA", baris: ganda + 1 };
-      const pemasok = await tx.supplier.findUnique({ where: { id: b.supplierId }, select: { name: true, taxWithholding: true, hasNpwp: true } });
+      const pemasok = await tx.supplier.findUnique({
+        where: { id: b.supplierId },
+        select: { name: true, taxWithholding: true, hasNpwp: true, skbNumber: true, skbValidUntil: true },
+      });
       if (!pemasok) return { ok: false, kode: "PEMASOK_TIDAK_DITEMUKAN" };
       const hutang = await bacaHutangPemasok({ supplierIds: [b.supplierId] }, tx);
       const milik = hutang.pemasok[0];
@@ -486,16 +509,17 @@ export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: u
       await tolakPoDitandaiLunas(tx, alokasi, poPerGrn);
       const nomorDok = new Map((milik?.dokumen ?? []).map((d) => [kunciDokumenHutang(d.jenis, d.id), d.nomor]));
 
-      const jenis = bacaJenisPotongPemasok(pemasok.taxWithholding);
-      const tarif = jenis === "PPH21" || jenis === "PPH23" ? await bacaTarifPajakKreatif(tx) : undefined;
-      const rencana = rencanaPotongPenerapan({
-        jenis,
-        adaNpwp: pemasok.hasNpwp,
-        tarif,
-        alokasi,
-        sisa,
-        poolSen: milik?.uangMuka.find((u) => u.pembayaranId === b.id)?.sudahDipotongSen ?? 0,
-      });
+      // Potongan saat penerapan bertanggal `hariIni`; SKB yang berlaku hari itu membebaskannya.
+      const keputusan = tentukanPotongPemasok({ jenis: bacaJenisPotongPemasok(pemasok.taxWithholding), skb: bacaSkbPemasok(pemasok), tanggal: hariIni });
+      const jenis = keputusan.jenis;
+      const jenisTarif = jenis ?? keputusan.dibebaskanSkb?.jenis ?? null;
+      const tarif = jenisTarif === "PPH21" || jenisTarif === "PPH23" ? await bacaTarifPajakKreatif(tx) : undefined;
+      const poolSen = milik?.uangMuka.find((u) => u.pembayaranId === b.id)?.sudahDipotongSen ?? 0;
+      const rencana = rencanaPotongPenerapan({ jenis, adaNpwp: pemasok.hasNpwp, tarif, alokasi, sisa, poolSen });
+      // Yang akan dipotong tanpa SKB — dicatat sebagai pembebasan bila ada.
+      const rencanaBebas = keputusan.dibebaskanSkb
+        ? rencanaPotongPenerapan({ jenis: keputusan.dibebaskanSkb.jenis, adaNpwp: pemasok.hasNpwp, tarif, alokasi, sisa, poolSen })
+        : null;
       // Peran wajib dipetakan SEBELUM menulis apa pun.
       if (rencana.potongSen > 0 && jenis) {
         await peranAkun("AP", tx);
@@ -534,6 +558,9 @@ export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: u
           alokasi: dariUangMuka.map((a) => ({ jenis: a.jenis, id: a.id, jumlah: a.dariUangMukaSen / 100 })),
           diminta: alokasi.map((a) => ({ jenis: a.jenis, id: a.id, jumlah: a.sen / 100 })),
           ...(potong ? { potongPph: { pembayaranId: potong.id, nomor: potong.nomor, jumlah: potong.jumlah, dasar: rencana.dasarSen / 100, jenisPotong: jenis } } : {}),
+          ...(keputusan.dibebaskanSkb && rencanaBebas && rencanaBebas.potongSen > 0
+            ? { dibebaskanSkb: { ...keputusan.dibebaskanSkb, dasar: rencanaBebas.dasarSen / 100, pph: rencanaBebas.potongSen / 100 } }
+            : {}),
         },
       });
       await selaraskanLunasPo(tx, [...new Set(poPerGrn.values())], input.olehUserId, b.docNumber, b.date);

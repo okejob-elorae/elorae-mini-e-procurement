@@ -279,10 +279,11 @@ export function RincianSiklusClient({
           />
           <Nomor
             label={t('numTax')}
-            nilai={b.noFakturPajak}
+            nilai={b.noFakturPajak ?? (data.tagihan.pakaiPpn ? null : t('tagihan.tanpaPpn'))}
             milik={t('ownerTax')}
             aksi={
-              bolehMengelola && data.terkunci && !b.noFakturPajak ? (
+              // Tagihan tanpa PPN tidak punya faktur pajak (tahap pajak dilewati).
+              bolehMengelola && data.terkunci && !b.noFakturPajak && data.tagihan.pakaiPpn ? (
                 <Button size="sm" variant="outline" onClick={() => { setNomorTerbuka('PAJAK'); setNomor(''); }}>
                   {t('record')}
                 </Button>

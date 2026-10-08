@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertTriangle, ArrowLeft, Loader2, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BadgeCheck, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +23,7 @@ import { labelTanggal } from "@/lib/tanggal-isian";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { labelPemasok } from "@/lib/suppliers/label-pemasok";
 import { bacaRupiahSen } from "@/lib/finance/kas/aturan";
-import { bacaJenisPotongPemasok, INFO_POTONG_PEMASOK, SEMUA_JENIS_POTONG_PEMASOK, type JenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
+import { bacaJenisPotongPemasok, INFO_POTONG_PEMASOK, SEMUA_JENIS_POTONG_PEMASOK, tentukanPotongPemasok } from "@/lib/finance/pajak/pemotongan";
 import {
   batasDasarPotongSen,
   CARA_BAYAR,
@@ -107,7 +107,9 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
   }
   const uangMukaSen = uangMuka.trim() ? bacaRupiahSen(uangMuka) : 0;
   const brutoSen = alokasi.reduce((s, a) => s + a.sen, 0) + (uangMukaSen ?? 0);
-  const jenisPotong: JenisPotongPemasok | null = potong === TANPA ? null : bacaJenisPotongPemasok(potong);
+  // Penentu yang sama dengan penulisnya: SKB yang berlaku pada tanggal bayar membebaskan potongan.
+  const keputusan = tentukanPotongPemasok({ jenis: potong === TANPA ? null : bacaJenisPotongPemasok(potong), skb: hutang?.skb, tanggal });
+  const jenisPotong = keputusan.jenis;
   const dasarBawaan = dasarPotongBawaanSen(jenisPotong, alokasi, sisa, brutoSen);
   const dasarSen = dasarKetik.trim() ? bacaRupiahSen(dasarKetik) : dasarBawaan;
   const hitung = hitungPembayaran(brutoSen, jenisPotong, dasarSen ?? 0, hutang?.adaNpwp ?? true, tarif);
@@ -377,6 +379,18 @@ export function FormPembayaranPemasok({ pemasok, rekening, tarif, hariIni, awal,
                 </SelectContent>
               </Select>
               {jenisPotong && <p className="text-xs text-muted-foreground">{INFO_POTONG_PEMASOK[jenisPotong].keterangan}</p>}
+              {keputusan.dibebaskanSkb && (
+                <p className="flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-400" role="status">
+                  <BadgeCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {t("skbBebas", { nomor: keputusan.dibebaskanSkb.nomor, tanggal: labelTanggal(keputusan.dibebaskanSkb.berlakuSampai, locale) })}
+                </p>
+              )}
+              {keputusan.skbHabis && (
+                <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400" role="status">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {t("skbHabis", { nomor: keputusan.skbHabis.nomor, tanggal: labelTanggal(keputusan.skbHabis.berlakuSampai, locale) })}
+                </p>
+              )}
               {hutang && !hutang.adaNpwp && jenisPotong && <p className="text-xs text-amber-700 dark:text-amber-400">{t("tanpaNpwp")}</p>}
             </div>
             {jenisPotong && (

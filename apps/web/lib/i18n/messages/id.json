@@ -526,7 +526,13 @@
     "pajakPunyaNpwp": "Punya NPWP",
     "pajakNpwp": "NPWP / NIK",
     "pajakNpwpTetap": "Kosongkan untuk mempertahankan NPWP tersimpan",
-    "pajakTanpaNpwpCatatan": "Tanpa NPWP, tarif potongan PPh lebih tinggi."
+    "pajakTanpaNpwpCatatan": "Tanpa NPWP, tarif potongan PPh lebih tinggi.",
+    "skbNomor": "Nomor SKB PPh",
+    "skbBerlakuSampai": "SKB berlaku sampai",
+    "skbFoto": "Foto SKB (opsional)",
+    "skbTanggalWajib": "Isi tanggal berlaku SKB",
+    "skbBerlakuLabel": "SKB s/d {tanggal}",
+    "skbHabisLabel": "SKB habis {tanggal}"
   },
   "common": {
     "save": "Simpan",
@@ -3543,7 +3549,10 @@
         "GAGAL": "Gagal menyimpan. Coba lagi."
       },
       "uangMukaBelumDipotong": "Uang muka {nilai} belum dipotong PPh — ikut dasar potongan",
-      "uangMukaDiterapkanPotong": "Uang muka diterapkan. PPh {nilai} atas uang muka dipotong lewat {nomor}."
+      "uangMukaDiterapkanPotong": "Uang muka diterapkan. PPh {nilai} atas uang muka dipotong lewat {nomor}.",
+      "skbBebas": "Dibebaskan SKB {nomor} (berlaku s/d {tanggal}) — tidak dipotong PPh.",
+      "skbHabis": "SKB {nomor} habis {tanggal}, sebelum tanggal bayar — PPh dipotong normal.",
+      "ringkasDibebaskanSkb": "{jenis} dibebaskan SKB {nomor} (s/d {tanggal})"
     },
     "umur": {
       "judul": "Umur utang pemasok",
@@ -5494,7 +5503,8 @@
       "salesman": "Sales penanggung jawab",
       "salesmanNone": "Belum ada",
       "salesmanHint": "Sales ini yang mendatangi toko dan menagih piutangnya — termasuk faktur dari sales sebelumnya.",
-      "searchNoApiKeyV2": "Pencarian alamat belum tersedia. Geser peta atau tempel koordinat."
+      "searchNoApiKeyV2": "Pencarian alamat belum tersedia. Geser peta atau tempel koordinat.",
+      "consignmentVat": "Tagihan konsinyasi memakai PPN"
     },
     "badge": {
       "putus": "Putus",
@@ -5577,7 +5587,10 @@
         "overdueNone": "Tidak ada",
         "receivablesFailed": "Piutang toko ini gagal dibaca. Muat ulang halaman.",
         "viewReceivables": "Lihat piutang toko ini",
-        "notApplicableKonsi": "Tidak berlaku — toko konsinyasi tidak punya piutang."
+        "notApplicableKonsi": "Tidak berlaku — toko konsinyasi tidak punya piutang.",
+        "ppnKonsi": "PPN tagihan konsinyasi",
+        "ppnKonsiYa": "Dengan PPN",
+        "ppnKonsiTidak": "Tanpa PPN"
       }
     },
     "storeChanges": {
@@ -11682,7 +11695,9 @@
       "cancelReason": "Alasan",
       "cancelConfirm": "Batalkan pembayaran",
       "okRecorded": "Pembayaran dicatat.",
-      "okCancelled": "Pembayaran dibatalkan."
+      "okCancelled": "Pembayaran dibatalkan.",
+      "denganPpn": "dengan PPN",
+      "tanpaPpn": "tanpa PPN"
     },
     "cocokBuku": {
       "title": "Pencocokan buku stok",
@@ -11787,7 +11802,8 @@
     "laporanBelumMasuk": "belum masuk",
     "laporanDiCocokkan": "Angka per barang dari kedua laporan disandingkan di kartu “Pencocokan buku stok” di bawah.",
     "lockTanpaBarang": "{n} baris belum dipilih barangnya — komisi SPG dan HPP konsinyasi baris itu tidak ikut dihitung.",
-    "lockTanpaHarga": "{n} baris berharga 0 — nilai terjualnya ikut 0 di tagihan toko."
+    "lockTanpaHarga": "{n} baris berharga 0 — nilai terjualnya ikut 0 di tagihan toko.",
+    "errTANPA_PPN": "Tagihan siklus ini tanpa PPN — tidak ada faktur pajak untuk dicatat."
   },
   "jenisPotongan": {
     "pageTitle": "Jenis potongan",
@@ -12341,7 +12357,9 @@
       "SUPPLIER_ADVANCE_APPLIED": "Uang muka pemasok diterapkan",
       "PO_PAID_BY_SUPPLIER_PAYMENTS": "PO lunas lewat pembayaran pemasok",
       "PO_UNPAID_BY_PAYMENT_CANCEL": "Tanda lunas PO dibuka (pembayaran dibatalkan)",
-      "JOURNAL_SWEEP_NOTHING_TO_POST": "Sapuan jurnal: tidak ada yang perlu dijurnal"
+      "JOURNAL_SWEEP_NOTHING_TO_POST": "Sapuan jurnal: tidak ada yang perlu dijurnal",
+      "SUPPLIER_SKB_CHANGED": "SKB pemasok diubah",
+      "STORE_CONSIGNMENT_VAT_CHANGED": "PPN tagihan konsinyasi toko diubah"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -12508,7 +12526,12 @@
       "tanggal": "Tanggal",
       "nomorBuktiPotong": "No. bukti potong",
       "npwp": "NPWP",
-      "nik": "NIK"
+      "nik": "NIK",
+      "consignmentVat": "PPN tagihan konsinyasi",
+      "vatApplied": "PPN tagihan (dibekukan)",
+      "skbNumber": "Nomor SKB",
+      "skbValidUntil": "SKB berlaku sampai",
+      "skbPhotoUrl": "Foto SKB"
     }
   },
   "jubelio": {
@@ -12660,7 +12683,7 @@
         "confirm": "{count} barang akan dihitung ulang dan dikirim ke Jubelio. Lanjutkan?",
         "confirmLarge": "{count} barang akan dihitung ulang dan dikirim ke Jubelio bertahap. Ini bisa memakan beberapa detik. Lanjutkan?",
         "countFailed": "Gagal menghitung barang yang terdampak: {message}",
-        "saved": "Tersimpan. {count} barang dihitung ulang.",
+        "saved": "Nilai bawaan tersimpan.",
         "field": {
           "sellTaxId": "ID pajak jual",
           "buyTaxId": "ID pajak beli",
@@ -19145,7 +19168,13 @@
     "lengkapiAtribut": "Isi nama dan minimal satu nilai untuk setiap atribut.",
     "lengkapiBahan": "Lengkapi bahan dan kebutuhan per pcs di setiap baris resep.",
     "komisiSpg": "Komisi SPG per pcs (Rp)",
-    "komisiSpgTidakSah": "Komisi SPG per pcs harus angka 0 atau lebih."
+    "komisiSpgTidakSah": "Komisi SPG per pcs harus angka 0 atau lebih.",
+    "hppPerPcs": "HPP per pcs",
+    "hppBelumAda": "Belum ada HPP",
+    "hppBahan": "bahan {nilai}",
+    "hppJahit": "jahit {nilai}",
+    "hppTambahan": "tambahan {nilai}",
+    "hppDari": "Penerimaan terakhir ({wo}, {tanggal}):"
   },
   "itemList": {
     "filterCategory": "Saring kategori",
@@ -21663,7 +21692,8 @@
       "kolomJenis": "Jenis",
       "kolomDasar": "Dasar potongan",
       "kolomPph": "PPh",
-      "total": "Total"
+      "total": "Total",
+      "dibebaskanSkb": "Dibebaskan SKB {nomor} (s/d {tanggal})"
     }
   },
   "templatAkun": {
@@ -23260,7 +23290,9 @@
         "jumlah": "Isi jumlah transfer.",
         "baris": "Setiap baris butuh akun dan jumlah lebih dari nol."
       },
-      "catatanAlur": "Komisi SPG/sales, gaji SPG konsinyasi, klaim biaya perjalanan, fee KOL, utang pemasok, dan setoran pajak dibayar lewat halamannya sendiri (tombol Tandai dibayar, Pembayaran pemasok, Pajak → Setoran) — jangan dicatat lagi di sini, bebannya sudah terjurnal."
+      "catatanAlur": "Komisi SPG/sales, gaji SPG konsinyasi, klaim biaya perjalanan, fee KOL, utang pemasok, dan setoran pajak dibayar lewat halamannya sendiri (tombol Tandai dibayar, Pembayaran pemasok, Pajak → Setoran) — jangan dicatat lagi di sini, bebannya sudah terjurnal.",
+      "skbBebas": "Dibebaskan SKB {nomor} (berlaku s/d {tanggal}) — tidak dipotong PPh.",
+      "skbHabis": "SKB {nomor} habis {tanggal}, sebelum tanggal voucher — PPh dipotong normal."
     },
     "rincian": {
       "ringkasan": "Ringkasan",
@@ -23276,7 +23308,8 @@
       "batalJudul": "Batalkan voucher {nomor}?",
       "batalIsi": "Jurnal pembalik diposting dengan tanggal jurnal aslinya. Voucher tidak dihapus dan tetap tampil sebagai dibatalkan.",
       "alasan": "Alasan pembatalan",
-      "dibatalkan": "Voucher {nomor} dibatalkan"
+      "dibatalkan": "Voucher {nomor} dibatalkan",
+      "dibebaskanSkb": "{jenis} dibebaskan SKB {nomor} (s/d {tanggal})"
     },
     "bukti": {
       "unggah": "Unggah foto",

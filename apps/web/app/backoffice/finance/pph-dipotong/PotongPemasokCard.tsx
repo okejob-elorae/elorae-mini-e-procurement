@@ -61,7 +61,14 @@ export function PotongPemasokCard({ baris }: { baris: BarisPotongPemasok[] }) {
                       <p>{b.pihak}</p>
                       {b.identitas && <p className="text-xs text-muted-foreground">{b.identitas}</p>}
                     </TableCell>
-                    <TableCell className="align-top">{INFO_POTONG_PEMASOK[b.jenis].label}</TableCell>
+                    <TableCell className="align-top whitespace-normal">
+                      <p>{INFO_POTONG_PEMASOK[b.jenis].label}</p>
+                      {b.dibebaskanSkb && (
+                        <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                          {t("dibebaskanSkb", { nomor: b.dibebaskanSkb.nomor, tanggal: labelTanggal(b.dibebaskanSkb.berlakuSampai, locale) })}
+                        </p>
+                      )}
+                    </TableCell>
                     <TableCell className="hidden align-top text-right tabular-nums xl:table-cell">{b.dasar != null ? formatRupiah(b.dasar) : "–"}</TableCell>
                     <TableCell className="align-top text-right tabular-nums">{formatRupiah(b.pph)}</TableCell>
                   </TableRow>

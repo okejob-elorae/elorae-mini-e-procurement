@@ -149,6 +149,8 @@ describe("kunciAngka / bukaKunci membekukan potongan promo Elorae", () => {
     const r = (await rincianSiklus(siklusId))!;
     expect(r.tagihan).toEqual({
       beku: true,
+      // Toko uji memakai bawaan: tagihan konsinyasi tanpa PPN.
+      pakaiPpn: false,
       lakuResmi: 210_000,
       promoElorae: 25_000,
       promoEloraeSekarang: 25_000,

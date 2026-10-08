@@ -8,6 +8,8 @@ import { cariTeks } from "@/lib/db/cari-teks";
 import { listPOs } from "@/lib/purchase-orders/queries";
 import { pisahUtangPo, utangBaris } from "@/app/backoffice/supplier-payments/nilai-utang";
 import { poIdsWithStandingPaymentJournalWhileUnpaid } from "./supplier-payment-journal";
+import { bacaJenisPotongPemasok, type JenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
+import { JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import { adalahCerminTandaiLunas, SUMBER_PEMBAYARAN_PEMASOK, SUMBER_PEMBAYARAN_PEMASOK_BALIK } from "./pembayaran-aturan";
 import { bacaHutangPemasok, keadaanBayarPo, saldoHutangUsahaBukuBesarSen, type DokumenHutang } from "./pembayaran-hutang-queries";
 import { jumlahkanUmur, susunUmur, type BarisUmur } from "./pembayaran-umur";
@@ -252,7 +254,18 @@ export type RincianPembayaran = BarisPembayaran & {
   jurnalId: string | null;
   jurnalBalikId: string | null;
   mutasiTercocok: number;
+  /** SKB pemasok yang membebaskan potongan pembayaran ini (dari jejak pencatatannya); null = tidak. */
+  dibebaskanSkb: { nomor: string; berlakuSampai: string; jenis: JenisPotongPemasok } | null;
 };
+
+/** `metadata.dibebaskanSkb` jejak `SUPPLIER_PAYMENT_RECORDED` → pembebasan, atau null. */
+function bacaDibebaskanSkb(metadata: unknown): RincianPembayaran["dibebaskanSkb"] {
+  const m = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as Record<string, unknown>).dibebaskanSkb : null;
+  if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+  const o = m as Record<string, unknown>;
+  const jenis = bacaJenisPotongPemasok(o.jenis);
+  return jenis && typeof o.nomor === "string" && typeof o.berlakuSampai === "string" ? { nomor: o.nomor, berlakuSampai: o.berlakuSampai, jenis } : null;
+}
 
 export async function rincianPembayaran(id: string, klien: Klien = prisma): Promise<RincianPembayaran | null> {
   const b = await klien.supplierPayment.findUnique({ where: { id }, include: { allocations: { orderBy: { createdAt: "asc" } } } });
@@ -260,13 +273,14 @@ export async function rincianPembayaran(id: string, klien: Klien = prisma): Prom
   const userIds = [...new Set([b.createdById, b.cancelledById].filter((x): x is string => Boolean(x)))];
   const grnIds = b.allocations.filter((x) => x.targetType === "GRN" && x.targetId).map((x) => x.targetId as string);
   const stepIds = b.allocations.filter((x) => x.targetType === "WO_STEP" && x.targetId).map((x) => x.targetId as string);
-  const [pemasok, akun, users, grn, step, jurnal] = await Promise.all([
+  const [pemasok, akun, users, grn, step, jurnal, jejak] = await Promise.all([
     klien.supplier.findUnique({ where: { id: b.supplierId }, select: { id: true, name: true, code: true } }),
     b.cashAccountId ? klien.chartAccount.findUnique({ where: { id: b.cashAccountId }, select: { name: true, code: true } }) : null,
     klien.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } }),
     grnIds.length ? klien.gRN.findMany({ where: { id: { in: grnIds } }, select: { id: true, poId: true } }) : [],
     stepIds.length ? klien.workOrderStep.findMany({ where: { id: { in: stepIds } }, select: { id: true, woId: true } }) : [],
     klien.journal.findMany({ where: { sourceType: { in: [SUMBER_PEMBAYARAN_PEMASOK, SUMBER_PEMBAYARAN_PEMASOK_BALIK, "SUPPLIER_PAYMENT"] }, sourceId: { in: [b.id, ...(adalahCerminTandaiLunas(b.idempotencyKey) ? [String(b.idempotencyKey).slice("tandai-lunas:".length)] : [])] } }, select: { id: true, sourceType: true, lines: { select: { id: true } } } }),
+    klien.auditLog.findFirst({ where: { action: JEJAK_KAS.PEMBAYARAN_DICATAT, entityType: "SupplierPayment", entityId: b.id }, orderBy: { createdAt: "asc" }, select: { metadata: true } }),
   ]);
   const u = new Map(users.map((x) => [x.id, x.name || x.email]));
   const g = new Map(grn.map((x) => [x.id, x.poId]));
@@ -310,6 +324,7 @@ export async function rincianPembayaran(id: string, klien: Klien = prisma): Prom
     jurnalId: asli?.id ?? null,
     jurnalBalikId: balik?.id ?? null,
     mutasiTercocok,
+    dibebaskanSkb: Number(b.withholdingAmount) === 0 ? bacaDibebaskanSkb(jejak?.metadata) : null,
   };
 }
 

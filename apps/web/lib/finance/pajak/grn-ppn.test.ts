@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { PPN_BAWAAN, type PengaturanPpn } from "./ppn";
 import { hitungPpnMasukanGrn, kunciBarisPpn, ppnMasukanGrn } from "./grn-ppn";
 
@@ -39,6 +39,13 @@ describe("PPN masukan GRN", () => {
   });
 
   it("hitungPpnMasukanGrn membaca PO + pengaturan lewat klien transaksi", async () => {
+    // Pengaturan tiruan di klien; tanpa ini pembacanya mengembalikan bawaan di bawah vitest.
+    const envAsli = process.env.UJI_PENGATURAN_PAJAK;
+    process.env.UJI_PENGATURAN_PAJAK = "setelan";
+    onTestFinished(() => {
+      if (envAsli === undefined) delete process.env.UJI_PENGATURAN_PAJAK;
+      else process.env.UJI_PENGATURAN_PAJAK = envAsli;
+    });
     const klien = {
       purchaseOrder: {
         findUnique: async () => ({ ppnRatePercent: 11, items: barisPo }),

@@ -90,7 +90,7 @@ export async function getSupplierByIdAction(id: string) {
 export async function createSupplierAction(input: z.infer<typeof supplierSchema>) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_CREATE);
-  const supplier = await createSupplier(input);
+  const supplier = await createSupplier(input, session.user.id);
   getActorName(session.user.id)
     .then((triggeredByName) => notifySupplierCreated(supplier.id, supplier.name, triggeredByName))
     .catch(() => {});
@@ -113,7 +113,7 @@ export async function updateSupplierAction(
 ) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_EDIT);
-  const supplier = await updateSupplier(id, input);
+  const supplier = await updateSupplier(id, input, session.user.id);
   revalidatePath('/backoffice/suppliers');
   revalidatePath(`/backoffice/suppliers/${id}`);
   return tanpaSandi(supplier);

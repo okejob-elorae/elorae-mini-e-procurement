@@ -4,7 +4,9 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { formatDateOnlyJakarta, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { cariTeks } from "@/lib/db/cari-teks";
+import { bacaJenisPotongPemasok, type JenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
 import { SUMBER_VOUCHER_KAS, SUMBER_VOUCHER_KAS_BALIK, type JenisVoucher } from "./aturan";
+import { JEJAK_KAS } from "./jejak";
 
 type Klien = Prisma.TransactionClient | typeof prisma;
 const sen = (v: Prisma.Decimal | number | null | undefined) => Math.round(Number(v ?? 0) * 100);
@@ -125,7 +127,17 @@ export type RincianVoucher = BarisVoucher & {
   jurnalId: string | null;
   jurnalBalikId: string | null;
   mutasiTercocok: number;
+  /** SKB pemasok yang membebaskan potongan voucher ini (dari jejak pencatatannya); null = tidak. */
+  dibebaskanSkb: { nomor: string; berlakuSampai: string; jenis: JenisPotongPemasok } | null;
 };
+
+function bacaDibebaskanSkb(metadata: unknown): RincianVoucher["dibebaskanSkb"] {
+  const m = metadata && typeof metadata === "object" && !Array.isArray(metadata) ? (metadata as Record<string, unknown>).dibebaskanSkb : null;
+  if (!m || typeof m !== "object" || Array.isArray(m)) return null;
+  const o = m as Record<string, unknown>;
+  const jenis = bacaJenisPotongPemasok(o.jenis);
+  return jenis && typeof o.nomor === "string" && typeof o.berlakuSampai === "string" ? { nomor: o.nomor, berlakuSampai: o.berlakuSampai, jenis } : null;
+}
 
 export async function rincianVoucher(id: string, klien: Klien = prisma): Promise<RincianVoucher | null> {
   const v = await klien.cashVoucher.findUnique({ where: { id }, include: { lines: { orderBy: { sortOrder: "asc" } } } });
@@ -133,12 +145,15 @@ export async function rincianVoucher(id: string, klien: Klien = prisma): Promise
   const akunIds = [...new Set([v.cashAccountId, v.transferAccountId, ...v.lines.map((l) => l.chartAccountId)].filter((x): x is string => Boolean(x)))];
   const katIds = [...new Set(v.lines.map((l) => l.categoryId).filter((x): x is string => Boolean(x)))];
   const userIds = [...new Set([v.createdById, v.cancelledById].filter((x): x is string => Boolean(x)))];
-  const [akun, kat, users, pemasok, jurnal] = await Promise.all([
+  const [akun, kat, users, pemasok, jurnal, jejak] = await Promise.all([
     klien.chartAccount.findMany({ where: { id: { in: akunIds } }, select: { id: true, code: true, name: true } }),
     katIds.length ? klien.cashCategory.findMany({ where: { id: { in: katIds } }, select: { id: true, name: true } }) : [],
     klien.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, email: true } }),
     v.supplierId ? klien.supplier.findUnique({ where: { id: v.supplierId }, select: { id: true, code: true, name: true } }) : null,
     klien.journal.findMany({ where: { sourceType: { in: [SUMBER_VOUCHER_KAS, SUMBER_VOUCHER_KAS_BALIK] }, sourceId: v.id }, select: { id: true, sourceType: true, lines: { select: { id: true } } } }),
+    v.supplierId && Number(v.withholdingAmount) === 0
+      ? klien.auditLog.findFirst({ where: { action: JEJAK_KAS.VOUCHER_DICATAT, entityType: "CashVoucher", entityId: v.id }, orderBy: { createdAt: "asc" }, select: { metadata: true } })
+      : null,
   ]);
   const a = new Map(akun.map((x) => [x.id, x]));
   const k = new Map(kat.map((x) => [x.id, x.name]));
@@ -182,6 +197,7 @@ export async function rincianVoucher(id: string, klien: Klien = prisma): Promise
     jurnalId: asli?.id ?? null,
     jurnalBalikId: balik?.id ?? null,
     mutasiTercocok,
+    dibebaskanSkb: bacaDibebaskanSkb(jejak?.metadata),
   };
 }
 

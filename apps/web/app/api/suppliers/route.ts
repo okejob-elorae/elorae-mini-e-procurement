@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
     const validated = supplierSchema.parse(body);
-    const supplier = await createSupplier(validated);
+    const supplier = await createSupplier(validated, session.user.id);
 
     getActorName(session.user.id)
       .then((triggeredByName) => notifySupplierCreated(supplier.id, supplier.name, triggeredByName))

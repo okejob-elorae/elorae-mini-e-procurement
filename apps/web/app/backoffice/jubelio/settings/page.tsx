@@ -14,7 +14,6 @@ import {
 import { deleteJubelioProduct } from "@/app/actions/jubelio-catalog-cleanup";
 import {
   getJubelioPushDefaults,
-  getMarginFallbackItemCount,
   saveJubelioPushDefaults,
   type JubelioPushDefaultsInput,
   type JubelioPushDefaultsState,
@@ -64,8 +63,6 @@ export default function JubelioSettingsPage() {
   const [isLoadingDefaults, setIsLoadingDefaults] = useState(true);
   const [defaultsGagal, setDefaultsGagal] = useState<GagalJubelio | null>(null);
   const [isSavingDefaults, setIsSavingDefaults] = useState(false);
-  // Jumlah barang yang akan dihitung ulang; tidak null = dialog konfirmasi terbuka.
-  const [fanOutCount, setFanOutCount] = useState<number | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -160,42 +157,21 @@ export default function JubelioSettingsPage() {
     }
   };
 
-  const simpanBawaan = async () => {
+  // Nilai bawaan tidak menyentuh harga barang: harga jual diisi manual pemilik.
+  const handleSaveDefaults = async () => {
     if (!defaultsDraft) return;
-    setFanOutCount(null);
     setIsSavingDefaults(true);
     try {
       const r = await saveJubelioPushDefaults(defaultsDraft);
       if (r.ok) {
         setDefaults(r.data);
-        toast.success(t("defaults.saved", { count: r.data.fanOutCount }));
+        toast.success(t("defaults.saved"));
       } else {
         toast.error(pesanGalat(r));
       }
     } finally {
       setIsSavingDefaults(false);
     }
-  };
-
-  const handleSaveDefaults = async () => {
-    if (!defaultsDraft) return;
-
-    const marginDiff =
-      (defaults?.defaultMarginPercent ?? null) !== (defaultsDraft.defaultMarginPercent ?? null);
-    const extrasDiff =
-      (defaults?.defaultAdditionalCost ?? null) !== (defaultsDraft.defaultAdditionalCost ?? null);
-
-    if (!marginDiff && !extrasDiff) {
-      await simpanBawaan();
-      return;
-    }
-    // Margin/biaya berubah → harga barang dihitung ulang; minta konfirmasi dengan jumlahnya.
-    const r = await getMarginFallbackItemCount();
-    if (!r.ok) {
-      toast.error(pesanGalat(r));
-      return;
-    }
-    setFanOutCount(r.data);
   };
 
   const handleSync = async (dryRun: boolean) => {
@@ -368,8 +344,6 @@ export default function JubelioSettingsPage() {
               <StrField label={t("defaults.field.buyUnit")} value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
               <NumField label={t("defaults.field.packageWeight")} value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
               <NumField label={t("defaults.field.buyPrice")} value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
-              <NumField label={t("defaults.field.defaultMarginPercent")} value={defaultsDraft.defaultMarginPercent} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultMarginPercent: v ?? null })} nullable />
-              <NumField label={t("defaults.field.defaultAdditionalCost")} value={defaultsDraft.defaultAdditionalCost} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultAdditionalCost: v ?? null })} nullable />
               <NumField label={t("defaults.field.rop")} value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
               <NumField label={t("defaults.field.storePriorityQtyTreshold")} value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
               <BoolField label={t("defaults.field.sellThis")} value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />
@@ -442,35 +416,6 @@ export default function JubelioSettingsPage() {
               }}
             >
               {t("catalog.importConfirmAction")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={fanOutCount !== null}
-        onOpenChange={(open) => {
-          if (!open) setFanOutCount(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("defaults.confirmTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {fanOutCount !== null && fanOutCount > 500
-                ? t("defaults.confirmLarge", { count: fanOutCount })
-                : t("defaults.confirm", { count: fanOutCount ?? 0 })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("cleanup.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(ev) => {
-                ev.preventDefault();
-                void simpanBawaan();
-              }}
-            >
-              {t("defaults.confirmAction")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

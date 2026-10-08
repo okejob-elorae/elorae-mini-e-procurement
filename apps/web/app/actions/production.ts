@@ -3,9 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { Decimal } from 'decimal.js';
-import { prisma, recalcItemSellingPrice } from '@elorae/db';
+import { prisma } from '@elorae/db';
 import { decimalKeAngka } from '@/lib/db/decimal-ke-angka';
-import { apiFetch } from "@/lib/internal-api";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { generateDocNumber } from '@/lib/docNumber';
 import { generateMaterialPlan } from '@/lib/production/planning';
@@ -1604,27 +1603,12 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
 
     const woCompleted = newActualQty >= Number(wo.plannedQty);
 
-    let recalcOutboxRowId: string | null = null;
-    // Harga jual otomatis tetap dihitung dari biaya BAHAN per pcs, bukan HPP
-    // lengkap: ongkos jahit yang kini masuk HPP tidak boleh menaikkan harga jual
-    // diam-diam (margin barang ditetapkan terhadap biaya bahan).
-    // Penerimaan tanpa biaya bahan (semua sudah dipikul penerimaan sebelumnya)
-    // bukan dasar harga: harga jual 0 + biaya tambahan jangan sampai terdorong ke Jubelio.
-    const bahanPerUnit = rincian.bahanPerUnit;
-    if (wo.finishedGoodId && qtyAccepted > 0 && bahanPerUnit.gt(0)) {
-      const recalc = await recalcItemSellingPrice(tx, {
-        itemId: wo.finishedGoodId,
-        trigger: "FG_RECEIPT",
-        newAvgCost: bahanPerUnit.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
-        fgReceiptId: receipt.id,
-        changedById: userId,
-      });
-      if (recalc.applied) recalcOutboxRowId = recalc.outboxRowId;
-    }
+    // Harga jual TIDAK disentuh: pemilik mengisinya sendiri dari HPP (keputusan
+    // pemilik 2026-10-08). HPP per pcs tampil di formulir barang.
 
     // Barang jadi yang stoknya bertambah — untuk push stok ke Jubelio sesudah commit.
     const fgStokBerubah = qtyAccepted > 0 ? wo.finishedGoodId : null;
-    return { receipt, woCompleted, recalcOutboxRowId, fgStokBerubah };
+    return { receipt, woCompleted, fgStokBerubah };
   });
 
   // Sesudah commit: kirim stok barang jadi ke Jubelio (best-effort, tidak pernah melempar).
@@ -1645,14 +1629,6 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
       console.warn("[leadtime] auto-confirm after FG partial failed", err);
     });
   }
-  if (receiveResult.recalcOutboxRowId) {
-    void apiFetch("POST", `/jubelio/outbox/enqueue/${receiveResult.recalcOutboxRowId}`, {
-      userId,
-    }).catch(() => {
-      // poller picks it up within ~5s if this fails
-    });
-  }
-
   // Jurnal sesudah commit, best-effort: tidak pernah menggagalkan penerimaan.
   // Gagal → JOURNAL_PENDING (posting ulang dari halaman WO, atau oleh sapuan).
   await postFgReceiptJournalAman(receiveResult.receipt.id, userId);

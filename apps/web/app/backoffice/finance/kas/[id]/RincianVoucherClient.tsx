@@ -94,6 +94,12 @@ export function RincianVoucherClient({ voucher: v, bolehKelola }: { voucher: Rin
             {v.pemasok && <Baris label={t("form.pemasok")} nilai={`${v.pemasok.nama} (${v.pemasok.kode})`} />}
             <Baris label={t("form.total")} nilai={formatRupiah(v.total)} />
             {v.potong > 0 && <Baris label={t("rincian.potongJenis", { jenis: potong ? INFO_POTONG_PEMASOK[potong].label : "PPh" })} nilai={`− ${formatRupiah(v.potong)}`} />}
+            {v.dibebaskanSkb && (
+              <Baris
+                label={t("rincian.dibebaskanSkb", { jenis: INFO_POTONG_PEMASOK[v.dibebaskanSkb.jenis].label, nomor: v.dibebaskanSkb.nomor, tanggal: labelTanggal(v.dibebaskanSkb.berlakuSampai, locale) })}
+                nilai={formatRupiah(0)}
+              />
+            )}
             <Baris label={v.jenis === "IN" ? t("form.netoMasuk") : t("form.netoKeluar")} nilai={formatRupiah(v.neto)} tebal />
             {v.keterangan && <p className="pt-2 whitespace-pre-line">{v.keterangan}</p>}
             {v.fotoUrl && (

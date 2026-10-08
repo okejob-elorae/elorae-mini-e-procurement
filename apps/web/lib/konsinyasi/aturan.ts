@@ -17,6 +17,11 @@ export type BahanTahap = {
   semuaKomisiDibayar: boolean;
   adaNota: boolean;
   adaFakturPajak: boolean;
+  /**
+   * Tagihan konsinyasi siklus ini memakai PPN (`ConsignmentCycle.vatApplied`,
+   * sebelum dikunci `Store.consignmentVat`). Tanpa PPN tidak ada faktur pajak.
+   */
+  pakaiPpn: boolean;
 };
 
 /**
@@ -25,13 +30,16 @@ export type BahanTahap = {
  * `bayar_spg` DILEWATI kalau tokonya belum punya SPG terdaftar. Kalau tidak,
  * siklus toko tanpa SPG menggantung di "menunggu bayar gaji" selamanya, dan
  * rantainya tidak pernah sampai ke nota maupun faktur pajak.
+ *
+ * `pajak` DILEWATI kalau tagihan konsinyasinya tanpa PPN — sama alasannya:
+ * faktur pajak untuk tagihan tanpa PPN tidak pernah ada.
  */
 export function tahapSiklus(b: BahanTahap): TahapSiklus {
   if (!b.adaLaporanSpg || !b.adaLaporanToko) return 'laporan';
   if (!b.terkunci) return 'cocok';
   if (b.adaSpg && !b.semuaKomisiDibayar) return 'bayar_spg';
   if (!b.adaNota) return 'nota';
-  if (!b.adaFakturPajak) return 'pajak';
+  if (b.pakaiPpn && !b.adaFakturPajak) return 'pajak';
   return 'selesai';
 }
 

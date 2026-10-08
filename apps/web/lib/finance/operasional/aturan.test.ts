@@ -92,7 +92,7 @@ describe("retur dari toko konsinyasi", () => {
 
 describe("siklus konsinyasi dikunci", () => {
   it("non-PKP: tagihan = laku − promo; promo jadi potongan; beban hilang jadi pemulihan; HPP dari konsinyasi", () => {
-    const b = barisSiklusKonsi({ storeId: "s1", lakuResmi: 700_000, promoElorae: 20_000, bebanHilang: 75_000, hpp: 400_000, pengaturanPpn: NON_PKP, tanggal: T });
+    const b = barisSiklusKonsi({ storeId: "s1", lakuResmi: 700_000, promoElorae: 20_000, bebanHilang: 75_000, hpp: 400_000, pengaturanPpn: NON_PKP, pakaiPpn: true, tanggal: T });
     expect(per(b)).toEqual({
       AR_CONSIGNMENT: 75_500_000,
       SALES_REVENUE: -70_000_000,
@@ -105,7 +105,7 @@ describe("siklus konsinyasi dikunci", () => {
     for (const x of b) if (x.role === "SALES_REVENUE" || x.role === "COGS") expect(x).toMatchObject({ channel: "KONSINYASI", storeId: "s1" });
   });
   it("PKP: PPN dihitung atas tagihan bersih promo; DPP potongan = DPP laku − DPP bersih", () => {
-    const b = barisSiklusKonsi({ storeId: "s1", lakuResmi: 1_110_000, promoElorae: 111_000, bebanHilang: 0, hpp: 0, pengaturanPpn: PKP, tanggal: T });
+    const b = barisSiklusKonsi({ storeId: "s1", lakuResmi: 1_110_000, promoElorae: 111_000, bebanHilang: 0, hpp: 0, pengaturanPpn: PKP, pakaiPpn: true, tanggal: T });
     const r = per(b);
     expect(r.AR_CONSIGNMENT).toBe(99_900_000);
     expect(r.SALES_REVENUE).toBe(-100_000_000);
@@ -119,13 +119,39 @@ describe("siklus konsinyasi dikunci", () => {
     expect(jurnal.find((l) => l.role === "SALES_REVENUE")!.memo).toBe("SALES_REVENUE");
   });
   it("penyelaras lapangan (dipakai siklus) menulis DPP PPN bersih dari potongan penjualan", () => {
-    const b = barisSiklusKonsi({ storeId: "s1", lakuResmi: 1_110_000, promoElorae: 111_000, bebanHilang: 0, hpp: 0, pengaturanPpn: PKP, tanggal: T });
+    const b = barisSiklusKonsi({ storeId: "s1", lakuResmi: 1_110_000, promoElorae: 111_000, bebanHilang: 0, hpp: 0, pengaturanPpn: PKP, pakaiPpn: true, tanggal: T });
     const ppn = keBarisJurnal(b).find((l) => l.role === "PPN_KELUARAN")!;
     expect(dppDariMemo(ppn.memo)).toBe(900_000);
   });
 
+  it("PPN per toko: dipisah HANYA bila Elorae PKP pada tanggal jurnal DAN toko memakai PPN (empat kombinasi)", () => {
+    const bahan = { storeId: "s1", lakuResmi: 1_110_000, promoElorae: 111_000, bebanHilang: 0, hpp: 0, tanggal: T };
+    // PKP + toko ber-PPN: PPN keluaran atas tagihan bersih.
+    expect(per(barisSiklusKonsi({ ...bahan, pengaturanPpn: PKP, pakaiPpn: true }))).toEqual({
+      AR_CONSIGNMENT: 99_900_000,
+      SALES_REVENUE: -100_000_000,
+      SALES_DISCOUNT: 10_000_000,
+      PPN_KELUARAN: -9_900_000,
+    });
+    // Tiga lainnya: seluruh tagihan = pendapatan, tanpa baris PPN; piutang tetap sebesar tagihan.
+    const tanpaPpn = { AR_CONSIGNMENT: 99_900_000, SALES_REVENUE: -111_000_000, SALES_DISCOUNT: 11_100_000 };
+    for (const [pengaturanPpn, pakaiPpn] of [
+      [PKP, false],
+      [NON_PKP, true],
+      [NON_PKP, false],
+    ] as const) {
+      const b = barisSiklusKonsi({ ...bahan, pengaturanPpn, pakaiPpn });
+      expect(per(b)).toEqual(tanpaPpn);
+      expect(b.some((x) => x.role === "PPN_KELUARAN")).toBe(false);
+      expect(seimbang(b)).toBe(0);
+    }
+    // PKP yang baru berlaku SESUDAH tanggal jurnal: tanpa PPN walau toko ber-PPN.
+    const pkpNanti: PengaturanPpn = { ...PKP, berlakuSejak: "2026-11-01" };
+    expect(per(barisSiklusKonsi({ ...bahan, pengaturanPpn: pkpNanti, pakaiPpn: true }))).toEqual(tanpaPpn);
+  });
+
   it("tanpa laku dan tanpa apa pun → kosong", () => {
-    expect(barisSiklusKonsi({ storeId: "s1", lakuResmi: 0, promoElorae: 0, bebanHilang: 0, hpp: 0, pengaturanPpn: NON_PKP, tanggal: T })).toEqual([]);
+    expect(barisSiklusKonsi({ storeId: "s1", lakuResmi: 0, promoElorae: 0, bebanHilang: 0, hpp: 0, pengaturanPpn: NON_PKP, pakaiPpn: false, tanggal: T })).toEqual([]);
   });
 });
 

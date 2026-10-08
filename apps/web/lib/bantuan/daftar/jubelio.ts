@@ -42,7 +42,7 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "jubelio.settings.defaults.title" },
         isi: [
           { kunci: "jubelio.settings.defaults.description" },
-          "Menyimpan nilai bawaan menghitung ulang dan mengirim ulang barang yang terdampak ke Jubelio.",
+          "Menyimpan nilai bawaan hanya menyimpan nilai-nilai ini; dipakai saat sebuah barang dikirim ke Jubelio berikutnya. Harga jual barang tidak tersentuh — harga jual diisi manual di formulir barang. Margin dan biaya tambahan bawaan sudah tidak ada (keputusan pemilik 2026-10-08).",
         ],
       },
       { judul: { kunci: "jubelio.settings.cleanup.title" }, isi: { kunci: "jubelio.settings.cleanup.description" } },

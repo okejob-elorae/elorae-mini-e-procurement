@@ -82,6 +82,8 @@ export const KOLOM_FOTO: readonly { model: string; kolom: readonly string[]; jso
   { model: "cashVoucher", kolom: ["photoUrl"] },
   { model: "supplierPayment", kolom: ["proofPhotoUrl"] },
   { model: "taxPayment", kolom: ["proofPhotoUrl"] },
+  // SKB (Surat Keterangan Bebas) pemasok — opsional, data master pemasok.
+  { model: "supplier", kolom: ["skbPhotoUrl"] },
 ];
 
 /**

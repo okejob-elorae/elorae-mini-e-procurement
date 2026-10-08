@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
-import { ArrowLeft, Loader2, Plus, Trash2 } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
+import { AlertTriangle, ArrowLeft, BadgeCheck, Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,15 @@ import { formatRupiah } from "@/lib/format/rupiah";
 import { newLocalId } from "@/lib/pwa/id-lokal";
 import { labelPemasok } from "@/lib/suppliers/label-pemasok";
 import { SEMUA_KANAL_JURNAL, LABEL_KANAL_JURNAL, type KanalJurnal } from "@/lib/finance/journals/kanal";
-import { bacaJenisPotongPemasok, INFO_POTONG_PEMASOK, SEMUA_JENIS_POTONG_PEMASOK, type JenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
+import { labelTanggal } from "@/lib/tanggal-isian";
+import {
+  bacaJenisPotongPemasok,
+  INFO_POTONG_PEMASOK,
+  SEMUA_JENIS_POTONG_PEMASOK,
+  tentukanPotongPemasok,
+  type JenisPotongPemasok,
+  type SkbPemasok,
+} from "@/lib/finance/pajak/pemotongan";
 import { bacaRupiahSen, hitungVoucher, type BarisVoucherSah, type JenisVoucher } from "@/lib/finance/kas/aturan";
 import type { TarifPajakKreatif } from "@/lib/creative/pph";
 import type { RekeningKasBank } from "@/lib/finance/pajak/setoran-queries";
@@ -35,7 +43,7 @@ type Props = {
   rekening: RekeningKasBank[];
   kategori: KategoriTampil[];
   akun: AkunPilihan[];
-  pemasok: Array<{ id: string; kode: string; nama: string; jenisPotong: string | null; adaNpwp: boolean }>;
+  pemasok: Array<{ id: string; kode: string; nama: string; jenisPotong: string | null; adaNpwp: boolean; skb: SkbPemasok | null }>;
   tarif: TarifPajakKreatif;
   hariIni: string;
 };
@@ -47,6 +55,7 @@ const barisKosong = (): BarisIsian => ({ kunci: newLocalId(), pilih: "", jumlah:
 
 export function FormVoucher({ jenisAwal, rekening, kategori, akun, pemasok, tarif, hariIni }: Props) {
   const t = useTranslations("financeKas");
+  const locale = useLocale();
   const router = useRouter();
   const [pending, mulai] = useTransition();
   const [jenis, setJenis] = useState<JenisVoucher>(jenisAwal);
@@ -90,7 +99,10 @@ export function FormVoucher({ jenisAwal, rekening, kategori, akun, pemasok, tari
     if (j && jenis === "OUT") setPotong(j);
   };
 
-  const jenisPotong: JenisPotongPemasok | null = jenis === "OUT" && potong !== TANPA ? bacaJenisPotongPemasok(potong) : null;
+  const jenisDiminta: JenisPotongPemasok | null = jenis === "OUT" && potong !== TANPA ? bacaJenisPotongPemasok(potong) : null;
+  // Penentu yang sama dengan penulisnya: SKB pemasok yang berlaku pada tanggal voucher membebaskan potongan.
+  const keputusan = tentukanPotongPemasok({ jenis: jenisDiminta, skb: pemasokId ? pemasok.find((p) => p.id === pemasokId)?.skb : null, tanggal });
+  const jenisPotong = keputusan.jenis;
   const barisSah: Pick<BarisVoucherSah, "sen" | "kenaPotong">[] = [];
   let barisSalah = false;
   for (const b of baris) {
@@ -130,7 +142,7 @@ export function FormVoucher({ jenisAwal, rekening, kategori, akun, pemasok, tari
         pemasokId: jenis === "OUT" && pemasokId ? pemasokId : null,
         keterangan: keterangan || null,
         fotoUrl: foto,
-        jenisPotong: jenisPotong ?? null,
+        jenisPotong: jenisDiminta ?? null,
         adaNpwp,
         baris:
           jenis === "TRANSFER"
@@ -331,6 +343,18 @@ export function FormVoucher({ jenisAwal, rekening, kategori, akun, pemasok, tari
                   ))}
                 </SelectContent>
               </Select>
+              {keputusan.dibebaskanSkb && (
+                <p className="flex items-start gap-1.5 text-xs text-emerald-700 dark:text-emerald-400" role="status">
+                  <BadgeCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {t("form.skbBebas", { nomor: keputusan.dibebaskanSkb.nomor, tanggal: labelTanggal(keputusan.dibebaskanSkb.berlakuSampai, locale) })}
+                </p>
+              )}
+              {keputusan.skbHabis && (
+                <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400" role="status">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                  {t("form.skbHabis", { nomor: keputusan.skbHabis.nomor, tanggal: labelTanggal(keputusan.skbHabis.berlakuSampai, locale) })}
+                </p>
+              )}
               {jenisPotong && (
                 <>
                   <p className="text-xs text-muted-foreground">{INFO_POTONG_PEMASOK[jenisPotong].keterangan}</p>

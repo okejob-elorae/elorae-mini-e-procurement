@@ -318,7 +318,7 @@ export const ENTRI: EntriBantuan[] = [
       "Biaya bahan: setiap penerimaan memikul bagian sisa biaya bahan sebanding jumlah yang disetor terhadap sisa target; penerimaan yang menutup target memikul seluruh sisanya. Bahan yang sudah kembali ke gudang tidak ikut dibebankan. Pratinjau di layar memakai rumus yang sama dengan yang dicatat.",
       "Ongkos jahit (CMT) dan jasa langkah lain masuk HPP barang jadi: harga jasa per pcs setiap langkah perintah kerja dikalikan jumlah yang LOLOS QC (barang cacat tidak dibayar ke pemasok jasa). Langkah \"Belum termasuk PPN\" berarti pemasok menambahkan PPN di atas harga, sama dengan baris PO. Bila Elorae PKP, PPN jasa dicatat sebagai PPN Masukan dan HPP memikul nilai jasa tanpa PPN; bila belum PKP, PPN jasa ikut HPP. Biaya tambahan per pcs (kemasan, dll., di tab HPP perintah kerja) juga ikut, per pcs lolos.",
       "Jurnalnya: persediaan barang jadi bertambah sebesar HPP setoran; persediaan bahan berkurang sebesar bagian bahannya; tagihan jasa menjadi utang usaha kepada pemasok jasa; biaya tambahan dicatat sebagai biaya yang masih harus dibayar. Penerimaan yang dicatat sebelum aturan ini tidak diubah.",
-      "Harga jual otomatis tetap dihitung dari biaya BAHAN per pcs × (1 + margin) + biaya tambahan barang — ongkos jahit yang kini masuk HPP tidak menaikkan harga jual.",
+      "Penerimaan barang jadi tidak pernah mengubah harga jual: harga jual diisi sendiri oleh pemilik di formulir barang, yang menampilkan HPP per pcs di samping harga jual (keputusan pemilik 2026-10-08).",
     ],
     kartu: [{ judul: { kunci: "workOrders.receive.cardTitle" }, isi: { kunci: "workOrders.receive.cardDescription" } }],
   },

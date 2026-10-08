@@ -9,6 +9,7 @@ import { daftarKategori } from "@/lib/finance/kas/kategori-writer";
 import { rekeningKasBank } from "@/lib/finance/pajak/setoran-queries";
 import { bacaTarifPajakKreatif } from "@/lib/creative/pajak-pengaturan";
 import { urutPemasok } from "@/lib/suppliers/label-pemasok";
+import { bacaSkbPemasok } from "@/lib/finance/pajak/pemotongan";
 import { FormVoucher } from "./FormVoucher";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +30,7 @@ export default async function VoucherBaruPage({ searchParams }: { searchParams: 
   const [kategori, akun, pemasok, tarif] = await Promise.all([
     daftarKategori(),
     akunBarisVoucher(new Set(rekening.map((r) => r.id))),
-    prisma.supplier.findMany({ where: { isActive: true }, select: { id: true, code: true, name: true, taxWithholding: true, hasNpwp: true } }),
+    prisma.supplier.findMany({ where: { isActive: true }, select: { id: true, code: true, name: true, taxWithholding: true, hasNpwp: true, skbNumber: true, skbValidUntil: true } }),
     bacaTarifPajakKreatif(),
   ]);
   return (
@@ -38,7 +39,7 @@ export default async function VoucherBaruPage({ searchParams }: { searchParams: 
       rekening={rekening}
       kategori={kategori.filter((k) => k.aktif)}
       akun={akun}
-      pemasok={urutPemasok(pemasok).map((p) => ({ id: p.id, kode: p.code, nama: p.name, jenisPotong: p.taxWithholding, adaNpwp: p.hasNpwp }))}
+      pemasok={urutPemasok(pemasok).map((p) => ({ id: p.id, kode: p.code, nama: p.name, jenisPotong: p.taxWithholding, adaNpwp: p.hasNpwp, skb: bacaSkbPemasok(p) }))}
       tarif={tarif}
       hariIni={hariIniWib()}
     />

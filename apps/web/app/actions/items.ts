@@ -1,13 +1,11 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ItemType, prisma, recalcItemSellingPrice } from '@elorae/db';
+import { ItemType, prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
-import { apiFetch } from '@/lib/internal-api';
 import { generateSKU as generateSKUFromLib } from '@/lib/sku-generator';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { getActorName, notifyItemCreated } from '@/app/actions/notifications';
-import { dasarHargaJualProduksi } from "@/lib/production/biaya-dasar-harga-jual";
 import {
   getConsumptionRules as getConsumptionRulesFromLib,
   saveConsumptionRules as saveConsumptionRulesFromLib,
@@ -84,53 +82,21 @@ export async function updateItem(id: string, data: ItemFormData) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT);
 
-  const txResult = await prisma.$transaction(async (tx) => {
-    const beforeItem = await tx.item.findUnique({
-      where: { id },
-      select: {
-        targetMarginPercent: true,
-        additionalCost: true,
-        sellingPrice: true,
-      },
-    });
-    if (!beforeItem) throw new Error("Item not found");
-    // Items with many variants/consumption rules push updateItemLib past Prisma's
-    // 5s default; helper adds a few more ops on top. 15s gives headroom.
-
-    const updated = await updateItemLib(tx, id, data, { olehUserId: session.user.id });
-
-    const toNumOrNull = (v: unknown): number | null => (v == null ? null : Number(v));
-    const beforeMargin = toNumOrNull(beforeItem.targetMarginPercent);
-    const afterMargin = toNumOrNull(data.targetMarginPercent);
-    const beforeExtras = toNumOrNull(beforeItem.additionalCost);
-    const afterExtras = toNumOrNull(data.additionalCost);
-    const beforeSelling = toNumOrNull(beforeItem.sellingPrice);
-    const afterSelling = toNumOrNull(data.sellingPrice);
-
-    const marginChanged = beforeMargin !== afterMargin;
-    const extrasChanged = beforeExtras !== afterExtras;
-    const sellingPriceChanged = beforeSelling !== afterSelling;
-
-    let outboxRowId: string | null = null;
-
-    if (marginChanged || extrasChanged) {
-      const recalc = await recalcItemSellingPrice(tx, {
-        itemId: id,
-        trigger: "MARGIN_CHANGE",
-        // Barang jadi produksi sendiri: dasar = biaya BAHAN per pcs, bukan
-        // avgCost yang kini memuat ongkos jahit (harga jual tidak ikut naik).
-        newAvgCost: await dasarHargaJualProduksi(tx, id),
-        changedById: session.user.id,
-      });
-      if (recalc.applied) {
-        outboxRowId = recalc.outboxRowId;
-      }
-    } else if (sellingPriceChanged) {
+  // Harga jual diisi MANUAL oleh pemilik (keputusan pemilik 2026-10-08): tidak
+  // ada lagi harga yang dihitung dari margin. Perubahan harga manual dicatat di
+  // riwayat harga dan ikut terkirim ke Jubelio lewat push produk di bawah.
+  // Items with many variants/consumption rules push updateItemLib past Prisma's
+  // 5s default. 15s gives headroom.
+  const updated = await prisma.$transaction(async (tx) => {
+    const hasil = await updateItemLib(tx, id, data, { olehUserId: session.user.id });
+    const hargaLama = hasil.before.sellingPrice;
+    const hargaBaru = hasil.after.sellingPrice;
+    if (hargaLama !== hargaBaru) {
       await tx.itemPriceChangeLog.create({
         data: {
           itemId: id,
-          oldSellingPrice: beforeSelling,
-          newSellingPrice: afterSelling,
+          oldSellingPrice: hargaLama,
+          newSellingPrice: hargaBaru,
           oldAvgCost: null,
           newAvgCost: null,
           marginPercentUsed: null,
@@ -141,21 +107,14 @@ export async function updateItem(id: string, data: ItemFormData) {
         },
       });
     }
-
-    return { updated, outboxRowId };
+    return hasil;
   }, { timeout: 15000 });
 
-  if (txResult.outboxRowId) {
-    void apiFetch("POST", `/jubelio/outbox/enqueue/${txResult.outboxRowId}`, {
-      userId: session.user.id,
-    }).catch(() => {});
-  } else {
-    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after).catch(() => {});
-  }
+  enqueueProductPushOnUpdate(id, updated.before, updated.after).catch(() => {});
 
   revalidatePath('/backoffice/items');
   revalidatePath(`/backoffice/items/${id}`);
-  return txResult.updated.serialized;
+  return updated.serialized;
 }
 
 export type DeleteItemActionResult =

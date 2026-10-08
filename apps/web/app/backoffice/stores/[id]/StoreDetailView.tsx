@@ -432,6 +432,9 @@ export function StoreDetailView({ store, canEdit, catatan, kredit, visits, order
                 {store.storeClass ? tKelas("kelas", { kelas: store.storeClass }) : tKelas("tanpa")}
               </DetailField>
               <DetailField label={tKredit("pkp")}>{store.isPkp ? tKredit("pkpYes") : tKredit("pkpNo")}</DetailField>
+              {store.termsType === "KONSI" ? (
+                <DetailField label={tKredit("ppnKonsi")}>{store.consignmentVat ? tKredit("ppnKonsiYa") : tKredit("ppnKonsiTidak")}</DetailField>
+              ) : null}
             </dl>
           </section>
 

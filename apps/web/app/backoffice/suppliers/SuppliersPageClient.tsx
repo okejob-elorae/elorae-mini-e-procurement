@@ -45,6 +45,9 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { TanggalInput } from '@/components/ui/tanggal-input';
+import { UnggahBukti } from '@/app/backoffice/finance/kas/_bersama/UnggahBukti';
+import { formatDateOnlyJakarta } from '@/lib/date-only';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -96,48 +99,69 @@ interface Supplier {
   isPkp?: boolean | null;
   taxWithholding?: string | null;
   hasNpwp?: boolean;
+  skbNumber?: string | null;
+  skbValidUntil?: Date | string | null;
+  skbPhotoUrl?: string | null;
   isActive: boolean;
   status?: StatusPersetujuanPemasok;
+}
+
+/** Tanggal berlaku SKB tersimpan (Date / teks ISO) → isian "YYYY-MM-DD" hari WIB. */
+function isianTanggalSkb(v: Date | string | null | undefined): string {
+  if (!v) return '';
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : formatDateOnlyJakarta(d);
 }
 
 type Translate = ReturnType<typeof useTranslations>;
 
 function makeSupplierSchema(t: Translate) {
-  return z.object({
-    code: z.string().optional(),
-    name: z.string().min(1, t('nameRequired')),
-    typeId: z.string().min(1, t('typeRequired')),
-    address: z.string().optional(),
-    phone: z.string().optional(),
-    email: z.string().email(t('invalidEmail')).optional().or(z.literal('')),
-    bankName: z.string().optional(),
-    bankAccount: z.string().optional(),
-    bankAccountName: z.string().optional(),
-    // Data pajak: 'belum' = status PKP belum diisi (Select tidak menerima string kosong).
-    isPkp: z.enum(['belum', 'ya', 'tidak']),
-    taxWithholding: z.enum(['TANPA', 'PPH23', 'PPH21', 'PPH4_2']),
-    hasNpwp: z.boolean(),
-    npwp: z
-      .string()
-      .optional()
-      .refine((v) => {
-        const angka = (v ?? '').replace(/\D/g, '');
-        return !angka || angka.length === 15 || angka.length === 16;
-      }, t('npwpTidakSah')),
-  });
+  return z
+    .object({
+      code: z.string().optional(),
+      name: z.string().min(1, t('nameRequired')),
+      typeId: z.string().min(1, t('typeRequired')),
+      address: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().email(t('invalidEmail')).optional().or(z.literal('')),
+      bankName: z.string().optional(),
+      bankAccount: z.string().optional(),
+      bankAccountName: z.string().optional(),
+      // Data pajak: 'belum' = status PKP belum diisi (Select tidak menerima string kosong).
+      isPkp: z.enum(['belum', 'ya', 'tidak']),
+      taxWithholding: z.enum(['TANPA', 'PPH23', 'PPH21', 'PPH4_2']),
+      hasNpwp: z.boolean(),
+      npwp: z
+        .string()
+        .optional()
+        .refine((v) => {
+          const angka = (v ?? '').replace(/\D/g, '');
+          return !angka || angka.length === 15 || angka.length === 16;
+        }, t('npwpTidakSah')),
+      // SKB bebas potong PPh: nomor terisi → tanggal berlaku sampai wajib.
+      skbNumber: z.string().max(191).optional(),
+      skbValidUntil: z.string().optional(),
+      skbPhotoUrl: z.string().nullable().optional(),
+    })
+    .refine((v) => !v.skbNumber?.trim() || Boolean(v.skbValidUntil), { message: t('skbTanggalWajib'), path: ['skbValidUntil'] });
 }
 
 type SupplierForm = z.infer<ReturnType<typeof makeSupplierSchema>>;
 
 /** Nilai formulir → isian aksi pemasok (status PKP null = belum diisi; NPWP kosong = tidak diubah). */
 function keIsianPemasok(data: SupplierForm) {
-  const { isPkp, taxWithholding, hasNpwp, npwp, ...lain } = data;
+  const { isPkp, taxWithholding, hasNpwp, npwp, skbNumber, skbValidUntil, skbPhotoUrl, ...lain } = data;
+  const nomorSkb = skbNumber?.trim() ?? '';
   return {
     ...lain,
     isPkp: isPkp === 'ya' ? true : isPkp === 'tidak' ? false : null,
     taxWithholding: taxWithholding === 'TANPA' ? null : taxWithholding,
     hasNpwp,
     ...(hasNpwp && npwp?.trim() ? { npwp: npwp.trim() } : {}),
+    // Nomor SKB dikosongkan = SKB dihapus seluruhnya (tanggal dan foto ikut kosong).
+    skbNumber: nomorSkb || null,
+    skbValidUntil: nomorSkb ? skbValidUntil || null : null,
+    skbPhotoUrl: nomorSkb ? skbPhotoUrl || null : null,
   };
 }
 
@@ -238,8 +262,12 @@ export function SuppliersPageClient({
       taxWithholding: 'TANPA',
       hasNpwp: true,
       npwp: '',
+      skbNumber: '',
+      skbValidUntil: '',
+      skbPhotoUrl: null,
     },
   });
+  const skbNumberIsian = useWatch({ control, name: 'skbNumber' });
   const isPkpIsian = useWatch({ control, name: 'isPkp' });
   const hasNpwpIsian = useWatch({ control, name: 'hasNpwp' });
 
@@ -354,6 +382,9 @@ export function SuppliersPageClient({
         taxWithholding: 'TANPA',
         hasNpwp: true,
         npwp: '',
+        skbNumber: '',
+        skbValidUntil: '',
+        skbPhotoUrl: null,
       });
       clearErrors();
     } else if (supplierDialogMode === 'edit' && editSupplier) {
@@ -376,6 +407,9 @@ export function SuppliersPageClient({
             : 'TANPA',
         hasNpwp: editSupplier.hasNpwp ?? true,
         npwp: '', // Terenkripsi; kosongkan untuk mempertahankan, ketik untuk mengganti
+        skbNumber: editSupplier.skbNumber ?? '',
+        skbValidUntil: isianTanggalSkb(editSupplier.skbValidUntil),
+        skbPhotoUrl: editSupplier.skbPhotoUrl ?? null,
       });
       clearErrors();
     }
@@ -424,6 +458,7 @@ export function SuppliersPageClient({
           'code', 'name', 'typeId', 'address', 'phone', 'email',
           'bankName', 'bankAccount', 'bankAccountName',
           'isPkp', 'taxWithholding', 'hasNpwp', 'npwp',
+          'skbNumber', 'skbValidUntil', 'skbPhotoUrl',
         ];
         if (Array.isArray(details) && details.length > 0) {
           details.forEach((issue) => {
@@ -787,6 +822,43 @@ export function SuppliersPageClient({
                     ) : (
                       <p className="text-sm text-muted-foreground">{tSupplier('pajakTanpaNpwpCatatan')}</p>
                     )}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="skbNumber">{tSupplier('skbNomor')}</Label>
+                        <Input id="skbNumber" autoComplete="off" maxLength={191} {...register('skbNumber')} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="skbValidUntil">{tSupplier('skbBerlakuSampai')}</Label>
+                        <Controller
+                          name="skbValidUntil"
+                          control={control}
+                          render={({ field }) => (
+                            <TanggalInput
+                              id="skbValidUntil"
+                              value={field.value ?? ''}
+                              disabled={!skbNumberIsian?.trim()}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              aria-invalid={!!errors.skbValidUntil}
+                            />
+                          )}
+                        />
+                        {errors.skbValidUntil && (
+                          <p className="text-sm text-destructive" role="alert">
+                            {errors.skbValidUntil.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {skbNumberIsian?.trim() ? (
+                      <div className="space-y-2">
+                        <Label>{tSupplier('skbFoto')}</Label>
+                        <Controller
+                          name="skbPhotoUrl"
+                          control={control}
+                          render={({ field }) => <UnggahBukti value={field.value ?? null} onChange={field.onChange} disabled={isSubmitting} />}
+                        />
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 

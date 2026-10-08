@@ -237,7 +237,7 @@ export const ENTRI: EntriBantuan[] = [
       { judul: { kunci: "pphDipotong.kartu.belum" }, isi: "Termin yang PPh-nya belum dicatat disetor, dan berapa yang belum punya nomor bukti potong." },
       {
         judul: { kunci: "pphDipotong.pemasok.judul" },
-        isi: "PPh yang dipotong dari pembayaran pemasok (PPh 23 jasa badan seperti CMT, PPh 21 penjahit perorangan, PPh 4(2) sewa) dan dari voucher kas keluar, per masa tanggal bayar: dasar potongan, PPh, dan dokumennya. Bahan bukti potong (BPPU/BP21) dan setoran di Coretax; setoran dicatat di Pajak → Setoran sehingga utang PPh-nya lunas. Pembayaran/voucher yang dibatalkan tidak dihitung.",
+        isi: "PPh yang dipotong dari pembayaran pemasok (PPh 23 jasa badan seperti CMT, PPh 21 penjahit perorangan, PPh 4(2) sewa) dan dari voucher kas keluar, per masa tanggal bayar: dasar potongan, PPh, dan dokumennya. Bahan bukti potong (BPPU/BP21) dan setoran di Coretax; setoran dicatat di Pajak → Setoran sehingga utang PPh-nya lunas. Pembayaran/voucher yang dibatalkan tidak dihitung. Pembayaran yang dibebaskan SKB pemasok (SKB berlaku pada tanggal bayar) tampil sebagai baris bernilai 0 bertanda \"Dibebaskan SKB\" dengan nomor dan masa berlaku SKB-nya, dengan jenis dan dasar potongan yang akan berlaku tanpa SKB.",
       },
     ],
   },
@@ -259,7 +259,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Pilih jenis (keluar, masuk, transfer), tanggal (tidak boleh sesudah hari ini), dan rekening kas/bank. Rekening = akun daun aktif yang dipetakan ke peran Bank/Kas atau diklasifikasikan Kas di Klasifikasi Arus Kas.",
       "Setiap baris memakai kategori (lihat Kategori kas — akunnya sudah ditentukan) atau akun langsung, jumlah, memo, dan kanal opsional (untuk laba per kanal). Baris tidak boleh memakai rekening kas/bank (pakai transfer) atau akun utang yang punya alur pembayaran sendiri.",
-      "Potongan PPh hanya untuk voucher keluar: PPh 23 jasa badan (2%, 4% tanpa NPWP), PPh 21 orang pribadi, PPh 4(2) sewa (10%). Dasarnya baris yang dicentang Kena PPh (kategori berpotongan tercentang sendiri), atau semua baris bila tidak ada yang dicentang. PPh yang dipotong menjadi utang PPh dan tampil di PPh dipotong.",
+      "Potongan PPh hanya untuk voucher keluar: PPh 23 jasa badan (2%, 4% tanpa NPWP), PPh 21 orang pribadi, PPh 4(2) sewa (10%). Dasarnya baris yang dicentang Kena PPh (kategori berpotongan tercentang sendiri), atau semua baris bila tidak ada yang dicentang. PPh yang dipotong menjadi utang PPh dan tampil di PPh dipotong. Voucher yang menyebut pemasok ber-SKB yang masih berlaku pada tanggal voucher tidak dipotong (formulir menulis \"Dibebaskan SKB\"), sama dengan pembayaran pemasok.",
       "Voucher yang dikirim dua kali (klik ganda, sinyal putus) hanya tercatat sekali.",
     ],
   },

@@ -55,7 +55,8 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
         { label: 'Toko', nilai: b.storeName },
         { label: 'Periode', nilai: b.periode },
         { label: 'No. nota', nilai: b.noNota ?? '—' },
-        { label: 'No. faktur pajak', nilai: b.noFakturPajak ?? '—' },
+        // Tagihan tanpa PPN tidak punya faktur pajak.
+        { label: 'No. faktur pajak', nilai: b.noFakturPajak ?? (data.tagihan.pakaiPpn ? '—' : 'Tanpa PPN') },
         { label: 'Dikunci', nilai: data.dikunciOleh ? `${data.dikunciOleh}, ${tanggal(data.dikunciPada)}` : 'belum' },
         { label: 'Tenggat gaji SPG', nilai: tanggal(b.tenggatSpg) },
       ]}

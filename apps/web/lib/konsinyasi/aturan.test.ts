@@ -16,6 +16,7 @@ const LENGKAP: BahanTahap = {
   semuaKomisiDibayar: true,
   adaNota: true,
   adaFakturPajak: true,
+  pakaiPpn: true,
 };
 
 describe('tahapSiklus — enam tahap, diperiksa berurutan', () => {
@@ -46,6 +47,13 @@ describe('tahapSiklus — enam tahap, diperiksa berurutan', () => {
 
   it('pajak setelah nota ada', () => {
     expect(tahapSiklus({ ...LENGKAP, adaFakturPajak: false })).toBe('pajak');
+  });
+
+  it("MELEWATI pajak kalau tagihan konsinyasi toko itu tanpa PPN", () => {
+    // Tidak ada faktur pajak untuk tagihan tanpa PPN; tanpa ini siklusnya
+    // menggantung di "menunggu faktur pajak" selamanya.
+    expect(tahapSiklus({ ...LENGKAP, pakaiPpn: false, adaFakturPajak: false })).toBe("selesai");
+    expect(tahapSiklus({ ...LENGKAP, pakaiPpn: false, adaFakturPajak: false, adaNota: false })).toBe("nota");
   });
 
   it('selesai kalau ketiga nomornya lengkap', () => {

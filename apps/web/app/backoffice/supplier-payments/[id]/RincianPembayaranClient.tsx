@@ -135,7 +135,14 @@ export function RincianPembayaranClient({ bayar: b, dokumenTerbuka, akses }: Pro
             {b.referensi && <Isi label={t("referensi")} nilai={b.referensi} />}
             {b.jatuhTempoGiro && <Isi label={t("jatuhTempoGiro")} nilai={labelTanggal(b.jatuhTempoGiro, locale)} />}
             <Isi label={t("ringkasBruto")} nilai={formatRupiah(b.bruto)} />
-            <Isi label={t("ringkasPotongBaris", { jenis: jenisPotong ? INFO_POTONG_PEMASOK[jenisPotong].label : "–" })} nilai={b.potong > 0 ? `− ${formatRupiah(b.potong)}` : "–"} />
+            {b.dibebaskanSkb ? (
+              <Isi
+                label={t("ringkasDibebaskanSkb", { jenis: INFO_POTONG_PEMASOK[b.dibebaskanSkb.jenis].label, nomor: b.dibebaskanSkb.nomor, tanggal: labelTanggal(b.dibebaskanSkb.berlakuSampai, locale) })}
+                nilai={formatRupiah(0)}
+              />
+            ) : (
+              <Isi label={t("ringkasPotongBaris", { jenis: jenisPotong ? INFO_POTONG_PEMASOK[jenisPotong].label : "–" })} nilai={b.potong > 0 ? `− ${formatRupiah(b.potong)}` : "–"} />
+            )}
             <Isi label={t("ringkasNeto")} nilai={formatRupiah(b.neto)} tebal />
             {b.uangMukaSisa > 0 && <Isi label={t("uangMukaBelumTerpakai")} nilai={formatRupiah(b.uangMukaSisa)} />}
             {b.mutasiTercocok > 0 && <p className="pt-2 text-xs text-muted-foreground">{t("sudahDicocokkanBank")}</p>}

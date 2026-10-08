@@ -7,8 +7,8 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  *
  * 1. Dulu SETIAP penerimaan sebagian memikul seluruh biaya bahan WO: rencana
  *    100 pcs, bahan 1.000.000, terima 40 → 25.000/pcs, terima 60 → 16.667/pcs,
- *    nilai stok 2.000.000 untuk bahan 1.000.000 (dan harga jual otomatis ikut
- *    naik). Sekarang 10.000/pcs pada keduanya, Σ = 1.000.000.
+ *    nilai stok 2.000.000 untuk bahan 1.000.000. Sekarang 10.000/pcs pada
+ *    keduanya, Σ = 1.000.000. Harga jual tidak pernah diubah penerimaan.
  * 2. Barang jadi bisa diterima ke WO yang sudah DIBATALKAN, dan pembatalan bisa
  *    menimpa penerimaan yang serentak. Keduanya kini di `runSerializable`.
  */
@@ -299,10 +299,11 @@ d("penerimaan barang jadi (test bed only)", () => {
       expect((await penerimaan(woId))[0].biaya).toBe(400_000);
     });
 
-    it("harga jual otomatis memakai HPP penerimaan, bukan seluruh bahan: margin 50% → 15.000 (dulu 37.500)", async () => {
+    it("harga jual TIDAK diubah penerimaan — diisi manual pemilik; margin lama di kolom barang diabaikan", async () => {
+      // Keputusan pemilik 2026-10-08: harga jual tidak pernah dihitung otomatis lagi.
       await prisma.item.update({
         where: { id: seededId(fgId) },
-        data: { targetMarginPercent: 50, additionalCost: 0, sellingPrice: null },
+        data: { targetMarginPercent: 50, additionalCost: 0, sellingPrice: 99_000 },
       });
       try {
         woId = await buatWo();
@@ -310,12 +311,12 @@ d("penerimaan barang jadi (test bed only)", () => {
           Number((await prisma.item.findUniqueOrThrow({ where: { id: seededId(fgId) }, select: { sellingPrice: true } })).sellingPrice);
 
         await receiveFG({ woId, qtyReceived: 40, qtyRejected: 0 }, userId);
-        expect(await harga()).toBe(15_000);
+        expect(await harga()).toBe(99_000);
         await receiveFG({ woId, qtyReceived: 60, qtyRejected: 0 }, userId);
-        expect(await harga()).toBe(15_000);
-        // Lebih produksi sesudah WO lengkap: biaya 0, harga jual tidak diturunkan ke 0 + biaya tambahan.
+        expect(await harga()).toBe(99_000);
         await receiveFG({ woId, qtyReceived: 10, qtyRejected: 0 }, userId);
-        expect(await harga()).toBe(15_000);
+        expect(await harga()).toBe(99_000);
+        expect(await prisma.itemPriceChangeLog.count({ where: { itemId: seededId(fgId) } })).toBe(0);
         expect((await penerimaan(woId)).map((r) => r.biaya)).toEqual([400_000, 600_000, 0]);
         expect(await stokFg()).toEqual([{ varian: "", qty: 110, avg: 9_090.91, nilai: 1_000_000 }]);
       } finally {
@@ -484,7 +485,7 @@ d("penerimaan barang jadi (test bed only)", () => {
       expect(r.bahan + r.jasa + r.tambahan - r.total).toBe(85_820);
     });
 
-    it("harga jual otomatis TIDAK ikut naik karena ongkos jahit: tetap biaya bahan per pcs × (1 + margin)", async () => {
+    it("barang tanpa harga jual tetap tanpa harga sesudah penerimaan (tidak ada harga otomatis), tanpa riwayat harga", async () => {
       await prisma.item.update({
         where: { id: seededId(fgId) },
         data: { targetMarginPercent: 50, additionalCost: 0, sellingPrice: null },
@@ -493,13 +494,8 @@ d("penerimaan barang jadi (test bed only)", () => {
         woId = await buatWoCmt();
         await receiveFG({ woId, qtyReceived: 40, qtyRejected: 0 }, userId);
         const item = await prisma.item.findUniqueOrThrow({ where: { id: seededId(fgId) }, select: { sellingPrice: true } });
-        expect(Number(item.sellingPrice)).toBe(15_000);
-        const log = await prisma.itemPriceChangeLog.findFirstOrThrow({
-          where: { itemId: seededId(fgId), triggerReason: "FG_RECEIPT" },
-          orderBy: { changedAt: "desc" },
-          select: { newAvgCost: true },
-        });
-        expect(Number(log.newAvgCost)).toBe(10_000);
+        expect(item.sellingPrice).toBeNull();
+        expect(await prisma.itemPriceChangeLog.count({ where: { itemId: seededId(fgId), triggerReason: "FG_RECEIPT" } })).toBe(0);
       } finally {
         await prisma.item.update({
           where: { id: seededId(fgId) },

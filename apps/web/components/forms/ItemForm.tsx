@@ -41,6 +41,9 @@ import { rapikanNamaBarang } from "@/app/backoffice/items/nama-barang";
 import { labelJenisBarang } from "@/app/backoffice/items/tampilan-barang";
 import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
 import { bacaKomisiPerPcs } from "@/lib/items/komisi-spg";
+import type { HppBarang } from "@/lib/items/hpp-barang";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { formatDisplayDate } from "@/lib/date-only";
 
 type ItemFormData = z.infer<typeof itemSchema>;
 /** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
@@ -131,8 +134,6 @@ interface ItemFormProps {
     reorderPoint?: number;
     overReceiveThreshold?: number;
     sellingPrice?: number;
-    targetMarginPercent?: number;
-    additionalCost?: number;
     material?: string | null;
     careInstructions?: string | null;
     sizeChartId?: string | null;
@@ -155,9 +156,11 @@ interface ItemFormProps {
   };
   onSubmit: (data: ItemFormData & InfoProdukIsian, consumptionRules?: ConsumptionRuleData[]) => Promise<void>;
   isLoading?: boolean;
+  /** HPP per pcs barang jadi (hanya dibaca, di samping harga jual). Tidak ada di barang baru. */
+  hpp?: HppBarang | null;
 }
 
-export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormProps) {
+export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null }: ItemFormProps) {
   const tValidation = useTranslations('validation');
   const tInfo = useTranslations("itemProductInfo");
   const tForm = useTranslations('itemForm');
@@ -169,8 +172,6 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     return createItemSchema((k) => (k === 'itemNameIdRequired' ? tForm('errNamaWajib') : tValidation(k))).extend({
       nameEn: z.string().optional(),
       sellingPrice: z.number(tidakNegatif).min(0, tidakNegatif).optional(),
-      targetMarginPercent: z.number(tidakNegatif).min(0, tidakNegatif).optional(),
-      additionalCost: z.number(tidakNegatif).min(0, tidakNegatif).optional(),
     });
   }, [tValidation, tForm]);
   const [uoms, setUOMs] = useState<UOM[]>([]);
@@ -255,8 +256,6 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       reorderPoint: initialData?.reorderPoint ?? 0,
       overReceiveThreshold: initialData?.overReceiveThreshold ?? 0,
       sellingPrice: initialData?.sellingPrice,
-      targetMarginPercent: initialData?.targetMarginPercent,
-      additionalCost: initialData?.additionalCost,
     },
   });
 
@@ -817,79 +816,33 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             </div>
           )}
 
-          {/* Pricing (Finished goods only) */}
+          {/* Harga (barang jadi saja): harga jual diisi manual pemilik; HPP per pcs hanya dibaca. */}
           {itemType === ItemType.FINISHED_GOOD && (
             <div className="space-y-4 border-t pt-4">
-              <div className="space-y-2">
-                <Label htmlFor="sellingPrice">{tForm('sellingPrice')}</Label>
-                <Input
-                  id="sellingPrice"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  {...register('sellingPrice', {
-                    // Kosong = belum ada harga (bukan NaN, yang ditolak dengan pesan bahasa Inggris).
-                    setValueAs: (v) => (v === '' || v == null ? undefined : Number(v)),
-                  })}
-                  placeholder="0"
-                  aria-invalid={!!errors.sellingPrice}
-                  className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.sellingPrice && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.sellingPrice.message}
-                  </p>
-                )}
-              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="sellingPrice">{tForm('sellingPrice')}</Label>
+                  <Input
+                    id="sellingPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    {...register('sellingPrice', {
+                      // Kosong = belum ada harga (bukan NaN, yang ditolak dengan pesan bahasa Inggris).
+                      setValueAs: (v) => (v === '' || v == null ? undefined : Number(v)),
+                    })}
+                    placeholder="0"
+                    aria-invalid={!!errors.sellingPrice}
+                    className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
+                  {errors.sellingPrice && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.sellingPrice.message}
+                    </p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="targetMarginPercent">
-                  {tForm('targetMargin')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
-                </Label>
-                <Input
-                  id="targetMarginPercent"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  {...register("targetMarginPercent", {
-                    setValueAs: (v) => (v === "" || v == null ? undefined : Number(v)),
-                  })}
-                  aria-invalid={!!errors.targetMarginPercent}
-                  className={errors.targetMarginPercent ? "border-destructive focus-visible:ring-destructive/20" : ""}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {tForm('targetMarginHint')}
-                </p>
-                {errors.targetMarginPercent && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.targetMarginPercent.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="additionalCost">
-                  {tForm('additionalCost')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
-                </Label>
-                <Input
-                  id="additionalCost"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  {...register("additionalCost", {
-                    setValueAs: (v) => (v === "" || v == null ? undefined : Number(v)),
-                  })}
-                  aria-invalid={!!errors.additionalCost}
-                  className={errors.additionalCost ? "border-destructive focus-visible:ring-destructive/20" : ""}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {tForm('additionalCostHint')}
-                </p>
-                {errors.additionalCost && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.additionalCost.message}
-                  </p>
-                )}
+                {initialData?.id && <HppPerPcs hpp={hpp} locale={locale} />}
               </div>
 
               <div className="space-y-2">
@@ -1291,5 +1244,39 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * HPP per pcs barang jadi — hanya dibaca, di samping harga jual. Pemilik
+ * menetapkan harga jual sendiri dari angka ini (keputusan pemilik 2026-10-08),
+ * jadi tidak ada saran harga atau margin di sini. Penjelasan HPP ada di Bantuan.
+ */
+function HppPerPcs({ hpp, locale }: { hpp: HppBarang | null; locale: string }) {
+  const tForm = useTranslations("itemForm");
+  const r = hpp?.rincian ?? null;
+  const bagian = r
+    ? [
+        tForm("hppBahan", { nilai: formatRupiah(r.bahanPerPcs) }),
+        ...(r.jahitPerPcs ? [tForm("hppJahit", { nilai: formatRupiah(r.jahitPerPcs) })] : []),
+        ...(r.tambahanPerPcs ? [tForm("hppTambahan", { nilai: formatRupiah(r.tambahanPerPcs) })] : []),
+      ].join(" · ")
+    : null;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm leading-none font-medium">{tForm("hppPerPcs")}</p>
+      <p className="flex h-9 items-center text-base font-semibold tabular-nums">
+        {hpp?.perPcs != null ? (
+          formatRupiah(hpp.perPcs)
+        ) : (
+          <span className="text-sm font-normal text-muted-foreground">{tForm("hppBelumAda")}</span>
+        )}
+      </p>
+      {r && bagian && (
+        <p className="text-xs text-muted-foreground">
+          {tForm("hppDari", { wo: r.wo, tanggal: formatDisplayDate(r.tanggal, locale) })} {bagian}
+        </p>
+      )}
+    </div>
   );
 }

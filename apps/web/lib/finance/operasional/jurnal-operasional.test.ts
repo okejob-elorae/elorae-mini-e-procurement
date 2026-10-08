@@ -378,6 +378,56 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
     expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toEqual({ COMMISSION_PAYABLE: 1_004_000, BANK: -1_004_000 });
   });
 
+  it("PPN per toko (Elorae PKP dipalsukan): dibekukan saat dikunci; sakelar toko diubah tidak mengubah siklus terkunci; buka-kunci-ulang menyesuaikan dan setiap generasi seimbang", async () => {
+    h.ppn = { ...PPN_BAWAAN, statusPkp: "PKP", berlakuSejak: null };
+    const kiriman = await kirim(4);
+    await postJurnalKirimKonsi(kiriman, adminId);
+    await siklusDenganLaporan(3);
+    // Bawaan toko: tagihan konsinyasi TANPA PPN.
+    expect(await kunci(3)).toMatchObject({ ok: true });
+    expect((await prisma.consignmentCycle.findUnique({ where: { id: siklusId }, select: { vatApplied: true } }))?.vatApplied).toBe(false);
+    await selaraskanJurnalSiklusKonsi(siklusId, adminId);
+    const tanpaPpn = { AR_CONSIGNMENT: 225_000, SALES_REVENUE: -225_000, COGS: 150_000, INVENTORY_CONSIGNMENT: -150_000 };
+    expect(await saldoPeran(SUMBER_OPERASIONAL.SIKLUS_KONSI, siklusId)).toEqual(tanpaPpn);
+
+    // Sakelar toko dinyalakan: siklus yang sudah dikunci tidak berubah diam-diam.
+    await prisma.store.update({ where: { id: tokoId }, data: { consignmentVat: true } });
+    expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: false });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.SIKLUS_KONSI, siklusId)).toEqual(tanpaPpn);
+
+    // Buka kunci → kunci ulang: membaca sakelar baru, PPN dipisah dari tagihan.
+    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
+    expect((await prisma.consignmentCycle.findUnique({ where: { id: siklusId }, select: { vatApplied: true } }))?.vatApplied).toBeNull();
+    await selaraskanJurnalSiklusKonsi(siklusId, adminId);
+    expect(await kunci(3)).toMatchObject({ ok: true });
+    await selaraskanJurnalSiklusKonsi(siklusId, adminId);
+    expect(await saldoPeran(SUMBER_OPERASIONAL.SIKLUS_KONSI, siklusId)).toEqual({
+      AR_CONSIGNMENT: 225_000,
+      SALES_REVENUE: -202_703,
+      PPN_KELUARAN: -22_297,
+      COGS: 150_000,
+      INVENTORY_CONSIGNMENT: -150_000,
+    });
+
+    // Dimatikan lagi → kembali tanpa PPN.
+    await prisma.store.update({ where: { id: tokoId }, data: { consignmentVat: false } });
+    expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
+    expect(await kunci(3)).toMatchObject({ ok: true });
+    await selaraskanJurnalSiklusKonsi(siklusId, adminId);
+    expect(await saldoPeran(SUMBER_OPERASIONAL.SIKLUS_KONSI, siklusId)).toEqual(tanpaPpn);
+
+    // Setiap generasi seimbang sendiri (mesin selaras hanya memposting selisih).
+    const generasi = await prisma.journal.findMany({
+      where: { sourceType: SUMBER_OPERASIONAL.SIKLUS_KONSI, OR: [{ sourceId: siklusId }, { sourceId: { startsWith: `${siklusId}#` } }] },
+      select: { lines: { select: { debit: true, credit: true } } },
+    });
+    expect(generasi.length).toBeGreaterThanOrEqual(4);
+    for (const j of generasi) {
+      const selisih = j.lines.reduce((n, l) => n + Math.round(Number(l.debit) * 100) - Math.round(Number(l.credit) * 100), 0);
+      expect(selisih).toBe(0);
+    }
+  });
+
   it("siklus yang belum dikunci tidak dijurnal; periode sebelum tanggal mulai juga tidak", async () => {
     await siklusDenganLaporan(1);
     expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toEqual({ ok: false, code: "BELUM_BERLAKU" });

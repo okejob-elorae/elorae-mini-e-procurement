@@ -29,9 +29,12 @@ import { ItemType } from '@/lib/constants/enums';
 import { PriceHistoryTable } from './PriceHistoryTable';
 import { alamatLabel } from "@/lib/items/label";
 import { GaleriBelumSimpanContext } from '@/components/items/ItemGalleryEditor';
+import type { HppBarang } from "@/lib/items/hpp-barang";
 
 type ItemDetailClientProps = {
   initialData: Parameters<typeof ItemForm>[0]['initialData'];
+  /** HPP per pcs barang jadi (hanya dibaca); null untuk bahan/aksesoris. */
+  hpp?: HppBarang | null;
   itemType: ItemType;
   nameId: string;
   nameEn: string;
@@ -41,6 +44,7 @@ type ItemDetailClientProps = {
 
 export function ItemDetailClient({
   initialData,
+  hpp = null,
   itemType,
   nameId,
   nameEn,
@@ -150,7 +154,7 @@ export function ItemDetailClient({
             belum disimpan tidak boleh hilang hanya karena melihat riwayat harga. */}
         <TabsContent value="details" forceMount className="space-y-4 data-[state=inactive]:hidden">
           <GaleriBelumSimpanContext.Provider value={setGaleriBelumSimpan}>
-            <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
+            <ItemForm initialData={initialData} hpp={hpp} onSubmit={handleSubmit} isLoading={isSaving} />
             {gallerySlot}
           </GaleriBelumSimpanContext.Provider>
         </TabsContent>

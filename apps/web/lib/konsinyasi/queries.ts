@@ -93,6 +93,8 @@ function bahan(c: {
   commissions: { paidAt: Date | null }[];
   noNota: string | null;
   noFakturPajak: string | null;
+  vatApplied: boolean | null;
+  store: { consignmentVat: boolean };
 }) {
   const sumber = new Set(c.reports.map((r) => r.source));
   return {
@@ -103,7 +105,16 @@ function bahan(c: {
     semuaKomisiDibayar: c.commissions.every((k) => k.paidAt !== null),
     adaNota: Boolean(c.noNota),
     adaFakturPajak: Boolean(c.noFakturPajak),
+    pakaiPpn: pakaiPpnSiklus(c),
   };
+}
+
+/**
+ * Tagihan konsinyasi siklus memakai PPN: yang DIBEKUKAN saat dikunci
+ * (`vatApplied`), sebelum itu sakelar toko sekarang (`Store.consignmentVat`).
+ */
+export function pakaiPpnSiklus(c: { vatApplied: boolean | null; store: { consignmentVat: boolean } }): boolean {
+  return c.vatApplied ?? c.store.consignmentVat;
 }
 
 const BULAN = [
@@ -127,7 +138,8 @@ export async function daftarSiklus(): Promise<BarisSiklus[]> {
       lockedAt: true,
       promoBorneByElorae: true,
       lossChargedToStore: true,
-      store: { select: { name: true } },
+      vatApplied: true,
+      store: { select: { name: true, consignmentVat: true } },
       reports: { select: { source: true } },
       commissions: { select: { paidAt: true } },
       sold: { select: { amount: true } },
@@ -226,6 +238,8 @@ export type RincianSiklus = {
  */
 export type TagihanSiklus = {
   beku: boolean;
+  /** Tagihan memakai PPN (dibekukan saat dikunci; sebelum itu sakelar toko). */
+  pakaiPpn: boolean;
   /** Σ angka resmi. null selama belum dikunci. */
   lakuResmi: number | null;
   /** Dibekukan saat dikunci; sebelum itu dihitung langsung. */
@@ -279,7 +293,8 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       lockedAt: true,
       promoBorneByElorae: true,
       lossChargedToStore: true,
-      store: { select: { name: true } },
+      vatApplied: true,
+      store: { select: { name: true, consignmentVat: true } },
       lockedBy: { select: { name: true } },
       reports: {
         select: {
@@ -403,6 +418,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
   const tagihan: TagihanSiklus = terkunci
     ? {
         beku: true,
+        pakaiPpn: pakaiPpnSiklus(c),
         lakuResmi,
         promoElorae: angka(c.promoBorneByElorae),
         promoEloraeSekarang: promoSekarang.total,
@@ -411,6 +427,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       }
     : {
         beku: false,
+        pakaiPpn: pakaiPpnSiklus(c),
         lakuResmi: null,
         promoElorae: promoSekarang.total,
         promoEloraeSekarang: promoSekarang.total,

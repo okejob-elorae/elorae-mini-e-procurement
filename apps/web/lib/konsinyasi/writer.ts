@@ -71,7 +71,9 @@ export type AlasanGagalKonsi =
   | "SUDAH_DIBATALKAN"
   | "PEMBAYARAN_TIDAK_DITEMUKAN"
   | "STOK_KURANG"
-  | "VARIAN_WAJIB";
+  | "VARIAN_WAJIB"
+  /** Nomor faktur pajak untuk siklus yang tagihannya tanpa PPN. */
+  | "TANPA_PPN";
 
 type Gagal = { ok: false; alasan: AlasanGagalKonsi };
 
@@ -578,6 +580,8 @@ export async function kunciAngka(input: {
         lockedAt: true,
         promoBorneByElorae: true,
         lossChargedToStore: true,
+        vatApplied: true,
+        store: { select: { consignmentVat: true } },
         reports: { select: { source: true } },
         commissions: { select: { id: true, spgUserId: true, total: true, deduction: true, paidAt: true } },
       },
@@ -735,6 +739,12 @@ export async function kunciAngka(input: {
       userId: input.olehUserId,
     });
 
+    /*
+     * PPN tagihan dibekukan bersama angkanya: `Store.consignmentVat` saat ini.
+     * Sakelar toko yang diubah kemudian tidak mengubah siklus terkunci (jurnal,
+     * tahap faktur pajak, kartu tagihan) — membetulkannya berarti buka kunci.
+     */
+    const pakaiPpn = siklus.store.consignmentVat;
     await tx.consignmentCycle.update({
       where: { id: siklus.id },
       data: {
@@ -742,6 +752,7 @@ export async function kunciAngka(input: {
         lockedById: input.olehUserId,
         promoBorneByElorae: D(promo.total),
         lossChargedToStore: D(bebanHilang),
+        vatApplied: pakaiPpn,
       },
     });
 
@@ -759,6 +770,7 @@ export async function kunciAngka(input: {
         before: {
           promoBorneByElorae: angka(siklus.promoBorneByElorae),
           lossChargedToStore: angka(siklus.lossChargedToStore),
+          vatApplied: siklus.vatApplied,
           komisiDihapus,
         },
         after: {
@@ -767,6 +779,7 @@ export async function kunciAngka(input: {
           gajiPokokPerSpg: input.gajiPokokPerSpg ?? 0,
           promoBorneByElorae: promo.total,
           lossChargedToStore: bebanHilang,
+          vatApplied: pakaiPpn,
           potonganHilangSpg: Math.round(totalPotonganHilang * 100) / 100,
           // Baris SPG yang sudah pindah toko tetap miliknya; SPG baru tidak ikut dibagi.
           komisiSpgPindah,
@@ -809,6 +822,7 @@ export async function bukaKunci(input: {
         lockedAt: true,
         promoBorneByElorae: true,
         lossChargedToStore: true,
+        vatApplied: true,
         noNota: true,
         noFakturPajak: true,
         commissions: { select: { id: true, paidAt: true, deduction: true } },
@@ -837,7 +851,7 @@ export async function bukaKunci(input: {
     }
     await tx.consignmentCycle.update({
       where: { id: siklus.id },
-      data: { lockedAt: null, lockedById: null, promoBorneByElorae: D(0), lossChargedToStore: D(0) },
+      data: { lockedAt: null, lockedById: null, promoBorneByElorae: D(0), lossChargedToStore: D(0), vatApplied: null },
     });
 
     // Pembalikan paling berbahaya di modul ini: setelah dibuka, komisi bisa
@@ -854,8 +868,9 @@ export async function bukaKunci(input: {
           promoBorneByElorae: angka(siklus.promoBorneByElorae),
           lossChargedToStore: angka(siklus.lossChargedToStore),
           potonganHilangSpg: siklus.commissions.reduce((n, k) => n + angka(k.deduction), 0),
+          vatApplied: siklus.vatApplied,
         },
-        after: { lockedAt: null, promoBorneByElorae: 0, lossChargedToStore: 0, potonganHilangSpg: 0 },
+        after: { lockedAt: null, promoBorneByElorae: 0, lossChargedToStore: 0, potonganHilangSpg: 0, vatApplied: null },
       },
       metadata: { noKonsi: siklus.noKonsi },
     });
@@ -939,12 +954,16 @@ export async function catatNomorDokumen(input: {
   return runSerializable(async (tx) => {
     const siklus = await tx.consignmentCycle.findUnique({
       where: { id: input.cycleId },
-      select: { id: true, lockedAt: true, noNota: true, noFakturPajak: true },
+      select: { id: true, lockedAt: true, noNota: true, noFakturPajak: true, vatApplied: true, store: { select: { consignmentVat: true } } },
     });
     if (!siklus) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
     // Nomor nota dan faktur pajak menyatakan nilai yang ditagihkan; sebelum
     // angkanya dikunci, nilai itu belum ada.
     if (!siklus.lockedAt) return { ok: false as const, alasan: 'BELUM_DIKUNCI' as const };
+    // Tagihan tanpa PPN (dibekukan saat dikunci) tidak punya faktur pajak.
+    if (input.jenis === 'PAJAK' && !(siklus.vatApplied ?? siklus.store.consignmentVat)) {
+      return { ok: false as const, alasan: "TANPA_PPN" as const };
+    }
 
     await tx.consignmentCycle.update({
       where: { id: siklus.id },

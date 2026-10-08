@@ -8,6 +8,7 @@ import { daftarHutangJasa } from "@/lib/production/hutang-jasa-queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { kunciJenis, SUMBER_JURNAL_SALDO_AWAL } from "@/lib/finance/saldo-awal/jenis";
 import { JEJAK_KAS } from "@/lib/finance/kas/jejak";
+import { bacaSkbPemasok, type SkbPemasok } from "@/lib/finance/pajak/pemotongan";
 import { AWALAN_KUNCI_TANDAI_LUNAS, ID_SALDO_AWAL, kunciDokumenHutang, type SisaDokumen } from "./pembayaran-aturan";
 import { terapkanFifo } from "./pembayaran-umur";
 import { hitungUangMukaBelumDipotong, susunJejakUangMuka, type DataUangMukaPembayaran } from "./pembayaran-uang-muka";
@@ -76,6 +77,8 @@ export type HutangPemasok = {
   jenisPotong: string | null;
   adaNpwp: boolean;
   isPkp: boolean | null;
+  /** SKB pemasok (nomor + berlaku sampai, hari WIB); null = tanpa SKB. */
+  skb: SkbPemasok | null;
   dokumen: DokumenHutang[];
   uangMuka: UangMukaPemasok[];
   uangMukaSen: number;
@@ -374,7 +377,7 @@ export async function bacaHutangPemasok(opsi: OpsiHutangPemasok = {}, klien: Kli
   const pemasokRows = ids.size
     ? await klien.supplier.findMany({
         where: { id: { in: [...ids] } },
-        select: { id: true, code: true, name: true, taxWithholding: true, hasNpwp: true, isPkp: true },
+        select: { id: true, code: true, name: true, taxWithholding: true, hasNpwp: true, isPkp: true, skbNumber: true, skbValidUntil: true },
       })
     : [];
 
@@ -451,6 +454,7 @@ export async function bacaHutangPemasok(opsi: OpsiHutangPemasok = {}, klien: Kli
       jenisPotong: p.taxWithholding,
       adaNpwp: p.hasNpwp,
       isPkp: p.isPkp,
+      skb: bacaSkbPemasok(p),
       dokumen,
       uangMuka,
       uangMukaSen,

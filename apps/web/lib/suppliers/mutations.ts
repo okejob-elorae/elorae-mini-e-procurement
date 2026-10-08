@@ -3,6 +3,7 @@ import { prisma } from '@elorae/db';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 import { logBankAccountView } from '@/lib/audit';
+import { isianSkbPemasok, JEJAK_SKB_PEMASOK, perubahanSkb, type DataSkb } from '@/lib/suppliers/skb';
 
 /**
  * Data pajak pemasok (akuntansi & pajak lengkap): status PKP (null = belum
@@ -15,7 +16,25 @@ const pajakPemasokSchema = {
   taxWithholding: z.enum(['PPH23', 'PPH21', 'PPH4_2']).nullable().optional(),
   hasNpwp: z.boolean().optional(),
   npwp: z.string().max(32).optional(),
+  // SKB bebas potong PPh: undefined = tidak diubah; nomor kosong = SKB dihapus (`isianSkbPemasok`).
+  skbNumber: z.string().max(191).nullable().optional(),
+  skbValidUntil: z.string().max(10).nullable().optional(),
+  skbPhotoUrl: z.string().max(191).nullable().optional(),
 };
+
+/** Pesan galat isian SKB (dilempar seperti galat NPWP; ditampilkan formulir pemasok). */
+const PESAN_SKB: Record<string, string> = {
+  SKB_TANGGAL_WAJIB: 'SKB harus punya tanggal berlaku sampai',
+  SKB_TANGGAL_TIDAK_SAH: 'Tanggal berlaku SKB tidak sah',
+  SKB_FOTO_TIDAK_SAH: 'Foto SKB tidak sah',
+  SKB_NOMOR_TERLALU_PANJANG: 'Nomor SKB terlalu panjang',
+};
+
+function dataSkb(input: { skbNumber?: string | null; skbValidUntil?: string | null; skbPhotoUrl?: string | null }): DataSkb {
+  const r = isianSkbPemasok(input);
+  if (!r.ok) throw new Error(PESAN_SKB[r.kode]);
+  return r.data;
+}
 
 export const supplierSchema = z.object({
   code: z.preprocess(
@@ -75,9 +94,15 @@ async function simpanNpwpPemasok(id: string, npwp: string | undefined) {
   });
 }
 
-export async function createSupplier(input: z.infer<typeof supplierSchema>) {
+/**
+ * `olehUserId` = pengguna sesi. SKB yang diisi/diubah meninggalkan jejak
+ * `SUPPLIER_SKB_CHANGED` (sebelum/sesudah) di transaksi yang sama — kolomnya
+ * hanya menyimpan nilai terakhir, padahal SKB menentukan potongan PPh.
+ */
+export async function createSupplier(input: z.infer<typeof supplierSchema>, olehUserId?: string) {
   const validated = supplierSchema.parse(input);
   angkaNpwp(validated.npwp);
+  const skb = dataSkb(validated);
 
   let code: string;
   if (validated.code?.trim()) {
@@ -93,33 +118,42 @@ export async function createSupplier(input: z.infer<typeof supplierSchema>) {
     bankAccountEnc = encryptBankAccount(validated.bankAccount, 'DEFAULT_PIN');
   }
 
-  const dibuat = await prisma.supplier.create({
-    data: {
-      code,
-      name: validated.name,
-      typeId: validated.typeId,
-      address: validated.address,
-      phone: validated.phone,
-      email: validated.email,
-      bankName: validated.bankName,
-      bankAccountEnc,
-      bankAccountName: validated.bankAccountName,
-      ...(validated.isPkp !== undefined ? { isPkp: validated.isPkp } : {}),
-      ...(validated.taxWithholding !== undefined ? { taxWithholding: validated.taxWithholding } : {}),
-      ...(validated.hasNpwp !== undefined ? { hasNpwp: validated.hasNpwp } : {}),
-      status: 'PENDING_APPROVAL',
-    },
+  const dibuat = await prisma.$transaction(async (tx) => {
+    const baru = await tx.supplier.create({
+      data: {
+        code,
+        name: validated.name,
+        typeId: validated.typeId,
+        address: validated.address,
+        phone: validated.phone,
+        email: validated.email,
+        bankName: validated.bankName,
+        bankAccountEnc,
+        bankAccountName: validated.bankAccountName,
+        ...(validated.isPkp !== undefined ? { isPkp: validated.isPkp } : {}),
+        ...(validated.taxWithholding !== undefined ? { taxWithholding: validated.taxWithholding } : {}),
+        ...(validated.hasNpwp !== undefined ? { hasNpwp: validated.hasNpwp } : {}),
+        ...skb,
+        status: 'PENDING_APPROVAL',
+      },
+    });
+    const ubah = perubahanSkb(null, skb);
+    if (ubah && olehUserId) {
+      await tx.auditLog.create({ data: { userId: olehUserId, action: JEJAK_SKB_PEMASOK, entityType: 'Supplier', entityId: baru.id, changes: ubah } });
+    }
+    return baru;
   });
   if (validated.npwp?.trim()) await simpanNpwpPemasok(dibuat.id, validated.npwp);
   return dibuat;
 }
 
-export async function updateSupplier(id: string, input: z.infer<typeof supplierUpdateSchema>) {
+export async function updateSupplier(id: string, input: z.infer<typeof supplierUpdateSchema>, olehUserId?: string) {
   const validated = supplierUpdateSchema.parse(input);
-  const { bankAccount, code: codeInput, npwp, ...rest } = validated;
+  const { bankAccount, code: codeInput, npwp, skbNumber, skbValidUntil, skbPhotoUrl, ...rest } = validated;
   angkaNpwp(npwp);
+  const skb = dataSkb({ skbNumber, skbValidUntil, skbPhotoUrl });
 
-  const data: Parameters<typeof prisma.supplier.update>[0]['data'] = { ...rest };
+  const data: Parameters<typeof prisma.supplier.update>[0]['data'] = { ...rest, ...skb };
   // Tanpa NPWP → hapus NPWP tersimpan (bukti potong memakai tarif tanpa NPWP).
   if (rest.hasNpwp === false) {
     data.npwpEnc = null;
@@ -137,7 +171,15 @@ export async function updateSupplier(id: string, input: z.infer<typeof supplierU
     data.bankAccountEnc = encryptBankAccount(bankAccount, 'DEFAULT_PIN');
   }
 
-  const diubah = await prisma.supplier.update({ where: { id }, data });
+  const diubah = await prisma.$transaction(async (tx) => {
+    const lama = await tx.supplier.findUnique({ where: { id }, select: { skbNumber: true, skbValidUntil: true, skbPhotoUrl: true } });
+    const hasil = await tx.supplier.update({ where: { id }, data });
+    const ubah = lama ? perubahanSkb(lama, skb) : null;
+    if (ubah && olehUserId) {
+      await tx.auditLog.create({ data: { userId: olehUserId, action: JEJAK_SKB_PEMASOK, entityType: 'Supplier', entityId: id, changes: ubah } });
+    }
+    return hasil;
+  });
   if (npwp?.trim() && rest.hasNpwp !== false) await simpanNpwpPemasok(id, npwp);
   return diubah;
 }

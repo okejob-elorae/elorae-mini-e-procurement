@@ -43,7 +43,10 @@ beforeEach(async () => {
   siklusId = "";
   lossId = "";
 
-  tokoId = (await prisma.store.create({ data: { code: `${tag}-S`, name: `${tag} Konsi`, address: "uji", termsType: "KONSI", isActive: true } })).id;
+  // Toko ber-PPN: tes di berkas ini memakai alur faktur pajak; toko tanpa PPN diuji tersendiri.
+  tokoId = (
+    await prisma.store.create({ data: { code: `${tag}-S`, name: `${tag} Konsi`, address: "uji", termsType: "KONSI", isActive: true, consignmentVat: true } })
+  ).id;
   uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
   barangId = (
     await prisma.item.create({
@@ -192,6 +195,34 @@ describe("bukaKunci ditolak sesudah nota atau faktur pajak", () => {
   it("tanpa nota, faktur, pembayaran toko, dan gaji dibayar, kunci masih bisa dibuka", async () => {
     await kunci();
     expect(await bukaKunci({ cycleId: siklusId, olehUserId: adminId })).toEqual({ ok: true });
+  });
+});
+
+describe("PPN tagihan konsinyasi per toko", () => {
+  it("toko tanpa PPN: dibekukan saat dikunci, tahap faktur pajak dilewati, nomor faktur ditolak", async () => {
+    await prisma.store.update({ where: { id: tokoId }, data: { consignmentVat: false } });
+    await kunci();
+    expect((await prisma.consignmentCycle.findUniqueOrThrow({ where: { id: siklusId } })).vatApplied).toBe(false);
+    await bayarSemuaKomisi();
+    expect(await catatNomorDokumen({ cycleId: siklusId, jenis: "NOTA", nomor: "NT-5", olehUserId: adminId })).toEqual({ ok: true });
+    // Tanpa PPN tidak ada faktur pajak: langsung menunggu pembayaran toko.
+    expect(await tahapSiklusIni()).toBe("bayar_toko");
+    expect(await catatNomorDokumen({ cycleId: siklusId, jenis: "PAJAK", nomor: "010.000-26.9", olehUserId: adminId })).toEqual({
+      ok: false,
+      alasan: "TANPA_PPN",
+    });
+    expect((await prisma.consignmentCycle.findUniqueOrThrow({ where: { id: siklusId } })).noFakturPajak).toBeNull();
+    expect((await rincianSiklus(siklusId))?.tagihan.pakaiPpn).toBe(false);
+  });
+
+  it("sakelar toko yang diubah sesudah dikunci tidak mengubah siklus terkunci; sebelum dikunci kartu mengikuti sakelar", async () => {
+    expect((await rincianSiklus(siklusId))?.tagihan.pakaiPpn).toBe(true);
+    await kunci();
+    await prisma.store.update({ where: { id: tokoId }, data: { consignmentVat: false } });
+    expect((await rincianSiklus(siklusId))?.tagihan.pakaiPpn).toBe(true);
+    await bayarSemuaKomisi();
+    await catatNomorDokumen({ cycleId: siklusId, jenis: "NOTA", nomor: "NT-6", olehUserId: adminId });
+    expect(await tahapSiklusIni()).toBe("pajak");
   });
 });
 

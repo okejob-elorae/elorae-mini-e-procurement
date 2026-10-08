@@ -28,6 +28,7 @@ export default async function NewStorePage() {
         lng: null,
         checkinRadiusMeters: null,
         isPkp: false,
+        consignmentVat: false,
         groupId: null,
         salesmanId: null,
         isActive: true,

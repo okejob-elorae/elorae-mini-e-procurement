@@ -62,6 +62,7 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
           maxOpenInvoices: store.maxOpenInvoices,
           storeClass: store.storeClass,
           isPkp: store.isPkp,
+          consignmentVat: store.consignmentVat,
           groupId: store.groupId,
           salesmanId: store.salesmanId,
           isActive: store.isActive,

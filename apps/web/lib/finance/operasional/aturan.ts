@@ -208,8 +208,13 @@ export function barisReturKonsi(b: {
  *   CR SALES_REVENUE (DPP laku resmi) / CR PPN_KELUARAN (PPN atas tagihan)
  *   DR AR_CONSIGNMENT / CR LOSS_RECOVERY (beban barang hilang ditagihkan ke toko)
  *   DR COGS / CR INVENTORY_CONSIGNMENT (biaya saat dikirim)
- * Angka konsinyasi selalu dibaca TERMASUK PPN: tagihan modul adalah yang
- * dibayar toko, jadi piutang buku besar sama persis dengan tagihannya.
+ * Angka konsinyasi dibaca sebagai TAGIHAN yang dibayar toko, jadi piutang
+ * buku besar sama persis dengan tagihannya. PPN keluaran dipisah dari tagihan
+ * itu HANYA bila Elorae PKP pada tanggal jurnal DAN toko itu memakai PPN
+ * (`pakaiPpn` = `ConsignmentCycle.vatApplied`, dibekukan dari
+ * `Store.consignmentVat` saat dikunci); selain itu seluruh tagihan = pendapatan
+ * (pemilik 2026-10-08: "kalau Elorae mengirim dengan harga PPN maka dicatat
+ * dengan PPN, kalau belum ya tidak, dan tergantung tokonya").
  */
 export function barisSiklusKonsi(b: {
   storeId: string;
@@ -218,13 +223,17 @@ export function barisSiklusKonsi(b: {
   bebanHilang: number;
   hpp: number;
   pengaturanPpn: PengaturanPpn;
+  /** Tagihan konsinyasi toko ini memakai PPN. */
+  pakaiPpn: boolean;
   tanggal: Date;
 }): BarisBertanda[] {
   const baris: BarisBertanda[] = [];
   const laku = keSen(b.lakuResmi);
   const bersih = laku - keSen(b.promoElorae);
   if (laku !== 0 || bersih !== 0) {
-    const opsi = { termasukPpn: true, pengaturan: b.pengaturanPpn, tanggal: b.tanggal };
+    // Toko tanpa PPN: dibaca seperti Elorae bukan PKP — `pisahPpn` tidak memisahkan apa pun.
+    const pengaturan: PengaturanPpn = b.pakaiPpn ? b.pengaturanPpn : { ...b.pengaturanPpn, statusPkp: "NON_PKP" };
+    const opsi = { termasukPpn: true, pengaturan, tanggal: b.tanggal };
     const pLaku = pisahPpn(laku / 100, opsi);
     const pBersih = pisahPpn(bersih / 100, opsi);
     baris.push({ role: "AR_CONSIGNMENT", sen: keSen(pBersih.total), storeId: b.storeId });

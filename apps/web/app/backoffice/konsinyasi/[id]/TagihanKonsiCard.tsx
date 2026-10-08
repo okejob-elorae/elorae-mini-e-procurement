@@ -110,7 +110,10 @@ export function TagihanKonsiCard({
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">{t("title")}</CardTitle>
+        <CardTitle className="flex flex-wrap items-baseline gap-x-2 text-base">
+          {t("title")}
+          <span className="text-sm font-normal text-muted-foreground">{tagihan.pakaiPpn ? t("denganPpn") : t("tanpaPpn")}</span>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <dl className="max-w-xl space-y-2 text-sm">

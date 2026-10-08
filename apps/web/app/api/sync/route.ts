@@ -114,7 +114,7 @@ async function handleSupplierCreate(payload: unknown, userId: string) {
     return tolak(400, "Invalid supplier payload", parsed.error.issues);
   }
   try {
-    const supplier = await createSupplier(parsed.data);
+    const supplier = await createSupplier(parsed.data, userId);
     getActorName(userId)
       .then((nama) => notifySupplierCreated(supplier.id, supplier.name, nama))
       .catch(() => {});

@@ -97,6 +97,8 @@ const PEMBACA_FOTO: Readonly<Record<string, Pembaca>> = {
   cashVoucher: { semua: punya(PERMISSIONS.JOURNALS_VIEW) },
   supplierPayment: { semua: punya(PERMISSIONS.JOURNALS_VIEW, PERMISSIONS.SUPPLIER_PAYMENTS_VIEW) },
   taxPayment: { semua: punya(PERMISSIONS.JOURNALS_VIEW) },
+  // Foto SKB pemasok: siapa pun yang boleh membuka data master pemasok.
+  supplier: { semua: punya(PERMISSIONS.SUPPLIERS_VIEW) },
   // Bukan dokumen pribadi: panduan display, foto produk, foto profil.
   displayGuide: { semua: siapaPunYangMasuk },
   itemImage: { semua: siapaPunYangMasuk },

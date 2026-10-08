@@ -14,6 +14,7 @@ export const ENTRI: EntriBantuan[] = [
       "Tombol Setujui dan Tolak tampil langsung di pemasok yang menunggu, untuk siapa pun yang memegang izin menyetujui pemasok (tidak harus peran ADMIN). Menolak butuh alasan.",
       "Cari, jenis, persetujuan, dan tampilan tersimpan di alamat halaman, jadi daftar yang tersaring bisa dibagikan.",
       "Nomor rekening pemasok disimpan terenkripsi dan selalu tampil tersamar; untuk melihatnya, buka rincian pemasok lalu masukkan PIN Anda. Menghapus pemasok meminta konfirmasi lalu PIN.",
+      "SKB (Surat Keterangan Bebas pemotongan PPh): penjahit yang bukan badan usaha diminta SKB. Isi nomor SKB, tanggal berlaku sampai, dan bila ada fotonya di bagian Pajak formulir pemasok. Selama SKB berlaku pada hari bayar (tanggal terakhirnya ikut), pembayaran ke pemasok itu TIDAK dipotong PPh apa pun jenis potongannya — termasuk voucher kas keluar yang menyebut pemasok itu. SKB yang sudah habis tidak membebaskan apa pun: potongannya kembali normal (penjahit perorangan: PPh 21, 50% × 5% = 2,5% di lapisan pertama). Kolom Pajak di daftar menulis \"SKB s/d tanggal\", atau \"SKB habis tanggal\" berwarna kuning bila sudah lewat. Setiap perubahan SKB tercatat di jejak audit; mengosongkan nomor SKB menghapus tanggal dan fotonya sekaligus.",
     ],
   },
   {
@@ -43,6 +44,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "stores.detail.infoTitle" },
     isi: [
       "Satu halaman untuk satu toko: data dan syarat kerja samanya, kredit dan piutang, catatan tim, buku stok SPG, tautan portal pesan, riwayat kunjungan, pesanan terakhir, dan barang yang pernah dikirim. Bila salesman mengusulkan perubahan data toko dari HP, usulannya tampil paling atas untuk disetujui atau ditolak.",
+      "Bagian syarat kerja sama toko konsinyasi juga menulis apakah tagihan konsinyasinya dengan atau tanpa PPN (diatur di Ubah toko).",
       "Bagian Kredit & piutang (hanya toko putus) menampilkan kelas toko, status PKP, batas kredit, dan maksimal faktur terbuka. Batas yang ditulis khusus toko ini menimpa bawaan di Pengaturan → Salesman; kosong berarti ikut bawaan. Pemegang izin piutang juga melihat sisa piutang toko, jumlah faktur yang belum lunas, dan piutang yang lewat janji bayar, dengan tautan ke daftar Faktur & Piutang tersaring toko ini. Sisa piutang selalu dihitung ulang dari pelunasan yang sudah diverifikasi.",
       "Ada dua angka stok di toko konsinyasi. Buku stok SPG (di halaman ini) dicatat SPG: kiriman yang diterima, penjualan, opname, mutasi, dan retur. Titipan menurut kiriman (di Target stok) dihitung dari kiriman dikurangi penjualan bulan yang sudah dikunci dan retur. Keduanya bisa berbeda; opname di toko yang membereskannya.",
     ],
@@ -84,7 +86,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/stores/[id]/edit",
     bagian: "navGroupMasterData",
     judul: { kunci: "stores.edit" },
-    isi: "Mengubah data dan syarat kerja sama toko, termasuk kelas toko, batas kredit, radius check-in, dan sales pemegang. Mengganti pemegang berarti sales baru yang menagih seluruh piutang toko ini, termasuk faktur dari sales sebelumnya. Batas kredit di sini menimpa batas bawaan di Pengaturan → Salesman hanya untuk toko ini.",
+    isi: [
+      "Mengubah data dan syarat kerja sama toko, termasuk kelas toko, batas kredit, radius check-in, dan sales pemegang. Mengganti pemegang berarti sales baru yang menagih seluruh piutang toko ini, termasuk faktur dari sales sebelumnya. Batas kredit di sini menimpa batas bawaan di Pengaturan → Salesman hanya untuk toko ini.",
+      "Tagihan konsinyasi memakai PPN (hanya toko konsinyasi, bawaan mati): nyalakan bila Elorae mengirim ke toko ini dengan harga ber-PPN. Menyala → saat siklus dikunci, PPN keluaran dipisah dari tagihan (hanya bila Elorae PKP pada tanggal jurnal) dan siklus menunggu nomor faktur pajak. Mati → seluruh tagihan dicatat sebagai pendapatan, tahap faktur pajak dilewati, dan nomor faktur pajak tidak bisa dicatat. Nilainya dibekukan ke siklus saat angkanya dikunci: mengubah sakelar tidak mengubah siklus yang sudah dikunci — buka kunci lalu kunci ulang siklusnya bila memang harus ikut berubah. Setiap perubahan tercatat di jejak audit.",
+    ],
   },
   {
     rute: "/backoffice/stores/[id]/target-stok",
@@ -163,6 +168,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "items.newPage.title" },
     isi: [
       "Menambah barang baru ke katalog: jenis, nama, satuan, kategori, harga, titik pesan ulang, varian, dan untuk barang jadi resep bahannya (BOM).",
+      "Harga jual (barang jadi) diisi sendiri dan tidak pernah dihitung otomatis — tidak oleh penerimaan barang jadi, tidak oleh margin. HPP per pcs tampil di samping harga jual setelah barang tersimpan dan punya stok atau penerimaan barang jadi.",
       "Nama Inggris tidak wajib: bila kosong, nama Indonesia dipakai di tempat yang membutuhkan nama Inggris. SKU bisa diketik atau dibuat otomatis menurut jenisnya.",
       "Varian: tambahkan atribut (mis. Warna, Ukuran) beserta nilainya; setiap kombinasi menjadi satu varian. SKU varian harus diawali kode kategori (bila kategorinya berkode) atau SKU barang; dibiarkan kosong, SKU varian dibuat otomatis saat disimpan dengan bentuk awalan-nilai1-nilai2 (mis. KAOS-MERAH-S). Barcode varian dibuat menurut format di Pengaturan → Kode barang.",
       "Resep bahan (BOM) hanya untuk barang jadi: bahan, kebutuhan per pcs, dan susut dalam persen.",
@@ -181,7 +187,8 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "navGroupMasterData",
     judul: "Rincian barang",
     isi: [
-      "Mengubah data barang dan foto galerinya (foto produk dan foto per varian). Gambar disimpan dengan tombol Simpan gambar di kartu galeri, terpisah dari Simpan barang; selama ada gambar yang belum disimpan, kartu galeri memperingatkannya dan Simpan barang tidak meninggalkan halaman. Tab Riwayat harga mencatat setiap perubahan harga jual beserta pemicunya: penerimaan barang jadi, perubahan margin, perubahan default, atau edit manual.",
+      "Mengubah data barang dan foto galerinya (foto produk dan foto per varian). Gambar disimpan dengan tombol Simpan gambar di kartu galeri, terpisah dari Simpan barang; selama ada gambar yang belum disimpan, kartu galeri memperingatkannya dan Simpan barang tidak meninggalkan halaman. Tab Riwayat harga mencatat setiap perubahan harga jual: siapa, kapan, dari berapa ke berapa. Sejak 2026-10-08 harga jual hanya berubah lewat isian manual; baris dengan pemicu penerimaan barang jadi, perubahan margin, atau perubahan default berasal dari sebelum tanggal itu, ketika harga masih dihitung otomatis.",
+      "Harga jual diisi sendiri oleh pemilik (keputusan pemilik 2026-10-08: rumus harga — HPP ditambah margin dan biaya lain — adalah hak pemilik). Mengubah harga jual mencatat riwayat harga dan, untuk barang yang tersambung ke Jubelio, ikut terkirim ke Jubelio. Isian target margin dan biaya tambahan per barang sudah dihapus; angka lama di basis data tidak dipakai lagi.",
       "Tombol Label barcode membuka cetak label untuk barang ini. Admin juga punya tombol Kirim stok ke Jubelio, yang memasukkan stok barang ini ke antrean kiriman ke Jubelio setelah dikonfirmasi.",
       "Tombol Simpan barang menyimpan isian formulir. Galeri produk di bawahnya punya tombol Simpan gambar sendiri — gambar yang ditambah atau digeser belum tersimpan sebelum tombol itu ditekan.",
       "Nama Inggris tidak wajib: bila dikosongkan, nama Indonesia yang dipakai.",
@@ -189,6 +196,14 @@ export const ENTRI: EntriBantuan[] = [
       "Komisi SPG per pcs (barang jadi saja): rupiah yang diterima SPG untuk setiap potong barang ini yang ia jual, bersih dari retur pembeli. Dipakai komisi SPG di toko konsinyasi (disalin ke siklus saat angkanya dikunci) dan di toko putus. Kosong = 0. Setiap perubahan tercatat di jejak audit barang.",
     ],
     kartu: [
+      {
+        judul: { kunci: "itemForm.hppPerPcs" },
+        isi: [
+          "HPP (harga pokok penjualan) = biaya yang sudah keluar untuk membuat satu pcs barang ini: bahan, ongkos jahit dan jasa langkah perintah kerja lain, serta biaya tambahan per pcs (kemasan, dll.). Angkanya hanya dibaca dan tidak pernah mengubah harga jual — harga jual tetap diisi sendiri.",
+          "Angka utama = nilai persediaan barang ini dibagi jumlah pcs di gudang, atas semua varian yang stoknya di atas nol (rata-rata bergerak, sama dengan kartu stok). Bila stok 0, dipakai nilai penerimaan barang jadi terakhir dibagi pcs lolos QC-nya. Belum ada stok maupun penerimaan → \"Belum ada HPP\".",
+          "Baris kecil di bawahnya merinci penerimaan barang jadi terakhir yang memikul bahan: bahan, jahit, dan tambahan per pcs, beserta nomor perintah kerja dan tanggal penerimaannya. Jahit = nilai persediaan penerimaan − bahan − tambahan, jadi bila Elorae PKP, PPN jasa (PPN Masukan) tidak ikut. Penerimaan dari sebelum ongkos jahit masuk HPP hanya menampilkan bahan. Setoran lebih produksi yang tidak memikul bahan dilewati, karena rinciannya tidak menggambarkan biaya barang.",
+        ],
+      },
       {
         judul: { kunci: "itemProductInfo.title" },
         isi: { kunci: "itemProductInfo.description" },

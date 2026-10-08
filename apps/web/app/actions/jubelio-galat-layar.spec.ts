@@ -9,9 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@elorae/db", () => ({
   prisma: {
     jubelioPushDefaults: { findFirst: vi.fn(), update: vi.fn() },
-    item: { count: vi.fn(), findMany: vi.fn() },
   },
-  recalcItemSellingPrice: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

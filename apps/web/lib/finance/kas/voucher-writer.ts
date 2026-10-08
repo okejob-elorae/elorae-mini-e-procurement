@@ -6,7 +6,7 @@ import { parseDateOnly } from "@/lib/date-only";
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { rekeningKasBank } from "@/lib/finance/pajak/setoran-queries";
 import { bacaTarifPajakKreatif } from "@/lib/creative/pajak-pengaturan";
-import { INFO_POTONG_PEMASOK, bacaJenisPotongPemasok } from "@/lib/finance/pajak/pemotongan";
+import { INFO_POTONG_PEMASOK, bacaJenisPotongPemasok, bacaSkbPemasok, tentukanPotongPemasok, type PembebasanSkb } from "@/lib/finance/pajak/pemotongan";
 import {
   barisJurnalVoucher,
   DOC_TYPE_VOUCHER,
@@ -187,15 +187,22 @@ async function tulisVoucher(
   if (!rekeningKas.has(v.rekeningId)) throw new Tolak("REKENING_TIDAK_SAH");
   if (v.jenis === "TRANSFER" && (!v.rekeningTujuanId || !rekeningKas.has(v.rekeningTujuanId))) throw new Tolak("REKENING_TIDAK_SAH");
   if (v.fotoUrl && !POLA_FOTO.test(v.fotoUrl)) throw new Tolak("FOTO_TIDAK_SAH");
+  // Voucher keluar ke pemasok ber-SKB: penentu yang sama dengan pembayaran pemasok.
+  let bebas: PembebasanSkb | null = null;
   if (v.pemasokId) {
-    const p = await tx.supplier.findUnique({ where: { id: v.pemasokId }, select: { id: true } });
+    const p = await tx.supplier.findUnique({ where: { id: v.pemasokId }, select: { id: true, skbNumber: true, skbValidUntil: true } });
     if (!p) throw new Tolak("PEMASOK_TIDAK_DITEMUKAN");
+    const keputusan = tentukanPotongPemasok({ jenis: v.jenisPotong, skb: bacaSkbPemasok(p), tanggal: v.tanggal });
+    bebas = keputusan.dibebaskanSkb;
   }
 
   const { akunBaris, baris } = v.jenis === "TRANSFER" ? { akunBaris: [], baris: [] } : await siapkanBaris(tx, v, rekeningKas);
-  const siap: VoucherSah = { ...v, baris };
-  const tarif = siap.jenisPotong === "PPH21" || siap.jenisPotong === "PPH23" ? await bacaTarifPajakKreatif(tx) : undefined;
+  const siap: VoucherSah = { ...v, baris, jenisPotong: bebas ? null : v.jenisPotong };
+  // Tarif menurut jenis yang diminta: juga dipakai menghitung dasar pembebasan SKB.
+  const tarif = v.jenisPotong === "PPH21" || v.jenisPotong === "PPH23" ? await bacaTarifPajakKreatif(tx) : undefined;
   const hitung = hitungVoucher(siap, tarif);
+  // Yang akan dipotong tanpa SKB — dasar pembebasannya dicatat di jejak.
+  const hitungBebas = bebas ? hitungVoucher({ ...siap, jenisPotong: bebas.jenis }, tarif) : null;
   let akunHutangPph: string | null = null;
   if (hitung.potongSen > 0 && siap.jenisPotong) {
     const peran = INFO_POTONG_PEMASOK[siap.jenisPotong].peranHutang;
@@ -272,7 +279,11 @@ async function tulisVoucher(
       },
     },
     // `dasarPotong` di metadata: tabel voucher tidak punya kolom dasar potongan; PPh dipotong membacanya dari sini.
-    metadata: { journalId: j.journalId, ...(hitung.potongSen > 0 ? { dasarPotong: hitung.dasarPotongSen / 100, jenisPotong: siap.jenisPotong } : {}) },
+    metadata: {
+      journalId: j.journalId,
+      ...(hitung.potongSen > 0 ? { dasarPotong: hitung.dasarPotongSen / 100, jenisPotong: siap.jenisPotong } : {}),
+      ...(bebas && hitungBebas ? { dibebaskanSkb: { ...bebas, dasar: hitungBebas.dasarPotongSen / 100, pph: hitungBebas.potongSen / 100 } } : {}),
+    },
   });
   return { id: voucher.id, nomor, journalId: j.journalId, barisRekeningIds: barisRekening.map((b) => b.id) };
 }

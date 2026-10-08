@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { CheckCircle, Edit, Eye, MessageCircle, MoreHorizontal, Trash2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CategoryBadge } from '@/components/ui/category-badge';
@@ -17,6 +17,9 @@ import { nomorTelepon, nomorWhatsApp } from '@/lib/salesman/dasbor';
 import { inisialPemasok } from '@/lib/suppliers/inisial';
 import type { JenisTampilan } from '@/lib/tampilan/tampilan';
 import { categoryToneClass } from '@/lib/ui/category-color';
+import { formatDateOnlyJakarta } from '@/lib/date-only';
+import { keadaanSkb } from '@/lib/finance/pajak/pemotongan';
+import { hariIniWib, labelTanggal } from '@/lib/tanggal-isian';
 import { cn } from '@/lib/utils';
 import { bolehMemutuskan, type StatusPersetujuanPemasok } from './status-pemasok';
 
@@ -47,6 +50,9 @@ export type BarisPemasok = {
   isPkp?: boolean | null;
   taxWithholding?: string | null;
   hasNpwp?: boolean;
+  /** SKB bebas potong PPh (penjahit bukan badan usaha). Tanggal = hari WIB terakhir berlaku. */
+  skbNumber?: string | null;
+  skbValidUntil?: Date | string | null;
   status?: StatusPersetujuanPemasok;
   /** `false` = nonaktif: tidak ditawarkan di PO baru dan tidak tampil di papan Lead time. */
   isActive?: boolean;
@@ -149,17 +155,34 @@ function Kontak({ s, ringkas }: { s: BarisPemasok; ringkas?: boolean }) {
 
 const LABEL_POTONG: Record<string, string> = { PPH23: 'potongPph23', PPH21: 'potongPph21', PPH4_2: 'potongPph42' };
 
-/** Status PKP, NPWP, dan jenis potongan PPh pemasok — data master untuk pembelian & pembayaran. */
+/** Hari WIB terakhir SKB berlaku ("YYYY-MM-DD"), dari Date atau teks ISO kiriman aksi. */
+function hariSkb(v: Date | string | null | undefined): string | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : formatDateOnlyJakarta(d);
+}
+
+/** Status PKP, NPWP, SKB, dan jenis potongan PPh pemasok — data master untuk pembelian & pembayaran. */
 function Pajak({ s }: { s: BarisPemasok }) {
   const t = useTranslations('supplier');
+  const locale = useLocale();
   const pkp = s.isPkp === true ? t('pajakPkp') : s.isPkp === false ? t('pajakNonPkp') : null;
   const potong = s.taxWithholding && LABEL_POTONG[s.taxWithholding] ? t(LABEL_POTONG[s.taxWithholding]) : null;
+  const skb = keadaanSkb({ nomor: s.skbNumber ?? null, berlakuSampai: hariSkb(s.skbValidUntil) }, hariIniWib());
   return (
     <div className="space-y-0.5">
       <span className={cn('block', pkp ? '' : 'text-muted-foreground')}>{pkp ?? t('pajakPkpBelum')}</span>
       {potong || s.hasNpwp === false ? (
         <span className="block text-xs text-muted-foreground">
           {[potong, s.hasNpwp === false ? t('pajakTanpaNpwp') : null].filter(Boolean).join(' · ')}
+        </span>
+      ) : null}
+      {skb ? (
+        <span
+          className={cn('block text-xs', skb.habis ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground')}
+          title={skb.nomor}
+        >
+          {t(skb.habis ? 'skbHabisLabel' : 'skbBerlakuLabel', { tanggal: labelTanggal(skb.berlakuSampai, locale) })}
         </span>
       ) : null}
     </div>

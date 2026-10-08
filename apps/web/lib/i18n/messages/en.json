@@ -526,7 +526,13 @@
     "pajakPunyaNpwp": "Has a tax ID (NPWP)",
     "pajakNpwp": "NPWP / NIK",
     "pajakNpwpTetap": "Leave empty to keep the stored tax ID",
-    "pajakTanpaNpwpCatatan": "Without a tax ID, the withholding rate is higher."
+    "pajakTanpaNpwpCatatan": "Without a tax ID, the withholding rate is higher.",
+    "skbNomor": "Tax exemption certificate (SKB) no.",
+    "skbBerlakuSampai": "SKB valid until",
+    "skbFoto": "SKB photo (optional)",
+    "skbTanggalWajib": "Enter the SKB validity date",
+    "skbBerlakuLabel": "SKB until {tanggal}",
+    "skbHabisLabel": "SKB expired {tanggal}"
   },
   "common": {
     "save": "Save",
@@ -3543,7 +3549,10 @@
         "GAGAL": "Could not save. Try again."
       },
       "uangMukaBelumDipotong": "Advance {nilai} not yet withheld — included in the withholding base",
-      "uangMukaDiterapkanPotong": "Advance applied. {nilai} tax withheld on the advance via {nomor}."
+      "uangMukaDiterapkanPotong": "Advance applied. {nilai} tax withheld on the advance via {nomor}.",
+      "skbBebas": "Exempt under SKB {nomor} (valid until {tanggal}) — no tax withheld.",
+      "skbHabis": "SKB {nomor} expired {tanggal}, before the payment date — tax is withheld as usual.",
+      "ringkasDibebaskanSkb": "{jenis} exempt under SKB {nomor} (until {tanggal})"
     },
     "umur": {
       "judul": "Supplier payables aging",
@@ -5494,7 +5503,8 @@
       "salesman": "Responsible salesperson",
       "salesmanNone": "None",
       "salesmanHint": "This salesperson visits the store and collects its receivables — including invoices from the previous salesperson.",
-      "searchNoApiKeyV2": "Address search is not available yet. Drag the map or paste coordinates."
+      "searchNoApiKeyV2": "Address search is not available yet. Drag the map or paste coordinates.",
+      "consignmentVat": "Consignment bill includes VAT"
     },
     "badge": {
       "putus": "Putus",
@@ -5577,7 +5587,10 @@
         "overdueNone": "None",
         "receivablesFailed": "This store's receivables could not be read. Reload the page.",
         "viewReceivables": "View this store's receivables",
-        "notApplicableKonsi": "Not applicable — consignment stores have no receivables."
+        "notApplicableKonsi": "Not applicable — consignment stores have no receivables.",
+        "ppnKonsi": "Consignment bill VAT",
+        "ppnKonsiYa": "With VAT",
+        "ppnKonsiTidak": "Without VAT"
       }
     },
     "storeChanges": {
@@ -11682,7 +11695,9 @@
       "cancelReason": "Reason",
       "cancelConfirm": "Cancel payment",
       "okRecorded": "Payment recorded.",
-      "okCancelled": "Payment cancelled."
+      "okCancelled": "Payment cancelled.",
+      "denganPpn": "with VAT",
+      "tanpaPpn": "without VAT"
     },
     "cocokBuku": {
       "title": "Stock book reconciliation",
@@ -11787,7 +11802,8 @@
     "laporanBelumMasuk": "not in yet",
     "laporanDiCocokkan": "Per-item figures from both reports are compared in the “Stock book matching” card below.",
     "lockTanpaBarang": "{n} row(s) have no item picked — SPG commission and consignment COGS are not counted for them.",
-    "lockTanpaHarga": "{n} row(s) are priced at 0 — their sold value is 0 on the store's bill."
+    "lockTanpaHarga": "{n} row(s) are priced at 0 — their sold value is 0 on the store's bill.",
+    "errTANPA_PPN": "This cycle's bill has no VAT — there is no tax invoice to record."
   },
   "jenisPotongan": {
     "pageTitle": "Deduction types",
@@ -12341,7 +12357,9 @@
       "SUPPLIER_ADVANCE_APPLIED": "Supplier advance applied",
       "PO_PAID_BY_SUPPLIER_PAYMENTS": "PO paid by supplier payments",
       "PO_UNPAID_BY_PAYMENT_CANCEL": "PO paid mark removed (payment cancelled)",
-      "JOURNAL_SWEEP_NOTHING_TO_POST": "Journal sweep: nothing to post"
+      "JOURNAL_SWEEP_NOTHING_TO_POST": "Journal sweep: nothing to post",
+      "SUPPLIER_SKB_CHANGED": "Supplier SKB changed",
+      "STORE_CONSIGNMENT_VAT_CHANGED": "Store consignment VAT changed"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -12508,7 +12526,12 @@
       "tanggal": "Date",
       "nomorBuktiPotong": "Withholding slip no.",
       "npwp": "Tax ID (NPWP)",
-      "nik": "ID number (NIK)"
+      "nik": "ID number (NIK)",
+      "consignmentVat": "Consignment bill VAT",
+      "vatApplied": "Bill VAT (frozen)",
+      "skbNumber": "SKB number",
+      "skbValidUntil": "SKB valid until",
+      "skbPhotoUrl": "SKB photo"
     }
   },
   "jubelio": {
@@ -12660,7 +12683,7 @@
         "confirm": "{count} items will be recalculated and pushed to Jubelio. Continue?",
         "confirmLarge": "{count} items will be recalculated and pushed to Jubelio in batches. This may take a few seconds. Continue?",
         "countFailed": "Failed to count affected items: {message}",
-        "saved": "Saved. {count} items recalculated.",
+        "saved": "Defaults saved.",
         "field": {
           "sellTaxId": "Sell Tax ID",
           "buyTaxId": "Buy Tax ID",
@@ -19145,7 +19168,13 @@
     "lengkapiAtribut": "Give every attribute a name and at least one value.",
     "lengkapiBahan": "Fill in the material and the quantity per pcs on every recipe row.",
     "komisiSpg": "SPG commission per piece (Rp)",
-    "komisiSpgTidakSah": "SPG commission per piece must be a number of 0 or more."
+    "komisiSpgTidakSah": "SPG commission per piece must be a number of 0 or more.",
+    "hppPerPcs": "Cost per pcs (COGS)",
+    "hppBelumAda": "No cost yet",
+    "hppBahan": "material {nilai}",
+    "hppJahit": "sewing {nilai}",
+    "hppTambahan": "extras {nilai}",
+    "hppDari": "Latest receipt ({wo}, {tanggal}):"
   },
   "itemList": {
     "filterCategory": "Filter category",
@@ -21663,7 +21692,8 @@
       "kolomJenis": "Type",
       "kolomDasar": "Withholding base",
       "kolomPph": "Tax",
-      "total": "Total"
+      "total": "Total",
+      "dibebaskanSkb": "Exempt under SKB {nomor} (until {tanggal})"
     }
   },
   "templatAkun": {
@@ -23260,7 +23290,9 @@
         "jumlah": "Enter the transfer amount.",
         "baris": "Every line needs an account and an amount above zero."
       },
-      "catatanAlur": "SPG/sales commissions, consignment SPG pay, travel claims, KOL fees, supplier payables, and tax payments are paid on their own pages (Mark paid, Supplier payments, Tax → Payments) — do not record them here again, their expense is already journaled."
+      "catatanAlur": "SPG/sales commissions, consignment SPG pay, travel claims, KOL fees, supplier payables, and tax payments are paid on their own pages (Mark paid, Supplier payments, Tax → Payments) — do not record them here again, their expense is already journaled.",
+      "skbBebas": "Exempt under SKB {nomor} (valid until {tanggal}) — no tax withheld.",
+      "skbHabis": "SKB {nomor} expired {tanggal}, before the voucher date — tax is withheld as usual."
     },
     "rincian": {
       "ringkasan": "Summary",
@@ -23276,7 +23308,8 @@
       "batalJudul": "Cancel voucher {nomor}?",
       "batalIsi": "A reversing journal is posted on the original journal date. The voucher is not deleted and stays visible as cancelled.",
       "alasan": "Reason for cancelling",
-      "dibatalkan": "Voucher {nomor} cancelled"
+      "dibatalkan": "Voucher {nomor} cancelled",
+      "dibebaskanSkb": "{jenis} exempt under SKB {nomor} (until {tanggal})"
     },
     "bukti": {
       "unggah": "Upload photo",

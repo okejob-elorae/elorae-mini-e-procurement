@@ -302,7 +302,8 @@ export async function selaraskanJurnalSiklusKonsi(cycleId: string, postedById: s
         lockedAt: true,
         promoBorneByElorae: true,
         lossChargedToStore: true,
-        store: { select: { name: true } },
+        vatApplied: true,
+        store: { select: { name: true, consignmentVat: true } },
         sold: { select: { itemId: true, qty: true, amount: true } },
       },
     });
@@ -322,6 +323,8 @@ export async function selaraskanJurnalSiklusKonsi(cycleId: string, postedById: s
       bebanHilang: angka(c.lossChargedToStore),
       hpp: nilaiBiayaKonsi(c.sold, petaBiaya(biaya)),
       pengaturanPpn: await bacaPengaturanPpn(tx),
+      // Dibekukan saat dikunci; sakelar toko hanya cadangan untuk baris lama.
+      pakaiPpn: c.vatApplied ?? c.store.consignmentVat,
       tanggal,
     });
     return { sasaran, bolehMulai: bolehMulai(mulai, tanggal), tanggal, deskripsi };

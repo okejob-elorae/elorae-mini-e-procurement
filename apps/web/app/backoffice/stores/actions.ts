@@ -34,6 +34,8 @@ const storeInputSchema = z.object({
   lng: z.number().min(-180).max(180).nullable(),
   checkinRadiusMeters: z.number().int().min(0).max(100000).nullable(),
   isPkp: z.boolean(),
+  // PPN tagihan konsinyasi; tidak dikirim = tidak diubah.
+  consignmentVat: z.boolean().optional(),
   groupId: z.string().min(1).nullable(),
   salesmanId: z.string().min(1).nullable(),
   // Batas kredit (Rp) muat di Decimal(15,2); tidak dikirim = tidak diubah, null = ikut bawaan.

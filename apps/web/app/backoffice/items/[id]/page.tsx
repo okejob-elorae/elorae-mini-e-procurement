@@ -6,6 +6,8 @@ import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { getItemImages } from '@/lib/items/images/queries';
 import { ItemDetailClient } from './ItemDetailClient';
 import { ItemGalleryEditor } from '@/components/items/ItemGalleryEditor';
+import { prisma } from "@elorae/db";
+import { bacaHppBarang } from "@/lib/items/hpp-barang-queries";
 
 export const dynamic = 'force-dynamic';
 
@@ -36,9 +38,6 @@ export default async function ItemDetailPage({
     overReceiveThreshold:
       item.overReceiveThreshold != null ? Number(item.overReceiveThreshold) : undefined,
     sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : undefined,
-    targetMarginPercent:
-      item.targetMarginPercent != null ? Number(item.targetMarginPercent) : undefined,
-    additionalCost: item.additionalCost != null ? Number(item.additionalCost) : undefined,
     material: item.material ?? null,
     careInstructions: item.careInstructions ?? null,
     sizeChartId: item.sizeChartId ?? null,
@@ -77,6 +76,8 @@ export default async function ItemDetailPage({
   };
 
   const images = await getItemImages(item.id);
+  // HPP per pcs di samping harga jual (barang jadi saja, hanya dibaca).
+  const hpp = item.type === ItemType.FINISHED_GOOD ? await bacaHppBarang(prisma, item.id) : null;
   const canManage = hasPermission(perms, PERMISSIONS.ITEMS_MANAGE);
   const itemVariants = (item.variants as Array<Record<string, string>> | null | undefined) ?? [];
   const variantSkus = itemVariants
@@ -87,6 +88,7 @@ export default async function ItemDetailPage({
   return (
     <ItemDetailClient
       initialData={initialData}
+      hpp={hpp}
       itemType={item.type as ItemType}
       nameId={item.nameId}
       nameEn={item.nameEn}

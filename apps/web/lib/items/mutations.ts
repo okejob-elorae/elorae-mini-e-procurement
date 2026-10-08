@@ -15,9 +15,8 @@ export type ItemFormData = {
   variants?: Array<Record<string, string>>;
   reorderPoint?: number;
   overReceiveThreshold?: number;
+  /** Harga jual — selalu diisi manual pemilik; sistem tidak pernah menghitungnya. */
   sellingPrice?: number;
-  targetMarginPercent?: number;
-  additionalCost?: number;
   /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). `undefined` = tidak disentuh. */
   kgPerRoll?: number | null;
   /** Komisi SPG per pcs (barang jadi). `undefined` = tidak disentuh; `null`/kosong = 0. */
@@ -35,8 +34,6 @@ export type SerializedItem = {
   reorderPoint: number | null;
   overReceiveThreshold: number | null;
   sellingPrice: number | null;
-  targetMarginPercent: number | null;
-  additionalCost: number | null;
   [k: string]: unknown;
 };
 
@@ -56,15 +53,6 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   }
   if (p.sellingPrice != null && (Number.isNaN(p.sellingPrice) || p.sellingPrice < 0)) {
     throw new Error('sellingPrice: Must be 0 or greater');
-  }
-  if (
-    p.targetMarginPercent != null &&
-    (Number.isNaN(p.targetMarginPercent) || p.targetMarginPercent < 0)
-  ) {
-    throw new Error('targetMarginPercent: Must be 0 or greater');
-  }
-  if (p.additionalCost != null && (Number.isNaN(p.additionalCost) || p.additionalCost < 0)) {
-    throw new Error('additionalCost: Must be 0 or greater');
   }
   const infoProduk = periksaInfoProduk(p);
   if (infoProduk) throw new Error(infoProduk);
@@ -191,13 +179,6 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     sellingPrice === undefined || sellingPrice === null || sellingPrice === ''
       ? undefined
       : Number(sellingPrice);
-  const parseOptionalNonNegative = (val: unknown): number | undefined => {
-    if (val === undefined || val === null || val === '') return undefined;
-    const n = Number(val);
-    return Number.isNaN(n) || n < 0 ? undefined : n;
-  };
-  const targetMarginPercentNum = parseOptionalNonNegative(raw.targetMarginPercent);
-  const additionalCostNum = parseOptionalNonNegative(raw.additionalCost);
   const variants = Array.isArray(raw.variants)
     ? (raw.variants as Array<Record<string, unknown>>).map((record) => {
         const out: Record<string, string> = {};
@@ -224,8 +205,8 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
       sellingPriceNum !== undefined && !Number.isNaN(sellingPriceNum) && sellingPriceNum >= 0
         ? sellingPriceNum
         : undefined,
-    targetMarginPercent: targetMarginPercentNum,
-    additionalCost: additionalCostNum,
+    // Margin target & biaya tambahan barang tidak lagi dibaca (harga jual manual):
+    // kiriman klien lama yang masih membawanya diabaikan, kolomnya tidak disentuh.
     sku: raw.sku != null ? String(raw.sku) : undefined,
     ...bacaInfoProduk(raw),
     kgPerRoll: bacaKgPerRoll(raw.kgPerRoll),
@@ -246,8 +227,6 @@ function serializeSingleItem(item: {
   reorderPoint?: unknown;
   overReceiveThreshold?: unknown;
   sellingPrice?: unknown;
-  targetMarginPercent?: unknown;
-  additionalCost?: unknown;
   createdAt?: Date;
   updatedAt?: Date;
   isActive?: boolean;
@@ -267,9 +246,6 @@ function serializeSingleItem(item: {
     overReceiveThreshold:
       item.overReceiveThreshold != null ? Number(item.overReceiveThreshold) : null,
     sellingPrice: item.sellingPrice != null ? Number(item.sellingPrice) : null,
-    targetMarginPercent:
-      item.targetMarginPercent != null ? Number(item.targetMarginPercent) : null,
-    additionalCost: item.additionalCost != null ? Number(item.additionalCost) : null,
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
     isActive: item.isActive,
@@ -302,8 +278,6 @@ export async function createItem(data: ItemFormData) {
         reorderPoint: rest.reorderPoint ?? null,
         overReceiveThreshold: rest.overReceiveThreshold ?? null,
         sellingPrice: rest.sellingPrice ?? null,
-        targetMarginPercent: rest.targetMarginPercent ?? null,
-        additionalCost: rest.additionalCost ?? null,
         // Kolom wajib: `null` dari isian sudah menjadi 0 di `normalizeItemPayload`.
         commissionPerPcs: rest.commissionPerPcs ?? undefined,
       },
@@ -346,8 +320,6 @@ export async function updateItem(
       nameEn: true,
       description: true,
       sellingPrice: true,
-      targetMarginPercent: true,
-      additionalCost: true,
       variants: true,
       isActive: true,
       commissionPerPcs: true,
@@ -371,8 +343,6 @@ export async function updateItem(
       reorderPoint: rest.reorderPoint ?? null,
       overReceiveThreshold: rest.overReceiveThreshold ?? null,
       sellingPrice: rest.sellingPrice ?? null,
-      targetMarginPercent: rest.targetMarginPercent ?? null,
-      additionalCost: rest.additionalCost ?? null,
       commissionPerPcs: rest.commissionPerPcs ?? undefined,
     },
   });
@@ -399,9 +369,6 @@ export async function updateItem(
       nameEn: existing.nameEn,
       description: existing.description,
       sellingPrice: existing.sellingPrice == null ? null : Number(existing.sellingPrice),
-      targetMarginPercent:
-        existing.targetMarginPercent == null ? null : Number(existing.targetMarginPercent),
-      additionalCost: existing.additionalCost == null ? null : Number(existing.additionalCost),
       variants: (existing.variants as Array<Record<string, string>> | null) ?? null,
       isActive: existing.isActive,
     },
@@ -410,9 +377,6 @@ export async function updateItem(
       nameEn: item.nameEn,
       description: item.description,
       sellingPrice: item.sellingPrice == null ? null : Number(item.sellingPrice),
-      targetMarginPercent:
-        item.targetMarginPercent == null ? null : Number(item.targetMarginPercent),
-      additionalCost: item.additionalCost == null ? null : Number(item.additionalCost),
       variants: (item.variants as Array<Record<string, string>> | null) ?? null,
       isActive: item.isActive,
     },

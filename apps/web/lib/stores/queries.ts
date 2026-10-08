@@ -33,6 +33,12 @@ export type StoreFields = {
    * mengubahnya mengubah berapa yang boleh dipotong dari tagihan.
    */
   isPkp: boolean;
+  /**
+   * Tagihan konsinyasi toko ini memakai PPN (hanya bermakna untuk toko KONSI).
+   * Bawaan mati: tanpa PPN. Dibekukan ke siklus saat angkanya dikunci. Milik
+   * admin; opsional seperti batas kredit — `undefined` tidak mengubah yang tersimpan.
+   */
+  consignmentVat?: boolean;
   /** Area (StoreGroup) — JGU, JTT, … Milik admin. */
   groupId: string | null;
   /**
@@ -60,6 +66,7 @@ export type StoreFields = {
 };
 
 export type StoreListItem = StoreFields & {
+  consignmentVat: boolean;
   creditLimit: number | null;
   maxOpenInvoices: number | null;
   storeClass: KelasToko | null;
@@ -87,6 +94,7 @@ function serializeStore(s: {
   lng: Prisma.Decimal | null;
   checkinRadiusMeters: number | null;
   isPkp: boolean;
+  consignmentVat: boolean;
   groupId: string | null;
   salesmanId: string | null;
   creditLimit: Prisma.Decimal | null;
@@ -110,6 +118,7 @@ function serializeStore(s: {
     lng: s.lng ? s.lng.toNumber() : null,
     checkinRadiusMeters: s.checkinRadiusMeters,
     isPkp: s.isPkp,
+    consignmentVat: s.consignmentVat,
     groupId: s.groupId,
     salesmanId: s.salesmanId,
     creditLimit: s.creditLimit ? s.creditLimit.toNumber() : null,
@@ -125,6 +134,8 @@ function serializeStore(s: {
 export const AKSI_BATAS_KREDIT_TOKO = "STORE_CREDIT_LIMIT_CHANGED";
 /** Aksi jejak saat kelas toko diubah — dari formulir toko atau dari usulan otomatis. */
 export const AKSI_KELAS_TOKO = "STORE_CLASS_CHANGED";
+/** Aksi jejak saat sakelar PPN tagihan konsinyasi toko diubah dari formulir toko. */
+export const AKSI_PPN_KONSI_TOKO = "STORE_CONSIGNMENT_VAT_CHANGED";
 
 export async function listStores(
   opts: {
@@ -199,6 +210,7 @@ export async function createStore(input: StoreFields): Promise<StoreListItem> {
       lng: toDecimalOrNull(input.lng),
       checkinRadiusMeters: input.checkinRadiusMeters,
       isPkp: input.isPkp,
+      consignmentVat: input.consignmentVat ?? false,
       groupId: input.groupId,
       salesmanId: input.salesmanId,
       creditLimit: toDecimalOrNull(input.creditLimit ?? null),
@@ -217,7 +229,7 @@ export async function updateStore(id: string, input: StoreFields, olehUserId: st
   return prisma.$transaction(async (tx) => {
     const sebelum = await tx.store.findUnique({
       where: { id },
-      select: { salesmanId: true, creditLimit: true, maxOpenInvoices: true, storeClass: true },
+      select: { salesmanId: true, creditLimit: true, maxOpenInvoices: true, storeClass: true, consignmentVat: true },
     });
     const updated = await tx.store.update({
       where: { id },
@@ -239,6 +251,7 @@ export async function updateStore(id: string, input: StoreFields, olehUserId: st
         ...(input.creditLimit !== undefined ? { creditLimit: toDecimalOrNull(input.creditLimit) } : {}),
         ...(input.maxOpenInvoices !== undefined ? { maxOpenInvoices: input.maxOpenInvoices } : {}),
         ...(input.storeClass !== undefined ? { storeClass: input.storeClass } : {}),
+        ...(input.consignmentVat !== undefined ? { consignmentVat: input.consignmentVat } : {}),
       },
     });
     const kreditSebelum = {
@@ -278,6 +291,18 @@ export async function updateStore(id: string, input: StoreFields, olehUserId: st
           entityId: id,
           changes: { before: { storeClass: kelasSebelum }, after: { storeClass: kelasSesudah } },
           metadata: { sumber: "FORMULIR" },
+        },
+      });
+    }
+    // PPN tagihan konsinyasi menentukan pendapatan dan faktur pajak siklus yang dikunci sesudahnya.
+    if (sebelum && sebelum.consignmentVat !== updated.consignmentVat) {
+      await tx.auditLog.create({
+        data: {
+          userId: olehUserId,
+          action: AKSI_PPN_KONSI_TOKO,
+          entityType: "Store",
+          entityId: id,
+          changes: { before: { consignmentVat: sebelum.consignmentVat }, after: { consignmentVat: updated.consignmentVat } },
         },
       });
     }

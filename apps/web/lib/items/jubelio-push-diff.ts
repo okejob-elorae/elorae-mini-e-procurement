@@ -1,10 +1,13 @@
+/**
+ * Isian barang yang ikut terkirim ke Jubelio lewat push produk. Harga jual di
+ * sini SELALU isian manual pemilik — margin target dan biaya tambahan barang
+ * tidak lagi menentukan harga (keputusan pemilik 2026-10-08), jadi tidak ikut.
+ */
 export type PushableSnapshot = {
   nameId: string;
   nameEn: string;
   description: string | null;
   sellingPrice: number | null;
-  targetMarginPercent: number | null;
-  additionalCost: number | null;
   variants: Array<Record<string, string>> | null;
   isActive: boolean;
 };
@@ -28,8 +31,6 @@ export function hasPushableChange(before: PushableSnapshot, after: PushableSnaps
   if (before.nameEn !== after.nameEn) return true;
   if ((before.description ?? "") !== (after.description ?? "")) return true;
   if ((before.sellingPrice ?? null) !== (after.sellingPrice ?? null)) return true;
-  if ((before.targetMarginPercent ?? null) !== (after.targetMarginPercent ?? null)) return true;
-  if ((before.additionalCost ?? null) !== (after.additionalCost ?? null)) return true;
   if (before.isActive !== after.isActive) return true;
   if (normalizeVariants(before.variants) !== normalizeVariants(after.variants)) return true;
   return false;

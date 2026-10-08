@@ -19,7 +19,6 @@ const PUSTAKA = [
   "biaya-penerimaan.ts",
   "biaya-penerimaan-queries.ts",
   "biaya-jasa.ts",
-  "biaya-dasar-harga-jual.ts",
   "biaya-bahan-queries.ts",
   "fg-receipt-journal.ts",
   "fg-receipt-journal-aman.ts",

@@ -674,6 +674,21 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
             </div>
           </div>
 
+          {/* PPN tagihan konsinyasi: hanya toko KONSI. Dibekukan ke siklus saat angkanya dikunci. */}
+          {form.termsType === "KONSI" ? (
+            <div className="flex items-start gap-3 rounded-lg border p-3">
+              <Switch
+                id="consignmentVat"
+                disabled={pending || readOnly}
+                checked={form.consignmentVat ?? false}
+                onCheckedChange={(v) => update("consignmentVat", v)}
+              />
+              <Label htmlFor="consignmentVat" className="cursor-pointer">
+                {t("consignmentVat")}
+              </Label>
+            </div>
+          ) : null}
+
           {/* Batas kredit hanya bermakna untuk toko PUTUS — konsinyasi tidak punya piutang. */}
           {form.termsType === "PUTUS" ? (
             <div className="space-y-3 rounded-lg border p-3">
