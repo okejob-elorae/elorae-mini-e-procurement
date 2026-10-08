@@ -11610,9 +11610,9 @@
     "paidOn": "dibayar {date}",
     "unpaid": "Belum dibayar",
     "okPaid": "Gaji ditandai sudah dibayar.",
-    "stockTitle": "Stok titipan",
-    "stockHint": "Dikirim dikurangi terjual. Dihitung, tidak disimpan.",
-    "stockEmpty": "Belum ada barang yang dikirim ke toko ini.",
+    "stockTitle": "Stok di toko",
+    "stockHint": "Barang yang sekarang ada di toko, per barang dan ukuran — hitungan yang sama dengan halaman toko. Toko yang punya buku stok SPG dibaca dari buku itu (diterima, terjual, dan opname SPG). Toko tanpa buku dibaca dari titipan: semua kiriman dan pesanan konsinyasi yang disetujui, dikurangi angka terjual resmi SEMUA siklus yang sudah dikunci, retur yang sudah final, barang rusak yang dihapuskan, dan barang hilang yang sudah diputuskan. Terjual dilaporkan per barang, jadi angka per ukuran dibagi sebanding kiriman dan diberi tanda ≈. Bulan yang belum dikunci belum mengurangi apa pun. Angka minus berarti toko melaporkan menjual lebih banyak dari yang pernah dikirim.",
+    "stockEmpty": "Belum ada barang di toko ini.",
     "colShipped": "Dikirim",
     "colSoldQty": "Terjual",
     "colLeft": "Sisa",
@@ -11803,7 +11803,11 @@
     "laporanDiCocokkan": "Angka per barang dari kedua laporan disandingkan di kartu “Pencocokan buku stok” di bawah.",
     "lockTanpaBarang": "{n} baris belum dipilih barangnya — komisi SPG dan HPP konsinyasi baris itu tidak ikut dihitung.",
     "lockTanpaHarga": "{n} baris berharga 0 — nilai terjualnya ikut 0 di tagihan toko.",
-    "errTANPA_PPN": "Tagihan siklus ini tanpa PPN — tidak ada faktur pajak untuk dicatat."
+    "errTANPA_PPN": "Tagihan siklus ini tanpa PPN — tidak ada faktur pajak untuk dicatat.",
+    "colSize": "Ukuran",
+    "colAtStore": "Di toko",
+    "stockSourceBook": "Sumber: buku stok SPG",
+    "stockSourceTitipan": "Sumber: hitungan titipan"
   },
   "jenisPotongan": {
     "pageTitle": "Jenis potongan",

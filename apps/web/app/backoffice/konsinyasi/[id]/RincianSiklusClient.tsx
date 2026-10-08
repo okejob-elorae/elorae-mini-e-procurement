@@ -473,32 +473,42 @@ export function RincianSiklusClient({
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">{t('stockTitle')}</CardTitle>
+          {data.stokToko.baris.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {data.stokToko.sumber === 'BUKU_TOKO' ? t('stockSourceBook') : t('stockSourceTitipan')}
+            </p>
+          )}
         </CardHeader>
-        <CardContent className={data.titipan.length === 0 ? undefined : 'px-0'}>
-          {data.titipan.length === 0 ? (
+        <CardContent className={data.stokToko.baris.length === 0 ? undefined : 'px-0'}>
+          {data.stokToko.baris.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t('stockEmpty')}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('colItem')}</TableHead>
-                  <TableHead className="text-right">{t('colShipped')}</TableHead>
-                  <TableHead className="text-right">{t('colSoldQty')}</TableHead>
-                  <TableHead className="text-right">{t('colLeft')}</TableHead>
+                  <TableHead>{t('colSize')}</TableHead>
+                  <TableHead className="text-right">{t('colAtStore')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.titipan.map((x) => (
-                  <TableRow key={x.itemName} className={cn(x.sisa < 0 && 'bg-destructive/[0.06]')}>
-                    <TableCell className="font-medium">{x.itemName}</TableCell>
-                    <TableCell className="text-right tabular-nums">{x.dikirim}</TableCell>
-                    <TableCell className="text-right tabular-nums">{x.terjual}</TableCell>
+                {data.stokToko.baris.map((x) => (
+                  <TableRow
+                    key={`${x.itemId}::${x.variantSku}`}
+                    className={cn(x.sisa < 0 && 'bg-destructive/[0.06]')}
+                  >
+                    <TableCell>
+                      <span className="font-medium">{x.nama}</span>
+                      <span className="block font-mono text-xs text-muted-foreground">{x.sku}</span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{x.varian ?? '—'}</TableCell>
                     <TableCell
                       className={cn(
                         'text-right font-semibold tabular-nums',
                         x.sisa < 0 && 'text-destructive',
                       )}
                     >
+                      {x.perkiraan ? '≈' : ''}
                       {x.sisa}
                     </TableCell>
                   </TableRow>

@@ -2,7 +2,6 @@ import { prisma } from '@elorae/db';
 import {
   bandingkanLaporan,
   giliranTahap,
-  stokTitipan,
   tahapSiklus,
   type BahanTahap,
   type BarisBanding,
@@ -12,6 +11,7 @@ import { pencocokanSiklus, penandaTerjualSiklus, type PencocokanSiklus } from ".
 import type { PenandaCocok } from "./pencocokan";
 import { promoEloraeSiklus } from "./promo-elorae-queries";
 import { keSen, totalTagihanKonsi } from "./promo-elorae";
+import { stokDiToko, type SumberStokToko } from "./stok-di-toko";
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -223,7 +223,24 @@ export type RincianSiklus = {
      */
     bebanTerbuka: number;
   }[];
-  titipan: { itemName: string; dikirim: number; terjual: number; sisa: number }[];
+  /**
+   * Stok barang yang sekarang ada di toko, per barang × ukuran — hitungan yang
+   * sama dengan halaman toko (`stokDiToko`): buku stok SPG kalau ada, kalau
+   * tidak titipan (dikirim − terjual resmi semua bulan − diretur). `perkiraan`:
+   * terjual per barang dibagi ke ukuran.
+   */
+  stokToko: {
+    sumber: SumberStokToko;
+    baris: {
+      itemId: string;
+      variantSku: string;
+      nama: string;
+      sku: string;
+      varian: string | null;
+      sisa: number;
+      perkiraan: boolean;
+    }[];
+  };
   pengiriman: { id: string; noKirim: string; tanggal: string; nilai: number; jumlahBaris: number }[];
   /** Buku stok toko vs laporan laku konsinyasi, per barang. */
   pencocokan: PencocokanSiklus;
@@ -343,8 +360,8 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
   });
   if (!c) return null;
 
-  // Pengiriman dicari lewat TOKO, bukan lewat siklus: barang bisa dikirim
-  // sebelum siklus bulan itu dibuka, dan stok titipannya tetap milik toko itu.
+  // Daftar pengiriman dicari lewat TOKO, bukan lewat siklus: barang bisa
+  // dikirim sebelum siklus bulan itu dibuka.
   const kirim = await prisma.consignmentShipment.findMany({
     where: { storeId: c.storeId },
     orderBy: { shippedAt: 'desc' },
@@ -352,7 +369,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       id: true,
       noKirim: true,
       shippedAt: true,
-      items: { select: { itemName: true, qty: true, amount: true } },
+      items: { select: { amount: true } },
     },
   });
 
@@ -389,8 +406,8 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
     : [];
   const namaOrang = new Map(orangBayar.map((o) => [o.id, o.name]));
 
-  const [mutasi, pencocokan, promoSekarang, penanda] = await Promise.all([
-    mutasiTitipan(c.storeId),
+  const [stok, pencocokan, promoSekarang, penanda] = await Promise.all([
+    stokDiToko(c.storeId),
     pencocokanSiklus(c.id),
     promoEloraeSiklus(prisma, { storeId: c.storeId, periodYear: c.periodYear, periodMonth: c.periodMonth }),
     c.lockedAt ? Promise.resolve(new Map<string, PenandaCocok | null>()) : penandaTerjualSiklus([c]),
@@ -483,10 +500,18 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       dibayarPada: k.paidAt?.toISOString() ?? null,
       bebanTerbuka: bebanPerOrang.get(k.spgUserId) ?? 0,
     })),
-    titipan: stokTitipan(
-      [...kirim.flatMap((k) => k.items.map((i) => ({ itemName: i.itemName, qty: i.qty }))), ...mutasi],
-      c.sold.map((s) => ({ itemName: s.itemName, qty: s.qty })),
-    ),
+    stokToko: {
+      sumber: stok.source,
+      baris: stok.baris.map((b) => ({
+        itemId: b.itemId,
+        variantSku: b.variantSku,
+        nama: b.nama,
+        sku: b.sku,
+        varian: b.varian,
+        sisa: b.qty,
+        perkiraan: b.perkiraan,
+      })),
+    },
     pengiriman: kirim.map((k) => ({
       id: k.id,
       noKirim: k.noKirim,
@@ -498,43 +523,6 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
     tagihan,
     pelunasan: { dibayar: bayar.dibayar, sisa: bayar.sisa, lunas: bayar.lunas, pembayaran },
   };
-}
-
-/**
- * Mutasi antar toko sebagai baris "dikirim" stok titipan, BERTANDA: barang yang
- * diterima toko ini dari toko lain (jumlah diterima, termasuk barang yang
- * kembali dari mutasi yang dibatalkan) menambah; barang yang dikirim toko ini
- * ke toko lain mengurangi; selisih yang diputuskan KEMBALI menambah lagi di toko
- * asal. Nama barang = nama master (`Item.nameId`) — nama yang sama dengan bahan
- * laporan SPG, supaya barisnya bertemu dengan barang yang sama.
- */
-async function mutasiTitipan(storeId: string): Promise<{ itemName: string; qty: number }[]> {
-  const [masuk, keluar, kembali] = await Promise.all([
-    prisma.storeReceiptLine.findMany({
-      where: { itemId: { not: null }, qtyReceived: { gt: 0 }, receipt: { storeId, sourceType: { in: ['MUTASI', 'MUTASI_KEMBALI'] } } },
-      select: { itemId: true, qtyReceived: true },
-    }),
-    prisma.storeTransferLine.findMany({
-      where: { transfer: { fromStoreId: storeId, shippedAt: { not: null }, status: { in: ['DIKIRIM', 'DITERIMA', 'DIKEMBALIKAN'] } } },
-      select: { itemId: true, qty: true },
-    }),
-    prisma.storeStockMovement.findMany({
-      where: { storeId, kind: 'MUTASI_MASUK', refType: 'StoreTransfer' },
-      select: { itemId: true, qty: true },
-    }),
-  ]);
-  const baris = [
-    ...masuk.map((l) => ({ itemId: l.itemId as string, qty: l.qtyReceived })),
-    ...keluar.map((l) => ({ itemId: l.itemId, qty: -l.qty })),
-    ...kembali.map((l) => ({ itemId: l.itemId, qty: l.qty })),
-  ];
-  if (baris.length === 0) return [];
-  const items = await prisma.item.findMany({
-    where: { id: { in: [...new Set(baris.map((b) => b.itemId))] } },
-    select: { id: true, nameId: true },
-  });
-  const nama = new Map(items.map((i) => [i.id, i.nameId]));
-  return baris.map((b) => ({ itemName: nama.get(b.itemId) ?? b.itemId, qty: b.qty }));
 }
 
 /** Toko konsinyasi, untuk membuka siklus atau mengirim titipan. */

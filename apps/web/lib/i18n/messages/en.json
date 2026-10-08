@@ -11610,9 +11610,9 @@
     "paidOn": "paid {date}",
     "unpaid": "Unpaid",
     "okPaid": "Salary marked paid.",
-    "stockTitle": "Consigned stock",
-    "stockHint": "Shipped minus sold. Derived, not stored.",
-    "stockEmpty": "Nothing has been shipped to this shop yet.",
+    "stockTitle": "Stock at the shop",
+    "stockHint": "Goods at the shop now, per item and size — the same count as the shop page. A shop with an SPG stock book is read from that book (received, sold and SPG counts). A shop without one is read from the consignment count: every shipment and approved consignment order, minus the official sold figures of ALL locked cycles, final returns, written-off damaged goods and decided lost goods. Sales are reported per item, so per-size figures are split in proportion to shipments and marked ≈. Months not yet locked reduce nothing. A negative figure means the shop reported selling more than was ever shipped.",
+    "stockEmpty": "No goods at this shop yet.",
     "colShipped": "Shipped",
     "colSoldQty": "Sold",
     "colLeft": "Left",
@@ -11803,7 +11803,11 @@
     "laporanDiCocokkan": "Per-item figures from both reports are compared in the “Stock book matching” card below.",
     "lockTanpaBarang": "{n} row(s) have no item picked — SPG commission and consignment COGS are not counted for them.",
     "lockTanpaHarga": "{n} row(s) are priced at 0 — their sold value is 0 on the store's bill.",
-    "errTANPA_PPN": "This cycle's bill has no VAT — there is no tax invoice to record."
+    "errTANPA_PPN": "This cycle's bill has no VAT — there is no tax invoice to record.",
+    "colSize": "Size",
+    "colAtStore": "At shop",
+    "stockSourceBook": "Source: SPG stock book",
+    "stockSourceTitipan": "Source: consignment count"
   },
   "jenisPotongan": {
     "pageTitle": "Deduction types",
