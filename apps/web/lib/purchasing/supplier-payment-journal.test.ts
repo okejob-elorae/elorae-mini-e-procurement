@@ -1270,7 +1270,9 @@ d("supplier payment journal (test bed only)", () => {
     try {
       expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
 
-      const paidAt = new Date("2026-08-31T00:00:00.000Z");
+      // Tahun lama: bulan Agustus–September 2026 sudah ditutup di basis data uji lokal,
+      // dan jurnal otomatis ke bulan tertutup digeser ke bulan terbuka pertama.
+      const paidAt = new Date("2004-08-31T00:00:00.000Z");
       expect(await postSupplierPaymentJournal(po.id, userId, paidAt, prisma)).toMatchObject({ ok: true, created: true });
 
       /* AP is repointed while the PO sits marked paid. A role-resolving reversal

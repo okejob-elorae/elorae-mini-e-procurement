@@ -13,6 +13,8 @@ const baca = (rel: string) => readFileSync(path.join(WEB, rel), "utf8");
 const DAFTAR_PO = "app/backoffice/purchase-orders/PurchaseOrdersPageClient.tsx";
 const RINCIAN_PO = "app/backoffice/purchase-orders/[id]/page.tsx";
 const BAYAR = "app/backoffice/supplier-payments/page.tsx";
+// Register pembayaran pemasok sejak 2026-10-08: halaman server (tab + saringan) + klien tabelnya.
+const BAYAR_KLIEN = "app/backoffice/supplier-payments/PembayaranPemasokClient.tsx";
 const INVENTORI = "app/backoffice/inventory/InventoryPageClient.tsx";
 const DAFTAR_RETUR = "app/backoffice/vendor-returns/page.tsx";
 const RINCIAN_RETUR = "app/backoffice/vendor-returns/[id]/page.tsx";
@@ -22,7 +24,7 @@ const GUDANG = "app/gudang-retur/GudangClient.tsx";
 
 describe("layar pembelian & inventori", () => {
   it("tanpa confirm() bawaan peramban — konfirmasi lewat AlertDialog aplikasi", () => {
-    for (const f of [DAFTAR_PO, RINCIAN_PO, BAYAR, INVENTORI, DAFTAR_RETUR, RINCIAN_RETUR]) {
+    for (const f of [DAFTAR_PO, RINCIAN_PO, BAYAR, BAYAR_KLIEN, INVENTORI, DAFTAR_RETUR, RINCIAN_RETUR]) {
       expect(baca(f), f).not.toMatch(/(^|[^.\w])confirm\(|window\.confirm\(/m);
     }
   });
@@ -35,7 +37,7 @@ describe("layar pembelian & inventori", () => {
   });
 
   it("tandai lunas selalu lewat dialog konfirmasi (register dan rincian PO)", () => {
-    for (const f of [BAYAR, RINCIAN_PO]) {
+    for (const f of [BAYAR_KLIEN, RINCIAN_PO]) {
       const s = baca(f);
       expect(s, f).toContain("<KonfirmasiBayarDialog");
       expect(s, f).not.toMatch(/onClick=\{\(\) => handle(MarkPaid|PaidToggle)\(/);
@@ -57,11 +59,15 @@ describe("layar pembelian & inventori", () => {
   });
 
   it("pemilih pemasok untuk saringan dan dokumen lama tidak memakai approvedOnly", () => {
-    for (const f of [BAYAR, DAFTAR_RETUR, GRN_BARU]) {
+    for (const f of [DAFTAR_RETUR, GRN_BARU]) {
       const s = baca(f);
       expect(s, f).not.toContain("approvedOnly");
       expect(s, f).toContain("getPemasokPilihan");
     }
+    // Register pembayaran memuat pemasoknya di server: yang aktif DAN yang punya PO/GRN
+    // walau belum disetujui — sama maksudnya dengan getPemasokPilihan.
+    for (const f of [BAYAR, BAYAR_KLIEN]) expect(baca(f), f).not.toContain("approvedOnly");
+    expect(baca(BAYAR)).toMatch(/OR: \[\{ status: "ACTIVE" \}, \{ purchaseOrders: \{ some: \{\} \} \}, \{ grns: \{ some: \{\} \} \}\]/);
     // Ubah retur: pemasok retur itu sendiri ditambahkan bila tidak disetujui.
     expect(baca(UBAH_RETUR)).toContain("ret.vendor");
   });

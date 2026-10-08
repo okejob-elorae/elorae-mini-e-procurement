@@ -95,6 +95,8 @@ vi.mock("@/lib/receivables/koreksi", () => ({
 
 // Halaman toko.
 vi.mock("@/lib/salesman/queries", () => ({ daftarSalesman: vi.fn(async () => []) }));
+// Rekening pembayar biaya perjalanan (sejak buku besar lengkap, 2026-10-08) — tidak relevan untuk saringan.
+vi.mock("@/lib/finance/operasional/akun-kas", () => ({ daftarAkunKasBank: vi.fn(async () => []) }));
 vi.mock("@/lib/stores/areas", () => ({ daftarArea: vi.fn(async () => []) }));
 vi.mock("@/lib/stores/kelas-toko", () => ({ bacaKelas: () => null }));
 vi.mock("@/lib/stores/usulan-queries", () => ({ jumlahUsulanMenunggu: vi.fn(async () => 0) }));
