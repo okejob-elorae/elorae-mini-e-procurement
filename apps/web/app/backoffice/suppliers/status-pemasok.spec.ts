@@ -9,6 +9,7 @@ import {
   bacaSaringPemasok,
   bisaDipilihDiPo,
   bolehMemutuskan,
+  isActiveDariSaring,
   UKURAN_HALAMAN_PEMASOK,
 } from "./status-pemasok";
 
@@ -18,6 +19,20 @@ describe("bisaDipilihDiPo", () => {
     expect(bisaDipilihDiPo("PENDING_APPROVAL")).toBe(false);
     expect(bisaDipilihDiPo("REJECTED")).toBe(false);
     expect(bisaDipilihDiPo(undefined)).toBe(false);
+  });
+
+  it("pemasok nonaktif tidak bisa dipilih di PO walau disetujui — sama dengan papan Lead time", () => {
+    expect(bisaDipilihDiPo("ACTIVE", false)).toBe(false);
+    expect(bisaDipilihDiPo("ACTIVE", true)).toBe(true);
+    expect(bisaDipilihDiPo("ACTIVE", undefined)).toBe(true);
+  });
+});
+
+describe("isActiveDariSaring", () => {
+  it("aktif → true, nonaktif → false, kosong → tanpa saringan", () => {
+    expect(isActiveDariSaring("aktif")).toBe(true);
+    expect(isActiveDariSaring("nonaktif")).toBe(false);
+    expect(isActiveDariSaring("")).toBeUndefined();
   });
 });
 
@@ -42,18 +57,20 @@ describe("bolehMemutuskan — menurut izin, bukan nama peran", () => {
 
 describe("saringan pemasok di alamat", () => {
   it("membaca saringan yang sah dan membuang yang asing", () => {
-    expect(bacaSaringPemasok({ cari: " kain ", jenis: "t1", status: "PENDING_APPROVAL", page: "2", pageSize: "25" })).toEqual({
+    expect(bacaSaringPemasok({ cari: " kain ", jenis: "t1", status: "PENDING_APPROVAL", aktif: "nonaktif", page: "2", pageSize: "25" })).toEqual({
       cari: "kain",
       jenis: "t1",
       status: "PENDING_APPROVAL",
+      aktif: "nonaktif",
       page: 2,
       pageSize: 25,
       tampilan: "tabel",
     });
-    expect(bacaSaringPemasok({ status: "AKTIF", page: "-3", pageSize: "7" })).toEqual({
+    expect(bacaSaringPemasok({ status: "AKTIF", aktif: "ya", page: "-3", pageSize: "7" })).toEqual({
       cari: "",
       jenis: "",
       status: "",
+      aktif: "",
       page: 1,
       pageSize: UKURAN_HALAMAN_PEMASOK,
       tampilan: "tabel",
@@ -65,12 +82,12 @@ describe("saringan pemasok di alamat", () => {
   });
 
   it("menulis hanya parameter yang terisi", () => {
-    expect(alamatSaringPemasok("/backoffice/suppliers", { cari: "", jenis: "", status: "", page: 1, pageSize: UKURAN_HALAMAN_PEMASOK, tampilan: "tabel" })).toBe(
+    expect(alamatSaringPemasok("/backoffice/suppliers", { cari: "", jenis: "", status: "", aktif: "", page: 1, pageSize: UKURAN_HALAMAN_PEMASOK, tampilan: "tabel" })).toBe(
       "/backoffice/suppliers",
     );
     expect(
-      alamatSaringPemasok("/backoffice/suppliers", { cari: "kain", jenis: "t1", status: "REJECTED", page: 3, pageSize: 50, tampilan: "galeri" }),
-    ).toBe("/backoffice/suppliers?cari=kain&jenis=t1&status=REJECTED&page=3&pageSize=50&tampilan=galeri");
+      alamatSaringPemasok("/backoffice/suppliers", { cari: "kain", jenis: "t1", status: "REJECTED", aktif: "aktif", page: 3, pageSize: 50, tampilan: "galeri" }),
+    ).toBe("/backoffice/suppliers?cari=kain&jenis=t1&status=REJECTED&aktif=aktif&page=3&pageSize=50&tampilan=galeri");
   });
 });
 
@@ -94,6 +111,18 @@ describe("layar pemasok memakai aturan di atas", () => {
   it("Setujui/Tolak menurut izin, bukan nama peran", () => {
     expect(tampilan).toContain("bolehMemutuskan(s.status, izin)");
     expect(layar + tampilan).not.toMatch(/Role\.ADMIN|role ===/);
+  });
+
+  it("saringan keaktifan dikirim ke server dan pemasok nonaktif berlencana di ketiga tampilan", () => {
+    expect(layar).toContain("isActive: isActiveDariSaring(saring.aktif)");
+    expect(layar).toContain("bisaDipilihDiPo(selectedSupplier?.status, selectedSupplier?.isActive)");
+    expect(tampilan).toContain("<LencanaNonaktif s={s} />");
+    expect(tampilan.match(/<LencanaNonaktif s=\{s\} \/>/g)?.length).toBe(3);
+  });
+
+  it("tombol ikon Setujui/Tolak di papan punya title (tooltip), bukan hanya teks tersembunyi", () => {
+    expect(tampilan).toContain("title={kecil ? t('setujuiNama', { name: s.name }) : undefined}");
+    expect(tampilan).toContain("title={kecil ? t('tolakNama', { name: s.name }) : undefined}");
   });
 
   it("tambah, ubah, dan hapus dijaga aksiPemasok", () => {

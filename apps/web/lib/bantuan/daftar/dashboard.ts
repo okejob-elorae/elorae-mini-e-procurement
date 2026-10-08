@@ -13,7 +13,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "dashboard.trendTitle" },
         isi: [
-          "Penjualan per hari untuk 7, 30, atau 90 hari terakhir, atau rentang tanggal yang Anda pilih. Kotak saluran memilih apa yang digambar: semua (marketplace dibanding lapangan), satu kelompok (satu garis per saluran), atau satu saluran saja (Shopee, TikTok, Tokopedia, Jubelio lain, putus, van, SPG). Klik nama saluran di keterangan grafik untuk melihat saluran itu saja. Angka di samping judul membandingkan dengan periode sebelumnya yang sama panjang.",
+          "Penjualan per hari untuk 7, 30, atau 90 hari terakhir, atau rentang tanggal yang Anda pilih. Kotak saluran memilih apa yang digambar: semua (marketplace dibanding lapangan), satu kelompok (satu garis per saluran), atau satu saluran saja (Shopee, TikTok, Tokopedia, Jubelio lain, putus, van, SPG). Klik nama saluran di keterangan grafik untuk melihat saluran itu saja. Angka di samping judul membandingkan dengan periode sebelumnya yang sama panjang. Periode dan saluran yang dipilih tersimpan di alamat halaman, jadi tautan yang dibagikan atau halaman yang dimuat ulang membuka grafik yang sama.",
           "Marketplace dihitung per tanggal pesanan Jubelio, tanpa pesanan yang batal atau retur. Di lapangan, putus dihitung per tanggal kirim; van dan SPG per tanggal jual, bersih dari barang yang dikembalikan pembeli. Transfer konsinyasi bukan penjualan dan tidak dihitung.",
           "Penjualan SPG di toko konsinyasi dihitung dengan harga Elorae, bukan harga di toko: nilai nota dikurangi margin toko saat ini (nota Rp 100.000 di toko bermargin 25% masuk Rp 75.000). Dengan begitu garisnya sebanding dengan putus dan van, yang juga memakai harga Elorae.",
         ],
@@ -32,7 +32,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "dashboard.kpiSalesSummary" },
         isi: [
-          "Terealisasi dihitung sejak data pertama, bukan 30 hari: pesanan putus yang sudah dikirim ditambah penjualan van. Angka di bawahnya menghitung pengiriman dan nota van, bukan pesanan: satu pesanan yang dikirim dua kali terhitung dua pengiriman, jadi angkanya bisa berbeda dengan jumlah pesanan di daftar pesanan lapangan.",
+          "Terealisasi dihitung sejak data pertama, bukan 30 hari: pesanan putus yang sudah dikirim ditambah penjualan van. Angka di bawahnya menyebut jumlah pengiriman, dari berapa pesanan, dan jumlah nota van: satu pesanan yang dikirim dua kali terhitung dua pengiriman tetapi satu pesanan. Tautannya membuka daftar pesanan putus yang disetujui, yang juga memuat pesanan yang belum dikirim (baris berikutnya), dan nota van ada di Penjualan van.",
           "Disetujui, belum dikirim: pesanan putus yang sudah disetujui tetapi belum satu pun dikirim, senilai total pesanannya. Tautannya membuka daftar pesanan lapangan dengan saringan yang sama.",
           "Penjualan marketplace hari ini memakai tanggal WIB. Pesanan belum dikirim adalah pesanan marketplace yang masih menunggu diambil, dikemas, atau dikirim di Antrian Pemenuhan.",
         ],
@@ -42,12 +42,12 @@ export const ENTRI: EntriBantuan[] = [
         isi: [{ kunci: "dashboard.salesmanDesc" }, "Diurutkan dari yang terbesar; batangnya membandingkan nilai terealisasi antarsalesman."],
       },
       {
-        judul: "Umur piutang dari jatuh tempo",
-        isi: "Sisa piutang yang masih terbuka, dikelompokkan menurut umurnya dari tanggal jatuh tempo: belum jatuh tempo, 1–30 hari, 31–60 hari, dan lebih dari 60 hari. Klik untuk membuka Piutang.",
+        judul: "Umur semua piutang dari jatuh tempo",
+        isi: "SEMUA sisa piutang yang masih terbuka, dikelompokkan menurut umurnya dari tanggal jatuh tempo: belum jatuh tempo, 1–30 hari, 31–60 hari, dan lebih dari 60 hari. Termasuk faktur yang sudah dikontrabon, yang BKM-nya menunggu verifikasi, dan yang tertahan retur, jadi jumlahnya bisa jauh lebih besar dari baris \"Lewat jatuh tempo\" di sebelahnya. Klik untuk membuka Piutang.",
       },
       {
         judul: { kunci: "dashboard.kpiReceivablesAttention" },
-        isi: "Lewat janji bayar: faktur yang janji bayarnya sudah lewat. Tertahan retur: potongan retur yang masih ditahan karena gudang belum menutup hitungan barangnya.",
+        isi: "Lewat janji bayar: faktur yang janji bayarnya (kontrabon) sudah lewat. Lewat jatuh tempo: faktur yang tanggal jatuh temponya sudah lewat dan belum dikontrabon, belum dilaporkan BKM-nya, dan tidak tertahan retur — angka dan definisinya sama dengan saringan \"Lewat jatuh tempo\" di halaman Piutang. Tertahan retur: potongan retur yang masih ditahan karena gudang belum menutup hitungan barangnya.",
       },
       {
         judul: { kunci: "dashboard.kpiProductionOnly" },
@@ -55,7 +55,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "dashboard.kpiPurchasing" },
-        isi: "PO terlambat: PO yang sudah dikirim ke pemasok (berstatus dikirim atau sebagian diterima), tanggal tibanya sebelum hari ini (WIB), dan barangnya belum lengkap. PO menunggu persetujuan: PO yang masih draf. Pemasok aktif disertai jumlah penerimaan barang minggu ini.",
+        isi: "PO terlambat: PO yang sudah dikirim ke pemasok (berstatus dikirim atau sebagian diterima), tanggal tibanya sebelum hari ini (WIB), dan barangnya belum lengkap. PO menunggu persetujuan: PO yang masih draf. Pemasok aktif disertai jumlah penerimaan barang minggu ini; tautannya membuka daftar pemasok yang tersaring aktif, jadi pemasok nonaktif tidak ikut terhitung.",
       },
       {
         judul: { kunci: "dashboard.stockMixTitle" },

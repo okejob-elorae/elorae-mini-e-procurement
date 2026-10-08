@@ -111,6 +111,21 @@ describe('muatDasbor (basis data)', () => {
     expect(tertahan?.jumlah).toBeGreaterThanOrEqual(1);
   });
 
+  it('kartu Tertahan retur menyebut angka yang sama dengan daftar ?keadaan=tertahan yang ditautnya', async () => {
+    const d = await muatDasbor();
+    const tertahan = d.perKeadaan.find((k) => k.keadaan === 'tertahan');
+    expect(d.fakturTertahan).toBe(tertahan?.jumlah);
+    expect(d.fakturTertahan).toBeGreaterThanOrEqual(1);
+    // Jumlah retur yang perlu dikerjakan adalah ukuran tersendiri, dirinci per langkah.
+    const l = d.returPerLangkah;
+    expect(l.cek + l.jodoh + l.keputusan).toBe(d.returPerluDikerjakan);
+  });
+
+  it('tidak lagi memuat ukuran penyimpanan foto', async () => {
+    const d = await muatDasbor();
+    expect('foto' in d).toBe(false);
+  });
+
   it('mengurutkan daftar tindakan dari yang paling berisiko', async () => {
     const d = await muatDasbor();
     const risiko = d.tindakan.map((t) => t.risiko);

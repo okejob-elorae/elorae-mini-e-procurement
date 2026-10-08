@@ -23,6 +23,14 @@ export type RingkasPiutangBeranda = {
   /** Yang sudah lewat janji bayar — ini yang menuntut tindakan hari ini. */
   lewatNilai: number;
   lewatJumlah: number;
+  /**
+   * Lewat jatuh tempo FAKTUR tanpa kontrabon, BKM menunggu, atau tahanan retur —
+   * definisi dan angka yang sama dengan `/backoffice/piutang?keadaan=jatuh_tempo`.
+   * Berbeda dari kartu umur, yang mengelompokkan SEMUA piutang terbuka menurut
+   * umurnya sejak jatuh tempo.
+   */
+  jatuhTempoNilai: number;
+  jatuhTempoJumlah: number;
   /** Ditahan karena retur belum dihitung gudang. */
   tertahanNilai: number;
   /** Umur dari tanggal jatuh tempo, untuk grafik beranda. */
@@ -37,6 +45,8 @@ export async function ringkasPiutangBeranda(): Promise<RingkasPiutangBeranda> {
     jumlah: r.jumlahPiutang,
     lewatNilai: r.perKeadaan.lewat.nilai,
     lewatJumlah: r.perKeadaan.lewat.jumlah,
+    jatuhTempoNilai: r.perKeadaanTampil.jatuh_tempo.nilai,
+    jatuhTempoJumlah: r.perKeadaanTampil.jatuh_tempo.jumlah,
     tertahanNilai: r.perKeadaan.tertahan.nilai,
     umur: umurPiutang(baris, new Date()),
   };

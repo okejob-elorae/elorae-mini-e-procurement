@@ -178,7 +178,10 @@ export function PermintaanKirimanClient({
           <CardTitle className="flex items-center gap-2">
             <Truck className="h-5 w-5" />
             {t("cardTitle")}
-            <span className="ml-2 text-sm font-normal text-muted-foreground">({t("count", { count: baris.length })})</span>
+            {/* Kosong: keterangan kosong cukup sekali, di badan kartu. */}
+            {baris.length > 0 ? (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">({t("count", { count: baris.length })})</span>
+            ) : null}
           </CardTitle>
           {terpotong ? <p className="text-sm text-muted-foreground">{t("capNote")}</p> : null}
         </CardHeader>

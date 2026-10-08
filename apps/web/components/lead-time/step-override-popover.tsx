@@ -77,7 +77,7 @@ export function StepOverridePopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="w-64 space-y-2" align="end">
         <div className="space-y-1">
-          <Label>{t("overrideDays")}</Label>
+          <Label>{t("overrideDaysV2")}</Label>
           <Input
             type="number"
             min={1}
@@ -88,7 +88,7 @@ export function StepOverridePopover({
         </div>
         {step.processTemplate.leadTimeType === "PER_QTY" && (
           <div className="space-y-1">
-            <Label>{t("overrideRateQty")}</Label>
+            <Label>{t("overrideRateQtyV2")}</Label>
             <Input
               type="number"
               min={1}
@@ -104,7 +104,7 @@ export function StepOverridePopover({
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => void save(true)}>
-            {t("resetDefault")}
+            {t("resetDefaultV2")}
           </Button>
           <Button size="sm" onClick={() => void save(false)}>
             {t("save")}

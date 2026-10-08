@@ -54,7 +54,7 @@ export function ForecastArticlesTab({ results, selectedSku, onSelectSku }: Artic
 
           <Card>
             <CardHeader>
-              <CardTitle>{t('results.annual')}: {selected.annualForecast.toLocaleString('id-ID')}</CardTitle>
+              <CardTitle>{t('results.forecastTahunan')}: {selected.annualForecast.toLocaleString('id-ID')}</CardTitle>
             </CardHeader>
             <CardContent>
               <MonthlyForecastTable
@@ -78,7 +78,7 @@ export function ForecastArticlesTab({ results, selectedSku, onSelectSku }: Artic
                 <p className="font-medium">{selected.totalHistoricalRevenue.toLocaleString('id-ID')}</p>
               </div>
               <div>
-                <span className="text-muted-foreground">{t('results.planTarget')}</span>
+                <span className="text-muted-foreground">{t('results.targetPlanKalimat')}</span>
                 <p className="font-medium">
                   {selected.planTarget != null ?
                     selected.planTarget.toLocaleString('id-ID')

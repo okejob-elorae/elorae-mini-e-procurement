@@ -88,3 +88,18 @@ describe("angka sistem opname gudang", () => {
     expect(saringBarisButa(baris, "all", "  kaos ").map((b) => b.id)).toEqual(["1"]);
   });
 });
+
+describe("hitungan buta: baris stok gabungan", () => {
+  it("ditandai seperti di layar persetujuan, tanpa membuka angka sistem", () => {
+    const baris = barisButa({
+      scope: "FINISHED_GOOD",
+      items: [
+        { id: "a", itemName: "Celana Kulot", variantSku: null, countedQty: null },
+        { id: "b", itemName: "Celana Kulot", variantSku: "CLN-28", countedQty: 2 },
+      ],
+    });
+    expect(baris.find((b) => b.id === "a")?.gabungan).toBe(true);
+    expect(baris.find((b) => b.id === "b")?.gabungan).toBeUndefined();
+    expect(JSON.stringify(baris)).not.toContain("snapshot");
+  });
+});

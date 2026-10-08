@@ -19,6 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { eksporPerformaAction } from "@/app/actions/kreatif-laporan";
 import { angkaTitik, rupiahTeks } from "@/lib/creative/angka-konten";
 import { LABEL_PLATFORM } from "@/lib/creative/aturan";
+import { ringkasAngka } from "../kol/format-kol";
 import {
   alamatCetakRekap,
   alamatLaporan,
@@ -269,7 +270,8 @@ function TabPeringkat({
                 <TableBody className="baris-berurutan">
                   {data.baris.map((b) => {
                     const atas = b.peringkat <= 3;
-                    const platform = b.platform ? `${LABEL_PLATFORM[b.platform]} · ${angkaTitik(b.pengikut)}` : "—";
+                    // Pengikut ditulis ringkas ("85 rb"), sama dengan daftar KOL.
+                    const platform = b.platform ? `${LABEL_PLATFORM[b.platform]} · ${ringkasAngka(b.pengikut)}` : "—";
                     return (
                       <TableRow key={b.kolId} className={cn(atas && "bg-primary/5")}>
                         <TableCell className={cn("text-right tabular-nums", atas ? "text-base font-bold text-tautan" : "text-muted-foreground")}>

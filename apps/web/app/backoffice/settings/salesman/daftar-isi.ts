@@ -3,10 +3,12 @@
  * tempat — halaman memasang `id` yang sama (dijaga `daftar-isi.spec.ts`),
  * judulnya memakai kunci i18n judul kartu itu sendiri.
  *
- * Kartu khusus SPG (mutasi antar toko, hari kerja SPG) ada di Pengaturan → SPG.
+ * Kartu khusus SPG (mutasi antar toko, hari kerja SPG) ada di Pengaturan → SPG;
+ * target bulanan SPG tetap di kartu `#target` di sini (daftar isi SPG menautnya).
  */
-export type KartuDaftarIsi = { id: string; judul: string };
-export type KelompokDaftarIsi = { id: string; judul: string; kartu: KartuDaftarIsi[] };
+import type { KelompokDaftarIsi } from "../DaftarIsiPengaturan";
+
+export type { KartuDaftarIsi, KelompokDaftarIsi } from "../DaftarIsiPengaturan";
 
 export const DAFTAR_ISI_SALESMAN: KelompokDaftarIsi[] = [
   {

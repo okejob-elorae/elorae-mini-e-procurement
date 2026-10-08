@@ -6,7 +6,7 @@ import { katalogBarang, tokoUntukRetur } from "@/lib/receivables/return-queries"
 import { bacaKeadaanTampil } from "@/lib/receivables/jatuh-tempo";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { PiutangClient } from "./PiutangClient";
-import { saringPiutang } from "./saring";
+import { hitungPilPiutang, saringPiutang } from "./saring";
 import { bacaCari, bacaHalaman, potongHalaman } from "./_daftar/halaman";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +49,7 @@ export default async function PiutangPage({
       halaman={{ halaman: halaman.halaman, totalHalaman: halaman.totalHalaman, total: halaman.total, ukuran: halaman.ukuran }}
       adaFaktur={semua.length > 0}
       ringkasan={ringkasPiutang(semua)}
+      pil={hitungPilPiutang(semua, cari)}
       toko={toko}
       katalog={katalog}
       bolehMengelola={bolehMengelola}

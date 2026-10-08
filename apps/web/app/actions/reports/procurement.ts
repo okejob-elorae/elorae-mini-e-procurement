@@ -2,6 +2,7 @@
 
 import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
+import { barisEksporPengadaan, keCsv, KOLOM_PENGADAAN } from '@/lib/laporan/ekspor-laporan';
 import { POStatus } from '@elorae/db';
 import * as XLSX from 'xlsx';
 import { PERMISSIONS } from '@/lib/rbac';
@@ -98,20 +99,6 @@ export async function getProcurementReport(filters?: ProcurementReportFilters) {
   return { report, summary };
 }
 
-function reportToRows(report: Awaited<ReturnType<typeof getProcurementReport>>['report']) {
-  return report.map((r) => ({
-    'Doc Number': r.docNumber,
-    'Supplier': r.supplier.name,
-    'Supplier Code': r.supplier.code,
-    'Status': r.status,
-    'ETA Date': r.etaDate ? new Date(r.etaDate).toLocaleDateString() : '',
-    'ETA Alert': r.etaMessage,
-    'Grand Total': r.grandTotal,
-    'Outstanding Qty': r.outstandingQty,
-    'Outstanding Value': r.outstandingValue,
-    'GRNs': r.grnCount,
-  }));
-}
 
 export type ExportResult =
   | { data: string; filename: string; base64?: never }
@@ -123,25 +110,16 @@ export async function exportProcurementReport(
 ): Promise<ExportResult> {
   await wajibIzinLaporan(PERMISSIONS.PURCHASE_ORDERS_VIEW);
   const { report } = await getProcurementReport(filters);
-  const rows = reportToRows(report);
+  // Kepala kolom, status, dan tanggal sama dengan layar (Indonesia, WIB).
+  const rows = barisEksporPengadaan(report);
 
   if (format === 'csv') {
-    const headers =
-      rows.length > 0
-        ? Object.keys(rows[0]).join(',')
-        : 'Doc Number,Supplier,Supplier Code,Status,ETA Date,ETA Alert,Grand Total,Outstanding Qty,Outstanding Value,GRNs';
-    if (rows.length === 0) {
-      return { data: headers + '\n', filename: `procurement-report-${Date.now()}.csv` };
-    }
-    const headerLine = Object.keys(rows[0]).join(',');
-    const lines = rows.map((r) => Object.values(r).map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    const data = [headerLine, ...lines].join('\n');
-    return { data, filename: `procurement-report-${Date.now()}.csv` };
+    return { data: keCsv(KOLOM_PENGADAAN, rows) + '\n', filename: `laporan-pengadaan-${Date.now()}.csv` };
   }
 
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, 'Procurement');
+  const ws = XLSX.utils.json_to_sheet(rows, { header: [...KOLOM_PENGADAAN] });
+  XLSX.utils.book_append_sheet(wb, ws, 'Pengadaan');
   const buffer = Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
-  return { base64: buffer.toString('base64'), filename: `procurement-report-${Date.now()}.xlsx` };
+  return { base64: buffer.toString('base64'), filename: `laporan-pengadaan-${Date.now()}.xlsx` };
 }

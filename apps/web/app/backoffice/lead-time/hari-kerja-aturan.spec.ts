@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { liburTetapTahun } from "@/lib/production/hari-kerja";
-import { gabungLibur, samaHari, samaLibur } from "./hari-kerja-aturan";
+import { gabungLibur, keteranganSimpanHari, samaHari, samaLibur } from "./hari-kerja-aturan";
 
 describe("gabungLibur", () => {
   it("menambah libur tanggal tetap tanpa menggandakan, nama yang diketik tim tetap", () => {
@@ -50,5 +50,14 @@ describe("pembanding perubahan", () => {
     expect(samaLibur(a, [{ tanggal: "2026-08-17", nama: "Kemerdekaan" }])).toBe(true);
     expect(samaLibur(a, [{ tanggal: "2026-08-17", nama: "HUT RI" }])).toBe(false);
     expect(samaLibur(a, [])).toBe(false);
+  });
+});
+
+describe("keteranganSimpanHari", () => {
+  it("tombol nonaktif selalu punya alasan: tanpa hari = galat, tanpa perubahan = 'Belum ada perubahan.'", () => {
+    expect(keteranganSimpanHari(0, true)).toEqual({ kunci: "hariMinimal", galat: true, bolehSimpan: false });
+    expect(keteranganSimpanHari(0, false)).toEqual({ kunci: "hariMinimal", galat: true, bolehSimpan: false });
+    expect(keteranganSimpanHari(5, false)).toEqual({ kunci: "belumBerubah", galat: false, bolehSimpan: false });
+    expect(keteranganSimpanHari(6, true)).toEqual({ kunci: "belumDisimpan", galat: false, bolehSimpan: true });
   });
 });

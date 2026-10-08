@@ -9,6 +9,7 @@ import {
 } from '@/lib/purchasing/supplier-payment-journal';
 import { kreditReturPerPo, returUntukPo } from '@/lib/purchase-orders/kredit-retur-queries';
 import { hitungUtangPo, type RincianUtangPo } from '@/lib/purchase-orders/utang';
+import { syaratCariPo } from '@/lib/purchase-orders/cari-po';
 
 export type ListPOsFilters = {
   status?: POStatus;
@@ -20,6 +21,8 @@ export type ListPOsFilters = {
   paymentDueFrom?: Date;
   paymentDueTo?: Date;
   paid?: boolean;
+  /** Kata kunci: nomor PO, nama atau kode pemasok — disaring di server (`syaratCariPo`). */
+  cari?: string;
 };
 
 export type ListPOsOpts = { page: number; pageSize: number };
@@ -140,6 +143,11 @@ function buildPOsWhere(filters?: ListPOsFilters) {
   if (filters?.overdue) {
     // Satu definisi dengan beranda dan lencana menu — lihat `overduePOWhere`.
     Object.assign(where, overduePOWhere());
+  }
+  const cari = syaratCariPo(filters?.cari);
+  if (cari) {
+    // AND, bukan OR di akar: tidak boleh menimpa saringan lain yang kelak memakai OR.
+    where.AND = [cari];
   }
 
   return where;

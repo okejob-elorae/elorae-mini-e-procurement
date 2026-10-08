@@ -69,6 +69,9 @@ import { DialogBatalWo } from '../DialogBatalWo';
 import { DialogTerbitWo } from '../DialogTerbitWo';
 import { KartuBahanWo } from './KartuBahanWo';
 import { LABEL_NOTA_CMT } from '../label-nota-cmt';
+import { angkaSetoranWo } from '@/lib/production/setoran-wo';
+import { CatatanTanpaDokumen, RingkasSetoran } from '../RingkasSetoran';
+import { WoTidakDitemukan } from '../WoTidakDitemukan';
 
 /** Tab yang boleh ada di `?tab=`. */
 const TAB_WO = ['details', 'issues', 'receipts', 'hpp'] as const;
@@ -154,6 +157,8 @@ export default function WorkOrderDetailPage() {
         switch (res.code) {
           case "UNMAPPED_ROLE": toast.error(tWO("receiptJournal.errUNMAPPED_ROLE", { role: res.role ?? "" })); break;
           case "UNBALANCED": toast.error(tWO("receiptJournal.errUNBALANCED")); break;
+          case "NON_POSTABLE_ACCOUNT": toast.error(tWO("receiptJournal.errNON_POSTABLE_ACCOUNT")); break;
+          case "ERROR": toast.error(tWO("receiptJournal.errUnexpected")); break;
           case "FORBIDDEN": toast.error(tWO("receiptJournal.errFORBIDDEN")); break;
           default: toast.error(tWO("receiptJournal.errBAD_STATE"));
         }
@@ -321,17 +326,22 @@ export default function WorkOrderDetailPage() {
     }
   };
 
-  if (isLoading || !wo) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
+  // Aksi mengembalikan null untuk id yang tidak ada: tampilkan keadaan "tidak ditemukan", bukan pemutar tanpa akhir.
+  if (!wo) return <WoTidakDitemukan />;
 
-  const planned = Number(wo.plannedQty);
-  const actual = Number(wo.actualQty ?? 0);
-  const progressPct = planned > 0 ? Math.min(100, Math.round((actual / planned) * 100)) : 0;
+  // Satu definisi angka setoran untuk rincian, layar terima, rekonsiliasi dan daftar.
+  const setoran = angkaSetoranWo({
+    plannedQty: wo.plannedQty,
+    actualQty: wo.actualQty,
+    receipts: ((wo as { receipts?: unknown }).receipts as Parameters<typeof angkaSetoranWo>[0]['receipts']) ?? [],
+  });
   const consumptionPlan = (wo.consumptionPlan as any[]) || [];
   const status = wo.status as WOStatus;
   const adaPenerimaan = ((wo as any).receipts?.length ?? 0) > 0;
@@ -347,11 +357,11 @@ export default function WorkOrderDetailPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link href="/backoffice/work-orders">
-            <Button variant="ghost" size="icon" aria-label={tD('backToList')} title={tD('backToList')}>
+          <Button asChild variant="ghost" size="icon">
+            <Link href="/backoffice/work-orders" aria-label={tD('backToList')} title={tD('backToList')}>
               <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div>
             <div className="flex items-center gap-1">
               <h1 className="text-2xl font-bold tracking-tight">
@@ -393,9 +403,9 @@ export default function WorkOrderDetailPage() {
           {berjalan && (
             <>
               {status !== 'PARTIAL' && (
-                <Link href={`/backoffice/work-orders/${id}/issue`}>
-                  <Button variant="outline">{tWO('issueMaterials')}</Button>
-                </Link>
+                <Button asChild variant="outline">
+                  <Link href={`/backoffice/work-orders/${id}/issue`}>{tWO('issueMaterials')}</Link>
+                </Button>
               )}
               {status === 'IN_PRODUCTION' && (
                 <Button
@@ -409,9 +419,9 @@ export default function WorkOrderDetailPage() {
                   {tD('issueAdditional')}
                 </Button>
               )}
-              <Link href={`/backoffice/work-orders/${id}/receive`}>
-                <Button variant="outline">{tWO('receiveFG')}</Button>
-              </Link>
+              <Button asChild variant="outline">
+                <Link href={`/backoffice/work-orders/${id}/receive`}>{tWO('terimaBarangJadi')}</Link>
+              </Button>
             </>
           )}
           {status !== 'DRAFT' && (
@@ -467,31 +477,25 @@ export default function WorkOrderDetailPage() {
             {tD('progressTitle')}
           </CardTitle>
           <CardDescription>
-            {t('progressTarget')}: {planned.toLocaleString('id-ID')} pcs · {t('progressActual')}: {actual.toLocaleString('id-ID')}
+            <RingkasSetoran angkaWo={setoran} />
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span>{progressPct}%</span>
-              <span>
-                {actual.toLocaleString('id-ID')} / {planned.toLocaleString('id-ID')}
+              <span className="tabular-nums">{setoran.persen}%</span>
+              <span className="tabular-nums">
+                {tWO('setoran.masukDariTarget', {
+                  masuk: setoran.masukStok.toLocaleString('id-ID'),
+                  target: setoran.target.toLocaleString('id-ID'),
+                })}
               </span>
             </div>
-            <Progress value={progressPct} className="h-2" />
+            <Progress value={setoran.persen} className="h-2" />
           </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {actual < planned
-              ? t('setoranSummary', {
-                  target: planned.toLocaleString('id-ID'),
-                  actual: actual.toLocaleString('id-ID'),
-                  shortfall: (planned - actual).toLocaleString('id-ID'),
-                })
-              : t('setoranSummaryExact', {
-                  target: planned.toLocaleString('id-ID'),
-                  actual: actual.toLocaleString('id-ID'),
-                })}
-          </p>
+          <div className="mt-2">
+            <CatatanTanpaDokumen angkaWo={setoran} />
+          </div>
           {(wo as any).targetDate && (
             <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
               <Calendar className="h-4 w-4" />
@@ -592,7 +596,7 @@ export default function WorkOrderDetailPage() {
         <TabsList className={isAdmin ? 'grid w-full grid-cols-4' : 'grid w-full grid-cols-3'}>
           <TabsTrigger value="details">{tWO('details')}</TabsTrigger>
           <TabsTrigger value="issues">{tWO('materialIssues')}</TabsTrigger>
-          <TabsTrigger value="receipts">{tWO('fgReceipts')}</TabsTrigger>
+          <TabsTrigger value="receipts">{tWO('penerimaanBarangJadi')}</TabsTrigger>
           {isAdmin && <TabsTrigger value="hpp">{tD('hppTitle')}</TabsTrigger>}
         </TabsList>
         <TabsContent value="details" className="space-y-4">
@@ -706,7 +710,7 @@ export default function WorkOrderDetailPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5" />
-                {tWO('fgReceipts')}
+                {tWO('penerimaanBarangJadi')}
               </CardTitle>
               <CardDescription>
                 {tD('receiptsCount', { count: (wo as any).receipts?.length ?? 0 })}
@@ -724,6 +728,7 @@ export default function WorkOrderDetailPage() {
                       <TableHead className="text-right">{tWO('received')}</TableHead>
                       <TableHead className="text-right">{tWO('rejected')}</TableHead>
                       <TableHead className="text-right">{tD('colAccepted')}</TableHead>
+                      <TableHead className="text-right">{tD('colNilaiHpp')}</TableHead>
                       <TableHead>{tWO("receiptJournal.column")}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -744,6 +749,22 @@ export default function WorkOrderDetailPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           {Number(r.qtyAccepted).toLocaleString('id-ID')}
+                        </TableCell>
+                        <TableCell className="text-right whitespace-normal">
+                          <div className="tabular-nums">
+                            {r.totalCostValue != null ? formatRupiah(Number(r.totalCostValue)) : '-'}
+                          </div>
+                          {r.serviceCost != null || r.additionalCost != null ? (
+                            <div className="text-xs text-muted-foreground tabular-nums">
+                              {tD('rincianNilaiHpp', {
+                                bahan: formatRupiah(Number(r.materialCost ?? 0)),
+                                jasa: formatRupiah(Number(r.serviceCost ?? 0)),
+                              })}
+                              {Number(r.additionalCost ?? 0) > 0
+                                ? ` · ${tD('rincianNilaiTambahan', { value: formatRupiah(Number(r.additionalCost)) })}`
+                                : ''}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell>
                           {r.journalId ? (

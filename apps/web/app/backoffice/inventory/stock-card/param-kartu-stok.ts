@@ -32,3 +32,21 @@ export function tulisParamKartuStok(p: ParamKartuStok, bawaan: { dari: string; s
   }
   return q.toString();
 }
+
+/**
+ * Perlu menulis alamat baru? `sekarang` = `location.search` (boleh berawalan
+ * "?"), `qs` = hasil `tulisParamKartuStok`. Urutan parameter diabaikan.
+ *
+ * Penting, bukan kosmetik: `history.replaceState` di Next masuk antrean router
+ * sebagai navigasi, dan navigasi MEMBUANG aksi server yang sedang berjalan.
+ * Kartu stok yang dibuka dengan `?itemId=` dulu menulis alamat yang sama persis
+ * saat dipasang, bersamaan dengan aksi muat ringkasan/kartu — aksi itu terbuang
+ * dan tombol Tampilkan berputar selamanya.
+ */
+export function alamatBerubah(sekarang: string, qs: string): boolean {
+  const urut = (s: string) => {
+    const p = new URLSearchParams(s.startsWith("?") ? s.slice(1) : s);
+    return [...p.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, v]) => `${k}=${v}`).join("&");
+  };
+  return urut(sekarang) !== urut(qs);
+}

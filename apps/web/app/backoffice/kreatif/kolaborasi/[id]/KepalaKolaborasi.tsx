@@ -16,7 +16,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusPill } from "@/components/ui/status-pill";
 import { TombolWa } from "@/components/kreatif/TombolWa";
-import { angkaTitik, rupiahTeks } from "@/lib/creative/angka-konten";
+import { angkaTitik, feeBruto, rupiahTeks } from "@/lib/creative/angka-konten";
 import type { PilihanCampaign } from "@/lib/creative/campaign-queries";
 import type { DetailKolaborasi, PilihanPengguna } from "@/lib/creative/kolaborasi-queries";
 import { alamatLengkap, teksAlamatKirim } from "@/lib/creative/kolaborasi-tampil";
@@ -95,6 +95,19 @@ export function KepalaKolaborasi({
   };
   const lengkap = alamatLengkap(alamat);
   const a = d.angka;
+  const kurangKirim = d.kurangKirim.map((x) => tk(`kurang.${x}`)).join(", ");
+  const tautanUkuran = `/backoffice/kreatif/kol/${d.kol.id}?tab=ukuran`;
+  // "fee" = angka yang disepakati (neto bila gross-up, bruto bila dipotong); bila
+  // gross-up, biaya bruto termasuk PPh selalu disebut di sampingnya.
+  const jenisTeks = tk(`jenis.${d.jenis}`);
+  const teksFee =
+    d.fee <= 0
+      ? t("kolaborasi.detail.metaJenis", { jenis: jenisTeks, fee: rupiahTeks(d.fee) })
+      : d.modePajak === "GROSS_UP"
+        ? a && a.biaya.pph > 0
+          ? t("kolaborasi.detail.metaFeeGrossUp", { jenis: jenisTeks, fee: rupiahTeks(d.fee), bruto: rupiahTeks(feeBruto(a.biaya)) })
+          : t("kolaborasi.detail.metaFeeNeto", { jenis: jenisTeks, fee: rupiahTeks(d.fee) })
+        : t("kolaborasi.detail.metaFeeBruto", { jenis: jenisTeks, fee: rupiahTeks(d.fee) });
 
   const salin = async () => {
     try {
@@ -151,7 +164,7 @@ export function KepalaKolaborasi({
             <StatusPill tone={d.payStatus === "BELUM" && !feeDiakui(tahap) ? "inactive" : NADA_BAYAR[d.payStatus]}>{tk(`bayar.${d.payStatus}`)}</StatusPill>
             <span className="text-sm text-muted-foreground">
               {[
-                t("kolaborasi.detail.metaJenis", { jenis: tk(`jenis.${d.jenis}`), fee: rupiahTeks(d.fee) }),
+                teksFee,
                 d.commissionPct ? t("kolaborasi.detail.metaKomisi", { n: d.commissionPct }) : null,
                 subKol(d.kol) || null,
               ]
@@ -258,16 +271,17 @@ export function KepalaKolaborasi({
                 </Button>
               ) : null}
             </div>
-            {lengkap ? (
-              <p className="whitespace-pre-line text-sm">{teksAlamatKirim(alamat)}</p>
-            ) : (
+            {lengkap ? <p className="whitespace-pre-line text-sm">{teksAlamatKirim(alamat)}</p> : null}
+            {d.kurangKirim.length > 0 ? (
               <div className="space-y-2 rounded-md border border-amber-600/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-                <p>{t("kolaborasi.detail.alamatKurang")}</p>
-                <Link href={`/backoffice/kreatif/kol/${d.kol.id}`} className="font-medium underline">
+                <p>{t("kolaborasi.detail.dataKirimKurang", { daftar: kurangKirim })}</p>
+                <Link href={tautanUkuran} className="font-medium underline">
                   {t("kolaborasi.detail.lengkapiProfil")}
                 </Link>
               </div>
-            )}
+            ) : !lengkap ? (
+              <p className="text-sm text-muted-foreground">{t("kolaborasi.detail.alamatKosong")}</p>
+            ) : null}
           </CardContent>
         </Card>
       </div>

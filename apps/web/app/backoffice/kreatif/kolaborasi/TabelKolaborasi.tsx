@@ -98,9 +98,10 @@ export function TabelKolaborasi({
                       </Link>
                       {b.kol.diblokir ? <StatusPill tone="attention">{t("diblokir")}</StatusPill> : null}
                     </div>
-                    <p className="text-xs text-muted-foreground">{subKol(b.kol) || b.docNo}</p>
-                    {tampilCampaign && b.campaign ? (
-                      <p className="truncate text-xs text-muted-foreground 2xl:hidden">{b.campaign.name}</p>
+                    {/* Nomor kolaborasi selalu tertulis: dua kolaborasi dengan KOL yang sama harus bisa dibedakan. */}
+                    <p className="text-xs text-muted-foreground">{[subKol(b.kol), b.docNo].filter(Boolean).join(" · ")}</p>
+                    {tampilCampaign ? (
+                      <p className="truncate text-xs text-muted-foreground 2xl:hidden">{b.campaign ? b.campaign.name : t("detail.tanpaCampaign")}</p>
                     ) : null}
                   </div>
                 </TableCell>
@@ -111,7 +112,7 @@ export function TabelKolaborasi({
                         {b.campaign.name}
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">—</span>
+                      <span className="text-sm text-muted-foreground">{t("detail.tanpaCampaign")}</span>
                     )}
                   </TableCell>
                 ) : null}

@@ -235,13 +235,13 @@ export function ForecastOverviewTab({
         {canManage && (
           <>
             <Button variant="outline" size="sm" onClick={onEditConfig}>
-              {t('config.editConfig')}
+              {t('config.ubahKonfigurasi')}
             </Button>
             <Button size="sm" onClick={handleRun} disabled={running || coverageMonths <= 0}>
-              {running ? t('config.running') : t('config.run')}
+              {running ? t('config.running') : t('config.jalankanForecast')}
             </Button>
             <Button variant="secondary" size="sm" asChild>
-              <Link href="/backoffice/forecast/import">{t('import.goToImport')}</Link>
+              <Link href="/backoffice/forecast/import">{t('import.keImpor')}</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
               <Link href="/backoffice/forecast/reconciliation">{t('import.viewReconciliation')}</Link>
@@ -260,7 +260,7 @@ export function ForecastOverviewTab({
       <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.totalArticles')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.totalArtikel')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{results.length}</p>
@@ -268,7 +268,7 @@ export function ForecastOverviewTab({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.annual')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.forecastTahunan')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{totalAnnual.toLocaleString('id-ID')}</p>
@@ -276,7 +276,7 @@ export function ForecastOverviewTab({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.avgMonthly')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.rataRataPerBulan')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{avgMonthly.toLocaleString('id-ID')}</p>
@@ -284,7 +284,7 @@ export function ForecastOverviewTab({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.dataCoverage')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.cakupanData')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
@@ -306,7 +306,7 @@ export function ForecastOverviewTab({
 
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>{t('results.summaryTitle')}</CardTitle>
+          <CardTitle>{t('results.ringkasanForecast')}</CardTitle>
           <Input
             type="search"
             value={searchQuery}
@@ -322,7 +322,7 @@ export function ForecastOverviewTab({
               <TableRow>
                 <TableHead>#</TableHead>
                 <SortableHead
-                  label={t('matrixModal.parentSku')}
+                  label={t('matrixModal.skuInduk')}
                   sortKey="parentSku"
                   activeSort={sortKey}
                   sortDir={sortDir}
@@ -350,7 +350,7 @@ export function ForecastOverviewTab({
                   onSort={handleSort}
                 />
                 <SortableHead
-                  label={t('matrixModal.avgMonthly')}
+                  label={t('matrixModal.rataRataPerBulan')}
                   sortKey="avgMonthlyDemand"
                   activeSort={sortKey}
                   sortDir={sortDir}
@@ -366,7 +366,7 @@ export function ForecastOverviewTab({
                   className="text-right"
                 />
                 <SortableHead
-                  label={t('results.planTarget')}
+                  label={t('results.targetPlanKalimat')}
                   sortKey="planTarget"
                   activeSort={sortKey}
                   sortDir={sortDir}

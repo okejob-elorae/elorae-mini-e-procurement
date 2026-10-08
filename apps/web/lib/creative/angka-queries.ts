@@ -16,12 +16,15 @@ import {
  *
  * - Angka konten = jumlah angka TERBARU tiap konten (angka tidak pernah
  *   ditimpa; setiap pengisian adalah baris baru, yang terakhir yang berlaku).
- * - Biaya = fee + boost + ongkir + HPP sampel yang sudah berangkat + komisi
- *   penjualan (`biayaKolaborasi`). Fee dihitung penuh (biaya rencana), bukan
- *   hanya yang sudah diakui sebagai beban. Bila kolaborasi punya termin, fee =
- *   Σ BRUTO termin yang tidak batal — angka yang sama dengan beban di jurnal
- *   (`jurnal-kol-aturan.ts`): untuk gross-up `KolBrief.fee` adalah neto yang
- *   diterima KOL, jadi PPh yang ditanggung Elorae ikut masuk biaya.
+ * - Biaya = fee + PPh gross-up + boost + ongkir + HPP sampel yang sudah
+ *   berangkat + komisi penjualan (`biayaKolaborasi`). Fee dihitung penuh
+ *   (biaya rencana), bukan hanya yang sudah diakui sebagai beban.
+ * - `biaya.fee` = angka yang DISEPAKATI (neto untuk gross-up, bruto untuk
+ *   dipotong): Σ jumlah basis termin yang tidak batal, atau `KolBrief.fee` bila
+ *   belum ada termin. `biaya.pph` = PPh gross-up yang ditanggung Elorae
+ *   (bruto − neto termin gross-up). `fee + pph` = Σ BRUTO termin hidup — angka
+ *   yang sama dengan beban di jurnal (`jurnal-kol-aturan.ts`). Satu arti "fee"
+ *   di semua layar (audit ulang 2026-10-08).
  * - Dengan `periode` (hari WIB "YYYY-MM-DD", inklusif): penjualan menurut
  *   tanggalnya, konten menurut tanggal tayang, pengiriman menurut tanggal
  *   berangkat, fee dan boost bila kolaborasi deal (atau dibuat) di periode itu.
@@ -109,12 +112,22 @@ export async function angkaKolaborasi(
     }),
     prisma.kolPaymentTerm.findMany({
       where: { collabId: { in: unik }, status: { not: "BATAL" } },
-      select: { collabId: true, bruto: true },
+      select: { collabId: true, bruto: true, neto: true, grossUp: true },
     }),
   ]);
 
-  const brutoSen = new Map<string, number>();
-  for (const t of termin) brutoSen.set(t.collabId, (brutoSen.get(t.collabId) ?? 0) + Math.round(Number(t.bruto) * 100));
+  // Per kolaborasi: Σ jumlah basis termin hidup (= fee disepakati) dan Σ PPh
+  // gross-up yang ditanggung Elorae, dalam sen.
+  const feeTermin = new Map<string, { basisSen: number; pphSen: number }>();
+  for (const t of termin) {
+    const bruto = Math.round(Number(t.bruto) * 100);
+    const neto = Math.round(Number(t.neto) * 100);
+    const lama = feeTermin.get(t.collabId) ?? { basisSen: 0, pphSen: 0 };
+    feeTermin.set(t.collabId, {
+      basisSen: lama.basisSen + (t.grossUp ? neto : bruto),
+      pphSen: lama.pphSen + (t.grossUp ? bruto - neto : 0),
+    });
+  }
 
   for (const k of kolab) {
     const kontenIni = konten.filter((c) => c.collabId === k.id && c.link && dalam(c.liveAt, batas));
@@ -130,8 +143,10 @@ export async function angkaKolaborasi(
     const kirimIni = kiriman.filter((s) => s.collabId === k.id && s.stockIssuedAt && dalam(s.sentAt ?? s.stockIssuedAt, batas));
     const feeMasuk = dalam(k.dealAt ?? k.createdAt, batas);
     const gmv = jualIni.reduce((s, j) => s + Number(j.gmv), 0);
+    const ft = feeTermin.get(k.id);
     const biaya = biayaKolaborasi({
-      fee: feeMasuk ? (brutoSen.has(k.id) ? brutoSen.get(k.id)! / 100 : Number(k.fee)) : 0,
+      fee: feeMasuk ? (ft ? ft.basisSen / 100 : Number(k.fee)) : 0,
+      pph: feeMasuk && ft ? ft.pphSen / 100 : 0,
       boostCost: feeMasuk ? Number(k.boostCost) : 0,
       ongkir: kirimIni.map((s) => Number(s.shippingCost)),
       sampel: kirimIni.flatMap((s) => s.lines.map((l) => ({ unitCost: Number(l.unitCost), qty: l.qty }))),
@@ -158,6 +173,7 @@ export function jumlahAngkaKolaborasi(daftar: Iterable<AngkaKolaborasi>): AngkaK
   const angka = jumlahkanAngka(semua.map((a) => a.angka));
   const biaya = biayaKolaborasi({
     fee: semua.reduce((s, a) => s + a.biaya.fee, 0),
+    pph: semua.reduce((s, a) => s + a.biaya.pph, 0),
     boostCost: semua.reduce((s, a) => s + a.biaya.boost, 0),
     ongkir: semua.map((a) => a.biaya.ongkir),
     sampel: semua.map((a) => ({ unitCost: a.biaya.sampel, qty: 1 })),

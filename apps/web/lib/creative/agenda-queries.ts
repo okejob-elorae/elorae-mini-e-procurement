@@ -77,7 +77,7 @@ export type KalenderKreatif = {
   sampai: string;
   hari: Record<string, HariKalender>;
   /** Kolaborasi deal yang sampelnya belum berangkat — pengingat di panel hari ini. */
-  dealBelumKirim: { jumlah: number; contoh: { id: string; judul: string }[] };
+  dealBelumKirim: { jumlah: number; contoh: { id: string; judul: string; docNo: string }[] };
 };
 
 type Kumpulan<J extends string> = Map<string, Map<J, { nilai: number | null; baris: BarisKalender[] }>>;
@@ -325,7 +325,8 @@ export async function kalenderKreatif(o: {
     hari: hasilHari,
     dealBelumKirim: {
       jumlah: belumKirim.length,
-      contoh: belumKirim.slice(0, 5).map((c) => ({ id: c.id, judul: labelKol(c.kolHandle, c.kolNama) })),
+      // Nomor kolaborasi ikut, supaya dua kolaborasi KOL yang sama tidak tertulis dua kali sama persis.
+      contoh: belumKirim.slice(0, 5).map((c) => ({ id: c.id, judul: labelKol(c.kolHandle, c.kolNama), docNo: c.docNo })),
     },
   };
 }

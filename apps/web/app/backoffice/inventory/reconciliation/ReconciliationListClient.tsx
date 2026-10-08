@@ -39,6 +39,11 @@ import {
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { useSession } from "next-auth/react";
 import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
+import { Pagination } from "@/components/ui/pagination";
+import { kelompokkanRun } from "./kelompok-run";
+
+/** Baris riwayat per halaman (sesudah kegagalan beruntun disatukan). */
+const UKURAN_HALAMAN_RUN = 10;
 
 function actionBadgeVariant(action: string): "default" | "secondary" | "destructive" | "outline" {
   switch (action) {
@@ -65,6 +70,7 @@ export function ReconciliationListClient() {
   const [threshold, setThreshold] = useState("0");
   const [direction, setDirection] = useState("FLAG_ONLY");
   const [cronEnabled, setCronEnabled] = useState(true);
+  const [halaman, setHalaman] = useState(1);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,8 +102,9 @@ export function ReconciliationListClient() {
         toast.success(t("runComplete", { flagged: r.flagged }));
       }
       await load();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("runFailed"));
+    } catch {
+      // Pesan lemparan disamarkan di build produksi: selalu teks terjemahan.
+      toast.error(t("runFailed"));
     } finally {
       setRunning(false);
     }
@@ -111,10 +118,16 @@ export function ReconciliationListClient() {
         cronEnabled,
       });
       toast.success(t("configSaved"));
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("configSaveFailed"));
+    } catch {
+      toast.error(t("configSaveFailed"));
     }
   };
+
+  // Kegagalan beruntun bersebab sama → satu baris; lalu dipotong per halaman.
+  const grupRun = kelompokkanRun(runs, (run) => reconciliationFailureReason(run.errorMessage, t).reason);
+  const totalHalaman = Math.max(1, Math.ceil(grupRun.length / UKURAN_HALAMAN_RUN));
+  const halamanAman = Math.min(halaman, totalHalaman);
+  const halamanGrup = grupRun.slice((halamanAman - 1) * UKURAN_HALAMAN_RUN, halamanAman * UKURAN_HALAMAN_RUN);
 
   return (
     <div className="space-y-6">
@@ -203,7 +216,31 @@ export function ReconciliationListClient() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {runs.map((run) => {
+                {halamanGrup.map((grup) => {
+                  if (grup.jenis === "gagalBeruntun") {
+                    const terbaru = grup.runs[0];
+                    const terlama = grup.runs[grup.runs.length - 1];
+                    return (
+                      <TableRow key={`grup-${terbaru.id}`}>
+                        <TableCell className="align-top">
+                          <Link href={`/backoffice/inventory/reconciliation/${terbaru.id}`} className={TAUTAN_DOKUMEN}>
+                            {formatDisplayDateTime(terbaru.startedAt, locale)}
+                          </Link>
+                        </TableCell>
+                        <TableCell colSpan={5} className="align-top whitespace-normal">
+                          <Badge variant="destructive">{t("runStatuses.FAILED")}</Badge>
+                          <p className="mt-1 text-sm">
+                            {t("gagalBeruntun", {
+                              n: grup.runs.length,
+                              sejak: formatDisplayDateTime(terlama.startedAt, locale),
+                            })}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{grup.sebab}</p>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  }
+                  const run = grup.run;
                   const failed = run.status === "FAILED";
                   const failure = failed ? reconciliationFailureReason(run.errorMessage, t) : null;
                   // A run that failed before checking anything has no counts —
@@ -242,6 +279,15 @@ export function ReconciliationListClient() {
                 })}
               </TableBody>
             </Table>
+          )}
+          {!loading && grupRun.length > UKURAN_HALAMAN_RUN && (
+            <Pagination
+              page={halamanAman}
+              totalPages={totalHalaman}
+              onPageChange={setHalaman}
+              totalCount={grupRun.length}
+              pageSize={UKURAN_HALAMAN_RUN}
+            />
           )}
         </CardContent>
       </Card>

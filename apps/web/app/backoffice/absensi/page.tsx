@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { formatDisplayDate } from "@/lib/date-only";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { bolehMelihatAbsensi } from "@/lib/salesman/absensi";
-import { absensiBulan, absensiHari, labelHariPanjang } from "@/lib/salesman/absensi-queries";
+import { absensiBulan, absensiHari } from "@/lib/salesman/absensi-queries";
 import { bacaBulan, daftarBulanTerakhir, labelBulan } from "@/lib/salesman/biaya";
 import { AbsensiClient } from "./AbsensiClient";
 
@@ -13,6 +14,7 @@ type PageProps = {
 };
 
 const HARI_MS = 86_400_000;
+const HARI_WIB = new Intl.DateTimeFormat("id-ID", { weekday: "long", timeZone: "Asia/Jakarta" });
 
 /** Geser "YYYY-MM-DD" sejumlah hari (kalender, tanpa zona). */
 function geserHari(dayKey: string, n: number): string {
@@ -62,7 +64,8 @@ export default async function AbsensiPage({ searchParams }: PageProps) {
       tampilan="hari"
       tanggal={tanggal}
       hariIni={hariIni}
-      labelTanggal={labelHariPanjang(tanggal)}
+      // "Kamis, 8 Okt 2026": tanggal gaya rumah (sama dengan pemilih tanggal di sampingnya) + nama hari.
+      labelTanggal={`${HARI_WIB.format(new Date(`${tanggal}T00:00:00+07:00`))}, ${formatDisplayDate(new Date(`${tanggal}T00:00:00+07:00`))}`}
       sebelum={geserHari(tanggal, -1)}
       sesudah={tanggal < hariIni ? geserHari(tanggal, 1) : null}
       bulan={bulan}

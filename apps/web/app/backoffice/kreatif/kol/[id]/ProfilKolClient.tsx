@@ -21,6 +21,7 @@ import { formatDisplayDate } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { DialogKol } from "../DialogKol";
 import { angkaPenuh, NADA_TIER, persenTeks, ringkasAngka, roasTeks, rupiahLayar } from "../format-kol";
+import { bacaTabProfilKol, type TabProfilKol } from "./tab-profil";
 import { TombolBlokir } from "./TombolBlokir";
 
 /** Garis kecil pertumbuhan pengikut — murni SVG, tanpa pustaka grafik. */
@@ -60,7 +61,10 @@ export function ProfilKolClient({
   labelSaran,
   panelCatatan,
   kartuPajak,
+  tabAwal = "kolaborasi",
 }: {
+  /** Tab pertama yang terbuka (`?tab=`), mis. "ukuran" dari tautan "Lengkapi data". */
+  tabAwal?: TabProfilKol;
   profil: ProfilKol;
   bolehMengelola: boolean;
   niche: readonly string[];
@@ -74,6 +78,20 @@ export function ProfilKolClient({
   const locale = useLocale();
   const router = useRouter();
   const [bukaUbah, setBukaUbah] = useState(false);
+  const [tab, setTab] = useState<TabProfilKol>(tabAwal);
+  // Tab ditulis ke alamat tanpa memuat ulang (pola rincian kolaborasi), supaya muat ulang dan tautan membuka tab yang sama.
+  const gantiTab = (v: string) => {
+    const baru = bacaTabProfilKol(v);
+    setTab(baru);
+    try {
+      const url = new URL(window.location.href);
+      if (baru === "kolaborasi") url.searchParams.delete("tab");
+      else url.searchParams.set("tab", baru);
+      window.history.replaceState(window.history.state, "", url.toString());
+    } catch {
+      // Alamat hanya kenyamanan.
+    }
+  };
   const f = profil.form;
   const r = profil.ringkas;
   const alamatTeks = teksAlamatKirim({
@@ -220,7 +238,7 @@ export function ProfilKolClient({
         />
       </div>
 
-      <Tabs defaultValue="kolaborasi">
+      <Tabs value={tab} onValueChange={gantiTab}>
         <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="kolaborasi">
             {t("kol.profil.tab.kolaborasi")} <span className="ml-1 tabular-nums text-muted-foreground">{profil.kolaborasi.length}</span>
@@ -274,7 +292,13 @@ export function ProfilKolClient({
                           <TableCell>
                             <StatusPill tone={nadaTahap(k.tahap)}>{t(`tahap.${k.tahap}`)}</StatusPill>
                           </TableCell>
-                          <TableCell className="text-right tabular-nums">{rupiahLayar(k.fee)}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {rupiahLayar(k.fee)}
+                            {/* Gross-up: fee = neto yang disepakati, biaya bruto termasuk PPh selalu disebut. */}
+                            {k.feeBruto !== null ? (
+                              <span className="block text-xs text-muted-foreground">{t("kol.profil.feeBruto", { bruto: rupiahLayar(k.feeBruto) })}</span>
+                            ) : null}
+                          </TableCell>
                           <TableCell className="text-right tabular-nums">{ringkasAngka(k.views)}</TableCell>
                           <TableCell className="text-right tabular-nums">{rupiahLayar(k.gmv)}</TableCell>
                           <TableCell className="text-right tabular-nums">{roasTeks(k.roas)}</TableCell>

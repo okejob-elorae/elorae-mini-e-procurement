@@ -168,6 +168,7 @@ export function ColorsFilterBar({
           <Input
             className="h-9 pl-9 text-sm"
             placeholder={t('searchPlaceholder')}
+            aria-label={t('cariWarna')}
             value={filters.search}
             onChange={(e) => onFiltersChange({ ...filters, search: e.target.value })}
           />

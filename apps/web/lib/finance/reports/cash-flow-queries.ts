@@ -1,4 +1,6 @@
-import { prisma } from "@elorae/db";
+import { prisma, type Prisma } from "@elorae/db";
+import { SARING_JURNAL_BERLAKU } from "@/lib/finance/journals/status-jurnal";
+import { AWALAN_SUMBER_SALDO_AWAL } from "@/lib/finance/periode/periode";
 import type { AccountType } from "@/lib/constants/enums";
 import type { PostingRole } from "@/lib/constants/journal-roles";
 import { resolveCashFlowSection, type CashFlowSection } from "./cash-flow-classify";
@@ -148,20 +150,39 @@ export async function getSectionByAccountId(): Promise<Map<string, CashFlowSecti
  * the intent, not as an invariant the data guarantees.
  *
  * An omitted `before` means the report runs since inception, where the opening
- * balance is zero by definition.
+ * balance is only what opening-balance journals (dated up to
+ * `saldoAwalSampai`) put into cash.
  */
 export async function getCashOpeningBalance(
   before: Date | undefined,
   cashAccountIds: string[],
+  opsi: { saldoAwalSampai?: Date } = {},
 ): Promise<number> {
-  if (!before || cashAccountIds.length === 0) return 0;
+  if (cashAccountIds.length === 0) return 0;
+  if (!before && !opsi.saldoAwalSampai) return 0;
+
+  /*
+   * Kas awal = semua baris kas BERLAKU sebelum jendela, DITAMBAH jurnal saldo
+   * awal (`OPENING…`) yang tanggalnya di dalam jendela (s.d. `saldoAwalSampai`).
+   * Jurnal saldo awal dikeluarkan dari mutasi periode
+   * (`getAccountBalances(…, { kecualiSaldoAwal: true })`), jadi kas yang
+   * dibukanya harus masuk ke sini — kalau tidak kas akhir kurang sebesar itu.
+   */
+  const syarat: Prisma.JournalWhereInput[] = [];
+  if (before) syarat.push({ date: { lte: before } });
+  if (opsi.saldoAwalSampai) {
+    syarat.push({
+      date: { lte: opsi.saldoAwalSampai, ...(before ? { gt: before } : {}) },
+      sourceType: { startsWith: AWALAN_SUMBER_SALDO_AWAL },
+    });
+  }
 
   const grouped = await prisma.journalLine.groupBy({
     by: ["chartAccountId"],
     _sum: { debit: true, credit: true },
     where: {
       chartAccountId: { in: cashAccountIds },
-      journal: { date: { lte: before } },
+      journal: { ...SARING_JURNAL_BERLAKU, OR: syarat },
     },
   });
 

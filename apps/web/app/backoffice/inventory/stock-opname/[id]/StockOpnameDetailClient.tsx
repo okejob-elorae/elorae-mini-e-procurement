@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { toast } from "sonner";
+import { kunciGalatOpname } from "@/lib/inventory/galat-opname";
 import { ArrowLeft, BookText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
@@ -86,7 +87,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
     setBusy(true);
     try {
       const r = await submitOpname(opnameId);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("submitted"));
         await load();
@@ -112,7 +113,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
         return;
       }
       if (!r.success) {
-        toast.error(r.error ?? t("selfApprovalError"));
+        toast.error(t(kunciGalatOpname(r.code)));
         return;
       }
       toast.success(t("approved"));
@@ -127,7 +128,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
     setBusy(true);
     try {
       const r = await cancelOpname(opnameId);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("cancelled"));
         await load();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { susunTindakan, tautanPiutang, type BahanTindakan } from './tindakan-dasbor';
+import { susunTindakan, tautanPiutang, tautanRetur, type BahanTindakan } from './tindakan-dasbor';
 
 /*
  * Daftar "Perlu tindakan hari ini" di beranda piutang.
@@ -146,5 +146,56 @@ describe('tautanPiutang', () => {
     expect(tautanPiutang({})).toBe('/backoffice/piutang');
     expect(tautanPiutang({ keadaan: 'lewat' })).toBe('/backoffice/piutang?keadaan=lewat');
     expect(tautanPiutang({ keadaan: 'tertahan', cari: 'INV 1' })).toBe('/backoffice/piutang?keadaan=tertahan&cari=INV+1');
+  });
+});
+
+describe('tautan baris retur dan faktur tertahan', () => {
+  it('faktur tertahan menaut ke daftar piutang yang tersaring pada faktur itu', () => {
+    const [t] = susunTindakan(
+      bahan({ piutang: [faktur('INV/2026/0110', { keadaan: 'tertahan', keadaanTampil: 'tertahan', alasan: { nilaiTertahan: 800_000 } })] }),
+    );
+    expect(t.jenis).toBe('tertahan');
+    expect(t.tautan).toBe('/backoffice/piutang?keadaan=tertahan&cari=INV%2F2026%2F0110');
+    expect(t.nilai).toBe(800_000);
+  });
+
+  it('nota gudang tanpa pasangan menaut ke daftar retur ?langkah=jodoh pada nomornya', () => {
+    const [t] = susunTindakan(
+      bahan({
+        retur: [
+          {
+            id: 'g1',
+            jenis: 'GUDANG_YATIM',
+            salesmanId: null,
+            nomor: 'NRI/26/08/0003',
+            storeName: null,
+            langkah: 'jodoh',
+            selisih: 0,
+            nilaiKlaim: null,
+            nilaiFisik: 120_000,
+          },
+        ],
+      }),
+    );
+    expect(t.jenis).toBe('jodoh');
+    expect(t.tautan).toBe('/backoffice/retur-toko?langkah=jodoh&cari=NRI%2F26%2F08%2F0003');
+  });
+
+  it('nota retur toko tetap menaut ke rinciannya', () => {
+    const [t] = susunTindakan(
+      bahan({
+        retur: [
+          { id: 'n9', jenis: 'NRT', salesmanId: null, nomor: 'NRT-1', storeName: 'X', langkah: 'keputusan', selisih: 5, nilaiKlaim: 10, nilaiFisik: 5 },
+        ],
+      }),
+    );
+    expect(t.tautan).toBe('/backoffice/retur-toko/n9');
+  });
+});
+
+describe('tautanRetur', () => {
+  it('menyusun saringan alamat daftar retur', () => {
+    expect(tautanRetur({})).toBe('/backoffice/retur-toko');
+    expect(tautanRetur({ langkah: 'cek' })).toBe('/backoffice/retur-toko?langkah=cek');
   });
 });

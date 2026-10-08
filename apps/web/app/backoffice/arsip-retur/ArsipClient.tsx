@@ -49,7 +49,7 @@ export function ArsipClient({
   const terlihat = useMemo(() => {
     const q = cari.trim().toLowerCase();
     if (!q) return folder;
-    return folder.filter((f) => (f.storeName ?? t('orphanFolder')).toLowerCase().includes(q));
+    return folder.filter((f) => (f.storeName ?? t('folderTanpaNota')).toLowerCase().includes(q));
   }, [folder, cari, t]);
 
   const total = folder.reduce((s, f) => s + f.jumlah, 0);
@@ -58,7 +58,7 @@ export function ArsipClient({
   if (dibuka !== undefined) {
     const namaFolder =
       dibuka === null
-        ? t('orphanFolder')
+        ? t('folderTanpaNota')
         : (folder.find((f) => f.storeId === dibuka)?.storeName ?? t('unknownFolder'));
 
     return (
@@ -147,7 +147,7 @@ export function ArsipClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t('pageTitle')}
+        title={t('judulHalaman')}
         meta={t('summary', { count: total, orphan: yatim })}
         actions={
           <div className="relative">
@@ -198,7 +198,7 @@ export function ArsipClient({
                 )}
               </span>
               <span className="text-sm font-medium leading-tight">
-                {f.storeName ?? t('orphanFolder')}
+                {f.storeName ?? t('folderTanpaNota')}
               </span>
               <span className="text-xs text-muted-foreground">
                 {f.jumlah === 0

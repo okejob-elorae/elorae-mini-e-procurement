@@ -37,7 +37,10 @@ export const ENTRI: EntriBantuan[] = [
     ],
     kartu: [
       { judul: { kunci: "konsinyasi.threeNumbers" }, isi: { kunci: "konsinyasi.threeNumbersHint" } },
-      { judul: { kunci: "konsinyasi.compareTitle" }, isi: { kunci: "konsinyasi.compareHint" } },
+      {
+        judul: { kunci: "konsinyasi.laporanJudul" },
+        isi: "SPG melapor lewat surel, toko lewat ekspedisi. Kartu ini menyebut laporan mana yang sudah masuk (berapa barang dan pcs) dan tempat mencatat atau mengubahnya. Angka per barang dari kedua laporan disandingkan di kartu Pencocokan buku stok: \"—\" berarti laporannya belum masuk, \"0\" berarti laporannya masuk tetapi tidak mencantumkan barang itu.",
+      },
       { judul: { kunci: "konsinyasi.stockTitle" }, isi: { kunci: "konsinyasi.stockHint" } },
       {
         judul: { kunci: "konsinyasi.cocokBuku.title" },

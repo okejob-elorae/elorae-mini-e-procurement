@@ -1,4 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+/*
+ * Settlement uji bertanggal Juni/Juli 2026 — sebelum tanggal mulai buku besar
+ * di basis data uji. Gerbang tanggal mulai diuji di `periode/gerbang.test.ts`;
+ * di sini dimatikan supaya yang diuji tetap jurnalnya.
+ */
+vi.mock("@/lib/finance/periode/gerbang", () => ({ seluruhnyaSebelumTanggalMulai: async () => false }));
 import { prisma } from "@elorae/db";
 import { postSettlementJournal } from "./journal";
 import { setAccountMapping, clearAccountMapping } from "../journals/mapping";

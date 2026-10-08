@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
@@ -306,7 +308,14 @@ export function SalesOrdersPageClient(props: Props) {
                     }
                   >
                     <TableCell className="font-mono text-sm">
-                      {o.salesorderNo}
+                      {/* Tautan sungguhan: bisa difokus papan ketik dan dibuka di tab baru; baris tetap bisa diklik. */}
+                      <Link
+                        href={`/backoffice/sales-orders/${o.id}`}
+                        className={TAUTAN_DOKUMEN}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {o.salesorderNo}
+                      </Link>
                     </TableCell>
                     <TableCell>
                       <span

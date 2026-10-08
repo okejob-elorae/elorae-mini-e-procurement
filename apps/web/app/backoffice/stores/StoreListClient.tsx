@@ -60,6 +60,7 @@ type Props = {
 
 // Radix Select tidak menerima nilai kosong.
 const SEMUA = "__SEMUA__";
+const PAGER_MIN = 10;
 
 export function StoreListClient({
   stores,
@@ -292,7 +293,14 @@ export function StoreListClient({
                       <TableCell className="font-mono text-xs">{s.code}</TableCell>
                       <TableCell className="font-medium">
                         <span className="inline-flex items-center gap-2">
-                          {s.name}
+                          {/* Tautan supaya toko bisa dibuka dengan papan ketik; baris tetap bisa diklik. */}
+                          <Link
+                            href={`/backoffice/stores/${s.id}`}
+                            className="hover:underline underline-offset-4"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {s.name}
+                          </Link>
                           {pendingSet.has(s.id) && (
                             <Badge variant="secondary" className="border-amber-500/40 text-amber-700">
                               {tChange("listBadge")}
@@ -361,22 +369,25 @@ export function StoreListClient({
         </>
       ) : null}
 
-      <Pager
-        page={page}
-        pageSize={pageSize}
-        total={totalCount}
-        onPageChange={(p) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("page", String(p));
-          startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
-        }}
-        onPageSizeChange={(size) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("pageSize", String(size));
-          params.delete("page");
-          startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
-        }}
-      />
+      {/* Paginasi hanya bila daftarnya bisa punya halaman kedua (ukuran terkecil 10). */}
+      {totalCount > PAGER_MIN || page > 1 ? (
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={(p) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("page", String(p));
+            startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
+          }}
+          onPageSizeChange={(size) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("pageSize", String(size));
+            params.delete("page");
+            startTransition(() => router.push(`/backoffice/stores?${params.toString()}`));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

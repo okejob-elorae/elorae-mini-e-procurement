@@ -5,6 +5,9 @@ import { PERMISSIONS } from "@/lib/rbac";
 import type { AmbangKreatif } from "./ambang";
 import { angkaKolaborasi, jumlahAngkaKolaborasi, type AngkaKolaborasi } from "./angka-queries";
 import type { Platform } from "./aturan";
+import type { ModePajak } from "./pph";
+import { kurangDataKirim, type KurangDataKirim } from "./tugas";
+import { ukuranTerisi } from "./tugas-queries";
 import {
   BATAS_PAPAN,
   TAHAP_KELUAR,
@@ -386,6 +389,8 @@ export async function pilihanPic(): Promise<PilihanPengguna[]> {
 /* ─────────────────────────── Rincian ─────────────────────────── */
 
 export type DetailKolaborasi = BarisKolaborasi & {
+  /** Mode pajak fee: DIPOTONG (fee = bruto) atau GROSS_UP (fee = neto yang diterima KOL). */
+  modePajak: ModePajak;
   commissionPct: number | null;
   boostCost: number;
   payStatus: StatusBayar;
@@ -411,6 +416,8 @@ export type DetailKolaborasi = BarisKolaborasi & {
     postalCode: string | null;
     blockReason: string | null;
   };
+  /** Data kirim yang masih kosong — aturan yang sama dengan tugas Hari ini (`kurangDataKirim`). */
+  kurangKirim: KurangDataKirim[];
   campaignLengkap: { id: string; name: string; brief: string | null; arsip: boolean } | null;
   deliverables: { id: string; platform: Platform; format: string; qty: number; dueDate: string | null }[];
   rencanaSampel: { id: string; itemId: string; itemName: string; variantSku: string | null; qty: number }[];
@@ -427,6 +434,7 @@ export async function detailKolaborasi(
     where: { id },
     select: {
       ...pilihBaris,
+      modePajak: true,
       commissionPct: true,
       boostCost: true,
       paidAmount: true,
@@ -450,6 +458,7 @@ export async function detailKolaborasi(
           province: true,
           postalCode: true,
           blockReason: true,
+          sizeProfile: true,
         },
       },
       deliverables: { select: { id: true, platform: true, format: true, qty: true, dueDate: true } },
@@ -467,6 +476,7 @@ export async function detailKolaborasi(
   );
   return {
     ...dasar,
+    modePajak: b.modePajak === "GROSS_UP" ? "GROSS_UP" : "DIPOTONG",
     commissionPct: b.commissionPct == null ? null : angka(b.commissionPct),
     boostCost: angka(b.boostCost),
     payStatus: b.payStatus as StatusBayar,
@@ -492,6 +502,7 @@ export async function detailKolaborasi(
       postalCode: b.kol.postalCode,
       blockReason: b.kol.blockReason,
     },
+    kurangKirim: kurangDataKirim({ alamat: b.kol.address, waNormal: b.kol.waNormal, ukuranAda: ukuranTerisi(b.kol.sizeProfile) }),
     campaignLengkap: b.campaign
       ? { id: b.campaign.id, name: b.campaign.name, brief: b.campaign.brief, arsip: b.campaign.archivedAt !== null }
       : null,

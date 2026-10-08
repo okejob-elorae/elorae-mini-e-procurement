@@ -1,9 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState, useTransition } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { formatDisplayDate } from "@/lib/date-only";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, ChevronDown, ChevronRight, GripVertical, Pencil, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   createChainTemplate,
@@ -12,10 +12,21 @@ import {
   getProcessTemplates,
   updateChainTemplate,
 } from "@/app/actions/lead-time";
+import { formatAngka } from "@/app/backoffice/lead-time/papan-aturan";
 import { HantuSeret } from "@/components/gerak/HantuSeret";
 import { ATRIBUT_BUTIR, atributDaftar, garisSisipDi, useSeretUrut } from "@/components/gerak/useSeretUrut";
 import { celahDiam, indeksTujuan, pindahkan } from "@/lib/gerak/seret-urut";
 import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,6 +116,8 @@ export function SopTab({ canManage }: Props) {
   const [formDescription, setFormDescription] = useState("");
   const [formSteps, setFormSteps] = useState<StepDraft[]>([]);
   const [saving, setSaving] = useState(false);
+  const [nonaktifkan, setNonaktifkan] = useState<ChainRow | null>(null);
+  const [sibuk, mulai] = useTransition();
 
   async function load() {
     setLoading(true);
@@ -225,27 +238,28 @@ export function SopTab({ canManage }: Props) {
     }
   }
 
-  async function onDeactivate(row: ChainRow) {
-    if (!confirm(t("deactivateConfirm", { name: row.name }))) return;
-    const result = await deactivateChainTemplate(row.id);
-    if (!result.success) {
-      toast.error(result.error ?? tc("failed"));
-      return;
-    }
-    toast.success(tc("saved"));
-    void load();
-  }
+  const onDeactivate = (row: ChainRow) =>
+    mulai(async () => {
+      const result = await deactivateChainTemplate(row.id).catch(() => ({ success: false, error: undefined }));
+      if (!result.success) {
+        toast.error(result.error ?? tc("failed"));
+        return;
+      }
+      toast.success(tc("saved"));
+      setNonaktifkan(null);
+      void load();
+    });
 
   return (
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
-        <CardTitle className="text-base">{t("title")}</CardTitle>
+        <CardTitle className="text-base">{t("titleV2")}</CardTitle>
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-8 w-56"
-              placeholder={t("search")}
+              placeholder={t("searchV2")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -276,7 +290,7 @@ export function SopTab({ canManage }: Props) {
               <TableHead>{t("colSteps")}</TableHead>
               <TableHead>{t("colDays")}</TableHead>
               <TableHead>{t("colUpdated")}</TableHead>
-              {canManage && <TableHead className="w-28">{t("actions")}</TableHead>}
+              {canManage && <TableHead className="w-28">{t("actionsV2")}</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -332,9 +346,9 @@ export function SopTab({ canManage }: Props) {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell>{t("steps", { n: row.steps.length })}</TableCell>
+                      <TableCell>{t("steps", { n: formatAngka(row.steps.length, locale) })}</TableCell>
                       <TableCell>
-                        {t("totalDays", { days: row.totalDaysFixedOnly })}
+                        {t("totalDaysV2", { days: formatAngka(row.totalDaysFixedOnly, locale) })}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {t("updatedAt", { date: updated })}
@@ -357,9 +371,9 @@ export function SopTab({ canManage }: Props) {
                                 variant="ghost"
                                 aria-label={t("deactivateAria", { name: row.name })}
                                 title={t("deactivateAria", { name: row.name })}
-                                onClick={() => void onDeactivate(row)}
+                                onClick={() => setNonaktifkan(row)}
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <Archive className="h-4 w-4" />
                               </Button>
                             )}
                           </div>
@@ -377,10 +391,10 @@ export function SopTab({ canManage }: Props) {
                                 <span className="text-muted-foreground ml-2">
                                   {s.type === "PER_QTY"
                                     ? tp("perQtyValue", {
-                                        days: s.days,
-                                        rateQty: s.rateQty ?? 0,
+                                        days: formatAngka(s.days, locale),
+                                        rateQty: formatAngka(s.rateQty ?? 0, locale),
                                       })
-                                    : tp("days", { days: s.days })}
+                                    : tp("days", { days: formatAngka(s.days, locale) })}
                                   {!s.isActive ? ` ${tc("archivedSuffix")}` : ""}
                                 </span>
                               </li>
@@ -551,6 +565,28 @@ export function SopTab({ canManage }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={nonaktifkan !== null} onOpenChange={(buka) => !buka && !sibuk && setNonaktifkan(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("deactivateConfirm", { name: nonaktifkan?.name ?? "" })}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deactivateIsi")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sibuk}>{t("form.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={sibuk}
+              onClick={(e) => {
+                e.preventDefault();
+                if (nonaktifkan) onDeactivate(nonaktifkan);
+              }}
+            >
+              <Archive className="h-4 w-4" aria-hidden />
+              {sibuk ? tc("menyimpan") : t("deactivate")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

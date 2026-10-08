@@ -92,6 +92,11 @@ const PEMBACA_FOTO: Readonly<Record<string, Pembaca>> = {
   },
   // Bukti transfer fee KOL: tim Kreatif yang membayar dan keuangan yang memeriksa.
   kolPaymentTerm: { semua: punya(PERMISSIONS.CREATIVE_VIEW, PERMISSIONS.JOURNALS_VIEW) },
+  // Dokumen keuangan: bukti voucher kas/bank dan setor pajak untuk keuangan;
+  // bukti bayar pemasok juga untuk yang membuka register pembayaran pemasok.
+  cashVoucher: { semua: punya(PERMISSIONS.JOURNALS_VIEW) },
+  supplierPayment: { semua: punya(PERMISSIONS.JOURNALS_VIEW, PERMISSIONS.SUPPLIER_PAYMENTS_VIEW) },
+  taxPayment: { semua: punya(PERMISSIONS.JOURNALS_VIEW) },
   // Bukan dokumen pribadi: panduan display, foto produk, foto profil.
   displayGuide: { semua: siapaPunYangMasuk },
   itemImage: { semua: siapaPunYangMasuk },

@@ -17,7 +17,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SANDI_MIN } from "@/lib/users/validasi";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
-import { alasanBelumBisaSimpan, kunciNamaPeran } from "./aturan-pengguna";
+import { alasanBelumBisaSimpan } from "./aturan-pengguna";
+import { useNamaPeran } from "../rbac/pakai-nama-peran";
+import { urutPeranTampil } from "../rbac/nama-peran";
 
 type Pengguna = { id: string; nama: string; email: string; roleId: string | null; tokoId: string | null; punyaSandi: boolean };
 type Peran = { id: string; nama: string; sistem: boolean; spg: boolean };
@@ -41,6 +43,7 @@ export function PenggunaClient({
 }) {
   const t = useTranslations("settings.users");
   const tIzin = useTranslations("izinPeran");
+  const tUi = useTranslations("ui");
   const router = useRouter();
   const [cari, setCari] = useState("");
   const [draf, setDraf] = useState<Draf | null>(null);
@@ -57,11 +60,10 @@ export function PenggunaClient({
 
   const peranDipilih = draf ? peranById.get(draf.roleId) : undefined;
   const ubahSendiri = draf?.id === sayaId;
-  // Nama tampilan peran bawaan (Produksi, Gudang…); peran buatan sendiri tampil apa adanya.
-  const namaPeran = (p: Peran) => {
-    const kunci = kunciNamaPeran(p.nama);
-    return kunci ? t(kunci as never) : p.nama;
-  };
+  // Satu aturan nama peran dengan Peran & izin (`../rbac/nama-peran.ts`): kode tidak pernah tampil mentah.
+  const namaTampil = useNamaPeran();
+  const namaPeran = (p: Peran) => namaTampil(p.nama);
+  const peranUrut = useMemo(() => urutPeranTampil(peran, (p) => namaTampil(p.nama), (p) => p.sistem), [peran, namaTampil]);
   const alasanBelum = draf ? alasanBelumBisaSimpan(draf, peranDipilih) : null;
 
   const buka = (d: Draf) => {
@@ -132,7 +134,7 @@ export function PenggunaClient({
                     <TableHead>{t("colEmail")}</TableHead>
                     <TableHead>{t("colRole")}</TableHead>
                     <TableHead>{t("colStore")}</TableHead>
-                    <TableHead className="w-24" />
+                    <TableHead className="w-24 text-right">{tUi("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -232,7 +234,7 @@ export function PenggunaClient({
                     <SelectValue placeholder={t("rolePlaceholder")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {peran.map((p) => (
+                    {peranUrut.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         {namaPeran(p)}
                         {p.sistem ? ` — ${t("roleFullAccess")}` : ""}

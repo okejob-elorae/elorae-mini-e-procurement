@@ -17,10 +17,13 @@ import {
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { getBahanWo, getWorkOrderById, terimaBarangJadi } from '@/app/actions/production';
+import { getBahanWo, getDasarBiayaPenerimaan, getWorkOrderById, terimaBarangJadi } from '@/app/actions/production';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { formatRupiah } from '@/lib/format/rupiah';
-import { hitungBiayaPenerimaanFG } from '@/lib/production/biaya-penerimaan';
+import { rincianBiayaPenerimaan, type DasarBiayaPenerimaan } from '@/lib/production/biaya-penerimaan';
+import { angkaSetoranWo, lebihDariTarget } from '@/lib/production/setoran-wo';
+import { CatatanTanpaDokumen, RingkasSetoran } from '../../RingkasSetoran';
+import { WoTidakDitemukan } from '../../WoTidakDitemukan';
 
 export default function WorkOrderReceivePage() {
   const t = useTranslations('toasts');
@@ -35,6 +38,8 @@ export default function WorkOrderReceivePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   /** Σ nilai bahan yang sudah kembali ke gudang — tidak ikut dipikul barang jadi. */
   const [nilaiKembali, setNilaiKembali] = useState(0);
+  /** Dasar biaya penerimaan dari server — pratinjau memakai rumus yang sama dengan yang dicatat. */
+  const [dasarBiaya, setDasarBiaya] = useState<DasarBiayaPenerimaan | null>(null);
 
   const [qtyReceived, setQtyReceived] = useState('');
   const [qtyRejected, setQtyRejected] = useState('0');
@@ -49,6 +54,9 @@ export default function WorkOrderReceivePage() {
     getBahanWo(id)
       .then((r) => setNilaiKembali((r?.riwayat ?? []).reduce((s, b) => s + b.nilai, 0)))
       .catch(() => setNilaiKembali(0));
+    getDasarBiayaPenerimaan(id)
+      .then(setDasarBiaya)
+      .catch(() => setDasarBiaya(null));
     getWorkOrderById(id)
       .then((data) => {
         setWO(data);
@@ -78,25 +86,26 @@ export default function WorkOrderReceivePage() {
   const cacatMelebihi = rejected > received;
   const issuesArr = Array.isArray(wo?.issues) ? wo.issues : [];
   const receiptsArr = (Array.isArray(wo?.receipts) ? wo.receipts : []) as Array<{
-    qtyReceived?: unknown;
-    totalCostValue?: unknown;
+    qtyReceived: unknown;
+    qtyRejected?: unknown;
+    qtyAccepted: unknown;
   }>;
-  const target = Number((wo as { plannedQty?: unknown } | null)?.plannedQty ?? 0);
-  const sudahDisetor = receiptsArr.reduce((s, r) => s + (Number(r.qtyReceived) || 0), 0);
-  const sisaTarget = Math.max(0, target - sudahDisetor);
+  // Satu definisi angka setoran (lib/production/setoran-wo.ts), sama dengan rincian WO dan daftar.
+  const setoran = angkaSetoranWo({
+    plannedQty: (wo as { plannedQty?: unknown } | null)?.plannedQty,
+    actualQty: (wo as { actualQty?: unknown } | null)?.actualQty,
+    receipts: receiptsArr,
+  });
+  const lebih = lebihDariTarget(setoran, accepted);
   const totalMaterialCost = Math.max(
     0,
     (issuesArr as Array<{ totalCost?: unknown }>).reduce((sum, i) => sum + Number(i.totalCost ?? 0), 0) - nilaiKembali
   );
-  // Pratinjau memakai rumus yang sama dengan yang dicatat (porsi sisa biaya).
-  const pratinjau = hitungBiayaPenerimaanFG({
-    totalBiayaBahan: totalMaterialCost,
-    qtyRencana: target,
-    sudahDibebankan: receiptsArr.reduce((s, r) => s + (Number(r.totalCostValue) || 0), 0),
-    sudahDiterima: sudahDisetor,
-    qtyDiterima: received,
-    qtyLolos: accepted,
-  });
+  // Pratinjau memakai rumus yang sama dengan yang dicatat: bahan sebanding
+  // setoran, jasa langkah WO dan biaya tambahan per pcs lolos.
+  const pratinjau = dasarBiaya
+    ? rincianBiayaPenerimaan(dasarBiaya, { qtyDiterima: received, qtyLolos: accepted, tanggal: new Date() })
+    : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,22 +174,23 @@ export default function WorkOrderReceivePage() {
     }
   };
 
-  if (isLoading || !wo) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
+  if (!wo) return <WoTidakDitemukan />;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/backoffice/work-orders/${id}`}>
-          <Button variant="ghost" size="icon" aria-label={tRc('backToWO')} title={tRc('backToWO')}>
+        <Button asChild variant="ghost" size="icon">
+          <Link href={`/backoffice/work-orders/${id}`} aria-label={tRc('backToWO')} title={tRc('backToWO')}>
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div>
           <div className="flex items-center gap-1">
             <h1 className="text-2xl font-bold">{tRc('title')}</h1>
@@ -196,10 +206,9 @@ export default function WorkOrderReceivePage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-lg border p-3 text-sm">
-              <span>{tRc('ringkasTarget', { qty: target.toLocaleString('id-ID') })}</span>
-              <span>{tRc('ringkasSudah', { qty: sudahDisetor.toLocaleString('id-ID') })}</span>
-              <span className="font-medium">{tRc('ringkasSisa', { qty: sisaTarget.toLocaleString('id-ID') })}</span>
+            <div className="space-y-1 rounded-lg border p-3 text-sm">
+              <RingkasSetoran angkaWo={setoran} />
+              <CatatanTanpaDokumen angkaWo={setoran} />
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
@@ -240,9 +249,9 @@ export default function WorkOrderReceivePage() {
             <div className="space-y-1 text-sm">
               <p className="font-medium">{tRc('masukStok', { qty: accepted.toLocaleString('id-ID') })}</p>
               {cacatMelebihi ? <p className="text-destructive">{tRc('cacatMelebihi')}</p> : null}
-              {received > sisaTarget && received > 0 ? (
-                <p className="text-amber-700 dark:text-amber-400">
-                  {tRc('lebihTarget', { lebih: (received - sisaTarget).toLocaleString('id-ID') })}
+              {lebih > 0 ? (
+                <p className="text-amber-800 dark:text-amber-300">
+                  {tRc('lebihTargetMasukStok', { lebih: lebih.toLocaleString('id-ID') })}
                 </p>
               ) : null}
             </div>
@@ -251,14 +260,41 @@ export default function WorkOrderReceivePage() {
               <p className="text-muted-foreground">
                 {tRc('totalMaterialCost', { value: formatRupiah(totalMaterialCost) })}
                 {nilaiKembali > 0 ? ` ${tRc('sudahKembali', { value: formatRupiah(nilaiKembali) })}` : ''} →{' '}
-                {accepted > 0
+                {accepted > 0 && pratinjau
                   ? tRc('costPerUnit', {
-                      cost: formatRupiah(pratinjau.biayaPerUnit.toNumber()),
+                      cost: formatRupiah(pratinjau.perUnit.toNumber()),
                       accepted: accepted.toLocaleString('id-ID'),
-                      total: formatRupiah(pratinjau.biaya.toNumber()),
+                      total: formatRupiah(pratinjau.total.toNumber()),
                     })
                   : tRc('notAvailable')}
               </p>
+              {accepted > 0 && pratinjau ? (
+                <ul className="mt-2 space-y-0.5 text-sm text-muted-foreground tabular-nums">
+                  <li>{tRc('rincianBahan', { value: formatRupiah(pratinjau.bahan.toNumber()) })}</li>
+                  {pratinjau.jasa.perLangkah.length > 0 ? (
+                    <li>
+                      {tRc('rincianJasa', {
+                        langkah: pratinjau.jasa.perLangkah.length,
+                        value: formatRupiah(pratinjau.jasa.tagihan.toNumber()),
+                      })}
+                      {pratinjau.ppnMasukan.gt(0)
+                        ? ` ${tRc('rincianPpnMasukan', { value: formatRupiah(pratinjau.ppnMasukan.toNumber()) })}`
+                        : ''}
+                    </li>
+                  ) : null}
+                  {pratinjau.tambahan.gt(0) ? (
+                    <li>{tRc('rincianTambahan', { value: formatRupiah(pratinjau.tambahan.toNumber()) })}</li>
+                  ) : null}
+                </ul>
+              ) : null}
+              {/* Status PKP pemasok jasa belum diisi: PPN jasa dihitung seolah ia memungut PPN. */}
+              {dasarBiaya?.langkah.some((l) => l.pemasokPkp == null) ? (
+                <p className="mt-2 text-sm text-amber-800 dark:text-amber-300">
+                  {tRc('pkpPemasokBelumDiisi', {
+                    nama: [...new Set(dasarBiaya.langkah.filter((l) => l.pemasokPkp == null).map((l) => l.namaPemasok ?? '?'))].join(', '),
+                  })}
+                </p>
+              ) : null}
             </div>
             {variantQtys.length > 1 && (
               <div className="space-y-4">
@@ -277,6 +313,7 @@ export default function WorkOrderReceivePage() {
                           setVariantQtys((prev) => prev.map((p, j) => (j === i ? { ...p, qty: v } : p)));
                         }}
                         placeholder="0"
+                        aria-label={tRc('labelVarianMasuk', { sku: row.variantSku })}
                         className="w-24"
                       />
                     </div>
@@ -306,6 +343,7 @@ export default function WorkOrderReceivePage() {
                             );
                           }}
                           placeholder="0"
+                          aria-label={tRc('labelVarianCacat', { sku: row.variantSku })}
                           className="w-24"
                         />
                       </div>
@@ -334,11 +372,9 @@ export default function WorkOrderReceivePage() {
               <Button type="submit" disabled={isSubmitting || received <= 0 || cacatMelebihi}>
                 {isSubmitting ? tRc('saving') : tRc('save')}
               </Button>
-              <Link href={`/backoffice/work-orders/${id}`}>
-                <Button type="button" variant="outline">
-                  {tRc('cancel')}
-                </Button>
-              </Link>
+              <Button asChild variant="outline">
+                <Link href={`/backoffice/work-orders/${id}`}>{tRc('cancel')}</Link>
+              </Button>
             </div>
             {received <= 0 ? <p className="text-xs text-muted-foreground">{tRc('isiDisetorDulu')}</p> : null}
           </form>

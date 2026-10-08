@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
+import { tautanFakturPajak, tautanPiutangFaktur } from "./tautan-penagihan";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -529,15 +530,15 @@ export function DeliveriesCard({
                         </DropdownMenuItem>
                         {bolehBukaPiutang && piutangKiriman[delivery.id] && (
                           <DropdownMenuItem asChild>
-                            <Link href={`/backoffice/piutang?keadaan=${piutangKiriman[delivery.id].keadaan}`}>
+                            <Link href={tautanPiutangFaktur(piutangKiriman[delivery.id].invoiceNo)}>
                               <Landmark className="mr-2 h-4 w-4" />
                               {t("delivery.penagihan.lihatPiutang")}
                             </Link>
                           </DropdownMenuItem>
                         )}
-                        {bolehBukaFakturPajak && delivery.taxInvoice && (
+                        {bolehBukaFakturPajak && tautanFakturPajak(delivery.taxInvoice, delivery.docNo) && (
                           <DropdownMenuItem asChild>
-                            <Link href={`/backoffice/finance/faktur-pajak?q=${encodeURIComponent(delivery.docNo)}`}>
+                            <Link href={tautanFakturPajak(delivery.taxInvoice, delivery.docNo) ?? ""}>
                               <FileText className="mr-2 h-4 w-4" />
                               {t("delivery.penagihan.lihatFakturPajak")}
                             </Link>
@@ -764,16 +765,16 @@ function PenagihanKiriman({
     <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
       {teksPiutang &&
         (bolehBukaPiutang && piutang ? (
-          <Link href={`/backoffice/piutang?keadaan=${piutang.keadaan}`} className="underline underline-offset-2 hover:text-foreground">
+          <Link href={tautanPiutangFaktur(piutang.invoiceNo)} className="underline underline-offset-2 hover:text-foreground">
             {teksPiutang}
           </Link>
         ) : (
           <span>{teksPiutang}</span>
         ))}
       {teksFaktur &&
-        (bolehBukaFakturPajak ? (
+        (bolehBukaFakturPajak && tautanFakturPajak(faktur, delivery.docNo) ? (
           <Link
-            href={`/backoffice/finance/faktur-pajak?q=${encodeURIComponent(delivery.docNo)}`}
+            href={tautanFakturPajak(faktur, delivery.docNo) ?? ""}
             className="underline underline-offset-2 hover:text-foreground"
           >
             {teksFaktur}

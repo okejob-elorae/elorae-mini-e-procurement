@@ -143,6 +143,8 @@ export function SpgSalesListClient({
               <p className="text-muted-foreground">
                 {hasFilters ? t("noResults") : t("empty")}
               </p>
+              {/* Dari mana nota datang, seperti keadaan kosong lain di grup ini. */}
+              {!hasFilters ? <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{t("emptySumber")}</p> : null}
               {hasFilters && (
                 <Button
                   variant="outline"

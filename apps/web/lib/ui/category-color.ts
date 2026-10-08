@@ -14,16 +14,20 @@
  *
  * Kept clear of the semantic set as far as possible: green means settled and
  * red means broken elsewhere in the app, so neither appears here.
+ *
+ * Teks tema terang memakai nada 800, bukan 700: di atas baris yang sudah
+ * berlatar (baris kuning/jingga di Piutang, Kontrabon) nada 700 hanya 4,27–4,36:1
+ * untuk teks 12 px (audit ulang 2026-10-08). Nada 800 ≥ 4,5:1 di atas latar itu.
  */
 export const CATEGORY_TONES = [
-  'bg-sky-500/12 text-sky-700 ring-sky-600/25 dark:text-sky-300 dark:ring-sky-400/25',
-  'bg-violet-500/12 text-violet-700 ring-violet-600/25 dark:text-violet-300 dark:ring-violet-400/25',
-  'bg-orange-500/12 text-orange-700 ring-orange-600/25 dark:text-orange-300 dark:ring-orange-400/25',
-  'bg-cyan-500/12 text-cyan-700 ring-cyan-600/25 dark:text-cyan-300 dark:ring-cyan-400/25',
-  'bg-fuchsia-500/12 text-fuchsia-700 ring-fuchsia-600/25 dark:text-fuchsia-300 dark:ring-fuchsia-400/25',
-  'bg-indigo-500/12 text-indigo-700 ring-indigo-600/25 dark:text-indigo-300 dark:ring-indigo-400/25',
-  'bg-teal-500/12 text-teal-700 ring-teal-600/25 dark:text-teal-300 dark:ring-teal-400/25',
-  'bg-rose-500/12 text-rose-700 ring-rose-600/25 dark:text-rose-300 dark:ring-rose-400/25',
+  'bg-sky-500/12 text-sky-800 ring-sky-600/25 dark:text-sky-300 dark:ring-sky-400/25',
+  'bg-violet-500/12 text-violet-800 ring-violet-600/25 dark:text-violet-300 dark:ring-violet-400/25',
+  'bg-orange-500/12 text-orange-800 ring-orange-600/25 dark:text-orange-300 dark:ring-orange-400/25',
+  'bg-cyan-500/12 text-cyan-800 ring-cyan-600/25 dark:text-cyan-300 dark:ring-cyan-400/25',
+  'bg-fuchsia-500/12 text-fuchsia-800 ring-fuchsia-600/25 dark:text-fuchsia-300 dark:ring-fuchsia-400/25',
+  'bg-indigo-500/12 text-indigo-800 ring-indigo-600/25 dark:text-indigo-300 dark:ring-indigo-400/25',
+  'bg-teal-500/12 text-teal-800 ring-teal-600/25 dark:text-teal-300 dark:ring-teal-400/25',
+  'bg-rose-500/12 text-rose-800 ring-rose-600/25 dark:text-rose-300 dark:ring-rose-400/25',
 ] as const;
 
 /**

@@ -116,7 +116,7 @@ export const navItems: NavItem[] = [
   // ── Operasional ────────────────────────────────────────────────────────────
   {
     section: "secOperations",
-    labelKey: "navGroupMasterData",
+    labelKey: "navGroupMasterDataKalimat",
     href: "/backoffice/suppliers",
     icon: Database,
     permission: PERMISSIONS.SUPPLIERS_VIEW,
@@ -140,7 +140,7 @@ export const navItems: NavItem[] = [
     permission: PERMISSIONS.INVENTORY_VIEW,
     children: [
       { labelKey: "inventory", href: "/backoffice/inventory", permission: PERMISSIONS.INVENTORY_VIEW },
-      { labelKey: "navStockOpname", href: "/backoffice/inventory/stock-opname", permission: PERMISSIONS.INVENTORY_OPNAME_VIEW },
+      { labelKey: "navStockOpnameKalimat", href: "/backoffice/inventory/stock-opname", permission: PERMISSIONS.INVENTORY_OPNAME_VIEW },
       // Layar gudang menghitung barang retur dari toko — di luar /backoffice
       // (lihat CLAUDE.md "Layar gudang ada di /gudang-retur"); sebelumnya tidak
       // ada satu tautan pun ke sana.
@@ -157,13 +157,14 @@ export const navItems: NavItem[] = [
     icon: ShoppingCart,
     permission: PERMISSIONS.SALES_ORDERS_VIEW,
     children: [
-      { labelKey: "navSalesOrders", href: "/backoffice/sales-orders", permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      // Label menu = judul halaman tujuannya (audit 2026-10-08: "Pesanan" membuka "Pesanan marketplace").
+      { labelKey: "navPesananMarketplace", href: "/backoffice/sales-orders", permission: PERMISSIONS.SALES_ORDERS_VIEW },
       { labelKey: "navFulfillment", href: "/backoffice/fulfillment", permission: PERMISSIONS.SALES_ORDERS_VIEW },
       { labelKey: "navSalesReturns", href: "/backoffice/returns", permission: PERMISSIONS.SALES_ORDERS_VIEW },
-      { labelKey: "navFieldSalesOrders", href: "/backoffice/field-sales-orders", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: "navPesananLapangan", href: "/backoffice/field-sales-orders", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
       { labelKey: "navInden", href: "/backoffice/inden", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: "navCanvassing", href: "/backoffice/canvassing", permission: PERMISSIONS.CANVASSING_MANAGE },
-      { labelKey: "navVanSales", href: "/backoffice/van-sales", permission: PERMISSIONS.CANVASSING_MANAGE },
+      { labelKey: "navSalesKanvas", href: "/backoffice/canvassing", permission: PERMISSIONS.CANVASSING_MANAGE },
+      { labelKey: "navPenjualanKanvas", href: "/backoffice/van-sales", permission: PERMISSIONS.CANVASSING_MANAGE },
       { labelKey: "promos", href: "/backoffice/promos", permission: PERMISSIONS.PROMOS_VIEW },
     ],
   },
@@ -172,34 +173,34 @@ export const navItems: NavItem[] = [
   // sepuluh anak; menambah enam lagi di sana membuatnya tidak terbaca.
   {
     section: "secOperations",
-    labelKey: "navGroupFieldTeam",
+    labelKey: "navGroupFieldTeamKalimat",
     href: "/backoffice/sales-lapangan",
     icon: MapPinned,
     permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
     children: [
-      { labelKey: "navSalesLapangan", href: "/backoffice/sales-lapangan", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: "navJadwalKunjungan", href: "/backoffice/jadwal-kunjungan", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: "navKinerjaSalesLapangan", href: "/backoffice/sales-lapangan", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: "navJadwalKunjunganSales", href: "/backoffice/jadwal-kunjungan", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
       { labelKey: "navPengumuman", href: "/backoffice/pengumuman", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
       { labelKey: "navAbsensi", href: "/backoffice/absensi", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: "navIzinCuti", href: "/backoffice/izin", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
-      { labelKey: "navTargetSales", href: "/backoffice/target-sales", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: "navIzinDanCuti", href: "/backoffice/izin", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      { labelKey: "navTargetPenjualanSales", href: "/backoffice/target-sales", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
       // Juga untuk keuangan (`journals:manage`) yang membayar biayanya — sama dengan `bolehMelihatBiaya`.
       {
-        labelKey: "navBiayaPerjalanan",
+        labelKey: "navBiayaPerjalananSales",
         href: "/backoffice/biaya-perjalanan",
         permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.JOURNALS_MANAGE],
       },
       // Sales menyetujui, gudang (`inventory:manage`) menyelesaikan — sama dengan `bolehMelihatTukar`.
       {
-        labelKey: "navTukarBarang",
+        labelKey: "navTukarBarangToko",
         href: "/backoffice/tukar-barang",
         permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE, PERMISSIONS.INVENTORY_MANAGE],
       },
-      { labelKey: "navKomisiSalesman", href: "/backoffice/laporan/komisi-salesman", permission: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE },
-      { labelKey: "navChecklistToko", href: "/backoffice/checklist-toko", permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: "navLaporanEksekusi", href: "/backoffice/checklist-toko/laporan", permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: "navPanduanDisplay", href: "/backoffice/panduan-display", permission: PERMISSIONS.STORES_VIEW },
-      { labelKey: "navHargaPesaing", href: "/backoffice/harga-pesaing", permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: "navKomisiSalesmanBulanan", href: "/backoffice/laporan/komisi-salesman", permission: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE },
+      { labelKey: "navDaftarPeriksaToko", href: "/backoffice/checklist-toko", permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: "navLaporanEksekusiToko", href: "/backoffice/checklist-toko/laporan", permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: "navPanduanDisplayToko", href: "/backoffice/panduan-display", permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: "navHargaPesaingToko", href: "/backoffice/harga-pesaing", permission: PERMISSIONS.STORES_VIEW },
     ],
   },
   // Semua pekerjaan SPG di satu tempat: nota konter, promo konter, tutup hari,
@@ -214,10 +215,10 @@ export const navItems: NavItem[] = [
     children: [
       { labelKey: "navSpgSales", href: "/backoffice/spg-sales", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navKinerjaSpg", href: "/backoffice/kinerja-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: "navSpgTutupHari", href: "/backoffice/spg-tutup-hari", permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: "navPromoKonter", href: "/backoffice/promo-konter", permission: PERMISSIONS.PROMOS_VIEW },
+      { labelKey: "navSpgTutupHariJudul", href: "/backoffice/spg-tutup-hari", permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: "navPromoKonterSpg", href: "/backoffice/promo-konter", permission: PERMISSIONS.PROMOS_VIEW },
       { labelKey: "navSpgPelanggan", href: "/backoffice/spg-pelanggan", permission: PERMISSIONS.SPG_SALES_VIEW },
-      { labelKey: "navJadwalSpg", href: "/backoffice/jadwal-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: "navJadwalShiftSpg", href: "/backoffice/jadwal-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navKomisiSpg", href: "/backoffice/komisi-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navSpgRequests", href: "/backoffice/spg-requests", permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.STORES_MANAGE] },
       { labelKey: "navSpgLostSales", href: "/backoffice/spg-lost-sales", permission: PERMISSIONS.SPG_SALES_VIEW },
@@ -266,9 +267,10 @@ export const navItems: NavItem[] = [
     icon: ShoppingBag,
     permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
     children: [
-      { labelKey: "purchaseOrders", href: "/backoffice/purchase-orders", permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
-      { labelKey: "supplierPayment", href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
-      { labelKey: "vendorReturns", href: "/backoffice/vendor-returns", permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
+      { labelKey: "navPesananPembelian", href: "/backoffice/purchase-orders", permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
+      { labelKey: "navPembayaranPemasok", href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+      { labelKey: "navUmurHutang", href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+      { labelKey: "navReturKePemasok", href: "/backoffice/vendor-returns", permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
     ],
   },
 
@@ -277,24 +279,24 @@ export const navItems: NavItem[] = [
   // mengerjakannya berbeda (sales melapor, admin keuangan memverifikasi, gudang
   // menghitung), dan izinnya pun terpisah.
   {
-    section: "secReceivables",
-    labelKey: "navGroupReceivables",
+    section: "secReceivablesKalimat",
+    labelKey: "navGroupReceivablesKalimat",
     href: "/backoffice/pelunasan-dasbor",
     icon: ReceiptText,
     permission: PERMISSIONS.RECEIVABLES_VIEW,
     children: [
-      { labelKey: "dasborPelunasan", href: "/backoffice/pelunasan-dasbor", permission: IZIN_BACA_PIUTANG },
-      { labelKey: "receivables", href: "/backoffice/piutang", permission: IZIN_BACA_PIUTANG },
+      { labelKey: "navBerandaPiutang", href: "/backoffice/pelunasan-dasbor", permission: IZIN_BACA_PIUTANG },
+      { labelKey: "navFakturPiutang", href: "/backoffice/piutang", permission: IZIN_BACA_PIUTANG },
       { labelKey: "collections", href: "/backoffice/kontrabon", permission: IZIN_BACA_PIUTANG },
-      { labelKey: "payments", href: "/backoffice/pelunasan", permission: IZIN_BACA_PELUNASAN },
-      { labelKey: "tugasTagih", href: "/backoffice/tugas-tagih", permission: IZIN_BACA_ARSIP },
-      { labelKey: "storeReturns", href: "/backoffice/retur-toko", permission: IZIN_BACA_RETUR },
-      { labelKey: "bebanSelisih", href: "/backoffice/beban-selisih", permission: IZIN_BACA_PIUTANG },
-      { labelKey: "arsipRetur", href: "/backoffice/arsip-retur", permission: IZIN_BACA_ARSIP },
+      { labelKey: "navPelunasanBkm", href: "/backoffice/pelunasan", permission: IZIN_BACA_PELUNASAN },
+      { labelKey: "navTugasTagih", href: "/backoffice/tugas-tagih", permission: IZIN_BACA_ARSIP },
+      { labelKey: "navReturPencocokan", href: "/backoffice/retur-toko", permission: IZIN_BACA_RETUR },
+      { labelKey: "navBebanSelisih", href: "/backoffice/beban-selisih", permission: IZIN_BACA_PIUTANG },
+      { labelKey: "navArsipNotaRetur", href: "/backoffice/arsip-retur", permission: IZIN_BACA_ARSIP },
     ],
   },
   {
-    section: "secReceivables",
+    section: "secReceivablesKalimat",
     labelKey: "konsinyasi",
     href: "/backoffice/konsinyasi",
     icon: Handshake,
@@ -334,18 +336,31 @@ export const navItems: NavItem[] = [
   // tidak lagi bisa dipindai, dan keduanya memang pekerjaan yang berbeda.
   {
     section: "secFinance",
-    labelKey: "navGroupLedger",
+    labelKey: "navGroupLedgerKalimat",
     href: "/backoffice/finance/journals",
     icon: BookOpenText,
     permission: PERMISSIONS.JOURNALS_VIEW,
     children: [
       { labelKey: "navFinanceJournals", href: "/backoffice/finance/journals", permission: PERMISSIONS.JOURNALS_VIEW },
-      { labelKey: "navCoa", href: "/backoffice/finance/coa", permission: PERMISSIONS.COA_VIEW },
-      { labelKey: "navFinanceAccountMapping", href: "/backoffice/finance/account-mapping", permission: PERMISSIONS.JOURNALS_VIEW },
-      { labelKey: "navFinanceCashFlowSections", href: "/backoffice/finance/cash-flow-sections", permission: PERMISSIONS.JOURNALS_VIEW },
-      { labelKey: "navFinanceSettlements", href: "/backoffice/finance/settlements", permission: PERMISSIONS.SETTLEMENTS_VIEW },
-      { labelKey: "navFakturPajak", href: "/backoffice/finance/faktur-pajak", permission: PERMISSIONS.TAX_INVOICES_VIEW },
+      { labelKey: "navFinanceBukuBesar", href: "/backoffice/finance/journals/ledger", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceKas", href: "/backoffice/finance/kas", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceRekonsiliasiBank", href: "/backoffice/finance/rekonsiliasi-bank", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceJurnalBerulang", href: "/backoffice/finance/jurnal-berulang", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceAsetTetap", href: "/backoffice/finance/aset-tetap", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceTutupBuku", href: "/backoffice/finance/tutup-buku", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceIntegritas", href: "/backoffice/finance/integritas", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navCoaKalimat", href: "/backoffice/finance/coa", permission: PERMISSIONS.COA_VIEW },
+      { labelKey: "navFinanceAccountMappingKalimat", href: "/backoffice/finance/account-mapping", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceMulaiBukuBesar", href: "/backoffice/finance/mulai-buku-besar", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceSaldoAwal", href: "/backoffice/finance/saldo-awal", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceCashFlowSectionsKalimat", href: "/backoffice/finance/cash-flow-sections", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceSettlementsKalimat", href: "/backoffice/finance/settlements", permission: PERMISSIONS.SETTLEMENTS_VIEW },
+      { labelKey: "navFakturPajakKalimat", href: "/backoffice/finance/faktur-pajak", permission: PERMISSIONS.TAX_INVOICES_VIEW },
       { labelKey: "navFinancePphDipotong", href: "/backoffice/finance/pph-dipotong", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinancePajak", href: "/backoffice/finance/pajak", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceAnggaran", href: "/backoffice/finance/anggaran", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceRekonsiliasiPiutang", href: "/backoffice/finance/rekonsiliasi-piutang", permission: PERMISSIONS.JOURNALS_VIEW },
+      { labelKey: "navFinanceRekonsiliasiPersediaan", href: "/backoffice/finance/rekonsiliasi-persediaan", permission: PERMISSIONS.JOURNALS_VIEW },
     ],
   },
   {
@@ -355,14 +370,21 @@ export const navItems: NavItem[] = [
     icon: BarChart2,
     permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
     children: [
-      // Laporan operasional yang dulu jadi tab di bawah beranda — izinnya sama
-      // dengan beranda, jadi siapa pun yang dulu melihat tabnya tetap melihatnya.
-      { labelKey: "navOperationalReports", href: "/backoffice/laporan", permission: PERMISSIONS.DASHBOARD_VIEW },
+      // Urutan: empat laporan keuangan pokok, lalu analisisnya (perbandingan,
+      // rasio, laba per kanal, anggaran), lalu laporan operasional. Umur utang
+      // ada di grup Pembelian, di samping Pembayaran pemasok — satu tempat saja.
       { labelKey: "navFinanceTrialBalance", href: "/backoffice/finance/reports/trial-balance", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
       { labelKey: "navFinanceIncomeStatement", href: "/backoffice/finance/reports/income-statement", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
       { labelKey: "navFinanceBalanceSheet", href: "/backoffice/finance/reports/balance-sheet", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
       { labelKey: "navFinanceCashFlow", href: "/backoffice/finance/reports/cash-flow", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
-      { labelKey: "hppReport", href: "/backoffice/reports/hpp", permission: PERMISSIONS.REPORTS_HPP_VIEW },
+      { labelKey: "navFinancePerbandingan", href: "/backoffice/finance/reports/perbandingan", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      { labelKey: "navFinanceRasio", href: "/backoffice/finance/reports/rasio", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      { labelKey: "navFinanceLabaKanal", href: "/backoffice/finance/reports/laba-kanal", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      { labelKey: "navFinanceAnggaranRealisasi", href: "/backoffice/finance/anggaran/realisasi", permission: PERMISSIONS.FINANCE_REPORTS_VIEW },
+      // Laporan operasional yang dulu jadi tab di bawah beranda — izinnya sama
+      // dengan beranda, jadi siapa pun yang dulu melihat tabnya tetap melihatnya.
+      { labelKey: "navOperationalReports", href: "/backoffice/laporan", permission: PERMISSIONS.DASHBOARD_VIEW },
+      { labelKey: "hppReportKalimat", href: "/backoffice/reports/hpp", permission: PERMISSIONS.REPORTS_HPP_VIEW },
     ],
   },
 
@@ -374,23 +396,24 @@ export const navItems: NavItem[] = [
     icon: Plug,
     permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
     children: [
-      { labelKey: "navJubelioAdmin", href: "/backoffice/jubelio/admin", permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
+      // Urutan penyiapan (audit G8): pengaturan → kategori → migrasi → kurir, lalu pemantauan harian.
       { labelKey: "navJubelioSettings", href: "/backoffice/jubelio/settings", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: "navJubelioCategories", href: "/backoffice/jubelio/categories", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: "navJubelioMigration", href: "/backoffice/jubelio/migration", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: "navJubelioCouriers", href: "/backoffice/jubelio/couriers", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+      { labelKey: "navJubelioAdmin", href: "/backoffice/jubelio/admin", permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
     ],
   },
   {
     section: "secSystem",
-    labelKey: "navGroupArchive",
+    labelKey: "navGroupArchiveKalimat",
     href: "/backoffice/archive",
     icon: FolderArchive,
     permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
     children: [
       // Sama dengan penjaga halamannya: pembelian ATAU pembaca piutang.
-      { labelKey: "archive", href: "/backoffice/archive", permission: [PERMISSIONS.PURCHASE_ORDERS_VIEW, PERMISSIONS.RECEIVABLES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE] },
-      { labelKey: "auditTrail", href: "/backoffice/audit-trail", permission: PERMISSIONS.AUDIT_TRAIL_VIEW },
+      { labelKey: "archiveKalimat", href: "/backoffice/archive", permission: [PERMISSIONS.PURCHASE_ORDERS_VIEW, PERMISSIONS.RECEIVABLES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE] },
+      { labelKey: "auditTrailKalimat", href: "/backoffice/audit-trail", permission: PERMISSIONS.AUDIT_TRAIL_VIEW },
     ],
   },
   {

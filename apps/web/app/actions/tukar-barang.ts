@@ -10,6 +10,7 @@ import {
   bolehMenyetujuiTukar,
 } from "@/lib/salesman/tukar-barang";
 import { namaTokoTukar } from "@/lib/salesman/tukar-queries";
+import { kaitTukarSelesai } from "@/lib/finance/lapangan/kait";
 import {
   ajukanTukar,
   batalkanTukar,
@@ -158,6 +159,8 @@ export async function selesaikanTukarAction(exchangeId: string): Promise<HasilKe
   try {
     const r = await selesaikanTukar({ exchangeId, olehUserId: pelakuId });
     if (r.ok) {
+      // Jurnal persediaan tukar barang — sekali, idempoten, tidak pernah menggagalkan penyelesaian.
+      await kaitTukarSelesai(exchangeId, pelakuId);
       segarkan(exchangeId, r.storeId);
       revalidatePath("/backoffice/inventory");
       await kabari(r, pelakuId, "TUKAR_SELESAI", exchangeId);

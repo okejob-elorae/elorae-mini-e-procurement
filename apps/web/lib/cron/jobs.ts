@@ -71,6 +71,82 @@ export function registerCronJobs(): void {
   );
 
   /*
+   * Tanggal 1 setiap bulan 01:00 WIB — penyusutan aset tetap bulan lalu
+   * (rancangan akuntansi & pajak lengkap D3). Bulan yang terlewat ikut
+   * disusulkan; bulan yang sudah ditutup dilewati (nilainya disusulkan bulan
+   * terbuka berikutnya). Idempoten per aset-bulan; yang gagal menulis
+   * JOURNAL_PENDING. Sapuan 02:30 menangkap yang tetap terlewat.
+   */
+  cron.schedule(
+    "0 1 1 * *",
+    async () => {
+      try {
+        const { postingPenyusutanTerjadwal } = await import("@/lib/finance/aset/penyusutan");
+        const r = await postingPenyusutanTerjadwal();
+        if (r && (r.diposting > 0 || r.gagal.length > 0)) {
+          console.log(`[cron] penyusutan ${r.sampai}: ${r.diposting} diposting (Rp ${r.totalNilai}), ${r.periodeDitutup} bulan ditutup, ${r.gagal.length} gagal`);
+        }
+      } catch (err) {
+        console.error("[cron] penyusutan gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Setiap hari 01:15 WIB — jurnal berulang & akrual (D4): templat AKTIF
+   * (sudah disetujui orang lain) yang tanggal postingnya sudah tiba. Idempoten
+   * per templat-bulan; bulan yang sudah ditutup dilewati dengan catatan.
+   */
+  cron.schedule(
+    "15 1 * * *",
+    async () => {
+      try {
+        const { jalankanJurnalBerulangTerjadwal } = await import("@/lib/finance/berulang/writer");
+        const r = await jalankanJurnalBerulangTerjadwal();
+        if (r && (r.diposting > 0 || r.gagal.length > 0 || r.dilewati.length > 0)) {
+          console.log(`[cron] jurnal-berulang: ${r.diposting} diposting, ${r.dibalik} pembalik, ${r.dilewati.length} dilewati, ${r.gagal.length} gagal`);
+        }
+      } catch (err) {
+        console.error("[cron] jurnal-berulang gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Setiap hari 02:30 WIB — sapuan dokumen tanpa jurnal (bagian A1).
+   *
+   * Jurnal otomatis dibuat sesudah dokumen di-commit; proses yang mati di
+   * antaranya tidak meninggalkan apa pun. Sapuan ini menanyai setiap sumber
+   * terdaftar (`lib/finance/sapuan/semua.ts`) dokumen mana sejak tanggal mulai
+   * buku besar yang belum berjurnal dan mempostingnya — idempoten, dan yang
+   * gagal menulis `JOURNAL_PENDING` sendiri. Tanpa tanggal mulai, inert.
+   * Dibatasi 200 dokumen per sumber per malam; sisanya malam berikutnya.
+   */
+  cron.schedule(
+    "30 2 * * *",
+    async () => {
+      try {
+        // Baris periode bulan ini dan bulan depan dibuat lebih dulu, supaya posting
+        // pertama sebuah bulan tidak perlu menyisipkannya (kunci periode, A1).
+        const { siapkanBarisPeriode } = await import("@/lib/finance/periode/siapkan");
+        await siapkanBarisPeriode(new Date());
+      } catch (err) {
+        console.error("[cron] siapkan baris periode gagal:", err);
+      }
+      try {
+        const { jalankanSapuan, ringkasLogSapuan } = await import("@/lib/finance/sapuan/runner");
+        const r = await jalankanSapuan({ batasPerSumber: 200 });
+        console.log(`[cron] sapuan-jurnal: ${ringkasLogSapuan(r)}`);
+      } catch (err) {
+        console.error("[cron] sapuan-jurnal gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
    * Setiap hari 03:10 WIB — sapu foto yatim.
    *
    * Foto disimpan sebagai bytes di dalam basis data, jadi yang tidak ditunjuk

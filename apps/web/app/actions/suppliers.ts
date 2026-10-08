@@ -3,8 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { auth } from '@/lib/auth';
-import { PERMISSIONS, hasPermission, requirePermission } from '@/lib/rbac';
-import { aktivitasPemasok, type AktivitasBaris } from '@/lib/suppliers/aktivitas-queries';
+import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { getActorName, notifySupplierCreated, notifySupplierApproved } from '@/app/actions/notifications';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import {
@@ -82,24 +81,6 @@ export async function getSuppliers(
   return listSuppliersAction({ ...filters, ...opts });
 }
 
-/**
- * Ringkasan kerja per pemasok untuk satu halaman daftar (PO terbuka, SPK di
- * penjahit, utang, terakhir order, tautan WhatsApp). Tiap bagian hanya diisi
- * bila penampil memegang izin layar asalnya: PO = `purchase_orders:view`,
- * utang = `supplier_payments:view`, SPK = `work_orders:view`.
- */
-export async function getSupplierActivityAction(supplierIds: string[]): Promise<Record<string, AktivitasBaris>> {
-  const session = await requireSession();
-  const izin = session.user.permissions ?? [];
-  requirePermission(izin, PERMISSIONS.SUPPLIERS_VIEW);
-  if (!Array.isArray(supplierIds)) return {};
-  return aktivitasPemasok(supplierIds, {
-    lihatPo: hasPermission(izin, PERMISSIONS.PURCHASE_ORDERS_VIEW),
-    lihatUtang: hasPermission(izin, PERMISSIONS.SUPPLIER_PAYMENTS_VIEW),
-    lihatSpk: hasPermission(izin, PERMISSIONS.WORK_ORDERS_VIEW),
-  });
-}
-
 export async function getSupplierByIdAction(id: string) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_VIEW);
@@ -114,7 +95,16 @@ export async function createSupplierAction(input: z.infer<typeof supplierSchema>
     .then((triggeredByName) => notifySupplierCreated(supplier.id, supplier.name, triggeredByName))
     .catch(() => {});
   revalidatePath('/backoffice/suppliers');
-  return supplier;
+  return tanpaSandi(supplier);
+}
+
+/** Kolom terenkripsi (rekening, NPWP) tidak pernah dikirim balik ke browser. */
+function tanpaSandi<T extends { bankAccountEnc: string | null; npwpEnc: string | null }>(s: T): T {
+  return {
+    ...s,
+    bankAccountEnc: s.bankAccountEnc ? '***ENCRYPTED***' : null,
+    npwpEnc: s.npwpEnc ? '***ENCRYPTED***' : null,
+  };
 }
 
 export async function updateSupplierAction(
@@ -126,7 +116,7 @@ export async function updateSupplierAction(
   const supplier = await updateSupplier(id, input);
   revalidatePath('/backoffice/suppliers');
   revalidatePath(`/backoffice/suppliers/${id}`);
-  return supplier;
+  return tanpaSandi(supplier);
 }
 
 export type DeleteSupplierActionResult =

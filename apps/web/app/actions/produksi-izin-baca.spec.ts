@@ -110,6 +110,12 @@ const AKSI: Array<{ nama: string; panggil: () => Promise<unknown>; sah: string[]
     sah: [["work_orders:view"], ["work_orders:manage"]],
   },
   {
+    // Pratinjau biaya penerimaan (bahan + ongkos jahit): izin yang sama dengan menerima barang jadi.
+    nama: "getDasarBiayaPenerimaan",
+    panggil: () => produksi.getDasarBiayaPenerimaan(TIDAK_ADA),
+    sah: [["work_orders:manage"]],
+  },
+  {
     nama: "getReconciliation",
     panggil: () => produksi.getReconciliation(TIDAK_ADA),
     sah: [["work_orders:view"]],

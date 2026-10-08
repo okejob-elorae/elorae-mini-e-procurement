@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededIds } from "@elorae/db";
 import { AMBANG_BAWAAN } from "./ambang";
 import { PARAM_KOLABORASI_AWAL, TAHAP_KELUAR, UKURAN_HALAMAN_KOLABORASI, type ParamKolaborasi } from "./kolaborasi-param";
-import { cariKolUntukKolaborasi, daftarKolaborasi, ringkasRiwayatKol } from "./kolaborasi-queries";
+import { cariKolUntukKolaborasi, daftarKolaborasi, detailKolaborasi, ringkasRiwayatKol } from "./kolaborasi-queries";
 import { SEMUA_TAHAP, type Tahap } from "./tahap";
 
 /*
@@ -171,5 +171,20 @@ describe("ringkasRiwayatKol dan cari KOL", () => {
     const h = await cariKolUntukKolaborasi(`@${tag.toLowerCase()}bima`);
     expect(h.map((k) => k.id)).toEqual([kolTt]);
     expect(h[0]).toMatchObject({ diblokir: true, platform: "TIKTOK", followers: 9_000 });
+  });
+});
+
+describe("detailKolaborasi — data kirim dan mode pajak", () => {
+  it("menyebut tepat kolom data kirim yang kosong (aturan yang sama dengan Hari ini) dan membawa mode pajak", async () => {
+    await prisma.kol.update({ where: { id: kolIg }, data: { phone: "081234567890", waNormal: "6281234567890" } });
+    const id = await kolab(kolIg, "DEAL");
+    await prisma.kolBrief.update({ where: { id }, data: { modePajak: "GROSS_UP" } });
+    const d = await detailKolaborasi(id, opsi);
+    expect(d?.modePajak).toBe("GROSS_UP");
+    // HP sudah ada: yang kurang hanya alamat dan ukuran — bukan "alamat & no. HP".
+    expect(d?.kurangKirim).toEqual(["ALAMAT", "UKURAN"]);
+
+    await prisma.kol.update({ where: { id: kolIg }, data: { address: "Jl. Mawar 1", sizeProfile: JSON.stringify({ atasan: "M" }) } });
+    expect((await detailKolaborasi(id, opsi))?.kurangKirim).toEqual([]);
   });
 });

@@ -100,12 +100,13 @@ export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehK
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        meta={t("ringkas", {
+        // Bawaan halaman ini bulan yang sudah selesai (Kinerja SPG: bulan berjalan) — disebut terang.
+        meta={`${t("bawaanBulanSelesai")} · ${t("ringkas", {
           hitung: formatIDR(ringkas.totalHitung),
           resmi: formatIDR(ringkas.totalResmi),
           dibayar: formatIDR(ringkas.totalDibayar),
           belum: ringkas.tokoBelum,
-        })}
+        })}`}
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

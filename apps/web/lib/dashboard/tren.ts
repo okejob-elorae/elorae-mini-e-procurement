@@ -261,3 +261,46 @@ export function rentangTren(mulai: string, akhir: string): { panjang: number; mu
   if (panjang > MAKS_HARI_RENTANG) return null;
   return { panjang, mulaiPembanding: new Date(a - panjang * HARI_MS).toISOString().slice(0, 10) };
 }
+
+/** Rentang cepat grafik tren beranda. */
+export const RENTANG_TREN = [7, 30, 90] as const;
+export type RentangTren = (typeof RENTANG_TREN)[number];
+/** Rentang bawaan — tidak ditulis di alamat. */
+export const RENTANG_TREN_BAWAAN: RentangTren = 30;
+
+export type PeriodeTren =
+  | { jenis: "hari"; hari: RentangTren }
+  | { jenis: "pilih"; mulai: string; akhir: string; panjang: number };
+
+/**
+ * Periode grafik tren dari alamat, supaya tautan yang dibagikan membuka periode
+ * yang sama (seperti `?saluran=`): `?dari=&sampai=` untuk rentang pilihan (bila
+ * sah menurut `rentangTren`), selain itu `?rentang=7|30|90`, bawaan 30 hari.
+ * Nilai yang tidak sah diabaikan, bukan ditolak.
+ */
+export function bacaPeriodeTren(p: {
+  rentang?: string | null;
+  dari?: string | null;
+  sampai?: string | null;
+}): PeriodeTren {
+  if (p.dari && p.sampai) {
+    const cek = rentangTren(p.dari, p.sampai);
+    if (cek) return { jenis: "pilih", mulai: p.dari, akhir: p.sampai, panjang: cek.panjang };
+  }
+  const hari = Number(p.rentang);
+  if ((RENTANG_TREN as readonly number[]).includes(hari)) return { jenis: "hari", hari: hari as RentangTren };
+  return { jenis: "hari", hari: RENTANG_TREN_BAWAAN };
+}
+
+/** Tulis periode ke parameter alamat (mengubah `params` di tempat). Bawaan 30 hari tidak ditulis. */
+export function tulisPeriodeTren(params: URLSearchParams, periode: PeriodeTren): void {
+  params.delete("rentang");
+  params.delete("dari");
+  params.delete("sampai");
+  if (periode.jenis === "pilih") {
+    params.set("dari", periode.mulai);
+    params.set("sampai", periode.akhir);
+  } else if (periode.hari !== RENTANG_TREN_BAWAAN) {
+    params.set("rentang", String(periode.hari));
+  }
+}

@@ -70,11 +70,11 @@ export function ForecastConfigModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('editConfig')} — {year}</DialogTitle>
+          <DialogTitle>{t('ubahKonfigurasi')} — {year}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
-            <Label htmlFor="growth">{t('growth')}</Label>
+            <Label htmlFor="growth">{t('faktorPertumbuhan')}</Label>
             <Input id="growth" type="number" value={growth} onChange={(e) => setGrowth(e.target.value)} />
             <p className="text-xs text-muted-foreground">{t('growthHint')}</p>
           </div>
@@ -84,7 +84,7 @@ export function ForecastConfigModal({
             <p className="text-xs text-muted-foreground">{t('lookbackHint')}</p>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="decay">{t('decay')}</Label>
+            <Label htmlFor="decay">{t('peluruhanBobot')}</Label>
             <Input id="decay" type="number" step="0.01" value={decay} onChange={(e) => setDecay(e.target.value)} />
             <p className="text-xs text-muted-foreground">{t('decayHint')}</p>
           </div>

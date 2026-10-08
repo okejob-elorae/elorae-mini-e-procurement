@@ -238,7 +238,7 @@ export function PaletClient({
     const sebelum = palet;
     setPaletSendiri(pilihAturanPalet(sebelum, aturan, katalogC()));
     if (sebelum.kain !== null && !sebelum.saranUtuh) {
-      toast.success(t('ruleReplacedInks', { rule: t(`rules.${aturanSablonDari(aturan)}.name`) }), {
+      toast.success(t('ruleReplacedInks', { rule: t(`aturanHarmoni.${aturanSablonDari(aturan)}.nama`) }), {
         action: { label: t('undo'), onClick: () => setPaletSendiri(sebelum) },
       });
     }
@@ -377,7 +377,7 @@ export function PaletClient({
         untitled: t('export.untitled'),
         date: t('export.date'),
         rule: t('export.rule'),
-        ruleName: t(`rules.${lembar.aturan}.name`),
+        ruleName: t(`aturanHarmoni.${lembar.aturan}.nama`),
         createdBy: t('export.createdBy'),
         fabric: t('export.fabric'),
         inks: t('export.inks'),
@@ -413,7 +413,7 @@ export function PaletClient({
           untitled: t('export.untitled'),
           sub: [
             lembar.kain ? t('savedFabric', { fabric: lembar.kain.nama ?? lembar.kain.hex }) : null,
-            t(`rules.${lembar.aturan}.name`),
+            t(`aturanHarmoni.${lembar.aturan}.nama`),
             tanggal.format(meta.tanggal ? new Date(meta.tanggal) : new Date()),
             meta.dibuatOleh,
           ]
@@ -481,73 +481,6 @@ export function PaletClient({
         katalogTcx={katalogTcx}
       />
 
-      <KartuWarnaLaris
-        hasil={hasilLaris}
-        adaData={penjualanWarna.length > 0}
-        kategori={kategoriLaris}
-        daftarKategori={kategoriTersedia}
-        onKategori={setKategoriLaris}
-        bolehMengelola={bolehMengelola}
-        onJadikanKain={(hexKain, namaWarna) => {
-          if (kainDikunci(hexKain)) return;
-          setKainTerakhir(hexKain);
-          if (!berkain) setTerpilih(0);
-          ubah((p) => pasangKain(p, hexKain, katalogC()));
-          toast.success(t('bestSellers.fabricSet', { name: namaWarna }));
-        }}
-        onPetakan={async (namaWarna, hexWarna) => {
-          const h = await simpanPemetaanWarnaAction(namaWarna, hexWarna);
-          if (h.ok) {
-            setPemetaan(h.peta);
-            toast.success(t('bestSellers.mapped', { name: namaWarna }));
-            return true;
-          }
-          toast.error(t(`bestSellers.errors.${h.kode}`));
-          return false;
-        }}
-      />
-
-      <AmbilDariGambar
-        berkain={berkain}
-        onAnalisis={setWarnaReferensi}
-        labelTerpilih={labelWarna(terpilih)}
-        katalogC={katalogC()}
-        katalogTcx={katalogTcx}
-        onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
-        onJadikanKain={(hex) => {
-          if (kainDikunci(hex)) return;
-          setKainTerakhir(hex);
-          if (!berkain) setTerpilih(0);
-          ubah((p) => pasangKain(p, hex, katalogC()));
-          toast.success(t('fabricSet', { hex: hex.toUpperCase() }));
-        }}
-        onPakaiUntukTerpilih={(hex) => {
-          ubah((p) => gantiHexPalet(p, terpilih, hex));
-          toast.success(t('appliedTo', { hex: hex.toUpperCase(), label: labelWarna(terpilih) }));
-        }}
-        onIsiPalet={(warna) => {
-          const baru = isiDariGambar(palet, warna);
-          if (baru === palet) {
-            toast.error(berkain ? t('allFabric') : t('needFive', { count: warna.length }));
-            return;
-          }
-          setPaletSendiri(baru);
-          setTerpilih(berkain ? 0 : INDEKS_DASAR);
-          toast.success(berkain ? t('filledInks') : t('filledPalette'));
-        }}
-      />
-
-      {warnaReferensi && (
-        <KartuKomposisiDesain
-          warnaGambar={warnaReferensi}
-          katalogC={katalogC()}
-          katalogTcx={katalogTcx}
-          kainTerkunci={kainTerkunci && palet.kain ? { hex: palet.kain, label: namaKain } : null}
-          aksenKandidat={aksenKandidat}
-          onPakai={pakaiVariasiDesain}
-        />
-      )}
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,25rem)_minmax(0,1fr)]">
         <div className="space-y-6">
           <Card id="roda-warna" className="scroll-mt-20">
@@ -570,13 +503,13 @@ export function PaletClient({
                     {pilihanAturan.map((aturan) => (
                       <SelectItem key={aturan} value={aturan} className="py-2">
                         <IkonHarmoni aturan={aturan} className="size-5" />
-                        {t(`rules.${aturan}.name`)}
+                        {t(`aturanHarmoni.${aturan}.nama`)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 {/* Tiga baris = penjelasan terpanjang di lebar kartu desktop maupun HP, jadi roda di bawahnya tidak melompat saat aturan diganti. */}
-                <p className="min-h-[3.75rem] text-sm text-muted-foreground">{t(`rules.${palet.aturan}.hint`)}</p>
+                <p className="min-h-[3.75rem] text-sm text-muted-foreground">{t(`aturanHarmoni.${palet.aturan}.petunjuk`)}</p>
               </div>
 
               {berkain && (
@@ -605,16 +538,6 @@ export function PaletClient({
                       : t('handleLabel', { n: i + 1, hex: kode })
                 }
               />
-
-              <p className="text-center text-xs text-muted-foreground">
-                {berkain
-                  ? tintaTerhubung
-                    ? t('inkDragHintLinked')
-                    : t('inkDragHint')
-                  : palet.aturan === 'CUSTOM'
-                    ? t('customHint')
-                    : t('dragHint')}
-              </p>
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
@@ -721,6 +644,74 @@ export function PaletClient({
         </Card>
       </div>
 
+      {/* Sumber warna lain (warna laris, gambar) di bawah roda: alat utamanya harus terlihat tanpa menggulir. */}
+      <KartuWarnaLaris
+        hasil={hasilLaris}
+        adaData={penjualanWarna.length > 0}
+        kategori={kategoriLaris}
+        daftarKategori={kategoriTersedia}
+        onKategori={setKategoriLaris}
+        bolehMengelola={bolehMengelola}
+        onJadikanKain={(hexKain, namaWarna) => {
+          if (kainDikunci(hexKain)) return;
+          setKainTerakhir(hexKain);
+          if (!berkain) setTerpilih(0);
+          ubah((p) => pasangKain(p, hexKain, katalogC()));
+          toast.success(t('bestSellers.fabricSet', { name: namaWarna }));
+        }}
+        onPetakan={async (namaWarna, hexWarna) => {
+          const h = await simpanPemetaanWarnaAction(namaWarna, hexWarna);
+          if (h.ok) {
+            setPemetaan(h.peta);
+            toast.success(t('bestSellers.mapped', { name: namaWarna }));
+            return true;
+          }
+          toast.error(t(`bestSellers.errors.${h.kode}`));
+          return false;
+        }}
+      />
+
+      <AmbilDariGambar
+        berkain={berkain}
+        onAnalisis={setWarnaReferensi}
+        labelTerpilih={labelWarna(terpilih)}
+        katalogC={katalogC()}
+        katalogTcx={katalogTcx}
+        onSalin={(teks) => salin(teks, t('copied', { hex: teks }))}
+        onJadikanKain={(hex) => {
+          if (kainDikunci(hex)) return;
+          setKainTerakhir(hex);
+          if (!berkain) setTerpilih(0);
+          ubah((p) => pasangKain(p, hex, katalogC()));
+          toast.success(t('fabricSet', { hex: hex.toUpperCase() }));
+        }}
+        onPakaiUntukTerpilih={(hex) => {
+          ubah((p) => gantiHexPalet(p, terpilih, hex));
+          toast.success(t('appliedTo', { hex: hex.toUpperCase(), label: labelWarna(terpilih) }));
+        }}
+        onIsiPalet={(warna) => {
+          const baru = isiDariGambar(palet, warna);
+          if (baru === palet) {
+            toast.error(berkain ? t('allFabric') : t('needFive', { count: warna.length }));
+            return;
+          }
+          setPaletSendiri(baru);
+          setTerpilih(berkain ? 0 : INDEKS_DASAR);
+          toast.success(berkain ? t('filledInks') : t('filledPalette'));
+        }}
+      />
+
+      {warnaReferensi && (
+        <KartuKomposisiDesain
+          warnaGambar={warnaReferensi}
+          katalogC={katalogC()}
+          katalogTcx={katalogTcx}
+          kainTerkunci={kainTerkunci && palet.kain ? { hex: palet.kain, label: namaKain } : null}
+          aksenKandidat={aksenKandidat}
+          onPakai={pakaiVariasiDesain}
+        />
+      )}
+
       {palet.kain && palet.porsi && (
         <KartuSablon
           kainHex={palet.kain}
@@ -803,7 +794,7 @@ export function PaletClient({
                       <p className="truncate text-xs text-muted-foreground">
                         {[
                           p.kain ? t('savedFabric', { fabric: namaKainDari(p.kain) }) : null,
-                          t(`rules.${p.aturan}.name`),
+                          t(`aturanHarmoni.${p.aturan}.nama`),
                           p.dibuatOleh,
                           formatDisplayDate(p.dibuatPada, locale),
                         ]

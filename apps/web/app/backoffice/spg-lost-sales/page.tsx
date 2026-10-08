@@ -4,40 +4,36 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { kunciHariWib } from "@/lib/dashboard/tren";
 import { daftarBarangDicari } from "@/lib/spg/kantor-queries";
-import { BarangDicariClient, type PeriodeHari } from "./BarangDicariClient";
+import { BarangDicariClient } from "./BarangDicariClient";
+import { batasPeriodeDicari, bacaPeriodeDicari } from "./periode";
 
 export const dynamic = "force-dynamic";
 
-const PERIODE: PeriodeHari[] = [7, 30, 90];
-const HARI_MS = 86_400_000;
 /** Batas baris `daftarBarangDicari` — ringkasan hanya menghitung sebanyak ini. */
 const BATAS_KUERI = 500;
 
 /**
- * Barang yang dicari pembeli tapi kosong di toko. Periode dihitung dalam hari
- * kalender WIB termasuk hari ini, supaya "7 hari" berarti tujuh tanggal yang
- * sama dengan yang dilihat orang toko — bukan 168 jam mundur dari detik ini.
+ * Barang yang dicari pembeli tapi kosong di toko. Periode = rentang hari
+ * kalender WIB (`?dari=&sampai=`, pemilih yang sama dengan Penjualan SPG;
+ * bawaan 30 hari terakhir termasuk hari ini) — "7 hari" berarti tujuh tanggal
+ * yang sama dengan yang dilihat orang toko, bukan 168 jam mundur dari detik ini.
  */
 export default async function BarangDicariPage({
   searchParams,
 }: {
-  searchParams: Promise<{ hari?: string }>;
+  searchParams: Promise<{ dari?: string; sampai?: string; hari?: string }>;
 }) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SPG_SALES_VIEW)) redirect("/backoffice");
 
   const sp = await searchParams;
-  const diminta = Number(sp.hari);
-  const hari: PeriodeHari = PERIODE.includes(diminta as PeriodeHari) ? (diminta as PeriodeHari) : 30;
-
-  const awalHariIni = new Date(`${kunciHariWib(new Date())}T00:00:00+07:00`);
-  const sejak = new Date(awalHariIni.getTime() - (hari - 1) * HARI_MS);
-  const { baris, ringkas } = await daftarBarangDicari({ sejak });
+  const periode = bacaPeriodeDicari(sp, kunciHariWib(new Date()));
+  const { baris, ringkas } = await daftarBarangDicari(batasPeriodeDicari(periode));
 
   return (
     <BarangDicariClient
-      hari={hari}
+      periode={periode}
       ringkas={ringkas}
       baris={baris.map((b) => ({
         id: b.id,

@@ -18,12 +18,15 @@ export function RincianBiayaClient({
   bolehSetujui,
   bolehBayar,
   milikSendiri,
+  akunKas = [],
 }: {
   rincian: RincianBiaya;
   bolehSetujui: boolean;
   bolehBayar: boolean;
   /** Klaim milik orang yang sedang membuka — server menolak ia memutuskannya. */
   milikSendiri: boolean;
+  /** Akun kas/bank sumber pembayaran (hanya untuk yang boleh membayar). */
+  akunKas?: { id: string; label: string }[];
 }) {
   const t = useTranslations("biayaPerjalanan");
   const td = dinamis(t);
@@ -65,6 +68,7 @@ export function RincianBiayaClient({
               ringkas={ringkas}
               bolehSetujui={bolehSetujui}
               bolehBayar={bolehBayar}
+              akunKas={akunKas}
               tata="baris"
             />
           )

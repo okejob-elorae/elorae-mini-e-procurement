@@ -113,7 +113,7 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     // 1000 delivered putus + 400 van = 1400, 2 realised transactions (1 delivery + 1 van sale)
     expect(rowA!.realised).toEqual({ count: 2, amount: 1400 });
     // Rinciannya disebut apa adanya — "2 transaksi" membuka daftar pesanan yang berisi 1.
-    expect(rowA!.realisedRincian).toEqual({ pengiriman: 1, van: 1 });
+    expect(rowA!.realisedRincian).toEqual({ pengiriman: 1, van: 1, pesanan: 1 });
     expect(rowA!.outstanding).toEqual({ count: 1, amount: 500 });
     expect(rowA!.menungguKirim).toEqual({ count: 0, amount: 0 });
     // 2000 delivered putus + 50 van = 2050
@@ -149,6 +149,18 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     const rowB = summary.rows.find((r) => r.salesmanId === salesmanBId);
     expect(rowB!.realised).toEqual({ count: 1, amount: 300 });
     expect(rowB!.menungguKirim).toEqual({ count: 0, amount: 0 });
+  });
+
+  it("satu pesanan yang dikirim dua kali: dua pengiriman, SATU pesanan (angka yang dicocokkan dengan daftar pesanan)", async () => {
+    const order = await makeOrder(14, salesmanAId, "APPROVED", "PUTUS", 800, "DELIVERED");
+    await makeDelivery(4, order.id, salesmanAId, 300);
+    await makeDelivery(5, order.id, salesmanAId, 500);
+
+    const summary = await getSalesmenSalesSummary();
+    const rowA = summary.rows.find((r) => r.salesmanId === salesmanAId);
+    expect(rowA!.realised).toEqual({ count: 2, amount: 800 });
+    expect(rowA!.realisedRincian).toEqual({ pengiriman: 2, van: 0, pesanan: 1 });
+    expect(summary.totals.realisedRincian.pesanan).toBeGreaterThanOrEqual(1);
   });
 
   it("pesanan putus yang sudah disetujui tetapi belum dikirim punya embernya sendiri — tidak hilang dari kedua angka", async () => {

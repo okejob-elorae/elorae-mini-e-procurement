@@ -20,7 +20,7 @@ export type FakturKreditTampil = FakturPanelKredit & {
 };
 
 /** Piutang dari satu nota pengiriman, per `deliveryId`. */
-export type PiutangKiriman = { sisa: number; keadaan: KeadaanPiutang };
+export type PiutangKiriman = { sisa: number; keadaan: KeadaanPiutang; invoiceNo: string };
 
 /**
  * Piutang dan faktur pajak tiap nota hanya dikirim ke peramban yang boleh membuka halamannya —
@@ -63,7 +63,7 @@ export async function muatTautanPesanan(input: {
   const piutangKiriman: Record<string, PiutangKiriman> = {};
   for (const p of input.piutangNota) {
     const b = byId.get(p.receivableId);
-    if (b) piutangKiriman[p.deliveryId] = { sisa: b.outstanding, keadaan: b.keadaan };
+    if (b) piutangKiriman[p.deliveryId] = { sisa: b.outstanding, keadaan: b.keadaan, invoiceNo: b.invoiceNo };
   }
   return { faktur, piutangKiriman };
 }

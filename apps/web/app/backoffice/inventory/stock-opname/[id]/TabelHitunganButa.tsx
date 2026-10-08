@@ -88,7 +88,11 @@ export function TabelHitunganButa({ lines, isFabric }: { lines: BarisButa[]; isF
                     <TableRow key={b.id}>
                       <TableCell>
                         <div className="font-medium leading-snug">{b.label}</div>
-                        {b.sublabel ? <div className="text-muted-foreground text-xs mt-0.5 font-mono">{b.sublabel}</div> : null}
+                        {b.sublabel ? (
+                          <div className="text-muted-foreground text-xs mt-0.5 font-mono">{b.sublabel}</div>
+                        ) : b.gabungan ? (
+                          <div className="text-muted-foreground text-xs mt-0.5">{t("tanpaVarian")}</div>
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{formatJumlah(b.counted)}</TableCell>
                     </TableRow>

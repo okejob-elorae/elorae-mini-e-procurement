@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
+import { labelPemasok, urutPemasok } from '@/lib/suppliers/label-pemasok';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   Select,
@@ -698,10 +699,11 @@ export function POForm({
               <Label htmlFor="supplierId">{tf('pemasok')} *</Label>
               <SearchableCombobox
                 id="supplierId"
-                options={suppliers.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))}
+                options={urutPemasok(suppliers).map((s) => ({ value: s.id, label: labelPemasok(s) }))}
                 value={watch('supplierId')}
                 onValueChange={(value) => setValue('supplierId', value, { shouldValidate: true })}
                 placeholder={tPlaceholders('selectSupplier')}
+                searchPlaceholder={tPlaceholders('cariPemasok')}
                 aria-invalid={!!errors.supplierId}
                 className={errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
@@ -795,7 +797,8 @@ export function POForm({
           <div className="flex justify-between items-center">
             <div className="flex-1 max-w-sm">
               <Input
-                placeholder={tPlaceholders('searchItemsBySkuOrName')}
+                placeholder={tPlaceholders('cariBarangSkuNama')}
+                aria-label={tPlaceholders('cariBarangSkuNama')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -850,7 +853,8 @@ export function POForm({
                           }))}
                           value={lineItem.itemId}
                           onValueChange={(value) => updateLineItem(lineItem.id, 'itemId', value)}
-                          placeholder={tPlaceholders('selectItem')}
+                          placeholder={tPlaceholders('pilihBarang')}
+                          searchPlaceholder={tPlaceholders('cariBarang')}
                           triggerClassName="max-w-[16rem] min-w-0"
                         />
                       </TableCell>

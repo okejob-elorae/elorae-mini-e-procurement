@@ -173,6 +173,8 @@ describe("muatMasukanTugas → 13 kelompok", () => {
     ]);
     const b = (await baca()).baris("BELUM_DIBAYAR", id);
     expect(b?.info.fee).toBe(1_000_000);
+    // Jumlah satu termin, bukan fee utuh — layar menulisnya "Termin …".
+    expect(b?.info.feeTermin).toBe(true);
     expect(b?.info.tanggal).toBe(geserHari(HARI_INI, -7));
     await prisma.kolPaymentTerm.update({ where: { id: dp.id }, data: { status: "DIBAYAR", dibayarAt: hari(-1) } });
     // Pelunasan belum punya jatuh tempo (belum tayang), walau payStatus kolaborasinya masih BELUM.

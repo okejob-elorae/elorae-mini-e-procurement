@@ -104,7 +104,7 @@ export function UmurTahap({ hari, merah }: { hari: number; merah: boolean }) {
       className={cn("whitespace-nowrap tabular-nums", merah ? "font-semibold text-destructive" : "text-muted-foreground")}
       title={t("umurJudul", { n: hari })}
     >
-      {t("umurHari", { n: Math.max(0, hari) })}
+      {t("umurHariPenuh", { n: Math.max(0, hari) })}
     </span>
   );
 }

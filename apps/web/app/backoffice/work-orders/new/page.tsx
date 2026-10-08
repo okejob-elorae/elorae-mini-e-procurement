@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -15,14 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { formatDateOnly, parseDateOnly } from '@/lib/date-only';
@@ -36,13 +28,16 @@ import {
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { itemHasSkuVariants } from '@/lib/items/variants';
-import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation, getAvailableFabricRolls } from '@/app/actions/production';
+import { createWorkOrder } from '@/app/actions/production';
 import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
-import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
+import { getItemsByType, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { ItemType } from '@/lib/constants/enums';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { alasanSimpanWo } from '@/lib/production/rencana-wo';
+import { usePakaiRencanaBahan } from '../pakai-rencana-bahan';
+import { KeteranganSimpanWo, RencanaBahanWo } from '../RencanaBahanWo';
 
 interface TailorSupplier {
   id: string;
@@ -60,30 +55,6 @@ interface FinishedGood {
   variants?: Array<Record<string, string>>;
 }
 
-interface ConsumptionRuleOption {
-  materialId: string;
-  materialName: string;
-  uomCode: string;
-}
-
-interface ConsumptionResult {
-  plannedQty: number;
-  remainder: number;
-  actualConsumption: number;
-  uomCode: string;
-}
-
-interface MaterialPlanRow {
-  itemId: string;
-  itemName: string;
-  uomCode: string;
-  qtyRequired: number;
-  wastePercent: number;
-  plannedQty: number;
-  availableStock: number;
-  shortage: number;
-}
-
 interface WorkOrderStepForm {
   sequence: number;
   supplierId: string;
@@ -98,35 +69,22 @@ export default function NewWorkOrderPage() {
   const t = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
   const tF = useTranslations('workOrders.form');
+  const tR = useTranslations('workOrders.formulir');
   const router = useRouter();
   const { data: session } = useSession();
   const [tailors, setTailors] = useState<TailorSupplier[]>([]);
   const [finishedGoods, setFinishedGoods] = useState<FinishedGood[]>([]);
-  const [materialPlan, setMaterialPlan] = useState<MaterialPlanRow[]>([]);
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(true);
   const [isLoadingFG, setIsLoadingFG] = useState(true);
-  const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
 
   const [vendorId, setVendorId] = useState('');
   const [finishedGoodId, setFinishedGoodId] = useState('');
   const [outputMode, setOutputMode] = useState<'GENERIC' | 'SKU'>('GENERIC');
-  const [consumptionRules, setConsumptionRules] = useState<ConsumptionRuleOption[]>([]);
-  const [consumptionMaterialId, setConsumptionMaterialId] = useState('');
-  /**
-   * Cara mengisi jumlah: "pcs" = ketik jumlah pcs langsung (bawaan), "bahan" =
-   * hitung pcs dari jumlah bahan utama (kain) yang tersedia.
-   */
-  const [caraIsi, setCaraIsi] = useState<'pcs' | 'bahan'>('pcs');
-  const [pcsInput, setPcsInput] = useState('');
-  const [consumptionInput, setConsumptionInput] = useState('');
-  const [consumptionInputDebounced, setConsumptionInputDebounced] = useState('');
-  const [consumptionResult, setConsumptionResult] = useState<ConsumptionResult | null>(null);
-  const [isComputingConsumption, setIsComputingConsumption] = useState(false);
-  const consumptionDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Kartu "Rencana bahan" — logika dan tampilan yang sama dengan formulir ubah. */
+  const r = usePakaiRencanaBahan(finishedGoodId, null);
+  const plannedNum = r.plannedNum;
 
-  const DEBOUNCE_MS = 1500;
   const [targetDate, setTargetDate] = useState('');
   const [targetTouched, setTargetTouched] = useState(false);
   const [targetPreview, setTargetPreview] = useState<{
@@ -135,9 +93,6 @@ export default function NewWorkOrderPage() {
     supplierCode: string;
   } | null>(null);
   const [notes, setNotes] = useState('');
-  const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
-  const [availableRolls, setAvailableRolls] = useState<Array<{ rollId: string; rollCode: string; rollRef: string; remainingLength: number }>>([]);
-  const [addRollValue, setAddRollValue] = useState('');
   const [poId, setPoId] = useState('');
   const [purchaseOrders, setPurchaseOrders] = useState<Array<{ id: string; docNumber: string }>>([]);
   const [isLoadingPOs, setIsLoadingPOs] = useState(true);
@@ -147,8 +102,6 @@ export default function NewWorkOrderPage() {
   const [finishedGoodVariants, setFinishedGoodVariants] = useState<Array<{ sku?: string; attributes: Record<string, string> }>>([]);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
   const [steps, setSteps] = useState<WorkOrderStepForm[]>([]);
-
-  const plannedNum = consumptionResult?.plannedQty ?? 0;
 
   useEffect(() => {
     const load = async () => {
@@ -179,89 +132,6 @@ export default function NewWorkOrderPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
 
-  useEffect(() => {
-    if (!finishedGoodId) {
-      setConsumptionRules([]);
-      setConsumptionMaterialId('');
-      setConsumptionInput('');
-      setConsumptionResult(null);
-      return;
-    }
-    getConsumptionRules(finishedGoodId)
-      .then((rules) => {
-        setConsumptionRules(
-          rules.map((r: { materialId: string; material: { nameId: string; uom: { code: string } } }) => ({
-            materialId: r.materialId,
-            materialName: r.material.nameId,
-            uomCode: r.material.uom.code,
-          }))
-        );
-        setConsumptionMaterialId('');
-        setConsumptionInput('');
-        setConsumptionInputDebounced('');
-        setConsumptionResult(null);
-      })
-      .catch(() => {
-        setConsumptionRules([]);
-        toast.error(t('failedToLoadData'));
-      });
-  }, [finishedGoodId, t]);
-
-  useEffect(() => {
-    if (consumptionDebounceRef.current) clearTimeout(consumptionDebounceRef.current);
-    consumptionDebounceRef.current = setTimeout(() => {
-      setConsumptionInputDebounced(consumptionInput);
-      consumptionDebounceRef.current = null;
-    }, DEBOUNCE_MS);
-    return () => {
-      if (consumptionDebounceRef.current) clearTimeout(consumptionDebounceRef.current);
-    };
-  }, [consumptionInput]);
-
-  const pcsDiketik = Math.floor(Number(pcsInput));
-
-  useEffect(() => {
-    const modePcs = caraIsi === 'pcs';
-    if (!finishedGoodId || !consumptionMaterialId || (modePcs ? !(pcsDiketik > 0) : consumptionInputDebounced === '')) {
-      setConsumptionResult(null);
-      return;
-    }
-    const amount = modePcs ? 1 : Number(consumptionInputDebounced);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setConsumptionResult(null);
-      return;
-    }
-    let cancelled = false;
-    setIsComputingConsumption(true);
-    computePlannedQtyFromConsumption(finishedGoodId, consumptionMaterialId, amount)
-      .then((res) => {
-        if (cancelled) return;
-        // Mode pcs: jumlah pcs dari isian, kebutuhan bahan = pcs × konsumsi per pcs.
-        setConsumptionResult(
-          modePcs
-            ? {
-                plannedQty: pcsDiketik,
-                remainder: 0,
-                actualConsumption: Math.round(pcsDiketik * res.consumptionPerPiece * 10000) / 10000,
-                uomCode: res.uomCode,
-              }
-            : res
-        );
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setConsumptionResult(null);
-          toast.error(t('failedToLoadMaterialPlan'));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsComputingConsumption(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, caraIsi, pcsDiketik, t]);
-
   // Barang jadi bervarian → bawaan "SKU (per varian)": stok hasil produksi
   // masuk per ukuran, bukan ke baris gabungan yang tidak terlihat per ukuran.
   const pilihBarangJadi = (id: string) => {
@@ -269,16 +139,6 @@ export default function NewWorkOrderPage() {
     const fg = finishedGoods.find((f) => f.id === id);
     setOutputMode(fg && itemHasSkuVariants(fg.variants) ? 'SKU' : 'GENERIC');
   };
-
-  useEffect(() => {
-    if (!consumptionMaterialId) {
-      setAvailableRolls([]);
-      return;
-    }
-    getAvailableFabricRolls(consumptionMaterialId)
-      .then(setAvailableRolls)
-      .catch(() => setAvailableRolls([]));
-  }, [consumptionMaterialId]);
 
   useEffect(() => {
     if (!finishedGoodId || outputMode !== 'SKU') {
@@ -317,31 +177,6 @@ export default function NewWorkOrderPage() {
   }, [finishedGoodId, outputMode]);
 
   useEffect(() => {
-    if (!finishedGoodId || plannedNum <= 0) {
-      setMaterialPlan([]);
-      return;
-    }
-    let cancelled = false;
-    setIsLoadingPlan(true);
-    getMaterialPlan(finishedGoodId, plannedNum)
-      .then((plan) => {
-        if (!cancelled) setMaterialPlan(plan);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setMaterialPlan([]);
-          toast.error(t('failedToLoadMaterialPlan'));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoadingPlan(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [finishedGoodId, plannedNum, t]);
-
-  useEffect(() => {
     if (!vendorId) {
       setTargetPreview(null);
       return;
@@ -375,71 +210,29 @@ export default function NewWorkOrderPage() {
     return () => clearTimeout(handle);
   }, [vendorId, plannedNum, tailors, targetTouched, targetDate]);
 
-  const hasShortage = materialPlan.some((m) => m.shortage > 0);
-  const rollSum = rollBreakdown.reduce((s, r) => s + r.qty, 0);
-  /** Material qty (consumption UOM); roll total must be at least this (excess allowed) */
-  const materialPlannedQtyForRolls = consumptionResult?.actualConsumption ?? 0;
-  const rollValid = rollBreakdown.length === 0 || rollSum >= materialPlannedQtyForRolls - 1e-6;
   const variantRatioSum = variantRatios.reduce((s, x) => s + x.ratioPercent, 0);
-  const skuVariantValid =
-    outputMode !== 'SKU' ||
-    (outputMode === 'SKU' && (variantRatios.length > 1 ? Math.abs(variantRatioSum - 100) < 0.01 : selectedVariantSku.length > 0));
-  const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
-  const canSubmit =
-    session?.user?.id &&
-    vendorId &&
-    finishedGoodId &&
-    consumptionResult &&
-    plannedNum > 0 &&
-    !hasShortage &&
-    rollValid &&
-    skuVariantValid &&
-    !noVariantsForSku &&
-    !isSubmitting;
-
-  const addRollBySelection = (roll: { rollId: string; rollCode: string; rollRef: string; remainingLength: number }) => {
-    setRollBreakdown((prev) => [...prev, { rollRef: roll.rollCode || roll.rollRef, qty: roll.remainingLength, notes: '' }]);
-  };
-  const updateRollRow = (i: number, field: 'rollRef' | 'qty' | 'notes', value: string | number) => {
-    setRollBreakdown((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], [field]: value };
-      return next;
-    });
-  };
-  const removeRollRow = (i: number) => {
-    setRollBreakdown((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  const handleSuggestRolls = async () => {
-    if (!consumptionMaterialId || !consumptionResult?.actualConsumption) return;
-    setIsSuggestingRolls(true);
-    try {
-      const suggestion = await suggestFabricRollAllocation(
-        consumptionMaterialId,
-        consumptionResult.actualConsumption
-      );
-      if (suggestion.selected.length === 0) {
-        toast.error(tF('noRollsFound'));
-        return;
-      }
-      setRollBreakdown(
-        suggestion.selected.map((row) => ({
-          rollRef: row.rollCode ?? row.rollRef,
-          qty: row.qty,
-        }))
-      );
-      if (suggestion.unallocated > 0) {
-        toast.error(tF('insufficientRolls', { qty: suggestion.unallocated.toFixed(2) }));
-      } else {
-        toast.success(tF('suggestionApplied'));
-      }
-    } catch {
-      toast.error(tF('suggestFailed'));
-    } finally {
-      setIsSuggestingRolls(false);
-    }
-  };
+  const noVariantsForSku = outputMode === 'SKU' && !!finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
+  // Satu aturan untuk tombol simpan dan kalimat di bawahnya (lib/production/rencana-wo.ts).
+  const alasan = alasanSimpanWo({
+    vendor: !!vendorId,
+    barangJadi: !!finishedGoodId,
+    modeSku: outputMode === 'SKU',
+    tanpaVarian: noVariantsForSku,
+    pakaiRasio: variantRatios.length > 1,
+    totalRasio: variantRatioSum,
+    varianTerpilih: selectedVariantSku.length > 0,
+    adaBom: r.aturanTermuat ? r.consumptionRules.length > 0 : true,
+    bahanUtama: !!r.consumptionMaterialId,
+    caraIsi: r.caraIsi,
+    pcs: r.pcsDiketik,
+    jumlahBahan: Number(r.consumptionInput) || 0,
+    menghitung: r.isComputingConsumption,
+    adaHasil: r.consumptionResult != null,
+    jumlahRencana: plannedNum,
+    stokKurang: r.hasShortage,
+    rollCukup: r.rollValid,
+  });
+  const canSubmit = !!session?.user?.id && !isSubmitting && alasan === null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -452,15 +245,12 @@ export default function NewWorkOrderPage() {
           finishedGoodId,
           outputMode,
           plannedQty: plannedNum,
-          expectedConsumption:
-            caraIsi === 'pcs'
-              ? consumptionResult?.actualConsumption || undefined
-              : consumptionInput.trim() ? Number(consumptionInput) : undefined,
-          consumptionMaterialId: consumptionMaterialId || undefined,
+          expectedConsumption: r.expectedConsumptionUntukSimpan,
+          consumptionMaterialId: r.consumptionMaterialId || undefined,
           targetDate: parseDateOnly(targetDate),
           poId: poId.trim() || undefined,
           notes: notes.trim() || undefined,
-          rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
+          rollBreakdown: r.rollBreakdown.length > 0 ? r.rollBreakdown : undefined,
           skuBreakdown:
             outputMode === 'SKU'
               ? variantRatios.length > 1
@@ -498,14 +288,14 @@ export default function NewWorkOrderPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/backoffice/work-orders">
-          <Button variant="ghost" size="icon" aria-label={tWO('detail.backToList')} title={tWO('detail.backToList')}>
+        <Button asChild variant="ghost" size="icon">
+          <Link href="/backoffice/work-orders" aria-label={tWO('detail.backToList')} title={tWO('detail.backToList')}>
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{tF('newTitle')}</h1>
-          <TombolBantuan judul={tF('newTitle')} />
+          <h1 className="text-2xl font-bold tracking-tight">{tR('judulBaru')}</h1>
+          <TombolBantuan judul={tR('judulBaru')} />
         </div>
       </div>
 
@@ -517,7 +307,7 @@ export default function NewWorkOrderPage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>{tF('vendorLabel')}</Label>
+                <Label>{tR('labelVendor')}</Label>
                 <SearchableCombobox
                   options={tailors.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
                   value={vendorId}
@@ -527,7 +317,7 @@ export default function NewWorkOrderPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>{tF('finishedGoodLabel')}</Label>
+                <Label>{tR('labelBarangJadi')}</Label>
                 <SearchableCombobox
                   options={finishedGoods.map((fg) => ({ value: fg.id, label: `${fg.nameId} (${fg.sku})` }))}
                   value={finishedGoodId}
@@ -540,7 +330,7 @@ export default function NewWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>{tWO('outputMode')}</Label>
+                <Label>{tR('labelModeHasil')}</Label>
                 <Select
                   value={outputMode}
                   onValueChange={(v) => setOutputMode(v as 'GENERIC' | 'SKU')}
@@ -610,7 +400,7 @@ export default function NewWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="targetDate">{tF('targetDateLabel')}</Label>
+                <Label htmlFor="targetDate">{tR('labelTanggalTarget')}</Label>
                 <DatePicker
                   id="targetDate"
                   value={parseDateOnly(targetDate)}
@@ -658,7 +448,7 @@ export default function NewWorkOrderPage() {
             </div>
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between">
-                <Label>{tF('stepsLabel')}</Label>
+                <Label>{tR('labelTahap')}</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -754,284 +544,23 @@ export default function NewWorkOrderPage() {
             <CardHeader>
               <CardTitle>{tF('materialPlanTitle')}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-6">
-              {consumptionRules.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{tWO('defineBomFirst')}</p>
-              ) : (
-                <>
-                  <div className="space-y-2">
-                    <Label>{tF('caraIsiLabel')}</Label>
-                    <Select
-                      value={caraIsi}
-                      onValueChange={(v) => {
-                        setCaraIsi(v as 'pcs' | 'bahan');
-                        setConsumptionResult(null);
-                      }}
-                    >
-                      <SelectTrigger className="w-full sm:w-[280px]" aria-label={tF('caraIsiLabel')}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pcs">{tF('caraIsiPcs')}</SelectItem>
-                        <SelectItem value="bahan">{tF('caraIsiBahan')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>{tWO('materialConsumptionDriver')}</Label>
-                      <SearchableCombobox
-                        options={consumptionRules.map((r) => ({
-                          value: r.materialId,
-                          label: `${r.materialName} (${r.uomCode})`,
-                        }))}
-                        value={consumptionMaterialId}
-                        onValueChange={(v) => {
-                          setConsumptionMaterialId(v);
-                          setConsumptionInput('');
-                          setConsumptionInputDebounced('');
-                          setConsumptionResult(null);
-                        }}
-                        placeholder={tWO('selectMaterial')}
-                      />
-                    </div>
-                    {caraIsi === 'pcs' ? (
-                    <div className="space-y-2">
-                      <Label htmlFor="wo-jumlah-pcs">{tF('jumlahPcsLabel')}</Label>
-                      <Input
-                        id="wo-jumlah-pcs"
-                        type="number"
-                        min={1}
-                        step={1}
-                        value={pcsInput}
-                        onChange={(e) => setPcsInput(e.target.value)}
-                        placeholder="pcs"
-                      />
-                    </div>
-                    ) : (
-                    <div className="space-y-2">
-                      <Label>{tWO('consumption')}</Label>
-                      <div className="relative">
-                        <Input
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={consumptionInput}
-                          onChange={(e) => setConsumptionInput(e.target.value)}
-                          placeholder={consumptionMaterialId ? consumptionRules.find((r) => r.materialId === consumptionMaterialId)?.uomCode : ''}
-                          disabled={!consumptionMaterialId}
-                          className={isComputingConsumption ? 'pr-9' : ''}
-                        />
-                        {isComputingConsumption && (
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" aria-hidden>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    )}
-                    {(isComputingConsumption || consumptionResult) && (
-                      <div className="sm:col-span-2 space-y-1 text-sm">
-                        <p className="flex items-center gap-2">
-                          <span className="font-medium">{tWO('plannedQtyCalculated')}:</span>
-                          {isComputingConsumption ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
-                              <span className="text-muted-foreground">{tF('calculating')}</span>
-                            </>
-                          ) : (
-                              <span>{plannedNum} pcs</span>
-                            )}
-                        </p>
-                        {consumptionResult && (
-                          <>
-                            <p className="text-muted-foreground">
-                              {tWO('actualConsumption')}: {consumptionResult.actualConsumption.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
-                            </p>
-                            {caraIsi === 'bahan' && (
-                              <p className="text-muted-foreground">
-                                {tWO('remainder')}: {consumptionResult.remainder.toLocaleString('id-ID', { maximumFractionDigits: 4 })} {consumptionResult.uomCode}
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    )}
-                    {caraIsi === 'bahan' && consumptionMaterialId && consumptionInput && !consumptionResult && plannedNum === 0 && Number(consumptionInput) > 0 && !isComputingConsumption && (
-                      <p className="sm:col-span-2 text-sm text-destructive">{tWO('increaseConsumptionOrMaterial')}</p>
-                    )}
-                  </div>
-
-                  {plannedNum > 0 && (
-                    <>
-                      {isLoadingPlan ? (
-                        <div className="py-8 text-center text-muted-foreground">
-                          {tF('loadingPlan')}
-                        </div>
-                      ) : (
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>{tWO('material')}</TableHead>
-                                <TableHead className="text-right">
-                                  {tWO('kebutuhanTotalRencana')} {tF('wasteSuffix')}
-                                </TableHead>
-                                <TableHead className="text-right">{tF('colAvailable')}</TableHead>
-                                <TableHead className="text-right">{tF('colShortage')}</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {materialPlan.map((m) => (
-                                <TableRow
-                                  key={m.itemId}
-                                  className={
-                                    m.shortage > 0 ? 'bg-destructive/10' : undefined
-                                  }
-                                >
-                                  <TableCell className="font-medium">
-                                    {m.itemName}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {m.plannedQty.toLocaleString('id-ID')} {m.uomCode} (
-                                    {m.wastePercent}%)
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {m.availableStock.toLocaleString('id-ID')} {m.uomCode}
-                                  </TableCell>
-                                  <TableCell className="text-right">
-                                    {m.shortage > 0 ? (
-                                      <span className="text-destructive font-medium">
-                                        -{m.shortage.toLocaleString('id-ID')} {m.uomCode}
-                                      </span>
-                                    ) : (
-                                      <span className="text-muted-foreground">-</span>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      )}
-                      {hasShortage && (
-                        <p className="text-sm text-destructive">
-                          Stok tidak mencukupi. Tambah stok atau kurangi qty rencana.
-                        </p>
-                      )}
-
-                      <div className="space-y-2 border-t pt-4">
-                        <Label>Alokasi per roll (opsional)</Label>
-                        <p className="text-xs text-muted-foreground">
-                          {tF('rollHintNew')}
-                        </p>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>{tWO('detail.colRollRef')}</TableHead>
-                                <TableHead className="text-right">{tF('colWholeRollQty')}</TableHead>
-                                <TableHead>{tWO('notes')}</TableHead>
-                                <TableHead className="w-12">
-                                  <span className="sr-only">{tWO('detail.colActions')}</span>
-                                </TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {rollBreakdown.map((row, i) => (
-                                <TableRow key={i}>
-                                  <TableCell className="font-medium">{row.rollRef}</TableCell>
-                                  <TableCell className="text-right">{Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
-                                  <TableCell>
-                                    <Input
-                                      value={row.notes ?? ''}
-                                      onChange={(e) => updateRollRow(i, 'notes', e.target.value)}
-                                      placeholder={tF('optional')}
-                                      className="h-8"
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => removeRollRow(i)}
-                                      aria-label={tF('removeRoll', { ref: row.rollRef })}
-                                      title={tF('removeRoll', { ref: row.rollRef })}
-                                    >
-                                      ×
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <SearchableCombobox
-                            options={availableRolls
-                              .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
-                              .map((r) => ({
-                                value: r.rollId,
-                                label: tF('rollRemaining', {
-                                  code: r.rollCode,
-                                  qty: r.remainingLength.toLocaleString('id-ID'),
-                                }),
-                              }))}
-                            value={addRollValue}
-                            onValueChange={(value) => {
-                              const roll = availableRolls.find((r) => r.rollId === value);
-                              if (roll) {
-                                addRollBySelection(roll);
-                                setAddRollValue('');
-                              }
-                            }}
-                            placeholder={tF('addRollPlaceholder')}
-                            emptyMessage={tF('noMoreRolls')}
-                            triggerClassName="w-[280px]"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleSuggestRolls}
-                            disabled={!consumptionMaterialId || isSuggestingRolls}
-                          >
-                            {isSuggestingRolls ? tF('suggesting') : tF('suggestBestFit')}
-                          </Button>
-                        </div>
-                        {rollBreakdown.length > 0 && (
-                          <p className="text-sm">
-                            {tF(rollSum >= materialPlannedQtyForRolls - 1e-6 ? 'allocatedOver' : 'allocatedShort', {
-                              total: `${rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}${consumptionResult ? ` ${consumptionResult.uomCode}` : ''}`,
-                              diff: Math.abs(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-                            })}
-                          </p>
-                        )}
-                        {rollBreakdown.length > 0 && !rollValid && (
-                          <p className="text-sm text-destructive">
-                            Total roll ({rollSum.toLocaleString(undefined, { maximumFractionDigits: 4 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}) kurang dari kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}).
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
+            <CardContent>
+              <RencanaBahanWo r={r} />
             </CardContent>
           </Card>
         )}
 
-        <div className="flex gap-4">
-          <Button type="submit" disabled={!canSubmit}>
-            {isSubmitting ? tF('creating') : tF('createWO')}
-          </Button>
-          <Link href="/backoffice/work-orders">
-            <Button type="button" variant="outline">
-              {tF('cancel')}
+        <div className="space-y-2">
+          <div className="flex gap-4">
+            <Button type="submit" disabled={!canSubmit}>
+              {isSubmitting ? tF('creating') : tR('tombolBuat')}
             </Button>
-          </Link>
+            <Button asChild variant="outline">
+              <Link href="/backoffice/work-orders">{tF('cancel')}</Link>
+            </Button>
+          </div>
+          {/* Tombol mati menyebut kekurangan pertamanya. */}
+          <KeteranganSimpanWo alasan={isSubmitting ? null : alasan} />
         </div>
       </form>
     </div>

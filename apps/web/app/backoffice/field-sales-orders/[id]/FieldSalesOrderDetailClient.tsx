@@ -262,14 +262,25 @@ export function FieldSalesOrderDetailClient({
         />
       )}
 
-      {kredit && (
-        <KreditPanel
-          kredit={kredit}
-          fakturTampil={fakturKredit}
-          menunggu={order.status === "PENDING_APPROVAL"}
-          bolehBukaPiutang={bolehBukaPiutang}
-        />
-      )}
+      {kredit &&
+        (order.status === "REJECTED" ? (
+          // Ditolak kantor atau dibatalkan salesman: tidak ada keputusan kredit lagi — panelnya dilipat.
+          <details className="rounded-xl border bg-card px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-medium">
+              {order.dibatalkan ? t("kredit.dilipatDibatalkan") : t("kredit.dilipatDitolak")}
+            </summary>
+            <div className="mt-3">
+              <KreditPanel kredit={kredit} fakturTampil={fakturKredit} menunggu={false} bolehBukaPiutang={bolehBukaPiutang} />
+            </div>
+          </details>
+        ) : (
+          <KreditPanel
+            kredit={kredit}
+            fakturTampil={fakturKredit}
+            menunggu={order.status === "PENDING_APPROVAL"}
+            bolehBukaPiutang={bolehBukaPiutang}
+          />
+        ))}
 
       {canApprove && (
         <ApproveRejectCard

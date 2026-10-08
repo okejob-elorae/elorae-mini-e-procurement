@@ -1,6 +1,7 @@
 import { prisma } from '@elorae/db';
 import { cariTeks } from '@/lib/db/cari-teks';
 import { whereWoTerlambat } from '@/lib/production/terlambat';
+import { angkaSetoranWo } from '@/lib/production/setoran-wo';
 
 export type ListWorkOrdersFilters = {
   status?: string;
@@ -39,6 +40,14 @@ const workOrderListInclude = {
       receipts: true,
     },
   },
+  // Angka setoran di daftar dihitung dari dokumen penerimaan, sama dengan rincian WO.
+  receipts: {
+    select: {
+      qtyReceived: true,
+      qtyRejected: true,
+      qtyAccepted: true,
+    },
+  },
 } as const;
 
 function serializeWorkOrderRow(wo: {
@@ -64,6 +73,7 @@ function serializeWorkOrderRow(wo: {
   vendor: { name: string; code: string };
   finishedGood: { id: string; sku: string; nameId: string; nameEn: string };
   _count: { issues: number; receipts: number };
+  receipts?: Array<{ qtyReceived: unknown; qtyRejected: unknown; qtyAccepted: unknown }>;
 }) {
   return {
     id: wo.id,
@@ -88,6 +98,7 @@ function serializeWorkOrderRow(wo: {
     vendor: wo.vendor,
     finishedGood: wo.finishedGood,
     _count: wo._count,
+    setoran: angkaSetoranWo({ plannedQty: wo.plannedQty, actualQty: wo.actualQty, receipts: wo.receipts ?? [] }),
   };
 }
 

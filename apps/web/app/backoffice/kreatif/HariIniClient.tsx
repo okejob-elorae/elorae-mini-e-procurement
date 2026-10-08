@@ -15,7 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
-import { angkaTitik, rupiahTeks } from "@/lib/creative/angka-konten";
+import { angkaTitik, feeBruto, rupiahTeks } from "@/lib/creative/angka-konten";
 import type { KpiKreatif } from "@/lib/creative/tugas-queries";
 import type { BarisTugas, KelompokTugas, KunciTugas } from "@/lib/creative/tugas";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -148,11 +148,22 @@ export function HariIniClient({ param, hariIni, kelompok, kpi, campaign, umurMer
           judul={t("hariIni.kpi.gmv")}
           nilai={kpi.angka.gmv}
           format={rupiahTeks}
+          uang
           sub={t("hariIni.kpi.gmvSub", { n: angkaTitik(kpi.angka.orders) })}
           nada="text-emerald-700 dark:text-emerald-300"
         />
         <KartuKpi judul={t("hariIni.kpi.views")} nilai={kpi.angka.angka.views} format={angkaTitik} sub={t("hariIni.kpi.viewsSub", { n: angkaTitik(kpi.angka.jumlahKonten) })} />
-        <KartuKpi judul={t("hariIni.kpi.biaya")} nilai={kpi.angka.biaya.total} format={rupiahTeks} sub={t("hariIni.kpi.biayaSub")} />
+        <KartuKpi
+          judul={t("hariIni.kpi.biaya")}
+          nilai={kpi.angka.biaya.total}
+          format={rupiahTeks}
+          uang
+          sub={
+            kpi.angka.biaya.pph > 0
+              ? t("hariIni.kpi.biayaSubGrossUp", { fee: rupiahTeks(kpi.angka.biaya.fee), bruto: rupiahTeks(feeBruto(kpi.angka.biaya)) })
+              : t("hariIni.kpi.biayaSubFee", { fee: rupiahTeks(kpi.angka.biaya.fee) })
+          }
+        />
         <KartuRoas roas={kpi.angka.roas} judul={t("hariIni.kpi.roas")} sub={t("hariIni.kpi.roasSub")} kosong={t("hariIni.kpi.roasKosong")} />
       </section>
 
@@ -192,11 +203,30 @@ export function HariIniClient({ param, hariIni, kelompok, kpi, campaign, umurMer
   );
 }
 
-function KartuKpi({ judul, nilai, format, sub, nada }: { judul: string; nilai: number; format: (n: number) => string; sub: string; nada?: string }) {
+function KartuKpi({
+  judul,
+  nilai,
+  format,
+  sub,
+  nada,
+  uang,
+}: {
+  judul: string;
+  nilai: number;
+  format: (n: number) => string;
+  sub: string;
+  nada?: string;
+  /** Rupiah tidak pernah dipatahkan ("Rp" lalu angka di baris berikutnya); hurufnya mengecil di HP. */
+  uang?: boolean;
+}) {
   return (
     <Card className="gap-1 px-4 py-4">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{judul}</p>
-      <AngkaNaik nilai={nilai} format={format} className={cn("text-xl font-semibold tabular-nums break-words", nada)} />
+      <AngkaNaik
+        nilai={nilai}
+        format={format}
+        className={cn("font-semibold tabular-nums", uang ? "whitespace-nowrap text-base sm:text-xl" : "text-xl break-words", nada)}
+      />
       <p className="text-xs text-muted-foreground">{sub}</p>
     </Card>
   );
@@ -418,7 +448,8 @@ function InfoBaris({ kunci, b, locale }: { kunci: KunciTugas; b: BarisTugas; loc
       break;
     }
     case "BELUM_DIBAYAR":
-      if (i.fee) bagian.push(t("hariIni.tugas.info.fee", { fee: rupiahTeks(i.fee) }));
+      // "Fee" selalu berarti fee kolaborasi utuh; jumlah satu termin ditulis "Termin …".
+      if (i.fee) bagian.push(i.feeTermin ? t("hariIni.tugas.info.termin", { jumlah: rupiahTeks(i.fee) }) : t("hariIni.tugas.info.fee", { fee: rupiahTeks(i.fee) }));
       bagian.push(t("hariIni.tugas.info.tenggat", { tanggal: tgl(i.tanggal) }));
       break;
     case "BELUM_DIBALAS":

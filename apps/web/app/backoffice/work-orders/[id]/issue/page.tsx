@@ -47,6 +47,10 @@ import { getItemAvgCosts } from '@/app/actions/inventory';
 import { ItemType } from '@/lib/constants/enums';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { newLocalId } from '@/lib/pwa/id-lokal';
+import { WoTidakDitemukan } from '../../WoTidakDitemukan';
+
+/** Angka bahan Indonesia ("10,5"), bukan format peramban. */
+const fmt = (n: number, maks = 2) => n.toLocaleString('id-ID', { maximumFractionDigits: maks });
 
 interface PlanRow {
   itemId: string;
@@ -374,7 +378,7 @@ export default function WorkOrderIssuePage() {
 
   /** Pesan untuk penolakan berkode dari `keluarkanBahan` (pesan lemparan disamarkan di produksi). */
   const pesanTolak = (hasil: Extract<KeluarkanBahanResult, { ok: false }>) => {
-    const angka = (n?: number) => (n ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const angka = (n?: number) => fmt(n ?? 0);
     switch (hasil.code) {
       case 'ROLL_KURANG_DARI_KAIN':
         return tI('rollBelowFabric', { roll: angka(hasil.roll), fabric: angka(hasil.kain) });
@@ -402,8 +406,8 @@ export default function WorkOrderIssuePage() {
     if (issueType === "FABRIC" && fabricQty > 0 && rollBreakdown.length > 0 && rollSum + 1e-6 < fabricQty) {
       toast.error(
         tI('rollBelowFabric', {
-          roll: rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 }),
-          fabric: fabricQty.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+          roll: fmt(rollSum),
+          fabric: fmt(fabricQty),
         })
       );
       return;
@@ -439,22 +443,32 @@ export default function WorkOrderIssuePage() {
     }
   };
 
-  if (isLoading || !wo) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
+  if (!wo) return <WoTidakDitemukan />;
+
+  // Tombol simpan yang mati menyebut alasannya (kekurangan pertama menurut urutan isian).
+  const alasanMati = isSubmitting
+    ? null
+    : lines.length === 0
+      ? tI('alasanBelumAdaBahan')
+      : !rollValid
+        ? tI('alasanRollKurang')
+        : null;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/backoffice/work-orders/${id}`}>
-          <Button variant="ghost" size="icon" aria-label={tWO('recon.backToWO')} title={tWO('recon.backToWO')}>
+        <Button asChild variant="ghost" size="icon">
+          <Link href={`/backoffice/work-orders/${id}`} aria-label={tWO('recon.backToWO')} title={tWO('recon.backToWO')}>
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div>
           <div className="flex items-center gap-1">
             <h1 className="text-2xl font-bold">{tWO('issueMaterials')}</h1>
@@ -464,7 +478,8 @@ export default function WorkOrderIssuePage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Bertumpuk di bawah 2xl: di 1280–1440 kolom setengah lebar memotong kolom Sisa. */}
+      <div className="grid gap-6 2xl:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle>{tF('materialPlanTitle')}</CardTitle>
@@ -474,33 +489,33 @@ export default function WorkOrderIssuePage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{tWO('material')}</TableHead>
-                  <TableHead className="text-right">{tWO('kebutuhanTotalRencana')}</TableHead>
-                  <TableHead className="text-right">{tI('colIssued')}</TableHead>
+                  <TableHead className="text-right">{tI('kolomRencana')}</TableHead>
+                  <TableHead className="text-right">{tI('kolomKeluar')}</TableHead>
                   <TableHead className="text-right">{tI('colRemaining')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {planWithRemaining.map((p) => (
                   <TableRow key={p.itemId}>
-                    <TableCell>{p.itemName}</TableCell>
-                    <TableCell className="text-right">
-                      {p.plannedQty.toLocaleString('id-ID', { maximumFractionDigits: 2 })} {p.uomCode ?? ''}
+                    <TableCell className="whitespace-normal">{p.itemName}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {fmt(p.plannedQty)} {p.uomCode ?? ''}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {p.issuedQty.toLocaleString('id-ID', { maximumFractionDigits: 2 })} {p.uomCode ?? ''}
+                    <TableCell className="text-right tabular-nums">
+                      {fmt(p.issuedQty)} {p.uomCode ?? ''}
                     </TableCell>
                     <TableCell
                       className={
                         p.plannedQty - p.issuedQty < 0
-                          ? 'text-right font-medium text-amber-700 dark:text-amber-400'
-                          : 'text-right'
+                          ? 'text-right font-medium tabular-nums text-amber-800 dark:text-amber-300'
+                          : 'text-right tabular-nums'
                       }
                     >
                       {p.plannedQty - p.issuedQty < 0
                         ? tI('lebihDariRencana', {
-                            qty: Math.abs(p.plannedQty - p.issuedQty).toLocaleString('id-ID', { maximumFractionDigits: 2 }),
+                            qty: `${fmt(Math.abs(p.plannedQty - p.issuedQty))} ${p.uomCode ?? ''}`.trim(),
                           })
-                        : (p.plannedQty - p.issuedQty).toLocaleString('id-ID', { maximumFractionDigits: 2 })}
+                        : `${fmt(p.plannedQty - p.issuedQty)} ${p.uomCode ?? ''}`.trim()}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -543,7 +558,7 @@ export default function WorkOrderIssuePage() {
                 <Label htmlFor="partial">{tI('partial')}</Label>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Label>{tI('addMaterial')}</Label>
+                <Label>{tI('tambahBahan')}</Label>
                 <SearchableCombobox
                   options={planWithRemaining
                     .filter((p) => !lines.some((l) => l.itemId === p.itemId))
@@ -551,12 +566,12 @@ export default function WorkOrderIssuePage() {
                       value: p.itemId,
                       label: tI('materialRemaining', {
                         name: p.itemName,
-                        qty: (p.plannedQty - p.issuedQty).toLocaleString('id-ID'),
+                        qty: `${fmt(p.plannedQty - p.issuedQty)} ${p.uomCode ?? ''}`.trim(),
                       }),
                     }))}
                   value=""
                   onValueChange={(itemId) => addLine(itemId)}
-                  placeholder={tWO('selectMaterial')}
+                  placeholder={tI('pilihBahan')}
                   triggerClassName="w-[200px]"
                 />
                 <Dialog open={scanOpen} onOpenChange={setScanOpen}>
@@ -565,15 +580,15 @@ export default function WorkOrderIssuePage() {
                       type="button"
                       variant="outline"
                       size="icon"
-                      aria-label={tI('scanBarcode')}
-                      title={tI('scanBarcode')}
+                      aria-label={tI('pindaiBarcode')}
+                      title={tI('pindaiBarcode')}
                     >
                       <Barcode className="h-4 w-4" />
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>{tI('scanBarcode')}</DialogTitle>
+                      <DialogTitle>{tI('pindaiBarcode')}</DialogTitle>
                     </DialogHeader>
                     <BarcodeScanner
                       onScan={handleScan}
@@ -591,7 +606,7 @@ export default function WorkOrderIssuePage() {
                     <TableRow>
                       <TableHead>{tWO('material')}</TableHead>
                       <TableHead className="text-right">{tWO('qty')}</TableHead>
-                      <TableHead className="text-right">{tI('colUnitPrice')}</TableHead>
+                      <TableHead className="text-right">{tI('kolomHargaSatuan')}</TableHead>
                       <TableHead className="w-12">
                         <span className="sr-only">{tWO('detail.colActions')}</span>
                       </TableHead>
@@ -612,7 +627,7 @@ export default function WorkOrderIssuePage() {
                               updateLineQty(l.itemId, v === '' ? 0 : Number(v));
                             }}
                             className="w-24 text-right"
-                            placeholder={l.maxQty > 0 ? tI('maxQty', { max: l.maxQty }) : tI('overIssueOk')}
+                            placeholder={l.maxQty > 0 ? tI('maxQty', { max: fmt(l.maxQty) }) : tI('overIssueOk')}
                           />
                         </TableCell>
                         <TableCell className="text-right">
@@ -646,7 +661,7 @@ export default function WorkOrderIssuePage() {
               )}
               {issueType === "FABRIC" && consumptionMaterialId && (
                 <div className="space-y-2 border-t pt-4">
-                  <Label>Alokasi per roll (opsional)</Label>
+                  <Label>{tI('alokasiRoll')}</Label>
                   <p className="text-xs text-muted-foreground">
                     {tI('rollHint')}
                   </p>
@@ -667,8 +682,8 @@ export default function WorkOrderIssuePage() {
                           {rollBreakdown.map((row, i) => (
                             <TableRow key={`${row.rollRef}-${i}`}>
                               <TableCell className="font-medium">{row.rollRef}</TableCell>
-                              <TableCell className="text-right">
-                                {Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              <TableCell className="text-right tabular-nums">
+                                {fmt(Number(row.qty))}
                               </TableCell>
                               <TableCell>
                                 <Input
@@ -734,24 +749,29 @@ export default function WorkOrderIssuePage() {
                     <p className="text-sm">
                       {fabricIssueQty > 0
                         ? tF(rollSum >= fabricIssueQty - 1e-6 ? 'allocatedOver' : 'allocatedShort', {
-                            total: rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 }),
-                            diff: Math.abs(rollSum - fabricIssueQty).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                            total: fmt(rollSum),
+                            diff: fmt(Math.abs(rollSum - fabricIssueQty)),
                           })
                         : tI('allocatedTotal', {
-                            total: rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                            total: fmt(rollSum),
                           })}
                     </p>
                   )}
                   {!rollValid && (
                     <p className="text-sm text-destructive">
-                      Total roll ({rollSum.toLocaleString(undefined, { maximumFractionDigits: 4 })}) kurang dari qty kain yang di-issue ({fabricIssueQty.toLocaleString(undefined, { maximumFractionDigits: 4 })}).
+                      {tI('rollBelowFabric', { roll: fmt(rollSum, 4), fabric: fmt(fabricIssueQty, 4) })}
                     </p>
                   )}
                 </div>
               )}
-              <Button type="submit" disabled={isSubmitting || lines.length === 0 || !rollValid}>
-                {isSubmitting ? tI('issuing') : tWO('issueMaterials')}
-              </Button>
+              <div className="space-y-1">
+                <Button type="submit" disabled={isSubmitting || lines.length === 0 || !rollValid}>
+                  {isSubmitting ? tI('issuing') : tWO('issueMaterials')}
+                </Button>
+                {alasanMati ? (
+                  <p className="text-sm text-muted-foreground" aria-live="polite">{alasanMati}</p>
+                ) : null}
+              </div>
             </form>
           </CardContent>
         </Card>

@@ -22,7 +22,8 @@ import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { ClipboardList } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -37,6 +38,7 @@ import { formatRupiah } from "@/lib/format/rupiah";
 import { LencanaJarakJauh } from "@/app/pwa/orders/[id]/LencanaJarakJauh";
 import { LencanaInden } from "./LencanaInden";
 import { useSorotBaris } from "@/components/gerak/useSorotBaris";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 
 type StatusFilter = FieldSalesOrderStatusFilter | "ALL";
 
@@ -56,6 +58,8 @@ type Props = {
   pageSize: number;
   /** Pesanan menunggu persetujuan yang kreditnya ditahan saat dibuat. */
   kreditDitahanIds?: string[];
+  /** Saringan dari Kinerja sales lapangan (`?dari=&sampai=&salesman=`), tanggal sudah diformat. */
+  saringKinerja?: { dari: string | null; sampai: string | null; sales: string | null } | null;
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -150,17 +154,41 @@ export function FieldSalesOrdersPageClient(props: Props) {
     startTransition(() => router.push("/backoffice/field-sales-orders?status=ALL"));
   }
 
+  const saringKinerja = props.saringKinerja ?? null;
+  const tanggalKinerja = saringKinerja
+    ? saringKinerja.dari && saringKinerja.sampai
+      ? saringKinerja.dari === saringKinerja.sampai
+        ? saringKinerja.dari
+        : `${saringKinerja.dari} – ${saringKinerja.sampai}`
+      : saringKinerja.dari
+        ? t("saring.sejak", { tanggal: saringKinerja.dari })
+        : saringKinerja.sampai
+          ? t("saring.sampai", { tanggal: saringKinerja.sampai })
+          : null
+    : null;
+
+  /** Alamat tanpa saringan apa pun: status bawaan "menunggu persetujuan" dipilih server, bukan pengguna. */
+  const saringanBawaan =
+    !sp.get("status") &&
+    !props.search &&
+    props.orderType === "ALL" &&
+    props.storeId === "ALL" &&
+    inden === "ALL" &&
+    kirim === "ALL" &&
+    !props.saringKinerja;
+
   const hasFilter =
     !!props.search ||
     props.status !== "ALL" ||
     props.orderType !== "ALL" ||
     props.storeId !== "ALL" ||
     inden !== "ALL" ||
-    kirim !== "ALL";
+    kirim !== "ALL" ||
+    !!saringKinerja;
 
   return (
     <div className="space-y-4">
-      <PageHeader title={t("pageTitle")} />
+      <PageHeader title={t("judulHalaman")} />
 
       <Card className="p-4">
         <div className="flex flex-wrap items-end gap-3">
@@ -180,6 +208,7 @@ export function FieldSalesOrdersPageClient(props: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">{t("statusAll")}</SelectItem>
+                <SelectItem value="AKTIF">{t("saring.aktif")}</SelectItem>
                 <SelectItem value="PENDING_APPROVAL">{t("statusPending")}</SelectItem>
                 <SelectItem value="APPROVED">{t("statusApproved")}</SelectItem>
                 <SelectItem value="REJECTED">{t("saring.ditolakKantor")}</SelectItem>
@@ -251,9 +280,31 @@ export function FieldSalesOrdersPageClient(props: Props) {
             </Button>
           </div>
         </div>
+        {/* Dibawa dari Kinerja sales lapangan: isi daftar = angka kartu/baris di sana. */}
+        {saringKinerja ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-muted-foreground">{t("saring.dariKinerja")}</span>
+            {tanggalKinerja ? <Badge variant="secondary">{t("saring.dibuat", { tanggal: tanggalKinerja })}</Badge> : null}
+            {saringKinerja.sales ? <Badge variant="secondary">{t("saring.sales", { nama: saringKinerja.sales })}</Badge> : null}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => pushParams({ dari: undefined, sampai: undefined, salesman: undefined })}
+            >
+              {t("saring.hapusKinerja")}
+            </Button>
+          </div>
+        ) : null}
       </Card>
 
       <Card>
+        {/* Kartu berjudul seperti daftar lain di grup Penjualan (Pesanan marketplace, Pemenuhan). */}
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ClipboardList className="h-5 w-5" />
+            {t("daftarJudul")}
+          </CardTitle>
+        </CardHeader>
         <Table>
           <TableHeader>
             <TableRow>
@@ -270,7 +321,15 @@ export function FieldSalesOrdersPageClient(props: Props) {
             {props.orders.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="whitespace-normal py-8 text-center text-muted-foreground">
-                  {hasFilter ? (
+                  {saringanBawaan ? (
+                    // Dibuka tanpa saringan: bawaannya "menunggu persetujuan" — bukan saringan pengguna.
+                    <div className="flex flex-col items-center gap-3">
+                      <span>{t("kosongMenunggu")}</span>
+                      <Button variant="outline" size="sm" onClick={clearFilters}>
+                        {t("lihatSemuaPesanan")}
+                      </Button>
+                    </div>
+                  ) : hasFilter ? (
                     <div className="flex flex-col items-center gap-3">
                       <span>{t("emptyFiltered")}</span>
                       <Button variant="outline" size="sm" onClick={clearFilters}>
@@ -292,7 +351,16 @@ export function FieldSalesOrdersPageClient(props: Props) {
                     startTransition(() => router.push(`/backoffice/field-sales-orders/${o.id}`))
                   }
                 >
-                  <TableCell className="font-mono text-sm">{o.orderNo}</TableCell>
+                  <TableCell className="font-mono text-sm">
+                    {/* Tautan sungguhan: bisa difokus papan ketik dan dibuka di tab baru; baris tetap bisa diklik. */}
+                    <Link
+                      href={`/backoffice/field-sales-orders/${o.id}`}
+                      className={TAUTAN_DOKUMEN}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {o.orderNo}
+                    </Link>
+                  </TableCell>
                   <TableCell className="hidden 2xl:table-cell">
                     <Badge variant="outline">
                       {o.orderType === "KONSI" ? t("typeKonsi") : t("typePutus")}

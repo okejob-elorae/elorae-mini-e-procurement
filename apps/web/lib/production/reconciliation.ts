@@ -9,6 +9,7 @@ import {
   parseVendorReturnLines,
 } from '@/lib/vendor-returns/baris-retur';
 import { SUMBER_KEMBALI_BAHAN } from './kembali-bahan';
+import { bagianBahanPenerimaan } from "./biaya-penerimaan";
 
 export interface ReconciliationResult {
   itemId: string;
@@ -228,10 +229,9 @@ export async function getWorkOrderSummary(woId: string) {
     return sum.plus(v != null ? new Decimal(String(v)) : 0);
   }, new Decimal(0));
 
-  const totalFGValue = wo.receipts.reduce((sum, receipt) => {
-    const v = receipt.totalCostValue;
-    return sum.plus(v != null ? new Decimal(String(v)) : 0);
-  }, new Decimal(0));
+  // Bagian BAHAN penerimaan (bukan totalCostValue, yang kini memuat ongkos
+  // jahit) — dibandingkan dengan biaya bahan yang dikeluarkan.
+  const totalFGValue = wo.receipts.reduce((sum, receipt) => sum.plus(bagianBahanPenerimaan(receipt)), new Decimal(0));
   
   return {
     workOrder: wo,

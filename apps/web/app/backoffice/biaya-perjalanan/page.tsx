@@ -15,6 +15,7 @@ import {
 } from "@/lib/salesman/biaya";
 import { daftarBiayaKantor, type BarisBiayaKantor } from "@/lib/salesman/biaya-queries";
 import { daftarSalesman } from "@/lib/salesman/queries";
+import { daftarAkunKasBank } from "@/lib/finance/operasional/akun-kas";
 import { BiayaPerjalananClient } from "./BiayaPerjalananClient";
 
 export const dynamic = "force-dynamic";
@@ -65,9 +66,11 @@ export default async function BiayaPerjalananPage({ searchParams }: PageProps) {
   const status = STATUS_BIAYA.includes(sp.status as StatusBiaya) ? (sp.status as StatusBiaya) : null;
   const salesmanId = sp.salesman?.trim() || null;
 
-  const [data, salesman] = await Promise.all([
+  const bolehBayar = bolehMembayarBiaya(izin);
+  const [data, salesman, akunKas] = await Promise.all([
     semuaBulan ? daftarBiayaSemuaBulan({ status, salesmanId }) : daftarBiayaKantor({ bulan, status, salesmanId }),
     daftarSalesman(),
+    bolehBayar ? daftarAkunKasBank() : Promise.resolve([]),
   ]);
   const pilihan = daftarBulanTerakhir(12, sekarang);
   if (!semuaBulan && !pilihan.includes(bulan)) pilihan.push(bulan);
@@ -81,7 +84,8 @@ export default async function BiayaPerjalananPage({ searchParams }: PageProps) {
       salesman={salesman}
       data={data}
       bolehSetujui={bolehMenyetujuiBiaya(izin)}
-      bolehBayar={bolehMembayarBiaya(izin)}
+      bolehBayar={bolehBayar}
+      akunKas={akunKas.map((a) => ({ id: a.id, label: `${a.code} · ${a.name}` }))}
     />
   );
 }

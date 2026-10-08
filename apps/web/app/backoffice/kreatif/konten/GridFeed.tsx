@@ -108,11 +108,14 @@ export function GridFeed({
       {Array.from({ length: Math.ceil(semuaSel.length / KOLOM_FEED) }).flatMap((_, r) => {
         const potong = semuaSel.slice(r * KOLOM_FEED, (r + 1) * KOLOM_FEED);
         return [
+          // Nomor baris feed — disengaja, meniru lembar kerja tim (lihat komentar di atas).
           <div
             key={`nomor-${r}`}
             className="w-6 pt-9 text-right text-sm font-medium tabular-nums text-muted-foreground"
+            title={t('rowNumber', { n: r + 1 })}
           >
-            {r + 1}
+            <span aria-hidden>{r + 1}</span>
+            <span className="sr-only">{t('rowNumber', { n: r + 1 })}</span>
           </div>,
           ...potong.map((c) =>
             c.tambah ? (

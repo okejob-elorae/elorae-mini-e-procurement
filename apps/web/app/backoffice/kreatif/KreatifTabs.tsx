@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -7,6 +8,8 @@ import {
   BarChart3,
   CalendarDays,
   CalendarRange,
+  ChevronLeft,
+  ChevronRight,
   ClipboardList,
   Flag,
   Handshake,
@@ -16,6 +19,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -58,9 +62,31 @@ export function KreatifTabs({ jumlahTugas = 0 }: { jumlahTugas?: number }) {
   const t = useTranslations('kreatifRuang.tab');
   const pathname = usePathname();
   const aktif = tabAktif(pathname);
+  const nav = useRef<HTMLElement>(null);
+  const [tepi, setTepi] = useState({ kiri: false, kanan: false });
+
+  // Sebelas tab lebih lebar dari layar laptop: tab yang aktif selalu digulir ke
+  // dalam pandangan, dan tepi yang masih bisa digulir diberi bayangan + tombol
+  // (audit ulang 2026-10-08 — tab Pengaturan pernah tersembunyi di luar layar).
+  useEffect(() => {
+    const el = nav.current;
+    if (!el) return;
+    const ukur = () => setTepi({ kiri: el.scrollLeft > 2, kanan: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 });
+    el.querySelector<HTMLElement>('[aria-current="page"]')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    ukur();
+    el.addEventListener('scroll', ukur, { passive: true });
+    window.addEventListener('resize', ukur);
+    return () => {
+      el.removeEventListener('scroll', ukur);
+      window.removeEventListener('resize', ukur);
+    };
+  }, [aktif]);
+
+  const geser = (arah: 1 | -1) => nav.current?.scrollBy({ left: arah * Math.max(160, nav.current.clientWidth * 0.6), behavior: 'smooth' });
 
   return (
-    <nav className="-mx-1 overflow-x-auto border-b" aria-label={t('label')}>
+    <div className="relative">
+    <nav ref={nav} className="-mx-1 overflow-x-auto border-b [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label={t('label')}>
       <div className="flex min-w-max gap-1 px-1">
         {TAB_KREATIF.map(({ href, key, ikon: Ikon }) => (
           <Link
@@ -91,5 +117,20 @@ export function KreatifTabs({ jumlahTugas = 0 }: { jumlahTugas?: number }) {
         ))}
       </div>
     </nav>
+      {tepi.kiri ? (
+        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center bg-gradient-to-r from-background via-background/90 to-transparent pr-6">
+          <Button type="button" variant="ghost" size="icon" onClick={() => geser(-1)} className="pointer-events-auto h-7 w-7" aria-label={t('gulirKiri')}>
+            <ChevronLeft className="h-4 w-4" aria-hidden />
+          </Button>
+        </div>
+      ) : null}
+      {tepi.kanan ? (
+        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center bg-gradient-to-l from-background via-background/90 to-transparent pl-6">
+          <Button type="button" variant="ghost" size="icon" onClick={() => geser(1)} className="pointer-events-auto h-7 w-7" aria-label={t('gulirKanan')}>
+            <ChevronRight className="h-4 w-4" aria-hidden />
+          </Button>
+        </div>
+      ) : null}
+    </div>
   );
 }

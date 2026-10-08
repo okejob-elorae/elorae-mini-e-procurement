@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
-import { useFormatter, useTranslations } from 'next-intl';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useTranslations } from 'next-intl';
 import { CheckCircle, Edit, Eye, MessageCircle, MoreHorizontal, Trash2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CategoryBadge } from '@/components/ui/category-badge';
@@ -13,10 +13,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { PropsSorot } from '@/components/gerak/useSorotBaris';
-import { formatDisplayDate } from '@/lib/date-only';
-import { formatRupiah } from '@/lib/format/rupiah';
+import { nomorTelepon, nomorWhatsApp } from '@/lib/salesman/dasbor';
 import { inisialPemasok } from '@/lib/suppliers/inisial';
-import type { AktivitasBaris } from '@/lib/suppliers/aktivitas-queries';
 import type { JenisTampilan } from '@/lib/tampilan/tampilan';
 import { categoryToneClass } from '@/lib/ui/category-color';
 import { cn } from '@/lib/utils';
@@ -28,6 +26,11 @@ import { bolehMemutuskan, type StatusPersetujuanPemasok } from './status-pemasok
  *  - Galeri: kartu dengan lingkaran inisial berwarna menurut jenis;
  *  - Papan: kolom per jenis pemasok.
  * Datanya sama, aksinya sama (rincian, ubah, hapus, setujui/tolak, WhatsApp).
+ *
+ * Ini DATA MASTER: yang tampil hanya data tetap pemasok (kontak, pajak,
+ * rekening, alamat). Progres pekerjaan (PO terbuka, SPK, utang) sengaja tidak
+ * di sini — tempatnya Pesanan pembelian, Follow-up produksi, dan Pembayaran
+ * pemasok (pemilik, 2026-10-08).
  */
 
 export type BarisPemasok = {
@@ -37,7 +40,16 @@ export type BarisPemasok = {
   typeId: string;
   type?: { id: string; code: string; name: string } | null;
   phone: string | null;
+  email?: string | null;
+  address?: string | null;
+  bankName?: string | null;
+  bankAccountName?: string | null;
+  isPkp?: boolean | null;
+  taxWithholding?: string | null;
+  hasNpwp?: boolean;
   status?: StatusPersetujuanPemasok;
+  /** `false` = nonaktif: tidak ditawarkan di PO baru dan tidak tampil di papan Lead time. */
+  isActive?: boolean;
 };
 
 export type AksiTampilanPemasok = {
@@ -51,8 +63,6 @@ export type AksiTampilanPemasok = {
 type Props = {
   tampilan: JenisTampilan;
   pemasok: readonly BarisPemasok[];
-  /** null = masih dimuat. */
-  aktivitas: Record<string, AktivitasBaris> | null;
   jenis: readonly { id: string; name: string }[];
   izin: string[];
   sibuk: boolean;
@@ -101,79 +111,81 @@ function CatatanPersetujuan({ s }: { s: BarisPemasok }) {
   );
 }
 
-/** "Sedang dikerjakan": PO terbuka (kain/aksesoris) dan SPK berjalan (penjahit). */
-function SedangDikerjakan({ a, ringkas }: { a: AktivitasBaris | undefined; ringkas?: boolean }) {
+/** Pemasok nonaktif terlihat di setiap tampilan — dulu tampil persis seperti yang aktif. */
+function LencanaNonaktif({ s }: { s: BarisPemasok }) {
   const t = useTranslations('supplier');
-  if (!a) return <span className="text-muted-foreground">…</span>;
-  const baris: ReactNode[] = [];
-  if (a.spk && a.spk.berjalan > 0) {
-    baris.push(
-      <div key="spk">
-        <span>{t('workSpk', { count: a.spk.berjalan, pcs: a.spk.pcs.toLocaleString('id-ID') })}</span>
-        {a.spk.terlambat > 0 ? (
-          <span className="block text-xs text-destructive">{t('workSpkLate', { count: a.spk.terlambat })}</span>
-        ) : null}
-      </div>,
-    );
-  }
-  if (a.po && a.po.terbuka > 0) {
-    baris.push(
-      <div key="po">
-        <span>{t('workPo', { count: a.po.terbuka })}</span>
-        {a.po.terlambat > 0 ? (
-          <span className="block text-xs text-destructive">{t('workPoLate', { count: a.po.terlambat })}</span>
-        ) : a.po.tibaTerdekat && !ringkas ? (
-          <span className="block text-xs text-muted-foreground">
-            {t('workArrives', { date: formatDisplayDate(a.po.tibaTerdekat) })}
-          </span>
-        ) : null}
-      </div>,
-    );
-  }
-  if (baris.length === 0) return <span className="text-muted-foreground">{t('workNone')}</span>;
-  return <div className="space-y-1">{baris}</div>;
+  if (s.isActive !== false) return null;
+  return (
+    <span className="inline-flex items-center rounded-full border border-muted-foreground/40 px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      {t('lencanaNonaktif')}
+    </span>
+  );
 }
 
-function Utang({ a }: { a: AktivitasBaris | undefined }) {
+/** Telepon (tautan panggil) dan email; "Belum ada kontak" bila keduanya kosong. */
+function Kontak({ s, ringkas }: { s: BarisPemasok; ringkas?: boolean }) {
   const t = useTranslations('supplier');
-  if (!a?.utang) return <span className="text-muted-foreground">…</span>;
-  if (a.utang.nilai <= 0) return <span className="text-muted-foreground">—</span>;
+  const tel = nomorTelepon(s.phone);
+  if (!s.phone && !s.email) return <span className="text-muted-foreground">{t('kontakKosong')}</span>;
   return (
-    <div>
-      <span className="tabular-nums">{formatRupiah(a.utang.nilai)}</span>
-      {a.utang.jatuhTempo ? (
-        <span
-          className={cn('block text-xs', a.utang.lewatTempo ? 'text-destructive' : 'text-muted-foreground')}
-        >
-          {a.utang.lewatTempo
-            ? t('payableOverdue', { date: formatDisplayDate(a.utang.jatuhTempo) })
-            : t('payableDue', { date: formatDisplayDate(a.utang.jatuhTempo) })}
+    <div className="min-w-0 space-y-0.5">
+      {s.phone ? (
+        tel ? (
+          <a href={`tel:${tel}`} className="block tabular-nums hover:underline underline-offset-4" title={t('teleponNama', { name: s.name })}>
+            {s.phone}
+          </a>
+        ) : (
+          <span className="block tabular-nums">{s.phone}</span>
+        )
+      ) : null}
+      {s.email && !ringkas ? (
+        <a href={`mailto:${s.email}`} className="block truncate text-xs text-muted-foreground hover:underline underline-offset-4" title={s.email}>
+          {s.email}
+        </a>
+      ) : null}
+    </div>
+  );
+}
+
+const LABEL_POTONG: Record<string, string> = { PPH23: 'potongPph23', PPH21: 'potongPph21', PPH4_2: 'potongPph42' };
+
+/** Status PKP, NPWP, dan jenis potongan PPh pemasok — data master untuk pembelian & pembayaran. */
+function Pajak({ s }: { s: BarisPemasok }) {
+  const t = useTranslations('supplier');
+  const pkp = s.isPkp === true ? t('pajakPkp') : s.isPkp === false ? t('pajakNonPkp') : null;
+  const potong = s.taxWithholding && LABEL_POTONG[s.taxWithholding] ? t(LABEL_POTONG[s.taxWithholding]) : null;
+  return (
+    <div className="space-y-0.5">
+      <span className={cn('block', pkp ? '' : 'text-muted-foreground')}>{pkp ?? t('pajakPkpBelum')}</span>
+      {potong || s.hasNpwp === false ? (
+        <span className="block text-xs text-muted-foreground">
+          {[potong, s.hasNpwp === false ? t('pajakTanpaNpwp') : null].filter(Boolean).join(' · ')}
         </span>
       ) : null}
     </div>
   );
 }
 
-function Terakhir({ a }: { a: AktivitasBaris | undefined }) {
+function Rekening({ s }: { s: BarisPemasok }) {
   const t = useTranslations('supplier');
-  const format = useFormatter();
-  // "Sekarang" dibekukan sekali per tampilan supaya teks tidak bergeser saat render ulang.
-  const [sekarang] = useState(() => Date.now());
-  if (!a) return <span className="text-muted-foreground">…</span>;
-  if (!a.terakhir) return <span className="text-muted-foreground">{t('lastNever')}</span>;
+  if (!s.bankName && !s.bankAccountName) return <span className="text-muted-foreground">—</span>;
   return (
-    <span className="text-muted-foreground" title={formatDisplayDate(a.terakhir)}>
-      {format.relativeTime(new Date(a.terakhir), sekarang)}
-    </span>
+    <div className="space-y-0.5">
+      <span className="block">{s.bankName ?? '—'}</span>
+      {s.bankAccountName ? (
+        <span className="block text-xs text-muted-foreground">{t('rekeningAtasNama', { nama: s.bankAccountName })}</span>
+      ) : null}
+    </div>
   );
 }
 
-function TombolWa({ a, s }: { a: AktivitasBaris | undefined; s: BarisPemasok }) {
+function TombolWa({ s }: { s: BarisPemasok }) {
   const t = useTranslations('supplier');
-  if (!a?.wa) return null;
+  const n = nomorWhatsApp(s.phone);
+  if (!n) return null;
   return (
     <Button asChild variant="ghost" size="icon" title={t('waChat', { name: s.name })}>
-      <a href={a.wa} target="_blank" rel="noopener noreferrer" aria-label={t('waChat', { name: s.name })}>
+      <a href={`https://wa.me/${n}`} target="_blank" rel="noopener noreferrer" aria-label={t('waChat', { name: s.name })}>
         <MessageCircle className="h-4 w-4" />
       </a>
     </Button>
@@ -223,13 +235,25 @@ function TombolPutusan({ s, izin, sibuk, aksi, kecil }: { s: BarisPemasok; izin:
   if (!bolehMemutuskan(s.status, izin)) return null;
   return (
     <div className="flex flex-wrap items-center gap-2" onClick={(e) => e.stopPropagation()}>
-      <Button size="sm" onClick={() => aksi.setujui(s)} disabled={sibuk}>
-        <CheckCircle className="h-4 w-4" />
+      {/* Di papan tombolnya ikon saja: `title` memberi tooltip bagi tetikus. */}
+      <Button
+        size="sm"
+        onClick={() => aksi.setujui(s)}
+        disabled={sibuk}
+        title={kecil ? t('setujuiNama', { name: s.name }) : undefined}
+      >
+        <CheckCircle aria-hidden className="h-4 w-4" />
         {kecil ? null : t('approve')}
         {kecil ? <span className="sr-only">{t('approve')}</span> : null}
       </Button>
-      <Button size="sm" variant="outline" onClick={() => aksi.tolak(s)} disabled={sibuk}>
-        <XCircle className="h-4 w-4" />
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => aksi.tolak(s)}
+        disabled={sibuk}
+        title={kecil ? t('tolakNama', { name: s.name }) : undefined}
+      >
+        <XCircle aria-hidden className="h-4 w-4" />
         {kecil ? null : t('reject')}
         {kecil ? <span className="sr-only">{t('reject')}</span> : null}
       </Button>
@@ -237,19 +261,10 @@ function TombolPutusan({ s, izin, sibuk, aksi, kecil }: { s: BarisPemasok; izin:
   );
 }
 
-/** Kolom pekerjaan/utang hanya muncul untuk yang boleh melihat layar asalnya. */
-function kolomTerlihat(aktivitas: Record<string, AktivitasBaris> | null) {
-  if (!aktivitas) return { kerja: true, utang: true };
-  const isi = Object.values(aktivitas);
-  if (isi.length === 0) return { kerja: true, utang: true };
-  return { kerja: isi.some((a) => a.po || a.spk), utang: isi.some((a) => a.utang) };
-}
-
 // ─── Tabel ─────────────────────────────────────────────────────────────────
 
-function TabelPemasok({ pemasok, aktivitas, izin, sibuk, sorot, aksi }: Props) {
+function TabelPemasok({ pemasok, izin, sibuk, sorot, aksi }: Props) {
   const t = useTranslations('supplier');
-  const kolom = kolomTerlihat(aktivitas);
   return (
     <div className="overflow-x-auto">
       <Table>
@@ -257,9 +272,10 @@ function TabelPemasok({ pemasok, aktivitas, izin, sibuk, sorot, aksi }: Props) {
           <TableRow>
             <TableHead>{t('colSupplier')}</TableHead>
             <TableHead className="hidden md:table-cell">{t('colType')}</TableHead>
-            {kolom.kerja ? <TableHead>{t('colWork')}</TableHead> : null}
-            {kolom.utang ? <TableHead className="hidden lg:table-cell">{t('colPayable')}</TableHead> : null}
-            <TableHead className="hidden xl:table-cell">{t('colLast')}</TableHead>
+            <TableHead>{t('colContact')}</TableHead>
+            <TableHead className="hidden xl:table-cell">{t('colPajak')}</TableHead>
+            <TableHead className="hidden 2xl:table-cell">{t('colRekening')}</TableHead>
+            <TableHead className="hidden 2xl:table-cell">{t('address')}</TableHead>
             <TableHead className="text-right">
               <span className="sr-only">{t('colActions')}</span>
             </TableHead>
@@ -267,7 +283,6 @@ function TabelPemasok({ pemasok, aktivitas, izin, sibuk, sorot, aksi }: Props) {
         </TableHeader>
         <TableBody className="baris-berurutan">
           {pemasok.map((s) => {
-            const a = aktivitas?.[s.id];
             return (
               <TableRow key={s.id} {...sorot(s.id)} className="group">
                 <TableCell className="min-w-[14rem] whitespace-normal">
@@ -285,30 +300,32 @@ function TabelPemasok({ pemasok, aktivitas, izin, sibuk, sorot, aksi }: Props) {
                       <div className="mt-1 flex flex-wrap gap-1 md:hidden">
                         <CategoryBadge label={s.type?.name} />
                       </div>
-                      <CatatanPersetujuan s={s} />
+                      <div className="flex flex-wrap gap-1">
+                        <CatatanPersetujuan s={s} />
+                        <LencanaNonaktif s={s} />
+                      </div>
                     </div>
                   </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   <CategoryBadge label={s.type?.name} />
                 </TableCell>
-                {kolom.kerja ? (
-                  <TableCell className="whitespace-normal text-sm">
-                    <SedangDikerjakan a={a} />
-                  </TableCell>
-                ) : null}
-                {kolom.utang ? (
-                  <TableCell className="hidden whitespace-normal text-sm lg:table-cell">
-                    <Utang a={a} />
-                  </TableCell>
-                ) : null}
-                <TableCell className="hidden text-sm xl:table-cell">
-                  <Terakhir a={a} />
+                <TableCell className="max-w-[16rem] whitespace-normal text-sm">
+                  <Kontak s={s} />
+                </TableCell>
+                <TableCell className="hidden whitespace-normal text-sm xl:table-cell">
+                  <Pajak s={s} />
+                </TableCell>
+                <TableCell className="hidden whitespace-normal text-sm 2xl:table-cell">
+                  <Rekening s={s} />
+                </TableCell>
+                <TableCell className="hidden max-w-[16rem] whitespace-normal text-sm text-muted-foreground 2xl:table-cell">
+                  <span className="line-clamp-2" title={s.address ?? undefined}>{s.address || '—'}</span>
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
                     <TombolPutusan s={s} izin={izin} sibuk={sibuk} aksi={aksi} />
-                    <TombolWa a={a} s={s} />
+                    <TombolWa s={s} />
                     <MenuBaris s={s} aksi={aksi} />
                   </div>
                 </TableCell>
@@ -323,14 +340,12 @@ function TabelPemasok({ pemasok, aktivitas, izin, sibuk, sorot, aksi }: Props) {
 
 // ─── Galeri ────────────────────────────────────────────────────────────────
 
-function KartuPemasok({ s, a, izin, sibuk, aksi, sorotProps, kolom }: {
+function KartuPemasok({ s, izin, sibuk, aksi, sorotProps }: {
   s: BarisPemasok;
-  a: AktivitasBaris | undefined;
   izin: string[];
   sibuk: boolean;
   aksi: AksiTampilanPemasok;
   sorotProps: PropsSorot;
-  kolom: { kerja: boolean; utang: boolean };
 }) {
   const t = useTranslations('supplier');
   return (
@@ -357,34 +372,27 @@ function KartuPemasok({ s, a, izin, sibuk, aksi, sorotProps, kolom }: {
             <p className="font-mono text-xs text-muted-foreground">{s.code}</p>
           </div>
           <div className="-mr-2 -mt-1.5 flex shrink-0" onClick={(e) => e.stopPropagation()}>
-            <TombolWa a={a} s={s} />
+            <TombolWa s={s} />
             <MenuBaris s={s} aksi={aksi} />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
           <CategoryBadge label={s.type?.name} />
           <CatatanPersetujuan s={s} />
+          <LencanaNonaktif s={s} />
         </div>
-        <dl className="space-y-1 text-xs">
-          {kolom.kerja ? (
-            <div>
-              <dt className="text-xs text-muted-foreground">{t('colWork')}</dt>
-              <dd>
-                <SedangDikerjakan a={a} ringkas />
-              </dd>
-            </div>
-          ) : null}
-          {kolom.utang && a?.utang && a.utang.nilai > 0 ? (
-            <div>
-              <dt className="text-xs text-muted-foreground">{t('colPayable')}</dt>
-              <dd>
-                <Utang a={a} />
-              </dd>
-            </div>
-          ) : null}
-          <div className="flex items-baseline justify-between gap-2">
-            <span className="text-muted-foreground">{t('colLast')}</span>
-            <Terakhir a={a} />
+        <dl className="space-y-1.5 text-xs">
+          <div>
+            <dt className="text-muted-foreground">{t('colContact')}</dt>
+            <dd>
+              <Kontak s={s} ringkas />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">{t('colPajak')}</dt>
+            <dd>
+              <Pajak s={s} />
+            </dd>
           </div>
         </dl>
         <div className="mt-auto pt-1">
@@ -395,20 +403,17 @@ function KartuPemasok({ s, a, izin, sibuk, aksi, sorotProps, kolom }: {
   );
 }
 
-function GaleriPemasok({ pemasok, aktivitas, izin, sibuk, sorot, aksi }: Props) {
-  const kolom = kolomTerlihat(aktivitas);
+function GaleriPemasok({ pemasok, izin, sibuk, sorot, aksi }: Props) {
   return (
     <div className="baris-berurutan grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-3">
       {pemasok.map((s) => (
         <KartuPemasok
           key={s.id}
           s={s}
-          a={aktivitas?.[s.id]}
           izin={izin}
           sibuk={sibuk}
           aksi={aksi}
           sorotProps={sorot(s.id)}
-          kolom={kolom}
         />
       ))}
     </div>
@@ -417,7 +422,7 @@ function GaleriPemasok({ pemasok, aktivitas, izin, sibuk, sorot, aksi }: Props) 
 
 // ─── Papan ─────────────────────────────────────────────────────────────────
 
-function PapanPemasok({ pemasok, aktivitas, jenis, izin, sibuk, sorot, aksi }: Props) {
+function PapanPemasok({ pemasok, jenis, izin, sibuk, sorot, aksi }: Props) {
   const t = useTranslations('supplier');
   // Kolom mengikuti urutan jenis pemasok; jenis tanpa pemasok tidak ditampilkan,
   // jenis yang tidak ada di daftar jenis aktif tetap mendapat kolom di ujung.
@@ -434,7 +439,7 @@ function PapanPemasok({ pemasok, aktivitas, jenis, izin, sibuk, sorot, aksi }: P
       .map((id) => ({ id, name: perJenis.get(id)?.[0]?.type?.name ?? t('typeFilter') })),
   ];
   return (
-    <div className="-mx-1 overflow-x-auto pb-2">
+    <GulirPapan>
       <div className="flex gap-4 px-1">
         {urutan.map((kol) => {
           const isi = perJenis.get(kol.id) ?? [];
@@ -445,7 +450,6 @@ function PapanPemasok({ pemasok, aktivitas, jenis, izin, sibuk, sorot, aksi }: P
                 <span className="text-xs tabular-nums text-muted-foreground">{isi.length}</span>
               </header>
               {isi.map((s) => {
-                const a = aktivitas?.[s.id];
                 return (
                   <div
                     key={s.id}
@@ -468,14 +472,15 @@ function PapanPemasok({ pemasok, aktivitas, jenis, izin, sibuk, sorot, aksi }: P
                         <p className="font-mono text-xs text-muted-foreground">{s.code}</p>
                       </div>
                       <div className="-mr-1 -mt-1 flex" onClick={(e) => e.stopPropagation()}>
-                        <TombolWa a={a} s={s} />
+                        <TombolWa s={s} />
                       </div>
                     </div>
                     <div className="mt-2 text-xs">
-                      <SedangDikerjakan a={a} ringkas />
+                      <Kontak s={s} ringkas />
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <CatatanPersetujuan s={s} />
+                      <LencanaNonaktif s={s} />
                       <TombolPutusan s={s} izin={izin} sibuk={sibuk} aksi={aksi} kecil />
                     </div>
                   </div>
@@ -484,6 +489,51 @@ function PapanPemasok({ pemasok, aktivitas, jenis, izin, sibuk, sorot, aksi }: P
             </section>
           );
         })}
+      </div>
+    </GulirPapan>
+  );
+}
+
+/**
+ * Wadah gulir samping papan, dengan tanda bahwa masih ada kolom di luar layar:
+ * tepi yang memudar di sisi yang bisa digeser, dan satu kalimat petunjuk. Dulu
+ * kolom keempat terpotong di 1440 px tanpa tanda apa pun.
+ */
+function GulirPapan({ children }: { children: ReactNode }) {
+  const t = useTranslations('supplier');
+  const wadah = useRef<HTMLDivElement>(null);
+  const [tepi, setTepi] = useState({ kiri: false, kanan: false });
+  useEffect(() => {
+    const el = wadah.current;
+    if (!el) return;
+    const ukur = () => {
+      const kiri = el.scrollLeft > 4;
+      const kanan = el.scrollLeft + el.clientWidth < el.scrollWidth - 4;
+      setTepi((l) => (l.kiri === kiri && l.kanan === kanan ? l : { kiri, kanan }));
+    };
+    ukur();
+    el.addEventListener('scroll', ukur, { passive: true });
+    const amati = new ResizeObserver(ukur);
+    amati.observe(el);
+    if (el.firstElementChild) amati.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener('scroll', ukur);
+      amati.disconnect();
+    };
+  }, []);
+  return (
+    <div className="space-y-1.5">
+      {tepi.kiri || tepi.kanan ? <p className="text-xs text-muted-foreground">{t('papanGeser')}</p> : null}
+      <div className="relative">
+        <div ref={wadah} className="-mx-1 overflow-x-auto pb-2">
+          {children}
+        </div>
+        {tepi.kiri ? (
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 left-0 w-8 bg-gradient-to-r from-background to-transparent" />
+        ) : null}
+        {tepi.kanan ? (
+          <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent" />
+        ) : null}
       </div>
     </div>
   );

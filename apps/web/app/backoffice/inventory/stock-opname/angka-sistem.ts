@@ -15,6 +15,7 @@
  *
  * Modul murni, aman diimpor komponen klien.
  */
+import { tandaiGabungan } from "@/lib/inventory/opname-detail-utils";
 
 /** Status opname yang masih menerima hitungan. */
 export const STATUS_MENGHITUNG = ["CREATED", "COUNTING"] as const;
@@ -53,7 +54,14 @@ export function rolTanpaAngka<T extends object>(baris: readonly T[]): Omit<T, (t
 }
 
 /** Baris tinjauan tanpa angka sistem: nama, ukuran/SKU, dan yang dihitung. */
-export type BarisButa = { id: string; label: string; sublabel: string | undefined; counted: number | null };
+export type BarisButa = {
+  id: string;
+  label: string;
+  sublabel: string | undefined;
+  counted: number | null;
+  /** Lihat `tandaiGabungan`. */
+  gabungan?: boolean;
+};
 
 const angkaAtauKosong = (v: unknown): number | null => {
   if (v === null || v === undefined || v === "") return null;
@@ -69,12 +77,14 @@ export function barisButa(opname: { scope: string; items?: readonly BarangMuatan
   if (opname.scope === "FABRIC") {
     return (opname.rolls ?? []).map((r) => ({ id: r.id, label: r.rollCode, sublabel: r.itemName, counted: angkaAtauKosong(r.countedLength) }));
   }
-  return (opname.items ?? []).map((r) => ({
-    id: r.id,
-    label: r.itemName,
-    sublabel: r.variantSku?.trim() || undefined,
-    counted: angkaAtauKosong(r.countedQty),
-  }));
+  return tandaiGabungan(
+    (opname.items ?? []).map((r) => ({
+      id: r.id,
+      label: r.itemName,
+      sublabel: r.variantSku?.trim() || undefined,
+      counted: angkaAtauKosong(r.countedQty),
+    })),
+  );
 }
 
 export type SaringanButa = "all" | "pending" | "counted";

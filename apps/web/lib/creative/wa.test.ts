@@ -47,6 +47,10 @@ describe("tautanWa", () => {
 describe("isiTemplate", () => {
   it("mengisi variabel yang dikenal dan membiarkan yang tidak dikenal", () => {
     expect(isiTemplate("Halo {nama} dari {brand} {asing}", { nama: "Rina", brand: "Eloraé" })).toBe("Halo Rina dari Eloraé {asing}");
+    // Pengirim yang sudah memuat merek tidak ditulis "Tim Eloraé dari Eloraé".
+    expect(isiTemplate("Saya {pengirim} dari {brand}.", { pengirim: "Tim Eloraé", brand: "Eloraé" })).toBe("Saya Tim Eloraé.");
+    expect(isiTemplate("Saya {pengirim} dari {brand}.", { pengirim: "Tim Elorae", brand: "Eloraé" })).toBe("Saya Tim Elorae.");
+    expect(isiTemplate("Saya {pengirim} dari {brand}.", { pengirim: "Dina", brand: "Eloraé" })).toBe("Saya Dina dari Eloraé.");
   });
 
   it("variabel yang dikenal tapi kosong dibiarkan terlihat, supaya ketahuan belum terisi", () => {

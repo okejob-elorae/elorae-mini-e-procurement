@@ -22,7 +22,9 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
+  /* Utilitas `ring-ring`/`border-ring`/`outline-ring` = cincin fokus yang terbaca
+     (lihat `--cincin-fokus`); `--ring` mentah tetap warna tema. */
+  --color-ring: var(--cincin-fokus);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
@@ -151,6 +153,28 @@
 }
 
 /*
+ * Cincin fokus papan ketik — token `--cincin-fokus`.
+ *
+ * Dulu `--ring` = warna tema apa adanya: limau #c0db3a di atas krem hanya
+ * 1,49:1, jadi pengguna papan ketik tidak tahu kontrol mana yang aktif (WCAG
+ * 1.4.11 meminta 3:1). Tema terang memakai warna tautan (kecerahan ≤ 0,45,
+ * ≥ 4,5:1 di atas semua latar terang — lihat `--tautan`); tema gelap memakai
+ * warna tema yang dicerahkan sampai ≥ 0,72 supaya tema bernada gelap tetap
+ * terlihat di latar gelap.
+ */
+:root {
+  --cincin-fokus: var(--tautan);
+}
+:root.dark {
+  --cincin-fokus: var(--ring);
+}
+@supports (color: oklch(from red l c h)) {
+  :root.dark {
+    --cincin-fokus: oklch(from var(--ring) max(l, 0.72) c h);
+  }
+}
+
+/*
  * `text-primary` lama ikut terbaca di tema terang tanpa menyentuh setiap
  * berkas. Di lapisan utilities (bukan di luar lapisan) supaya varian seperti
  * `hover:`/`data-[…]:` di elemen yang sama tetap menang. Keping
@@ -165,7 +189,9 @@
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+    /* Warna outline bawaan (tautan, kontrol tanpa data-slot) = cincin fokus yang terbaca. */
+    outline-color: var(--cincin-fokus);
   }
   body {
     @apply bg-background text-foreground;
@@ -430,18 +456,32 @@ html.backoffice-shell [data-slot="table-head"] {
 /* Cards: slightly tighter than the stock 24px, and they lift under the cursor
    when they lead somewhere. */
 html.backoffice-shell [data-slot="card"] {
-  gap: var(--ui-card-gap);
-  padding-block: var(--ui-card-pad);
   box-shadow: var(--ui-card-shadow);
   transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
 }
 
-html.backoffice-shell [data-slot="card-header"] {
+/*
+ * Kepadatan tema hanya menggantikan jarak BAWAAN kartu — kelas `gap-6`/`py-6`/
+ * `px-6` milik komponennya sendiri. Kelas yang ditulis pemanggil (`py-0`,
+ * `p-4`, `px-0`, `gap-2`…) menyingkirkan kelas bawaan itu lewat tailwind-merge,
+ * sehingga aturan di bawah tidak lagi cocok dan kelas pemanggil yang berlaku.
+ * Dulu aturan ini menimpa SEMUA kartu dari luar lapisan Tailwind, jadi aturan
+ * rumah "Card `py-0` bila CardContent berpadding sendiri" dan `px-0` pada
+ * CardContent diam-diam tidak berpengaruh di kantor (padding ganda).
+ */
+html.backoffice-shell [data-slot="card"].gap-6 {
+  gap: var(--ui-card-gap);
+}
+html.backoffice-shell [data-slot="card"].py-6 {
+  padding-block: var(--ui-card-pad);
+}
+
+html.backoffice-shell [data-slot="card-header"].px-6 {
   padding-inline: var(--ui-card-pad);
 }
 
-html.backoffice-shell [data-slot="card-content"],
-html.backoffice-shell [data-slot="card-footer"] {
+html.backoffice-shell [data-slot="card-content"].px-6,
+html.backoffice-shell [data-slot="card-footer"].px-6 {
   padding-inline: var(--ui-card-pad);
 }
 
@@ -688,8 +728,18 @@ html.backoffice-shell [data-slot="card-content"]:has(> table) {
 [data-slot="switch"]:focus-visible,
 [data-slot="toggle"]:focus-visible,
 [data-slot="tabs-trigger"]:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: 2px solid var(--cincin-fokus);
   outline-offset: 2px;
+}
+
+/*
+ * Menu samping kantor berlatar warna tema: cincin fokusnya memakai warna teks
+ * menu itu sendiri (`--primary-foreground`, dipilih kontras dengan latar), di
+ * dalam tepi tautan supaya tidak terpotong wadah gulir menu.
+ */
+[data-menu-samping] :is(a, button, input):focus-visible {
+  outline: 2px solid var(--primary-foreground);
+  outline-offset: -2px;
 }
 
 /*

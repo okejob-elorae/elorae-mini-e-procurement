@@ -221,8 +221,8 @@ export function ForecastImportPageClient() {
           </Link>
         </Button>
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold">{t('import.title')}</h1>
-          <TombolBantuan judul={t('import.title')} />
+          <h1 className="text-2xl font-bold">{t('import.judulKalimat')}</h1>
+          <TombolBantuan judul={t('import.judulKalimat')} />
         </div>
       </div>
 

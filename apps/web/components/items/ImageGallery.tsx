@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { ArrowLeft, ArrowRight, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Plus, Trash2 } from "lucide-react";
 import type { ItemImageSubmission } from "@/lib/items/images/types";
 
 type Props = {
@@ -53,13 +53,14 @@ export function ImageGallery({ variantSku, items, onChange, onUpload, canManage 
     <div className="flex flex-wrap gap-2 items-center">
       {items.map((it, idx) => (
         <div
-          key={it.id ?? `new-${idx}`}
+          key={it.id ?? it.url}
           className="relative w-20 h-20 rounded border overflow-hidden group"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={it.url} alt="" className="w-full h-full object-cover" />
           {canManage && (
-            <div className="absolute inset-0 hidden group-hover:flex items-center justify-center gap-1 bg-black/50">
+            // Tetap ada di DOM (bukan display:none) supaya tombolnya bisa dicapai papan ketik.
+            <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
               <button
                 type="button"
                 onClick={() => move(idx, -1)}
@@ -90,8 +91,9 @@ export function ImageGallery({ variantSku, items, onChange, onUpload, canManage 
       ))}
       {canManage && (
         <label
-          className="w-20 h-20 rounded border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/50"
+          className="w-20 h-20 rounded border-2 border-dashed flex items-center justify-center cursor-pointer hover:bg-muted/50 focus-within:ring-2 focus-within:ring-ring"
           title={t("addImage")}
+          aria-busy={busy}
         >
           <span className="sr-only">{t("addImage")}</span>
           <input
@@ -99,10 +101,14 @@ export function ImageGallery({ variantSku, items, onChange, onUpload, canManage 
             accept="image/jpeg,image/png,image/webp"
             multiple
             disabled={busy}
-            className="hidden"
+            className="sr-only"
             onChange={handlePick}
           />
-          <Plus className="h-5 w-5 text-muted-foreground" />
+          {busy ? (
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden />
+          ) : (
+            <Plus className="h-5 w-5 text-muted-foreground" aria-hidden />
+          )}
         </label>
       )}
     </div>

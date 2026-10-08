@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -182,7 +183,22 @@ export function ReturnDecisionCard({ ret, canDecide, canPostJournal }: Props) {
             )}
           </span>
           <span className="text-muted-foreground">{t("orderNo")}</span>
-          <span className="font-mono">{ret.channelOrderNo ?? "—"}</span>
+          {/* Nomor yang sama dengan daftar Pesanan marketplace, bertaut ke pesanannya;
+              nomor channel (tanpa awalan) di bawahnya sebagai rujukan ke marketplace. */}
+          {ret.salesOrder ? (
+            <span>
+              <Link href={`/backoffice/sales-orders/${ret.salesOrder.id}`} className={`font-mono ${TAUTAN_DOKUMEN}`}>
+                {ret.salesOrder.salesorderNo}
+              </Link>
+              {ret.channelOrderNo && ret.channelOrderNo !== ret.salesOrder.salesorderNo && (
+                <span className="block text-xs text-muted-foreground">
+                  {t("nomorChannel", { nomor: ret.channelOrderNo })}
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="font-mono">{ret.channelOrderNo ?? "—"}</span>
+          )}
           <span className="text-muted-foreground">{t("buyer")}</span>
           <span>{ret.buyerName ?? "—"}</span>
           <span className="text-muted-foreground">{t("receivedAt")}</span>

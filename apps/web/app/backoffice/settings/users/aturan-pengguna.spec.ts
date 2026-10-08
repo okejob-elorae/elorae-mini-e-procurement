@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alasanBelumBisaSimpan, kunciNamaPeran } from "./aturan-pengguna";
+import { alasanBelumBisaSimpan } from "./aturan-pengguna";
 
 const draf = {
   id: null as string | null,
@@ -41,17 +41,5 @@ describe("alasanBelumBisaSimpan — isian pertama yang kurang, urut formulir", (
 
   it("mengubah akun: sandi kosong berarti tetap", () => {
     expect(alasanBelumBisaSimpan({ ...draf, id: "u1", sandi: "", ulangSandi: "" }, { spg: false })).toBeNull();
-  });
-});
-
-describe("kunciNamaPeran", () => {
-  it("peran bawaan diberi nama tampilan", () => {
-    expect(kunciNamaPeran("PRODUCTION")).toBe("roleName.PRODUCTION");
-    expect(kunciNamaPeran("ADMIN")).toBe("roleName.ADMIN");
-  });
-
-  it("peran buatan sendiri tampil apa adanya", () => {
-    expect(kunciNamaPeran("ADMIN_GUDANG")).toBeNull();
-    expect(kunciNamaPeran("toString")).toBeNull();
   });
 });

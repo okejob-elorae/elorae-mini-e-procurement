@@ -31,6 +31,8 @@ import {
   penjelasanIzin,
   type GrupTampil,
 } from "@/lib/rbac/penjelasan-izin";
+import { urutPeranTampil } from "./nama-peran";
+import { useNamaPeran } from "./pakai-nama-peran";
 
 export type IzinDb = { id: string; code: string; description: string | null };
 export type PeranEditor = {
@@ -81,6 +83,7 @@ export function EditorPeran({
   const tUmum = useTranslations("common");
   const tUi = useTranslations("ui");
   const teksBantuan = useTeksBantuan();
+  const namaPeran = useNamaPeran();
 
   const hanyaLihat = mode === "lihat" || peran?.isSystem === true;
   const [nama, setNama] = useState("");
@@ -171,7 +174,7 @@ export function EditorPeran({
     if (!asal) return;
     setSumber(id);
     setDipilih(asal.isSystem ? new Set(semuaIzin.map((p) => p.id)) : new Set(asal.permissions.map((p) => p.id)));
-    toast.success(t("disalin", { nama: asal.name }));
+    toast.success(t("disalin", { nama: namaPeran(asal.name) }));
   };
 
   const simpan = async () => {
@@ -205,10 +208,15 @@ export function EditorPeran({
     mode === "buat"
       ? tR("createRole")
       : hanyaLihat
-        ? t("lihatJudul", { name: peran?.name ?? "" })
-        : tR("editTitle", { name: peran?.name ?? "" });
+        ? t("lihatJudul", { name: peran ? namaPeran(peran.name) : "" })
+        : tR("editTitleV2", { name: peran ? namaPeran(peran.name) : "" });
   const penjelasan = mode === "buat" ? tR("createDescription") : hanyaLihat ? tR("permissions") : tR("editDescription");
-  const pilihanSumber = semuaPeran.filter((p) => p.id !== peran?.id);
+  const pilihanSumber = urutPeranTampil(
+    semuaPeran.filter((p) => p.id !== peran?.id),
+    (p) => namaPeran(p.name),
+    (p) => p.isSystem,
+  );
+  const alasanBelum = mode === "buat" && !nama.trim() ? tR("nameRequiredHint") : null;
 
   return (
     <Dialog open onOpenChange={(buka) => !buka && !sibuk && onTutup()}>
@@ -233,7 +241,7 @@ export function EditorPeran({
             {mode === "buat" ? (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="peran-nama">{tR("roleName")} *</Label>
+                  <Label htmlFor="peran-nama">{tR("roleNameV2")} *</Label>
                   <Input
                     id="peran-nama"
                     value={nama}
@@ -267,7 +275,7 @@ export function EditorPeran({
                   <SelectContent>
                     {pilihanSumber.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name}
+                        {namaPeran(p.name)}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -373,13 +381,18 @@ export function EditorPeran({
               {tUmum("close")}
             </Button>
           ) : (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {alasanBelum ? (
+                <p className="text-xs text-muted-foreground" aria-live="polite">
+                  {alasanBelum}
+                </p>
+              ) : null}
               <Button variant="outline" onClick={onTutup} disabled={sibuk}>
                 {tR("cancel")}
               </Button>
-              <Button onClick={simpan} disabled={sibuk || (mode === "buat" && !nama.trim())}>
+              <Button onClick={simpan} disabled={sibuk || alasanBelum !== null}>
                 {sibuk ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {sibuk ? t("menyimpan") : mode === "buat" ? tR("createRole") : tR("saveChanges")}
+                {sibuk ? t("menyimpan") : mode === "buat" ? tR("createRole") : tR("saveChangesV2")}
               </Button>
             </div>
           )}

@@ -130,7 +130,21 @@ export function LaporanChecklistClient({
         </CardHeader>
         <CardContent className="p-0">
           {data.baris.length === 0 ? (
-            <EmptyState icon={ClipboardCheck} title={t("kosongJudul")} description={t("kosongIsi")} />
+            pilihan.template.length === 0 ? (
+              // Tanpa template salesman tidak bisa mengirim apa pun — tunjukkan tempat membuatnya.
+              <EmptyState
+                icon={ClipboardCheck}
+                title={t("tanpaTemplateJudul")}
+                description={t("tanpaTemplateIsi")}
+                action={
+                  <Button asChild size="sm">
+                    <Link href="/backoffice/checklist-toko">{t("tanpaTemplateAksi")}</Link>
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState icon={ClipboardCheck} title={t("kosongJudul")} description={t("kosongIsi")} />
+            )
           ) : (
             <div className="overflow-x-auto">
               <Table>

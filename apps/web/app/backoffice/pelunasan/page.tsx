@@ -8,22 +8,31 @@ import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables
 import { formatDisplayDate } from "@/lib/date-only";
 import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
 import { koreksiTertunda } from "@/lib/receivables/koreksi";
-import { PelunasanClient, type BarisKlaim, type StatusKlaim } from "./PelunasanClient";
+import { PelunasanClient, type BarisKlaim } from "./PelunasanClient";
+import { bacaPeriodeKlaim, bacaStatusKlaim, dalamPeriode, hitungTabKlaim } from "./saring";
 import { pemeriksaSamaKlaim } from "./[id]/putusan-klaim";
 import { bacaCari, bacaHalaman, cocokCari, potongHalaman } from "../piutang/_daftar/halaman";
 
 export const dynamic = "force-dynamic";
 
-const STATUS_KLAIM: readonly StatusKlaim[] = ["DIKIRIM", "TERVERIFIKASI", "DITOLAK"];
-
 /**
- * `?status=` (DIKIRIM/TERVERIFIKASI/DITOLAK), `?koreksi=1`, `?cari=`, dan
+ * `?status=` (DIKIRIM/TERVERIFIKASI/DITOLAK/DIBATALKAN), `?koreksi=1`, `?cari=`,
+ * `?dari=`/`?sampai=` (YYYY-MM-DD, hari WIB, inklusif — atas tanggal
+ * VERIFIKASI di tab Terverifikasi, selain itu atas tanggal transfer BKM), dan
  * `?halaman=` disaring di server, supaya tautan Beranda ("BKM menunggu
- * verifikasi", "Permintaan koreksi BKM") mendarat di daftar yang angkanya sama
+ * verifikasi", "Permintaan koreksi BKM") dan kartu periode di layar lain
+ * ("Pelunasan terverifikasi" bulan ini) mendarat di daftar yang angkanya sama,
  * dan peramban hanya menerima satu halaman.
  */
 export default async function PelunasanPage(props?: {
-  searchParams: Promise<{ status?: string; koreksi?: string; cari?: string; halaman?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    koreksi?: string;
+    cari?: string;
+    halaman?: string;
+    dari?: string;
+    sampai?: string;
+  }>;
 }) {
   const session = await auth();
   if (!session) redirect("/login");
@@ -32,9 +41,10 @@ export default async function PelunasanPage(props?: {
   if (!bolehMembacaPelunasan(session.user.permissions)) redirect("/backoffice");
 
   const sp = (await props?.searchParams) ?? {};
-  const saringStatus = (STATUS_KLAIM as readonly string[]).includes(sp.status ?? "") ? (sp.status as StatusKlaim) : null;
+  const saringStatus = bacaStatusKlaim(sp.status);
   const saringKoreksi = sp.koreksi === "1";
   const cari = bacaCari(sp.cari);
+  const periode = bacaPeriodeKlaim(sp);
 
   const rows = await prisma.paymentClaim.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -46,6 +56,7 @@ export default async function PelunasanPage(props?: {
       deductionTotal: true,
       receivedAmount: true,
       status: true,
+      verifiedAt: true,
       verifyNote: true,
       method: true,
       giroNo: true,
@@ -72,6 +83,7 @@ export default async function PelunasanPage(props?: {
     storeName: r.store.name,
     salesmanName: r.salesman?.name ?? null,
     claimedTransferAt: r.claimedTransferAt.toISOString(),
+    verifiedAt: r.verifiedAt?.toISOString() ?? null,
     invoiceAmount: Number(r.invoiceAmount),
     deductionTotal: Number(r.deductionTotal),
     receivedAmount: Number(r.receivedAmount),
@@ -105,19 +117,17 @@ export default async function PelunasanPage(props?: {
       : null,
   }));
   const giroMenunggu = semua.filter((b) => b.status === "DIKIRIM" && b.giro?.status === "MENUNGGU").length;
-  const jumlah = {
-    semua: semua.length,
-    DIKIRIM: semua.filter((b) => b.status === "DIKIRIM").length,
-    TERVERIFIKASI: semua.filter((b) => b.status === "TERVERIFIKASI").length,
-    DITOLAK: semua.filter((b) => b.status === "DITOLAK").length,
-    koreksi: semua.filter((b) => b.mintaKoreksi).length,
-  };
+  // Angka tab mengikuti kotak cari, supaya angka tab = baris yang muncul saat
+  // tab itu diklik. Kepala halaman tetap menyebut SEMUA BKM.
+  const cocok = semua.filter((b) => cocokCari(cari, b.docNo, b.storeName, b.salesmanName, b.giro?.nomor));
+  const jumlah = hitungTabKlaim(cocok, periode);
   const halaman = potongHalaman(
-    semua.filter(
+    cocok.filter(
       (b) =>
         (!saringStatus || b.status === saringStatus) &&
         (!saringKoreksi || b.mintaKoreksi) &&
-        cocokCari(cari, b.docNo, b.storeName, b.salesmanName, b.giro?.nomor),
+        // Dasar tanggal mengikuti tab — sama dengan hitungan tabnya.
+        dalamPeriode(b, saringKoreksi ? null : saringStatus, periode),
     ),
     bacaHalaman(sp.halaman),
   );
@@ -126,8 +136,15 @@ export default async function PelunasanPage(props?: {
     <PelunasanClient
       baris={halaman.baris}
       halaman={{ halaman: halaman.halaman, totalHalaman: halaman.totalHalaman, total: halaman.total, ukuran: halaman.ukuran }}
-      saring={{ status: saringStatus, koreksi: saringKoreksi, cari }}
+      saring={{
+        status: saringStatus,
+        koreksi: saringKoreksi,
+        cari,
+        dari: periode?.dari ?? null,
+        sampai: periode?.sampai ?? null,
+      }}
       jumlah={jumlah}
+      ringkas={{ semua: semua.length, menunggu: semua.filter((b) => b.status === "DIKIRIM").length }}
       giroMenunggu={giroMenunggu}
       bolehMemutuskan={hasPermission(
         session.user.permissions ?? [],

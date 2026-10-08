@@ -203,16 +203,15 @@ export default function NotaRegisterPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/backoffice/work-orders">
-          <Button
-            variant="ghost"
-            size="icon"
+        <Button asChild variant="ghost" size="icon">
+          <Link
+            href="/backoffice/work-orders"
             aria-label={tNota('backToWorkOrders')}
             title={tNota('backToWorkOrders')}
           >
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold">{tNota('pageTitle')}</h1>
           <TombolBantuan judul={tNota('pageTitle')} />

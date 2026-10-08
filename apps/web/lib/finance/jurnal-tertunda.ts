@@ -44,6 +44,59 @@ const JENIS_VAN = new Map([
   ["van_reconcile", "VAN_RECONCILE"],
 ]);
 
+/*
+ * Jurnal penjualan lapangan & piutang toko (`lib/finance/lapangan/`,
+ * `JENIS_TERTUNDA_LAPANGAN`). BKM dan retur toko berjurnal bergenerasi
+ * (`<id>`, `<id>#2`, …) — notifikasinya selesai lewat `readAt` dari
+ * penyelarasnya, karena jurnal generasi pertama yang berdiri bukan bukti
+ * bahwa keadaan terakhirnya sudah terjurnal.
+ */
+const JENIS_LAPANGAN = new Map([
+  ["nota_putus", "FIELD_DELIVERY"],
+  ["bkm_lapangan", "FIELD_COLLECTION"],
+  ["retur_toko", "STORE_RETURN"],
+  ["tukar_barang", "STORE_EXCHANGE"],
+]);
+const LAPANGAN_BERGENERASI = new Set(["FIELD_COLLECTION", "STORE_RETURN"]);
+
+/*
+ * Jurnal operasional (`lib/finance/operasional/`, `JENIS_TERTUNDA_OPERASIONAL`):
+ * konsinyasi, komisi, barang hilang, gudang rusak, stok manual, retur
+ * pemasok, biaya perjalanan. Yang bergenerasi (`<id>`, `<id>#2`, …) selesai
+ * hanya lewat `readAt` dari penyelarasnya, seperti jurnal lapangan.
+ */
+const JENIS_OPERASIONAL = new Map([
+  ["konsi_kirim", "CONSIGNMENT_SHIPMENT"],
+  ["konsi_pesanan", "CONSIGNMENT_ORDER"],
+  ["konsi_retur", "CONSIGNMENT_RETURN"],
+  ["konsi_siklus", "CONSIGNMENT_CYCLE"],
+  ["konsi_komisi", "CONSIGNMENT_COMMISSION"],
+  ["konsi_gaji_bayar", "CONSIGNMENT_COMMISSION_PAYMENT"],
+  ["konsi_bayar_toko", "CONSIGNMENT_PAYMENT"],
+  ["komisi_spg", "SPG_COMMISSION"],
+  ["komisi_spg_bayar", "SPG_COMMISSION_PAYMENT"],
+  ["barang_hilang", "STOCK_LOSS"],
+  ["potong_sales", "LOSS_SALES_DEDUCTION"],
+  ["gudang_rusak", "DAMAGED_STOCK"],
+  ["stok_manual", "STOCK_ADJUSTMENT"],
+  ["retur_pemasok", "VENDOR_RETURN"],
+  ["biaya_perjalanan", "TRAVEL_CLAIM"],
+  ["biaya_perjalanan_bayar", "TRAVEL_CLAIM_PAYMENT"],
+]);
+const OPERASIONAL_BERGENERASI = new Set([
+  "CONSIGNMENT_RETURN",
+  "CONSIGNMENT_CYCLE",
+  "CONSIGNMENT_COMMISSION",
+  "CONSIGNMENT_PAYMENT",
+  "SPG_COMMISSION",
+  "STOCK_LOSS",
+]);
+
+/** Sumber yang notifikasinya hanya selesai lewat `readAt` penyelarasnya (keberadaan jurnal generasi pertama bukan bukti). */
+function bergenerasi(sourceType: string): boolean {
+  return LAPANGAN_BERGENERASI.has(sourceType) || OPERASIONAL_BERGENERASI.has(sourceType);
+}
+
 function teks(v: unknown): string | null {
   return typeof v === "string" && v !== "" ? v : null;
 }
@@ -74,6 +127,13 @@ export function sumberNotifikasiJurnal(metadata: unknown): SumberNotifikasiJurna
     if (kind === "supplier_payment_reversal") return { tipe: "pembayaranPemasok", arah: "reversal", poId: docId };
     if (kind === "kol_kolaborasi") return { tipe: "kolaborasiKol", kolaborasiId: docId };
     if (kind === "kol_sampel") return dokumenJurnal("KOL_SAMPLE", docId);
+    // Penyusutan aset tetap (`<aset>/<YYYY-MM>`) dan jurnal berulang (`<templat>/<YYYY-MM>`) — lib/finance/aset, lib/finance/berulang.
+    if (kind === "penyusutan") return dokumenJurnal("DEPRECIATION", docId);
+    if (kind === "jurnal_berulang") return dokumenJurnal("RECURRING", docId);
+    const lapangan = JENIS_LAPANGAN.get(kind);
+    if (lapangan) return dokumenJurnal(lapangan, docId);
+    const operasional = JENIS_OPERASIONAL.get(kind);
+    if (operasional) return dokumenJurnal(operasional, docId);
     return null;
   }
 
@@ -179,6 +239,8 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
   for (const { s } of terpetakan) {
     if (!s) continue;
     if (s.tipe === "dokumen") {
+      // Jurnal lapangan bergenerasi: hanya `readAt` dari penyelarasnya yang menyelesaikan.
+      if (bergenerasi(s.sourceType)) continue;
       const ids = perJenis.get(s.sourceType) ?? new Set<string>();
       ids.add(s.sourceId);
       perJenis.set(s.sourceType, ids);
@@ -213,7 +275,7 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
   for (const { n, s } of terpetakan) {
     if (!s) continue;
     if (s.tipe === "dokumen") {
-      if (ada.has(kunci(s))) sudah.add(n.id);
+      if (!bergenerasi(s.sourceType) && ada.has(kunci(s))) sudah.add(n.id);
       continue;
     }
     if (s.tipe === "kolaborasiKol") continue;

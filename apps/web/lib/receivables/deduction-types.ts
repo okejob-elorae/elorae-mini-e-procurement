@@ -1,5 +1,6 @@
 import { prisma } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { peranPotonganSah } from '@/lib/finance/lapangan/aturan';
 import { catatJejak, JEJAK } from './jejak';
 
 /**
@@ -24,6 +25,12 @@ export type BarisJenisPotongan = {
   hanyaPkp: boolean;
   wajibCatatan: boolean;
   aktif: boolean;
+  /**
+   * Peran jurnal yang didebit potongan ini saat BKM terverifikasi
+   * (`DeductionType.postingRole`, `PERAN_POTONGAN_BOLEH`). null = otomatis:
+   * potongan penjualan, atau PPh 23 dibayar dimuka untuk jenis khusus PKP.
+   */
+  peranJurnal: string | null;
   /** Berapa kali jenis ini sudah dipakai — penentu boleh dihapus atau tidak. */
   jumlahDipakai: number;
 };
@@ -39,6 +46,7 @@ export async function daftarJenisPotongan(): Promise<BarisJenisPotongan[]> {
       pkpOnly: true,
       noteRequired: true,
       isActive: true,
+      postingRole: true,
       _count: { select: { deductions: true } },
     },
   });
@@ -50,6 +58,7 @@ export async function daftarJenisPotongan(): Promise<BarisJenisPotongan[]> {
     hanyaPkp: r.pkpOnly,
     wajibCatatan: r.noteRequired,
     aktif: r.isActive,
+    peranJurnal: r.postingRole,
     jumlahDipakai: r._count.deductions,
   }));
 }
@@ -78,7 +87,7 @@ export async function jenisPotonganAktif(): Promise<
   }));
 }
 
-export type AlasanGagalJenis = 'NAMA_WAJIB' | 'NAMA_SUDAH_ADA' | 'TIDAK_DITEMUKAN' | 'SEDANG_DIPAKAI';
+export type AlasanGagalJenis = 'NAMA_WAJIB' | 'NAMA_SUDAH_ADA' | 'TIDAK_DITEMUKAN' | 'SEDANG_DIPAKAI' | 'PERAN_TIDAK_SAH';
 
 export async function simpanJenisPotongan(input: {
   id?: string | null;
@@ -88,10 +97,13 @@ export async function simpanJenisPotongan(input: {
   hanyaPkp: boolean;
   wajibCatatan: boolean;
   aktif: boolean;
+  /** Tidak diisi = tidak diubah; null = otomatis; peran di luar `PERAN_POTONGAN_BOLEH` ditolak. */
+  peranJurnal?: string | null;
   olehUserId: string;
 }): Promise<{ ok: true; id: string } | { ok: false; alasan: AlasanGagalJenis }> {
   const nama = input.nama?.trim();
   if (!nama) return { ok: false, alasan: 'NAMA_WAJIB' };
+  if (input.peranJurnal != null && !peranPotonganSah(input.peranJurnal)) return { ok: false, alasan: 'PERAN_TIDAK_SAH' };
 
   return runSerializable(async (tx) => {
     const kembar = await tx.deductionType.findFirst({
@@ -107,12 +119,13 @@ export async function simpanJenisPotongan(input: {
       pkpOnly: input.hanyaPkp,
       noteRequired: input.wajibCatatan,
       isActive: input.aktif,
+      ...(input.peranJurnal !== undefined ? { postingRole: input.peranJurnal } : {}),
     };
 
     if (input.id) {
       const lama = await tx.deductionType.findUnique({
         where: { id: input.id },
-        select: { name: true, method: true, isActive: true },
+        select: { name: true, method: true, isActive: true, postingRole: true },
       });
       if (!lama) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
 

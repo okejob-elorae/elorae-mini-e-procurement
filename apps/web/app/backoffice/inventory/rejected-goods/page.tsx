@@ -24,6 +24,7 @@ import { Pagination } from '@/components/ui/pagination';
 import { useLocale, useTranslations } from 'next-intl';
 import { formatDisplayDate } from '@/lib/date-only';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
 
 export default function RejectedGoodsPage() {
   const t = useTranslations('inventory.rejected');
@@ -93,8 +94,8 @@ export default function RejectedGoodsPage() {
                       <TableHead>{t('colDoc')}</TableHead>
                       <TableHead>{t('colSku')}</TableHead>
                       <TableHead>{t('colName')}</TableHead>
-                      <TableHead className="text-right">{t('colQty')}</TableHead>
-                      <TableHead>WO</TableHead>
+                      <TableHead className="text-right">{t('colQtyCacat')}</TableHead>
+                      <TableHead>{t('colWo')}</TableHead>
                       <TableHead>{t('colNotes')}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -124,7 +125,15 @@ export default function RejectedGoodsPage() {
                         <TableCell className="text-right">
                           {row.qty.toLocaleString('id-ID')}
                         </TableCell>
-                        <TableCell>{row.woId ?? '—'}</TableCell>
+                        <TableCell>
+                          {row.woId && row.woDocNumber ? (
+                            <Link href={`/backoffice/work-orders/${row.woId}`} className={TAUTAN_DOKUMEN}>
+                              {row.woDocNumber}
+                            </Link>
+                          ) : (
+                            '—'
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-normal min-w-[160px] max-w-[260px] text-muted-foreground">
                           {row.notes ?? '—'}
                         </TableCell>

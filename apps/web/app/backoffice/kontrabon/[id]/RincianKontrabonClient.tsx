@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/table';
 import { UnggahFoto, type NilaiFoto } from '@/components/foto/UnggahFoto';
 import { cn } from '@/lib/utils';
+import { tautanPiutang } from '@/lib/receivables/tindakan-dasbor';
 import { formatDisplayDate } from '@/lib/date-only';
 import { dinamis } from '@/lib/i18n/dinamis';
 import { pasangFotoKontrabonAction } from '@/app/actions/collections';
@@ -144,7 +145,16 @@ export function RincianKontrabonClient({
               <TableBody>
                 {data.faktur.map((f) => (
                   <TableRow key={f.id}>
-                    <TableCell className="font-medium">{f.invoiceNo}</TableCell>
+                    <TableCell>
+                      {/* Ke daftar piutang yang tersaring pada faktur ini — keadaan
+                          dan alasannya terbaca di sana tanpa mencari lagi. */}
+                      <Link
+                        href={tautanPiutang({ cari: f.invoiceNo })}
+                        className="whitespace-nowrap font-medium text-foreground underline decoration-primary underline-offset-2 hover:decoration-2"
+                      >
+                        {f.invoiceNo}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {rupiah(f.nilaiSerah)}
                     </TableCell>
@@ -190,6 +200,9 @@ export function RincianKontrabonClient({
                   nilai={foto}
                   onChange={simpanFoto}
                   disabled={pending}
+                  // × tidak menghapus foto yang tersimpan: ia hanya membuka
+                  // pemilih untuk foto pengganti.
+                  labelLepas={t('gantiFotoTt')}
                 />
                 {!foto && fotoTersimpan && (
                   <p className="mt-2 text-xs text-muted-foreground">
@@ -258,7 +271,7 @@ export function RincianKontrabonClient({
                               : 'inactive'
                         }
                       >
-                        {tBkm(`status${k.status}`)}
+                        {tBkm(`keadaan${k.status}`)}
                       </StatusPill>
                     </TableCell>
                   </TableRow>

@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -72,7 +74,13 @@ export function CanvassingListClient({ canvassers }: Props) {
                     >
                       <TableCell className="font-medium">
                         <div className="flex flex-wrap items-center gap-2">
-                          {c.name}
+                          <Link
+                            href={`/backoffice/canvassing/${c.id}`}
+                            className={TAUTAN_DOKUMEN}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {c.name}
+                          </Link>
                           {c.bukanKanvas && (
                             <Badge variant="outline" className="border-amber-500/40 text-amber-700 dark:text-amber-300">
                               {t(`lencanaBukanKanvas.${c.bukanKanvas}`)}

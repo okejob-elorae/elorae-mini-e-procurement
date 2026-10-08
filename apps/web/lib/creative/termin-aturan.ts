@@ -211,6 +211,16 @@ export function bobotUlang(jumlahLama: readonly number[]): number[] {
   return sen.map((s) => (s / total) * 100);
 }
 
+/**
+ * Termin yang dipicu TAYANG tetapi kontennya belum tayang (jatuh temponya belum
+ * ada) — mis. Pelunasan yang mau dibayar lebih awal. BOLEH dibayar, tetapi
+ * tombolnya bukan tombol utama dan dialog bayar memperingatkan serta meminta
+ * centang konfirmasi (keputusan sementara pemilik, audit ulang 2026-10-08).
+ */
+export function bayarSebelumTayang(t: { status: StatusTermin; pemicu: PemicuTermin; jatuhTempo: unknown }): boolean {
+  return t.status === "BELUM" && t.pemicu === "TAYANG" && (t.jatuhTempo === null || t.jatuhTempo === undefined);
+}
+
 /** Kunci status kolaborasi untuk peringatan "data pajak belum lengkap". */
 export function perluDataPajak(jenis: SubjekPajak["jenis"], dataPajakLengkap: boolean): boolean {
   return jenis !== "TIDAK_DIPOTONG" && !dataPajakLengkap;

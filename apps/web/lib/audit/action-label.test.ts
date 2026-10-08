@@ -37,6 +37,18 @@ describe("humanizeAuditCode", () => {
     expect(humanizeAuditCode("GRN")).toBe("Grn");
   });
 
+  it("writes Indonesian tax abbreviations the way they are spelled", () => {
+    expect(humanizeAuditCode("dpp")).toBe("DPP");
+    expect(humanizeAuditCode("pph")).toBe("PPh");
+    expect(humanizeAuditCode("nik")).toBe("NIK");
+    expect(humanizeAuditCode("nomorNpwp")).toBe("Nomor NPWP");
+    expect(humanizeAuditCode("ppnRatePercent")).toBe("PPN rate percent");
+    expect(humanizeAuditCode("PPH21_PAYABLE")).toBe("PPh 21 payable");
+    expect(humanizeAuditCode("pph4_2")).toBe("PPh 4 2");
+    // Only whole words: "nikah" stays a word.
+    expect(humanizeAuditCode("TANGGAL_NIKAH")).toBe("Tanggal nikah");
+  });
+
   it("handles other separators, stray spaces and empty input", () => {
     expect(humanizeAuditCode("  stock-card.printed ")).toBe("Stock card printed");
     expect(humanizeAuditCode("")).toBe("");

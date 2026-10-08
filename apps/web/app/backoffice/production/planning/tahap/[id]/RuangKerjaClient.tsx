@@ -54,7 +54,7 @@ export function RuangKerjaClient({ data, pemasok, izin }: Props) {
     bagianRingkasan.push(t("ringkasanKosong"));
   } else {
     bagianRingkasan.push(t("ringkasanSelesai", { selesai: ringkasan.selesai, jumlah: ringkasan.jumlah }));
-    if (ringkasan.telat > 0) bagianRingkasan.push(t("ringkasanTelat", { n: ringkasan.telat }));
+    if (ringkasan.telat > 0) bagianRingkasan.push(t("ringkasanTerlambat", { n: ringkasan.telat }));
     if (ringkasan.selesaiPada) {
       bagianRingkasan.push(
         ringkasan.selesai === ringkasan.jumlah
@@ -122,7 +122,7 @@ export function RuangKerjaClient({ data, pemasok, izin }: Props) {
                 </span>
                 {ringkasan.berikutnya.keadaan === "TELAT" ? (
                   <StatusPill tone="attention">
-                    {t("telatHari", { n: hariTerlambat(ringkasan.berikutnya.targetDate, hariIni) })}
+                    {t("terlambatHari", { n: hariTerlambat(ringkasan.berikutnya.targetDate, hariIni) })}
                   </StatusPill>
                 ) : ringkasan.berikutnya.keadaan === "HARI_INI" ? (
                   <StatusPill tone="waiting">{t("hariIni")}</StatusPill>

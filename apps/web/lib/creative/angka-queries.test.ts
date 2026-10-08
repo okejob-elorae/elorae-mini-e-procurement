@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
+import { feeBruto } from "./angka-konten";
 import { angkaKolaborasi, jumlahAngkaKolaborasi } from "./angka-queries";
 
 /*
@@ -76,7 +77,7 @@ describe("angkaKolaborasi", () => {
     expect(a.interaksi).toBe(900);
     expect(a.orders).toBe(15);
     expect(a.gmv).toBe(3_000_000);
-    expect(a.biaya).toEqual({ fee: 1_000_000, boost: 50_000, ongkir: 20_000, sampel: 150_000, komisi: 150_000, total: 1_370_000 });
+    expect(a.biaya).toEqual({ fee: 1_000_000, pph: 0, boost: 50_000, ongkir: 20_000, sampel: 150_000, komisi: 150_000, total: 1_370_000 });
     expect(a.roas).toBe(2.19); // roas() membulatkan 2 desimal
   });
 
@@ -101,7 +102,7 @@ describe("angkaKolaborasi", () => {
     expect(total.roas).toBe(0.13);
   });
 
-  it("fee dihitung dari bruto termin hidup: gross-up ikut PPh-nya, termin batal tidak dihitung", async () => {
+  it("fee = angka yang disepakati (basis termin hidup), PPh gross-up terpisah, termin batal tidak dihitung", async () => {
     // Gross-up: KOL menerima 9.750.000 bersih, Elorae menanggung bruto 9.999.999.
     const grossUp = await kolaborasi("gu", 9_750_000, new Date("2026-09-01T03:00:00Z"));
     await prisma.kolPaymentTerm.createMany({
@@ -118,9 +119,20 @@ describe("angkaKolaborasi", () => {
     const tanpa = await kolaborasi("tt", 300_000, new Date("2026-09-01T03:00:00Z"));
 
     const peta = await angkaKolaborasi([grossUp, dipotong, tanpa]);
-    expect(peta.get(grossUp)!.biaya.fee).toBe(9_999_999);
+    // Gross-up: fee = neto yang disepakati, PPh yang ditanggung terpisah; bruto = beban di jurnal.
+    expect(peta.get(grossUp)!.biaya.fee).toBe(9_750_000);
+    expect(peta.get(grossUp)!.biaya.pph).toBe(249_999);
+    expect(feeBruto(peta.get(grossUp)!.biaya)).toBe(9_999_999);
+    // Dipotong: PPh dipotong dari KOL, bukan biaya tambahan.
     expect(peta.get(dipotong)!.biaya.fee).toBe(2_000_000);
+    expect(peta.get(dipotong)!.biaya.pph).toBe(0);
     expect(peta.get(tanpa)!.biaya.fee).toBe(300_000);
+    expect(peta.get(tanpa)!.biaya.pph).toBe(0);
+    // Total biaya tetap Σ bruto termin + boost (50.000 per kolaborasi).
+    expect(peta.get(grossUp)!.biaya.total).toBe(10_049_999);
+    const jumlah = jumlahAngkaKolaborasi(peta.values());
+    expect(jumlah.biaya.fee).toBe(12_050_000);
+    expect(jumlah.biaya.pph).toBe(249_999);
   });
 
   it("id kosong atau tak dikenal tidak membuat galat", async () => {

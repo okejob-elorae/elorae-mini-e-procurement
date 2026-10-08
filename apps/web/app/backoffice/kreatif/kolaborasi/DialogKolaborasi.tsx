@@ -326,8 +326,12 @@ function IsiDialog({
                   onChange={(e) => setFee(e.target.value)}
                   placeholder="0"
                   aria-invalid={cobaSimpan && !feeSah}
+                  aria-describedby="kol-fee-petunjuk"
                   className="tabular-nums"
                 />
+                <p id="kol-fee-petunjuk" className="text-xs text-muted-foreground">
+                  {t("kolaborasi.form.feePetunjuk")}
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="kol-komisi">{t("kolaborasi.form.komisi")}</Label>

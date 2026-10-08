@@ -13,6 +13,7 @@ import {
 } from "@/lib/field-sales/errors";
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
 import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
+import { kaitPesananKonsiDisetujui } from "@/lib/finance/operasional/kait";
 
 export type ActionResult =
   | { ok: true }
@@ -111,6 +112,9 @@ export async function approveFieldSalesOrderAction(
   // Pesanan konsi yang disetujui langsung berangkat ke toko → SPG toko itu dikabari, sekali per
   // pesanan. Pesanan putus tidak (barangnya berangkat saat pengiriman); penyaringnya di sana.
   void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: orderId, pelakuId: g.userId });
+  // Pesanan konsinyasi: stok gudang pindah ke persediaan konsinyasi → jurnalnya (sesudah commit,
+  // tidak pernah melempar). Pesanan putus disaring penulisnya — jurnalnya di nota tagihan.
+  await kaitPesananKonsiDisetujui(orderId, g.userId);
   return { ok: true };
 }
 

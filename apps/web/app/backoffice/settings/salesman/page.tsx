@@ -13,7 +13,8 @@ import {
 } from "@/lib/salesman/pengaturan";
 import { daftarSalesman, daftarSpg, penjualanSalesman } from "@/lib/salesman/queries";
 import { bacaAturanKredit, KUNCI_ATURAN_KREDIT } from "@/lib/salesman/kredit";
-import { BatasKunjunganCard, JudulKelompok, JudulPengaturanSalesman, TargetBulananCard } from "./PengaturanSalesmanClient";
+import { BatasKunjunganCard, JudulPengaturanSalesman, TargetBulananCard } from "./PengaturanSalesmanClient";
+import { JudulKelompok } from "../DaftarIsiPengaturan";
 import { PembagianTokoCard } from "./PembagianTokoCard";
 import { KreditTokoCard } from "./KreditTokoCard";
 import {
@@ -146,11 +147,12 @@ export default async function PengaturanSalesmanPage() {
   }
 
   const bolehUbah = hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+  const bolehBukaSpg = hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW);
   // Urutan kartu = urutan daftar isi (`daftar-isi.ts`); setiap kartu punya jangkar.
   const jangkar = "scroll-mt-6";
   return (
     <div className="space-y-6">
-      <JudulPengaturanSalesman bolehUbah={bolehUbah} bolehBukaSpg={hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)} />
+      <JudulPengaturanSalesman bolehUbah={bolehUbah} bolehBukaSpg={bolehBukaSpg} />
 
       <JudulKelompok kunci="settings.salesman.toc.kunjungan" />
       <div id="batas-kunjungan" className={jangkar}>
@@ -182,6 +184,7 @@ export default async function PengaturanSalesmanPage() {
       <div id="target" className={jangkar}>
         <TargetBulananCard
           bolehUbah={bolehUbah}
+          bolehBukaSpg={bolehBukaSpg}
           bulan={[
             {
               kunci: bulanIni,

@@ -30,6 +30,7 @@ type Baris = {
 };
 
 const SARINGAN = ["PENDING", "APPROVED", "REJECTED", "SEMUA"] as const;
+const PAGER_MIN = 10;
 
 export function lencanaStatus(status: Status): "default" | "secondary" | "destructive" | "outline" {
   if (status === "APPROVED") return "default";
@@ -53,6 +54,7 @@ export function UsulanTokoListClient({
   baris: Baris[];
 }) {
   const t = useTranslations("storeProposals");
+  const tNav = useTranslations("navigation");
   const td = dinamis(t);
   const router = useRouter();
   const sp = useSearchParams();
@@ -76,7 +78,13 @@ export function UsulanTokoListClient({
     startTransition(() => router.push(`/backoffice/stores/usulan?${params.toString()}`));
   }
 
-  const kosong = cari ? t("emptyFiltered") : status === "PENDING" ? t("emptyPending") : t("empty");
+  const kosong = cari
+    ? t("emptyFiltered")
+    : status === "PENDING"
+      ? t("emptyPendingV2")
+      : status === "SEMUA"
+        ? t("emptyV2")
+        : t("emptyFiltered");
 
   return (
     <div className="space-y-6">
@@ -85,7 +93,7 @@ export function UsulanTokoListClient({
           <Button variant="ghost" size="sm" asChild className="-ml-2">
             <Link href="/backoffice/stores">
               <ArrowLeft className="mr-1.5 h-4 w-4" />
-              {t("backToStores")}
+              {tNav("masterStores")}
             </Link>
           </Button>
           <div className="flex items-center gap-1">
@@ -192,13 +200,15 @@ export function UsulanTokoListClient({
         </CardContent>
       </Card>
 
-      <Pager
-        page={page}
-        pageSize={pageSize}
-        total={total}
-        onPageChange={(p) => dorong({ page: String(p) })}
-        onPageSizeChange={(size) => dorong({ pageSize: String(size), page: undefined })}
-      />
+      {total > PAGER_MIN || page > 1 ? (
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={total}
+          onPageChange={(p) => dorong({ page: String(p) })}
+          onPageSizeChange={(size) => dorong({ pageSize: String(size), page: undefined })}
+        />
+      ) : null}
     </div>
   );
 }

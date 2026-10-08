@@ -29,10 +29,13 @@ import { Pagination } from "@/components/ui/pagination";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-only";
 import { journalSourceLabel } from "./journal-source-label";
+import { teksKeteranganJurnal } from "@/lib/finance/journals/keterangan-tampil";
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
+import { UkuranHalaman } from "./_daftar/UkuranHalaman";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { JENIS_SUMBER_JURNAL } from "./_sumber/tautan";
-import { STATUS_TERTUNDA, type StatusJurnal } from "./_tertunda/sebab";
+import { STATUS_DITOLAK, STATUS_DRAF, STATUS_TERTUNDA, type StatusJurnal } from "./_tertunda/sebab";
 import type { BarisJurnalTertunda } from "./_tertunda/muat";
 import { DaftarJurnalTertunda } from "./_tertunda/DaftarJurnalTertunda";
 import { SpandukBukuBesar } from "../_kesiapan/SpandukBukuBesar";
@@ -49,14 +52,14 @@ type Props = {
   /** Isi tab "Tertunda"; null saat tab terposting yang dibuka. */
   tertunda: BarisJurnalTertunda[] | null;
   jumlahTertunda: number;
+  /** Jurnal manual yang menunggu persetujuan orang lain. */
+  jumlahDraf: number;
   kesiapan: KesiapanBukuBesar | null;
   akses: AksesSpanduk;
   filters: { from: string; to: string; source: string; q: string };
 };
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
+const formatRupiah = rupiahLaporan;
 
 export function JournalsPageClient({
   status,
@@ -67,6 +70,7 @@ export function JournalsPageClient({
   canManage,
   tertunda,
   jumlahTertunda,
+  jumlahDraf,
   kesiapan,
   akses,
   filters,
@@ -106,9 +110,16 @@ export function JournalsPageClient({
     startTransition(() => router.push(`/backoffice/finance/journals?${params.toString()}`));
   }
 
+  function ubahUkuran(n: number) {
+    const params = new URLSearchParams(sp.toString());
+    params.set("per", String(n));
+    params.delete("page");
+    startTransition(() => router.push(`/backoffice/finance/journals?${params.toString()}`));
+  }
+
   function reset() {
     setSearchInput("");
-    startTransition(() => router.push("/backoffice/finance/journals"));
+    startTransition(() => router.push(status === "terposting" ? "/backoffice/finance/journals" : `/backoffice/finance/journals?status=${status}`));
   }
 
   const hasFilter = !!(filters.from || filters.to || filters.source || filters.q);
@@ -116,7 +127,9 @@ export function JournalsPageClient({
   function gantiTab(v: string) {
     setSearchInput("");
     startTransition(() =>
-      router.push(v === STATUS_TERTUNDA ? `/backoffice/finance/journals?status=${STATUS_TERTUNDA}` : "/backoffice/finance/journals"),
+      router.push(
+        v === STATUS_TERTUNDA || v === STATUS_DRAF || v === STATUS_DITOLAK ? `/backoffice/finance/journals?status=${v}` : "/backoffice/finance/journals",
+      ),
     );
   }
 
@@ -145,6 +158,10 @@ export function JournalsPageClient({
           <TabsTrigger value={STATUS_TERTUNDA}>
             {t("tabPending")} ({jumlahTertunda})
           </TabsTrigger>
+          <TabsTrigger value={STATUS_DRAF}>
+            {t("persetujuan.tabDraf")} ({jumlahDraf})
+          </TabsTrigger>
+          <TabsTrigger value={STATUS_DITOLAK}>{t("persetujuan.tabDitolak")}</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -163,6 +180,7 @@ export function JournalsPageClient({
                   onChange={(e) => setSearchInput(e.target.value)}
                 />
               </div>
+              {status === "terposting" ? (
               <div className="w-full sm:w-auto sm:flex-[1_1_160px]">
                 <label className="text-xs text-muted-foreground mb-1 block">{t("filter.source")}</label>
                 <Select
@@ -183,6 +201,7 @@ export function JournalsPageClient({
                   </SelectContent>
                 </Select>
               </div>
+              ) : null}
               <div className="w-full sm:w-auto sm:flex-[1_1_240px]">
                 <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
                 <RentangTanggalInput
@@ -209,7 +228,15 @@ export function JournalsPageClient({
               {items.length === 0 ? (
                 <div className="text-center py-12">
                   <BookText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <p className="text-muted-foreground">{hasFilter ? t("emptyFiltered") : t("empty")}</p>
+                  <p className="text-muted-foreground">
+                    {hasFilter
+                      ? t("emptyFiltered")
+                      : status === "draf"
+                        ? t("persetujuan.kosongDraf")
+                        : status === "ditolak"
+                          ? t("persetujuan.kosongDitolak")
+                          : t("empty")}
+                  </p>
                 </div>
               ) : (
                 <>
@@ -235,7 +262,16 @@ export function JournalsPageClient({
                             }
                           >
                             <TableCell className="whitespace-nowrap">{formatDate(row.date)}</TableCell>
-                            <TableCell className="max-w-[320px] truncate">{row.description}</TableCell>
+                            <TableCell className="max-w-[320px] truncate">
+                              {/* Tautan sungguhan: bisa difokus, dibuka dengan papan ketik atau di tab baru (audit G8). */}
+                              <Link
+                                href={`/backoffice/finance/journals/${row.id}`}
+                                className="hover:underline underline-offset-4"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {teksKeteranganJurnal(t, row.description, { manual: row.isManual })}
+                              </Link>
+                            </TableCell>
                             <TableCell>
                               {row.isManual ? (
                                 <Badge variant="secondary">{t("sourceManual")}</Badge>
@@ -258,6 +294,9 @@ export function JournalsPageClient({
                     totalCount={totalCount}
                     pageSize={pageSize}
                   />
+                  <div className="mt-2 flex justify-end">
+                    <UkuranHalaman nilai={pageSize} onUbah={ubahUkuran} />
+                  </div>
                 </>
               )}
             </CardContent>

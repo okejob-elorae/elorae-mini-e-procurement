@@ -56,6 +56,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/lead-time': 'lead_time:view',
   '/backoffice/purchase-orders': 'purchase_orders:view',
   '/backoffice/supplier-payments': 'supplier_payments:view',
+  '/backoffice/supplier-payments/baru': 'supplier_payments:create',
   '/backoffice/inventory': 'inventory:view',
   '/backoffice/inventory/stock-opname': 'inventory_opname:view',
   '/backoffice/inventory/reconciliation': 'inventory_reconciliation:view',
@@ -136,6 +137,29 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/finance/coa': 'coa:view',
   '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
   '/backoffice/finance/pph-dipotong': 'journals:view',
+  // Kas & bank (voucher BKK/BKMK/transfer, kas kecil, kategori) dan rekonsiliasi bank.
+  '/backoffice/finance/kas': 'journals:view',
+  '/backoffice/finance/kas/baru': 'journals:manage',
+  '/backoffice/finance/rekonsiliasi-bank': 'journals:view',
+  '/backoffice/finance/tutup-buku': 'journals:view',
+  '/backoffice/finance/integritas': 'journals:view',
+  '/backoffice/finance/mulai-buku-besar': 'journals:view',
+  '/backoffice/finance/pajak': 'journals:view',
+  // Ekspor faktur keluaran dibuka pembaca faktur pajak (tim pajak), bukan pembaca jurnal.
+  '/backoffice/finance/pajak/faktur-keluaran': 'tax_invoices:view',
+  '/backoffice/finance/rekonsiliasi-piutang': 'journals:view',
+  '/backoffice/finance/rekonsiliasi-persediaan': 'journals:view',
+  '/backoffice/finance/saldo-awal': 'journals:view',
+  // Isi anggaran: pembaca jurnal (keuangan); realisasi vs anggaran: pembaca
+  // laporan keuangan. Awalan terpanjang menang, jadi `/realisasi` memakai izinnya sendiri.
+  '/backoffice/finance/anggaran': 'journals:view',
+  '/backoffice/finance/anggaran/realisasi': 'finance_reports:view',
+  '/backoffice/finance/reports/perbandingan': 'finance_reports:view',
+  '/backoffice/finance/reports/rasio': 'finance_reports:view',
+  '/backoffice/finance/reports/laba-kanal': 'finance_reports:view',
+  // Aset tetap & jurnal berulang: melihat journals:view; formulir (/baru, /ubah) menjaga journals:manage sendiri.
+  '/backoffice/finance/aset-tetap': 'journals:view',
+  '/backoffice/finance/jurnal-berulang': 'journals:view',
   // Modul piutang sengaja TIDAK dipetakan — `/backoffice/piutang`, `pelunasan`
   // (termasuk `giro` dan `baru`), `pelunasan-dasbor`, `retur-toko`, `kontrabon`,
   // `beban-selisih`, `tugas-tagih`, `arsip-retur`, `konsinyasi`, dan cetakannya

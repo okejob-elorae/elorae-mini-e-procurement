@@ -65,6 +65,14 @@ describe("susunRekap satu hari", () => {
     expect(teks).toContain("- ROAS               : 2,00x");
   });
 
+  it("gross-up: fee tetap angka yang disepakati, PPh yang ditanggung ditulis sendiri, dan biaya bruto disebut", () => {
+    const t = susunRekap({ ...dasar, ringkasan: { ...dasar.ringkasan, biayaFee: 19_750_000, biayaPph: 301_546, biayaKirim: 0, komisi: 0, gmv: 0 } });
+    expect(t).toContain("- Biaya              : Rp 20.051.546 (fee Rp 19.750.000 + PPh gross-up Rp 301.546 + kirim Rp 0)");
+    expect(t).toContain("- Fee disepakati     : Rp 19.750.000 · biaya bruto (termasuk PPh) Rp 20.051.546");
+    // Tanpa gross-up tidak ada baris tambahan.
+    expect(teks).not.toContain("Fee disepakati");
+  });
+
   it("posisi tahap hanya yang berisi, dengan label Indonesia", () => {
     expect(teks).toContain("POSISI TAHAP (kondisi saat ini)");
     expect(teks).toContain("- Deal           : 4");

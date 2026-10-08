@@ -17,6 +17,7 @@ import {
   KUNCI_TUTUP_HARI,
 } from "@/lib/spg/pengaturan";
 import { JudulPengaturanSpg } from "./JudulPengaturanSpg";
+import { JudulKelompok } from "../DaftarIsiPengaturan";
 import { DiskonManualCard } from "./DiskonManualCard";
 import { ShiftCard } from "./ShiftCard";
 import { KomisiPutusCard } from "./KomisiPutusCard";
@@ -61,20 +62,46 @@ export default async function PengaturanSpgPage() {
   });
   const nilai = (kunci: string) => setelan.find((s) => s.key === kunci)?.value ?? null;
 
+  // Urutan kartu = urutan daftar isi (`daftar-isi.ts`); setiap kartu punya jangkar.
+  const jangkar = "scroll-mt-6";
   return (
     <div className="space-y-6">
-      <JudulPengaturanSpg />
-      <DiskonManualCard bolehUbah={hasPermission(izin, PERMISSIONS.PROMOS_MANAGE)} nilai={bacaDiskonManual(nilai(KUNCI_DISKON_MANUAL))} />
-      <TutupHariCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaTutupHari(nilai(KUNCI_TUTUP_HARI))} />
-      <TitipPesanCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaTitipPesan(nilai(KUNCI_TITIP_PESAN))} />
-      <ShiftCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaAturanShift(nilai(KUNCI_SHIFT))} />
-      <KomisiPutusCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaKomisiPutus(nilai(KUNCI_KOMISI_PUTUS))} />
-      <BarangHilangCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaBarangHilang(nilai(KUNCI_BARANG_HILANG))} />
-      <AturanMutasiCard bolehUbah={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)} nilai={nilai(KUNCI_ATURAN_MUTASI)} />
-      <HariKerjaSpgCard
-        bolehUbah={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)}
-        hariKerja={bacaHariKerjaSpg(nilai(KUNCI_HARI_KERJA_SPG))}
-      />
+      <JudulPengaturanSpg bolehBukaTarget={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_VIEW)} />
+
+      <JudulKelompok kunci="settings.spg.toc.konter" />
+      <div id="diskon-manual" className={jangkar}>
+        <DiskonManualCard bolehUbah={hasPermission(izin, PERMISSIONS.PROMOS_MANAGE)} nilai={bacaDiskonManual(nilai(KUNCI_DISKON_MANUAL))} />
+      </div>
+      <div id="tutup-hari" className={jangkar}>
+        <TutupHariCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaTutupHari(nilai(KUNCI_TUTUP_HARI))} />
+      </div>
+      <div id="titip-pesan" className={jangkar}>
+        <TitipPesanCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaTitipPesan(nilai(KUNCI_TITIP_PESAN))} />
+      </div>
+
+      <JudulKelompok kunci="settings.spg.toc.jadwal" />
+      <div id="shift" className={jangkar}>
+        <ShiftCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaAturanShift(nilai(KUNCI_SHIFT))} />
+      </div>
+      <div id="hari-kerja" className={jangkar}>
+        <HariKerjaSpgCard
+          bolehUbah={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)}
+          hariKerja={bacaHariKerjaSpg(nilai(KUNCI_HARI_KERJA_SPG))}
+        />
+      </div>
+
+      <JudulKelompok kunci="settings.spg.toc.komisiBeban" />
+      <div id="komisi-putus" className={jangkar}>
+        <KomisiPutusCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaKomisiPutus(nilai(KUNCI_KOMISI_PUTUS))} />
+      </div>
+      <div id="barang-hilang" className={jangkar}>
+        <BarangHilangCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaBarangHilang(nilai(KUNCI_BARANG_HILANG))} />
+      </div>
+
+      <JudulKelompok kunci="settings.spg.toc.stok" />
+      <div id="mutasi" className={jangkar}>
+        <AturanMutasiCard bolehUbah={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)} nilai={nilai(KUNCI_ATURAN_MUTASI)} />
+      </div>
     </div>
   );
 }

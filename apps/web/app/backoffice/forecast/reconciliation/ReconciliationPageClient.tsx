@@ -230,7 +230,7 @@ export function ReconciliationPageClient({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t("parentSku")}</TableHead>
+                    <TableHead>{t("skuInduk")}</TableHead>
                     <TableHead>{t("product")}</TableHead>
                     <TableHead className="text-right">{t("excelQty")}</TableHead>
                     <TableHead className="text-right">{t("jubelioQty")}</TableHead>

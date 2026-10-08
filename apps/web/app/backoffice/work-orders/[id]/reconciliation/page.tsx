@@ -34,6 +34,9 @@ import {
   statusTampilRekon,
   type StatusTampilRekon,
 } from '@/lib/production/rekonsiliasi-tampil';
+import { angkaSetoranWo } from '@/lib/production/setoran-wo';
+import { CatatanTanpaDokumen, RingkasSetoran } from '../../RingkasSetoran';
+import { WoTidakDitemukan } from '../../WoTidakDitemukan';
 
 /** Rupiah bertanda: "+Rp 3.031.250". */
 const rupiahBertanda = (n: number) => (n > 0 ? `+${formatRupiah(n)}` : formatRupiah(n));
@@ -78,10 +81,13 @@ export default function WorkOrderReconciliationPage() {
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([getWorkOrderById(id), getReconciliation(id)])
+    // Rekonsiliasi untuk WO yang tidak ada melempar galat; yang menentukan
+    // "tidak ditemukan" adalah WO-nya, jadi galat rekonsiliasi ditangkap sendiri.
+    Promise.all([getWorkOrderById(id), getReconciliation(id).catch(() => null)])
       .then(([w, r]) => {
         setWO(w);
         setRecon(r);
+        if (w && !r) toast.error(tR('loadFailed'));
       })
       .catch(() => toast.error(tR('loadFailed')))
       .finally(() => setIsLoading(false));
@@ -171,43 +177,47 @@ export default function WorkOrderReconciliationPage() {
     }, 350);
   };
 
-  if (isLoading || !wo || !recon) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
+  if (!wo) return <WoTidakDitemukan />;
+  if (!recon) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">{tR('loadFailed')}</CardContent>
+      </Card>
+    );
+  }
+
+  const setoran = angkaSetoranWo({
+    plannedQty: wo.plannedQty,
+    actualQty: wo.actualQty,
+    receipts: ((wo as { receipts?: unknown }).receipts as Parameters<typeof angkaSetoranWo>[0]['receipts']) ?? [],
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link href={`/backoffice/work-orders/${id}`}>
-            <Button variant="ghost" size="icon" aria-label={tR('backToWO')} title={tR('backToWO')}>
+          <Button asChild variant="ghost" size="icon">
+            <Link href={`/backoffice/work-orders/${id}`} aria-label={tR('backToWO')} title={tR('backToWO')}>
               <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div>
             <div className="flex items-center gap-1">
               <h1 className="text-2xl font-bold">{tWO('reconciliationTitle')}</h1>
               <TombolBantuan judul={tWO('reconciliationTitle')} />
             </div>
             <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {String(
-                Number(wo.actualQty ?? 0) < Number(wo.plannedQty)
-                  ? t('setoranSummary', {
-                      target: Number(wo.plannedQty).toLocaleString('id-ID'),
-                      actual: Number(wo.actualQty ?? 0).toLocaleString('id-ID'),
-                      shortfall: (Number(wo.plannedQty) - Number(wo.actualQty ?? 0)).toLocaleString('id-ID'),
-                    })
-                  : t('setoranSummaryExact', {
-                      target: Number(wo.plannedQty).toLocaleString('id-ID'),
-                      actual: Number(wo.actualQty ?? 0).toLocaleString('id-ID'),
-                    })
-              )}
-            </p>
+            <div className="mt-1 space-y-1 text-sm text-muted-foreground">
+              <RingkasSetoran angkaWo={setoran} />
+              <CatatanTanpaDokumen angkaWo={setoran} />
+            </div>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={handleExportPDF}>

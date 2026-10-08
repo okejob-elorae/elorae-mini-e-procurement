@@ -13,6 +13,9 @@ import { getUsersWithPermission, sendNotificationToUsers } from "./recipients";
  */
 const CATEGORY_PERMISSION: Record<string, string> = {
   JOURNAL_PENDING: PERMISSIONS.JOURNALS_MANAGE,
+  // Jurnal manual / pembalik yang menunggu persetujuan orang lain (maker-checker,
+  // lib/finance/jurnal-manual). Pembuatnya ikut menerima — penulisnya yang menolak ia menyetujui.
+  JOURNAL_APPROVAL: PERMISSIONS.JOURNALS_MANAGE,
   PENDING_ORDER_APPROVAL: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
   STORE_CHANGE_REQUEST: PERMISSIONS.STORES_MANAGE,
   TAX_INVOICE_PENDING: PERMISSIONS.TAX_INVOICES_MANAGE,

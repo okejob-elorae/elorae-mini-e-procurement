@@ -53,7 +53,7 @@ export function TukarShiftKantor({
 
   const tanggal = (day: string) => formatDisplayDate(new Date(`${day}T00:00:00+07:00`), locale);
   const teksSel = (s: SelRingkas | null) =>
-    !s ? t("kosong") : s.kind === "LIBUR" ? t("libur") : `${s.label} ${s.mulai ?? ""}–${s.selesai ?? ""}`;
+    !s ? t("kosong") : s.kind === "LIBUR" ? t("libur") : `${s.label} ${(s.mulai ?? "").replace(":", ".")}–${(s.selesai ?? "").replace(":", ".")}`;
   // Sesudah disetujui: isi sel bertukar; sel kosong dianggap libur.
   const sesudah = (s: SelRingkas | null) => (s ? teksSel(s) : t("libur"));
 

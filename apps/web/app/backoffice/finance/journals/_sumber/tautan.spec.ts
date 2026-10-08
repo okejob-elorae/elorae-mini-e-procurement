@@ -27,6 +27,12 @@ describe("idDokumenDariSumber", () => {
     expect(idDokumenDariSumber(null, "x")).toBeNull();
     expect(idDokumenDariSumber("SUPPLIER_PAYMENT", "#1")).toBeNull();
   });
+
+  it("saldo awal: jurnal dan pembaliknya (`<id>:balik`) menunjuk catatan saldo awal yang sama, di halaman Saldo awal", () => {
+    expect(idDokumenDariSumber("OPENING", "imp1")).toBe("imp1");
+    expect(idDokumenDariSumber("OPENING", "imp1:balik")).toBe("imp1");
+    expect(tautanDokumenSumber("OPENING", "imp1")).toBe("/backoffice/finance/saldo-awal");
+  });
 });
 
 describe("tautanDokumenSumber", () => {
@@ -57,6 +63,16 @@ describe("tautanDokumenSumber", () => {
     expect(tautanDokumenSumber("ENTAH", "x")).toBeNull();
     expect(tautanDokumenSumber(null, "x")).toBeNull();
     expect(tautanDokumenSumber("OPNAME", "")).toBeNull();
+  });
+});
+
+describe("jurnal pajak (lib/finance/pajak)", () => {
+  it("masa PPN & PPh final ber-sourceId `<masa>#<generasi>` menuju halaman pajaknya; setoran ke daftar setoran", () => {
+    expect(idDokumenDariSumber("PPN_MASA", "2026-09#2")).toBe("2026-09");
+    expect(idDokumenDariSumber("PPH_FINAL_REVERSAL", "2026-08#1")).toBe("2026-08");
+    expect(tautanDokumenSumber("PPN_MASA", "2026-09")).toBe("/backoffice/finance/pajak/ppn?masa=2026-09");
+    expect(tautanDokumenSumber("PPH_FINAL", "2026-08")).toBe("/backoffice/finance/pajak/pph-final?tahun=2026");
+    expect(tautanDokumenSumber("TAX_PAYMENT_REVERSAL", "tp1")).toBe("/backoffice/finance/pajak/setoran?id=tp1");
   });
 });
 

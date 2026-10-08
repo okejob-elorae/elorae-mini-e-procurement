@@ -20,6 +20,11 @@ const DEFAULT_CONFIGS: Record<
   VANRECON: { prefix: "VRCN/", resetPeriod: "YEARLY", padding: 4 },
   SPGSALE: { prefix: "SPG/", resetPeriod: "YEARLY", padding: 4 },
   DELIVERY: { prefix: "DLV/", resetPeriod: "MONTHLY", padding: 4 },
+  CASHOUT: { prefix: "BKK/", resetPeriod: "MONTHLY", padding: 4 },
+  CASHIN: { prefix: "BKMK/", resetPeriod: "MONTHLY", padding: 4 },
+  CASHTRF: { prefix: "TRF/", resetPeriod: "MONTHLY", padding: 4 },
+  SUPPAY: { prefix: "BYR/", resetPeriod: "MONTHLY", padding: 4 },
+  ASSET: { prefix: "AT/", resetPeriod: "YEARLY", padding: 4 },
 };
 
 /**
@@ -49,6 +54,12 @@ export const KOLOM_NOMOR_DOKUMEN: Partial<Record<DocType, { model: string; kolom
   VANRECON: { model: "vanReconcile", kolom: "docNo" },
   SPGSALE: { model: "spgSale", kolom: "docNo" },
   DELIVERY: { model: "fieldSalesDelivery", kolom: "docNo" },
+  // Ketiga jenis voucher kas berbagi satu tabel (`CashVoucher.type` membedakannya).
+  CASHOUT: { model: "cashVoucher", kolom: "docNumber" },
+  CASHIN: { model: "cashVoucher", kolom: "docNumber" },
+  CASHTRF: { model: "cashVoucher", kolom: "docNumber" },
+  SUPPAY: { model: "supplierPayment", kolom: "docNumber" },
+  ASSET: { model: "fixedAsset", kolom: "code" },
 };
 
 type Klien = Prisma.TransactionClient;

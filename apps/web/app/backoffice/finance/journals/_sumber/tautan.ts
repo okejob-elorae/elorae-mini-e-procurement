@@ -29,6 +29,47 @@ export const JENIS_SUMBER_JURNAL = [
   "KOL_PAYMENT",
   "KOL_PAYMENT_REVERSAL",
   "KOL_SAMPLE",
+  "FIELD_DELIVERY",
+  "FIELD_COLLECTION",
+  "STORE_RETURN",
+  "STORE_EXCHANGE",
+  "PPN_MASA",
+  "PPN_MASA_REVERSAL",
+  "PPH_FINAL",
+  "PPH_FINAL_REVERSAL",
+  "TAX_PAYMENT",
+  "TAX_PAYMENT_REVERSAL",
+  "CASH_VOUCHER",
+  "CASH_VOUCHER_REVERSAL",
+  "SUPPLIER_PAYMENT_DOC",
+  "SUPPLIER_PAYMENT_DOC_REVERSAL",
+  "YEAR_END_CLOSE",
+  "OPENING",
+  // Jurnal operasional (lib/finance/operasional).
+  "CONSIGNMENT_SHIPMENT",
+  "CONSIGNMENT_ORDER",
+  "CONSIGNMENT_RETURN",
+  "CONSIGNMENT_CYCLE",
+  "CONSIGNMENT_COMMISSION",
+  "CONSIGNMENT_COMMISSION_PAYMENT",
+  "CONSIGNMENT_PAYMENT",
+  "SPG_COMMISSION",
+  "SPG_COMMISSION_PAYMENT",
+  "STOCK_LOSS",
+  "LOSS_SALES_DEDUCTION",
+  "DAMAGED_STOCK",
+  "STOCK_ADJUSTMENT",
+  "VENDOR_RETURN",
+  "TRAVEL_CLAIM",
+  "TRAVEL_CLAIM_PAYMENT",
+  // Aset tetap (lib/finance/aset) dan jurnal berulang (lib/finance/berulang).
+  "FIXED_ASSET",
+  "FIXED_ASSET_REVERSAL",
+  "DEPRECIATION",
+  "ASSET_DISPOSAL",
+  "ASSET_DISPOSAL_REVERSAL",
+  "RECURRING",
+  "RECURRING_REVERSAL",
 ] as const;
 
 /** Nilai `?source=` → saringan kueri; nilai tak dikenal tidak menyaring apa pun. */
@@ -45,6 +86,14 @@ export type IndukDokumen = {
   canvasserId?: string | null;
   /** Pengiriman sampel KOL tampil di rincian kolaborasinya. */
   kolaborasiId?: string | null;
+  /** Nota tagihan putus tampil di rincian pesanan lapangannya. */
+  fieldOrderId?: string | null;
+  /** Hitungan gudang (NRI) tampil di rincian nota retur tokonya. */
+  storeReturnId?: string | null;
+  /** Kiriman titipan, gaji SPG, dan pembayaran toko tampil di rincian siklus konsinyasinya. */
+  cycleId?: string | null;
+  /** Komisi SPG toko putus tampil di halaman Komisi SPG bulan itu ("YYYY-MM"). */
+  periode?: string | null;
 };
 
 /** Pembayaran pemasok ber-sourceId `poId#generasi`; jenis lain memakai sourceId apa adanya. */
@@ -56,11 +105,34 @@ export function idDokumenDariSumber(sourceType: string | null, sourceId: string 
     // Jurnal KOL ber-sourceId `<kolaborasi>#…`.
     sourceType === "KOL_FEE" ||
     sourceType === "KOL_PAYMENT" ||
-    sourceType === "KOL_PAYMENT_REVERSAL"
+    sourceType === "KOL_PAYMENT_REVERSAL" ||
+    // Jurnal lapangan bergenerasi: `<id>`, `<id>#2`, … (lib/finance/lapangan/selaras.ts).
+    sourceType === "FIELD_COLLECTION" ||
+    sourceType === "STORE_RETURN" ||
+    // Penyelesaian masa PPN dan PPh final ber-sourceId `<masa>#<generasi>` (lib/finance/pajak/masa.ts).
+    sourceType === "PPN_MASA" ||
+    sourceType === "PPN_MASA_REVERSAL" ||
+    sourceType === "PPH_FINAL" ||
+    sourceType === "PPH_FINAL_REVERSAL" ||
+    // Jurnal penutup tahun ber-sourceId `<tahun>`, `<tahun>#2`, `<tahun>#2#balik` (lib/finance/periode).
+    sourceType === "YEAR_END_CLOSE" ||
+    // Jurnal operasional bergenerasi: `<id>`, `<id>#2`, … (lib/finance/operasional, lewat selaras.ts).
+    sourceType === "CONSIGNMENT_RETURN" ||
+    sourceType === "CONSIGNMENT_CYCLE" ||
+    sourceType === "CONSIGNMENT_COMMISSION" ||
+    sourceType === "CONSIGNMENT_PAYMENT" ||
+    sourceType === "SPG_COMMISSION" ||
+    sourceType === "STOCK_LOSS"
   ) {
     const id = sourceId.split("#")[0];
     return id ? id : null;
   }
+  // Saldo awal: `<OpeningBalanceImport.id>`, pembaliknya `<id>:balik` (lib/finance/saldo-awal/jenis.ts).
+  if (sourceType === "OPENING") return sourceId.replace(/:balik$/, "") || null;
+  // Pelepasan aset bergenerasi: `<aset>`, `<aset>#2`, … (lib/finance/aset/writer.ts). Penyusutan
+  // (`<aset>/<YYYY-MM>`) dan jurnal berulang (`<templat>/<YYYY-MM>`) memakai sourceId apa adanya:
+  // nomor dokumennya menyebut bulannya (info-dokumen.ts).
+  if (sourceType === "ASSET_DISPOSAL" || sourceType === "ASSET_DISPOSAL_REVERSAL") return sourceId.split("#")[0] || null;
   return sourceId;
 }
 
@@ -114,6 +186,83 @@ export function tautanDokumenSumber(
     case "KOL_SAMPLE":
       // Pengiriman sampel tidak punya halaman sendiri: tampil di kolaborasinya.
       return induk.kolaborasiId ? `/backoffice/kreatif/kolaborasi/${seg(induk.kolaborasiId)}` : "/backoffice/kreatif/sampel";
+    case "FIELD_DELIVERY":
+      // Nota tagihan tampil di kartu pengiriman pesanan lapangannya.
+      return induk.fieldOrderId ? `/backoffice/field-sales-orders/${seg(induk.fieldOrderId)}` : "/backoffice/field-sales-orders";
+    case "FIELD_COLLECTION":
+      return `/backoffice/pelunasan/${seg(id)}`;
+    case "STORE_RETURN":
+      // Hitungan gudang tampil di rincian nota retur tokonya; yang belum dijodohkan hanya di daftar.
+      return induk.storeReturnId ? `/backoffice/retur-toko/${seg(induk.storeReturnId)}` : "/backoffice/retur-toko";
+    case "STORE_EXCHANGE":
+      return `/backoffice/tukar-barang/${seg(id)}`;
+    case "PPN_MASA":
+    case "PPN_MASA_REVERSAL":
+      return `/backoffice/finance/pajak/ppn?masa=${seg(id)}`;
+    case "PPH_FINAL":
+    case "PPH_FINAL_REVERSAL":
+      return `/backoffice/finance/pajak/pph-final?tahun=${seg(id.slice(0, 4))}`;
+    case "TAX_PAYMENT":
+    case "TAX_PAYMENT_REVERSAL":
+      return `/backoffice/finance/pajak/setoran?id=${seg(id)}`;
+    case "CASH_VOUCHER":
+    case "CASH_VOUCHER_REVERSAL":
+      // Voucher kas & bank (BKK/BKMK/TRF) dan pembatalannya (lib/finance/kas).
+      return `/backoffice/finance/kas/${seg(id)}`;
+    case "SUPPLIER_PAYMENT_DOC":
+    case "SUPPLIER_PAYMENT_DOC_REVERSAL":
+      // Dokumen pembayaran pemasok BYR/… dan pembatalannya (lib/purchasing/pembayaran-*).
+      return `/backoffice/supplier-payments/${seg(id)}`;
+    case "YEAR_END_CLOSE":
+      // Jurnal penutup (dan pembaliknya) dikelola di halaman Tutup buku, baris tahunnya.
+      return "/backoffice/finance/tutup-buku";
+    case "OPENING":
+      // Saldo awal (dan pembaliknya) dikelola di halaman Saldo awal, satu jenis per jurnal.
+      return "/backoffice/finance/saldo-awal";
+    // Jurnal operasional (lib/finance/operasional).
+    case "CONSIGNMENT_SHIPMENT":
+    case "CONSIGNMENT_COMMISSION_PAYMENT":
+    case "CONSIGNMENT_PAYMENT":
+      // Kiriman, gaji SPG, dan pembayaran toko tampil di rincian siklusnya; kiriman tanpa siklus hanya di daftar.
+      return induk.cycleId ? `/backoffice/konsinyasi/${seg(induk.cycleId)}` : "/backoffice/konsinyasi";
+    case "CONSIGNMENT_CYCLE":
+    case "CONSIGNMENT_COMMISSION":
+      return `/backoffice/konsinyasi/${seg(id)}`;
+    case "CONSIGNMENT_ORDER":
+      return `/backoffice/field-sales-orders/${seg(id)}`;
+    case "CONSIGNMENT_RETURN":
+      return induk.storeReturnId ? `/backoffice/retur-toko/${seg(induk.storeReturnId)}` : "/backoffice/retur-toko";
+    case "SPG_COMMISSION":
+    case "SPG_COMMISSION_PAYMENT":
+      return induk.periode ? `/backoffice/komisi-spg?bulan=${seg(induk.periode)}` : "/backoffice/komisi-spg";
+    case "STOCK_LOSS":
+      return `/backoffice/barang-hilang/${seg(id)}`;
+    case "LOSS_SALES_DEDUCTION":
+      return "/backoffice/laporan/komisi-salesman";
+    case "DAMAGED_STOCK":
+      return "/backoffice/gudang-rusak";
+    case "STOCK_ADJUSTMENT":
+      return "/backoffice/inventory?tab=adjustments";
+    case "VENDOR_RETURN":
+      return `/backoffice/vendor-returns/${seg(id)}`;
+    case "TRAVEL_CLAIM":
+    case "TRAVEL_CLAIM_PAYMENT":
+      return `/backoffice/biaya-perjalanan/${seg(id)}`;
+    // Aset tetap: perolehan, pelepasan, pembatalannya (id aset) dan penyusutan (`<aset>/<YYYY-MM>`).
+    case "FIXED_ASSET":
+    case "FIXED_ASSET_REVERSAL":
+    case "ASSET_DISPOSAL":
+    case "ASSET_DISPOSAL_REVERSAL":
+    case "DEPRECIATION": {
+      const asetId = id.split("/")[0];
+      return asetId ? `/backoffice/finance/aset-tetap/${seg(asetId)}` : "/backoffice/finance/aset-tetap";
+    }
+    // Jurnal berulang (`<templat>/<YYYY-MM>`) dan pembalik akrualnya.
+    case "RECURRING":
+    case "RECURRING_REVERSAL": {
+      const templatId = id.split("/")[0];
+      return templatId ? `/backoffice/finance/jurnal-berulang/${seg(templatId)}` : "/backoffice/finance/jurnal-berulang";
+    }
     default:
       return null;
   }

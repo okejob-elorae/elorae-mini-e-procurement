@@ -6,6 +6,9 @@ import { getJournalById } from "@/lib/finance/journals/queries";
 import { JournalDetailClient, type SumberJurnalTampil } from "./JournalDetailClient";
 import { cariInfoDokumen } from "../_sumber/info-dokumen";
 import { idDokumenDariSumber, kunciDokumen, rentangBulanWib, tautanDokumenSumber } from "../_sumber/tautan";
+import { infoPersetujuanJurnal, type InfoPersetujuanJurnal } from "@/lib/finance/jurnal-manual/queries";
+import { hariIniWib } from "@/lib/tanggal-isian";
+import { PanelPersetujuanJurnal } from "./PanelPersetujuanJurnal";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +31,16 @@ async function sumberJurnal(journalId: string): Promise<SumberJurnalTampil | nul
     return href ? { href, nomor: info?.nomor ?? null } : null;
   } catch (e) {
     console.error("[journal-detail] gagal membaca dokumen sumber", e);
+    return null;
+  }
+}
+
+/** Persetujuan (maker-checker) dan pembalikan; kegagalan membaca hanya menghilangkan panelnya. */
+async function infoPersetujuanAman(journalId: string): Promise<InfoPersetujuanJurnal | null> {
+  try {
+    return await infoPersetujuanJurnal(journalId);
+  } catch (e) {
+    console.error("[journal-detail] gagal membaca persetujuan", e);
     return null;
   }
 }
@@ -57,17 +70,28 @@ export default async function JournalDetailPage({ params }: PageProps) {
   const journal = await getJournalById(id);
   if (!journal) notFound();
 
-  const [sumber, akunIds] = await Promise.all([
+  const [sumber, akunIds, persetujuan] = await Promise.all([
     sumberJurnal(id),
     idAkunPerKode([...new Set(journal.lines.map((l) => l.accountCode))]),
+    infoPersetujuanAman(id),
   ]);
 
   return (
-    <JournalDetailClient
-      journal={journal}
-      sumber={sumber}
-      akunIds={akunIds}
-      rentangBukuBesar={rentangBulanWib(journal.date)}
-    />
+    <div className="space-y-6">
+      <JournalDetailClient
+        journal={journal}
+        sumber={sumber}
+        akunIds={akunIds}
+        rentangBukuBesar={rentangBulanWib(journal.date)}
+      />
+      {persetujuan ? (
+        <PanelPersetujuanJurnal
+          info={persetujuan}
+          penggunaId={session.user.id}
+          bolehMengelola={hasPermission(permissions, PERMISSIONS.JOURNALS_MANAGE)}
+          hariIni={hariIniWib()}
+        />
+      ) : null}
+    </div>
   );
 }

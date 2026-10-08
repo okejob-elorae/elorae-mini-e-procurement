@@ -17,6 +17,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { urutkanBaris, type ArahUrut } from "@/lib/spg/kinerja";
 import type { BarisKinerjaSpg, DataKinerjaSpg } from "@/lib/spg/kinerja-queries";
 import { cn } from "@/lib/utils";
+import { cariDenganTampilan, type Tampilan } from "./tampilan";
 
 const ALAMAT = "/backoffice/kinerja-spg";
 const SEMUA = "__semua__";
@@ -45,19 +46,22 @@ type Kolom = {
   nilai: (b: BarisKinerjaSpg) => number | string | null;
   isi: (b: BarisKinerjaSpg) => ReactNode;
   teks?: boolean;
+  /** Isi sel boleh patah baris (keterangan di bawah angka) supaya kolomnya tidak melebar. */
+  bungkus?: boolean;
 };
 
 /**
  * Tabel dipecah dua tampilan supaya muat di laptop 1280 px tanpa digulir ke
  * samping. Nama dan toko ada di keduanya; kolom yang `sekunder` disembunyikan
- * di bawah lebar 2xl (1536 px) — angkanya tetap ada di halaman rincian SPG.
+ * di bawah lebar 2xl (1536 px) — angkanya tetap ada di halaman rincian SPG —
+ * dan judul kolom boleh patah dua baris. Tampilan tercatat di alamat
+ * (`?tampilan=kehadiran`), seperti tab halaman lain.
  */
-type Tampilan = "penjualan" | "kehadiran";
 const KOLOM_TAMPILAN: Record<Tampilan, KunciKolom[]> = {
   penjualan: ["nama", "toko", "nilai", "target", "nota", "potong", "pengunjung", "konversi", "rata", "retur"],
   kehadiran: ["nama", "toko", "jadwal", "masuk", "terlambat", "tidakMasuk", "izin", "tutup", "titip"],
 };
-const KOLOM_SEKUNDER: ReadonlySet<KunciKolom> = new Set(["rata", "retur"]);
+const KOLOM_SEKUNDER: ReadonlySet<KunciKolom> = new Set(["rata", "retur", "potong", "izin"]);
 
 /**
  * Kinerja SPG di kantor: bulan dan toko di alamat (keduanya ditulis dalam SATU
@@ -65,14 +69,14 @@ const KOLOM_SEKUNDER: ReadonlySet<KunciKolom> = new Set(["rata", "retur"]);
  * rincian harian SPG itu. Kolom jadwal tampil "—" bila jadwal belum disusun —
  * bukan 0 — dan nilai kosong selalu di bawah saat diurutkan.
  */
-export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
+export function KinerjaSpgClient({ data, tampilanAwal = "penjualan" }: { data: DataKinerjaSpg; tampilanAwal?: Tampilan }) {
   const t = useTranslations("kinerjaSpg");
   const td = dinamis(t);
   const locale = useLocale();
   const router = useRouter();
   const [menunggu, mulai] = useTransition();
   const [urut, setUrut] = useState<{ kunci: KunciKolom; arah: ArahUrut }>({ kunci: "nama", arah: "naik" });
-  const [tampilan, setTampilan] = useState<Tampilan>("penjualan");
+  const [tampilan, setTampilan] = useState<Tampilan>(tampilanAwal);
 
   const angka = new Intl.NumberFormat(locale === "en" ? "en-US" : "id-ID", { maximumFractionDigits: 1 });
   const persen = (n: number | null) => (n === null ? "—" : `${angka.format(n)}%`);
@@ -88,7 +92,14 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
     q.set("bulan", ubah.bulan ?? data.bulan);
     const toko = ubah.toko !== undefined ? ubah.toko : data.storeId;
     if (toko) q.set("toko", toko);
+    if (tampilan !== "penjualan") q.set("tampilan", tampilan);
     mulai(() => router.replace(`${ALAMAT}?${q.toString()}`, { scroll: false }));
+  };
+  // Ganti tab tanpa memuat ulang data: alamat ditulis di tempat (bisa dibagikan, tombol kembali utuh).
+  const gantiTampilan = (v: Tampilan) => {
+    setTampilan(v);
+    const cari = cariDenganTampilan(window.location.search, v);
+    window.history.replaceState(window.history.state, "", cari ? `${ALAMAT}?${cari}` : ALAMAT);
   };
   const alamatRincian = (b: BarisKinerjaSpg) => `${ALAMAT}/${b.userId}?bulan=${data.bulan}`;
 
@@ -172,6 +183,7 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
     {
       kunci: "tutup",
       nilai: (b) => b.kepatuhanTutupPersen,
+      bungkus: true,
       isi: (b) =>
         b.kepatuhanTutupPersen === null ? (
           kosong
@@ -185,6 +197,7 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
     {
       kunci: "titip",
       nilai: (b) => b.titipDibuat,
+      bungkus: true,
       isi: (b) => (b.titipDibuat === 0 ? "0" : t("sel.titip", { dibuat: b.titipDibuat, selesai: b.titipSelesai })),
     },
     { kunci: "retur", nilai: (b) => b.persenKembali, isi: (b) => (b.persenKembali === null ? kosong : persen(b.persenKembali)) },
@@ -251,7 +264,7 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
             <Gauge className="h-5 w-5" />
             {t("daftarJudul")}
           </CardTitle>
-          <Tabs value={tampilan} onValueChange={(v) => setTampilan(v as Tampilan)}>
+          <Tabs value={tampilan} onValueChange={(v) => gantiTampilan(v as Tampilan)}>
             <TabsList>
               <TabsTrigger value="penjualan">{t("tampilan.penjualan")}</TabsTrigger>
               <TabsTrigger value="kehadiran">{t("tampilan.kehadiran")}</TabsTrigger>
@@ -272,15 +285,15 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
                       return (
                         <TableHead
                           key={k.kunci}
-                          className={cn(!k.teks && "text-right", sekunder(k))}
+                          className={cn("whitespace-normal", !k.teks && "text-right", sekunder(k))}
                           aria-sort={aktif ? (arahUrut === "naik" ? "ascending" : "descending") : "none"}
                         >
                           <Button
                             variant="ghost"
                             size="sm"
                             className={cn(
-                              "-mx-2 h-8 gap-1 px-2 font-medium [letter-spacing:inherit] [text-transform:inherit]",
-                              !k.teks && "ml-auto flex",
+                              "-mx-2 h-auto min-h-8 gap-1 whitespace-normal px-2 py-1 font-medium [letter-spacing:inherit] [text-transform:inherit]",
+                              !k.teks ? "ml-auto flex text-right" : "text-left",
                             )}
                             onClick={() => pilihUrut(k)}
                             aria-label={t("urut", { kolom: td(`kolom.${k.kunci}`) })}
@@ -301,7 +314,7 @@ export function KinerjaSpgClient({ data }: { data: DataKinerjaSpg }) {
                       onClick={() => router.push(alamatRincian(b))}
                     >
                       {kolomTampil.map((k) => (
-                        <TableCell key={k.kunci} className={cn(!k.teks && "text-right tabular-nums", sekunder(k))}>
+                        <TableCell key={k.kunci} className={cn(!k.teks && "text-right tabular-nums", k.bungkus && "whitespace-normal", sekunder(k))}>
                           {k.isi(b)}
                         </TableCell>
                       ))}

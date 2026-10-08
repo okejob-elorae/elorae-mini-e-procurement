@@ -121,7 +121,7 @@ export function ForecastPageClient() {
       <Tabs value={activeTab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
-          <TabsTrigger value="articles">{t('tabs.articles')}</TabsTrigger>
+          <TabsTrigger value="articles">{t('tabs.perArtikel')}</TabsTrigger>
           <TabsTrigger value="abc">{t('tabs.abc')}</TabsTrigger>
           <TabsTrigger value="plan-bridge">{t('tabs.planBridge')}</TabsTrigger>
         </TabsList>

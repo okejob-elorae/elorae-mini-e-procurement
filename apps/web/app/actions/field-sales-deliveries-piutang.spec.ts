@@ -14,6 +14,9 @@ vi.mock("@/lib/notifications/kabar-pengguna", () => ({
   kabariPengguna: vi.fn(),
 }));
 vi.mock("./audit", () => ({ logPrint: vi.fn() }));
+// Jurnal nota (lib/finance/lapangan) diuji di tempatnya sendiri; di sini ia akan menulis
+// JOURNAL_PENDING untuk nota uji yang dihapus teardown (pemetaan dev belum lengkap).
+vi.mock("@/lib/finance/lapangan/kait", () => ({ kaitNotaTerbit: vi.fn(async () => undefined) }));
 
 import { recordDeliveryAction, updateDeliveryDatesAction } from "./field-sales-deliveries";
 

@@ -48,6 +48,13 @@ vi.mock("@/lib/spg/shift-queries", () => ({
     return 5;
   }),
 }));
+// Dokumen tanpa jurnal menjalankan pencari sapuan (SQL mentah) — ditiru di tingkat modulnya.
+vi.mock("@/lib/finance/integritas/queries", () => ({
+  hitungDokumenTanpaJurnalDiam: vi.fn(async () => {
+    catatan.dipanggil.push("tanpaJurnal");
+    return 6;
+  }),
+}));
 vi.mock("@/lib/receivables/koreksi", () => ({
   koreksiTertunda: vi.fn(async () => {
     catatan.dipanggil.push("koreksi");

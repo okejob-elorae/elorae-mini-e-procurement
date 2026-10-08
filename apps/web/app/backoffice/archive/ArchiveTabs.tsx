@@ -58,23 +58,24 @@ export function ArchiveTabs({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t('pageTitle')} />
+      <PageHeader title={t('judulHalaman')} />
       <Tabs value={tab} onValueChange={gantiTab} className="space-y-4">
       <TabsList>
-        <TabsTrigger value="nota">{t('tabNotaToko')}</TabsTrigger>
-        {retur && <TabsTrigger value="retur">{t('tabReturPemasok')}</TabsTrigger>}
-        {workOrder && <TabsTrigger value="wo">{t('tabWorkOrder')}</TabsTrigger>}
+        <TabsTrigger value="nota">{t('tab.nota')}</TabsTrigger>
+        {retur && <TabsTrigger value="retur">{t('tab.retur')}</TabsTrigger>}
+        {workOrder && <TabsTrigger value="wo">{t('tab.wo')}</TabsTrigger>}
       </TabsList>
 
       <TabsContent value="nota">
         <DocumentArchive
           folders={nota.folders}
-          groupTitle={t('allStores')}
+          groupTitle={t('semuaToko')}
           summary={t('notaSummary', { docs: nota.totalDocs, pending: nota.totalPending })}
           searchPlaceholder={t('searchStore')}
           emptyLabel={t('empty')}
           hint={hint(
-            '/backoffice/finance/faktur-pajak',
+            // Langsung ke antrean yang belum berfaktur — halaman Faktur pajak membaca ?status=.
+            '/backoffice/finance/faktur-pajak?status=PENDING',
             t('hintLinkNota', { count: nota.totalPending }),
             nota.totalPending,
           )}
@@ -85,7 +86,7 @@ export function ArchiveTabs({
         <TabsContent value="retur">
           <DocumentArchive
             folders={retur.folders}
-            groupTitle={t('allVendors')}
+            groupTitle={t('semuaPemasok')}
             summary={t('returSummary', { docs: retur.totalDocs, pending: retur.totalPending })}
             searchPlaceholder={t('searchVendor')}
             emptyLabel={t('empty')}
@@ -102,7 +103,7 @@ export function ArchiveTabs({
         <TabsContent value="wo">
           <DocumentArchive
             folders={workOrder.folders}
-            groupTitle={t('allVendors')}
+            groupTitle={t('semuaPemasok')}
             summary={t('woSummary', { docs: workOrder.totalDocs, pending: workOrder.totalPending })}
             searchPlaceholder={t('searchVendor')}
             emptyLabel={t('empty')}

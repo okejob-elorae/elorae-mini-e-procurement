@@ -1,13 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useTranslations } from "next-intl";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { Archive, Pencil, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   deactivateProcessTemplate,
   getProcessTemplates,
 } from "@/app/actions/lead-time";
+import { formatAngka } from "@/app/backoffice/lead-time/papan-aturan";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -42,12 +53,15 @@ type Props = { canManage: boolean };
 export function PustakaTab({ canManage }: Props) {
   const t = useTranslations("leadTime.pustaka");
   const tc = useTranslations("leadTime.common");
+  const locale = useLocale();
   const [rows, setRows] = useState<Template[]>([]);
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Template | null>(null);
+  const [nonaktifkan, setNonaktifkan] = useState<Template | null>(null);
+  const [sibuk, mulai] = useTransition();
 
   async function load() {
     setLoading(true);
@@ -71,16 +85,22 @@ export function PustakaTab({ canManage }: Props) {
     return rows.filter((r) => r.name.toLowerCase().includes(q));
   }, [rows, search]);
 
-  async function onDeactivate(row: Template) {
-    if (!confirm(t("deactivateConfirm", { name: row.name }))) return;
-    const result = await deactivateProcessTemplate(row.id);
-    if (!result.success) {
-      toast.error(result.error ?? tc("failed"));
-      return;
-    }
-    toast.success(tc("saved"));
-    void load();
-  }
+  const lamaProses = (row: Pick<Template, "leadTimeType" | "days" | "rateQty">) =>
+    row.leadTimeType === "PER_QTY"
+      ? t("perQtyValue", { days: formatAngka(row.days, locale), rateQty: formatAngka(row.rateQty ?? 0, locale) })
+      : t("days", { days: formatAngka(row.days, locale) });
+
+  const onDeactivate = (row: Template) =>
+    mulai(async () => {
+      const result = await deactivateProcessTemplate(row.id).catch(() => ({ success: false, error: undefined }));
+      if (!result.success) {
+        toast.error(result.error ?? tc("failed"));
+        return;
+      }
+      toast.success(tc("saved"));
+      setNonaktifkan(null);
+      void load();
+    });
 
   return (
     <Card>
@@ -91,7 +111,7 @@ export function PustakaTab({ canManage }: Props) {
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-8 w-56"
-              placeholder={t("search")}
+              placeholder={t("searchV2")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -114,7 +134,7 @@ export function PustakaTab({ canManage }: Props) {
               }}
             >
               <Plus className="h-4 w-4 mr-1" />
-              {t("add")}
+              {t("addV2")}
             </Button>
           )}
         </div>
@@ -125,9 +145,9 @@ export function PustakaTab({ canManage }: Props) {
             <TableRow>
               <TableHead className="w-12">#</TableHead>
               <TableHead>{t("process")}</TableHead>
-              <TableHead>{t("leadTime")}</TableHead>
-              <TableHead>{t("equalsDays")}</TableHead>
-              {canManage && <TableHead className="w-28">{t("actions")}</TableHead>}
+              <TableHead>{t("leadTimeV2")}</TableHead>
+              <TableHead>{t("equalsDaysV2")}</TableHead>
+              {canManage && <TableHead className="w-28">{t("actionsV2")}</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -140,7 +160,7 @@ export function PustakaTab({ canManage }: Props) {
             ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={5} className="text-muted-foreground">
-                  —
+                  {rows.length === 0 ? t("kosong") : t("tidakCocok")}
                 </TableCell>
               </TableRow>
             ) : (
@@ -162,22 +182,13 @@ export function PustakaTab({ canManage }: Props) {
                         variant="outline"
                         className="ml-2 border-amber-500 text-amber-700"
                       >
-                        {t("perQty")}
+                        {t("perQtyV2")}
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell>
-                    {row.leadTimeType === "PER_QTY"
-                      ? t("perQtyValue", {
-                          days: row.days,
-                          rateQty: row.rateQty ?? 0,
-                        })
-                      : t("days", { days: row.days })}
-                  </TableCell>
+                  <TableCell>{lamaProses(row)}</TableCell>
                   <TableCell className="text-muted-foreground">
-                    {row.leadTimeType === "PER_QTY"
-                      ? t("asQty")
-                      : t("days", { days: row.days })}
+                    {row.leadTimeType === "PER_QTY" ? t("asQtyV2") : lamaProses(row)}
                   </TableCell>
                   {canManage && (
                     <TableCell>
@@ -200,9 +211,9 @@ export function PustakaTab({ canManage }: Props) {
                             variant="ghost"
                             aria-label={t("deactivateAria", { name: row.name })}
                             title={t("deactivateAria", { name: row.name })}
-                            onClick={() => void onDeactivate(row)}
+                            onClick={() => setNonaktifkan(row)}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Archive className="h-4 w-4" />
                           </Button>
                         )}
                       </div>
@@ -221,6 +232,28 @@ export function PustakaTab({ canManage }: Props) {
         initial={editing}
         onSaved={() => void load()}
       />
+
+      <AlertDialog open={nonaktifkan !== null} onOpenChange={(buka) => !buka && !sibuk && setNonaktifkan(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("deactivateConfirm", { name: nonaktifkan?.name ?? "" })}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deactivateIsi")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sibuk}>{t("form.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={sibuk}
+              onClick={(e) => {
+                e.preventDefault();
+                if (nonaktifkan) onDeactivate(nonaktifkan);
+              }}
+            >
+              <Archive className="h-4 w-4" aria-hidden />
+              {sibuk ? tc("menyimpan") : t("deactivate")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

@@ -24,7 +24,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "kinerjaSpg.deskripsi" },
       "Satu baris per SPG per toko untuk bulan yang dipilih. Pilih nama SPG untuk rincian hariannya.",
-      "Tabelnya dua tampilan supaya muat di laptop: Penjualan (nilai, capaian target, nota, potong, pengunjung, konversi) dan Kehadiran & layanan (jadwal, masuk, terlambat, tanpa izin, izin, tutup hari, titip pesan). Rata-rata per nota dan retur pembeli hanya tampil di layar lebar; angkanya juga ada di rincian SPG.",
+      "Tabelnya dua tampilan supaya muat di laptop: Penjualan (nilai, capaian target, nota, potong, pengunjung, konversi) dan Kehadiran & layanan (jadwal, masuk, terlambat, tanpa izin, izin, tutup hari, titip pesan). Potong bersih, izin, rata-rata per nota, dan retur pembeli hanya tampil di layar lebar; angkanya juga ada di rincian SPG. Tab yang dibuka tercatat di alamat, jadi tautannya bisa dibagikan.",
     ],
     kartu: [
       {
@@ -203,7 +203,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgLostSales.pageTitle" },
     isi: [
       { kunci: "spgLostSales.pageDescription" },
-      "Periode dihitung dalam hari kalender WIB termasuk hari ini.",
+      "Periode dipilih dengan pemilih rentang yang sama dengan Penjualan SPG (ada pilihan cepat 7, 30, dan 90 hari); bawaannya 30 hari terakhir termasuk hari ini, dalam hari kalender WIB.",
       "Tiga layar ini saling terkait dan saling ditautkan di kepala halaman: titip pesan (pembeli menunggu barang tertentu), barang dicari pembeli (yang ditanyakan tetapi tidak ada di rak), dan permintaan kiriman SPG. Permintaan pembeli yang sering muncul sebaiknya diteruskan SPG menjadi permintaan kiriman ke salesman pemegang toko.",
     ],
     kartu: [{ judul: { kunci: "spgLostSales.summaryTitle" }, isi: { kunci: "spgLostSales.summaryHint" } }],

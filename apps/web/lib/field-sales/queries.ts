@@ -10,9 +10,10 @@ export type FieldSalesOrderStatus = "PENDING_APPROVAL" | "APPROVED" | "REJECTED"
 
 /**
  * Saringan status di daftar: `REJECTED` = ditolak KANTOR saja, `CANCELLED` = dibatalkan
- * salesman sendiri (status tersimpan tetap REJECTED, dibedakan `cancelledById`).
+ * salesman sendiri (status tersimpan tetap REJECTED, dibedakan `cancelledById`). `AKTIF` =
+ * menunggu + disetujui — pesanan yang dihitung kartu Kinerja sales lapangan.
  */
-export type FieldSalesOrderStatusFilter = FieldSalesOrderStatus | "CANCELLED";
+export type FieldSalesOrderStatusFilter = FieldSalesOrderStatus | "CANCELLED" | "AKTIF";
 
 export type FieldSalesOrderType = "PUTUS" | "KONSI";
 
@@ -210,6 +211,11 @@ export async function listFieldSalesOrders(
      * menunggu dan konsinyasi juga bernilai bawaan PENDING di kolomnya, jadi keduanya disaring keluar.
      */
     kirim?: FieldSalesDeliveryStatus;
+    /** Pembuat pesanan (`?salesman=` dari Kinerja sales lapangan). */
+    salesmanId?: string;
+    /** Batas tanggal dibuat: `createdAt >= dibuatSejak` dan `< dibuatSebelum` (awal hari WIB). */
+    dibuatSejak?: Date;
+    dibuatSebelum?: Date;
   },
   paging: { page: number; pageSize: number },
 ): Promise<{ orders: FieldSalesOrderListItem[]; totalCount: number }> {
@@ -217,7 +223,17 @@ export async function listFieldSalesOrders(
   const dan: Prisma.FieldSalesOrderWhereInput[] = [];
   if (filter.status === "CANCELLED") dan.push({ status: "REJECTED", cancelledById: { not: null } });
   else if (filter.status === "REJECTED") dan.push({ status: "REJECTED", cancelledById: null });
+  else if (filter.status === "AKTIF") dan.push({ status: { in: ["PENDING_APPROVAL", "APPROVED"] } });
   else if (filter.status) dan.push({ status: filter.status });
+  if (filter.salesmanId) dan.push({ salesmanId: filter.salesmanId });
+  if (filter.dibuatSejak || filter.dibuatSebelum) {
+    dan.push({
+      createdAt: {
+        ...(filter.dibuatSejak ? { gte: filter.dibuatSejak } : {}),
+        ...(filter.dibuatSebelum ? { lt: filter.dibuatSebelum } : {}),
+      },
+    });
+  }
   if (filter.kirim) dan.push({ deliveryStatus: filter.kirim, status: "APPROVED", orderType: "PUTUS" });
   if (dan.length > 0) where.AND = dan;
   if (filter.orderType) where.orderType = filter.orderType;

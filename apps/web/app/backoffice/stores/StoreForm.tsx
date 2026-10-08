@@ -195,7 +195,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
       if (!result.ok) {
         if (result.code === "NO_API_KEY") {
           setPlaceSearchConfigured(false);
-          setSearchError(t("searchNoApiKey"));
+          setSearchError(t("searchNoApiKeyV2"));
         } else if (result.code === "FORBIDDEN") {
           setSearchError(tErr("forbidden"));
         } else if (result.code === "EMPTY_QUERY") {
@@ -459,7 +459,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                 {t("searchOnMap")}
               </Button>
               {placeSearchConfigured === false && (
-                <p className="text-xs text-muted-foreground">{t("searchNoApiKey")}</p>
+                <p className="text-xs text-muted-foreground">{t("searchNoApiKeyV2")}</p>
               )}
             </div>
             {searchError && <p className="text-sm text-destructive">{searchError}</p>}

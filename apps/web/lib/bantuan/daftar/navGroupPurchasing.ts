@@ -56,13 +56,44 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/supplier-payments",
     bagian: "navGroupPurchasing",
-    judul: { kunci: "supplierPayments.pageTitle" },
+    judul: { kunci: "supplierPayments.judulHalaman" },
     isi: [
-      { kunci: "supplierPayments.pageDescription" },
-      "Menandai PO lunas memposting jurnal pembayaran untuk hutang yang sudah dibukukan dari penerimaan barangnya; membatalkan tanda lunas memposting jurnal kebalikannya. Bila jurnalnya tidak bisa diposting, Anda diberi tahu alasannya.",
-      "Kartu Utang (barang sudah diterima) menjumlah nilai barang yang sudah diterima dari PO yang belum dibayar, dengan harga PO dan PPN-nya, dikurangi retur ke pemasok. Kartu Komitmen PO (belum diterima) adalah sisa nilai PO yang barangnya belum datang — belum menjadi utang. Keduanya dihitung dari PO di halaman daftar yang sedang tampil.",
-      "Tandai lunas dan Batalkan tanda lunas selalu meminta konfirmasi. Tanggal bayar menjadi tanggal jurnal, jadi tidak boleh sesudah hari ini. Bila belum ada barang diterima, tanda lunas tidak memposting jurnal karena belum ada utang — pakai hanya untuk uang muka yang sudah ditransfer.",
+      "Dua tab. Utang per PO: setiap PO yang sudah dikirim ke pemasok, utangnya, dan status bayarnya. Dokumen pembayaran: setiap pembayaran ke pemasok (BYR/…) — sebagian atau penuh, ke satu atau banyak dokumen utang sekaligus, dengan uang muka dan potongan PPh.",
+      "Bayar pemasok membuka formulir pembayaran: pilih pemasok, lalu isi jumlah yang dibayar untuk setiap dokumen utangnya — penerimaan barang (GRN), jasa produksi/CMT per langkah WO, dan utang saldo awal. Sisanya boleh dibayar lain kali. Jumlah di luar dokumen menjadi uang muka, yang kelak diterapkan ke dokumen utang dari rincian pembayarannya.",
+      "Jurnal pembayaran: utang usaha didebit sebesar bruto, rekening kas/bank dikredit sebesar yang benar-benar keluar, dan PPh yang dipotong menjadi utang PPh (PPh 23 jasa badan 2%, PPh 21 penjahit perorangan, PPh 4(2) sewa 10%). Potongan bawaan mengikuti jenis potongan di data pemasok; dasar potongan jasa CMT adalah nilai jasa tanpa PPN — barang tidak dipotong.",
+      "Utang setiap dokumen dibaca dari buku besar: baris utang usaha jurnal GRN-nya (sudah termasuk PPN bila PKP), dikurangi jurnal retur ke pemasok dan pembayaran sebelumnya. GRN tanpa jurnal belum muncul sebagai utang — posting jurnalnya dulu.",
+      "Kartu ringkasan dihitung di server atas SELURUH PO yang tersaring, bukan hanya halaman yang tampil. Saringan, pencarian, dan halaman tersimpan di alamat, jadi tautannya bisa dibagikan. Kartu Utang (barang sudah diterima) = nilai barang yang sudah diterima dari PO yang belum dibayar (harga PO dan PPN-nya, dikurangi retur); Komitmen PO = sisa nilai PO yang barangnya belum datang — belum menjadi utang.",
+      "Tombol lama Tandai lunas (menu Aksi) tetap bekerja: membayar seluruh utang PO yang sudah dibukukan dalam satu pembayaran, yang juga tampil di tab Dokumen pembayaran. Tombol itu ditolak untuk PO yang sudah punya pembayaran dokumen — lunasi sisanya atau batalkan pembayarannya dari tab Dokumen pembayaran. PO yang utangnya habis lewat pembayaran dokumen dan tidak menunggu barang lagi ditandai lunas otomatis; membatalkan pembayarannya membuka tanda itu lagi.",
       "Saringan pemasok memuat pemasok yang disetujui dan pemasok yang punya dokumen walau belum disetujui (ditandai). Bukti bayar mencetak utang PO sesudah sisa yang tidak datang dan retur pemasok.",
+    ],
+  },
+  {
+    rute: "/backoffice/supplier-payments/baru",
+    bagian: "navGroupPurchasing",
+    judul: { kunci: "supplierPayments.dokumen.judulBaru" },
+    isi: [
+      "Satu pembayaran ke satu pemasok. Setelah pemasok dipilih, semua dokumen utangnya yang belum lunas tampil dengan sisanya; isi kolom Bayar sekarang (sebagian atau penuh) atau centang untuk melunasi. Jumlah tidak boleh melebihi sisa — diperiksa lagi di server saat menyimpan, jadi pembayaran ganda dari dua layar ditolak.",
+      "Uang muka = bagian yang tidak dipasangkan ke dokumen. Uang muka ikut mendebit utang usaha pemasok itu (saldonya menjadi debit sampai barangnya datang) dan diterapkan ke dokumen utang kemudian dari rincian pembayarannya — tanpa jurnal baru.",
+      "Potongan PPh mengikuti data pemasok dan bisa diubah. Dasar potongan bawaan: untuk PPh 23/21, bagian jasa tanpa PPN dari dokumen jasa produksi yang dibayar (barang dan saldo awal tidak dipotong); untuk PPh 4(2) sewa, seluruh bruto. Ketik dasar lain bila perlu. Yang keluar dari rekening = bruto − potongan.",
+      "Tanggal bayar menjadi tanggal jurnal dan tidak boleh sesudah hari ini. Pembayaran yang dikirim dua kali (klik ganda, sinyal putus) hanya tercatat sekali.",
+    ],
+  },
+  {
+    rute: "/backoffice/supplier-payments/[id]",
+    bagian: "navGroupPurchasing",
+    judul: "Rincian pembayaran pemasok",
+    isi: [
+      "Dokumen utang yang dibayar, bruto, potongan PPh, yang keluar dari rekening, uang muka yang belum terpakai, dan tautan ke jurnalnya.",
+      "Terapkan uang muka memasangkan sisa uang muka ke dokumen utang pemasok yang sama; tidak ada jurnal baru. Batalkan pembayaran memposting jurnal pembalik bertanggal sama dengan jurnal aslinya dan membuka lagi utang yang dibayar; mutasi bank yang sudah dicocokkan dengan pembayaran ini dilepas. Pembayaran dari tombol lama Tandai lunas dibatalkan lewat tombol itu di PO-nya.",
+    ],
+  },
+  {
+    rute: "/backoffice/supplier-payments/umur-hutang",
+    bagian: "navGroupPurchasing",
+    judul: { kunci: "supplierPayments.umur.judul" },
+    isi: [
+      "Sisa utang setiap pemasok dikelompokkan menurut umur dokumennya: 0–30, 31–60, 61–90, dan lebih dari 90 hari, dihitung dari tanggal GRN, tanggal penerimaan barang jadi pertama (untuk jasa produksi), atau tanggal saldo awal. Uang muka dan lebih bayar tampil sebagai kredit. Klik nama pemasok untuk melihat dokumennya.",
+      "Saldonya adalah saldo SAAT INI; mengganti tanggal hanya menggeser cara umur dihitung. Total dibandingkan dengan saldo akun utang usaha di buku besar — selisih biasanya berasal dari jurnal manual ke akun utang usaha, retur atau GRN yang belum berjurnal.",
     ],
   },
   {

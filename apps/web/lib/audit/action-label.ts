@@ -52,8 +52,28 @@ export function humanizeAuditCode(code: string | null | undefined): string {
         .filter(Boolean)
         .map((w) => w.toLowerCase());
 
-  const sentence = words.join(" ");
+  const sentence = words.map(singkatanPajak).join(" ");
   return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
+/** Indonesian tax abbreviations keep their own spelling: "Dpp" read as a typo. */
+const SINGKATAN_PAJAK: Record<string, string> = {
+  dpp: "DPP",
+  pph: "PPh",
+  ppn: "PPN",
+  npwp: "NPWP",
+  nik: "NIK",
+  nsfp: "NSFP",
+  ntpn: "NTPN",
+  hpp: "HPP",
+};
+
+/** `pph` → "PPh", `pph21` → "PPh 21"; any other word unchanged. Whole words only. */
+function singkatanPajak(word: string): string {
+  const m = /^([a-z]+)(\d*)$/.exec(word);
+  const ganti = m ? SINGKATAN_PAJAK[m[1]] : undefined;
+  if (!m || !ganti) return word;
+  return m[2] ? `${ganti} ${m[2]}` : ganti;
 }
 
 /** Readable name of an entity type: `ContentPlan` → "Rencana konten". */

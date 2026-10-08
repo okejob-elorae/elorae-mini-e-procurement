@@ -1,10 +1,13 @@
 import { redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { formatDisplayDate } from "@/lib/date-only";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listFieldSalesOrders } from "@/lib/field-sales/queries";
 import type { FieldSalesDeliveryStatus, FieldSalesOrderStatusFilter } from "@/lib/field-sales/queries";
 import { listStoreOptions } from "@/lib/stores/queries";
 import { idPesananKreditDitahan } from "@/lib/field-sales/kredit-panel";
+import { adaSaringanKinerja, bacaSaringanKinerja } from "@/lib/field-sales/saringan-kinerja";
 import { FieldSalesOrdersPageClient } from "./FieldSalesOrdersPageClient";
 
 export const dynamic = "force-dynamic";
@@ -19,11 +22,15 @@ type PageProps = {
     kirim?: string;
     page?: string;
     pageSize?: string;
+    /** Dari Kinerja sales lapangan: hari WIB tanggal dibuat dan pembuat pesanan. */
+    dari?: string;
+    sampai?: string;
+    salesman?: string;
   }>;
 };
 
 const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
-const STATUS_VALUES: FieldSalesOrderStatusFilter[] = ["PENDING_APPROVAL", "APPROVED", "REJECTED", "CANCELLED"];
+const STATUS_VALUES: FieldSalesOrderStatusFilter[] = ["PENDING_APPROVAL", "APPROVED", "REJECTED", "CANCELLED", "AKTIF"];
 const KIRIM_VALUES: FieldSalesDeliveryStatus[] = ["PENDING", "PARTIAL", "DELIVERED", "CLOSED"];
 
 function parsePageSize(raw: string | undefined): number {
@@ -60,6 +67,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
 
   const sp = await searchParams;
   const kirim = parseKirim(sp.kirim);
+  const kinerja = bacaSaringanKinerja(sp);
   const filter = {
     search: sp.search?.trim() || undefined,
     status: parseStatus(sp.status, kirim),
@@ -67,14 +75,29 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
     orderType: parseOrderType(sp.orderType),
     storeId: sp.storeId?.trim() || undefined,
     inden: parseInden(sp.inden),
+    salesmanId: kinerja.salesmanId ?? undefined,
+    dibuatSejak: kinerja.dibuatSejak ?? undefined,
+    dibuatSebelum: kinerja.dibuatSebelum ?? undefined,
   };
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
 
-  const [{ orders, totalCount }, storeOptions] = await Promise.all([
+  const [{ orders, totalCount }, storeOptions, sales] = await Promise.all([
     listFieldSalesOrders(filter, { page, pageSize }),
     listStoreOptions(),
+    kinerja.salesmanId
+      ? prisma.user.findUnique({ where: { id: kinerja.salesmanId }, select: { name: true, email: true } })
+      : Promise.resolve(null),
   ]);
+  // Keping saringan dari Kinerja sales lapangan — tanggal diformat di server (WIB).
+  const tgl = (k: string) => formatDisplayDate(new Date(`${k}T00:00:00+07:00`));
+  const saringKinerja = adaSaringanKinerja(kinerja)
+    ? {
+        dari: kinerja.dari ? tgl(kinerja.dari) : null,
+        sampai: kinerja.sampai ? tgl(kinerja.sampai) : null,
+        sales: kinerja.salesmanId ? (sales?.name ?? sales?.email ?? kinerja.salesmanId) : null,
+      }
+    : null;
   // Lencana "Kredit ditahan" — hanya untuk baris di halaman ini, satu kueri.
   const kreditDitahanIds = await idPesananKreditDitahan(orders.map((o) => o.id));
 
@@ -92,6 +115,7 @@ export default async function FieldSalesOrdersPage({ searchParams }: PageProps) 
       page={page}
       pageSize={pageSize}
       kreditDitahanIds={kreditDitahanIds}
+      saringKinerja={saringKinerja}
     />
   );
 }

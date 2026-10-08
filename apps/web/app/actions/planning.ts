@@ -675,10 +675,10 @@ export async function deletePlanYear(planYearId: string) {
 }
 
 export async function setPlanYearLock(planYearId: string, isLocked: boolean) {
+  // Dulu hanya peran bernama ADMIN. Kini izin mengelola plan produksi — kuasa yang
+  // sama dengan "Aktifkan" (mengunci) dan "Buka kembali ke draf" (membuka) yang
+  // pemegang izin ini sudah punya (keputusan sementara, laporan audit ulang G6).
   const session = await requirePlanningManage();
-  if (session.user.role !== "ADMIN") {
-    throw new Error("Only ADMIN can lock or unlock plan year");
-  }
   const updated = await prisma.planYear.update({
     where: { id: planYearId },
     data: { isLocked },

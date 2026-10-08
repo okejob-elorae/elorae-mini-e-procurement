@@ -38,6 +38,7 @@ import {
   STATUS_MENGHITUNG,
 } from "@/app/backoffice/inventory/stock-opname/angka-sistem";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { kodeGalatOpname, type KodeGalatOpname } from "@/lib/inventory/galat-opname";
 
 const OPNAME_PATH = "/backoffice/inventory/stock-opname";
 const HITUNGAN_DITUTUP = "Opname sudah dikirim untuk persetujuan; hitungan tidak dapat diubah lagi";
@@ -71,7 +72,7 @@ export async function createOpname(data: {
   assignedToId?: string;
   itemIds?: string[];
   notes?: string;
-}): Promise<{ success: boolean; opnameId?: string; error?: string }> {
+}): Promise<{ success: boolean; opnameId?: string; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -116,14 +117,14 @@ export async function createOpname(data: {
     revalidatePath(OPNAME_PATH);
     return { success: true, opnameId: result.id };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to create opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
 export async function updateOpnameCounts(
   opnameId: string,
   counts: Array<{ opnameItemId: string; countedQty: number; notes?: string }>,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -160,14 +161,14 @@ export async function updateOpnameCounts(
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to update counts" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
 export async function updateOpnameRollCounts(
   opnameId: string,
   counts: Array<{ opnameRollId: string; countedLength: number; notes?: string }>,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -203,11 +204,11 @@ export async function updateOpnameRollCounts(
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to update roll counts" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
-export async function submitOpname(opnameId: string): Promise<{ success: boolean; error?: string }> {
+export async function submitOpname(opnameId: string): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -240,7 +241,7 @@ export async function submitOpname(opnameId: string): Promise<{ success: boolean
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to submit opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
@@ -250,6 +251,7 @@ export async function approveOpname(
 ): Promise<{
   success: boolean;
   driftRows?: DriftRow[];
+  code?: KodeGalatOpname;
   error?: string;
 }> {
   try {
@@ -262,7 +264,7 @@ export async function approveOpname(
 
     const canApproveOwn = hasPermission(user.permissions ?? [], "inventory_opname:approve_own");
     if (isSelfApprovalBlocked(opname.submittedById, user.id, canApproveOwn)) {
-      return { success: false, error: SELF_APPROVAL_ERROR };
+      return { success: false, code: "SETUJUI_SENDIRI", error: SELF_APPROVAL_ERROR };
     }
 
     if (!confirmDrift) {
@@ -339,7 +341,7 @@ export async function approveOpname(
     revalidatePath("/backoffice/inventory");
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to approve opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
@@ -363,7 +365,7 @@ export async function postOpnameJournalAction(
   return r;
 }
 
-export async function cancelOpname(opnameId: string): Promise<{ success: boolean; error?: string }> {
+export async function cancelOpname(opnameId: string): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     const opname = await prisma.stockOpname.findUnique({ where: { id: opnameId } });
@@ -384,7 +386,7 @@ export async function cancelOpname(opnameId: string): Promise<{ success: boolean
     revalidatePath(OPNAME_PATH);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to cancel opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 

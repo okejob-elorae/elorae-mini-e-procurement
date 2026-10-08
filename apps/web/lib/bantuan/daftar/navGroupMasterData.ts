@@ -8,7 +8,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "supplier.pageDescription" },
       "Satu daftar, tiga cara melihat (seperti Notion/Airtable): Tabel untuk membandingkan, Galeri berupa kartu, dan Papan dengan satu kolom per jenis pemasok. Pilihan tampilan diingat di perangkat Anda dan ikut di alamat halaman. Papan menampilkan sampai 100 pemasok sekaligus, tanpa halaman.",
-      "Sedang dikerjakan: untuk penjahit, jumlah SPK yang berjalan dan pcs-nya (merah bila lewat target); untuk pemasok kain/aksesoris, jumlah PO terbuka dan tanggal tiba terdekat (merah bila terlambat). Utang: nilai barang yang SUDAH diterima pada PO yang belum dibayar, dikurangi kredit retur — sama dengan Pembayaran Pemasok; PO yang barangnya belum datang bukan utang. Terakhir: PO, penerimaan barang, atau SPK terakhir. Kolom ini hanya tampil untuk yang boleh melihat PO, SPK, atau pembayaran pemasok.",
+      "Ini data master: yang tampil hanya data tetap pemasok — kontak (telepon bisa langsung dipanggil, email), pajak (PKP atau bukan, potongan PPh, tanpa NPWP), dan di layar lebar rekening serta alamat. Progres pekerjaan pemasok tidak ditampilkan di sini: PO terbuka dan yang terlambat ada di Pesanan pembelian, SPK di penjahit ada di Follow-up produksi, dan utang ada di Pembayaran pemasok — masing-masing bisa disaring per pemasok.",
       "Tombol WhatsApp muncul bila nomor pemasok adalah nomor HP; nomor kantor tidak.",
       "Pemasok baru berstatus Menunggu persetujuan dan BELUM bisa dipilih di pesanan pembelian (PO) sampai disetujui; pemasok yang ditolak juga tidak bisa dipilih.",
       "Tombol Setujui dan Tolak tampil langsung di pemasok yang menunggu, untuk siapa pun yang memegang izin menyetujui pemasok (tidak harus peran ADMIN). Menolak butuh alasan.",
@@ -180,7 +180,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "navGroupMasterData",
     judul: "Rincian barang",
     isi: [
-      "Mengubah data barang dan foto galerinya (foto produk dan foto per varian). Tab Riwayat Harga mencatat setiap perubahan harga jual beserta pemicunya: penerimaan barang jadi, perubahan margin, perubahan default, atau edit manual.",
+      "Mengubah data barang dan foto galerinya (foto produk dan foto per varian). Gambar disimpan dengan tombol Simpan gambar di kartu galeri, terpisah dari Simpan barang; selama ada gambar yang belum disimpan, kartu galeri memperingatkannya dan Simpan barang tidak meninggalkan halaman. Tab Riwayat harga mencatat setiap perubahan harga jual beserta pemicunya: penerimaan barang jadi, perubahan margin, perubahan default, atau edit manual.",
       "Tombol Label barcode membuka cetak label untuk barang ini. Admin juga punya tombol Kirim stok ke Jubelio, yang memasukkan stok barang ini ke antrean kiriman ke Jubelio setelah dikonfirmasi.",
       "Tombol Simpan barang menyimpan isian formulir. Galeri produk di bawahnya punya tombol Simpan gambar sendiri — gambar yang ditambah atau digeser belum tersimpan sebelum tombol itu ditekan.",
       "Nama Inggris tidak wajib: bila dikosongkan, nama Indonesia yang dipakai.",
@@ -234,7 +234,7 @@ export const ENTRI: EntriBantuan[] = [
     ],
     kartu: [
       {
-        judul: { kunci: "leadTime.tabs.pustaka" },
+        judul: { kunci: "leadTime.tabs.pustakaV2" },
         isi: [
           "Daftar semua proses beserta lamanya.",
           { kunci: "leadTime.pustaka.banner" },
@@ -243,7 +243,7 @@ export const ENTRI: EntriBantuan[] = [
         ],
       },
       {
-        judul: { kunci: "leadTime.tabs.papan" },
+        judul: { kunci: "leadTime.tabs.papanV2" },
         isi: [
           "Memasang proses ke tiap pemasok: pilih proses di kiri lalu klik kartu pemasoknya, atau terapkan SOP (mengganti rantai yang ada atau menambahkannya di belakang). Lama tiap langkah bisa ditimpa khusus untuk pemasok itu.",
           "Seret-lepas, dengan mouse atau jari: seret proses dari palet kiri ke kartu pemasok — dilepas di antara dua langkah, proses disisipkan tepat di posisi itu; dilepas di bawah langkah terakhir, ditaruh di belakang. Seret pegangan ⠿ di depan langkah untuk mengubah urutan di dalam kartu. Garis di kartu menunjukkan tempat jatuhnya, dan Esc membatalkan seretan. Dengan jari, tekan pegangan ⠿ (bukan bagian lain) supaya halaman tetap bisa digulir; tombol panah naik/turun tetap ada untuk papan ketik.",
@@ -252,7 +252,7 @@ export const ENTRI: EntriBantuan[] = [
         ],
       },
       {
-        judul: { kunci: "leadTime.tabs.sop" },
+        judul: { kunci: "leadTime.tabs.sopV2" },
         isi: [
           "Rantai proses baku yang bisa diterapkan ke pemasok.",
           { kunci: "leadTime.sop.helper" },

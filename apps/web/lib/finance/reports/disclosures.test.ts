@@ -16,10 +16,27 @@ import {
  */
 
 describe("cakupan data laporan keuangan", () => {
-  it("daftar yang belum berjurnal lengkap menurut audit", () => {
+  it("konsinyasi, komisi SPG, barang hilang, gudang rusak, stok manual, retur pemasok, dan biaya perjalanan sudah berjurnal (lib/finance/operasional)", () => {
+    const berjurnal = SUMBER_BERJURNAL.join(" | ");
+    const belum = SUMBER_BELUM_BERJURNAL.join(" | ");
+    for (const kata of ["konsinyasi", "komisi SPG", "barang hilang", "gudang barang rusak", "penyesuaian stok manual", "retur ke pemasok", "biaya perjalanan"]) {
+      expect(berjurnal).toContain(kata);
+      expect(belum).not.toContain(kata);
+    }
+  });
+
+  it("yang masih belum berjurnal disebut jujur: perubahan stok dari Jubelio dan komisi salesman", () => {
     const teks = SUMBER_BELUM_BERJURNAL.join(" | ");
-    for (const kata of ["putus", "konsinyasi", "SPG", "pelunasan piutang", "retur toko", "barang hilang"]) {
-      expect(teks).toContain(kata);
+    expect(teks).toContain("Jubelio");
+    expect(teks).toContain("komisi salesman");
+  });
+
+  it("penjualan lapangan putus, pelunasan, retur toko putus, dan tukar barang sudah berjurnal (lib/finance/lapangan)", () => {
+    const berjurnal = SUMBER_BERJURNAL.join(" | ");
+    const belum = SUMBER_BELUM_BERJURNAL.join(" | ");
+    for (const kata of ["putus", "pelunasan piutang", "retur toko", "tukar barang"]) {
+      expect(berjurnal).toContain(kata);
+      expect(belum).not.toContain(kata);
     }
   });
 

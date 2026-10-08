@@ -27,6 +27,7 @@ export async function simpanJenisPotonganAction(input: {
   hanyaPkp: boolean;
   wajibCatatan: boolean;
   aktif: boolean;
+  peranJurnal?: string | null;
 }): Promise<HasilAksiJenis> {
   const session = await auth();
   if (!session?.user?.id || !bolehMengelola(session.user.permissions)) {

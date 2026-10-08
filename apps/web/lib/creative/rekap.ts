@@ -74,7 +74,10 @@ export type DataRekap = {
     orders: number;
     gmv: number;
     komisi: number;
+    /** Fee yang disepakati (neto untuk gross-up, bruto untuk dipotong). */
     biayaFee: number;
+    /** PPh gross-up yang ditanggung Elorae; boleh tidak ada (= 0). */
+    biayaPph?: number;
     /** Ongkir + HPP sampel. */
     biayaKirim: number;
     biayaBoost: number;
@@ -116,10 +119,14 @@ export function susunRekap(d: DataRekap): string {
   const r = d.ringkasan;
   // Satu definisi biaya dengan `biayaKolaborasi`/`angkaKolaborasi`: komisi ikut
   // dihitung, supaya ROAS di rekap sama dengan ROAS di Peringkat dan Hari ini.
-  const biaya = Math.round((r.biayaFee + r.biayaKirim + r.biayaBoost + r.komisi) * 100) / 100;
+  const pph = r.biayaPph ?? 0;
+  const biaya = Math.round((r.biayaFee + pph + r.biayaKirim + r.biayaBoost + r.komisi) * 100) / 100;
   const rasio = roas(r.gmv, biaya);
+  // "fee" selalu angka yang disepakati; PPh gross-up yang ditanggung Elorae
+  // ditulis sendiri, dan biaya bruto fee (termasuk PPh) disebut di barisnya.
   const rincianBiaya = [
     `fee ${rupiahTeks(r.biayaFee)}`,
+    ...(pph > 0 ? [`PPh gross-up ${rupiahTeks(pph)}`] : []),
     `kirim ${rupiahTeks(r.biayaKirim)}`,
     ...(r.biayaBoost > 0 ? [`boost ${rupiahTeks(r.biayaBoost)}`] : []),
     ...(r.komisi > 0 ? [`komisi ${rupiahTeks(r.komisi)}`] : []),
@@ -136,6 +143,9 @@ export function susunRekap(d: DataRekap): string {
     baris("GMV", rupiahTeks(r.gmv)),
     baris("Komisi", rupiahTeks(r.komisi)),
     baris("Biaya", `${rupiahTeks(biaya)} (${rincianBiaya.join(" + ")})`),
+    ...(pph > 0
+      ? [baris("Fee disepakati", `${rupiahTeks(r.biayaFee)} · biaya bruto (termasuk PPh) ${rupiahTeks(Math.round((r.biayaFee + pph) * 100) / 100)}`)]
+      : []),
     baris("ROAS", rasio === null ? "—" : `${rasio.toFixed(2).replace(".", ",")}x`),
   ]);
 

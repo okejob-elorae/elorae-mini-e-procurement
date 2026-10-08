@@ -42,6 +42,9 @@ import {
 import { getWorkOrders } from '@/app/actions/production';
 import { getItems } from '@/app/actions/items';
 import { getGRNs } from '@/app/actions/grn';
+import { BuktiRetur, PerkiraanNilaiRetur } from '../../BuktiDanNilaiRetur';
+import { pisahTautanBukti, type BarisPerkiraan } from '../../perkiraan-nilai';
+import { labelPemasok, urutPemasok } from '@/lib/suppliers/label-pemasok';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
@@ -442,10 +445,7 @@ export default function EditVendorReturnPage() {
 
     setIsSubmitting(true);
     try {
-      const urls = evidenceUrls
-        .split(/[\n,]/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      const urls = pisahTautanBukti(evidenceUrls);
       const invalidUrl = urls.find((u) => {
         try {
           new URL(u);
@@ -473,12 +473,26 @@ export default function EditVendorReturnPage() {
       );
       toast.success(t('form.updated'));
       router.replace('/backoffice/vendor-returns');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('form.updateFailed'));
+    } catch {
+      // Pesan lemparan disamarkan di build produksi: selalu teks terjemahan.
+      toast.error(t('form.updateFailed'));
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Perkiraan nilai: kain = jumlah panjang roll yang dipilih, lainnya = qty yang diketik.
+  const barisPerkiraan: BarisPerkiraan[] = lines.map((l) => ({
+    type: l.type,
+    itemId: l.itemId,
+    qty:
+      l.type === 'FABRIC'
+        ? (l.rollIds ?? []).reduce(
+            (n, rid) => n + ((fabricRollOptions[l.itemId] ?? []).find((o) => o.value === rid)?.qty ?? 0),
+            0
+          )
+        : Number(l.qty) || 0,
+  }));
 
   if (isLoading) {
     return (
@@ -497,28 +511,29 @@ export default function EditVendorReturnPage() {
           </Button>
         </Link>
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold">{t('form.editTitle')}</h1>
-          <TombolBantuan judul={t('form.editTitle')} />
+          <h1 className="text-2xl font-bold">{t('form.judulUbah')}</h1>
+          <TombolBantuan judul={t('form.judulUbah')} />
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>{t('form.cardTitle')}</CardTitle>
+            <CardTitle>{t('form.judulKartu')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <Label>{t('form.vendorLabel')}</Label>
                 <SearchableCombobox
-                  options={vendors.map((v) => ({
+                  options={urutPemasok(vendors).map((v) => ({
                     value: v.id,
-                    label: `${v.code} – ${v.name}${v.belumDisetujui ? ` · ${tList('belumDisetujui')}` : ''}`,
+                    label: `${labelPemasok(v)}${v.belumDisetujui ? ` · ${tList('belumDisetujui')}` : ''}`,
                   }))}
                   value={vendorId}
                   onValueChange={setVendorId}
                   placeholder={t('form.selectVendor')}
+                  searchPlaceholder={t('form.cariPemasok')}
                 />
               </div>
               <div className="space-y-2">
@@ -531,6 +546,7 @@ export default function EditVendorReturnPage() {
                   value={woId}
                   onValueChange={setWoId}
                   placeholder={t('form.none')}
+                  searchPlaceholder={t('form.cariPerintahKerja')}
                 />
               </div>
               <div className="space-y-2">
@@ -543,6 +559,7 @@ export default function EditVendorReturnPage() {
                   value={grnId}
                   onValueChange={setGrnId}
                   placeholder={t('form.selectGrn')}
+                  searchPlaceholder={t('form.cariGrn')}
                 />
               </div>
             </div>
@@ -597,6 +614,7 @@ export default function EditVendorReturnPage() {
                             value={line.itemId}
                             onValueChange={(v) => updateLine(i, 'itemId', v)}
                             placeholder={t('form.selectItem')}
+                            searchPlaceholder={t('form.cariBarang')}
                             triggerClassName="min-w-[180px]"
                           />
                         </TableCell>
@@ -618,6 +636,7 @@ export default function EditVendorReturnPage() {
                                 );
                               }}
                               placeholder={t('form.selectRoll')}
+                              searchPlaceholder={t('form.cariRoll')}
                               triggerClassName="min-w-[160px]"
                             />
                           ) : (
@@ -720,26 +739,16 @@ export default function EditVendorReturnPage() {
                 </TableBody>
               </Table>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {t('form.totalValueNote')}
-            </p>
+            <PerkiraanNilaiRetur baris={barisPerkiraan} />
             </div>
 
-            <div className="space-y-2">
-              <Label>{t('form.evidenceLabel')}</Label>
-              <textarea
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={evidenceUrls}
-                onChange={(e) => setEvidenceUrls(e.target.value)}
-                placeholder={t('form.evidencePlaceholder')}
-              />
-            </div>
+            <BuktiRetur teks={evidenceUrls} onTeksChange={setEvidenceUrls} />
           </CardContent>
         </Card>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? t('form.saving') : t('form.saveChanges')}
+            {isSubmitting ? t('form.saving') : t('form.tombolSimpan')}
           </Button>
           <Link href="/backoffice/vendor-returns">
             <Button type="button" variant="outline">

@@ -13,7 +13,7 @@ export function TautanDashboard() {
       className="inline-flex min-h-10 items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
     >
       <ArrowLeft className="h-4 w-4" aria-hidden />
-      {t("kembaliDashboard")}
+      {t("kembaliBeranda")}
     </Link>
   );
 }

@@ -32,6 +32,18 @@ vi.mock("@/lib/leadtime/auto-confirm", () => ({ applyChainSignal: vi.fn(async ()
 vi.mock("@/lib/production/fg-receipt-journal", () => ({
   postFgReceiptJournal: vi.fn(async () => ({ ok: true })),
 }));
+/* Pengaturan PPN ditiru: tes tidak boleh menulis SystemSetting bersama. */
+const ppnUji = vi.hoisted(() => ({ statusPkp: "BELUM_DITETAPKAN" as "BELUM_DITETAPKAN" | "PKP" | "NON_PKP" }));
+vi.mock("@/lib/finance/pajak/ppn-pengaturan", () => ({
+  bacaPengaturanPpn: async () => ({
+    statusPkp: ppnUji.statusPkp,
+    tarifPersen: 12,
+    pakaiDppNilaiLain: true,
+    hargaJualTermasukPpn: true,
+    berlakuSejak: null,
+  }),
+}));
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async () => {}) }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
 /*
@@ -95,7 +107,7 @@ async function balapan(pertama: () => Promise<unknown>, kedua: () => Promise<unk
   }
 }
 
-const { receiveFG, cancelWorkOrder } = await import("./production");
+const { receiveFG, cancelWorkOrder, keluarkanBahan } = await import("./production");
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -107,6 +119,7 @@ d("penerimaan barang jadi (test bed only)", () => {
   let vendorId = "";
   let uomId = "";
   let fgId = "";
+  let kancingId = "";
   let woId = "";
   let urut = 0;
   const woIds: string[] = [];
@@ -117,6 +130,7 @@ d("penerimaan barang jadi (test bed only)", () => {
     vendorId = "";
     uomId = "";
     fgId = "";
+    kancingId = "";
     userId = (
       await prisma.user.create({ data: { email: `fg-terima-${token}@uji.local`, name: "Gudang uji" }, select: { id: true } })
     ).id;
@@ -129,6 +143,12 @@ d("penerimaan barang jadi (test bed only)", () => {
     fgId = (
       await prisma.item.create({
         data: { sku: `FG-TRM-${token}`, nameId: "Kaos uji", nameEn: "Test tee", type: "FINISHED_GOOD", uomId },
+        select: { id: true },
+      })
+    ).id;
+    kancingId = (
+      await prisma.item.create({
+        data: { sku: `KC-TRM-${token}`, nameId: "Kancing uji", nameEn: "Test button", type: "ACCESSORIES", uomId },
         select: { id: true },
       })
     ).id;
@@ -176,6 +196,7 @@ d("penerimaan barang jadi (test bed only)", () => {
   beforeEach(async () => {
     woId = "";
     sesi.id = userId;
+    ppnUji.statusPkp = "BELUM_DITETAPKAN";
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(fgId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(fgId) } });
   });
@@ -184,11 +205,14 @@ d("penerimaan barang jadi (test bed only)", () => {
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(fgId) } });
     await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: seededId(fgId) } });
     await prisma.itemPriceChangeLog.deleteMany({ where: { itemId: seededId(fgId) } });
+    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(kancingId) } });
     await prisma.fGReceipt.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
     await prisma.materialIssue.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
+    await prisma.workOrderStep.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
+    await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(woIds) } } });
     await prisma.workOrder.deleteMany({ where: { id: { in: seededIds(woIds) } } });
-    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(fgId) } });
-    await prisma.item.deleteMany({ where: { id: seededId(fgId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: seededIds([fgId, kancingId]) } } });
+    await prisma.item.deleteMany({ where: { id: { in: seededIds([fgId, kancingId]) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.supplier.deleteMany({ where: { id: seededId(vendorId) } });
     await prisma.supplierType.deleteMany({ where: { id: seededId(typeId) } });
@@ -385,6 +409,158 @@ d("penerimaan barang jadi (test bed only)", () => {
         select: { status: true, actualQty: true },
       });
       expect({ status: wo.status, actualQty: Number(wo.actualQty) }).toEqual({ status: "COMPLETED", actualQty: 120 });
+    });
+  });
+  describe("ongkos jahit (CMT) masuk HPP — keputusan sementara pemilik 34", () => {
+    /**
+     * WO rencana 100 pcs, bahan 1.000.000; langkah jahit 15.000/pcs "Belum
+     * termasuk PPN" (pemasok menambah PPN 11%) dan sablon 5.000/pcs "Sudah
+     * termasuk PPN"; biaya tambahan 2.000/pcs.
+     */
+    async function buatWoCmt() {
+      const id = await buatWo();
+      await prisma.workOrder.update({ where: { id: seededId(id) }, data: { hppAdditionalCost: 2_000 } });
+      await prisma.workOrderStep.createMany({
+        data: [
+          { woId: id, sequence: 1, supplierId: vendorId, stepName: "Jahit", servicePrice: 15_000, servicePpnIncluded: false },
+          { woId: id, sequence: 2, supplierId: vendorId, stepName: "Sablon", servicePrice: 5_000, servicePpnIncluded: true },
+        ],
+      });
+      return id;
+    }
+
+    async function rincian(id: string) {
+      const rows = await prisma.fGReceipt.findMany({
+        where: { woId: seededId(id) },
+        orderBy: { receivedAt: "asc" },
+        select: { materialCost: true, serviceCost: true, additionalCost: true, totalCostValue: true, avgCostPerUnit: true },
+      });
+      return rows.map((r) => ({
+        bahan: Number(r.materialCost),
+        jasa: Number(r.serviceCost),
+        tambahan: Number(r.additionalCost),
+        total: Number(r.totalCostValue),
+        perPcs: Number(r.avgCostPerUnit),
+      }));
+    }
+
+    it("belum PKP: jasa (termasuk PPN pemasok) dan biaya tambahan masuk HPP per pcs lolos; Σ = biaya WO", async () => {
+      woId = await buatWoCmt();
+      await receiveFG({ woId, qtyReceived: 40, qtyRejected: 0 }, userId);
+      // 60 disetor, 5 cacat → 55 lolos; menutup rencana → bahan sisa seluruhnya.
+      await receiveFG({ woId, qtyReceived: 60, qtyRejected: 5 }, userId);
+
+      expect(await rincian(woId)).toEqual([
+        // jahit 40 × 15.000 + PPN 66.000 = 666.000; sablon 40 × 5.000 = 200.000; tambahan 40 × 2.000.
+        { bahan: 400_000, jasa: 866_000, tambahan: 80_000, total: 1_346_000, perPcs: 33_650 },
+        // jahit 55 × 15.000 + PPN 90.750 = 915.750; sablon 275.000; tambahan 110.000.
+        { bahan: 600_000, jasa: 1_190_750, tambahan: 110_000, total: 1_900_750, perPcs: 34_559.09 },
+      ]);
+      const stok = await stokFg();
+      expect(stok).toHaveLength(1);
+      expect(stok[0].qty).toBe(95);
+      expect(stok[0].nilai).toBe(3_246_750);
+
+      // Ringkasan langkah di halaman WO: pcs lolos × harga (sebelum PPN tambahan).
+      const langkah = await prisma.workOrderStep.findMany({
+        where: { woId: seededId(woId) },
+        orderBy: { sequence: "asc" },
+        select: { qty: true, totalCost: true },
+      });
+      expect(langkah.map((l) => [Number(l.qty), Number(l.totalCost)])).toEqual([
+        [95, 1_425_000],
+        [95, 475_000],
+      ]);
+    });
+
+    it("PKP: PPN jasa dipisah — persediaan memikul DPP, tagihan (hutang) tetap termasuk PPN", async () => {
+      ppnUji.statusPkp = "PKP";
+      woId = await buatWoCmt();
+      await receiveFG({ woId, qtyReceived: 40, qtyRejected: 0 }, userId);
+      const [r] = await rincian(woId);
+      // jahit DPP 600.000 (+PPN 66.000); sablon 200.000 termasuk PPN = DPP 180.180 + PPN 19.820.
+      expect(r).toEqual({ bahan: 400_000, jasa: 866_000, tambahan: 80_000, total: 1_260_180, perPcs: 31_504.5 });
+      // PPN Masukan = bahan + jasa + tambahan − persediaan.
+      expect(r.bahan + r.jasa + r.tambahan - r.total).toBe(85_820);
+    });
+
+    it("harga jual otomatis TIDAK ikut naik karena ongkos jahit: tetap biaya bahan per pcs × (1 + margin)", async () => {
+      await prisma.item.update({
+        where: { id: seededId(fgId) },
+        data: { targetMarginPercent: 50, additionalCost: 0, sellingPrice: null },
+      });
+      try {
+        woId = await buatWoCmt();
+        await receiveFG({ woId, qtyReceived: 40, qtyRejected: 0 }, userId);
+        const item = await prisma.item.findUniqueOrThrow({ where: { id: seededId(fgId) }, select: { sellingPrice: true } });
+        expect(Number(item.sellingPrice)).toBe(15_000);
+        const log = await prisma.itemPriceChangeLog.findFirstOrThrow({
+          where: { itemId: seededId(fgId), triggerReason: "FG_RECEIPT" },
+          orderBy: { changedAt: "desc" },
+          select: { newAvgCost: true },
+        });
+        expect(Number(log.newAvgCost)).toBe(10_000);
+      } finally {
+        await prisma.item.update({
+          where: { id: seededId(fgId) },
+          data: { targetMarginPercent: null, additionalCost: null, sellingPrice: null },
+        });
+      }
+    });
+
+    it("balapan dua penerimaan 60 + 60: jasa tidak dihitung dua kali untuk pcs yang sama (Σ = 120 pcs × tarif)", async () => {
+      woId = await buatWoCmt();
+      const hasil = await balapan(
+        () => receiveFG({ woId, qtyReceived: 60, qtyRejected: 0 }, userId),
+        () => receiveFG({ woId, qtyReceived: 60, qtyRejected: 0 }, userId),
+      );
+      expect(hasil.map((h) => h.status)).toEqual(["fulfilled", "fulfilled"]);
+      const r = await rincian(woId);
+      const jasa = r.reduce((s, x) => s + x.jasa, 0);
+      // jahit 120 × 15.000 = 1.800.000 + PPN 198.000; sablon 120 × 5.000 = 600.000.
+      expect(jasa).toBe(2_598_000);
+      expect(r.reduce((s, x) => s + x.tambahan, 0)).toBe(240_000);
+      expect(r.reduce((s, x) => s + x.bahan, 0)).toBe(1_000_000);
+      expect((await stokFg())[0].nilai).toBe(1_000_000 + 2_598_000 + 240_000);
+    });
+
+    it("WO tanpa langkah jasa dan tanpa biaya tambahan: sama persis dengan dulu (bahan saja)", async () => {
+      woId = await buatWo();
+      await receiveFG({ woId, qtyReceived: 40, qtyRejected: 0 }, userId);
+      expect(await rincian(woId)).toEqual([{ bahan: 400_000, jasa: 0, tambahan: 0, total: 400_000, perPcs: 10_000 }]);
+    });
+  });
+
+  describe("nilai keluar bahan = nilai yang keluar dari stok", () => {
+    it("harga ketik di layar tidak dipakai: dua baris gudang 6 @ 1.000 + 4 @ 1.300 → 11.200, sama dengan kartu stok", async () => {
+      woId = await buatWo("ISSUED", { bahan: false });
+      await prisma.stockMovement.deleteMany({ where: { itemId: seededId(kancingId) } });
+      await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(kancingId) } });
+      await prisma.inventoryValue.createMany({
+        data: [
+          { itemId: kancingId, variantSku: "", qtyOnHand: 6, avgCost: 1_000, totalValue: 6_000 },
+          { itemId: kancingId, variantSku: `KC-TRM-${token}-M`, qtyOnHand: 10, avgCost: 1_300, totalValue: 13_000 },
+        ],
+      });
+      const hasil = await keluarkanBahan({
+        woId,
+        issueType: "ACCESSORIES",
+        isPartial: false,
+        items: [{ itemId: kancingId, qty: 10, uomId, unitPrice: 2_500 }],
+      });
+      expect(hasil).toMatchObject({ ok: true, totalCost: 11_200 });
+      const gerak = await prisma.stockMovement.findMany({
+        where: { itemId: seededId(kancingId), refType: "WO_ISSUE" },
+        select: { totalCost: true },
+      });
+      expect(gerak.reduce((s, g) => s + Number(g.totalCost), 0)).toBe(11_200);
+      const issue = await prisma.materialIssue.findFirstOrThrow({ where: { woId: seededId(woId) }, select: { items: true } });
+      const baris = (typeof issue.items === "string" ? JSON.parse(issue.items) : issue.items) as Array<Record<string, number>>;
+      expect(baris[0]).toMatchObject({ qty: 10, totalCost: 11_200, avgCostAtIssue: 1_120, sellingPrice: 2_500 });
+
+      // Penerimaan penutup memikul persis nilai yang keluar dari gudang.
+      await receiveFG({ woId, qtyReceived: 100, qtyRejected: 0 }, userId);
+      expect((await penerimaan(woId))[0].bahan).toBe(11_200);
     });
   });
 });

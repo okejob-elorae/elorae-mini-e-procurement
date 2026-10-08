@@ -28,6 +28,8 @@ import {
 } from "@/lib/salesman/biaya";
 import { daftarBiayaKantor, pengaturanBiayaDb } from "@/lib/salesman/biaya-queries";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { akunKasSah } from "@/lib/finance/operasional/akun-kas";
+import { kaitBiayaPerjalanan } from "@/lib/finance/operasional/kait";
 
 /**
  * Klaim biaya perjalanan salesman: mengajukan (HP), menyetujui/menolak
@@ -154,7 +156,7 @@ export type HasilKeputusanBiaya =
   | { ok: true }
   | {
       ok: false;
-      kode: KodeTolakPindah | "TANPA_AKSES" | "TIDAK_DITEMUKAN" | "MILIK_SENDIRI" | "SUDAH_DIPUTUSKAN" | "GAGAL";
+      kode: KodeTolakPindah | "TANPA_AKSES" | "TIDAK_DITEMUKAN" | "MILIK_SENDIRI" | "SUDAH_DIPUTUSKAN" | "AKUN_KAS_TIDAK_SAH" | "GAGAL";
     };
 
 /** Nama kategori untuk teks kabar (disimpan sebagai teks di antrean notifikasi). */
@@ -170,6 +172,8 @@ async function putuskan(
   id: string,
   ke: Extract<StatusBiaya, "DISETUJUI" | "DITOLAK" | "DIBAYAR">,
   alasanMentah?: string | null,
+  /** DIBAYAR: akun kas/bank sumber uangnya; kosong = akun peran Kas. */
+  akunKasId?: string | null,
 ): Promise<HasilKeputusanBiaya> {
   const session = await auth();
   const pelakuId = session?.user?.id;
@@ -177,8 +181,12 @@ async function putuskan(
   const boleh = ke === "DIBAYAR" ? bolehMembayarBiaya(izin) : bolehMenyetujuiBiaya(izin);
   if (!pelakuId || !boleh) return { ok: false, kode: "TANPA_AKSES" };
   if (typeof id !== "string" || !id) return { ok: false, kode: "TIDAK_DITEMUKAN" };
+  const akunKas = ke === "DIBAYAR" && typeof akunKasId === "string" && akunKasId.trim() ? akunKasId.trim() : null;
 
   try {
+    // Rekening sumber pembayaran: akun kas/bank daun yang aktif (jurnal pembayarannya mengkreditnya).
+    if (akunKas && !(await akunKasSah(prisma, akunKas))) return { ok: false, kode: "AKUN_KAS_TIDAK_SAH" };
+
     type Klaim = { userId: string; spentAt: Date; category: string; amount: Prisma.Decimal };
     type Putusan =
       | { ok: true; klaim: Klaim; alasan: string | null; notifikasiBayar: AdminNotification | null }
@@ -211,7 +219,7 @@ async function putuskan(
       const sekarang = new Date();
       const data =
         ke === "DIBAYAR"
-          ? { status: ke, paidById: pelakuId, paidAt: sekarang }
+          ? { status: ke, paidById: pelakuId, paidAt: sekarang, paidAccountId: akunKas }
           : { status: ke, reviewedById: pelakuId, reviewedAt: sekarang, reviewNote: periksa.alasan };
 
       const r = await tx.expenseClaim.updateMany({ where: { id, status: klaim.status }, data });
@@ -222,7 +230,7 @@ async function putuskan(
           action: JEJAK_BIAYA[ke],
           entityType: ENTITAS_BIAYA,
           entityId: id,
-          changes: { before: { status: klaim.status }, after: { status: ke } },
+          changes: { before: { status: klaim.status }, after: { status: ke, ...(ke === "DIBAYAR" ? { paidAccountId: akunKas } : {}) } },
           reason: periksa.alasan,
         },
       });
@@ -244,6 +252,8 @@ async function putuskan(
     });
     if (!putusan.ok) return { ok: false, kode: putusan.kode };
     const { klaim, notifikasiBayar } = putusan;
+    // Disetujui → beban + hutang penggantian; dibayar → hutang lunas dari kas/bank (sesudah commit, tidak pernah melempar).
+    if (ke === "DISETUJUI" || ke === "DIBAYAR") await kaitBiayaPerjalanan(id, ke, pelakuId);
     const periksa = { alasan: putusan.alasan };
     if (notifikasiBayar) void fanOutAdminNotification(notifikasiBayar);
 
@@ -292,8 +302,8 @@ export async function tolakBiayaAction(id: string, alasan: string): Promise<Hasi
   return putuskan(id, "DITOLAK", alasan);
 }
 
-export async function tandaiDibayarBiayaAction(id: string): Promise<HasilKeputusanBiaya> {
-  return putuskan(id, "DIBAYAR");
+export async function tandaiDibayarBiayaAction(id: string, akunKasId?: string | null): Promise<HasilKeputusanBiaya> {
+  return putuskan(id, "DIBAYAR", null, akunKasId);
 }
 
 // ─── Ekspor ──────────────────────────────────────────────────────────────────

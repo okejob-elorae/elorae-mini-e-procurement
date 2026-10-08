@@ -29,6 +29,7 @@ import { formatDisplayDateTime } from '@/lib/date-only';
 import { keDateLokal } from '@/lib/tanggal-isian';
 import { auditActionLabel, auditEntityLabel } from '@/lib/audit/action-label';
 import { RincianPerubahan } from './RincianPerubahan';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 type AuditLogRow = Awaited<ReturnType<typeof getAuditLogs>>['logs'][number];
 
@@ -209,7 +210,7 @@ export default function AuditTrailPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={tAudit('trail.pageTitle')}
+        title={tAudit('trail.judulHalaman')}
         actions={
           <Button variant="outline" size="sm" onClick={handleExport}>
             <FileDown className="mr-1.5 h-3.5 w-3.5" />
@@ -397,37 +398,52 @@ export default function AuditTrailPage() {
                             <TableRow key={`${log.id}-detail`}>
                               <TableCell colSpan={6} className="whitespace-normal bg-muted/50">
                                 <div className="space-y-3 p-4 text-sm">
-                                  <RincianPerubahan changes={log.changes} />
-                                  <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
-                                    {log.reason && (
-                                      <>
-                                        <dt className="text-muted-foreground">{tAudit('trail.reason')}</dt>
-                                        <dd className="whitespace-pre-wrap break-words">{log.reason}</dd>
-                                      </>
-                                    )}
-                                    {log.sensitiveDataAccessed && (
-                                      <>
-                                        <dt className="text-muted-foreground">{tAudit('trail.sensitive')}</dt>
-                                        <dd>{log.sensitiveDataAccessed}</dd>
-                                      </>
-                                    )}
-                                    <dt className="text-muted-foreground">{tAudit('trail.recordId')}</dt>
-                                    <dd className="break-all font-mono text-xs text-muted-foreground">
-                                      {log.entityId}
-                                    </dd>
-                                    {log.ipAddress && (
-                                      <>
-                                        <dt className="text-muted-foreground">{tAudit('trail.colIp')}</dt>
-                                        <dd className="text-muted-foreground">{log.ipAddress}</dd>
-                                      </>
-                                    )}
-                                    {log.userAgent && (
-                                      <>
-                                        <dt className="text-muted-foreground">{tAudit('trail.userAgent')}</dt>
-                                        <dd className="break-all text-xs text-muted-foreground">{log.userAgent}</dd>
-                                      </>
-                                    )}
-                                  </dl>
+                                  <RincianPerubahan changes={log.changes} entityType={log.entityType} />
+                                  {(log.reason || log.sensitiveDataAccessed) && (
+                                    <dl className="grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
+                                      {log.reason && (
+                                        <>
+                                          <dt className="text-muted-foreground">{tAudit('trail.reason')}</dt>
+                                          <dd className="whitespace-pre-wrap break-words">{log.reason}</dd>
+                                        </>
+                                      )}
+                                      {log.sensitiveDataAccessed && (
+                                        <>
+                                          <dt className="text-muted-foreground">{tAudit('trail.sensitive')}</dt>
+                                          <dd>{log.sensitiveDataAccessed}</dd>
+                                        </>
+                                      )}
+                                    </dl>
+                                  )}
+                                  {/* Id data, IP, dan perangkat hanya untuk penelusuran teknis — tidak tampil sampai diminta. */}
+                                  <Collapsible>
+                                    <CollapsibleTrigger asChild>
+                                      <Button variant="ghost" size="sm" className="group h-8 px-2 text-muted-foreground">
+                                        <ChevronRight className="mr-1 h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-90" />
+                                        {tAudit('trail.rincianTeknis')}
+                                      </Button>
+                                    </CollapsibleTrigger>
+                                    <CollapsibleContent>
+                                      <dl className="mt-1 grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
+                                        <dt className="text-muted-foreground">{tAudit('trail.recordId')}</dt>
+                                        <dd className="break-all font-mono text-xs text-muted-foreground">
+                                          {log.entityId}
+                                        </dd>
+                                        {log.ipAddress && (
+                                          <>
+                                            <dt className="text-muted-foreground">{tAudit('trail.colIp')}</dt>
+                                            <dd className="text-muted-foreground">{log.ipAddress}</dd>
+                                          </>
+                                        )}
+                                        {log.userAgent && (
+                                          <>
+                                            <dt className="text-muted-foreground">{tAudit('trail.userAgent')}</dt>
+                                            <dd className="break-all text-xs text-muted-foreground">{log.userAgent}</dd>
+                                          </>
+                                        )}
+                                      </dl>
+                                    </CollapsibleContent>
+                                  </Collapsible>
                                 </div>
                               </TableCell>
                             </TableRow>

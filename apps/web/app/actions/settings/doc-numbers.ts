@@ -39,6 +39,11 @@ const DEFAULT_CONFIGS: Record<
   VANRECON: { prefix: 'VRCN/', resetPeriod: 'YEARLY', padding: 4 },
   SPGSALE: { prefix: 'SPG/', resetPeriod: 'YEARLY', padding: 4 },
   DELIVERY: { prefix: 'DLV/', resetPeriod: 'MONTHLY', padding: 4 },
+  CASHOUT: { prefix: 'BKK/', resetPeriod: 'MONTHLY', padding: 4 },
+  CASHIN: { prefix: 'BKMK/', resetPeriod: 'MONTHLY', padding: 4 },
+  CASHTRF: { prefix: 'TRF/', resetPeriod: 'MONTHLY', padding: 4 },
+  SUPPAY: { prefix: 'BYR/', resetPeriod: 'MONTHLY', padding: 4 },
+  ASSET: { prefix: 'AT/', resetPeriod: 'YEARLY', padding: 4 },
 };
 
 const PERIODE_SAH = ['YEARLY', 'MONTHLY', 'NEVER'] as const;

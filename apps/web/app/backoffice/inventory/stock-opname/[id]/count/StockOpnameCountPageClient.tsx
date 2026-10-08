@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { kunciGalatOpname } from "@/lib/inventory/galat-opname";
 import { ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
@@ -212,7 +213,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
           countedQty: Number(itemCounts[row.id]),
         }));
       const r = await updateOpnameCounts(opnameId, counts);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("saved"));
         await load();
@@ -233,7 +234,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
           countedLength: Number(rollCounts[row.id]),
         }));
       const r = await updateOpnameRollCounts(opnameId, counts);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("saved"));
         await load();

@@ -56,12 +56,22 @@ export type VariabelWa = Record<(typeof VARIABEL_WA)[number], string | null>;
 const POLA_VARIABEL = /\{([a-zA-Z_]+)\}/g;
 const DIKENAL: ReadonlySet<string> = new Set(VARIABEL_WA);
 
+const tanpaAksen = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
 /**
  * Isi template. Variabel yang tidak dikenal dibiarkan apa adanya; variabel yang
  * dikenal tapi kosong JUGA dibiarkan ("{resi}") supaya kelihatan belum terisi
  * sebelum pesannya terkirim.
  */
 export function isiTemplate(isi: string, vars: Partial<Record<string, string | null | undefined>>): string {
+  // "Saya {pengirim} dari {brand}" dengan pengirim yang sudah memuat nama merek
+  // ("Tim Eloraé") menjadi "Saya Tim Eloraé dari Eloraé" — bagian "dari {brand}"
+  // dilewati bila begitu (audit ulang 2026-10-08).
+  const pengirim = vars.pengirim?.trim();
+  const brand = vars.brand?.trim();
+  if (pengirim && brand && tanpaAksen(pengirim).includes(tanpaAksen(brand))) {
+    isi = isi.replace(/\{pengirim\}\s+dari\s+\{brand\}/g, "{pengirim}");
+  }
   return isi.replace(POLA_VARIABEL, (utuh, nama: string) => {
     const v = vars[nama];
     return typeof v === "string" && v.trim() ? v : utuh;

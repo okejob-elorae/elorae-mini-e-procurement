@@ -23,6 +23,12 @@ import { bahanLaporanSpg, type BarisBahan } from '@/lib/konsinyasi/laporan-spg';
 import { pilihanVarianKirim, type PilihanVarianKirim } from '@/lib/konsinyasi/varian-kirim';
 import { antrekanPushStok } from '@/lib/jubelio/antre-push-stok';
 import { kabarkanKirimanBerangkat } from '@/lib/spg/pesanan-menuju-toko';
+import {
+  kaitBayarGajiKonsi,
+  kaitBayarTokoKonsi,
+  kaitKirimTitipan,
+  kaitSiklusKonsi,
+} from '@/lib/finance/operasional/kait';
 
 export type KodeAksiKonsi = 'TANPA_AKSES' | 'TANGGAL_TIDAK_VALID' | AlasanGagalKonsi | 'GAGAL';
 export type HasilAksiKonsi = { ok: true } | { ok: false; kode: KodeAksiKonsi };
@@ -151,6 +157,8 @@ export async function kirimTitipanAction(input: {
   }
   // Barang berangkat ke toko → SPG toko itu dikabari, sekali per kiriman (kiriman ulang tidak).
   void kabarkanKirimanBerangkat({ sourceType: 'KONSI_SHIPMENT', sourceId: hasil.id, pelakuId: userId });
+  // Jurnal pindah gudang ke persediaan konsinyasi (sesudah commit, tidak pernah melempar; idempoten).
+  await kaitKirimTitipan(hasil.id, userId);
   segarkan();
   return { ok: true, noKirim: hasil.noKirim, ulang: hasil.ulang };
 }
@@ -210,6 +218,8 @@ export async function kunciAngkaAction(
   try {
     const hasil = await kunciAngka({ cycleId, baris, gajiPokokPerSpg, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    // Penjualan siklus + gaji SPG ke buku besar (sesudah commit, tidak pernah melempar).
+    await kaitSiklusKonsi(cycleId, userId);
     segarkan();
     return { ok: true };
   } catch (err) {
@@ -225,6 +235,8 @@ export async function bukaKunciAction(cycleId: string): Promise<HasilAksiKonsi> 
   try {
     const hasil = await bukaKunci({ cycleId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    // Jurnal siklus dan gaji SPG-nya dibalik (generasi penyesuaian), tidak dihapus.
+    await kaitSiklusKonsi(cycleId, userId);
     segarkan();
     return { ok: true };
   } catch (err) {
@@ -243,6 +255,7 @@ export async function bayarKomisiAction(
   try {
     const hasil = await bayarKomisi({ commissionId, olehUserId: userId, catatan });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    await kaitBayarGajiKonsi(commissionId, userId);
     segarkan();
     return { ok: true };
   } catch (err) {
@@ -326,6 +339,7 @@ export async function catatPembayaranTokoAction(input: {
       idempotencyKey: kunci,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    await kaitBayarTokoKonsi(hasil.id, userId);
     segarkan();
     return { ok: true };
   } catch (err) {
@@ -341,6 +355,8 @@ export async function batalkanPembayaranTokoAction(paymentId: string, alasan: st
   try {
     const hasil = await batalkanPembayaranToko({ paymentId, alasan, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    // Jurnal pembayarannya dibalik (generasi penyesuaian).
+    await kaitBayarTokoKonsi(paymentId, userId);
     segarkan();
     return { ok: true };
   } catch (err) {

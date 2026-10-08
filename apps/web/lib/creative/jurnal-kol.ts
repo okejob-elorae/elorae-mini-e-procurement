@@ -9,12 +9,16 @@ import {
   barisSampel,
   idBayar,
   idFee,
+  nilaiSampel,
   pasalDariJenis,
   selisihPengakuan,
   SUMBER_KOL,
   type BarisJurnalKol,
 } from "./jurnal-kol-aturan";
 import { feeDiakui, type Tahap } from "./tahap";
+import { KANAL_JURNAL } from "@/lib/finance/journals/kanal";
+import { denganDimensi, ppnPemberianCumaCuma } from "@/lib/finance/pajak/jurnal-ppn";
+import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 
 /**
  * Penulis jurnal Ruang KOL — KHUSUS SERVER. Aturannya di `jurnal-kol-aturan.ts`.
@@ -66,7 +70,8 @@ async function posting(
 ): Promise<{ dibuat: boolean; gagal: GagalJurnal | null }> {
   if (baris.length === 0) return { dibuat: false, gagal: null };
   try {
-    const r = await generateAutoJournal(client, sourceType, sourceId, baris, meta);
+    // Kanal KOL di setiap baris jurnal Ruang KOL (laba per kanal).
+    const r = await generateAutoJournal(client, sourceType, sourceId, denganDimensi(baris, { channel: KANAL_JURNAL.KOL }), meta);
     return { dibuat: r.ok && r.created, gagal: gagalDari(`${sourceType}:${sourceId}`, r) };
   } catch (e) {
     return { dibuat: false, gagal: gagalDariGalat(`${sourceType}:${sourceId}`, e) };
@@ -80,7 +85,13 @@ async function jurnalKolaborasi(client: Klien, kolaborasiId: string) {
       sourceType: { in: [SUMBER_KOL.FEE, SUMBER_KOL.BAYAR, SUMBER_KOL.BALIK] },
       sourceId: { startsWith: `${kolaborasiId}#` },
     },
-    select: { id: true, sourceType: true, sourceId: true, date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
+    select: {
+      id: true,
+      sourceType: true,
+      sourceId: true,
+      date: true,
+      lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true, channel: true, storeId: true } },
+    },
   });
 }
 
@@ -152,6 +163,8 @@ export async function sinkronJurnalKolaborasi(kolaborasiId: string, postedById: 
             debit: angka(l.credit),
             credit: angka(l.debit),
             ...(l.memo ? { memo: l.memo } : {}),
+            ...(l.channel ? { channel: l.channel } : {}),
+            ...(l.storeId ? { storeId: l.storeId } : {}),
           })),
         });
         if (res.created) diposting++;
@@ -196,7 +209,10 @@ export async function postJurnalSampelKol(pengirimanId: string, postedById: stri
     },
   });
   if (!p || !p.stockIssuedAt) return { ok: true, dilewati: "TIDAK_DITEMUKAN", diposting: 0, gagal: [] };
-  const baris = barisSampel(p.lines.map((l) => ({ qty: l.qty, unitCost: angka(l.unitCost), tipeBarang: l.item?.type ?? null })));
+  const sampel = p.lines.map((l) => ({ qty: l.qty, unitCost: angka(l.unitCost), tipeBarang: l.item?.type ?? null }));
+  // PPN keluaran pemberian cuma-cuma (hanya PKP): 11/12 × HPP × 12%, ditanggung Elorae.
+  const ppn = ppnPemberianCumaCuma(nilaiSampel(sampel), await bacaPengaturanPpn(client), p.sentAt ?? p.stockIssuedAt);
+  const baris = barisSampel(sampel, ppn.ppn > 0 ? ppn : undefined);
   const r = await posting(client, SUMBER_KOL.SAMPEL, p.id, baris, {
     date: p.sentAt ?? p.stockIssuedAt,
     description: `Sampel KOL ${p.collab.docNo} — ${p.collab.kol.name}${p.trackingNo ? ` (resi ${p.trackingNo})` : ""}`,

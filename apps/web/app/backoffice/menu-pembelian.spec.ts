@@ -19,13 +19,14 @@ const { navItems, bolehAnak } = await import("./BackofficeShell");
 const PEMBELIAN = [
   { href: "/backoffice/purchase-orders", permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
   { href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+  { href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
   { href: "/backoffice/vendor-returns", permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
 ];
 
 const grup = navItems.find((i) => i.labelKey === "navGroupPurchasing");
 
 describe("menu Pembelian", () => {
-  it("satu grup berisi PO, pembayaran pemasok, dan retur ke pemasok — izinnya tidak berubah", () => {
+  it("satu grup berisi PO, pembayaran pemasok, umur utang, dan retur ke pemasok — izinnya tidak berubah", () => {
     expect(grup).toBeDefined();
     expect(grup?.section).toBe("secOperations");
     expect(grup?.children?.map((c) => ({ href: c.href, permission: c.permission }))).toEqual(PEMBELIAN);
@@ -48,7 +49,7 @@ describe("menu Pembelian", () => {
   });
 
   it("Master Pemasok tetap di Data Master", () => {
-    const master = navItems.find((i) => i.labelKey === "navGroupMasterData");
+    const master = navItems.find((i) => i.labelKey === "navGroupMasterDataKalimat");
     expect(master?.children?.map((c) => c.href)).toContain("/backoffice/suppliers");
   });
 
@@ -57,9 +58,9 @@ describe("menu Pembelian", () => {
     expect(new Set(hrefInduk).size).toBe(hrefInduk.length);
   });
 
-  it("pemegang izin pembayaran pemasok saja melihat anak itu, bukan PO", () => {
+  it("pemegang izin pembayaran pemasok saja melihat pembayaran dan umur utang, bukan PO", () => {
     const izin = [PERMISSIONS.SUPPLIER_PAYMENTS_VIEW];
     const terlihat = (grup?.children ?? []).filter((c) => bolehAnak(izin, c.permission)).map((c) => c.href);
-    expect(terlihat).toEqual(["/backoffice/supplier-payments"]);
+    expect(terlihat).toEqual(["/backoffice/supplier-payments", "/backoffice/supplier-payments/umur-hutang"]);
   });
 });

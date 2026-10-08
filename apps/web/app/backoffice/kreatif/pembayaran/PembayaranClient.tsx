@@ -21,6 +21,7 @@ import { eksporTerminAction } from "@/app/actions/kreatif-termin";
 import { labelTanggal } from "@/lib/tanggal-isian";
 import { jumlahUang, rupiahTeks } from "@/lib/creative/angka-konten";
 import type { BarisTermin, HasilDaftarTermin } from "@/lib/creative/termin-queries";
+import { bayarSebelumTayang } from "@/lib/creative/termin-aturan";
 import { alamatTermin, CHIP_TERMIN, type ParamTermin } from "@/lib/creative/termin-param";
 import { cn } from "@/lib/utils";
 
@@ -133,7 +134,11 @@ export function PembayaranClient({ param, data, campaign, kolaborasiDocNo, hariI
     <div className="space-y-6">
       <PageHeader
         title={t("halaman.pembayaran")}
-        meta={t("termin.meta", { n: data.jumlahPerChip.SEMUA })}
+        meta={
+          param.chip === "SEMUA"
+            ? t("termin.meta", { n: data.jumlahPerChip.SEMUA })
+            : t("termin.metaSaring", { n: data.total, total: data.jumlahPerChip.SEMUA, saringan: t(`termin.chip.${param.chip}`) })
+        }
         actions={
           <Button variant="outline" onClick={ekspor} disabled={mengekspor}>
             {mengekspor ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Download className="h-4 w-4" aria-hidden />}
@@ -142,19 +147,34 @@ export function PembayaranClient({ param, data, campaign, kolaborasiDocNo, hariI
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      {/*
+        Kartu mengikuti saringan yang aktif. "Fee" = jumlah yang DISEPAKATI
+        (neto bila gross-up, bruto bila dipotong) dan biaya bruto termasuk PPh
+        selalu disebut di bawahnya; beban dibaca dari termin kolaborasi yang
+        sudah tayang (aturan jurnal), bukan dari tahap saja.
+      */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="gap-1 py-4">
           <CardContent className="px-4">
-            <p className="text-sm text-muted-foreground">{t("termin.kartu.bruto")}</p>
-            <p className="text-2xl font-semibold tabular-nums">{rupiahTeks(data.ringkas.bruto)}</p>
-            <p className="text-xs text-muted-foreground">{t("termin.kartu.brutoSub", { n: data.ringkas.jumlah })}</p>
+            <p className="text-sm text-muted-foreground">{t("termin.kartu.fee")}</p>
+            <p className="text-2xl font-semibold tabular-nums">{rupiahTeks(data.ringkas.fee)}</p>
+            <p className="text-xs text-muted-foreground">{t("termin.kartu.feeSub", { bruto: rupiahTeks(data.ringkas.bruto), n: data.ringkas.jumlah })}</p>
           </CardContent>
         </Card>
         <Card className="gap-1 py-4">
           <CardContent className="px-4">
-            <p className="text-sm text-muted-foreground">{t("termin.kartu.pph")}</p>
+            <p className="text-sm text-muted-foreground">{t("termin.kartu.pphSemua")}</p>
             <p className="text-2xl font-semibold tabular-nums">{rupiahTeks(data.ringkas.pph)}</p>
-            <p className="text-xs text-muted-foreground">{t("termin.kartu.pphSub")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t("termin.kartu.pphRinci", { dipotong: rupiahTeks(data.ringkas.pphDipotong), ditanggung: rupiahTeks(data.ringkas.pphDitanggung) })}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="gap-1 py-4">
+          <CardContent className="px-4">
+            <p className="text-sm text-muted-foreground">{t("termin.kartu.beban")}</p>
+            <p className="text-2xl font-semibold tabular-nums">{rupiahTeks(data.ringkas.bebanDiakui)}</p>
+            <p className="text-xs text-muted-foreground">{t("termin.kartu.bebanSub")}</p>
           </CardContent>
         </Card>
         <Card className="gap-1 py-4">
@@ -283,8 +303,8 @@ export function PembayaranClient({ param, data, campaign, kolaborasiDocNo, hariI
                       <TableHead className="min-w-[150px]">{t("pembayaran.kolom.kol")}</TableHead>
                       <TableHead className="min-w-[130px]">{t("termin.kolom.termin")}</TableHead>
                       <TableHead>{t("pembayaran.kolom.jatuhTempo")}</TableHead>
-                      <TableHead className="hidden text-right lg:table-cell">{t("termin.kolom.bruto")}</TableHead>
-                      <TableHead className="hidden text-right lg:table-cell">{t("termin.kolom.pph")}</TableHead>
+                      <TableHead className="hidden text-right 2xl:table-cell">{t("termin.kolom.bruto")}</TableHead>
+                      <TableHead className="hidden text-right 2xl:table-cell">{t("termin.kolom.pph")}</TableHead>
                       <TableHead className="text-right">{t("termin.kolom.neto")}</TableHead>
                       <TableHead>{t("pembayaran.kolom.status")}</TableHead>
                       <TableHead className="text-right">
@@ -346,11 +366,11 @@ export function PembayaranClient({ param, data, campaign, kolaborasiDocNo, hariI
                               <span className="text-sm text-muted-foreground">{t(`termin.menunggu.${b.pemicu}`)}</span>
                             )}
                           </TableCell>
-                          <TableCell className="hidden text-right tabular-nums lg:table-cell">{rupiahTeks(b.bruto)}</TableCell>
-                          <TableCell className="hidden text-right tabular-nums lg:table-cell">{b.warisan ? "—" : rupiahTeks(b.pph)}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="hidden text-right tabular-nums 2xl:table-cell">{rupiahTeks(b.bruto)}</TableCell>
+                          <TableCell className="hidden text-right tabular-nums 2xl:table-cell">{b.warisan ? "—" : rupiahTeks(b.pph)}</TableCell>
+                          <TableCell className="text-right whitespace-normal">
                             <p className="font-medium tabular-nums">{rupiahTeks(b.neto)}</p>
-                            <p className="text-xs text-muted-foreground tabular-nums lg:hidden">
+                            <p className="ml-auto max-w-44 text-xs text-muted-foreground tabular-nums 2xl:hidden">
                               {t("termin.brutoPph", { bruto: rupiahTeks(b.bruto), pph: rupiahTeks(b.pph) })}
                             </p>
                           </TableCell>
@@ -365,7 +385,9 @@ export function PembayaranClient({ param, data, campaign, kolaborasiDocNo, hariI
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
                               {b.status === "BELUM" && bolehMengelola ? (
-                                <Button size="sm" onClick={() => bukaDialog([b])}>
+                                // Termin yang menunggu tayang tetap bisa dibayar, tetapi bukan tombol utama;
+                                // dialognya memperingatkan dan meminta centang konfirmasi.
+                                <Button size="sm" variant={bayarSebelumTayang(b) ? "outline" : "default"} onClick={() => bukaDialog([b])}>
                                   {t("termin.bayar")}
                                 </Button>
                               ) : null}

@@ -296,7 +296,7 @@ export function KartuJadwal({ data, kal, pemasok, bolehUbah, sibuk, jalankan }: 
                           ) : null}
                           {l.keadaan === "TELAT" ? (
                             <StatusPill tone="attention">
-                              {t("telatHari", { n: hariTerlambat(l.targetDate, hariIni) })}
+                              {t("terlambatHari", { n: hariTerlambat(l.targetDate, hariIni) })}
                             </StatusPill>
                           ) : l.keadaan === "HARI_INI" ? (
                             <StatusPill tone="waiting">{t("hariIni")}</StatusPill>

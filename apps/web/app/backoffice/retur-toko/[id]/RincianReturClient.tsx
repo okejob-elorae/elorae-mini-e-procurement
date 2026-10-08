@@ -363,7 +363,7 @@ export function RincianReturClient({
           {/* Sisi toko */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">{t('sideStore')}</h3>
+              <h3 className="text-sm font-semibold">{t('sisiToko')}</h3>
               <StatusPill tone="progress">{t('sideStoreTag')}</StatusPill>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -403,7 +403,7 @@ export function RincianReturClient({
           {/* Sisi gudang */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-semibold">{t('sideWarehouse')}</h3>
+              <h3 className="text-sm font-semibold">{t('sisiGudang')}</h3>
               <StatusPill tone={data.gudang ? 'settled' : 'waiting'}>
                 {data.gudang ? t('sideWarehouseTag') : t('notCounted')}
               </StatusPill>

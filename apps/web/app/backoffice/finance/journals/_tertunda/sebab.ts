@@ -8,10 +8,18 @@ import type { SumberNotifikasiJurnal } from "@/lib/finance/jurnal-tertunda";
 /** KONTRAK: Beranda menautkan baris "Jurnal gagal" ke `/backoffice/finance/journals?status=tertunda`. */
 export const STATUS_TERTUNDA = "tertunda";
 
-export type StatusJurnal = "terposting" | "tertunda";
+/** Tab jurnal manual yang menunggu persetujuan / yang ditolak (maker-checker, lib/finance/jurnal-manual). */
+export const STATUS_DRAF = "draf";
+export const STATUS_DITOLAK = "ditolak";
+
+export type StatusJurnal = "terposting" | "tertunda" | "draf" | "ditolak";
 
 export function bacaStatusJurnal(raw: string | undefined): StatusJurnal {
-  return raw?.trim().toLowerCase() === STATUS_TERTUNDA ? "tertunda" : "terposting";
+  const v = raw?.trim().toLowerCase();
+  if (v === STATUS_TERTUNDA) return "tertunda";
+  if (v === STATUS_DRAF) return "draf";
+  if (v === STATUS_DITOLAK) return "ditolak";
+  return "terposting";
 }
 
 /**
@@ -36,6 +44,8 @@ export const SEBAB_DIKENAL = [
   "ORIGINAL_SALE_UNLINKED",
   "ORIGINAL_SALE_OUTSIDE_LEDGER",
   "GL_CUTOVER_NOT_CONFIGURED",
+  // Jurnal lapangan (lib/finance/lapangan): biaya barang yang keluar tidak ada di kartu stok.
+  "BIAYA_TIDAK_DIKETAHUI",
 ] as const;
 
 export type SebabDikenal = (typeof SEBAB_DIKENAL)[number];
@@ -71,4 +81,30 @@ export function jenisDanIdSumber(sumber: SumberNotifikasiJurnal | null): { jenis
  */
 export function postingUlangOtomatis(jenis: string | null): boolean {
   return jenis === "SALESORDER_REVENUE" || jenis === "SALESORDER_COGS";
+}
+
+/**
+ * Langkah posting ulang per jenis dokumen, untuk ditulis di bawah sebabnya
+ * (`financeJournals.tertunda.langkah.<KUNCI>`). Pembayaran pemasok lama tidak
+ * punya tombol "Posting jurnal": tanda bayarnya dibatalkan lalu ditandai lagi.
+ */
+export type LangkahPostingUlang = "OTOMATIS" | "BAYAR_PEMASOK" | "BALIK_BAYAR_PEMASOK" | "DOKUMEN";
+
+export function langkahPostingUlang(jenis: string | null): LangkahPostingUlang {
+  if (postingUlangOtomatis(jenis)) return "OTOMATIS";
+  if (jenis === "SUPPLIER_PAYMENT") return "BAYAR_PEMASOK";
+  if (jenis === "SUPPLIER_PAYMENT_REVERSAL") return "BALIK_BAYAR_PEMASOK";
+  return "DOKUMEN";
+}
+
+/**
+ * Sebab yang ditampilkan SEKARANG. Notifikasi `JOURNAL_PENDING` menyimpan
+ * sebab saat gagal; sesudah peran dipetakan, "peran belum dipetakan" sudah
+ * tidak benar lagi (audit G8: baris tertunda menyebut Utang Usaha belum
+ * dipetakan di bawah spanduk "peran wajib 11/11"). `peranKiniTerpetakan` =
+ * hasil pemeriksaan ulang pemetaan saat halaman dimuat.
+ */
+export function sebabTerkini(sebab: string | null, peranKiniTerpetakan: boolean | null): SebabDikenal | "LAIN" | "UNMAPPED_ROLE_SUDAH" {
+  const kunci = kunciSebab(sebab);
+  return kunci === "UNMAPPED_ROLE" && peranKiniTerpetakan === true ? "UNMAPPED_ROLE_SUDAH" : kunci;
 }

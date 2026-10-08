@@ -19,6 +19,7 @@ d("listWorkOrders: cari dan terlambat (test bed only)", () => {
   let kemejaId = "";
   let kaosId = "";
   const woIds: string[] = [];
+  let receiptId = "";
 
   const kemarin = new Date(Date.now() - 3 * 86_400_000);
   const besok = new Date(Date.now() + 3 * 86_400_000);
@@ -66,9 +67,26 @@ d("listWorkOrders: cari dan terlambat (test bed only)", () => {
     await buat(2, kemejaId, "IN_PRODUCTION", besok); // belum
     await buat(3, kaosId, "COMPLETED", kemarin); // selesai: tidak terlambat
     await buat(4, kaosId, "DRAFT", kemarin); // draf: tidak terlambat
+    // WO 2 punya satu penerimaan dengan cacat: 6 disetor, 1 cacat, 5 masuk stok.
+    receiptId = (
+      await prisma.fGReceipt.create({
+        data: {
+          docNumber: `RCV-DW-${token}`,
+          woId: woIds[1],
+          receiptType: "GENERIC",
+          qtyReceived: 6,
+          qtyRejected: 1,
+          qtyAccepted: 5,
+          receivedById: userId,
+        },
+        select: { id: true },
+      })
+    ).id;
+    await prisma.workOrder.update({ where: { id: woIds[1] }, data: { actualQty: 5, status: "PARTIAL" } });
   });
 
   afterAll(async () => {
+    await prisma.fGReceipt.deleteMany({ where: { id: seededId(receiptId) } });
     await prisma.workOrder.deleteMany({ where: { id: { in: seededIds(woIds) } } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds([kemejaId, kaosId]) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -95,5 +113,16 @@ d("listWorkOrders: cari dan terlambat (test bed only)", () => {
     expect(nomor(await listWorkOrders({ vendorId, terlambat: true }, { page: 1, pageSize: 50 }))).toEqual(["1"]);
     expect(nomor(await listWorkOrders({ vendorId, terlambat: true, status: "COMPLETED" }, { page: 1, pageSize: 50 }))).toEqual([]);
     expect(nomor(await listWorkOrders({ vendorId, terlambat: true, status: "IN_PRODUCTION" }, { page: 1, pageSize: 50 }))).toEqual(["1"]);
+  });
+
+  it("setoran di daftar dihitung dari dokumen penerimaan (satu definisi dengan rincian)", async () => {
+    const hasil = (await listWorkOrders({ q: `WO-DW-${token}-2` }, { page: 1, pageSize: 50 })) as {
+      items: Array<{ setoran: { target: number; disetor: number; cacat: number; masukStok: number; kurang: number; persen: number } }>;
+    };
+    expect(hasil.items[0].setoran).toMatchObject({ target: 10, disetor: 6, cacat: 1, masukStok: 5, kurang: 5, persen: 50 });
+    const tanpa = (await listWorkOrders({ q: `WO-DW-${token}-1` }, { page: 1, pageSize: 50 })) as {
+      items: Array<{ setoran: { masukStok: number; kurang: number } }>;
+    };
+    expect(tanpa.items[0].setoran).toMatchObject({ masukStok: 0, kurang: 10 });
   });
 });

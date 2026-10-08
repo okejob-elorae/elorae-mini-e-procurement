@@ -51,6 +51,10 @@ export const KUNCI_ANTREAN = [
   "spgCommissionsUnset",
   "productionStepsOverdue",
   "productionStepsDueToday",
+  "ledgerDocsWithoutJournal",
+  "taxDueSoon",
+  "taxOverdue",
+  "manualJournalsPendingApproval",
 ] as const;
 
 export type KunciAntrean = (typeof KUNCI_ANTREAN)[number];
@@ -189,6 +193,33 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: productionView,
     bolehBertindak: productionView,
   },
+  // Dokumen sejak tanggal mulai buku besar yang belum berjurnal DAN tidak
+  // tercatat gagal (yang tercatat gagal sudah di baris "Jurnal gagal"),
+  // bertanggal sebelum hari ini — sapuan harian 02.30 belum bisa mempostingnya.
+  ledgerDocsWithoutJournal: {
+    href: "/backoffice/finance/integritas?tanpaJurnal=diam",
+    bolehBuka: izinTunggal(PERMISSIONS.JOURNALS_VIEW),
+    bolehBertindak: izinTunggal(PERMISSIONS.JOURNALS_MANAGE),
+  },
+  // Kalender pajak: setoran yang belum lunas dan jatuh tempo ≤ 3 hari / sudah
+  // lewat. Mencatat setoran = keuangan (`journals:manage`).
+  taxDueSoon: {
+    href: "/backoffice/finance/pajak?saring=segera",
+    bolehBuka: izinTunggal(PERMISSIONS.JOURNALS_VIEW),
+    bolehBertindak: izinTunggal(PERMISSIONS.JOURNALS_MANAGE),
+  },
+  taxOverdue: {
+    href: "/backoffice/finance/pajak?saring=lewat",
+    bolehBuka: izinTunggal(PERMISSIONS.JOURNALS_VIEW),
+    bolehBertindak: izinTunggal(PERMISSIONS.JOURNALS_MANAGE),
+  },
+  // Jurnal manual (dan pembalik) yang menunggu persetujuan orang lain —
+  // menyetujui = `journals:manage` (lib/finance/jurnal-manual, maker-checker).
+  manualJournalsPendingApproval: {
+    href: "/backoffice/finance/journals?status=draf",
+    bolehBuka: izinTunggal(PERMISSIONS.JOURNALS_VIEW),
+    bolehBertindak: izinTunggal(PERMISSIONS.JOURNALS_MANAGE),
+  },
 };
 
 /** Jalur halaman tanpa saringan — kunci `ROUTE_PERMISSIONS`. */
@@ -289,6 +320,13 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   // Satu definisi dengan tab "Terlambat"/"Hari ini" follow-up produksi (`whereFollowUp`).
   productionStepsOverdue: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahTelat(),
   productionStepsDueToday: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahHariIni(),
+  // Satu definisi dengan saringan `?tanpaJurnal=diam` di Integritas buku besar.
+  ledgerDocsWithoutJournal: async () => (await import("@/lib/finance/integritas/queries")).hitungDokumenTanpaJurnalDiam(),
+  // Satu definisi dengan saringan `?saring=segera|lewat` kalender pajak (`cocokSaring`).
+  taxDueSoon: async () => (await import("@/lib/finance/pajak/kalender-queries")).hitungKalenderPajak("segera"),
+  taxOverdue: async () => (await import("@/lib/finance/pajak/kalender-queries")).hitungKalenderPajak("lewat"),
+  // Satu definisi dengan tab "Menunggu persetujuan" halaman Jurnal (`?status=draf`).
+  manualJournalsPendingApproval: async () => (await import("@/lib/finance/jurnal-manual/queries")).hitungDrafJurnal(),
 };
 
 export type AngkaAntrean = Partial<Record<KunciAntrean, number>>;

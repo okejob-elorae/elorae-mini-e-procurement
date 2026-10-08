@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { kaitBarangHilang, kaitPotongSales } from "@/lib/finance/operasional/kait";
 import { prisma } from "@elorae/db";
 import { cariTeks } from "@/lib/db/cari-teks";
 import { auth } from "@/lib/auth";
@@ -109,6 +110,8 @@ export async function putuskanBarangHilangAction(input: IsianKeputusan): Promise
   if ("ok" in s) return s;
   const r = await putuskanBarangHilang({ ...input, olehUserId: s.userId });
   if (!r.ok) return { ok: false, code: r.kode };
+  // Barang hilang di toko konsinyasi: persediaan konsinyasi → beban (sesudah commit, tidak pernah melempar).
+  await kaitBarangHilang(r.id, s.userId);
   segarkan(r.id);
   return { ok: true };
 }
@@ -118,6 +121,7 @@ export async function ubahKeputusanHilangAction(input: IsianKeputusan): Promise<
   if ("ok" in s) return s;
   const r = await ubahKeputusanHilang({ ...input, catatan: input.catatan ?? "", olehUserId: s.userId });
   if (!r.ok) return { ok: false, code: r.kode };
+  await kaitBarangHilang(r.id, s.userId);
   segarkan(r.id);
   return { ok: true };
 }
@@ -127,6 +131,8 @@ export async function batalkanBarangHilangAction(input: { lossId: string; alasan
   if ("ok" in s) return s;
   const r = await batalkanBarangHilang({ lossId: input.lossId, alasan: input.alasan, olehUserId: s.userId });
   if (!r.ok) return { ok: false, code: r.kode };
+  // Keputusan yang dibatalkan: jurnalnya dibalik (generasi penyesuaian), tidak dihapus.
+  await kaitBarangHilang(r.id, s.userId);
   segarkan(r.id);
   return { ok: true };
 }
@@ -154,6 +160,8 @@ export async function tandaiSalesDipotongAction(input: {
   if (typeof input.salesmanId !== "string" || !input.salesmanId) return { ok: false, code: "INVALID" };
   const r = await tandaiSalesDipotong({ ...input, olehUserId: s.userId });
   if (!r.ok) return { ok: false, code: r.kode };
+  // Potongan beban SALES → pemulihan beban (kunci rujukan sama dengan penulisnya).
+  await kaitPotongSales(`${input.salesmanId}:${input.bulan}:${String(input.kunci ?? "").trim()}`, s.userId);
   segarkan();
   revalidatePath("/backoffice/laporan/komisi-salesman");
   return { ok: true, dipotong: r.dipotong };

@@ -24,6 +24,7 @@ import {
   type SupplierPaymentPostFailure,
 } from '@/lib/purchasing/post-supplier-payment-journal-safely';
 import type { SupplierPaymentDirection } from '@/lib/purchasing/supplier-payment-journal-message';
+import { adaPembayaranDokumenUntukPo, selaraskanCerminTandaiLunas } from '@/lib/purchasing/pembayaran-tandai-lunas';
 import { tandaiJurnalTertundaSelesai, type SumberNotifikasiJurnal } from '@/lib/finance/jurnal-tertunda';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { tanggalBayarSah } from '@/app/backoffice/supplier-payments/tanggal-bayar';
@@ -714,7 +715,15 @@ export async function getPOStats() {
  * diberi tanggal `paidAt`, jadi tanggal di masa depan menaruh kas keluar di
  * periode yang belum terjadi. Tidak ada yang ditulis.
  */
-export type SetPOPaidAtRefusal = 'STANDING_PAYMENT_JOURNAL' | 'TANGGAL_TIDAK_SAH';
+/**
+ * `ADA_PEMBAYARAN_DOKUMEN`: PO ini sudah (sebagian) dibayar lewat dokumen
+ * pembayaran pemasok (Pembayaran pemasok → Bayar). Tombol ini membayar SELURUH
+ * hutang PO dari buku besar, jadi bagian yang sudah dibayar akan terbayar dua
+ * kali; membuka tanda lunasnya pun tidak membatalkan pembayaran dokumen itu.
+ * Lunasi sisanya / batalkan pembayarannya dari halaman Pembayaran pemasok.
+ * Tidak ada yang ditulis.
+ */
+export type SetPOPaidAtRefusal = 'STANDING_PAYMENT_JOURNAL' | 'TANGGAL_TIDAK_SAH' | 'ADA_PEMBAYARAN_DOKUMEN';
 
 export type SetPOPaidAtResult = {
   changed: boolean;
@@ -824,6 +833,17 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
         return { changed: false, refusal: 'STANDING_PAYMENT_JOURNAL', failure: null };
       }
 
+      /*
+       * Pembayaran pemasok sebagian (dokumen BYR/…): kedua arah ditolak bila PO
+       * ini sudah punya alokasi pembayaran dokumen — lihat `ADA_PEMBAYARAN_DOKUMEN`.
+       * Di dalam transaksi yang sama, sebelum CAS, karena alasan yang sama dengan
+       * penjaga di atas: pembayaran dokumen yang di-commit di antara keduanya
+       * akan basi bila diperiksa di luar.
+       */
+      if (await adaPembayaranDokumenUntukPo(poId, tx)) {
+        return { changed: false, refusal: 'ADA_PEMBAYARAN_DOKUMEN', failure: null };
+      }
+
       const toggled = await tx.purchaseOrder.updateMany({
         where: { id: poId, paidAt: paidAt != null ? null : { not: null } },
         data: { paidAt },
@@ -917,6 +937,14 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
         notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)
       )
       .catch(() => {});
+
+    /*
+     * Cermin tombol ini di daftar Pembayaran pemasok (satu pembayaran penuh
+     * BYR/…, atau pembatalannya). Sesudah commit dan tidak pernah melempar: angka
+     * hutang dibaca dari jurnal tombol ini, jadi cermin yang gagal dibuat hanya
+     * berarti barisnya belum tampil di daftar pembayaran.
+     */
+    await selaraskanCerminTandaiLunas(poId, actorId);
   }
 
   revalidatePath('/backoffice/purchase-orders');
@@ -1035,6 +1063,7 @@ export async function postSupplierPaymentReversalJournalAction(
 
   // Pembalikan berdiri → PO belum dibayar tanpa jurnal tertinggal: tanda "Jurnal gagal"-nya selesai.
   if (result.ok) {
+    await selaraskanCerminTandaiLunas(poId, postedById);
     await tandaiJurnalTertundaSelesai(
       [
         { tipe: 'pembayaranPemasok', arah: 'reversal', poId },

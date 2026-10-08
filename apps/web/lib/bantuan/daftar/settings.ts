@@ -27,11 +27,11 @@ export const ENTRI: EntriBantuan[] = [
       { judul: { kunci: "settings.security.title" }, isi: { kunci: "settings.security.description" } },
       { judul: { kunci: "settings.documents.title" }, isi: { kunci: "settings.documents.description" } },
       { judul: { kunci: "settings.itemCodes.title" }, isi: { kunci: "settings.itemCodes.description" } },
-      { judul: { kunci: "settings.tax.title" }, isi: { kunci: "settings.tax.description" } },
+      { judul: { kunci: "settings.hub.taxTitle" }, isi: { kunci: "settings.hub.taxDescription" } },
       { judul: { kunci: "settings.uom.title" }, isi: { kunci: "settings.uom.description" } },
       { judul: { kunci: "settings.users.title" }, isi: { kunci: "settings.users.description" } },
       { judul: { kunci: "settings.rbac.title" }, isi: { kunci: "settings.rbac.description" } },
-      { judul: { kunci: "settings.packRatio.title" }, isi: { kunci: "settings.packRatio.description" } },
+      { judul: { kunci: "settings.packRatio.title" }, isi: { kunci: "settings.hub.packRatioDescription" } },
       { judul: { kunci: "settings.jenisPotongan.title" }, isi: { kunci: "settings.jenisPotongan.description" } },
       { judul: { kunci: "settings.salesman.title" }, isi: { kunci: "settings.salesman.description" } },
       { judul: { kunci: "settings.spg.title" }, isi: { kunci: "settings.spg.description" } },
@@ -44,10 +44,10 @@ export const ENTRI: EntriBantuan[] = [
     isi: { kunci: "security.subtitle" },
     kartu: [
       { judul: { kunci: "security.changePassword" }, isi: { kunci: "security.changePasswordDescription" } },
-      { judul: { kunci: "security.setPin" }, isi: { kunci: "security.pinCardDescription" } },
+      { judul: { kunci: "security.setPinV2" }, isi: { kunci: "security.pinCardDescription" } },
       { judul: { kunci: "security.lastAccessTitle" }, isi: { kunci: "security.lastAccessDescription" } },
       { judul: { kunci: "security.attemptsTitle" }, isi: { kunci: "security.attemptsDescription" } },
-      { judul: { kunci: "security.forceResetTitle" }, isi: { kunci: "security.resetPinDescription" } },
+      { judul: { kunci: "security.forceResetTitleV2" }, isi: { kunci: "security.resetPinDescription" } },
     ],
   },
   {
@@ -90,7 +90,22 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "tax.pageTitle" },
     isi: { kunci: "tax.pageDescription" },
     kartu: [
-      { judul: { kunci: "tax.cardTitle" }, isi: { kunci: "tax.cardDescription" } },
+      {
+        judul: { kunci: "tax.perusahaan.ppnJudul" },
+        isi: [
+          "Status PKP perusahaan menentukan apakah jurnal memisahkan PPN. Belum ditetapkan (bawaan) diperlakukan seperti bukan PKP: tidak ada PPN di jurnal mana pun, dan halaman pajak serta laporan keuangan menampilkan spanduk sampai status dipilih.",
+          "PKP: penjualan (marketplace, kanvas, nota tagihan) mencatat pendapatan sebesar DPP dan PPN keluaran sendiri; retur membalik PPN penjualan asalnya; biaya marketplace dan penerimaan barang dari baris PO \"Tidak termasuk PPN\" mencatat PPN masukan; sampel KOL mencatat PPN pemberian cuma-cuma. Bukan PKP: PPN tidak dipisah (PPN pembelian tetap ikut biaya).",
+          "Tarif undang-undang 12% dengan DPP nilai lain 11/12 = tarif efektif 11% (PMK 131/2024). \"PPN dipungut sejak\" membatasi PPN untuk transaksi mulai tanggal itu. Jurnal yang sudah diposting tidak berubah ketika pengaturan diubah.",
+        ],
+      },
+      {
+        judul: { kunci: "tax.perusahaan.profilJudul" },
+        isi: [
+          "Bentuk usaha dan rezim PPh menentukan PPh final UMKM 0,5% (PP 20/2026: orang pribadi, PT perorangan, koperasi; CV dan PT hanya selama jendela PP 55/2022-nya) atau PPh badan 22% (dengan atau tanpa fasilitas Pasal 31E, angsuran PPh 25). Kalender pajak dan halaman PPh final mengikuti pilihan ini.",
+          "NPWP dan NITKU perusahaan dipakai berkas ekspor faktur keluaran Coretax. NITKU kosong berarti kantor pusat (NPWP + 000000). Setiap perubahan tercatat di jejak audit; mengubahnya butuh izin mengelola pengaturan pajak.",
+        ],
+      },
+      { judul: { kunci: "tax.tarifPo.judul" }, isi: { kunci: "tax.cardDescription" } },
       {
         judul: { kunci: "tax.suratPo.judul" },
         isi: "Paragraf pembuka dan penutup yang tercetak di setiap PO, di atas tabel barang dan di bawah total. Saat mencetak, teksnya masih bisa diubah untuk PO itu saja. Paragraf yang dikosongkan tidak dicetak. Mengubahnya butuh izin yang sama dengan tarif PPN, dan setiap perubahan tercatat di jejak audit.",
@@ -103,7 +118,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "uom.pageTitle" },
     isi: { kunci: "uom.pageDescription" },
     kartu: [
-      { judul: { kunci: "uom.unitsTitle" }, isi: { kunci: "uom.unitsDescription" } },
+      { judul: { kunci: "uom.unitsTitleV2" }, isi: { kunci: "uom.unitsDescription" } },
       { judul: { kunci: "uom.conversionsTitle" }, isi: { kunci: "uom.conversionsDescription" } },
     ],
   },
@@ -114,7 +129,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "settings.users.subtitle" },
       "Pengguna dengan peran SPG wajib diberi satu toko tetap; untuk peran lain toko tetapnya dikosongkan. Anda tidak bisa mengganti peran akun Anda sendiri, dan hanya admin sistem yang boleh memberi atau mengubah peran berakses penuh.",
-      "Peran menentukan menu dan tombol yang bisa dipakai seseorang. Bila belum ada peran yang pas, buat peran sendiri lewat tombol Kelola peran di kepala halaman (Pengaturan → Peran & Izin), lalu pilih peran itu di sini.",
+      "Peran menentukan menu dan tombol yang bisa dipakai seseorang. Bila belum ada peran yang pas, buat peran sendiri lewat tombol Kelola peran di kepala halaman (Pengaturan → Peran & izin), lalu pilih peran itu di sini.",
       "Setiap penambahan dan perubahan tercatat di jejak audit, tanpa sandinya. Halaman ini butuh izin mengelola keamanan.",
     ],
   },
@@ -136,7 +151,7 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/settings/pack-ratio",
     bagian: "settings",
     judul: { kunci: "settings.packRatio.title" },
-    isi: { kunci: "settings.packRatio.description" },
+    isi: { kunci: "settings.hub.packRatioDescription" },
     kartu: [{ judul: { kunci: "settings.packRatio.heading" }, isi: { kunci: "settings.packRatio.subtitle" } }],
   },
   {
@@ -147,6 +162,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "jenisPotongan.pageDescription" },
       { kunci: "jenisPotongan.explain" },
       "Jenis dengan cara Dari retur wajib ditautkan ke nota retur, sehingga nilainya ditahan sampai gudang selesai menghitung. Halaman ini butuh izin mengelola piutang.",
+      "Akun jurnal menentukan peran akun yang didebit saat BKM dengan potongan ini diverifikasi keuangan: potongan penjualan, PPh 23 atau PPh 22 dibayar dimuka (pajak yang dipotong toko), biaya bank, atau kerugian. Otomatis berarti potongan penjualan, atau PPh 23 dibayar dimuka untuk jenis yang khusus toko PKP. Potongan Dari retur tidak memakai pilihan ini: piutangnya sudah dikurangi jurnal retur saat gudang menghitung barangnya.",
     ],
   },
   {

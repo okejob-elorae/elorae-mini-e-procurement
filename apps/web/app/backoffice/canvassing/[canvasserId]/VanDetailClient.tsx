@@ -180,7 +180,7 @@ export function VanDetailClient({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>{t("colItem")}</TableHead>
+                        <TableHead>{t("kolomBarang")}</TableHead>
                         <TableHead>{t("colVariant")}</TableHead>
                         <TableHead className="text-right">{t("colQty")}</TableHead>
                         <TableHead className="text-right">{t("colAvgCost")}</TableHead>

@@ -126,6 +126,19 @@ export type CampaignTugas = { id: string; name: string; budget: number | null; t
 
 export type KurangDataKirim = "ALAMAT" | "HP" | "UKURAN";
 
+/**
+ * Data kirim yang masih kosong — SATU aturan untuk tugas "Data kirim belum
+ * lengkap" di Hari ini dan kartu alamat di rincian kolaborasi, supaya
+ * keduanya menyebut kolom yang sama (audit ulang 2026-10-08).
+ */
+export function kurangDataKirim(c: { alamat: string | null | undefined; waNormal: string | null | undefined; ukuranAda: boolean }): KurangDataKirim[] {
+  const kurang: KurangDataKirim[] = [];
+  if (!c.alamat?.trim()) kurang.push("ALAMAT");
+  if (!c.waNormal?.trim()) kurang.push("HP");
+  if (!c.ukuranAda) kurang.push("UKURAN");
+  return kurang;
+}
+
 /** Keterangan per baris; kunci yang terisi bergantung kelompoknya. */
 export type InfoTugas = {
   /** Id pengiriman/konten sumber tenggatnya. */
@@ -145,6 +158,8 @@ export type InfoTugas = {
   lewatBudget?: boolean;
   sisa?: number | null;
   fee?: number;
+  /** `fee` adalah jumlah SATU termin (basis fee), bukan fee kolaborasi utuh — ditulis "Termin …". */
+  feeTermin?: boolean;
 };
 
 export type BarisTugas = {
@@ -295,7 +310,7 @@ export function susunTugas(m: MasukanTugas): KelompokTugas[] {
     const bayar = lewat("JATUH_TEMPO_BAYAR");
     if (bayar) {
       const termin = c.termin?.find((t) => t.id === bayar.refId);
-      tambah("BELUM_DIBAYAR", barisKolaborasi(c, bayar.sejak, m.hariIni, { tanggal: bayar.tanggal, fee: termin ? termin.jumlah : c.fee }));
+      tambah("BELUM_DIBAYAR", barisKolaborasi(c, bayar.sejak, m.hariIni, { tanggal: bayar.tanggal, fee: termin ? termin.jumlah : c.fee, ...(termin ? { feeTermin: true } : {}) }));
     }
 
     if (TAHAP_RAWAN_DOBEL.has(c.tahap)) {
@@ -315,10 +330,7 @@ export function susunTugas(m: MasukanTugas): KelompokTugas[] {
     }
 
     if (TAHAP_SEBELUM_KIRIM.has(c.tahap) && !c.pengiriman.some(berangkat)) {
-      const kurang: KurangDataKirim[] = [];
-      if (!c.alamat?.trim()) kurang.push("ALAMAT");
-      if (!c.waNormal) kurang.push("HP");
-      if (!c.ukuranAda) kurang.push("UKURAN");
+      const kurang = kurangDataKirim(c);
       if (kurang.length) tambah("DATA_KIRIM_KURANG", barisKolaborasi(c, c.dealAt ?? c.tahapAt, m.hariIni, { kurang }));
     }
 

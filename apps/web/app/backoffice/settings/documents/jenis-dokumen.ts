@@ -10,7 +10,7 @@ import type { DocType } from "@elorae/db";
  * berbahaya. Kelengkapannya dijaga `jenis-dokumen.spec.ts`. Peta ini BUKAN
  * `DocType` lokal 8 anggota di `@/lib/constants/enums`.
  */
-export type KelompokDokumen = "pembelianGudang" | "produksi" | "penjualanLapangan" | "kanvas" | "lainnya";
+export type KelompokDokumen = "pembelianGudang" | "produksi" | "penjualanLapangan" | "kanvas" | "keuangan" | "lainnya";
 
 const KELOMPOK: Partial<Record<DocType, Exclude<KelompokDokumen, "lainnya">>> = {
   PO: "pembelianGudang",
@@ -28,9 +28,14 @@ const KELOMPOK: Partial<Record<DocType, Exclude<KelompokDokumen, "lainnya">>> = 
   VANLOAD: "kanvas",
   VANSALE: "kanvas",
   VANRECON: "kanvas",
+  CASHOUT: "keuangan",
+  CASHIN: "keuangan",
+  CASHTRF: "keuangan",
+  SUPPAY: "keuangan",
+  ASSET: "keuangan",
 };
 
-export const URUTAN_KELOMPOK: readonly KelompokDokumen[] = ["pembelianGudang", "produksi", "penjualanLapangan", "kanvas", "lainnya"];
+export const URUTAN_KELOMPOK: readonly KelompokDokumen[] = ["pembelianGudang", "produksi", "penjualanLapangan", "kanvas", "keuangan", "lainnya"];
 
 const URUTAN_JENIS = Object.keys(KELOMPOK) as DocType[];
 

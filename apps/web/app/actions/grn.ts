@@ -12,6 +12,8 @@ import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate
 import { auth } from '@/lib/auth';
 import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
+import { hitungPpnMasukanGrn, kunciBarisPpn } from "@/lib/finance/pajak/grn-ppn";
+import { hitungPpnKapitalisasiGrn } from "@/lib/finance/operasional/grn-kapitalisasi-queries";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
@@ -19,6 +21,7 @@ import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { runSerializable } from "@/lib/db/tx-retry";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { alasanTolakPenerimaanPo } from "@/lib/purchase-orders/penerimaan";
+import { syaratCariGrn } from "@/lib/inventory/cari-grn";
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
 import {
   PESAN_PEMILIK_GRN,
@@ -249,8 +252,30 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
 
     let totalAmount = new Decimal(0);
 
+    // PPN pembelian saat Elorae BUKAN PKP (baris PO "Exclude PPN"): bagian dari harga
+    // perolehan — masuk nilai kartu stok dan hutang bruto (`lib/finance/operasional/grn-kapitalisasi.ts`).
+    // Dihitung SEBELUM stok bergerak, dari qty yang sama dengan baris stoknya.
+    const tipeBarangAwal = new Map(
+      (
+        await tx.item.findMany({ where: { id: { in: [...new Set(validated.items.map((i) => i.itemId))] } }, select: { id: true, type: true } })
+      ).map((i) => [i.id, i.type as string]),
+    );
+    const qtyBarisAwal = validated.items.map((item) => {
+      const rolls = item.rolls ?? [];
+      return tipeBarangAwal.get(item.itemId) === 'FABRIC' && rolls.length > 0 ? rolls.reduce((sum, roll) => sum + roll.length, 0) : item.qty;
+    });
+    const ppnModal = await hitungPpnKapitalisasiGrn(tx, {
+      poId: validated.poId ?? null,
+      baris: validated.items.map((item, i) => ({
+        itemId: item.itemId,
+        variantSku: item.variantSku?.trim() || null,
+        nilai: new Decimal(qtyBarisAwal[i]).mul(item.unitCost).toNumber(),
+      })),
+      tanggal: now,
+    });
+
     const processedItems = await Promise.all(
-      validated.items.map(async (item) => {
+      validated.items.map(async (item, idxBaris) => {
         const itemRow = await tx.item.findUnique({
           where: { id: item.itemId },
           select: { type: true, uomId: true, overReceiveThreshold: true },
@@ -264,8 +289,10 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
           ? rolls.reduce((sum, roll) => sum + roll.length, 0)
           : item.qty;
         const qty = new Decimal(derivedQty);
-        const unitCost = new Decimal(item.unitCost);
-        const lineTotal = qty.mul(unitCost);
+        const ppnBaris = new Decimal(ppnModal[idxBaris] ?? 0);
+        const lineTotal = qty.mul(item.unitCost).plus(ppnBaris);
+        // Harga per unit di kartu stok = harga PO + bagian PPN yang dikapitalisasi.
+        const unitCost = ppnBaris.gt(0) && qty.gt(0) ? lineTotal.div(qty) : new Decimal(item.unitCost);
         totalAmount = totalAmount.plus(lineTotal);
 
         const variantKey = item.variantSku ?? null;
@@ -286,7 +313,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
             refId: 'temp',
             refDocNumber: docNumber,
             qty: derivedQty,
-            unitCost: item.unitCost,
+            unitCost: unitCost.toNumber(),
             totalCost: lineTotal.toNumber(),
             balanceQty: costCalc.newQty.toNumber(),
             balanceValue: costCalc.newTotalValue.toNumber(),
@@ -298,7 +325,9 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
           itemId: item.itemId,
           variantSku: item.variantSku?.trim() || null,
           qty: derivedQty,
-          unitCost: item.unitCost,
+          unitCost: unitCost.toNumber(),
+          // Harga PO dan PPN yang ikut dikapitalisasi (bukan PKP) — supaya harga per unit di atas terjelaskan.
+          ...(ppnBaris.gt(0) ? { hargaPo: item.unitCost, ppnDikapitalisasi: ppnBaris.toNumber() } : {}),
           itemType: itemRow.type,
           uomId: item.uomId || itemRow.uomId,
           overReceiveThreshold: itemRow.overReceiveThreshold != null ? Number(itemRow.overReceiveThreshold) : null,
@@ -337,6 +366,18 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
       }
     }
 
+    // PPN masukan (hanya PKP, baris PO "Exclude PPN") dihitung SEKALI di sini dan
+    // disimpan; jurnal penerimaan membaca angka tersimpan ini, bukan pengaturan
+    // hari ini (`lib/finance/pajak/grn-ppn.ts`). Nilai stok tidak berubah.
+    const ppnMasukan = await hitungPpnMasukanGrn(tx, {
+      poId: validated.poId ?? null,
+      baris: processedItems.map((p) => ({ itemId: p.itemId, variantSku: p.variantSku, nilai: p.totalCost })),
+      tanggal: now,
+    });
+    const itemsTersimpan = processedItems.map((p) =>
+      ppnMasukan.kenaPpn.has(kunciBarisPpn(p.itemId, p.variantSku)) ? { ...p, ppnIncluded: false } : p,
+    );
+
     const grn = await tx.gRN.create({
       data: {
         docNumber,
@@ -344,9 +385,10 @@ export async function createGRN(data: z.infer<typeof grnSchema>, _userId?: strin
         supplierId: validated.supplierId,
         receivedBy: userId,
         totalAmount: totalAmount.toNumber(),
+        ppnAmount: ppnMasukan.ppn,
         requiresOwnerApproval,
         photoUrls: validated.photoUrls ? JSON.stringify(validated.photoUrls) : null,
-        items: JSON.stringify(processedItems),
+        items: JSON.stringify(itemsTersimpan),
         notes: validated.notes ?? null,
         idempotencyKey: kunci,
       },
@@ -591,6 +633,8 @@ export async function getGRNs(
     dateFrom?: Date;
     dateTo?: Date;
     poId?: string;
+    /** Kata kunci (nomor GRN, pemasok, nomor PO) — disaring di server, lihat `syaratCariGrn`. */
+    cari?: string;
   },
   opts?: { page: number; pageSize: number }
 ) {
@@ -598,6 +642,8 @@ export async function getGRNs(
   const where: Record<string, unknown> = {};
   if (filters?.supplierId) where.supplierId = filters.supplierId;
   if (filters?.poId) where.poId = filters.poId;
+  const cari = syaratCariGrn(filters?.cari);
+  if (cari) where.AND = [cari];
   if (filters?.dateFrom || filters?.dateTo) {
     where.grnDate = {};
     if (filters.dateFrom) (where.grnDate as Record<string, Date>).gte = filters.dateFrom;
@@ -623,6 +669,7 @@ export async function getGRNs(
     const items = rows.map((r) => ({
       ...r,
       totalAmount: Number(r.totalAmount),
+      ppnAmount: r.ppnAmount == null ? null : Number(r.ppnAmount),
     }));
     return { items, totalCount };
   }
@@ -635,6 +682,7 @@ export async function getGRNs(
   return rows.map((r) => ({
     ...r,
     totalAmount: Number(r.totalAmount),
+    ppnAmount: r.ppnAmount == null ? null : Number(r.ppnAmount),
   }));
 }
 
@@ -653,6 +701,7 @@ export async function getGRNById(id: string) {
   return {
     ...grn,
     totalAmount: Number(grn.totalAmount),
+    ppnAmount: grn.ppnAmount == null ? null : Number(grn.ppnAmount),
   };
 }
 
@@ -871,7 +920,7 @@ export async function approveGRNByOwner(id: string, _userId?: string) {
 
   if (grn.poId) revalidatePath(`/backoffice/purchase-orders/${grn.poId}`);
   revalidatePath('/backoffice/inventory');
-  return { ...grn, totalAmount: Number(grn.totalAmount) };
+  return { ...grn, totalAmount: Number(grn.totalAmount), ppnAmount: grn.ppnAmount == null ? null : Number(grn.ppnAmount) };
 }
 
 /**
@@ -1173,6 +1222,8 @@ export type RincianGRN = {
   po: { id: string; docNumber: string; status: string } | null;
   penerima: string | null;
   totalAmount: number;
+  /** PPN masukan tersimpan (`lib/finance/pajak/grn-ppn.ts`); null/0 = tanpa PPN dipisah. */
+  ppnAmount: number | null;
   notes: string | null;
   foto: string[];
   baris: BarisRincianGrn[];
@@ -1233,6 +1284,7 @@ export async function getRincianGRN(id: string): Promise<RincianGRN | null> {
     po: grn.po,
     penerima: penerima ? penerima.name || penerima.email || null : null,
     totalAmount: Number(grn.totalAmount),
+    ppnAmount: grn.ppnAmount == null ? null : Number(grn.ppnAmount),
     notes: grn.notes,
     foto: fotoGrn(grn.photoUrls),
     baris: susunBarisGrn(grn.items, barang),

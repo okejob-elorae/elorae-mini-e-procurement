@@ -30,7 +30,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "kreatifRuang.hariIni.kpi.biaya" },
-        isi: "Fee dan boost kolaborasi yang deal di periode itu, ongkir dan modal sampel (harga pokok rata-rata) yang berangkat di periode itu, dan komisi penjualan di periode itu.",
+        isi: "Fee dan boost kolaborasi yang deal di periode itu, ongkir dan modal sampel (harga pokok rata-rata) yang berangkat di periode itu, dan komisi penjualan di periode itu. \"Fee\" selalu angka yang disepakati dengan KOL: neto bila gross-up, bruto bila dipotong. Untuk gross-up, PPh yang ditanggung Elorae ikut dihitung dan baris bawah kartu menyebut biaya bruto termasuk PPh.",
       },
       {
         judul: { kunci: "kreatifRuang.hariIni.kpi.roas" },
@@ -98,7 +98,7 @@ export const ENTRI: EntriBantuan[] = [
     kartu: [
       {
         judul: "Views, order, GMV, ROAS",
-        isi: "Dihitung dari konten, penjualan, dan biaya kolaborasi ini. Biaya = fee + boost + ongkir + modal sampel yang sudah berangkat + komisi. ROAS = GMV ÷ biaya; hijau bila 1 atau lebih.",
+        isi: "Dihitung dari konten, penjualan, dan biaya kolaborasi ini. Biaya = fee + PPh gross-up yang ditanggung Elorae + boost + ongkir + modal sampel yang sudah berangkat + komisi. ROAS = GMV ÷ biaya; hijau bila 1 atau lebih, dan — selama belum ada penjualan. Di bawah nama KOL, \"fee\" adalah angka yang disepakati (neto bila gross-up, bruto bila dipotong); bila gross-up, biaya bruto termasuk PPh disebut di sampingnya.",
       },
       {
         judul: "Tenggat",
@@ -113,7 +113,7 @@ export const ENTRI: EntriBantuan[] = [
         isi: [
           "Mode pajak kolaborasi ini: Dipotong (fee = bruto, KOL menerima bruto dikurangi PPh) atau Gross-up (fee = neto yang diterima KOL, Elorae menanggung PPh). Mengganti mode menghitung ulang termin yang belum dibayar. Subjek pajak (perorangan/badan/tidak dipotong) dan NPWP diatur di profil KOL.",
           "Tabel termin: pemicu dan jatuh tempo, bruto, PPh, neto, status. Panah di kiri membuka rincian hitungan — DPP, setiap lapisan tarif, tambahan tanpa NPWP, PPh, dan neto — supaya keuangan bisa memeriksanya. \"Atur termin\" memecah atau mengubah termin yang belum dibayar, dalam persen atau nominal, dengan pratinjau angka yang akan tersimpan; jumlahnya harus persis sama dengan sisa fee.",
-          "Bayar mencatat satu termin (tanggal, bukti transfer, nomor bukti potong). Batalkan bayar membatalkan pembayaran yang salah catat, wajib beralasan; ditolak bila PPh-nya sudah disetor. Semua perubahan tercatat di riwayat di bawah tabel.",
+          "Bayar mencatat satu termin (tanggal, bukti transfer, nomor bukti potong). Termin yang menunggu tayang (mis. Pelunasan sebelum konten tayang) tetap bisa dibayar, tetapi tombolnya bukan tombol utama dan dialognya meminta centang konfirmasi. Batalkan bayar membatalkan pembayaran yang salah catat, wajib beralasan; tidak tersedia bila PPh-nya sudah disetor. Semua perubahan tercatat di riwayat di bawah tabel.",
           "Keuangan melihat peringatan bila jurnal kolaborasi ini (fee, pembayaran, atau sampel) belum terposting — biasanya karena akun belum dipetakan — dan tombol Posting ulang jurnal sesudah akunnya dipetakan. Kolaborasi yang uangnya sudah bergerak sebelum modul ini tidak dijurnal otomatis.",
         ],
       },
@@ -165,7 +165,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: "Total views, GMV, ROAS",
-        isi: "Jumlah seluruh kolaborasinya, dari angka konten terbaru dan penjualan afiliasi yang dicatat. ROAS = GMV ÷ biaya (fee + boost + ongkir + modal sampel yang sudah berangkat + komisi).",
+        isi: "Jumlah seluruh kolaborasinya, dari angka konten terbaru dan penjualan afiliasi yang dicatat. ROAS = GMV ÷ biaya (fee + PPh gross-up yang ditanggung Elorae + boost + ongkir + modal sampel yang sudah berangkat + komisi); — selama belum ada penjualan.",
       },
       { judul: "Fee terakhir", isi: "Fee kolaborasi berbayar yang paling baru." },
       {
@@ -211,7 +211,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: "Terpakai",
-        isi: "Jumlah biaya kolaborasi di campaign itu: fee + boost + ongkir + modal sampel yang sudah berangkat + komisi. Fee dihitung sejak dijanjikan, karena budget adalah komitmen. Kolaborasi yang keluar jalur (ditolak, ghosting, batal) tanpa konten tayang hanya menghitung yang benar-benar keluar: ongkir, modal sampel, dan komisi.",
+        isi: "Jumlah biaya kolaborasi di campaign itu: fee + PPh gross-up yang ditanggung Elorae + boost + ongkir + modal sampel yang sudah berangkat + komisi. Fee dihitung sejak dijanjikan, karena budget adalah komitmen. Kolaborasi yang keluar jalur (ditolak, ghosting, batal) tanpa konten tayang hanya menghitung yang benar-benar keluar: ongkir, modal sampel, dan komisi.",
       },
       {
         judul: "ROAS",
@@ -327,12 +327,22 @@ export const ENTRI: EntriBantuan[] = [
       "Bayar: isi tanggal bayar (tidak boleh sesudah hari ini), unggah bukti transfer bila ada, dan nomor bukti potong bila sudah dibuat. Termin yang sudah dibayar terkunci; membatalkan pembayarannya (salah catat) hanya dari rincian kolaborasi, wajib beralasan, dan ditolak bila PPh-nya sudah disetor. Pilih beberapa termin lalu \"Bayar yang dipilih\" untuk satu transfer sekaligus — total menjumlah SEMUA yang dipilih, dan bila satu termin ditolak tidak ada yang tersimpan.",
       "Tanda ⚠ di samping nama KOL berarti data pajaknya belum lengkap (rekening atau NIK/NPWP belum diisi di profil KOL). Pembayaran tetap bisa dicatat, tetapi bukti potong butuh identitasnya.",
       "Status bayar kolaborasi (belum, sebagian, lunas) diturunkan dari terminnya. Kolaborasi yang sudah tayang dan semua terminnya dibayar maju sendiri ke tahap Dibayar.",
-      "Setiap pembayaran dijurnal ke buku besar sesudah tersimpan: sebelum tayang sebagai uang muka KOL, sesudah tayang mengurangi hutang KOL; bank berkurang sebesar neto dan hutang PPh bertambah sebesar PPh. Akunnya diatur keuangan di Pemetaan Akun; bila belum dipetakan pembayaran tetap tersimpan dan jurnalnya menunggu di Jurnal → Tertunda.",
+      "Setiap pembayaran dijurnal ke buku besar sesudah tersimpan: sebelum tayang sebagai uang muka KOL, sesudah tayang mengurangi utang KOL; bank berkurang sebesar neto dan utang PPh bertambah sebesar PPh. Akunnya diatur keuangan di Pemetaan Akun; bila belum dipetakan pembayaran tetap tersimpan dan jurnalnya menunggu di Jurnal → Tertunda.",
       "Ekspor CSV mengunduh termin sesuai saringan yang sedang dibuka (semua halaman), dengan rekening tersamar (bank + empat digit terakhir), ditutup baris TOTAL.",
     ],
     kartu: [
-      { judul: { kunci: "kreatifRuang.termin.kartu.bruto" }, isi: "Jumlah bruto termin di saringan yang sedang dibuka (chip, pencarian, campaign) — dasar pengakuan beban KOL." },
-      { judul: { kunci: "kreatifRuang.termin.kartu.pph" }, isi: "Jumlah PPh 21 dan PPh 23 termin itu. Yang sudah dibayar disetor dan dilaporkan keuangan dari Keuangan → PPh dipotong." },
+      {
+        judul: { kunci: "kreatifRuang.termin.kartu.fee" },
+        isi: "Jumlah termin di saringan yang sedang dibuka (chip, pencarian, campaign) dalam angka yang DISEPAKATI dengan KOL: neto bila gross-up, bruto bila dipotong. Baris bawahnya menyebut biaya bruto termasuk PPh — dasar pengakuan beban KOL.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.termin.kartu.pphSemua" },
+        isi: "Jumlah PPh 21 dan PPh 23 termin itu, dipisah: yang dipotong dari KOL (mode dipotong) dan yang ditanggung Elorae (gross-up — menambah biaya). Yang sudah dibayar disetor dan dilaporkan keuangan dari Keuangan → PPh dipotong.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.termin.kartu.beban" },
+        isi: "Bruto termin yang kolaborasinya sudah tayang — sama dengan jurnal beban KOL. Sebelum tayang, termin yang sudah dibayar dicatat sebagai uang muka, jadi angka ini bisa nol walaupun uang sudah keluar.",
+      },
       { judul: { kunci: "kreatifRuang.termin.kartu.neto" }, isi: "Jumlah yang ditransfer ke KOL. Baris bawahnya: neto termin yang belum dibayar." },
     ],
   },
@@ -382,15 +392,15 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "kreatifRuang.laporan.tab.peringkat" },
         isi: [
           "Siapa yang layak diajak lagi. Hanya KOL yang punya aktivitas (konten, views, order, GMV, atau biaya) pada periode itu yang ikut. Bawaan: bulan ini, diurut menurut GMV; bisa diurut menurut ROAS, order, views, jumlah konten, CPM termurah, atau biaya terbesar.",
-          "Nomor peringkat berlanjut lintas halaman; tiga teratas disorot. ROAS = GMV ÷ biaya — hijau bila 1 atau lebih, merah bila kurang dari 1. Biaya = fee + boost + ongkir + modal sampel + komisi. CPM = biaya per 1.000 views.",
-          "Ekspor CSV performa berisi satu baris per kolaborasi untuk periode dan pencarian yang sama, ditutup baris TOTAL.",
+          "Nomor peringkat berlanjut lintas halaman; tiga teratas disorot. ROAS = GMV ÷ biaya — hijau bila 1 atau lebih, merah bila kurang dari 1, dan — selama belum ada penjualan. Biaya = fee + PPh gross-up yang ditanggung Elorae + boost + ongkir + modal sampel + komisi. CPM = biaya per 1.000 views.",
+          "Ekspor CSV performa berisi satu baris per kolaborasi untuk periode dan pencarian yang sama, ditutup baris TOTAL. Kolom \"Fee disepakati\" adalah angka yang disepakati dengan KOL; kolom \"PPh gross-up\" adalah PPh yang ditanggung Elorae.",
         ],
       },
       {
         judul: { kunci: "kreatifRuang.laporan.tab.rekap" },
         isi: [
           "Teks rekap siap tempel ke grup WhatsApp atau email. Bawaan: hari ini. Satu hari berisi rincian per KOL (pengiriman, konten tayang, perubahan tahap); rentang yang lebih panjang berisi ringkasan, konten terbaik, dan per campaign. Blok yang kosong tidak ditulis.",
-          "Posisi tahap dan \"Perlu ditindaklanjuti\" adalah keadaan SAAT INI, bukan keadaan pada periode yang dipilih. ROAS di rekap = GMV ÷ (fee + kirim + boost); komisi ditulis di barisnya sendiri.",
+          "Posisi tahap dan \"Perlu ditindaklanjuti\" adalah keadaan SAAT INI, bukan keadaan pada periode yang dipilih. ROAS di rekap = GMV ÷ biaya (fee + PPh gross-up + kirim + boost + komisi), sama dengan Peringkat dan Hari ini. Bila ada kolaborasi gross-up, rekap menambah baris \"Fee disepakati\" dengan biaya bruto termasuk PPh.",
           "Salin menyalin teksnya; Unduh .txt menyimpannya sebagai berkas; Cetak / PDF membuka versi cetak di tab baru dan langsung membuka jendela cetak — pilih \"Simpan sebagai PDF\" untuk menyimpannya.",
         ],
       },
@@ -409,7 +419,12 @@ export const ENTRI: EntriBantuan[] = [
       "\"Lewat jadwal\" dihitung menurut hari WIB: konten yang dijadwalkan hari ini belum terlambat, baru terlambat sesudah harinya berganti.",
       "Unggahan yang gagal disebut sebabnya dalam bahasa Indonesia (bukan gambar, terlalu besar — maksimal 6 MB sesudah diperkecil — atau jaringan putus). \"Pilih semua\" hanya memilih ubin yang terlihat dan bergambar, karena hanya ubin itu yang punya kotak centang.",
     ],
-    kartu: [{ judul: { kunci: "creative.kpiFeeCommitted" }, isi: { kunci: "creative.kpiFeeCommittedHint" } }],
+    kartu: [
+      {
+        judul: "Angka fee KOL",
+        isi: "Rencana konten adalah konten akun sendiri, jadi angka fee KOL tidak ada di sini. Fee yang disepakati, biaya bruto termasuk PPh, beban yang sudah diakui, dan yang sudah ditransfer ada di Kreatif → Pembayaran.",
+      },
+    ],
   },
   {
     rute: "/backoffice/kreatif/pengaturan",

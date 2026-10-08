@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useSyncExternalStore, useTransition } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore, useTransition } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -23,6 +23,7 @@ import {
 import { ambilTrenPenjualanRentang } from '@/app/actions/dashboard';
 import {
   bacaFilterSaluran,
+  bacaPeriodeTren,
   bandingkanPeriode,
   kalimatBanding,
   MAKS_HARI_RENTANG,
@@ -30,8 +31,11 @@ import {
   rentangTren,
   SALURAN_LAPANGAN,
   SALURAN_MARKETPLACE,
+  RENTANG_TREN,
   seriFilter,
+  tulisPeriodeTren,
   type FilterSaluran,
+  type PeriodeTren,
   type KunciSeri,
   type TitikTren,
 } from '@/lib/dashboard/tren';
@@ -77,8 +81,6 @@ const WARNA: Record<KunciSeri, string> = {
 
 type Pilihan = { mulai: string; akhir: string; panjang: number; tren: TitikTren[] };
 
-const RENTANG = [7, 30, 90] as const;
-type Rentang = (typeof RENTANG)[number];
 
 const langgananGerak = (cb: () => void) => {
   const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -91,14 +93,29 @@ export function TrenPenjualan({ tren, formatIdr }: { tren: TitikTren[]; formatId
   const locale = useLocale();
   // Dibaca langsung dari URL, bukan disalin ke state: history.replaceState
   // memperbarui useSearchParams tanpa memuat ulang data beranda dari server.
-  const filter = bacaFilterSaluran(useSearchParams().get('saluran'));
+  // Semua parameter dibaca sekaligus, sebelum apa pun diturunkan darinya.
+  const sp = useSearchParams();
+  const saluranAlamat = sp.get('saluran');
+  const rentangAlamat = sp.get('rentang');
+  const dariAlamat = sp.get('dari');
+  const sampaiAlamat = sp.get('sampai');
+  const filter = bacaFilterSaluran(saluranAlamat);
   const gantiFilter = (f: FilterSaluran) => {
     const url = new URL(window.location.href);
     if (f === 'semua') url.searchParams.delete('saluran');
     else url.searchParams.set('saluran', f);
     window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   };
-  const [rentang, setRentang] = useState<Rentang | 'pilih'>(30);
+  // Periode juga tinggal di alamat (`?rentang=` atau `?dari=&sampai=`), sama
+  // seperti saluran — tautan yang dibagikan dulu selalu kembali ke 30 hari.
+  const periode = bacaPeriodeTren({ rentang: rentangAlamat, dari: dariAlamat, sampai: sampaiAlamat });
+  const gantiPeriode = (p: PeriodeTren) => {
+    const url = new URL(window.location.href);
+    tulisPeriodeTren(url.searchParams, p);
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+  };
+  const rentang = periode.jenis === 'pilih' ? ('pilih' as const) : periode.hari;
+  const setRentang = (hari: (typeof RENTANG_TREN)[number]) => gantiPeriode({ jenis: 'hari', hari });
   const [pilihan, setPilihan] = useState<Pilihan | null>(null);
   const [memuat, mulaiMuat] = useTransition();
   const kurangiGerak = useSyncExternalStore(
@@ -107,7 +124,30 @@ export function TrenPenjualan({ tren, formatIdr }: { tren: TitikTren[]; formatId
     () => true,
   );
 
-  const aktif = rentang === 'pilih' ? pilihan : null;
+  // Rentang pilihan yang datang dari alamat (tautan dibagikan, muat ulang): ambil datanya sekali.
+  const mulaiAlamat = periode.jenis === 'pilih' ? periode.mulai : null;
+  const akhirAlamat = periode.jenis === 'pilih' ? periode.akhir : null;
+  useEffect(() => {
+    if (!mulaiAlamat || !akhirAlamat) return;
+    if (pilihan && pilihan.mulai === mulaiAlamat && pilihan.akhir === akhirAlamat) return;
+    let batal = false;
+    mulaiMuat(async () => {
+      const hasil = await ambilTrenPenjualanRentang(mulaiAlamat, akhirAlamat);
+      if (batal) return;
+      const cek = rentangTren(mulaiAlamat, akhirAlamat);
+      if (!hasil.ok || !cek) {
+        toast.error(t('trendLoadFailed'));
+        return;
+      }
+      setPilihan({ mulai: mulaiAlamat, akhir: akhirAlamat, panjang: cek.panjang, tren: hasil.tren });
+    });
+    return () => {
+      batal = true;
+    };
+  }, [mulaiAlamat, akhirAlamat, pilihan, t]);
+
+  const aktif =
+    rentang === 'pilih' && pilihan && pilihan.mulai === mulaiAlamat && pilihan.akhir === akhirAlamat ? pilihan : null;
   const sumber = aktif ? aktif.tren : tren;
   const panjang = aktif ? aktif.panjang : rentang === 'pilih' ? 30 : rentang;
   const data = useMemo(() => sumber.slice(-panjang), [sumber, panjang]);
@@ -152,7 +192,7 @@ export function TrenPenjualan({ tren, formatIdr }: { tren: TitikTren[]; formatId
         return;
       }
       setPilihan({ mulai, akhir, panjang: cek.panjang, tren: hasil.tren });
-      setRentang('pilih');
+      gantiPeriode({ jenis: 'pilih', mulai, akhir, panjang: cek.panjang });
     });
   };
   const labelTanggal = useMemo(
@@ -247,7 +287,7 @@ export function TrenPenjualan({ tren, formatIdr }: { tren: TitikTren[]; formatId
             </SelectContent>
           </Select>
           <div role="group" aria-label={t('trendRange')} className="flex rounded-lg border bg-background/60 p-0.5">
-            {RENTANG.map((r) => (
+            {RENTANG_TREN.map((r) => (
               <button
                 key={r}
                 type="button"
@@ -268,7 +308,9 @@ export function TrenPenjualan({ tren, formatIdr }: { tren: TitikTren[]; formatId
               sedang menunjukkan tanggal pilihan, bukan 7/30/90 hari. */}
           <DateRangePicker
             value={
-              pilihan ? { from: parseDateOnly(pilihan.mulai), to: parseDateOnly(pilihan.akhir) } : undefined
+              mulaiAlamat && akhirAlamat
+                ? { from: parseDateOnly(mulaiAlamat), to: parseDateOnly(akhirAlamat) }
+                : undefined
             }
             onChange={pilihRentang}
             placeholder={t('trendPickDates')}

@@ -1,5 +1,6 @@
 import { prisma } from '@elorae/db';
 import type { ArchiveFolder } from '@/components/archive/DocumentArchive';
+import { susunFolder } from './susun-folder';
 
 /**
  * Folder archives, one per document family.
@@ -8,9 +9,11 @@ import type { ArchiveFolder } from '@/components/archive/DocumentArchive';
  * because that is how someone looks for a printed note months later ("what did
  * we send Toko Sinar Jaya?"), and no date-ordered list answers that.
  *
- * Every archive keeps parties with zero documents in the result. A folder that
- * disappears when empty makes the archive look complete when it is not, and
- * hides the fact that a store has never been billed at all.
+ * Every archive keeps the parties that are EXPECTED to hold documents even
+ * with zero documents (every active store; for work orders, every CMT
+ * supplier). A folder that disappears when empty makes the archive look
+ * complete when it is not, and hides the fact that a store has never been
+ * billed at all. Folder building and the summary totals: `susun-folder.ts`.
  */
 
 const rupiah = (value: number) =>
@@ -23,6 +26,9 @@ const rupiah = (value: number) =>
  * tagihan that has been issued to a store but carries no faktur number yet.
  * That is real unfinished work with a real consequence at tax time, which is
  * what earns the red dot.
+ *
+ * Active stores always get a folder; an inactive store only while it still has
+ * notes, so every note stays reachable and the summary equals the folders.
  */
 export async function getNotaTokoArchive(): Promise<{
   folders: ArchiveFolder[];
@@ -31,8 +37,7 @@ export async function getNotaTokoArchive(): Promise<{
 }> {
   const [stores, deliveries] = await Promise.all([
     prisma.store.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, code: true },
+      select: { id: true, name: true, isActive: true },
       orderBy: { name: 'asc' },
     }),
     prisma.fieldSalesDelivery.findMany({
@@ -45,40 +50,19 @@ export async function getNotaTokoArchive(): Promise<{
     }),
   ]);
 
-  const byStore = new Map<string, { count: number; value: number; pending: number }>();
-  for (const d of deliveries) {
-    const key = d.order.storeId;
-    const acc = byStore.get(key) ?? { count: 0, value: 0, pending: 0 };
-    acc.count += 1;
-    acc.value += Number(d.total);
-    if (d.taxInvoice?.status === 'PENDING') acc.pending += 1;
-    byStore.set(key, acc);
-  }
-
-  const folders = stores.map((store) => {
-    const acc = byStore.get(store.id) ?? { count: 0, value: 0, pending: 0 };
-    return {
-      id: store.id,
-      name: store.name,
-      count: acc.count,
-      pending: acc.pending,
-      meta: acc.count > 0 ? `${acc.count} nota · ${rupiah(acc.value)}` : null,
-      href: `/backoffice/archive/toko/${store.id}`,
-    } satisfies ArchiveFolder;
-  });
-
-  // Folders holding work first, then the rest by name — the archive is read to
-  // find something outstanding far more often than to browse it.
-  folders.sort(
-    (a, b) =>
-      (b.pending ?? 0) - (a.pending ?? 0) || b.count - a.count || a.name.localeCompare(b.name),
+  return susunFolder(
+    stores,
+    deliveries.map((d) => ({
+      pihakId: d.order.storeId,
+      pending: d.taxInvoice?.status === 'PENDING',
+      nilai: Number(d.total),
+    })),
+    {
+      tampilKosong: (store) => store.isActive,
+      meta: (jumlah, nilai) => (jumlah > 0 ? `${jumlah} nota · ${rupiah(nilai)}` : null),
+      href: (store) => `/backoffice/archive/toko/${store.id}`,
+    },
   );
-
-  return {
-    folders,
-    totalDocs: deliveries.length,
-    totalPending: folders.reduce((sum, f) => sum + (f.pending ?? 0), 0),
-  };
 }
 
 /** Vendor returns per supplier. Pending = not yet processed or completed. */
@@ -89,8 +73,7 @@ export async function getReturPemasokArchive(): Promise<{
 }> {
   const [vendors, returns] = await Promise.all([
     prisma.supplier.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isActive: true },
       orderBy: { name: 'asc' },
     }),
     prisma.vendorReturn.findMany({
@@ -98,39 +81,29 @@ export async function getReturPemasokArchive(): Promise<{
     }),
   ]);
 
-  const byVendor = new Map<string, { count: number; pending: number }>();
-  for (const r of returns) {
-    const acc = byVendor.get(r.vendorId) ?? { count: 0, pending: 0 };
-    acc.count += 1;
-    if (r.status === 'DRAFT' || r.status === 'SUBMITTED') acc.pending += 1;
-    byVendor.set(r.vendorId, acc);
-  }
-
-  const folders = vendors.map((vendor) => {
-    const acc = byVendor.get(vendor.id) ?? { count: 0, pending: 0 };
-    return {
-      id: vendor.id,
-      name: vendor.name,
-      count: acc.count,
-      pending: acc.pending,
-      meta: acc.count > 0 ? `${acc.count} retur` : null,
-      href: `/backoffice/vendor-returns?vendorId=${vendor.id}`,
-    } satisfies ArchiveFolder;
-  });
-
-  folders.sort(
-    (a, b) =>
-      (b.pending ?? 0) - (a.pending ?? 0) || b.count - a.count || a.name.localeCompare(b.name),
+  return susunFolder(
+    vendors,
+    returns.map((r) => ({ pihakId: r.vendorId, pending: r.status === 'DRAFT' || r.status === 'SUBMITTED' })),
+    {
+      tampilKosong: (vendor) => vendor.isActive,
+      // Same word as the summary ("N nota retur"), so one term carries one meaning.
+      meta: (jumlah) => (jumlah > 0 ? `${jumlah} nota retur` : null),
+      href: (vendor) => `/backoffice/vendor-returns?vendorId=${vendor.id}`,
+    },
   );
-
-  return {
-    folders,
-    totalDocs: returns.length,
-    totalPending: folders.reduce((sum, f) => sum + (f.pending ?? 0), 0),
-  };
 }
 
-/** Work orders per CMT vendor. Pending = still open on the floor. */
+/** Supplier type code of a CMT / sewing supplier — the only kind that receives work orders. */
+const JENIS_PEMASOK_CMT = 'TAILOR';
+
+/**
+ * Work orders per CMT vendor. Pending = still open on the floor.
+ *
+ * Only CMT (sewing) suppliers get an empty folder: a fabric or accessories
+ * supplier never receives a work order, and listing it as "kosong" buried the
+ * tailors under folders that can never fill. Any supplier that DOES hold a
+ * work order still gets its folder, whatever its type.
+ */
 export async function getWorkOrderArchive(): Promise<{
   folders: ArchiveFolder[];
   totalDocs: number;
@@ -138,8 +111,7 @@ export async function getWorkOrderArchive(): Promise<{
 }> {
   const [vendors, workOrders] = await Promise.all([
     prisma.supplier.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isActive: true, type: { select: { code: true } } },
       orderBy: { name: 'asc' },
     }),
     prisma.workOrder.findMany({
@@ -147,38 +119,20 @@ export async function getWorkOrderArchive(): Promise<{
     }),
   ]);
 
-  const byVendor = new Map<string, { count: number; pending: number }>();
-  for (const wo of workOrders) {
-    const acc = byVendor.get(wo.vendorId) ?? { count: 0, pending: 0 };
-    acc.count += 1;
-    if (wo.status === 'DRAFT' || wo.status === 'ISSUED' || wo.status === 'IN_PRODUCTION' || wo.status === 'PARTIAL') {
-      acc.pending += 1;
-    }
-    byVendor.set(wo.vendorId, acc);
-  }
-
-  const folders = vendors.map((vendor) => {
-    const acc = byVendor.get(vendor.id) ?? { count: 0, pending: 0 };
-    return {
-      id: vendor.id,
-      name: vendor.name,
-      count: acc.count,
-      pending: acc.pending,
-      meta: acc.count > 0 ? `${acc.count} WO` : null,
-      href: `/backoffice/work-orders?vendorId=${vendor.id}`,
-    } satisfies ArchiveFolder;
-  });
-
-  folders.sort(
-    (a, b) =>
-      (b.pending ?? 0) - (a.pending ?? 0) || b.count - a.count || a.name.localeCompare(b.name),
+  return susunFolder(
+    vendors,
+    workOrders.map((wo) => ({
+      pihakId: wo.vendorId,
+      pending:
+        wo.status === 'DRAFT' || wo.status === 'ISSUED' || wo.status === 'IN_PRODUCTION' || wo.status === 'PARTIAL',
+    })),
+    {
+      tampilKosong: (vendor) => vendor.isActive && vendor.type?.code === JENIS_PEMASOK_CMT,
+      // "perintah kerja", like the summary and the tab — not "WO" beside "13 perintah kerja".
+      meta: (jumlah) => (jumlah > 0 ? `${jumlah} perintah kerja` : null),
+      href: (vendor) => `/backoffice/work-orders?vendorId=${vendor.id}`,
+    },
   );
-
-  return {
-    folders,
-    totalDocs: workOrders.length,
-    totalPending: folders.reduce((sum, f) => sum + (f.pending ?? 0), 0),
-  };
 }
 
 export type StoreDeliveryRow = {
@@ -187,6 +141,8 @@ export type StoreDeliveryRow = {
   orderId: string;
   orderNo: string;
   deliveredAt: string;
+  /** Tanggal nota tagihan — the date the Faktur pajak queue shows as "Tanggal nota". */
+  invoiceDate: string;
   dueDate: string;
   total: number;
   taxStatus: string | null;
@@ -210,11 +166,12 @@ export async function getStoreDeliveries(storeId: string): Promise<{
     prisma.store.findUnique({ where: { id: storeId }, select: { name: true } }),
     prisma.fieldSalesDelivery.findMany({
       where: { order: { storeId } },
-      orderBy: { deliveredAt: 'desc' },
+      orderBy: [{ invoiceDate: 'desc' }, { deliveredAt: 'desc' }],
       select: {
         id: true,
         docNo: true,
         deliveredAt: true,
+        invoiceDate: true,
         dueDate: true,
         total: true,
         orderId: true,
@@ -230,6 +187,7 @@ export async function getStoreDeliveries(storeId: string): Promise<{
     orderId: d.orderId,
     orderNo: d.order.orderNo,
     deliveredAt: d.deliveredAt.toISOString(),
+    invoiceDate: d.invoiceDate.toISOString(),
     dueDate: d.dueDate.toISOString(),
     total: Number(d.total),
     taxStatus: d.taxInvoice?.status ?? null,

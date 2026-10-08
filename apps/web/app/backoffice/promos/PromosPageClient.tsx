@@ -159,7 +159,7 @@ export function PromosPageClient(props: Props) {
               <TableRow>
                 <TableHead>{t("colName")}</TableHead>
                 <TableHead>{t("colType")}</TableHead>
-                <TableHead>{t("colLevel")}</TableHead>
+                <TableHead>{t("level")}</TableHead>
                 <TableHead>{t("colActive")}</TableHead>
                 <TableHead>{t("colWindow")}</TableHead>
               </TableRow>

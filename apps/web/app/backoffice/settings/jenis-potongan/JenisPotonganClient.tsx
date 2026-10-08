@@ -53,6 +53,7 @@ import {
   simpanJenisPotonganAction,
 } from '@/app/actions/deduction-types';
 import type { BarisJenisPotongan, CaraPotongan } from '@/lib/receivables/deduction-types';
+import { PERAN_POTONGAN_BOLEH } from '@/lib/finance/lapangan/aturan';
 
 const CARA: CaraPotongan[] = ['NOMINAL', 'PERSEN', 'DARI_RETUR'];
 
@@ -64,11 +65,18 @@ const KOSONG = {
   hanyaPkp: false,
   wajibCatatan: false,
   aktif: true,
+  /** Peran jurnal yang didebit (Keuangan); null = otomatis. */
+  peranJurnal: null as string | null,
 };
+
+/** Nilai pilihan "otomatis" di Select (Select tidak menerima nilai kosong). */
+const OTOMATIS = 'OTOMATIS';
 
 export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) {
   const t = useTranslations('jenisPotongan');
   const td = dinamis(t);
+  const tPeran = useTranslations('financeAccountMapping');
+  const namaPeran = (peran: string) => (tPeran.has(`role.${peran}`) ? tPeran(`role.${peran}`) : peran);
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [form, setForm] = useState<typeof KOSONG | null>(null);
@@ -138,6 +146,7 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                           b.wajibCatatan && t('ruleNote'),
                           b.hanyaPkp && t('rulePkp'),
                           !b.bolehManual && t('ruleNoManual'),
+                          b.cara !== 'DARI_RETUR' && b.peranJurnal && t('peranJurnalRingkas', { peran: namaPeran(b.peranJurnal) }),
                         ]
                           .filter(Boolean)
                           .join(' · ') || '—'}
@@ -210,6 +219,29 @@ export function JenisPotonganClient({ baris }: { baris: BarisJenisPotongan[] }) 
                 </Select>
                 <p className="text-xs text-muted-foreground">{td(`methodHint_${form.cara}`)}</p>
               </div>
+
+              {form.cara !== 'DARI_RETUR' && (
+                <div className="space-y-2">
+                  <Label htmlFor="jp-peran">{t('peranJurnal')}</Label>
+                  <Select
+                    value={form.peranJurnal ?? OTOMATIS}
+                    onValueChange={(v) => setForm({ ...form, peranJurnal: v === OTOMATIS ? null : v })}
+                  >
+                    <SelectTrigger id="jp-peran">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={OTOMATIS}>{t('peranJurnalOtomatis')}</SelectItem>
+                      {PERAN_POTONGAN_BOLEH.map((p) => (
+                        <SelectItem key={p} value={p}>
+                          {namaPeran(p)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">{t('peranJurnalHint')}</p>
+                </div>
+              )}
 
               <Saklar
                 label={t('ruleNote')}

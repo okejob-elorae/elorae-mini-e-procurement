@@ -74,8 +74,11 @@ describe("umur baris tugas", () => {
 
   it("kirim dobel/data kurang/diblokir: umur biasa, merah hanya lewat ambang; budget tanpa umur", () => {
     const u = umurTugas("DATA_KIRIM_KURANG", baris({ umurHari: 9 }), HARI_INI);
-    expect(u).toEqual({ jenis: "UMUR", hari: 9 });
+    // Umurnya dihitung sejak deal dan ditulis begitu ("9 hari sejak deal").
+    expect(u).toEqual({ jenis: "UMUR_DEAL", hari: 9 });
     expect(umurMerah(u, 7)).toBe(true);
+    expect(umurTugas("KOL_DIBLOKIR", baris({ umurHari: 2 }), HARI_INI)).toEqual({ jenis: "UMUR_TAHAP", hari: 2 });
+    expect(umurMerah({ jenis: "UMUR_TAHAP", hari: 8 }, 7)).toBe(true);
     expect(umurMerah({ jenis: "UMUR", hari: 7 }, 7)).toBe(false);
     expect(umurMerah({ jenis: "TELAT", hari: 1 }, 7)).toBe(true);
     expect(umurTugas("BUDGET_CAMPAIGN", baris({ jenis: "CAMPAIGN" }), HARI_INI)).toBeNull();
@@ -89,7 +92,7 @@ describe("tautan baris", () => {
     expect(pintasanTugas("DRAF_MENUNGGU", baris())?.href).toBe("/backoffice/kreatif/konten-kol?tab=draf&kolaborasi=c1");
     expect(pintasanTugas("ANGKA_BELUM_ADA", baris())?.aksi).toBe("isiAngka");
     expect(pintasanTugas("BELUM_DIBAYAR", baris())?.href).toBe("/backoffice/kreatif/pembayaran?kolaborasi=c1");
-    expect(pintasanTugas("DATA_KIRIM_KURANG", baris())?.href).toBe("/backoffice/kreatif/kol/k1");
+    expect(pintasanTugas("DATA_KIRIM_KURANG", baris())?.href).toBe("/backoffice/kreatif/kol/k1?tab=ukuran");
     expect(pintasanTugas("BELUM_DIBALAS", baris())).toBeNull();
     expect(pintasanTugas("AGENDA", baris({ jenis: "AGENDA" }))).toBeNull();
   });

@@ -80,7 +80,8 @@ export function DaftarPromoKonter({
           <CardTitle className="flex items-center gap-2">
             <Tag className="h-5 w-5" />
             {t("daftarJudul")}
-            <span className="ml-1 text-sm font-normal text-muted-foreground">({data.baris.length})</span>
+            {/* Kosong: keterangan kosong cukup sekali, di badan kartu. */}
+            {data.baris.length > 0 ? <span className="ml-1 text-sm font-normal text-muted-foreground">({data.baris.length})</span> : null}
           </CardTitle>
         </CardHeader>
         <CardContent className={data.baris.length === 0 ? undefined : "px-0"}>

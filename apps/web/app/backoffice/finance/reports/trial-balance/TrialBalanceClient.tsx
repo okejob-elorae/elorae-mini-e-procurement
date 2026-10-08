@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { AlertTriangle, CheckCircle2, Scale } from "lucide-react";
-import type { TrialBalance } from "@/lib/finance/reports/trial-balance";
+import { sisiSaldo, type TrialBalance } from "@/lib/finance/reports/trial-balance";
+import type { AccountType } from "@/lib/constants/enums";
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -14,6 +16,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -37,8 +40,17 @@ type Props = {
   akses: AksesSpanduk;
 };
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+/** Saldo + sisi sebenarnya (D/K), supaya tandanya tidak bergantung pada sisi normal akun. */
+function SelSaldo({ type, nilai, huruf, judul }: { type: AccountType; nilai: number; huruf: { D: string; K: string }; judul: { D: string; K: string } }) {
+  const s = sisiSaldo(type, nilai);
+  return (
+    <span className="inline-flex items-baseline gap-1.5">
+      <span>{rupiahLaporan(s.jumlah)}</span>
+      <span className="w-5 text-left text-xs text-muted-foreground" title={s.sisi ? judul[s.sisi] : undefined}>
+        {s.sisi ? huruf[s.sisi] : ""}
+      </span>
+    </span>
+  );
 }
 
 export function TrialBalanceClient({ report, filters, hariIni, kesiapan, akses }: Props) {
@@ -60,6 +72,8 @@ export function TrialBalanceClient({ report, filters, hariIni, kesiapan, akses }
   }
 
   const periode = periodeLaporan({ dari: filters.from, sampai: filters.to }, hariIni);
+  const huruf = { D: t("trialBalance.hurufDebit"), K: t("trialBalance.hurufKredit") };
+  const judulSisi = { D: t("trialBalance.sisiDebit"), K: t("trialBalance.sisiKredit") };
 
   function reset() {
     startTransition(() => router.push("/backoffice/finance/reports/trial-balance"));
@@ -142,16 +156,17 @@ export function TrialBalanceClient({ report, filters, hariIni, kesiapan, akses }
                     <TableRow>
                       <TableHead>{t("trialBalance.colCode")}</TableHead>
                       <TableHead>{t("trialBalance.colName")}</TableHead>
+                      <TableHead className="text-right">{t("trialBalance.colOpening")}</TableHead>
                       <TableHead className="text-right">{t("trialBalance.colDebit")}</TableHead>
                       <TableHead className="text-right">{t("trialBalance.colCredit")}</TableHead>
-                      <TableHead className="text-right">{t("trialBalance.colBalance")}</TableHead>
+                      <TableHead className="text-right">{t("trialBalance.colClosing")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {report.rows.map((row) => (
                       <TableRow key={row.accountId}>
                         <TableCell className="whitespace-nowrap font-mono text-xs">{row.code}</TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-normal min-w-[180px]">
                           {akses.jurnal ? (
                             <Link href={tautanBukuBesar(row.accountId, periode)} className="underline underline-offset-4">
                               {row.name}
@@ -160,22 +175,42 @@ export function TrialBalanceClient({ report, filters, hariIni, kesiapan, akses }
                             row.name
                           )}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">{formatRupiah(row.debit)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatRupiah(row.credit)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatRupiah(row.signed)}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          <SelSaldo type={row.type} nilai={row.opening} huruf={huruf} judul={judulSisi} />
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{rupiahLaporan(row.debit)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{rupiahLaporan(row.credit)}</TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">
+                          <SelSaldo type={row.type} nilai={row.closing} huruf={huruf} judul={judulSisi} />
+                        </TableCell>
                       </TableRow>
                     ))}
+                  </TableBody>
+                  <TableFooter>
                     <TableRow className="font-semibold">
-                      <TableCell colSpan={2}>{t("trialBalance.totalRow")}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatRupiah(report.totalDebit)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{formatRupiah(report.totalCredit)}</TableCell>
+                      <TableCell colSpan={2}>{t("trialBalance.totalMutasi")}</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalDebit)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalCredit)}</TableCell>
                       <TableCell />
                     </TableRow>
-                  </TableBody>
+                    <TableRow>
+                      <TableCell colSpan={2}>{t("trialBalance.totalSisiDebit")}</TableCell>
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAwal.debit)} {huruf.D}</TableCell>
+                      <TableCell colSpan={2} />
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAkhir.debit)} {huruf.D}</TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={2}>{t("trialBalance.totalSisiKredit")}</TableCell>
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAwal.kredit)} {huruf.K}</TableCell>
+                      <TableCell colSpan={2} />
+                      <TableCell className="text-right tabular-nums">{rupiahLaporan(report.totalSaldoAkhir.kredit)} {huruf.K}</TableCell>
+                    </TableRow>
+                  </TableFooter>
                 </Table>
               </div>
-              {/* "Seimbang" pada Rp 0 (baris nol ditampilkan) bukan hasil pemeriksaan apa pun. */}
-              {(report.totalDebit !== 0 || report.totalCredit !== 0) && (
+              {/* "Seimbang" pada Rp 0 (baris nol ditampilkan, tanpa saldo awal) bukan hasil pemeriksaan apa pun. */}
+              {(report.totalDebit !== 0 || report.totalCredit !== 0 || report.adaSaldoAwal) && (
                 <div
                   className={`mt-4 flex items-start gap-2 rounded-md border p-3 text-sm ${report.isBalanced ? "border-emerald-500/40 text-muted-foreground" : "border-destructive/50 text-destructive"}`}
                 >
@@ -185,7 +220,7 @@ export function TrialBalanceClient({ report, filters, hariIni, kesiapan, akses }
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   )}
                   <p>
-                    {report.isBalanced ? t("trialBalance.balancedNote") : t("trialBalance.unbalancedNote")}
+                    {report.isBalanced ? t("trialBalance.balancedNoteSaldo") : t("trialBalance.unbalancedNoteSaldo")}
                   </p>
                 </div>
               )}

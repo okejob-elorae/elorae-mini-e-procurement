@@ -12,6 +12,7 @@ import { useTranslations } from 'next-intl';
 export function NewItemPageClient() {
   const router = useRouter();
   const tItems = useTranslations('items');
+  const tDetail = useTranslations('itemDetail');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (
@@ -29,10 +30,10 @@ export function NewItemPageClient() {
       if (consumptionRules && consumptionRules.length > 0) {
         await saveConsumptionRules(item.id, consumptionRules);
       }
-      toast.success(tItems('newPage.createdToast'));
+      toast.success(tDetail('dibuat'));
       router.push(`/backoffice/items/${item.id}`);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : tItems('newPage.createFailed');
+      const message = error instanceof Error ? error.message : tDetail('gagalBuat');
       toast.error(message);
     } finally {
       setIsLoading(false);

@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { alamatDaftarBarang, type StatusBarang } from './saring-barang';
+import { angkaStok, kunciGalatHapusBarang, labelJenisBarang } from './tampilan-barang';
 import {
   Table,
   TableBody,
@@ -113,6 +114,16 @@ const ITEM_TYPE_CATEGORY: Record<ItemType, string> = {
   FINISHED_GOOD: 'finished good',
 };
 
+/** Satuan di belakang angka stok — daftar mencampur kain (YD/MTR/KG) dan barang jadi (PCS). */
+function Satuan({ code }: { code: string }) {
+  // Kode satuan panjang (data uji) tidak boleh melebarkan tabel sampai menggulir di 1280 px.
+  return (
+    <span title={code} className="ml-1 inline-block min-w-8 max-w-14 truncate text-left align-bottom text-xs text-muted-foreground">
+      {code}
+    </span>
+  );
+}
+
 type ItemsPageClientProps = {
   items: ItemsListRow[];
   totalCount: number;
@@ -146,11 +157,11 @@ export function ItemsPageClient({
   const router = useRouter();
   const pathname = usePathname();
   const tTable = useTranslations('tableHeaders');
-  const t = useTranslations('toasts');
   const tNav = useTranslations('navigation');
   const tItems = useTranslations('items');
   const tPlaceholders = useTranslations('placeholders');
   const tDaftar = useTranslations('itemList');
+  const tUi = useTranslations('ui');
   const [hapusTarget, setHapusTarget] = useState<ItemsListRow | null>(null);
   const [menghapus, setMenghapus] = useState(false);
   const tForm = useTranslations('itemForm');
@@ -168,11 +179,7 @@ export function ItemsPageClient({
 
   // Label tab dari kode jenis (sentence case, satu istilah); jenis asing memakai nama di master.
   const typeTabLabel = (master: ItemTypeMasterRow) =>
-    master.code === 'FABRIC' || master.code === 'ACCESSORIES' || master.code === 'FINISHED_GOOD'
-      ? tForm(`typeName.${master.code}`)
-      : locale === 'en'
-        ? master.nameEn
-        : master.nameId;
+    labelJenisBarang(master, locale, (code) => tForm(`typeName.${code}`));
 
   useEffect(() => {
     setSearchInput(initialSearch);
@@ -217,14 +224,14 @@ export function ItemsPageClient({
     try {
       const result = await deleteItem(hapusTarget.id);
       if (!result.success) {
-        toast.error(t(result.messageKey));
+        toast.error(tDaftar(kunciGalatHapusBarang(result.messageKey)));
         return;
       }
-      toast.success(t('itemDeletedSuccessfully'));
+      toast.success(tDaftar('deletedToast'));
       setHapusTarget(null);
       router.refresh();
     } catch {
-      toast.error(t('anErrorOccurred'));
+      toast.error(tDaftar('errDelete'));
     } finally {
       setMenghapus(false);
     }
@@ -318,14 +325,14 @@ export function ItemsPageClient({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            {tItems('itemList')}
+            {tDaftar('cardTitle')}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {items.length === 0 ? (
             <div className="text-center py-12">
               <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">{tItems('noItemsFound')}</p>
+              <p className="text-muted-foreground">{tDaftar('empty')}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -337,19 +344,16 @@ export function ItemsPageClient({
                     <TableHead>SKU</TableHead>
                     <TableHead>{tTable('name')}</TableHead>
                     <TableHead>{tTable('type')}</TableHead>
-                    {/* Satuan, harga rata-rata dan nilai disembunyikan di bawah
-                        2xl: di layar 1280 px kolom-kolom ini mendorong Harga
-                        Jual keluar layar. Ketiganya tetap ada di halaman
-                        detail barang dan di Inventori. */}
-                    <TableHead className="hidden 2xl:table-cell">{tTable('uom')}</TableHead>
+                    {/* Satuan ditulis di belakang angka Stok dan Tersedia (bukan
+                        kolom sendiri). Harga rata-rata dan nilai disembunyikan di
+                        bawah 2xl: di layar 1280 px keduanya mendorong Harga jual
+                        keluar layar; keduanya tetap ada di rincian barang dan Inventori. */}
                     <TableHead className="text-right">{tTable('stock')}</TableHead>
                     <TableHead className="text-right">{tTable('available')}</TableHead>
-                    <TableHead className="hidden 2xl:table-cell text-right">{tTable('avgCost')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell text-right">{tDaftar('colAvgCost')}</TableHead>
                     <TableHead className="hidden 2xl:table-cell text-right">{tTable('value')}</TableHead>
-                    <TableHead className="text-right">{tTable('sellingPrice')}</TableHead>
-                    <TableHead className="w-12 sticky right-0 bg-card">
-                      <span className="sr-only">{tItems('actions')}</span>
-                    </TableHead>
+                    <TableHead className="text-right">{tDaftar('colSellingPrice')}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{tUi('actions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -408,18 +412,18 @@ export function ItemsPageClient({
                             {itemTypeLabels[item.type]}
                           </CategoryBadge>
                         </TableCell>
-                        <TableCell className="hidden 2xl:table-cell">{item.uom.code}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
                             {isLowStock(item) && (
                               <AlertTriangle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
                             )}
-                            <span>
-                              {Number(item.inventoryValue?.qtyOnHand || 0).toLocaleString('id-ID')}
+                            <span className="tabular-nums">
+                              {angkaStok(item.inventoryValue?.qtyOnHand)}
+                              <Satuan code={item.uom.code} />
                             </span>
                           </div>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right tabular-nums">
                           <span
                             className={
                               (item.inventoryValue?.available ?? 0) < 0
@@ -427,8 +431,9 @@ export function ItemsPageClient({
                                 : undefined
                             }
                           >
-                            {Number(item.inventoryValue?.available ?? 0).toLocaleString('id-ID')}
+                            {angkaStok(item.inventoryValue?.available)}
                           </span>
+                          <Satuan code={item.uom.code} />
                         </TableCell>
                         <TableCell className="hidden 2xl:table-cell text-right">
                           Rp {Number(item.inventoryValue?.avgCost || 0).toLocaleString('id-ID')}
@@ -441,7 +446,7 @@ export function ItemsPageClient({
                             ? `Rp ${Number(item.sellingPrice).toLocaleString('id-ID')}`
                             : '—'}
                         </TableCell>
-                        <TableCell className="sticky right-0 bg-card">
+                        <TableCell className="sticky right-0 bg-card text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -473,7 +478,7 @@ export function ItemsPageClient({
                       </TableRow>
                       {expandedId === item.id && (
                         <TableRow>
-                          <TableCell colSpan={12}>
+                          <TableCell colSpan={11}>
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="space-y-1">
                                 <p className="text-sm font-semibold">{tItems('variants')}</p>
@@ -518,7 +523,7 @@ export function ItemsPageClient({
                                   </div>
                                 ) : (
                                   <p className="text-sm text-muted-foreground">
-                                    {tItems('noVariants')}
+                                    {tDaftar('noVariants')}
                                   </p>
                                 )}
                               </div>
@@ -532,16 +537,20 @@ export function ItemsPageClient({
                                           {rule.material?.sku || '-'} {rule.material?.nameId || ''}
                                         </span>
                                         <span className="text-muted-foreground">
-                                          {tItems('bomQty', { qty: rule.qtyRequired })}
+                                          {tItems('bomQty', {
+                                            qty: Number(rule.qtyRequired).toLocaleString('id-ID', { maximumFractionDigits: 4 }),
+                                          })}
                                         </span>
                                         <span className="text-muted-foreground">
-                                          {tItems('bomWaste', { percent: rule.wastePercent })}
+                                          {tItems('bomWaste', {
+                                            percent: Number(rule.wastePercent).toLocaleString('id-ID', { maximumFractionDigits: 2 }),
+                                          })}
                                         </span>
                                       </div>
                                     ))}
                                   </div>
                                 ) : (
-                                  <p className="text-sm text-muted-foreground">{tItems('noBOM')}</p>
+                                  <p className="text-sm text-muted-foreground">{tDaftar('noBom')}</p>
                                 )}
                               </div>
                             </div>
@@ -553,13 +562,15 @@ export function ItemsPageClient({
                 </TableBody>
               </Table>
 
-              <Pagination
-                page={page}
-                totalPages={Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
-                onPageChange={(p) => pushParams({ page: p })}
-                totalCount={totalCount}
-                pageSize={pageSize}
-              />
+              {totalCount > pageSize || page > 1 ? (
+                <Pagination
+                  page={page}
+                  totalPages={Math.max(1, Math.ceil(totalCount / pageSize) || 1)}
+                  onPageChange={(p) => pushParams({ page: p })}
+                  totalCount={totalCount}
+                  pageSize={pageSize}
+                />
+              ) : null}
             </div>
           )}
         </CardContent>

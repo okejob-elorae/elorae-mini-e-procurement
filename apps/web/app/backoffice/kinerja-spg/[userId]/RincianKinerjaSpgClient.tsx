@@ -54,12 +54,15 @@ export function RincianKinerjaSpgClient({ data }: { data: DataKinerjaSpgHarian }
   };
 
   const shift = (h: HariKinerjaTampil): ReactNode => {
-    if (!h.shift) return <span className="text-muted-foreground">{t("rincian.tanpaJadwal")}</span>;
+    if (!h.shift) return <span className="text-muted-foreground">{t("rincian.tanpaJadwalPendek")}</span>;
     if (h.shift.jenis === "LIBUR") return t("rincian.libur");
     return (
       <span>
         {h.shift.label}
-        {h.shift.mulai ? <span className="block text-xs text-muted-foreground">{`${h.shift.mulai}–${h.shift.selesai ?? ""}`}</span> : null}
+        {/* Jam gaya WIB "10.00", sama dengan kisi Jadwal SPG. */}
+        {h.shift.mulai ? (
+          <span className="block text-xs text-muted-foreground">{`${h.shift.mulai.replace(":", ".")}–${(h.shift.selesai ?? "").replace(":", ".")}`}</span>
+        ) : null}
       </span>
     );
   };
@@ -186,7 +189,8 @@ function BagianToko({
 
         <div className="-mx-6 overflow-x-auto">
           <Table>
-            <TableHeader>
+            {/* Judul kolom boleh patah dua baris supaya tabel muat di laptop 1280 px. */}
+            <TableHeader className="[&_th]:whitespace-normal">
               <TableRow>
                 <TableHead className="pl-6">{t("rincian.kolom.hari")}</TableHead>
                 <TableHead>{t("rincian.kolom.shift")}</TableHead>

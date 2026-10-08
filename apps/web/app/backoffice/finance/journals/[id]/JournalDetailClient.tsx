@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { formatDisplayDate } from "@/lib/date-only";
 import { journalSourceLabel } from "../journal-source-label";
+import { memoJurnal, teksKeteranganJurnal } from "@/lib/finance/journals/keterangan-tampil";
 import { tautanBukuBesar } from "../_sumber/tautan";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
@@ -42,6 +43,10 @@ export function JournalDetailClient({ journal, sumber, akunIds, rentangBukuBesar
   const locale = useLocale();
 
   const formatDate = (iso: string) => formatDisplayDate(iso, locale);
+  /* Keterangan & memo lama tersimpan berbahasa Inggris / berupa kode peran — diterjemahkan saat tampil. */
+  const tPeran = useTranslations("financeAccountMapping");
+  const keterangan = teksKeteranganJurnal(t, journal.description, { manual: journal.isManual });
+  const labelPeran = (peran: string) => (tPeran.has(`role.${peran}`) ? tPeran(`role.${peran}`) : null);
 
   const totalDebit = journal.lines.reduce((sum, l) => sum + l.debit, 0);
   const totalCredit = journal.lines.reduce((sum, l) => sum + l.credit, 0);
@@ -62,12 +67,18 @@ export function JournalDetailClient({ journal, sumber, akunIds, rentangBukuBesar
         </Button>
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-1">
-            <h1 className="min-w-0 text-xl font-semibold truncate">{journal.description}</h1>
-            <TombolBantuan judul={journal.description} />
+            <h1 className="min-w-0 text-xl font-semibold truncate">{keterangan}</h1>
+            <TombolBantuan judul={keterangan} />
           </div>
-          <p className="text-sm text-muted-foreground">{formatDate(journal.date)}</p>
+          <p className="text-sm text-muted-foreground">
+            {formatDate(journal.date)}
+            {journal.originalDate ? ` · ${t("detail.tanggalAsli", { tanggal: formatDate(journal.originalDate) })}` : ""}
+          </p>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
+          {journal.status !== "POSTED" ? (
+            <Badge variant={journal.status === "DRAFT" ? "outline" : "destructive"}>{t(`persetujuan.status.${journal.status}` as never)}</Badge>
+          ) : null}
           {journal.isManual ? (
             <Badge variant="secondary">{t("sourceManual")}</Badge>
           ) : (
@@ -124,7 +135,7 @@ export function JournalDetailClient({ journal, sumber, akunIds, rentangBukuBesar
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground whitespace-normal min-w-[160px] max-w-[360px]">
-                      {line.memo ?? "—"}
+                      {memoJurnal(line.memo, labelPeran) ?? "—"}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {line.debit > 0 ? formatRupiah(line.debit) : "—"}

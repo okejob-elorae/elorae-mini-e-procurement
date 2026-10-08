@@ -1,5 +1,8 @@
 import { prisma } from "@elorae/db";
 import { kunciDokumen, type IndukDokumen } from "./tautan";
+import { infoDokumenOperasional } from "@/lib/finance/operasional/info-dokumen";
+import { infoDokumenAset } from "@/lib/finance/aset/queries";
+import { infoDokumenBerulang } from "@/lib/finance/berulang/queries";
 
 /*
  * Nomor dokumen sumber jurnal (dan induknya, untuk dokumen tanpa halaman
@@ -109,6 +112,71 @@ export async function cariInfoDokumen(pasangan: Pasangan[]): Promise<Map<string,
   for (const r of settlement) isi(["SETTLEMENT"], r.id, { nomor: `${namaMarketplace(r.marketplace)} · ${r.seller}` });
   for (const r of kolab) isi(["KOL_KOLABORASI", "KOL_FEE", "KOL_PAYMENT", "KOL_PAYMENT_REVERSAL"], r.id, { nomor: r.docNo });
   for (const r of sampel) isi(["KOL_SAMPLE"], r.id, { nomor: r.trackingNo ? `${r.collab.docNo} · ${r.trackingNo}` : r.collab.docNo, kolaborasiId: r.collabId });
+
+  // Penjualan lapangan & piutang toko (lib/finance/lapangan).
+  const notaIds = idsPer(pasangan, "FIELD_DELIVERY");
+  const bkmIds = idsPer(pasangan, "FIELD_COLLECTION");
+  const nriIds = idsPer(pasangan, "STORE_RETURN");
+  const tukarIds = idsPer(pasangan, "STORE_EXCHANGE");
+  const [nota, bkm, nri, tukar] = await Promise.all([
+    aman("FieldSalesDelivery", notaIds, () =>
+      prisma.fieldSalesDelivery.findMany({ where: { id: { in: notaIds } }, select: { id: true, docNo: true, orderId: true } }),
+    ),
+    aman("PaymentClaim", bkmIds, () =>
+      prisma.paymentClaim.findMany({ where: { id: { in: bkmIds } }, select: { id: true, docNo: true } }),
+    ),
+    aman("WarehouseReturn", nriIds, () =>
+      prisma.warehouseReturn.findMany({ where: { id: { in: nriIds } }, select: { id: true, noNri: true, storeReturnId: true } }),
+    ),
+    aman("StoreExchange", tukarIds, () =>
+      prisma.storeExchange.findMany({ where: { id: { in: tukarIds } }, select: { id: true, docNo: true } }),
+    ),
+  ]);
+  for (const r of nota) isi(["FIELD_DELIVERY"], r.id, { nomor: r.docNo, fieldOrderId: r.orderId });
+  for (const r of bkm) isi(["FIELD_COLLECTION"], r.id, { nomor: r.docNo });
+  for (const r of nri) isi(["STORE_RETURN"], r.id, { nomor: r.noNri, storeReturnId: r.storeReturnId });
+  for (const r of tukar) isi(["STORE_EXCHANGE"], r.id, { nomor: r.docNo });
+
+  // Pajak (lib/finance/pajak): masa PPN / PPh final dinamai masanya, setoran NTPN-nya.
+  for (const p of pasangan) {
+    if (p.jenis === "PPN_MASA" || p.jenis === "PPN_MASA_REVERSAL") isi([p.jenis], p.id, { nomor: `Masa PPN ${p.id}` });
+    if (p.jenis === "PPH_FINAL" || p.jenis === "PPH_FINAL_REVERSAL") isi([p.jenis], p.id, { nomor: `PPh final ${p.id}` });
+  }
+  const setoranIds = idsPer(pasangan, "TAX_PAYMENT", "TAX_PAYMENT_REVERSAL");
+  const setoran = await aman("TaxPayment", setoranIds, () =>
+    prisma.taxPayment.findMany({ where: { id: { in: setoranIds } }, select: { id: true, type: true, period: true, ntpn: true } }),
+  );
+  for (const r of setoran) isi(["TAX_PAYMENT", "TAX_PAYMENT_REVERSAL"], r.id, { nomor: `${r.type} ${r.period}${r.ntpn ? ` · ${r.ntpn}` : ""}` });
+
+  // Kas & bank dan pembayaran pemasok (lib/finance/kas, lib/purchasing/pembayaran-*).
+  const voucherIds = idsPer(pasangan, "CASH_VOUCHER", "CASH_VOUCHER_REVERSAL");
+  const bayarPemasokIds = idsPer(pasangan, "SUPPLIER_PAYMENT_DOC", "SUPPLIER_PAYMENT_DOC_REVERSAL");
+  const [voucher, bayarPemasok] = await Promise.all([
+    aman("CashVoucher", voucherIds, () =>
+      prisma.cashVoucher.findMany({ where: { id: { in: voucherIds } }, select: { id: true, docNumber: true } }),
+    ),
+    aman("SupplierPayment", bayarPemasokIds, () =>
+      prisma.supplierPayment.findMany({ where: { id: { in: bayarPemasokIds } }, select: { id: true, docNumber: true } }),
+    ),
+  ]);
+  for (const r of voucher) isi(["CASH_VOUCHER", "CASH_VOUCHER_REVERSAL"], r.id, { nomor: r.docNumber });
+  for (const r of bayarPemasok) isi(["SUPPLIER_PAYMENT_DOC", "SUPPLIER_PAYMENT_DOC_REVERSAL"], r.id, { nomor: r.docNumber });
+
+  // Jurnal operasional: konsinyasi, komisi, barang hilang, gudang rusak, stok manual, retur pemasok, biaya perjalanan.
+  try {
+    for (const r of await infoDokumenOperasional(pasangan)) isi([r.jenis], r.id, r.info);
+  } catch (e) {
+    console.error("[info-dokumen] gagal membaca dokumen operasional", e);
+  }
+
+  // Aset tetap (kode aset; penyusutan "<kode> · <YYYY-MM>") dan jurnal berulang ("<nama templat> · <YYYY-MM>").
+  try {
+    const [aset, berulang] = await Promise.all([infoDokumenAset(pasangan), infoDokumenBerulang(pasangan)]);
+    for (const [kunci, v] of aset) hasil.set(kunci, { nomor: v.nomor });
+    for (const [kunci, v] of berulang) hasil.set(kunci, { nomor: v.nomor });
+  } catch (e) {
+    console.error("[info-dokumen] gagal membaca aset tetap / jurnal berulang", e);
+  }
 
   return hasil;
 }

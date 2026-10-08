@@ -241,6 +241,8 @@ export function KalenderKreatifClient({ param, data, hariIni, opsi, userId, bole
                 const dipilih = h.tanggal === tanggal;
                 const hariIniSel = h.tanggal === hariIni;
                 const adaTenggat = isi.tenggat.length > 0;
+                // Merah + ⚠ hanya sesudah harinya lewat; hari ini kuning; yang akan datang netral.
+                const nadaTenggat = h.tanggal < hariIni ? "lewat" : h.tanggal === hariIni ? "hariIni" : "nanti";
                 const adaAgenda = isi.agenda.length > 0;
                 const adaKejadian = isi.kejadian.length > 0;
                 return (
@@ -269,15 +271,29 @@ export function KalenderKreatifClient({ param, data, hariIni, opsi, userId, bole
                     </span>
                     {/* Layar sempit: titik penanda saja. */}
                     <span className="flex gap-0.5 md:hidden" aria-hidden>
-                      {adaTenggat ? <span className="h-1.5 w-1.5 rounded-full bg-red-600" /> : null}
+                      {adaTenggat ? (
+                        <span className={cn("h-1.5 w-1.5 rounded-full", nadaTenggat === "lewat" ? "bg-red-600" : nadaTenggat === "hariIni" ? "bg-amber-500" : "bg-muted-foreground")} />
+                      ) : null}
                       {adaAgenda ? <span className="h-1.5 w-1.5 rounded-full bg-sky-600" /> : null}
                       {adaKejadian ? <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" /> : null}
                     </span>
                     <span className="hidden min-w-0 flex-col gap-0.5 md:flex">
                       {tampil.map((b) =>
                         b.macam === "tenggat" ? (
-                          <span key={`t:${b.grup.jenis}`} className="truncate text-[11px] font-semibold text-red-700 dark:text-red-300" title={contoh(b.grup)}>
-                            ⚠ {teksTenggat(b.grup)}
+                          <span
+                            key={`t:${b.grup.jenis}`}
+                            className={cn(
+                              "truncate text-[11px]",
+                              nadaTenggat === "lewat"
+                                ? "font-semibold text-red-700 dark:text-red-300"
+                                : nadaTenggat === "hariIni"
+                                  ? "font-semibold text-amber-800 dark:text-amber-300"
+                                  : "font-medium text-foreground",
+                            )}
+                            title={contoh(b.grup)}
+                          >
+                            {nadaTenggat === "lewat" ? "⚠ " : ""}
+                            {teksTenggat(b.grup)}
                           </span>
                         ) : b.macam === "agenda" ? (
                           <span
@@ -398,7 +414,7 @@ function PanelHari({
                 <span key={c.id}>
                   {i > 0 ? ", " : null}
                   <Link href={`/backoffice/kreatif/kolaborasi/${encodeURIComponent(c.id)}`} className="font-medium underline-offset-2 hover:underline">
-                    {c.judul}
+                    {c.judul} ({c.docNo})
                   </Link>
                 </span>
               ))}
@@ -416,13 +432,20 @@ function PanelHari({
 
         {isi.tenggat.length ? (
           <section className="space-y-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">{t("kalender.panel.perlu")}</h2>
+            <h2
+              className={cn(
+                "text-xs font-semibold uppercase tracking-wide",
+                tanggal < hariIni ? "text-red-700 dark:text-red-300" : "text-muted-foreground",
+              )}
+            >
+              {t("kalender.panel.perlu")}
+            </h2>
             {isi.tenggat.map((g) => (
               <GrupPanel
                 key={g.jenis}
                 judul={td(`tenggat.${g.jenis}`)}
                 g={g}
-                peringatan
+                peringatan={tanggal < hariIni}
                 nilai={g.jenis === "JATUH_TEMPO_BAYAR" && g.nilai ? rupiahTeks(g.nilai) : null}
               />
             ))}

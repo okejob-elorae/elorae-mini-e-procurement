@@ -65,6 +65,7 @@ export function BiayaPerjalananClient({
   data,
   bolehSetujui,
   bolehBayar,
+  akunKas = [],
 }: {
   bulan: string;
   status: StatusBiaya | null;
@@ -74,6 +75,8 @@ export function BiayaPerjalananClient({
   data: { baris: BarisBiayaKantor[]; perStatus: Record<StatusBiaya, Jumlahan>; total: Jumlahan };
   bolehSetujui: boolean;
   bolehBayar: boolean;
+  /** Akun kas/bank sumber pembayaran (hanya untuk yang boleh membayar). */
+  akunKas?: { id: string; label: string }[];
 }) {
   const t = useTranslations("biayaPerjalanan");
   const td = dinamis(t);
@@ -269,6 +272,7 @@ export function BiayaPerjalananClient({
                             ringkas={ringkas}
                             bolehSetujui={bolehSetujui}
                             bolehBayar={bolehBayar}
+                            akunKas={akunKas}
                           />
                         </TableCell>
                       </TableRow>

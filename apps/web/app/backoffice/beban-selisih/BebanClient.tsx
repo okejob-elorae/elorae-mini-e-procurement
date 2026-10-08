@@ -114,7 +114,7 @@ export function BebanClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t('pageTitle')}
+        title={t('judulHalaman')}
         meta={t('summary', { count: jumlah('TERBUKA'), value: rupiah(nilaiTerbuka) })}
       />
 

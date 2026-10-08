@@ -7,7 +7,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "salesLapangan.pageTitle" },
     isi: [
       { kunci: "salesLapangan.pageDescription" },
-      "Kartu angka dan angka di tabel membuka sumbernya: kunjungan dan check-in janggal ke rincian sales itu, pelunasan ke daftar BKM yang dicari dengan nama sales (hanya bila Anda boleh membuka daftar pelunasan), pesanan ke daftar pesanan lapangan. Admin kantor yang mencatat BKM dari kantor tidak dihitung sebagai sales.",
+      "Kartu angka dan angka di tabel membuka sumbernya: kunjungan dan check-in janggal ke rincian sales itu; pesanan ke daftar Pesanan lapangan yang disaring sama dengan angkanya (dibuat di rentang ini, sales itu, menunggu atau disetujui — isinya sama dengan angka kartu); pelunasan ke daftar BKM terverifikasi yang diverifikasi dalam rentang ini (hari WIB) dan dicari dengan nama sales (hanya bila Anda boleh membuka daftar pelunasan). Admin kantor yang mencatat BKM dari kantor tidak dihitung sebagai sales.",
     ],
     kartu: [
       { judul: { kunci: "salesLapangan.table.title" }, isi: { kunci: "salesLapangan.table.hint" } },
@@ -19,7 +19,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/sales-lapangan/[salesmanId]",
     bagian: "navGroupFieldTeam",
     judul: "Rincian sales lapangan",
-    isi: { kunci: "salesLapangan.detail.description" },
+    isi: [
+      { kunci: "salesLapangan.detail.description" },
+      "Kartu Nilai pesanan putus membuka daftar Pesanan lapangan milik sales ini yang dibuat di rentang yang dipilih; target bulanan dilihat dan diatur lewat tautan di baris Target bulan ini.",
+    ],
     kartu: [
       { judul: { kunci: "salesLapangan.schedule.title" }, isi: "Toko yang dijadwalkan kantor untuk sales ini di rentang yang dipilih, beserta statusnya. Tombol di kartu membuka Jadwal Kunjungan untuk sales ini." },
       { judul: { kunci: "salesLapangan.plan.title" }, isi: { kunci: "salesLapangan.plan.hint" } },

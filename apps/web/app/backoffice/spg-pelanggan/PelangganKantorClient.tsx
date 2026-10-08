@@ -50,7 +50,7 @@ export function PelangganKantorClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t("judul")}
+        title={t("judulMenu")}
         meta={tab === "pelanggan" ? t("ringkasPelanggan", { toko: ringkas.length, n: totalPelanggan }) : t("ringkasTitip", { toko: titip.length, n: totalTerbuka })}
         actions={<TautanTerkaitSpg kecuali="titip" />}
       />

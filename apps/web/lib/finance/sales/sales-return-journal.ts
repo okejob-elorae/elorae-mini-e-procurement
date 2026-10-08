@@ -1,6 +1,9 @@
 import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { nilaiPerPeranPersediaan } from "@/lib/finance/journals/peran-persediaan";
+import { kanalMarketplace, type KanalJurnal } from "@/lib/finance/journals/kanal";
+import { barisPenjualanPpn, denganDimensi } from "@/lib/finance/pajak/jurnal-ppn";
+import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { saleGlDate } from "./sales-journal";
 import { readGlCutover } from "./sweep";
 
@@ -75,17 +78,32 @@ export type PostSalesReturnJournalResult =
 async function returnMeta(
   returnId: string,
   client: AnyClient,
-): Promise<{ date: Date; label: string; salesOrderId: string | null } | null> {
+): Promise<{ date: Date; label: string; salesOrderId: string | null; channel: KanalJurnal } | null> {
   const ret = await client.salesReturn.findUnique({
     where: { id: returnId },
-    select: { decidedAt: true, jubelioReturnNo: true, salesOrderId: true },
+    select: { decidedAt: true, jubelioReturnNo: true, salesOrderId: true, channel: true },
   });
   if (!ret) return null;
   return {
     date: ret.decidedAt ?? new Date(),
     label: ret.jubelioReturnNo ?? returnId,
     salesOrderId: ret.salesOrderId,
+    channel: kanalMarketplace(ret.channel),
   };
+}
+
+/**
+ * Apakah jurnal pendapatan penjualan ASAL memungut PPN keluaran — dibaca dari
+ * barisnya sendiri (baris PPN selalu bermemo DPP, `memoDpp`), bukan dari
+ * pengaturan hari ini: retur membalik persis apa yang dulu dibukukan, walau
+ * status PKP sudah berubah sejak penjualannya.
+ */
+async function penjualanAsalBerPpn(salesOrderId: string, client: AnyClient): Promise<boolean> {
+  const baris = await client.journalLine.findFirst({
+    where: { journal: { sourceType: "SALESORDER_REVENUE", sourceId: salesOrderId }, memo: { startsWith: "DPP " } },
+    select: { id: true },
+  });
+  return baris != null;
 }
 
 /**
@@ -174,13 +192,19 @@ export async function postSalesReturnRevenueJournal(
   if (Math.abs(value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
   const gate = await classifySaleLeg(meta.salesOrderId, "SALESORDER_REVENUE", client);
   if (gate != null) return { ok: false, code: gate };
-  const lines = [
-    { role: "SALES_REVENUE" as const, debit: value, credit: 0 },
-    { role: "AR" as const, debit: 0, credit: value },
-  ];
-  return generateAutoJournal(client, "SALESRETURN_REVENUE", returnId, lines, {
+  // Gerbang di atas menjamin `salesOrderId` terisi dan jurnal penjualannya ada.
+  const { baris } = barisPenjualanPpn({
+    total: value,
+    peranDebit: "AR",
+    pengaturan: await bacaPengaturanPpn(client),
+    tanggal: meta.date,
+    dimensi: { channel: meta.channel },
+    balik: true,
+    paksaPpn: await penjualanAsalBerPpn(meta.salesOrderId as string, client),
+  });
+  return generateAutoJournal(client, "SALESRETURN_REVENUE", returnId, baris, {
     date: meta.date,
-    description: `Return ${meta.label}`,
+    description: `Retur penjualan ${meta.label}`,
     postedById,
   });
 }
@@ -209,13 +233,16 @@ export async function postSalesReturnCogsJournal(
   if (Math.abs(value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
   const gate = await classifySaleLeg(meta.salesOrderId, "SALESORDER_COGS", client);
   if (gate != null) return { ok: false, code: gate };
-  const lines = [
-    ...perPeran.map((p) => ({ role: p.role, debit: p.nilai, credit: 0 })),
-    { role: "COGS" as const, debit: 0, credit: value },
-  ];
+  const lines = denganDimensi(
+    [
+      ...perPeran.map((p) => ({ role: p.role, debit: p.nilai, credit: 0 })),
+      { role: "COGS" as const, debit: 0, credit: value },
+    ],
+    { channel: meta.channel },
+  );
   return generateAutoJournal(client, "SALESRETURN_COGS", returnId, lines, {
     date: meta.date,
-    description: `Return COGS ${meta.label}`,
+    description: `HPP retur penjualan ${meta.label}`,
     postedById,
   });
 }

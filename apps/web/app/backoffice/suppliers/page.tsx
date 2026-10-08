@@ -6,7 +6,15 @@ import { alamatMemilihTampilan, bacaSaringPemasok } from "./status-pemasok";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams: Promise<{ cari?: string; jenis?: string; status?: string; page?: string; pageSize?: string; tampilan?: string }>;
+  searchParams: Promise<{
+    cari?: string;
+    jenis?: string;
+    status?: string;
+    aktif?: string;
+    page?: string;
+    pageSize?: string;
+    tampilan?: string;
+  }>;
 };
 
 /**

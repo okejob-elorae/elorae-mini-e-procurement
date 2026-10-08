@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { bacaParamKartuStok, tulisParamKartuStok } from './param-kartu-stok';
+import { alamatBerubah, bacaParamKartuStok, tulisParamKartuStok } from './param-kartu-stok';
 import { subDays, startOfDay, endOfDay, format } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
@@ -37,6 +37,7 @@ import { buildStockCardPrintHtml } from '@/lib/print/stock-card-html';
 import type { StockCardPrintLabels } from '@/lib/print/stock-card-html';
 import { labelJenisGerakan } from '@/lib/inventory/jenis-gerakan-stok';
 import { toast } from 'sonner';
+import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
 
 /** Sel CSV: dikutip bila memuat koma, kutip, atau baris baru. */
 function selCsv(v: string | number | null | undefined): string {
@@ -93,6 +94,20 @@ const RENTANG_BAWAAN = { dari: format(defaultFrom, 'yyyy-MM-dd'), sampai: format
 
 type ViewMode = 'by-item' | 'by-type' | 'by-category';
 
+/** Nomor dokumen gerakan: tautan ke rinciannya bila dokumen itu punya halaman. */
+function NomorDokumen({ nomor, tautan }: { nomor: string | null; tautan?: string | null }) {
+  if (!nomor) return <>-</>;
+  if (!tautan) return <>{nomor}</>;
+  return (
+    <Link href={tautan} className={TAUTAN_DOKUMEN}>
+      {nomor}
+    </Link>
+  );
+}
+
+/** Kartu stok yang belum dijawab sesudah ini dianggap gagal (tombol dibuka lagi). */
+const BATAS_MUAT_MS = 45_000;
+
 export default function StockCardPage() {
   const t = useTranslations('inventory.stockCard');
   const tKind = useTranslations('inventory.stockMoveKind');
@@ -148,11 +163,15 @@ export default function StockCardPage() {
     try {
       const from = startOfDay(new Date(dateFrom));
       const to = endOfDay(new Date(dateTo));
-      const result = await getStockCard(itemId, { from, to }, variantSku || undefined);
+      // Batas waktu: jawaban yang tidak pernah datang tidak boleh mengunci tombol selamanya.
+      const result = await Promise.race([
+        getStockCard(itemId, { from, to }, variantSku || undefined),
+        new Promise<never>((_, tolak) => window.setTimeout(() => tolak(new Error('BATAS_WAKTU')), BATAS_MUAT_MS)),
+      ]);
       setData(result);
       setLoadedOnce(true);
-    } catch {
-      toast.error(t('loadFailed'));
+    } catch (err) {
+      toast.error(err instanceof Error && err.message === 'BATAS_WAKTU' ? t('loadTimeout') : t('loadFailed'));
       setData(null);
     } finally {
       setIsLoading(false);
@@ -203,6 +222,9 @@ export default function StockCardPage() {
   useEffect(() => {
     if (viewMode !== 'by-item') return;
     const qs = tulisParamKartuStok({ itemId, varian: variantSku, dari: dateFrom, sampai: dateTo }, RENTANG_BAWAAN);
+    // Alamat yang sudah sama tidak ditulis ulang: replaceState membuang aksi server
+    // yang sedang berjalan (lihat `alamatBerubah`).
+    if (!alamatBerubah(window.location.search, qs)) return;
     window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
   }, [viewMode, itemId, variantSku, dateFrom, dateTo, pathname]);
 
@@ -385,8 +407,8 @@ export default function StockCardPage() {
           </Link>
         </Button>
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
-          <TombolBantuan judul={t('title')} />
+          <h1 className="text-2xl font-bold tracking-tight">{t('judul')}</h1>
+          <TombolBantuan judul={t('judul')} />
         </div>
       </div>
 
@@ -438,6 +460,7 @@ export default function StockCardPage() {
                   setVariantSku('');
                 }}
                 placeholder={t('selectItem')}
+                searchPlaceholder={t('cariBarang')}
                 triggerClassName="min-h-[44px]"
               />
             </div>
@@ -464,6 +487,7 @@ export default function StockCardPage() {
                 value={variantSku || '__all__'}
                 onValueChange={(v) => setVariantSku(v === '__all__' ? '' : v)}
                 placeholder={t('allVariants')}
+                searchPlaceholder={t('cariVarian')}
                 triggerClassName="min-h-[44px]"
               />
             </div>
@@ -538,7 +562,7 @@ export default function StockCardPage() {
                     <TableHead>{t('colDate')}</TableHead>
                     <TableHead>{t('colDoc')}</TableHead>
                     <TableHead>{t('colDesc')}</TableHead>
-                    <TableHead>{t('colNotes')}</TableHead>
+                    <TableHead className="hidden 2xl:table-cell">{t('colNotes')}</TableHead>
                     <TableHead>{t('colVariant')}</TableHead>
                     <TableHead className="text-right text-green-600 dark:text-green-400">{t('colIn')}</TableHead>
                     <TableHead className="text-right text-red-600 dark:text-red-400">{t('colOut')}</TableHead>
@@ -551,9 +575,15 @@ export default function StockCardPage() {
                   {data.movements.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell>{formatDisplayDateTime(m.date, locale)}</TableCell>
-                      <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
-                      <TableCell className="whitespace-normal min-w-[180px]">{ket(m.jenis)}</TableCell>
-                      <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
+                      <TableCell className="font-medium"><NomorDokumen nomor={m.docNumber} tautan={m.tautan} /></TableCell>
+                      <TableCell className="whitespace-normal min-w-[160px]">
+                        {ket(m.jenis)}
+                        {/* Di bawah 2xl catatan ikut di sini: tabel muat 1280 tanpa gulir samping. */}
+                        {(m as { notes?: string | null }).notes ? (
+                          <span className="block text-xs text-muted-foreground 2xl:hidden">{(m as { notes?: string | null }).notes}</span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="hidden whitespace-normal min-w-[140px] 2xl:table-cell">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
                       <TableCell className="text-right text-green-600 dark:text-green-400">
                         {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
@@ -718,7 +748,7 @@ export default function StockCardPage() {
                                         {row.movements.map((m) => (
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
-                                            <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
+                                            <TableCell className="font-medium"><NomorDokumen nomor={m.docNumber} tautan={m.tautan} /></TableCell>
                                             <TableCell className="whitespace-normal min-w-[180px]">{ket(m.jenis)}</TableCell>
                                             <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
@@ -892,7 +922,7 @@ export default function StockCardPage() {
                                         {row.movements.map((m) => (
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
-                                            <TableCell className="font-medium">{m.docNumber ?? '-'}</TableCell>
+                                            <TableCell className="font-medium"><NomorDokumen nomor={m.docNumber} tautan={m.tautan} /></TableCell>
                                             <TableCell className="whitespace-normal min-w-[180px]">{ket(m.jenis)}</TableCell>
                                             <TableCell className="whitespace-normal min-w-[140px]">{(m as { notes?: string | null }).notes ?? '-'}</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">

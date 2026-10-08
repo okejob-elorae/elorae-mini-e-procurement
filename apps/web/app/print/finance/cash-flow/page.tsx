@@ -1,5 +1,6 @@
 "use client";
 
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
@@ -19,9 +20,8 @@ import {
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
+/** Satu format angka laporan keuangan: negatif dalam kurung (`format-laporan.ts`). */
+const formatRupiah = rupiahLaporan;
 
 function lineRows(lines: CashFlowLine[]): React.ReactNode[] {
   return lines.map((line) => (

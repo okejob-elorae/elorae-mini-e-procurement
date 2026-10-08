@@ -321,8 +321,8 @@ export function KonsinyasiClient({
                     <TableHead title={t("matchHint")} className="whitespace-normal">{t("colMatch")}</TableHead>
                     {/* Tiga nomor berdampingan — inilah yang dulu tersimpan di
                         kepala tiga orang berbeda. */}
-                    {/* Nomor nota dan faktur pajak boleh turun baris di tanda hubungnya:
-                        tanpa itu tabelnya tidak muat di laptop 1280 px. */}
+                    {/* Nomor nota dan faktur pajak TIDAK dipatahkan — "NP-202608-" /
+                        "0058" terbaca sebagai dua nomor. Yang turun baris kolom Tahap. */}
                     <TableHead className="whitespace-normal">{t('colNota')}</TableHead>
                     <TableHead className="whitespace-normal">{t('colTax')}</TableHead>
                     <TableHead>{t('colStage')}</TableHead>
@@ -340,7 +340,7 @@ export function KonsinyasiClient({
                         </Link>
                         <span className="block text-xs text-muted-foreground">{b.periode}</span>
                       </TableCell>
-                      <TableCell className="whitespace-normal min-w-[8rem] max-w-[12rem]">{b.storeName}</TableCell>
+                      <TableCell className="whitespace-normal min-w-[7rem] max-w-[12rem]">{b.storeName}</TableCell>
                       <TableCell className="text-right tabular-nums">
                         {b.nilaiTerjual > 0 ? rupiah(b.nilaiTerjual) : '—'}
                         {b.sisaTagihan !== null && b.sisaTagihan > 0 && (
@@ -358,11 +358,11 @@ export function KonsinyasiClient({
                           <StatusPill tone="attention">{t("matchDiff", { count: b.penandaCocok.berselisih })}</StatusPill>
                         )}
                       </TableCell>
-                      <TableCell className="whitespace-normal font-mono text-xs">{b.noNota ?? '—'}</TableCell>
-                      <TableCell className="whitespace-normal font-mono text-xs">{b.noFakturPajak ?? '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">{b.noNota ?? '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap font-mono text-xs">{b.noFakturPajak ?? '—'}</TableCell>
                       {/* Sel tabel bawaan tidak turun baris (components/ui/table.tsx);
                           kalimat tahap dulu meluberkan tabel jauh ke kanan. */}
-                      <TableCell className="whitespace-normal min-w-[12rem] max-w-[18rem]">
+                      <TableCell className="whitespace-normal min-w-[10rem] max-w-[18rem]">
                         <div className="space-y-1">
                           <StatusPill tone={NADA_TAHAP[b.tahap]}>{td(`stage_${b.tahap}`)}</StatusPill>
                           <p className="text-xs leading-relaxed text-muted-foreground">

@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/internal-api';
 import { generateSKU as generateSKUFromLib } from '@/lib/sku-generator';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { getActorName, notifyItemCreated } from '@/app/actions/notifications';
+import { dasarHargaJualProduksi } from "@/lib/production/biaya-dasar-harga-jual";
 import {
   getConsumptionRules as getConsumptionRulesFromLib,
   saveConsumptionRules as saveConsumptionRulesFromLib,
@@ -116,6 +117,9 @@ export async function updateItem(id: string, data: ItemFormData) {
       const recalc = await recalcItemSellingPrice(tx, {
         itemId: id,
         trigger: "MARGIN_CHANGE",
+        // Barang jadi produksi sendiri: dasar = biaya BAHAN per pcs, bukan
+        // avgCost yang kini memuat ongkos jahit (harga jual tidak ikut naik).
+        newAvgCost: await dasarHargaJualProduksi(tx, id),
         changedById: session.user.id,
       });
       if (recalc.applied) {

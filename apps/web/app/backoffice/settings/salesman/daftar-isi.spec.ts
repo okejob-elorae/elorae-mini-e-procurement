@@ -25,9 +25,13 @@ describe("daftar isi Pengaturan → Salesman", () => {
   });
 
   it("tautan ke Pengaturan → SPG hanya untuk yang bisa membukanya (spg_sales:view)", () => {
-    expect(halaman).toContain("bolehBukaSpg={hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)}");
+    expect(halaman).toContain("const bolehBukaSpg = hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW);");
+    expect(halaman).toContain("<JudulPengaturanSalesman bolehUbah={bolehUbah} bolehBukaSpg={bolehBukaSpg} />");
+    expect(halaman).toMatch(/<TargetBulananCard\s+bolehUbah=\{bolehUbah\}\s+bolehBukaSpg=\{bolehBukaSpg\}/);
     const judul = readFileSync(path.join(__dirname, "PengaturanSalesmanClient.tsx"), "utf8");
-    expect(judul).toMatch(/bolehBukaSpg \? \(\s*<div[^]*?href="\/backoffice\/settings\/spg"/);
+    // Kaki daftar isi dan catatan target: keduanya hanya bila bolehBukaSpg.
+    const tautan = [...judul.matchAll(/bolehBukaSpg \? \(\s*(?:<>\s*\{" "\}\s*)?<Link href="\/backoffice\/settings\/spg"/g)];
+    expect(tautan).toHaveLength(2);
   });
 
   it("15 kartu lama minus 2 kartu SPG = 13 kartu terdaftar", () => {

@@ -165,7 +165,7 @@ export function PlanKalenderTab({
                       </span>
                       {data.langkahTelat > 0 && (
                         <span className="text-xs font-medium text-red-700 dark:text-red-400">
-                          {t("telat", { n: data.langkahTelat })}
+                          {t("terlambat", { n: data.langkahTelat })}
                         </span>
                       )}
                       {data.tanpaJadwal > 0 && (

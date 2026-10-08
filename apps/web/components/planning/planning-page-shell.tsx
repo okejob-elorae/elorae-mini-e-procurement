@@ -34,7 +34,8 @@ type PlanningPageShellProps = {
   createdByName?: string;
   planStatus?: "DRAFT" | "ACTIVE";
   isLocked?: boolean;
-  isAdmin?: boolean;
+  /** Boleh mengunci/membuka plan — izin mengelola plan produksi, bukan nama peran. */
+  bolehKunci?: boolean;
   canManage?: boolean;
   newYear: string;
   onNewYearChange: (value: string) => void;
@@ -58,7 +59,7 @@ export function PlanningPageShell({
   createdByName,
   planStatus,
   isLocked,
-  isAdmin,
+  bolehKunci,
   canManage,
   newYear,
   onNewYearChange,
@@ -71,11 +72,11 @@ export function PlanningPageShell({
   children,
 }: PlanningPageShellProps) {
   const t = useTranslations("planning");
-  const tt = useTranslations("planning.tabs");
   const tj = useTranslations("jadwalProduksi.plan");
   const tl = useTranslations("planning.lock");
   const tls = useTranslations("planning.status");
   const ta = useTranslations("planning.actions");
+  const tk = useTranslations("planning.tabKalimat");
   const [dialogTahun, setDialogTahun] = useState(false);
 
   return (
@@ -85,7 +86,7 @@ export function PlanningPageShell({
         <CardContent className="space-y-3">
           {isLocked && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
-              {tl("lockedBanner")}
+              {tl("lockedBannerPerintahKerja")}
             </div>
           )}
 
@@ -139,7 +140,7 @@ export function PlanningPageShell({
               </>
             )}
 
-            {isAdmin && selectedYearId && (
+            {bolehKunci && selectedYearId && (
               <Button type="button" variant="outline" onClick={onToggleLock}>
                 {isLocked ? (
                   <Unlock className="mr-2 h-4 w-4" />
@@ -220,7 +221,7 @@ export function PlanningPageShell({
         <TabsList className="flex flex-wrap h-auto">
           {TAB_KEYS.map((key) => (
             <TabsTrigger key={key} value={key}>
-              {key === "kalender" ? tj("tabKalender") : tt(key)}
+              {key === "kalender" ? tj("tabKalender") : tk(key)}
             </TabsTrigger>
           ))}
         </TabsList>

@@ -30,23 +30,35 @@ export const SUMBER_BERJURNAL: readonly string[] = [
   "penerimaan barang (GRN)",
   "hasil produksi",
   "penyesuaian stock opname",
-  "pembayaran ke pemasok",
+  "pembayaran ke pemasok (sebagian, uang muka, dan potongan PPh)",
+  "voucher kas & bank (pengeluaran, penerimaan, transfer, kas kecil, dan biaya bank dari rekonsiliasi)",
   "fee, pembayaran, dan sampel KOL",
-  "jurnal manual",
-];
-
-/** Sumber yang BELUM pernah membuat jurnal (audit 2026-10-06). */
-export const SUMBER_BELUM_BERJURNAL: readonly string[] = [
-  "penjualan lapangan (putus) dan nota tagihannya",
-  "pelunasan piutang (BKM dan giro)",
-  "retur toko (NRI)",
-  "konsinyasi (kiriman, penjualan toko, pembayaran toko, komisi)",
-  "penjualan SPG",
-  "barang hilang",
+  "penjualan lapangan putus (nota tagihan)",
+  "pelunasan piutang toko (BKM dan giro)",
+  "retur toko putus (NRI)",
   "tukar barang",
+  "penyelesaian masa PPN, PPh final, dan setoran pajak",
+  "konsinyasi (kiriman, retur, penjualan toko dari siklus yang dikunci, pembayaran toko, gaji dan komisi SPG)",
+  "komisi SPG toko putus",
+  "barang hilang di toko konsinyasi",
+  "keputusan gudang barang rusak",
   "penyesuaian stok manual",
   "retur ke pemasok",
   "biaya perjalanan sales",
+  "perolehan, penyusutan, dan pelepasan aset tetap",
+  "jurnal berulang dan akrual",
+  "jurnal manual yang sudah disetujui",
+];
+
+/**
+ * Sumber yang BELUM membuat jurnal. Penjualan SPG sengaja tidak dijurnal
+ * sendiri (keputusan sementara pemilik no. 37): di toko putus barangnya sudah
+ * milik toko sejak nota tagihan, di toko konsinyasi pendapatannya diakui lewat
+ * siklus yang dikunci.
+ */
+export const SUMBER_BELUM_BERJURNAL: readonly string[] = [
+  "perubahan stok dari Jubelio (webhook stok dan rekonsiliasi)",
+  "komisi salesman (dibayar di luar sistem)",
 ];
 
 function daftarKalimat(butir: readonly string[]): string {
@@ -71,7 +83,7 @@ export function ledgerPendingNote(jumlah: number): string {
 export const BALANCE_SHEET_OPENING_TITLE = "Saldo awal belum dicatat";
 
 export function balanceSheetOpeningBody(dateLabel: string): string {
-  return `Jurnal paling awal bertanggal ${dateLabel}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat jurnal manual saldo awal (kas, piutang, persediaan, utang, ekuitas) bertanggal sebelum itu agar neraca mencerminkan posisi sebenarnya.`;
+  return `Jurnal paling awal bertanggal ${dateLabel}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat saldo awal (kas, piutang, persediaan, utang, ekuitas) lewat Keuangan → Saldo awal, atau jurnal manual bertanggal sebelum itu, agar neraca mencerminkan posisi sebenarnya.`;
 }
 
 /** Day-month-year label for the opening-balance warning, in the business timezone (WIB). */
@@ -115,3 +127,16 @@ export const REPORT_EMPTY_PERIOD_NOTE = "Belum ada jurnal pada periode ini.";
 export const INCOME_STATEMENT_EMPTY_NOTE = "Belum ada jurnal pendapatan, HPP, atau beban pada periode ini.";
 
 export const BALANCE_SHEET_EMPTY_NOTE = "Belum ada jurnal sampai tanggal ini.";
+
+/** Kalimat "BELUM termasuk …" — kosong begitu semua sumber sudah berjurnal. */
+function kalimatBelumBerjurnal(): string {
+  return SUMBER_BELUM_BERJURNAL.length ? ` BELUM termasuk: ${daftarKalimat(SUMBER_BELUM_BERJURNAL)}.` : "";
+}
+
+export const BALANCE_SHEET_COVERAGE_TITLE = "Cakupan data";
+
+/** Neraca (layar, cetak, Excel): saldonya sama lengkapnya dengan jurnal yang ada. */
+export const BALANCE_SHEET_COVERAGE_BODY = `Posisi ini disusun dari jurnal buku besar, jadi saldonya hanya memuat transaksi yang sudah menghasilkan jurnal.${kalimatBelumBerjurnal()}`;
+
+/** Laporan lanjutan (perbandingan, rasio, laba per kanal, anggaran vs realisasi). */
+export const CAKUPAN_LAPORAN_BODY = `Laporan ini disusun dari jurnal buku besar dan hanya memuat transaksi yang sudah menghasilkan jurnal.${kalimatBelumBerjurnal()}`;

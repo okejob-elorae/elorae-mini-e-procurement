@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { tautanPiutangFaktur } from "./tautan-penagihan";
 import { useTranslations } from "next-intl";
 import { CreditCard } from "lucide-react";
 import type { PanelKredit } from "@/lib/field-sales/kredit-panel";
@@ -155,7 +156,7 @@ export function KreditPanel({
                         <TableCell className="font-mono text-xs">
                           {bolehBukaPiutang && f.keadaanPiutang ? (
                             <Link
-                              href={`/backoffice/piutang?keadaan=${f.keadaanPiutang}`}
+                              href={tautanPiutangFaktur(f.invoiceNo)}
                               className="underline underline-offset-2"
                               title={t("bukaPiutang")}
                             >

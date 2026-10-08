@@ -5,15 +5,13 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { ListOrdered, SearchX, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { TautanTerkaitSpg } from "../spg-pelanggan/TautanTerkaitSpg";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { dinamis } from "@/lib/i18n/dinamis";
 import type { RingkasBarangDicari } from "@/lib/spg/kantor-queries";
-
-export type PeriodeHari = 7 | 30 | 90;
 
 type BarisDicari = {
   id: string;
@@ -25,21 +23,20 @@ type BarisDicari = {
   qty: number;
 };
 
-const PERIODE: PeriodeHari[] = [7, 30, 90];
-
 export function BarangDicariClient({
-  hari,
+  periode,
   ringkas,
   baris,
   terpotong,
 }: {
-  hari: PeriodeHari;
+  /** Hari WIB `YYYY-MM-DD`, kedua ujung termasuk (pemilih rentang, sama dengan Penjualan SPG). */
+  periode: { dari: string; sampai: string };
   ringkas: RingkasBarangDicari[];
   baris: BarisDicari[];
   terpotong: boolean;
 }) {
   const t = useTranslations("spgLostSales");
-  const td = dinamis(t);
+  const tt = useTranslations("tanggalInput");
   const router = useRouter();
   const [pindah, mulai] = useTransition();
 
@@ -47,20 +44,24 @@ export function BarangDicariClient({
     <div className="space-y-6">
       <PageHeader title={t("pageTitle")} actions={<TautanTerkaitSpg kecuali="dicari" />} />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-muted-foreground">{t("periodLabel")}</span>
-        <Tabs
-          value={String(hari)}
-          onValueChange={(v) => mulai(() => router.push(`/backoffice/spg-lost-sales?hari=${v}`))}
-        >
-          <TabsList>
-            {PERIODE.map((p) => (
-              <TabsTrigger key={p} value={String(p)} disabled={pindah}>
-                {td(`period.${p}`)}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+      {/* Pemilih rentang yang sama dengan Penjualan SPG; pilihan cepat 7/30/90 hari ada di dalamnya. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+        <div className="w-full space-y-2 sm:w-64">
+          <Label htmlFor="barang-dicari-periode" className="text-muted-foreground">
+            {tt("periode")}
+          </Label>
+          <RentangTanggalInput
+            id="barang-dicari-periode"
+            dari={periode.dari}
+            sampai={periode.sampai}
+            required
+            disabled={pindah}
+            onChange={({ dari, sampai }) => {
+              if (!dari || !sampai) return;
+              mulai(() => router.push(`/backoffice/spg-lost-sales?dari=${dari}&sampai=${sampai}`));
+            }}
+          />
+        </div>
         {terpotong ? <span className="text-sm text-amber-700 dark:text-amber-400">{t("capNote")}</span> : null}
       </div>
 

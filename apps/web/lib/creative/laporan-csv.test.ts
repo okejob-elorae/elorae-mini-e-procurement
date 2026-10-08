@@ -69,6 +69,7 @@ describe("csvPerforma", () => {
           tahap: "TAYANG",
           jenis: "BAYAR",
           fee: 1_000_000,
+          pphGrossUp: 25_641,
           views: 100_000,
           jumlahKonten: 2,
           orders: 10,
@@ -89,6 +90,7 @@ describe("csvPerforma", () => {
           tahap: "DEAL",
           jenis: "BARTER",
           fee: 0,
+          pphGrossUp: 0,
           views: 0,
           jumlahKonten: 0,
           orders: 0,
@@ -104,9 +106,10 @@ describe("csvPerforma", () => {
     );
     const b = baris(csv);
     expect(b[0]).toBe("Periode: 2026-10-01 s/d 2026-10-07");
-    expect(b[2]).toBe("1,nadia,Nadia,TikTok,85000,Lebaran,BRIEF/2026/0001,Tayang,Berbayar,1000000,2,100000,10,3000000,0,150000,0,1150000,2.61,11500");
+    expect(b[1]).toContain(",Jenis,Fee disepakati,PPh gross-up,Konten,");
+    expect(b[2]).toBe("1,nadia,Nadia,TikTok,85000,Lebaran,BRIEF/2026/0001,Tayang,Berbayar,1000000,25641,2,100000,10,3000000,0,150000,0,1150000,2.61,11500");
     expect(b[3].startsWith("2,,Rina,,0,,BRIEF/2026/0002,Deal,Barter,")).toBe(true);
-    expect(b[5]).toBe("TOTAL,,,,,,,,,1000000,2,100000,10,3000000,0,200000,0,1200000,2.50,12000");
+    expect(b[5]).toBe("TOTAL,,,,,,,,,1000000,25641,2,100000,10,3000000,0,200000,0,1200000,2.50,12000");
     expect(baris(csvPerforma([], null))[0]).toBe("Periode: semua");
   });
 });

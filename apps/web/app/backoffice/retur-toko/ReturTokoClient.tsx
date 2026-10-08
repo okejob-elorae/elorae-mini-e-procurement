@@ -194,7 +194,7 @@ export function ReturTokoClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t('pageTitle')}
+        title={t('judulHalaman')}
         meta={t('summary', {
           count: ringkasan.perluDikerjakan,
           held: rupiah(ringkasan.nilaiTertahan),

@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { formatDateTime } from "@/lib/sales-orders/format";
 import { PRINT_STYLES, BRAND } from "@/lib/sales-orders/print-styles";
+import { BilahCetak } from "../BilahCetak";
 import type { SalesOrderDetail, SalesOrderItemRow } from "@/lib/sales-orders/queries";
 
 type Props = {
@@ -25,6 +26,7 @@ export function PickListPrint({ order, items, lineImages = {} }: Props) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: PRINT_STYLES }} />
+      <BilahCetak orderId={order.id} />
       <div className="print-root">
         <div className="print-header">{BRAND.name} — {t("title")}</div>
         <div className="print-divider" />

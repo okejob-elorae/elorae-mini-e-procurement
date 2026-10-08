@@ -47,7 +47,7 @@ const GABUNGAN: string[][] = [
   ["dashboard:view", "inventory:view"],
 ];
 
-const grup = navItems.find((i) => i.labelKey === "navGroupReceivables");
+const grup = navItems.find((i) => i.labelKey === "navGroupReceivablesKalimat");
 
 describe("menu Piutang & Pelunasan mengikuti pagar halaman", () => {
   it("grupnya ada dan setiap anak punya pagar halaman yang dikenal", () => {

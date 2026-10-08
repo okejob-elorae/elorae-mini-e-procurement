@@ -85,7 +85,11 @@ export type BarisBrief = {
   campaignNama: string | null;
   tahap: Tahap;
   fee: number;
-  /** Fee yang BOLEH dihitung sebagai beban. Nol selama kontennya belum tayang. */
+  /**
+   * Fee yang BOLEH dihitung sebagai beban. Nol selama kontennya belum tayang;
+   * sesudahnya Σ BRUTO termin yang tidak batal (termasuk PPh gross-up — sama
+   * dengan jurnal `KOL_FEE`), atau fee bila belum ada termin.
+   */
   bebanDiakui: number;
   dueDate: string | null;
   jumlahDeliverable: number;
@@ -120,12 +124,16 @@ export async function daftarBrief(opts?: { tahap?: Tahap; kolId?: string }): Pro
       deliverables: { select: { qty: true } },
       items: { select: { qty: true } },
       shipments: { where: { stockIssuedAt: { not: null } }, select: { id: true }, take: 1 },
+      terms: { where: { status: { not: 'BATAL' } }, select: { bruto: true } },
     },
   });
 
   return rows.map((b) => {
     const tahap = b.tahap as Tahap;
     const fee = angka(b.fee);
+    // Beban dibaca dari termin (bruto, seperti jurnal), bukan dari kolom fee yang
+    // untuk gross-up adalah neto.
+    const brutoTermin = b.terms.length ? Math.round(b.terms.reduce((s, t) => s + Math.round(angka(t.bruto) * 100), 0)) / 100 : fee;
     return {
       id: b.id,
       docNo: b.docNo,
@@ -136,7 +144,7 @@ export async function daftarBrief(opts?: { tahap?: Tahap; kolId?: string }): Pro
       fee,
       // Aturan 1 diterapkan di kueri, bukan di layar: setiap pembaca daftar ini
       // mendapat angka yang sama tanpa harus mengingat aturannya.
-      bebanDiakui: nilaiBebanDiakui(tahap, fee),
+      bebanDiakui: nilaiBebanDiakui(tahap, brutoTermin),
       dueDate: b.dueDate?.toISOString() ?? null,
       jumlahDeliverable: b.deliverables.reduce((s, d) => s + d.qty, 0),
       jumlahBarang: b.items.reduce((s, i) => s + i.qty, 0),
@@ -252,6 +260,8 @@ export async function ringkasKreatif(): Promise<RingkasanKreatif> {
     // Kolaborasi yang keluar jalur tidak menjanjikan apa pun lagi.
     feeBelumDiakui: brief
       .filter((b) => !isJalurKeluar(b.tahap))
-      .reduce((s, b) => s + (b.fee - b.bebanDiakui), 0),
+      // Yang sudah diakui keluar seluruhnya dari "dijanjikan" (beban memakai
+      // bruto, fee memakai angka yang disepakati — keduanya tidak dikurangkan).
+      .reduce((s, b) => s + (b.bebanDiakui > 0 ? 0 : b.fee), 0),
   };
 }

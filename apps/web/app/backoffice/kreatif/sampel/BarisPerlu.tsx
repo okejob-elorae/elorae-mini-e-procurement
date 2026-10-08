@@ -175,7 +175,9 @@ export function BarisPerlu({ b, varianAwal, ambangHari, kolom, bolehMengelola, o
                   aria-label={t("sampel.simpanResi")}
                   title={t("sampel.simpanResi")}
                   onClick={kirim}
-                  disabled={menyimpan}
+                  // Belum ada barang yang siap dikirim: tombol mati dan alasannya tertulis di bawah (petunjuk abu-abu, bukan galat).
+                  disabled={menyimpan || belum !== null}
+                  aria-describedby={belum ? `alasan-sampel-${b.kolaborasiId}` : undefined}
                 >
                   {menyimpan ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Check className="h-4 w-4" aria-hidden />}
                 </Button>
@@ -196,7 +198,7 @@ export function BarisPerlu({ b, varianAwal, ambangHari, kolom, bolehMengelola, o
                 />
               </div>
               {belum ? (
-                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                <p id={`alasan-sampel-${b.kolaborasiId}`} className="text-xs text-muted-foreground">
                   {belum.kode === "KOSONG" ? t("sampel.belum.KOSONG") : td(`sampel.belum.${belum.kode}`, { barang: belum.nama })}
                 </p>
               ) : null}

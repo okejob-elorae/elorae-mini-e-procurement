@@ -31,6 +31,7 @@ import type { AlasanPengganti } from '@/lib/receivables/pengganti';
 import { formatIDR } from '@/lib/sales-orders/format';
 import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { tokoTerkunci } from "@/lib/salesman/queries";
+import { kaitReturBerubah } from "@/lib/finance/lapangan/kait";
 
 export type KodeAksiRetur =
   | 'TANPA_AKSES'
@@ -300,6 +301,8 @@ export async function catatHitunganGudangAction(input: {
       warehouseUserId: userId,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    // Jurnal retur toko (persediaan kembali + pendapatan dibalik sebesar fisik) — sesudah commit.
+    await kaitReturBerubah({ nriIds: [hasil.id] }, userId);
     segarkan();
     // Penerimaan yatim (tanpa NRT) belum punya pelapor; ia dikabarkan saat dijodohkan.
     if (input.storeReturnId) void kabarReturDihitung(input.storeReturnId, userId);
@@ -321,6 +324,7 @@ export async function jodohkanReturAction(
   try {
     const hasil = await jodohkanRetur({ warehouseReturnId, storeReturnId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    await kaitReturBerubah({ nriIds: [warehouseReturnId] }, userId);
     segarkan();
     // Baru sekarang hitungan gudang menempel ke nota si pelapor — bagi dia, inilah saat returnya dihitung.
     void kabarReturDihitung(storeReturnId, userId);
@@ -339,6 +343,7 @@ export async function lepasPasanganAction(warehouseReturnId: string): Promise<Ha
   try {
     const hasil = await lepasPasangan({ warehouseReturnId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    await kaitReturBerubah({ nriIds: [warehouseReturnId] }, userId);
     segarkan();
     return { ok: true };
   } catch (err) {
@@ -360,6 +365,7 @@ export async function putuskanBebanAction(
   try {
     const hasil = await putuskanBeban({ chargeId, bearer, alasan, bearerUserId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    await kaitReturBerubah({ chargeIds: [chargeId] }, userId);
     segarkan();
     revalidatePath('/backoffice/beban-selisih');
     // Penulis hanya menyimpan orangnya untuk beban SALES; aturan yang sama di sini.
@@ -432,6 +438,7 @@ export async function alihkanBebanAction(
         : null;
     const hasil = await alihkanBeban({ chargeId, bearer, alasan, bearerUserId, olehUserId: userId });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    await kaitReturBerubah({ chargeIds: [chargeId] }, userId);
     segarkan();
     revalidatePath('/backoffice/beban-selisih');
     const orangSama = sebelum?.bearer === 'SALES' && sebelum.bearerUserId === bearerUserId;
@@ -480,6 +487,7 @@ export async function pindahkanReturAction(
   try {
     const hasil = await pindahkanReturKeToko({ storeReturnId, tokoTujuanId, alasan, olehUserId: userId, setujuSiklusTerkunci });
     if (!hasil.ok) return keHasil(hasil);
+    await kaitReturBerubah({ nrtIds: [storeReturnId] }, userId);
     segarkan();
     revalidatePath(`/backoffice/retur-toko/${storeReturnId}`);
     revalidatePath('/pwa/retur');
@@ -503,6 +511,7 @@ export async function pindahkanNriAction(
   try {
     const hasil = await pindahkanNriKeToko({ warehouseReturnId, tokoTujuanId, alasan, olehUserId: userId, setujuSiklusTerkunci });
     if (!hasil.ok) return keHasil(hasil);
+    await kaitReturBerubah({ nriIds: [warehouseReturnId] }, userId);
     segarkan();
     return { ok: true };
   } catch (err) {

@@ -104,6 +104,15 @@ export function tautanPiutang(s: { keadaan?: KeadaanTampil; cari?: string }): st
   return qs ? `/backoffice/piutang?${qs}` : '/backoffice/piutang';
 }
 
+/** Alamat daftar Retur & pencocokan dengan saringannya (`?langkah=`, `?cari=`). */
+export function tautanRetur(s: { langkah?: LangkahRetur; cari?: string }): string {
+  const p = new URLSearchParams();
+  if (s.langkah) p.set('langkah', s.langkah);
+  if (s.cari) p.set('cari', s.cari);
+  const qs = p.toString();
+  return qs ? `/backoffice/retur-toko?${qs}` : '/backoffice/retur-toko';
+}
+
 export function susunTindakan(b: BahanTindakan): TindakanHariIni[] {
   const tindakan: TindakanHariIni[] = [];
 
@@ -137,7 +146,9 @@ export function susunTindakan(b: BahanTindakan): TindakanHariIni[] {
         jenis: 'tertahan',
         risiko: 800 + bobotNilai(p.alasan.nilaiTertahan ?? 1),
         judul: p.invoiceNo,
-        tautan: '/backoffice/retur-toko',
+        // Ke fakturnya, seperti baris faktur lain: kalimat alasannya menyebut
+        // nilai yang ditahan; nota returnya ada di daftar Retur & pencocokan.
+        tautan: tautanPiutang({ keadaan: 'tertahan', cari: p.invoiceNo }),
         nilai: p.alasan.nilaiTertahan ?? 0,
         konteks: { toko: p.storeName },
       });
@@ -172,7 +183,9 @@ export function susunTindakan(b: BahanTindakan): TindakanHariIni[] {
       jenis: r.langkah,
       risiko: r.langkah === 'keputusan' ? 950 : r.langkah === 'jodoh' ? 700 : 600,
       judul: r.nomor,
-      tautan: r.jenis === 'NRT' ? `/backoffice/retur-toko/${r.id}` : '/backoffice/retur-toko',
+      // Nota gudang tanpa pasangan (NRI) tidak punya halaman rincian: ke daftar
+      // retur yang tersaring pada langkah dan nomornya.
+      tautan: r.jenis === 'NRT' ? `/backoffice/retur-toko/${r.id}` : tautanRetur({ langkah: r.langkah, cari: r.nomor }),
       nilai: buta ? 0 : r.langkah === 'keputusan' ? r.selisih : (r.nilaiKlaim ?? r.nilaiFisik ?? 0),
       konteks: { toko: r.storeName ?? undefined, ...(buta ? { klaimTersembunyi: true } : {}) },
     });

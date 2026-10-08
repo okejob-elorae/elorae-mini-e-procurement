@@ -122,6 +122,27 @@ export function PapanKolaborasi({
         {TAHAP_BERJALAN.map((tahap) => {
           const kartu = perKolom.get(tahap) ?? [];
           const menyala = sasaranAktif === tahap;
+          // Tahap kosong diciutkan jadi strip sempit (nama + 0) supaya kolom yang berisi
+          // tidak terdorong ke luar layar; strip itu tetap tempat lepas seretan.
+          if (kartu.length === 0 && (hitung[tahap] ?? 0) === 0) {
+            return (
+              <section
+                key={tahap}
+                {...atributDaftar(tahap)}
+                role="listitem"
+                aria-label={`${tk(`tahap.${tahap}`)} (0)`}
+                title={t("kolaborasi.papan.kosongJudul", { tahap: tk(`tahap.${tahap}`) })}
+                className={cn(
+                  "flex w-11 shrink-0 flex-col items-center gap-2 rounded-lg border border-dashed bg-muted/20 py-2",
+                  "motion-safe:transition-colors",
+                  menyala && "border-primary bg-primary/5 ring-2 ring-primary/40",
+                )}
+              >
+                <span className="rounded-full bg-background px-1.5 text-xs tabular-nums text-muted-foreground">0</span>
+                <span className="text-xs text-muted-foreground [writing-mode:vertical-rl]">{tk(`tahap.${tahap}`)}</span>
+              </section>
+            );
+          }
           return (
             <section
               key={tahap}
@@ -180,8 +201,11 @@ export function PapanKolaborasi({
                             >
                               {b.kol.name}
                             </Link>
-                            <p className="truncate text-xs text-muted-foreground">{subKol(b.kol) || b.docNo}</p>
-                            {b.campaign ? <p className="truncate text-xs">{b.campaign.name}</p> : null}
+                            {subKol(b.kol) ? <p className="truncate text-xs text-muted-foreground">{subKol(b.kol)}</p> : null}
+                            {/* Nomor kolaborasi + campaign: dua kolaborasi KOL yang sama tetap bisa dibedakan. */}
+                            <p className="truncate text-xs text-muted-foreground">
+                              <span className="tabular-nums">{b.docNo}</span> · {b.campaign ? b.campaign.name : t("kolaborasi.detail.tanpaCampaign")}
+                            </p>
                             {b.kol.diblokir ? (
                               <StatusPill tone="attention" className="mt-1">
                                 {t("kolaborasi.diblokir")}

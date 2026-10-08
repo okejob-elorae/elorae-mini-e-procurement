@@ -14,10 +14,19 @@ import { cn } from "@/lib/utils";
 import type { AngkaSales, BarisHasil, BarisTanda, FilterRentangData } from "./bentuk";
 import { FilterRentang } from "./FilterRentang";
 import { GrafikBatang } from "./GrafikBatang";
-import { KartuAngka } from "./KartuAngka";
+import { KartuAngka, type TautanKartu } from "./KartuAngka";
 import { TombolEkspor } from "./TombolEkspor";
 
-export type BarisKinerja = { salesmanId: string; nama: string; href: string; angka: AngkaSales };
+export type BarisKinerja = {
+  salesmanId: string;
+  nama: string;
+  href: string;
+  /** Daftar pesanan lapangan sales ini, disaring sama dengan angkanya (rentang + menunggu/disetujui). */
+  pesananHref?: string;
+  /** BKM terverifikasi sales ini; tanpa izin membaca pelunasan tidak ada. */
+  pelunasanHref?: string;
+  angka: AngkaSales;
+};
 
 /** Jumlah kolom yang hanya bermakna per sales (rencana, toko menurun, target) untuk baris total. */
 function jumlahTambahan(baris: readonly BarisKinerja[]) {
@@ -60,15 +69,15 @@ export function KinerjaSalesClient({
   total,
   hasil,
   perTanda,
-  bolehPelunasan = false,
+  tautan,
 }: {
   filter: FilterRentangData;
   baris: BarisKinerja[];
   total: AngkaSales;
   hasil: BarisHasil[];
   perTanda: BarisTanda[];
-  /** Penonton boleh membuka daftar pelunasan; tanpa itu angka pelunasan bukan tautan. */
-  bolehPelunasan?: boolean;
+  /** Daftar sumber kartu tim; pelunasan kosong bila penonton tidak boleh membukanya. */
+  tautan?: TautanKartu;
 }) {
   const t = useTranslations("salesLapangan");
   const td = dinamis(t);
@@ -84,10 +93,7 @@ export function KinerjaSalesClient({
 
       <FilterRentang key={`${filter.preset}|${filter.dari}|${filter.sampai}`} alamat="/backoffice/sales-lapangan" filter={filter} />
 
-      <KartuAngka
-        angka={{ ...total, jadwal: tambahan.jadwal }}
-        tautan={{ pesanan: "/backoffice/field-sales-orders?status=ALL", pelunasan: bolehPelunasan ? "/backoffice/pelunasan" : undefined }}
-      />
+      <KartuAngka angka={{ ...total, jadwal: tambahan.jadwal }} tautan={tautan} />
 
       <Card>
         <CardHeader className="pb-3">
@@ -121,10 +127,7 @@ export function KinerjaSalesClient({
                   {baris.map((b) => (
                     <BarisSales
                       key={b.salesmanId}
-                      tautan={{
-                        rincian: b.href,
-                        pelunasan: bolehPelunasan ? `/backoffice/pelunasan?cari=${encodeURIComponent(b.nama)}` : undefined,
-                      }}
+                      tautan={{ rincian: b.href, pesanan: b.pesananHref, pelunasan: b.pelunasanHref }}
                       nama={<Link href={b.href} className="font-medium hover:underline">{b.nama}</Link>}
                       angka={b.angka}
                       rencana={b.angka.rencana}
@@ -210,7 +213,7 @@ function BarisSales({
   tautan,
 }: {
   /** Baris total tidak punya tautan. */
-  tautan?: { rincian: string; pelunasan?: string };
+  tautan?: { rincian: string; pesanan?: string; pelunasan?: string };
   nama: ReactNode;
   angka: AngkaSales;
   rencana: AngkaSales["rencana"];
@@ -248,7 +251,7 @@ function BarisSales({
         )}
       </TableCell>
       <TableCell className="text-right tabular-nums">
-        {angka.pesanan.jumlah}
+        <Taut href={tautan?.pesanan}>{angka.pesanan.jumlah}</Taut>
         <Sub>{t("table.subOrders", { putus: angka.pesanan.putus, konsi: angka.pesanan.konsi })}</Sub>
       </TableCell>
       <TableCell className="text-right tabular-nums">{formatIDR(angka.pesanan.nilaiPutus)}</TableCell>

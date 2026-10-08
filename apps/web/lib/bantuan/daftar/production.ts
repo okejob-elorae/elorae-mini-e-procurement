@@ -7,9 +7,9 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "forecast.title" },
     isi: [
       { kunci: "forecast.subtitle" },
-      "Forecast dihitung per artikel dari data penjualan marketplace yang diimpor di Impor Data Penjualan, untuk tahun yang dipilih di kanan atas. Pengaturan lookback, growth factor, dan weight decay disimpan per tahun.",
+      "Forecast dihitung per artikel dari data penjualan marketplace yang diimpor di Impor data penjualan, untuk tahun yang dipilih di kanan atas. Pengaturan lookback, faktor pertumbuhan, dan peluruhan bobot disimpan per tahun.",
       "Tahun yang bisa dipilih: dua tahun ke belakang sampai dua tahun ke depan. Mulai Juli (WIB) halaman ini langsung membuka tahun depan, karena saat itulah produksi tahun depan direncanakan.",
-      "Jalankan Forecast mati selama belum ada data penjualan sama sekali. Dengan data kurang dari 12 bulan forecast tetap bisa dijalankan, tetapi pola musimannya belum terbaca.",
+      "Jalankan forecast mati selama belum ada data penjualan sama sekali. Dengan data kurang dari 12 bulan forecast tetap bisa dijalankan, tetapi pola musimannya belum terbaca.",
       "Melihat cukup dengan izin melihat forecast; mengubah pengaturan, menjalankan forecast, dan mengimpor data butuh izin mengelola forecast.",
     ],
     kartu: [
@@ -17,13 +17,13 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "forecast.tabs.abc" },
         isi: "Artikel dikelompokkan menurut omzet (A tinggi, B sedang, C rendah) dan kestabilan permintaannya (X stabil, Y berubah-ubah, Z tidak menentu). Setiap kotak memuat saran singkat; klik kotaknya untuk melihat artikelnya.",
       },
-      { judul: { kunci: "forecast.bridge.title" }, isi: { kunci: "forecast.bridge.note" } },
+      { judul: { kunci: "forecast.bridge.title" }, isi: { kunci: "forecast.bridge.catatan" } },
     ],
   },
   {
     rute: "/backoffice/forecast/import",
     bagian: "production",
-    judul: { kunci: "forecast.import.title" },
+    judul: { kunci: "forecast.import.judulKalimat" },
     isi: [
       "Tempat mengunggah berkas penjualan Shopee atau TikTok (.xlsx) per bulan sebagai bahan forecast. Hanya baris pesanan selesai yang disimpan; baris dengan channel, ID pesanan, dan SKU yang sama dengan impor sebelumnya dilewati.",
       "Satu channel dan satu bulan hanya bisa diimpor sekali. Untuk mengimpor ulang, hapus dulu impor lamanya di Riwayat Impor. Halaman ini butuh izin mengelola forecast.",
@@ -51,10 +51,10 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "production",
     judul: { kunci: "planning.title" },
     isi: [
-      { kunci: "planning.subtitle" },
-      "Satu plan per tahun, diisi lewat tab Isi Grid atau diimpor dari Excel dengan template yang bisa diunduh. Plan berstatus draf sampai diaktifkan; perintah kerja dibuat dari tab Pembagian Jahitan setelah plan aktif.",
-      "Membuat dan mengubah plan butuh izin mengelola plan kerja. Mengunci dan membuka kunci plan hanya bisa dilakukan admin; plan yang terkunci tidak bisa diubah, tetapi perintah kerja tetap bisa dibuat.",
-      "Tahun plan baru dibuat lewat tombol Tambah tahun. Tahun yang sedang dibuka tersimpan di alamat halaman (?tahun=), jadi tautannya bisa dibagikan.",
+      { kunci: "planning.subtitleKalimat" },
+      "Satu plan per tahun, diisi lewat tab Isi grid atau diimpor dari Excel dengan template yang bisa diunduh. Plan berstatus draf sampai diaktifkan; perintah kerja dibuat dari tab Pembagian jahitan setelah plan aktif.",
+      "Membuat dan mengubah plan butuh izin mengelola plan kerja. Mengunci dan membuka kunci plan juga memakai izin itu (sama seperti Aktifkan dan Buka kembali ke draf); plan yang terkunci tidak bisa diubah, tetapi perintah kerja tetap bisa dibuat.",
+      "Tahun plan baru dibuat lewat tombol Tambah tahun. Usulan tahunnya sama dengan tahun bawaan Forecast (mulai Juli tahun depan), dan tahun yang sudah punya plan dilewati. Tahun yang sedang dibuka tersimpan di alamat halaman (?tahun=), jadi tautannya bisa dibagikan.",
       "Buat perintah kerja dari satu tahap butuh vendor CMT dan varian SKU di tahap itu, dan barang jadi bervarian di kategorinya. Bila berhasil, halaman pindah ke perintah kerja yang baru; bila tidak, alasannya disebut.",
       "Bulan target dan varian setiap tahap dipilih langsung di baris tahapnya. Bulan target menentukan di bulan mana tahap muncul di tab Kalender, dan varian dipilih dari varian barang jadi yang terhubung ke jenis itu — tanpa varian, \"Buat WO\" dari tahap ditolak. Sesudah plan diaktifkan atau dikunci, bulan, varian, dan penjahit tahap masih bisa diubah (nama dan qty tidak), tetapi varian dikunci selama tahap punya WO aktif.",
       "Tautan Ruang kerja di baris tahap membuka jadwal proses, dokumen (SPK dan PO), dan kebutuhan bahan tahap itu. Lencana di sampingnya meringkas jadwalnya: belum dijadwalkan, berapa proses selesai, berapa yang terlambat.",
@@ -64,7 +64,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "jadwalProduksi.plan.tabKalender" },
         isi: [
-          "Tab Kalender menampilkan dua belas bulan tahun plan: banyaknya tahap dan qty per bulan target, langkah jadwal yang telat, serta tahap yang belum punya jadwal atau PO — tahap tanpa bulan target tidak ikut terhitung.",
+          "Tab Kalender menampilkan dua belas bulan tahun plan: banyaknya tahap dan qty per bulan target, langkah jadwal yang terlambat, serta tahap yang belum punya jadwal atau PO — tahap tanpa bulan target tidak ikut terhitung.",
           "Klik satu bulan untuk melihat tahapnya beserta ringkasan jadwal, WO, dan PO, lalu buka ruang kerja tahap untuk mengatur jadwal prosesnya. Tab dan bulan yang dibuka tersimpan di alamat halaman (?tab=kalender&bulan=), jadi bisa dibagikan.",
           "Kolom PO menyebut nomor setiap PO tahap itu yang tidak batal; klik nomornya untuk membuka PO. Tahap yang belum punya PO sama sekali diberi latar kuning lembut dan lencana Belum ada PO, supaya batch yang bahannya belum dipesan terlihat sekilas. Kolom PO dan penanda ini hanya tampil bagi yang boleh melihat PO.",
         ],
@@ -175,7 +175,24 @@ export const ENTRI: EntriBantuan[] = [
     ],
     kartu: [
       { judul: { kunci: "productionPalette.bestSellers.title" }, isi: { kunci: "productionPalette.bestSellers.description" } },
-      { judul: { kunci: "productionPalette.imageTitle" }, isi: { kunci: "productionPalette.imageDescription" } },
+      {
+        judul: { kunci: "productionPalette.wheelTitle" },
+        isi: [
+          { kunci: "productionPalette.dragHint" },
+          { kunci: "productionPalette.customHint" },
+          { kunci: "productionPalette.inkDragHint" },
+          { kunci: "productionPalette.inkDragHintLinked" },
+          "Aturan harmoni: Analog (warna bertetangga), Monokromatik (satu rona), Triadik (tiga rona berjarak sama), Komplementer (warna dan lawannya), Komplementer terbelah, Persegi (empat rona), Majemuk, Gradasi terang-gelap, dan Bebas (setiap warna digeser sendiri).",
+        ],
+      },
+      {
+        judul: { kunci: "productionPalette.imageTitle" },
+        isi: [
+          { kunci: "productionPalette.imageDescription" },
+          { kunci: "productionPalette.imagePrivacy" },
+          { kunci: "productionPalette.imageAccuracy" },
+        ],
+      },
       { judul: { kunci: "productionPalette.design.title" }, isi: { kunci: "productionPalette.design.description" } },
       { judul: { kunci: "productionPalette.swatchesTitle" }, isi: { kunci: "productionPalette.swatchesHint" } },
       {
@@ -210,11 +227,12 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/work-orders/new",
     bagian: "production",
-    judul: { kunci: "workOrders.form.newTitle" },
+    judul: { kunci: "workOrders.formulir.judulBaru" },
     isi: [
       { kunci: "workOrders.form.newDescription" },
       "Jumlah pcs bisa diisi dengan dua cara. \"Ketik jumlah pcs\" (bawaan): isi jumlah pcs langsung, lalu kebutuhan bahan utama dihitung dari BOM. \"Hitung dari bahan utama\": isi berapa bahan utama (kain) yang tersedia, lalu jumlah pcs dihitung dari konsumsi per pcs dan susutnya; sisa bahan yang tidak cukup untuk satu pcs ditampilkan.",
       "Barang jadi yang punya varian otomatis memakai mode \"SKU (per varian)\", supaya hasil produksinya masuk stok per ukuran. Mode \"Umum (pcs)\" tetap bisa dipilih untuk barang tanpa varian.",
+      "Bila tombol Buat perintah kerja mati, kekurangan pertamanya menurut urutan isian ditulis di bawah tombol (mis. vendor belum dipilih, jumlah pcs belum diisi, atau stok bahan kurang).",
     ],
     kartu: [
       { judul: { kunci: "workOrders.form.cardTitle" }, isi: { kunci: "workOrders.form.cardDescription" } },
@@ -227,6 +245,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Rincian perintah kerja",
     isi: [
       "Satu perintah kerja: kemajuan setoran, alokasi kain per roll, bahan (rencana, keluar, kembali, masih di CMT), pengeluaran bahan, dan penerimaan barang jadi. Rekonsiliasi pemakaian dibuka dari tombol Rekonsiliasi di atas.",
+      "Angka setoran di kartu Kemajuan, di layar Terima barang jadi, di rekonsiliasi, dan di daftar perintah kerja dihitung dengan cara yang sama dari dokumen penerimaan: disetor (termasuk cacat), cacat, masuk stok (lolos QC), dan kurang = target − masuk stok. Bila catatan setoran lama tidak cocok dengan dokumennya, selisihnya disebut di bawah kartu.",
       "Perintah kerja draf bisa diubah, diterbitkan, atau dibatalkan dari sini. Setelah terbit, bahan dikeluarkan lewat Keluarkan bahan dan hasil jadi diterima lewat Terima barang jadi. Perintah kerja yang sudah selesai tidak bisa mengeluarkan bahan atau menerima barang jadi lagi.",
       "Pembatalan butuh alasan dan hanya bisa selama belum ada penerimaan barang jadi dan tidak ada bahan yang masih di CMT. Bila masih ada, penolakannya menyebut bahan dan jumlahnya; kembalikan dulu lewat Kembalikan bahan.",
       { kunci: "workOrders.detail.additionalDesc" },
@@ -236,7 +255,17 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "workOrders.allocationPerRoll" },
         isi: [{ kunci: "workOrders.notaKainPerRollDesc" }, { kunci: "workOrders.detail.rollStatusHint" }],
       },
-      { judul: { kunci: "workOrders.detail.hppTitle" }, isi: { kunci: "workOrders.detail.hppDescription" } },
+      {
+        judul: { kunci: "workOrders.detail.hppTitle" },
+        isi: [
+          { kunci: "workOrders.detail.hppDescription" },
+          "Biaya tambahan di sini dihitung per pcs dan ikut HPP barang jadi yang diterima SESUDAH diisi (per pcs lolos QC), dicatat sebagai biaya yang masih harus dibayar. Mengubahnya tidak mengubah penerimaan yang sudah dicatat.",
+        ],
+      },
+      {
+        judul: { kunci: "workOrders.fgReceipts" },
+        isi: "Kolom Nilai HPP: nilai persediaan barang jadi dari setoran itu. Di bawahnya rinciannya — bahan, tagihan jasa langkah perintah kerja (termasuk PPN yang dipungut pemasok), dan biaya tambahan. Bila Elorae PKP, PPN jasa tidak ikut HPP (dicatat sebagai PPN Masukan), jadi nilai HPP bisa lebih kecil dari jumlah rinciannya. Penerimaan yang dicatat sebelum ongkos jahit masuk HPP hanya menampilkan nilainya.",
+      },
       {
         judul: "Bahan",
         isi: [
@@ -252,9 +281,11 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/work-orders/[id]/edit",
     bagian: "production",
-    judul: { kunci: "workOrders.form.editTitle" },
+    judul: { kunci: "workOrders.formulir.judulUbah" },
     isi: [
       "Hanya perintah kerja draf yang bisa diubah.",
+      "Kartu Rencana bahan sama dengan formulir perintah kerja baru, termasuk pilihan \"Ketik jumlah pcs\" atau \"Hitung dari bahan utama\". Saat dibuka, cara isinya mengikuti angka yang tersimpan: perintah kerja yang dibuat dari jumlah pcs dibuka dengan jumlah pcs, yang dibuat dari jumlah bahan dibuka dengan jumlah bahannya, supaya menyimpan tanpa perubahan tidak menggeser angkanya.",
+      "Bila tombol simpan mati, kekurangan pertamanya ditulis di bawah tombol.",
       "Vendor yang sudah tercatat di perintah kerja tetap ada di pilihan walaupun belum (atau tidak lagi) disetujui, ditandai \"belum disetujui\". Vendor baru hanya bisa dipilih dari pemasok yang sudah disetujui.",
     ],
     kartu: [
@@ -269,6 +300,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Mengeluarkan kain atau aksesoris dari gudang ke vendor untuk satu perintah kerja. Kain diterbitkan per roll utuh; total roll yang dialokasikan minimal sama dengan qty kain yang diterbitkan.",
       "Bila simpan gagal (mis. sambungan putus), tekan Simpan lagi tanpa mengubah isian: pengeluaran yang sudah tercatat tidak dikeluarkan dua kali.",
+      "Nilai bahan yang dicatat adalah nilai yang benar-benar keluar dari stok (jumlah × biaya rata-rata gudang saat itu), sama dengan kartu stok. Harga yang diketik di baris tetap disimpan bersama pengeluaran, tetapi tidak lagi menentukan nilai bahan yang masuk HPP.",
     ],
     kartu: [
       { judul: { kunci: "workOrders.form.materialPlanTitle" }, isi: { kunci: "workOrders.plannedVsIssued" } },
@@ -282,8 +314,11 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Mencatat barang jadi yang disetor vendor untuk satu perintah kerja: yang lolos QC dan yang cacat, dirinci per varian.",
       "Jumlah disetor adalah SEMUA yang diserahkan CMT, termasuk yang cacat. Yang masuk stok = disetor − cacat. Contoh: CMT menyerahkan 30 bagus dan 2 cacat → isi disetor 32 dan cacat 2; masuk stok 30.",
-      "Di atas formulir tampil target, yang sudah disetor, dan sisanya. Setoran yang melebihi sisa target tetap boleh dicatat (lebih produksi) dan diberi peringatan.",
+      "Di atas formulir tampil target, yang sudah disetor (beserta cacatnya), yang masuk stok, dan kekurangannya — angka yang sama dengan rincian dan daftar perintah kerja. Kurang = target − masuk stok, karena barang cacat harus diganti. Setoran yang membuat masuk stok melebihi target tetap boleh dicatat (lebih produksi) dan diberi peringatan.",
       "Biaya bahan: setiap penerimaan memikul bagian sisa biaya bahan sebanding jumlah yang disetor terhadap sisa target; penerimaan yang menutup target memikul seluruh sisanya. Bahan yang sudah kembali ke gudang tidak ikut dibebankan. Pratinjau di layar memakai rumus yang sama dengan yang dicatat.",
+      "Ongkos jahit (CMT) dan jasa langkah lain masuk HPP barang jadi: harga jasa per pcs setiap langkah perintah kerja dikalikan jumlah yang LOLOS QC (barang cacat tidak dibayar ke pemasok jasa). Langkah \"Belum termasuk PPN\" berarti pemasok menambahkan PPN di atas harga, sama dengan baris PO. Bila Elorae PKP, PPN jasa dicatat sebagai PPN Masukan dan HPP memikul nilai jasa tanpa PPN; bila belum PKP, PPN jasa ikut HPP. Biaya tambahan per pcs (kemasan, dll., di tab HPP perintah kerja) juga ikut, per pcs lolos.",
+      "Jurnalnya: persediaan barang jadi bertambah sebesar HPP setoran; persediaan bahan berkurang sebesar bagian bahannya; tagihan jasa menjadi utang usaha kepada pemasok jasa; biaya tambahan dicatat sebagai biaya yang masih harus dibayar. Penerimaan yang dicatat sebelum aturan ini tidak diubah.",
+      "Harga jual otomatis tetap dihitung dari biaya BAHAN per pcs × (1 + margin) + biaya tambahan barang — ongkos jahit yang kini masuk HPP tidak menaikkan harga jual.",
     ],
     kartu: [{ judul: { kunci: "workOrders.receive.cardTitle" }, isi: { kunci: "workOrders.receive.cardDescription" } }],
   },

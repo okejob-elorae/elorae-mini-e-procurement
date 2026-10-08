@@ -12,8 +12,6 @@ import {
   RefreshCw,
   Repeat,
   Loader2,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   ChevronUp,
   BookText,
@@ -30,6 +28,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Pagination } from "@/components/ui/pagination";
 import {
   Table,
   TableBody,
@@ -115,7 +114,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
         const result = await matchSettlementAction(settlement.id);
         if (result.ok) {
           toast.success(
-            t("matchToastSuccess", {
+            t("toastCocok", {
               matched: String(result.matched),
               unmatched: String(result.unmatched),
               profitPending: String(result.profitPending),
@@ -274,6 +273,9 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
             case "SETTLEMENT_KEMBAR":
               toast.error(t("journalErr.SETTLEMENT_KEMBAR"));
               break;
+            case "SEBELUM_TANGGAL_MULAI":
+              toast.error(t("journalErr.SEBELUM_TANGGAL_MULAI"));
+              break;
             default:
               toast.error(t("errGeneric"));
           }
@@ -313,7 +315,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" disabled={isPending} onClick={handleMatch}>
               <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
-              {isPending ? t("matchOrdersPending") : t("matchOrdersButton")}
+              {isPending ? t("matchOrdersPending") : t("tombolCocokkan")}
             </Button>
 
             {unmatchedLines.length > 0 && (
@@ -325,8 +327,8 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
               >
                 <Repeat className={`h-4 w-4 mr-2 ${isResyncing ? "animate-spin" : ""}`} />
                 {isResyncing
-                  ? t("resyncButtonPending")
-                  : t("resyncButton", { count: String(unmatchedLines.length) })}
+                  ? t("sinkronUlangMemulai")
+                  : t("tombolSinkronUlang", { count: String(unmatchedLines.length) })}
               </Button>
             )}
 
@@ -339,12 +341,12 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
               <>
                 <Badge variant="default" className="gap-1">
                   <BookText className="h-3.5 w-3.5" />
-                  {t("journalPosted")}
+                  {t("jurnalSudahDiposting")}
                 </Badge>
                 <Button size="sm" variant="outline" asChild>
                   <Link href={`/backoffice/finance/journals/${settlement.journalId}`}>
                     <ExternalLink className="h-4 w-4 mr-2" />
-                    {t("viewJournal")}
+                    {t("lihatJurnal")}
                   </Link>
                 </Button>
               </>
@@ -357,7 +359,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
                   onClick={handlePostJournal}
                 >
                   <BookText className={`h-4 w-4 mr-2 ${isPosting ? "animate-pulse" : ""}`} />
-                  {isPosting ? t("postJournalPending") : t("postJournal")}
+                  {isPosting ? t("postJournalPending") : t("tombolPostingJurnal")}
                 </Button>
                 {/* Kembaran: menjurnalnya mendebit bank & mengkredit piutang untuk kedua kali. */}
                 {ganda !== null ? (
@@ -413,7 +415,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               {!resyncTerminal && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />}
-              {t("resyncPanelTitle")}
+              {t("judulPanelSinkron")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -437,9 +439,9 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
                   <ResyncStatTile label={t("resyncStatPending")} value={resyncSummary.pending} />
                   <ResyncStatTile label={t("resyncStatResolving")} value={resyncSummary.resolving} />
-                  <ResyncStatTile label={t("resyncStatFetching")} value={resyncSummary.fetching} />
+                  <ResyncStatTile label={t("statMengambilData")} value={resyncSummary.fetching} />
                   <ResyncStatTile label={t("resyncStatDone")} value={resyncSummary.done} tone="good" />
-                  <ResyncStatTile label={t("resyncStatNotFound")} value={resyncSummary.notFound} tone="warn" />
+                  <ResyncStatTile label={t("statTidakDitemukan")} value={resyncSummary.notFound} tone="warn" />
                   <ResyncStatTile label={t("resyncStatDead")} value={resyncSummary.dead} tone="bad" />
                   <ResyncStatTile label={t("resyncStatSkipped")} value={resyncSummary.skipped} />
                 </div>
@@ -460,7 +462,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
                     </div>
                     <Button size="sm" disabled={isPending} onClick={handleMatch}>
                       <RefreshCw className={`h-4 w-4 mr-2 ${isPending ? "animate-spin" : ""}`} />
-                      {isPending ? t("matchOrdersPending") : t("resyncRematchButton")}
+                      {isPending ? t("matchOrdersPending") : t("tombolCocokkanUlang")}
                     </Button>
                   </div>
                 )}
@@ -472,16 +474,16 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         {/* Reconciling trio: matchedNetIncome - totalCogs === totalProfit exactly. */}
-        <KpiTile label={t("kpiNetIncomeMatched")} value={formatRupiah(settlement.matchedNetIncome)} />
+        <KpiTile label={t("kpiPendapatanBersihCocok")} value={formatRupiah(settlement.matchedNetIncome)} />
         <KpiTile label={t("kpiCogs")} value={formatRupiah(settlement.totalCogs)} />
-        <KpiTile label={t("kpiProfit")} value={formatRupiah(settlement.totalProfit)} />
+        <KpiTile label={t("kpiTotalLaba")} value={formatRupiah(settlement.totalProfit)} />
         {/* Separate — sums ALL lines regardless of match/cogs status, does not tie to the trio above. */}
-        <KpiTile label={t("kpiGrossNetIncome")} value={formatRupiah(settlement.totalNetIncome)} />
-        <KpiTile label={t("kpiMatchRate")} value={`${settlement.matchRatePct}%`} />
-        <KpiTile label={t("kpiUnmatched")} value={String(settlement.unmatchedCount)} />
-        <KpiTile label={t("kpiProfitPending")} value={String(settlement.profitPendingCount)} />
+        <KpiTile label={t("kpiPendapatanBersihSemua")} value={formatRupiah(settlement.totalNetIncome)} />
+        <KpiTile label={t("kpiTingkatCocok")} value={`${settlement.matchRatePct}%`} />
+        <KpiTile label={t("kpiBelumCocok")} value={String(settlement.unmatchedCount)} />
+        <KpiTile label={t("kpiLabaTertunda")} value={String(settlement.profitPendingCount)} />
         <KpiTile
-          label={t("kpiDiffer")}
+          label={t("kpiPesananBerbeda")}
           value={String(settlement.differCount)}
           tone={settlement.differCount > 0 ? "warn" : undefined}
         />
@@ -489,7 +491,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("matchedLinesTitle")}</CardTitle>
+          <CardTitle>{t("judulBarisCocok")}</CardTitle>
         </CardHeader>
         <CardContent>
           {matchedLines.length === 0 ? (
@@ -500,11 +502,11 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-9" />
-                    <TableHead>{t("colOrderNo")}</TableHead>
-                    <TableHead className="text-right">{t("colNetIncome")}</TableHead>
+                    <TableHead>{t("kolomPesanan")}</TableHead>
+                    <TableHead className="text-right">{t("kolomPendapatanBersih")}</TableHead>
                     <TableHead className="text-right">{t("colCogs")}</TableHead>
-                    <TableHead className="text-right">{t("colProfit")}</TableHead>
-                    <TableHead className="text-right">{t("compare.netDelta")}</TableHead>
+                    <TableHead className="text-right">{t("kolomLaba")}</TableHead>
+                    <TableHead className="text-right">{t("banding.selisihBersih")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -562,7 +564,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
                   })}
                 </TableBody>
               </Table>
-              <TablePager total={matchedLines.length} page={matchedPage} pageSize={PAGE_SIZE} onPage={setMatchedPage} t={t} />
+              <TablePager total={matchedLines.length} page={matchedPage} pageSize={PAGE_SIZE} onPage={setMatchedPage} />
             </div>
           )}
         </CardContent>
@@ -570,7 +572,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
 
       <Card>
         <CardHeader>
-          <CardTitle>{t("unmatchedLinesTitle")}</CardTitle>
+          <CardTitle>{t("judulBarisBelumCocok")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {unmatchedLines.length === 0 ? (
@@ -580,8 +582,8 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t("colOrderNo")}</TableHead>
-                    <TableHead className="text-right">{t("colNetIncome")}</TableHead>
+                    <TableHead>{t("kolomPesanan")}</TableHead>
+                    <TableHead className="text-right">{t("kolomPendapatanBersih")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -593,7 +595,7 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
                   ))}
                 </TableBody>
               </Table>
-              <TablePager total={unmatchedLines.length} page={unmatchedPage} pageSize={PAGE_SIZE} onPage={setUnmatchedPage} t={t} />
+              <TablePager total={unmatchedLines.length} page={unmatchedPage} pageSize={PAGE_SIZE} onPage={setUnmatchedPage} />
             </div>
           )}
         </CardContent>
@@ -602,50 +604,22 @@ export function SettlementDetailClient({ settlement, canManage, ganda = null }: 
   );
 }
 
+/** Halaman tabel baris settlement: pola bersama "Menampilkan 1–25 dari 110", tidak tampil bila hanya satu halaman. */
 function TablePager({
   total,
   page,
   pageSize,
   onPage,
-  t,
 }: {
   total: number;
   page: number;
   pageSize: number;
   onPage: (p: number) => void;
-  t: (key: string) => string;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   if (totalPages <= 1) return null;
-  const from = (page - 1) * pageSize + 1;
-  const to = Math.min(page * pageSize, total);
   return (
-    <div className="flex items-center justify-between gap-2 pt-3">
-      <span className="text-xs text-muted-foreground tabular-nums">{`${from}–${to} / ${total}`}</span>
-      <div className="flex items-center gap-1">
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          disabled={page <= 1}
-          onClick={() => onPage(page - 1)}
-          aria-label={t("prevPage")}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-xs tabular-nums px-1">{`${page} / ${totalPages}`}</span>
-        <Button
-          variant="outline"
-          size="icon"
-          className="h-8 w-8"
-          disabled={page >= totalPages}
-          onClick={() => onPage(page + 1)}
-          aria-label={t("nextPage")}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
+    <Pagination page={page} totalPages={totalPages} onPageChange={onPage} totalCount={total} pageSize={pageSize} />
   );
 }
 
@@ -661,7 +635,7 @@ function KpiTile({
   const toneClass = tone === "warn" ? "text-amber-700 dark:text-amber-400" : "";
   return (
     <Card className="gap-1 p-3">
-      <p className="text-xs text-muted-foreground truncate">{label}</p>
+      <p className="text-xs leading-snug text-muted-foreground">{label}</p>
       <p className={`text-lg font-semibold tabular-nums truncate ${toneClass}`}>{value}</p>
     </Card>
   );
@@ -677,7 +651,7 @@ function ComparisonBadge({ line, t }: { line: SettlementDetailLine; t: TFn }) {
   ) : null;
   const primary =
     line.netDelta === null ? (
-      <Badge variant="secondary">{t("compare.statusUnavailable")}</Badge>
+      <Badge variant="secondary">{t("banding.belumAdaData")}</Badge>
     ) : line.matches ? (
       <Badge className="bg-green-600 text-white hover:bg-green-600/90 dark:bg-green-700">
         {t("compare.statusMatches")}
@@ -719,23 +693,23 @@ function JubelioBreakdown({ line, t }: { line: SettlementDetailLine; t: TFn }) {
   const rows: Array<{ key: string; label: string; value: number }> = [];
 
   if (comp) {
-    rows.push({ key: "qtyTotal", label: t("compare.qtyTotal"), value: comp.grossProduct });
+    rows.push({ key: "qtyTotal", label: t("banding.qtyTotal"), value: comp.grossProduct });
     if (comp.diskon !== 0) rows.push({ key: "diskon", label: t("compare.diskon"), value: -Math.abs(comp.diskon) });
     if (comp.pajak !== 0) rows.push({ key: "pajak", label: t("compare.pajak"), value: comp.pajak });
-    if (comp.ongkir !== 0) rows.push({ key: "ongkir", label: t("compare.ongkir"), value: comp.ongkir });
+    if (comp.ongkir !== 0) rows.push({ key: "ongkir", label: t("banding.ongkir"), value: comp.ongkir });
   }
   if (fees) {
     const deductions: Array<[string, string, number]> = [
-      ["serviceFee", t("compare.serviceFee"), fees.serviceFee],
-      ["orderProcessingFee", t("compare.orderProcessingFee"), fees.orderProcessingFee],
-      ["insuranceCost", t("compare.insuranceCost"), fees.insuranceCost],
-      ["addFee", t("compare.addFee"), fees.addFee],
+      ["serviceFee", t("banding.biayaLayananJubelio"), fees.serviceFee],
+      ["orderProcessingFee", t("banding.biayaProsesJubelio"), fees.orderProcessingFee],
+      ["insuranceCost", t("banding.biayaAsuransi"), fees.insuranceCost],
+      ["addFee", t("banding.biayaTambahan"), fees.addFee],
       ["codFee", t("compare.codFee"), fees.codFee],
-      ["shippingTax", t("compare.shippingTax"), fees.shippingTax],
+      ["shippingTax", t("banding.pajakPengiriman"), fees.shippingTax],
       // TikTok/Tokopedia escrow-level deductions — itemize what would otherwise
       // land in the "Other Adjustments" residual (0 for Shopee → hidden).
-      ["feeAndTax", t("compare.feeAndTax"), fees.feeAndTax],
-      ["shippingCostAmount", t("compare.shippingCostMp"), fees.shippingCostAmount],
+      ["feeAndTax", t("banding.biayaPajak"), fees.feeAndTax],
+      ["shippingCostAmount", t("banding.biayaKirim"), fees.shippingCostAmount],
     ];
     for (const [key, label, v] of deductions) {
       if (v !== 0) rows.push({ key, label, value: -Math.abs(v) });
@@ -752,11 +726,11 @@ function JubelioBreakdown({ line, t }: { line: SettlementDetailLine; t: TFn }) {
         <FeeRow key={r.key} label={r.label} value={r.value} />
       ))}
       {residual !== null && residual !== 0 && (
-        <FeeRow label={t("compare.otherAdjustments")} value={residual} />
+        <FeeRow label={t("banding.penyesuaianLain")} value={residual} />
       )}
       {escrow !== null && (
         <div className="flex justify-between border-t pt-1 text-sm font-medium">
-          <span>{t("compare.escrowNet")}</span>
+          <span>{t("banding.escrowBersih")}</span>
           <span className="tabular-nums">{formatRupiah(escrow)}</span>
         </div>
       )}
@@ -771,14 +745,14 @@ function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) 
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
           {t("compare.excelTitle")}
         </h3>
-        <FeeRow label={t("compare.hargaAsliProduk")} value={line.hargaAsliProduk} />
-        <FeeRow label={t("compare.totalDiskonProduk")} value={line.totalDiskonProduk} />
-        <FeeRow label={t("compare.biayaAdministrasi")} value={line.biayaAdministrasi} />
-        <FeeRow label={t("compare.biayaLayanan")} value={line.biayaLayanan} />
-        <FeeRow label={t("compare.biayaKomisiAms")} value={line.biayaKomisiAms} />
-        <FeeRow label={t("compare.biayaProsesPesanan")} value={line.biayaProsesPesanan} />
+        <FeeRow label={t("banding.hargaAsliProduk")} value={line.hargaAsliProduk} />
+        <FeeRow label={t("banding.totalDiskonProduk")} value={line.totalDiskonProduk} />
+        <FeeRow label={t("banding.biayaAdministrasi")} value={line.biayaAdministrasi} />
+        <FeeRow label={t("banding.biayaLayanan")} value={line.biayaLayanan} />
+        <FeeRow label={t("banding.biayaKomisiAms")} value={line.biayaKomisiAms} />
+        <FeeRow label={t("banding.biayaProsesPesanan")} value={line.biayaProsesPesanan} />
         <div className="flex justify-between border-t pt-1 text-sm font-medium">
-          <span>{t("compare.netIncomeExcel")}</span>
+          <span>{t("banding.pendapatanBersihExcel")}</span>
           <span className="tabular-nums">{formatRupiah(line.netIncome)}</span>
         </div>
       </div>
@@ -790,18 +764,18 @@ function FeeBreakdownPanel({ line, t }: { line: SettlementDetailLine; t: TFn }) 
           <JubelioBreakdown line={line} t={t} />
         ) : (
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">{t("compare.netIncomeJubelio")}</span>
+            <span className="text-muted-foreground">{t("banding.pendapatanBersihJubelio")}</span>
             <span className="tabular-nums">—</span>
           </div>
         )}
         <div className="flex justify-between border-t pt-1 text-sm font-medium">
-          <span>{t("compare.netDelta")}</span>
+          <span>{t("banding.selisihBersih")}</span>
           <span className="tabular-nums">
             {line.netDelta === null ? "—" : formatRupiah(line.netDelta)}
           </span>
         </div>
         {line.netDelta === null && (
-          <p className="text-xs text-muted-foreground">{t("compare.statusUnavailable")}</p>
+          <p className="text-xs text-muted-foreground">{t("banding.belumAdaData")}</p>
         )}
       </div>
     </div>

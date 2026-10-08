@@ -150,7 +150,7 @@ export function KomisiSalesmanClient({ bulan, pilihan, skema, baris, potonganHil
             split: persen(skema.bagianPenagihPersen),
           })}{" "}
           <Link
-            href="/backoffice/settings/salesman"
+            href="/backoffice/settings/salesman#komisi"
             className="inline-flex items-center gap-1 font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
           >
             {t("openSettings")}

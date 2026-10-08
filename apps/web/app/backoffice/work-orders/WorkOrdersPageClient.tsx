@@ -53,6 +53,7 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { isAwaitingApproval } from '@/lib/leadtime/awaiting-acc';
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { hariTerlambatWo } from '@/lib/production/terlambat';
+import type { AngkaSetoranWo } from '@/lib/production/setoran-wo';
 import { DialogBatalWo } from './DialogBatalWo';
 import { DialogTerbitWo } from './DialogTerbitWo';
 
@@ -76,6 +77,8 @@ interface WorkOrder {
     issues: number;
     receipts: number;
   };
+  /** Angka setoran dari dokumen penerimaan (lib/production/setoran-wo.ts), dihitung di server. */
+  setoran: AngkaSetoranWo;
 }
 
 const SEMUA_STATUS: WOStatus[] = ['DRAFT', 'ISSUED', 'IN_PRODUCTION', 'PARTIAL', 'COMPLETED', 'CANCELLED'];
@@ -156,9 +159,81 @@ export function WorkOrdersPageClient() {
     void fetchWorkOrders();
   }, [fetchWorkOrders]);
 
-  const getCompletionPercent = (wo: WorkOrder) => {
-    if (!wo.actualQty || Number(wo.plannedQty) === 0) return 0;
-    return Math.min(100, Math.round((Number(wo.actualQty) / Number(wo.plannedQty)) * 100));
+  const labelStatus = (wo: WorkOrder) => {
+    const meta = getStatusMeta('workOrder', wo.status);
+    return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
+  };
+  const menungguAcc = (wo: WorkOrder) =>
+    isAwaitingApproval(wo.chainSnapshot as SnapshotStep[] | null, wo.chainConfirmedStepIndex ?? null) &&
+    wo.status !== 'DRAFT' &&
+    wo.status !== 'CANCELLED' &&
+    wo.status !== 'COMPLETED';
+  const kemajuan = (wo: WorkOrder) => (
+    <div className="w-32">
+      <div className="mb-1 flex justify-between text-xs tabular-nums">
+        <span>{wo.setoran.persen}%</span>
+        <span className="text-muted-foreground">
+          {wo.setoran.masukStok.toLocaleString('id-ID')} / {wo.setoran.target.toLocaleString('id-ID')}
+        </span>
+      </div>
+      <Progress value={wo.setoran.persen} className="h-2" aria-label={tWO('setoran.masukDariTarget', {
+        masuk: wo.setoran.masukStok.toLocaleString('id-ID'),
+        target: wo.setoran.target.toLocaleString('id-ID'),
+      })} />
+    </div>
+  );
+  /** Tombol aksi baris; tautan memakai Button asChild supaya tidak ada <a> yang membungkus <button>. */
+  const aksi = (wo: WorkOrder) => {
+    const bolehBatal =
+      (wo.status === 'DRAFT' || wo.status === 'ISSUED' || wo.status === 'IN_PRODUCTION') &&
+      wo._count.receipts === 0;
+    return (
+      <div className="flex items-center gap-1">
+        <Button asChild variant="ghost" size="icon">
+          <Link
+            href={`/backoffice/work-orders/${wo.id}`}
+            title={tWO('viewWO', { docNumber: wo.docNumber })}
+            aria-label={tWO('viewWO', { docNumber: wo.docNumber })}
+          >
+            <Eye className="h-4 w-4" />
+          </Link>
+        </Button>
+        {wo.status === 'DRAFT' && (
+          <>
+            <Button asChild variant="ghost" size="icon">
+              <Link
+                href={`/backoffice/work-orders/${wo.id}/edit`}
+                title={tWO('editWO', { docNumber: wo.docNumber })}
+                aria-label={tWO('editWO', { docNumber: wo.docNumber })}
+              >
+                <Pencil className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTerbit(wo)}
+              aria-label={`${tWO('issue')} — ${wo.docNumber}`}
+              title={tWO('issue')}
+            >
+              <Play className="h-4 w-4" />
+            </Button>
+          </>
+        )}
+        {bolehBatal && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="text-destructive"
+            onClick={() => setBatal(wo)}
+            aria-label={`${tWO('cancelWO')} — ${wo.docNumber}`}
+            title={tWO('cancelWO')}
+          >
+            <XCircle className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -167,12 +242,12 @@ export function WorkOrdersPageClient() {
       <PageHeader
         title={tWO('pageTitle')}
         actions={
-          <Link href="/backoffice/work-orders/new">
-            <Button>
+          <Button asChild>
+            <Link href="/backoffice/work-orders/new">
               <Plus className="mr-2 h-4 w-4" />
               {tWO('newWO')}
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         }
       />
 
@@ -239,13 +314,57 @@ export function WorkOrdersPageClient() {
             />
           ) : (
             <>
-            <div className="overflow-x-auto">
+            {/* HP: satu kartu per perintah kerja — tabel sembilan kolom tidak terbaca di 390 px. */}
+            <ul className="space-y-3 md:hidden">
+              {workOrders.map((wo) => {
+                const terlambat = hariTerlambatWo(wo.targetDate, wo.status);
+                return (
+                  <li key={wo.id} className="space-y-2 rounded-lg border p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <Link href={`/backoffice/work-orders/${wo.id}`} className="font-medium hover:underline">
+                          {wo.docNumber}
+                        </Link>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {labelStatus(wo)}
+                          {menungguAcc(wo) ? (
+                            <Badge variant="outline" className="border-amber-500 text-amber-800 dark:text-amber-300">
+                              {tWO('menungguAcc')}
+                            </Badge>
+                          ) : null}
+                          {terlambat != null ? (
+                            <Badge variant="destructive">{tWO('terlambatHari', { hari: terlambat })}</Badge>
+                          ) : null}
+                        </div>
+                      </div>
+                      {aksi(wo)}
+                    </div>
+                    {wo.finishedGood ? (
+                      <p className="text-sm">
+                        {wo.finishedGood.nameId}{' '}
+                        <span className="text-muted-foreground">· {wo.finishedGood.sku}</span>
+                      </p>
+                    ) : null}
+                    <p className="text-sm text-muted-foreground">{wo.vendor.name}</p>
+                    <div className="flex flex-wrap items-end justify-between gap-2 text-sm">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <Calendar className="h-4 w-4" aria-hidden />
+                        {wo.targetDate ? formatDisplayDate(wo.targetDate, locale) : '-'}
+                      </span>
+                      {kemajuan(wo)}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="hidden overflow-x-auto md:block">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>{tTable('woNumber')}</TableHead>
                     <TableHead className="min-w-[180px]">{tWO('colBarangJadi')}</TableHead>
-                    <TableHead className="min-w-[140px]">{tTable('vendor')}</TableHead>
+                    {/* Di bawah 2xl vendor menumpang di sel barang jadi supaya tabel muat di laptop 1280. */}
+                    <TableHead className="hidden min-w-[140px] 2xl:table-cell">{tTable('vendor')}</TableHead>
                     <TableHead>{tTable('status')}</TableHead>
                     <TableHead>{tWO('colTargetDate')}</TableHead>
                     <TableHead className="hidden 2xl:table-cell">{tWO('completedAt')}</TableHead>
@@ -260,9 +379,6 @@ export function WorkOrdersPageClient() {
                 <TableBody>
                   {workOrders.map((wo) => {
                     const terlambat = hariTerlambatWo(wo.targetDate, wo.status);
-                    const bolehBatal =
-                      (wo.status === 'DRAFT' || wo.status === 'ISSUED' || wo.status === 'IN_PRODUCTION') &&
-                      wo._count.receipts === 0;
                     return (
                     <TableRow key={wo.id}>
                       <TableCell className="font-medium">
@@ -279,8 +395,9 @@ export function WorkOrdersPageClient() {
                         ) : (
                           <span className="text-muted-foreground">-</span>
                         )}
+                        <p className="mt-1 text-sm text-muted-foreground 2xl:hidden">{wo.vendor.name}</p>
                       </TableCell>
-                      <TableCell className="whitespace-normal">
+                      <TableCell className="hidden whitespace-normal 2xl:table-cell">
                         <div>
                           <p>{wo.vendor.name}</p>
                           <p className="text-sm text-muted-foreground">{wo.vendor.code}</p>
@@ -288,24 +405,15 @@ export function WorkOrdersPageClient() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap items-center gap-1">
-                          {(() => {
-                            const meta = getStatusMeta('workOrder', wo.status);
-                            return <StatusPill tone={meta.tone}>{tStatus(meta.labelKey as never)}</StatusPill>;
-                          })()}
-                          {isAwaitingApproval(
-                            wo.chainSnapshot as SnapshotStep[] | null,
-                            wo.chainConfirmedStepIndex ?? null
-                          ) &&
-                            wo.status !== 'DRAFT' &&
-                            wo.status !== 'CANCELLED' &&
-                            wo.status !== 'COMPLETED' && (
-                              <Badge
-                                variant="outline"
-                                className="border-amber-500 text-amber-700 dark:text-amber-400"
-                              >
-                                {tWO('menungguAcc')}
-                              </Badge>
-                            )}
+                          {labelStatus(wo)}
+                          {menungguAcc(wo) ? (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-500 text-amber-800 dark:text-amber-300"
+                            >
+                              {tWO('menungguAcc')}
+                            </Badge>
+                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -343,68 +451,10 @@ export function WorkOrdersPageClient() {
                           <span className="text-muted-foreground">-</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <div className="w-32">
-                          <div className="flex justify-between text-xs mb-1">
-                            <span>{getCompletionPercent(wo)}%</span>
-                            <span className="text-muted-foreground">
-                              {Number(wo.actualQty || 0).toLocaleString('id-ID')} / {Number(wo.plannedQty).toLocaleString('id-ID')}
-                            </span>
-                          </div>
-                          <Progress value={getCompletionPercent(wo)} className="h-2" />
-                        </div>
-                      </TableCell>
-                      <TableCell className="hidden text-right 2xl:table-cell">{wo._count.issues}</TableCell>
-                      <TableCell className="hidden text-right 2xl:table-cell">{wo._count.receipts}</TableCell>
-                      <TableCell className="sticky right-0 bg-card">
-                        <div className="flex items-center gap-1">
-                          <Link href={`/backoffice/work-orders/${wo.id}`}>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title={tWO('viewWO', { docNumber: wo.docNumber })}
-                              aria-label={tWO('viewWO', { docNumber: wo.docNumber })}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          {wo.status === 'DRAFT' && (
-                            <>
-                              <Link href={`/backoffice/work-orders/${wo.id}/edit`}>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  title={tWO('editWO', { docNumber: wo.docNumber })}
-                                  aria-label={tWO('editWO', { docNumber: wo.docNumber })}
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setTerbit(wo)}
-                                aria-label={`${tWO('issue')} — ${wo.docNumber}`}
-                                title={tWO('issue')}
-                              >
-                                <Play className="h-4 w-4" />
-                              </Button>
-                            </>
-                          )}
-                          {bolehBatal && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="text-destructive"
-                              onClick={() => setBatal(wo)}
-                              aria-label={`${tWO('cancelWO')} — ${wo.docNumber}`}
-                              title={tWO('cancelWO')}
-                            >
-                              <XCircle className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
+                      <TableCell>{kemajuan(wo)}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums 2xl:table-cell">{wo._count.issues}</TableCell>
+                      <TableCell className="hidden text-right tabular-nums 2xl:table-cell">{wo._count.receipts}</TableCell>
+                      <TableCell className="sticky right-0 bg-card">{aksi(wo)}</TableCell>
                     </TableRow>
                     );
                   })}

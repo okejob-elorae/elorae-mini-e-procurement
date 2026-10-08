@@ -17,6 +17,7 @@ import { formatIDR } from '@/lib/sales-orders/format';
 import { cn } from '@/lib/utils';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { DAFTAR_ISI_SALESMAN } from "./daftar-isi";
+import { DaftarIsiPengaturan } from "../DaftarIsiPengaturan";
 
 const angkaSaja = (s: string) => s.replace(/\D/g, '');
 const kelompok = new Intl.NumberFormat('id-ID');
@@ -34,7 +35,6 @@ function useGalat() {
  */
 export function JudulPengaturanSalesman({ bolehUbah, bolehBukaSpg }: { bolehUbah: boolean; bolehBukaSpg: boolean }) {
   const t = useTranslations('settings.salesman');
-  const tAkar = useTranslations();
   return (
     <div className="space-y-4">
       <div>
@@ -44,44 +44,20 @@ export function JudulPengaturanSalesman({ bolehUbah, bolehBukaSpg }: { bolehUbah
         </div>
         {!bolehUbah ? <p className="mt-2 text-sm text-amber-700 dark:text-amber-400">{t('readOnly')}</p> : null}
       </div>
-      <nav aria-label={t('toc.label')} className="rounded-lg border bg-card p-4">
-        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-          {DAFTAR_ISI_SALESMAN.map((g) => (
-            <div key={g.id} className="space-y-1.5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{tAkar(g.judul as never)}</p>
-              <ul className="space-y-1">
-                {g.kartu.map((k) => (
-                  <li key={k.id}>
-                    <a href={`#${k.id}`} className="text-sm text-foreground underline-offset-4 hover:underline">
-                      {tAkar(k.judul as never)}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-        {/* Pengaturan → SPG dijaga spg_sales:view; tautan hanya untuk yang bisa membukanya. */}
-        {bolehBukaSpg ? (
-          <div className="mt-3 border-t pt-3">
+      <DaftarIsiPengaturan
+        label={t('toc.label')}
+        kelompok={DAFTAR_ISI_SALESMAN}
+        // Pengaturan → SPG dijaga spg_sales:view; tautan hanya untuk yang bisa membukanya.
+        kaki={
+          bolehBukaSpg ? (
             <Link href="/backoffice/settings/spg" className="inline-flex items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline">
               <Store className="h-4 w-4" aria-hidden />
-              {t('toc.spgLink')}
+              {t("toc.spgLinkV2")}
             </Link>
-          </div>
-        ) : null}
-      </nav>
+          ) : null
+        }
+      />
     </div>
-  );
-}
-
-/** Judul kelompok di halaman, sejajar dengan daftar isi. */
-export function JudulKelompok({ kunci }: { kunci: string }) {
-  const tAkar = useTranslations();
-  return (
-    <h2 className="border-t pt-6 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-      {tAkar(kunci as never)}
-    </h2>
   );
 }
 
@@ -147,13 +123,15 @@ export function BatasKunjunganCard({ bolehUbah, batas }: { bolehUbah: boolean; b
 
 type PropsTarget = {
   bolehUbah: boolean;
+  /** Tautan ke Pengaturan → SPG (dijaga spg_sales:view). */
+  bolehBukaSpg: boolean;
   bulan: { kunci: string; target: Record<string, number> }[];
   salesman: { id: string; nama: string; capai: number }[];
   /** SPG: target per orang, pencapaian = total nota SPG bulan ini. */
   spg: { id: string; nama: string; tokoNama: string | null; capai: number }[];
 };
 
-export function TargetBulananCard({ bolehUbah, bulan, salesman, spg }: PropsTarget) {
+export function TargetBulananCard({ bolehUbah, bolehBukaSpg, bulan, salesman, spg }: PropsTarget) {
   const t = useTranslations('settings.salesman');
   const tToasts = useTranslations('toasts');
   const locale = useLocale();
@@ -263,6 +241,20 @@ export function TargetBulananCard({ bolehUbah, bulan, salesman, spg }: PropsTarg
             </button>
           ))}
         </div>
+
+        {spg.length > 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {t("targetSpgNote")}
+            {bolehBukaSpg ? (
+              <>
+                {" "}
+                <Link href="/backoffice/settings/spg" className="font-medium text-foreground underline-offset-4 hover:underline">
+                  {t("targetSpgLink")}
+                </Link>
+              </>
+            ) : null}
+          </p>
+        ) : null}
 
         {salesman.length === 0 && spg.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("noSalesman")}</p>

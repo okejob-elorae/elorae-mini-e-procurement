@@ -64,12 +64,16 @@ export type GerakanKartu = {
   hargaSatuan: number | null;
   /** Nilai rupiah bertanda bila diketahui pasti; tanpa ini = qty × hargaSatuan. */
   nilai?: number | null;
+  /** Halaman rincian dokumennya di kantor; null bila dokumen itu tidak punya halaman sendiri. */
+  tautan?: string | null;
 };
 
 export type BarisKartuStok = {
   id: string;
   date: Date;
   docNumber: string | null;
+  /** Lihat `GerakanKartu.tautan`. */
+  tautan?: string | null;
   jenis: string;
   variantSku: string | null;
   notes: string | null;
@@ -133,6 +137,39 @@ export function qtyBertandaMovement(m: Pick<BarisMovementKartu, "type" | "qty">)
   return dua(m.qty);
 }
 
+/**
+ * Rincian dokumen sebuah StockMovement menurut `refType`. Hanya jenis yang
+ * `refId`-nya PASTI id dokumen yang punya halaman: GRN (dan pembalikannya),
+ * opname gudang, retur pemasok, rekonsiliasi, penyesuaian manual. Keluar bahan
+ * dan terima hasil produksi menunjuk dokumen tanpa halaman sendiri → null.
+ */
+export function tautanMovement(refType: string, refId: string | null | undefined): string | null {
+  const id = (refId ?? "").trim();
+  if (!id || id === "temp") return null;
+  const e = encodeURIComponent(id);
+  switch (refType) {
+    case "GRN":
+    case "GRN_OWNER_DECLINE":
+      return `/backoffice/inventory/grn/${e}`;
+    case "OPNAME":
+      return `/backoffice/inventory/stock-opname/${e}`;
+    case "VENDOR_RETURN":
+      return `/backoffice/vendor-returns/${e}`;
+    case "RECON":
+      return `/backoffice/inventory/reconciliation/${e}`;
+    case "ADJUSTMENT":
+      return `/backoffice/inventory/adjustment/${e}`;
+    default:
+      return null;
+  }
+}
+
+/** Setiap StockAdjustment punya rincian di halaman penyesuaian (sumber apa pun). */
+export function tautanPenyesuaian(id: string | null | undefined): string | null {
+  const v = (id ?? "").trim();
+  return v ? `/backoffice/inventory/adjustment/${encodeURIComponent(v)}` : null;
+}
+
 export function gerakanDariMovement(m: BarisMovementKartu): GerakanKartu {
   return {
     id: m.id,
@@ -144,6 +181,7 @@ export function gerakanDariMovement(m: BarisMovementKartu): GerakanKartu {
     catatan: m.notes,
     qty: qtyBertandaMovement(m),
     hargaSatuan: m.unitCost,
+    tautan: tautanMovement(m.refType, m.refId),
   };
 }
 
@@ -187,6 +225,7 @@ export function gerakanDariPenyesuaian(a: BarisPenyesuaianKartu): GerakanKartu {
     qty,
     hargaSatuan: harga,
     nilai: geser,
+    tautan: tautanPenyesuaian(a.id),
   };
 }
 
@@ -250,6 +289,7 @@ export function susunKartuStok(p: {
       id: g.id,
       date: g.tanggal,
       docNumber: g.docNumber,
+      tautan: g.tautan ?? null,
       jenis: g.jenis,
       variantSku: g.variantSku,
       notes: g.catatan,

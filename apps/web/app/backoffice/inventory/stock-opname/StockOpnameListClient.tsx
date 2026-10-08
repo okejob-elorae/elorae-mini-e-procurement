@@ -58,13 +58,13 @@ export function StockOpnameListClient() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <TombolBantuan judul={t("title")} />
+          <h1 className="text-2xl font-bold tracking-tight">{t("judul")}</h1>
+          <TombolBantuan judul={t("judul")} />
         </div>
         <Link href="/backoffice/inventory/stock-opname/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
-            {t("new")}
+            {t("judulBaru")}
           </Button>
         </Link>
       </div>
@@ -87,7 +87,7 @@ export function StockOpnameListClient() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ClipboardList className="h-5 w-5" />
-            {t("title")}
+            {t("judul")}
           </CardTitle>
         </CardHeader>
         <CardContent>

@@ -7,13 +7,17 @@ import {
   labelKolomAudit,
   nilaiTampil,
 } from "@/lib/audit/rincian-perubahan";
+import { angkaUang, kolomUang, labelNilaiStatus } from "@/lib/audit/nilai-audit";
+import { formatRupiah } from "@/lib/format/rupiah";
 import { cn } from "@/lib/utils";
 
 /**
  * Rincian perubahan satu baris log: tabel Kolom / Sebelum / Sesudah dengan
- * nama kolom berbahasa Indonesia — bukan JSON mentah.
+ * nama kolom berbahasa Indonesia — bukan JSON mentah. Kolom uang tampil
+ * sebagai rupiah dan kode status sebagai labelnya (`lib/audit/nilai-audit.ts`);
+ * `entityType` menentukan arti kode status (BELUM di termin KOL ≠ BELUM di pajak).
  */
-export function RincianPerubahan({ changes }: { changes: unknown }) {
+export function RincianPerubahan({ changes, entityType }: { changes: unknown; entityType?: string | null }) {
   const tAudit = useTranslations("audit");
   const tAuditActions = useTranslations("auditActions");
   const rows = barisPerubahan(changes);
@@ -40,11 +44,19 @@ export function RincianPerubahan({ changes }: { changes: unknown }) {
               </td>
               {adaSebelum && (
                 <td className="px-3 py-1.5 align-top">
-                  {r.adaSebelum ? <Nilai v={r.sebelum} /> : <span className="text-muted-foreground">—</span>}
+                  {r.adaSebelum ? (
+                    <Nilai v={r.sebelum} kunci={r.kunci} entityType={entityType} />
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </td>
               )}
               <td className={cn("px-3 py-1.5 align-top", r.berubah && "font-medium")}>
-                {r.adaSesudah ? <Nilai v={r.sesudah} /> : <span className="text-muted-foreground">—</span>}
+                {r.adaSesudah ? (
+                  <Nilai v={r.sesudah} kunci={r.kunci} entityType={entityType} />
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </td>
             </tr>
           ))}
@@ -54,9 +66,24 @@ export function RincianPerubahan({ changes }: { changes: unknown }) {
   );
 }
 
-function Nilai({ v }: { v: unknown }) {
+function Nilai({ v, kunci, entityType }: { v: unknown; kunci: string; entityType?: string | null }) {
   const tAudit = useTranslations("audit");
+  const tRoot = useTranslations();
   const locale = useLocale();
+  const status = labelNilaiStatus(tRoot, entityType, kunci, v);
+  if (status !== null) return <>{status}</>;
+  const uang = kolomUang(kunci) ? angkaUang(v) : null;
+  if (uang !== null) {
+    // Rupiah utuh di layar; nilai persisnya (mis. DPP 2.512.886,5) tetap ada di tooltip.
+    return (
+      <span
+        className="tabular-nums"
+        title={Number.isInteger(uang) ? undefined : uang.toLocaleString(locale === "en" ? "en-GB" : "id-ID")}
+      >
+        {formatRupiah(uang)}
+      </span>
+    );
+  }
   const n = nilaiTampil(v);
   switch (n.jenis) {
     case "kosong":

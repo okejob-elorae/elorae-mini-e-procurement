@@ -3,6 +3,7 @@ import type { StockAdjustmentSource } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { lengkapiNilaiMasukRusak, nilaiKeluarBerikutnya, nilaiMasukRusak } from "@/lib/finance/operasional/nilai-rusak-queries";
 import {
   ENTITAS_GERAK_RUSAK,
   JEJAK_GUDANG_RUSAK,
@@ -59,8 +60,11 @@ export async function masukkanGudangRusakDariNri(
   const ada = new Set(sudah.map((s) => s.refId));
   const baru = rusak.filter((b) => !ada.has(b.id));
   if (baru.length === 0) return 0;
+  // Nilai masuk = qty × harga rata-rata barang itu sekarang — sama dengan yang didebit
+  // jurnal returnya ke `INVENTORY_DAMAGED`, supaya buku besar = nilai gudang rusak.
+  const nilai = await Promise.all(baru.map((b) => nilaiMasukRusak(tx, b.itemId, b.variantSku, b.qty)));
   await tx.damagedStockMovement.createMany({
-    data: baru.map((b) => ({
+    data: baru.map((b, i) => ({
       itemId: b.itemId,
       variantSku: b.variantSku?.trim() ?? "",
       productName: b.itemName.trim() || b.itemId,
@@ -68,6 +72,7 @@ export async function masukkanGudangRusakDariNri(
       kind: "MASUK_RETUR",
       refType: REF_BARIS_NRI,
       refId: b.id,
+      value: new Prisma.Decimal(nilai[i]),
       note: `${input.noNri} · ${b.condition}`,
       createdById: input.olehUserId,
     })),
@@ -138,6 +143,14 @@ export async function putuskanGudangRusak(input: {
     if (!barang) return { ok: false, alasan: "BARANG_TIDAK_DITEMUKAN" };
     const productName = terakhir?.productName ?? barang.nameId;
 
+    // Nilai yang keluar dari gudang rusak = bagian rata-rata saldo barang itu
+    // (`lib/finance/operasional/nilai-rusak.ts`). Gerakan masuk lama yang belum
+    // bernilai diisi dulu, supaya nilai ini dan nilai saldo sesudahnya memakai
+    // harga yang sama. PERBAIKI/MUSNAHKAN menyimpannya di `value`; JUAL_OBRAL
+    // memakai `value` untuk HASIL JUAL, jadi biayanya hanya di jejak (`biaya`).
+    await lengkapiNilaiMasukRusak(tx, { barang: { itemId, variantSku: varian } });
+    const biaya = await nilaiKeluarBerikutnya(tx, itemId, varian, p.qty);
+
     const penyesuaianId = p.keputusan === "PERBAIKI" ? await kembalikanKeStokJual(tx, { itemId, varian, qty: p.qty, productName, catatan: p.catatan, olehUserId: input.olehUserId }) : null;
 
     const gerak = await tx.damagedStockMovement.create({
@@ -149,7 +162,12 @@ export async function putuskanGudangRusak(input: {
         kind: p.keputusan,
         refType: penyesuaianId ? REF_PENYESUAIAN : null,
         refId: penyesuaianId,
-        value: p.keputusan === "JUAL_OBRAL" && p.nilai !== null ? new Prisma.Decimal(p.nilai) : null,
+        value:
+          p.keputusan === "JUAL_OBRAL"
+            ? p.nilai !== null
+              ? new Prisma.Decimal(p.nilai)
+              : null
+            : new Prisma.Decimal(biaya),
         note: p.catatan,
         createdById: input.olehUserId,
         createdAt: sekarang,
@@ -172,6 +190,8 @@ export async function putuskanGudangRusak(input: {
           keputusan: p.keputusan satisfies KeputusanGudangRusak,
           qty: p.qty,
           ...(p.nilai !== null ? { nilai: p.nilai } : {}),
+          // Nilai gudang rusak yang keluar (dibaca jurnal keputusan ini).
+          biaya,
           ...(penyesuaianId ? { stockAdjustmentId: penyesuaianId } : {}),
         },
         reason: p.catatan,

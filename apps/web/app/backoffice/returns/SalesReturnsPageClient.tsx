@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
@@ -255,7 +257,13 @@ export function SalesReturnsPageClient(props: Props) {
                   }
                 >
                   <TableCell className="font-mono text-sm">
-                    {r.jubelioReturnNo ?? `#${r.jubelioReturnId}`}
+                    <Link
+                      href={`/backoffice/returns/${r.id}`}
+                      className={TAUTAN_DOKUMEN}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {r.jubelioReturnNo ?? `#${r.jubelioReturnId}`}
+                    </Link>
                   </TableCell>
                   <TableCell>
                     <span

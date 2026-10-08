@@ -23,10 +23,21 @@
  *
  * Setiap baris membawa `memo` = nama perannya. Saldo yang "sudah dibukukan"
  * per kolaborasi dihitung dari memo itu, bukan dari akun — pemetaan akun boleh
- * berubah tanpa membuat selisihnya salah.
+ * berubah tanpa membuat selisihnya salah. Satu pengecualian: baris PPN
+ * keluaran sampel bermemo `DPP <angka>` (`memoDpp`) — rekap masa PPN membaca
+ * DPP dari memo itu, dan tidak ada saldo KOL yang dihitung dari baris PPN.
+ *
+ * Semua baris jurnal KOL membawa kanal `KOL` (dimensi laba per kanal) —
+ * dipasang penulisnya (`jurnal-kol.ts`), bukan di aturan ini.
+ *
+ * Sampel berangkat ketika status PKP (`pajak.ppn`) = PKP: pemberian
+ * cuma-cuma terutang PPN keluaran (PMK 11/2025, DPP nilai lain 11/12 × HPP)
+ * yang ditanggung Elorae — DR Beban KOL (HPP + PPN) / CR Persediaan HPP / CR
+ * `PPN_KELUARAN` PPN. Bukan PKP (bawaan): tanpa baris PPN, seperti dulu.
  */
 
 import { nilaiPerPeranPersediaan } from "@/lib/finance/journals/peran-persediaan";
+import { memoDpp } from "@/lib/finance/pajak/jurnal-ppn";
 
 export const SUMBER_KOL = {
   FEE: "KOL_FEE",
@@ -37,9 +48,19 @@ export const SUMBER_KOL = {
 
 export const SEMUA_SUMBER_KOL: readonly string[] = Object.values(SUMBER_KOL);
 
-export type PeranKol = "KOL_EXPENSE" | "KOL_PAYABLE" | "KOL_PREPAID" | "PPH21_PAYABLE" | "PPH23_PAYABLE" | "BANK" | "INVENTORY" | "INVENTORY_FG";
+export type PeranKol =
+  | "KOL_EXPENSE"
+  | "KOL_PAYABLE"
+  | "KOL_PREPAID"
+  | "PPH21_PAYABLE"
+  | "PPH23_PAYABLE"
+  | "BANK"
+  | "INVENTORY"
+  | "INVENTORY_FG"
+  | "PPN_KELUARAN";
 
-export type BarisJurnalKol = { role: PeranKol; debit: number; credit: number; memo: PeranKol };
+/** `memo` = nama peran, kecuali baris PPN keluaran sampel (`DPP <angka>`). */
+export type BarisJurnalKol = { role: PeranKol; debit: number; credit: number; memo: string };
 
 const dariSen = (s: number) => s / 100;
 const keSen = (n: number): number => Math.round(Number(((Number.isFinite(n) ? n : 0) * 100).toFixed(4)));
@@ -116,14 +137,22 @@ export function nilaiSampel(baris: readonly { qty: number; unitCost: number }[])
 /**
  * Baris jurnal sampel berangkat: DR Beban KOL sebesar total, CR persediaan per
  * peran (`INVENTORY_FG` untuk barang jadi, `INVENTORY` selain itu).
+ *
+ * `ppn` (opsional, dari `ppnPemberianCumaCuma`): PPN keluaran pemberian
+ * cuma-cuma yang ditanggung Elorae — ikut beban, CR `PPN_KELUARAN` bermemo DPP.
  */
-export function barisSampel(baris: readonly { qty: number; unitCost: number; tipeBarang: string | null | undefined }[]): BarisJurnalKol[] {
+export function barisSampel(
+  baris: readonly { qty: number; unitCost: number; tipeBarang: string | null | undefined }[],
+  ppn?: { ppn: number; dpp: number },
+): BarisJurnalKol[] {
   const kelompok = nilaiPerPeranPersediaan(baris.map((b) => ({ tipeBarang: b.tipeBarang, nilai: dariSen(senBaris(b)) })));
   const totalSen = kelompok.reduce((s, k) => s + keSen(k.nilai), 0);
   if (totalSen <= 0) return [];
+  const ppnSen = ppn ? Math.max(0, keSen(ppn.ppn)) : 0;
   return [
-    { role: "KOL_EXPENSE", debit: dariSen(totalSen), credit: 0, memo: "KOL_EXPENSE" },
+    { role: "KOL_EXPENSE", debit: dariSen(totalSen + ppnSen), credit: 0, memo: "KOL_EXPENSE" },
     ...kelompok.filter((k) => keSen(k.nilai) > 0).map((k) => ({ role: k.role, debit: 0, credit: k.nilai, memo: k.role }) as BarisJurnalKol),
+    ...(ppnSen > 0 && ppn ? [{ role: "PPN_KELUARAN" as const, debit: 0, credit: dariSen(ppnSen), memo: memoDpp(ppn.dpp) }] : []),
   ];
 }
 

@@ -166,6 +166,13 @@ export function getNotificationHref(type: string, raw: unknown): string | null {
     }
     case 'JOURNAL_PENDING':
       return tautanJurnalTertunda(data);
+    case 'JOURNAL_APPROVAL': {
+      // Jurnal manual (atau pembalik) / templat jurnal berulang yang menunggu persetujuan orang lain.
+      const templat = idAman(data, 'templatId');
+      if (templat) return `/backoffice/finance/jurnal-berulang/${templat}`;
+      const id = idAman(data, 'journalId');
+      return id ? `/backoffice/finance/journals/${id}` : '/backoffice/finance/journals?status=draf';
+    }
 
     /*
      * Kabar (`kabariPengguna`) yang sampai ke lonceng KANTOR: BKM/NRT yang dicatat
@@ -207,6 +214,8 @@ export function getNotificationHref(type: string, raw: unknown): string | null {
 
 const TAUTAN_GRN = '/backoffice/inventory?tab=grn';
 const TAUTAN_BUKU_JURNAL = '/backoffice/finance/journals?status=tertunda';
+const TAUTAN_REKONSILIASI_PIUTANG = '/backoffice/finance/rekonsiliasi-piutang#tertunda';
+const TAUTAN_REKONSILIASI_PERSEDIAAN = '/backoffice/finance/rekonsiliasi-persediaan#tertunda';
 
 /** `data` notifikasi sebagai objek — juga dipakai teks lonceng (`tampilan-lonceng.ts`). */
 export function bacaDataNotifikasi(raw: unknown): Record<string, unknown> {
@@ -265,6 +274,39 @@ function tautanJurnalTertunda(data: Record<string, unknown>): string {
         // Pengiriman sampel tampil di kolaborasinya; tombol posting ulang ada di tab Pembayaran.
         const kolaborasi = idAman(data, 'collabId');
         return kolaborasi ? `/backoffice/kreatif/kolaborasi/${kolaborasi}?tab=pembayaran` : '/backoffice/kreatif/sampel';
+      }
+      // Jurnal penjualan lapangan & piutang toko: posting ulangnya di layar rekonsiliasi piutang.
+      case 'nota_putus':
+      case 'bkm_lapangan':
+      case 'retur_toko':
+      case 'tukar_barang':
+        return TAUTAN_REKONSILIASI_PIUTANG;
+      // Jurnal operasional (konsinyasi, komisi, barang hilang, gudang rusak, stok manual,
+      // retur pemasok, biaya perjalanan): posting ulangnya di layar rekonsiliasi persediaan.
+      case 'konsi_kirim':
+      case 'konsi_pesanan':
+      case 'konsi_retur':
+      case 'konsi_siklus':
+      case 'konsi_komisi':
+      case 'konsi_gaji_bayar':
+      case 'konsi_bayar_toko':
+      case 'komisi_spg':
+      case 'komisi_spg_bayar':
+      case 'barang_hilang':
+      case 'potong_sales':
+      case 'gudang_rusak':
+      case 'stok_manual':
+      case 'retur_pemasok':
+      case 'biaya_perjalanan':
+      case 'biaya_perjalanan_bayar':
+        return TAUTAN_REKONSILIASI_PERSEDIAAN;
+      // Penyusutan aset (`<aset>/<YYYY-MM>`) dan jurnal berulang (`<templat>/<YYYY-MM>`):
+      // posting ulangnya di halaman aset / templatnya.
+      case 'penyusutan':
+      case 'jurnal_berulang': {
+        const induk = String(data.docId).trim().split('/')[0];
+        const dasar = kind === 'penyusutan' ? '/backoffice/finance/aset-tetap' : '/backoffice/finance/jurnal-berulang';
+        return induk ? `${dasar}/${encodeURIComponent(induk)}` : dasar;
       }
       default:
         return TAUTAN_BUKU_JURNAL;

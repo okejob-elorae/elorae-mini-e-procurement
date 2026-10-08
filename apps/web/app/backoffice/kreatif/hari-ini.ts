@@ -80,6 +80,10 @@ export type UmurTugas =
   | { jenis: "H_MIN"; hari: number }
   | { jenis: "HARI_INI" }
   | { jenis: "UMUR"; hari: number }
+  /** Hari sejak deal (data kirim kurang, kirim dobel) — ditulis "N hari sejak deal". */
+  | { jenis: "UMUR_DEAL"; hari: number }
+  /** Hari di tahap sekarang (KOL diblokir). */
+  | { jenis: "UMUR_TAHAP"; hari: number }
   | null;
 
 /**
@@ -98,9 +102,8 @@ export function umurTugas(kunci: KunciTugas, b: BarisTugas, hariIni: string): Um
     if (b.umurHari === 0) return { jenis: "HARI_INI" };
     return { jenis: "TELAT", hari: b.umurHari };
   }
-  if (kunci === "KIRIM_DOBEL" || kunci === "DATA_KIRIM_KURANG" || kunci === "KOL_DIBLOKIR") {
-    return { jenis: "UMUR", hari: Math.max(0, b.umurHari) };
-  }
+  if (kunci === "KIRIM_DOBEL" || kunci === "DATA_KIRIM_KURANG") return { jenis: "UMUR_DEAL", hari: Math.max(0, b.umurHari) };
+  if (kunci === "KOL_DIBLOKIR") return { jenis: "UMUR_TAHAP", hari: Math.max(0, b.umurHari) };
   const tenggat = b.info.tanggal;
   if (!tenggat) return { jenis: "UMUR", hari: Math.max(0, b.umurHari) };
   const telat = selisihHari(tenggat, hariIni);
@@ -111,7 +114,7 @@ export function umurTugas(kunci: KunciTugas, b: BarisTugas, hariIni: string): Um
 export function umurMerah(u: UmurTugas, ambangUmurHari: number): boolean {
   if (!u) return false;
   if (u.jenis === "TELAT") return true;
-  return u.jenis === "UMUR" && u.hari > ambangUmurHari;
+  return (u.jenis === "UMUR" || u.jenis === "UMUR_DEAL" || u.jenis === "UMUR_TAHAP") && u.hari > ambangUmurHari;
 }
 
 export type AksiTugas = "kirimSampel" | "tandaiDiterima" | "tempelLink" | "reviewDraf" | "isiAngka" | "bayar" | "lengkapiData";
@@ -138,7 +141,8 @@ export function pintasanTugas(kunci: KunciTugas, b: BarisTugas): { aksi: AksiTug
     case "BELUM_DIBAYAR":
       return { aksi: "bayar", href: `/backoffice/kreatif/pembayaran?kolaborasi=${k}` };
     case "DATA_KIRIM_KURANG":
-      return b.kolId ? { aksi: "lengkapiData", href: `/backoffice/kreatif/kol/${encodeURIComponent(b.kolId)}` } : null;
+      // Langsung ke tab tempat alamat, HP, dan ukuran diisi — bukan tab pertama profil.
+      return b.kolId ? { aksi: "lengkapiData", href: `/backoffice/kreatif/kol/${encodeURIComponent(b.kolId)}?tab=ukuran` } : null;
     default:
       return null;
   }

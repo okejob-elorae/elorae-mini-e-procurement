@@ -188,6 +188,11 @@ export function InventoryPageClient({
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [grnSearchQuery, setGrnSearchQuery] = useState('');
+  /** Kata kunci GRN yang dikirim ke server (sesudah jeda mengetik). */
+  const [grnSearchDebounced, setGrnSearchDebounced] = useState('');
+  const [grnLoading, setGrnLoading] = useState(false);
+  const grnPermintaanRef = useRef(0);
+  const lewatiMuatGrnAwal = useRef(true);
   const [adjustmentSearchQuery, setAdjustmentSearchQuery] = useState('');
   const [expandedAdjustmentId, setExpandedAdjustmentId] = useState<string | null>(null);
   const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
@@ -256,7 +261,7 @@ export function InventoryPageClient({
   const fetchData = async () => {
     setIsLoading(true);
     try {
-      const [invData, grnData, adjData] = await Promise.all([
+      const [invData, adjData] = await Promise.all([
         getInventorySnapshot({
           page: stockPage,
           pageSize: stockPageSize,
@@ -264,7 +269,6 @@ export function InventoryPageClient({
           status: stockStatus ?? undefined,
           sort: stockSort,
         }),
-        getGRNs(undefined, { page: grnPage, pageSize: grnPageSize }),
         getStockAdjustments(adjItemFilter === ADJ_FILTER_ALL ? undefined : adjItemFilter, {
           page: adjPage,
           pageSize: adjPageSize,
@@ -297,14 +301,6 @@ export function InventoryPageClient({
         });
         setStockTotalCount(snap.totalCount ?? snap.items.length);
       }
-      if (grnData != null && typeof grnData === 'object' && 'items' in grnData && 'totalCount' in grnData) {
-        setGRNs((grnData as unknown as { items: GRN[] }).items);
-        setGrnTotalCount((grnData as unknown as { totalCount: number }).totalCount);
-      } else {
-        const grnList = (grnData as unknown as GRN[]) ?? [];
-        setGRNs(grnList);
-        setGrnTotalCount(grnList.length);
-      }
       if (adjData != null && typeof adjData === 'object' && 'items' in adjData && 'totalCount' in adjData) {
         setAdjustments((adjData as unknown as { items: Adjustment[] }).items);
         setAdjTotalCount((adjData as unknown as { totalCount: number }).totalCount);
@@ -325,7 +321,6 @@ export function InventoryPageClient({
     if (
       skipInitialListFetch.current &&
       stockPage === 1 &&
-      grnPage === 1 &&
       adjPage === 1 &&
       adjItemFilter === ADJ_FILTER_ALL &&
       adjSumber === SARINGAN_SUMBER_BAWAAN &&
@@ -339,7 +334,45 @@ export function InventoryPageClient({
     skipInitialListFetch.current = false;
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData depends on pagination/filters above
-  }, [stockPage, grnPage, adjPage, adjItemFilter, adjSumber, adjSearchDebounced, stockSearchDebounced, stockStatus, stockSort]);
+  }, [stockPage, adjPage, adjItemFilter, adjSumber, adjSearchDebounced, stockSearchDebounced, stockStatus, stockSort]);
+
+  // Penerimaan barang: cari dan halaman di server (dulu hanya menyaring halaman yang tampil).
+  useEffect(() => {
+    if (lewatiMuatGrnAwal.current) {
+      lewatiMuatGrnAwal.current = false;
+      if (grnPage === 1 && !grnSearchDebounced) return;
+    }
+    const nomor = ++grnPermintaanRef.current;
+    setGrnLoading(true);
+    getGRNs(grnSearchDebounced ? { cari: grnSearchDebounced } : undefined, { page: grnPage, pageSize: grnPageSize })
+      .then((grnData) => {
+        if (nomor !== grnPermintaanRef.current) return;
+        if (grnData != null && typeof grnData === 'object' && 'items' in grnData && 'totalCount' in grnData) {
+          setGRNs((grnData as unknown as { items: GRN[] }).items);
+          setGrnTotalCount((grnData as unknown as { totalCount: number }).totalCount);
+        } else {
+          const grnList = (grnData as unknown as GRN[]) ?? [];
+          setGRNs(grnList);
+          setGrnTotalCount(grnList.length);
+        }
+      })
+      .catch(() => {
+        if (nomor === grnPermintaanRef.current) toast.error(tToasts('failedToLoadInventoryData'));
+      })
+      .finally(() => {
+        if (nomor === grnPermintaanRef.current) setGrnLoading(false);
+      });
+  }, [grnPage, grnPageSize, grnSearchDebounced, tToasts]);
+
+  useEffect(() => {
+    const k = grnSearchQuery.trim();
+    if (k === grnSearchDebounced) return;
+    const id = setTimeout(() => {
+      setGrnSearchDebounced(k);
+      setGrnPage(1);
+    }, 400);
+    return () => clearTimeout(id);
+  }, [grnSearchQuery, grnSearchDebounced]);
 
   // Pencarian penyesuaian dikirim ke server setelah jeda mengetik.
   useEffect(() => {
@@ -423,14 +456,8 @@ export function InventoryPageClient({
       .finally(() => setRollsLoading(false));
   }, [activeTab, rollsPage, rollsPageSize, rollsFilterGrnId, rollsFilterItemId, rollsSearchDebounced]);
 
-  const q = (s: string) => s.toLowerCase().trim();
-  const filteredGrns = grns.filter(
-    (grn) =>
-      !grnSearchQuery ||
-      q(grn.docNumber).includes(q(grnSearchQuery)) ||
-      q(grn.supplier.name).includes(q(grnSearchQuery)) ||
-      q(grn.po?.docNumber ?? '').includes(q(grnSearchQuery))
-  );
+  // Sudah disaring dan dipotong per halaman di server (`syaratCariGrn`).
+  const filteredGrns = grns;
 
   // Penyesuaian sudah disaring (sumber + pencarian) dan dipaginasi di server.
   const filteredAdjustments = adjustments;
@@ -465,13 +492,13 @@ export function InventoryPageClient({
           <Link href="/backoffice/inventory/grn/new">
             <Button variant="outline" className="min-h-[44px]">
               <ArrowDownLeft className="mr-2 h-4 w-4" />
-              {tp('receiveGoods')}
+              {tp('terimaBarang')}
             </Button>
           </Link>
           <Link href="/backoffice/inventory/stock-card">
             <Button variant="outline" className="min-h-[44px]">
               <History className="mr-2 h-4 w-4" />
-              {tp('stockCard')}
+              {tp('kartuStok')}
             </Button>
           </Link>
           <Link href="/backoffice/inventory/adjustment/new">
@@ -522,7 +549,7 @@ export function InventoryPageClient({
             }}
           >
             <Printer className="mr-2 h-4 w-4" />
-            {tp('printReport')}
+            {tp('cetakLaporan')}
           </Button>
         </div>
       </div>
@@ -535,7 +562,7 @@ export function InventoryPageClient({
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList>
+        <TabsList className="h-auto max-w-full flex-wrap justify-start">
           <TabsTrigger value="stock">{t("tabStock")}</TabsTrigger>
           <TabsTrigger value="grn">{t("tabGrn")}</TabsTrigger>
           <TabsTrigger value="rolls">{t("tabRolls")}</TabsTrigger>
@@ -647,7 +674,9 @@ export function InventoryPageClient({
           <div className="relative w-full sm:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
+              type="search"
               placeholder={tp('grnSearchPlaceholder')}
+              aria-label={tp('grnSearchPlaceholder')}
               value={grnSearchQuery}
               onChange={(e) => setGrnSearchQuery(e.target.value)}
               className="pl-9"
@@ -668,7 +697,18 @@ export function InventoryPageClient({
                       <TableHead className="min-w-[200px]">{tTable('overReceive')}</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
+                  <TableBody aria-busy={grnLoading}>
+                    {filteredGrns.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground whitespace-normal">
+                          {grnLoading
+                            ? tp('grnMemuat')
+                            : grnSearchDebounced
+                              ? tp('grnKosongCari', { cari: grnSearchDebounced })
+                              : tp('grnKosong')}
+                        </TableCell>
+                      </TableRow>
+                    )}
                     {filteredGrns.map((grn) => (
                       <Fragment key={grn.id}>
                         <TableRow>
@@ -862,8 +902,10 @@ export function InventoryPageClient({
                       <TableBody>
                         {rolls.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                              {tp('noFabricRolls')}
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8 whitespace-normal">
+                              <p>{tp('noFabricRolls')}</p>
+                              {/* Arah: roll lahir dari GRN kain yang diisi panjang per roll. */}
+                              <p className="mt-1 text-sm">{tp('noFabricRollsHint')}</p>
                             </TableCell>
                           </TableRow>
                         ) : (

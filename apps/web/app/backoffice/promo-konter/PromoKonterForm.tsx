@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { AlertTriangle, Info, Loader2, Sparkles, Store, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Info, Loader2, Sparkles, Store, X } from "lucide-react";
 import { simpanPromoKonterAction } from "@/app/actions/promo-konter";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -230,6 +231,13 @@ export function PromoKonterForm({
 
   return (
     <div className="space-y-6">
+      {/* Tautan kembali di atas judul, sama dengan formulir lain di grup ini. */}
+      <Button asChild variant="ghost" size="sm" className="-ml-2">
+        <Link href="/backoffice/promo-konter">
+          <ArrowLeft className="mr-2 h-4 w-4" aria-hidden />
+          {t("kembaliKeDaftar")}
+        </Link>
+      </Button>
       <PageHeader
         title={id ? awal?.name || t("judulUbah") : t("judulBaru")}
         meta={

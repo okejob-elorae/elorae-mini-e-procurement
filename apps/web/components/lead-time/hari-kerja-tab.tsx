@@ -29,7 +29,7 @@ import { liburTetapTahun, type TanggalMerah } from "@/lib/production/hari-kerja"
 import { NAMA_LIBUR_MAKS } from "@/lib/production/jadwal-jejak";
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { cn } from "@/lib/utils";
-import { gabungLibur, samaHari, samaLibur, SEMUA_HARI } from "@/app/backoffice/lead-time/hari-kerja-aturan";
+import { gabungLibur, keteranganSimpanHari, samaHari, samaLibur, SEMUA_HARI } from "@/app/backoffice/lead-time/hari-kerja-aturan";
 
 type Muatan =
   | { keadaan: "memuat" }
@@ -97,7 +97,7 @@ export function HariKerjaTab({ bolehUbah }: { bolehUbah: boolean }) {
 
   return (
     <div className="space-y-4">
-      {!bolehUbah ? <p className="text-sm text-muted-foreground">{t("hariKerja.hanyaLihat")}</p> : null}
+      {!bolehUbah ? <p className="text-sm text-muted-foreground">{t("hariKerja.hanyaLihatV2")}</p> : null}
       <KartuHariKerja
         tersimpan={muatan.hariKerja}
         bolehUbah={bolehUbah}
@@ -164,7 +164,7 @@ function KartuHariKerja({
   }, [locale]);
 
   const berubah = !samaHari(tersimpan, pilihan);
-  const alasan = pilihan.size === 0 ? t("hariKerja.hariMinimal") : !berubah ? t("hariKerja.belumBerubah") : null;
+  const keterangan = keteranganSimpanHari(pilihan.size, berubah);
 
   const ganti = (hari: number, centang: boolean) =>
     setPilihan((lama) => {
@@ -213,14 +213,12 @@ function KartuHariKerja({
         </div>
         {bolehUbah ? (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <Button type="button" onClick={() => setTanya(true)} disabled={menyimpan || alasan !== null}>
+            <Button type="button" onClick={() => setTanya(true)} disabled={menyimpan || !keterangan.bolehSimpan}>
               {menyimpan ? t("hariKerja.menyimpan") : t("hariKerja.simpanHari")}
             </Button>
-            {alasan && pilihan.size === 0 ? (
-              <p className="text-sm text-destructive">{alasan}</p>
-            ) : berubah ? (
-              <p className="text-sm text-muted-foreground">{t("hariKerja.belumDisimpan")}</p>
-            ) : null}
+            <p className={cn("text-sm", keterangan.galat ? "text-destructive" : "text-muted-foreground")}>
+              {t(`hariKerja.${keterangan.kunci}`)}
+            </p>
           </div>
         ) : null}
       </CardContent>
@@ -363,7 +361,7 @@ function KartuTanggalMerah({
                   <TableHead>{t("hariKerja.kolomNama")}</TableHead>
                   {bolehUbah ? (
                     <TableHead className="w-12">
-                      <span className="sr-only">{t("hariKerja.kolomAksi")}</span>
+                      <span className="sr-only">{t("hariKerja.kolomTindakan")}</span>
                     </TableHead>
                   ) : null}
                 </TableRow>

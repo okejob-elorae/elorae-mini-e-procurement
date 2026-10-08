@@ -43,12 +43,12 @@ const props: Props = {
     rows: [],
     totals: {
       realised: { count: 3, amount: 22_850_000 },
-      realisedRincian: { pengiriman: 2, van: 1 },
+      realisedRincian: { pengiriman: 2, van: 1, pesanan: 1 },
       outstanding: { count: 0, amount: 0 },
       menungguKirim: { count: 2, amount: 4_000_000 },
     },
   },
-  piutang: { total: 1, jumlah: 1, umur: [], lewatJumlah: 1, lewatNilai: 1, tertahanNilai: 5 },
+  piutang: { total: 1, jumlah: 1, umur: [], lewatJumlah: 1, lewatNilai: 1, jatuhTempoJumlah: 3, jatuhTempoNilai: 6_470_000, tertahanNilai: 5 },
   trenPenjualan: null,
   hariIniWib: "2026-10-06",
   dimuatPada: "2026-10-06T01:00:00.000Z",
@@ -85,5 +85,19 @@ describe("klien beranda — tautan KPI membawa saringannya", () => {
 
   it("stok menipis → daftar Inventori tersaring MENIPIS", () => {
     expect(html).toContain("[kpiLowStock=/backoffice/inventory?tab=stock&amp;status=MENIPIS]");
+  });
+
+  it("lewat jatuh tempo punya barisnya sendiri, ke piutang dengan keadaan jatuh_tempo", () => {
+    expect(html).toContain("[kpiDueOverdue=/backoffice/piutang?keadaan=jatuh_tempo]");
+  });
+
+  it("pemasok aktif → daftar pemasok tersaring aktif (sama dengan hitungan isActive)", () => {
+    expect(html).toContain("[kpiSuppliers=/backoffice/suppliers?aktif=aktif]");
+  });
+
+  it("kisi beranda satu lajur minmax(0,1fr) di HP, supaya tabel tidak meluber", () => {
+    const tanpaKisiSatu = html.match(/class="grid gap-4/g) ?? [];
+    expect(tanpaKisiSatu).toHaveLength(0);
+    expect(html).toContain("grid grid-cols-1 gap-4");
   });
 });

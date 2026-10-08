@@ -6,6 +6,7 @@ import { prisma, type Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
+import { bagianBahanPenerimaan } from "./biaya-penerimaan";
 import {
   AKSI_KEMBALI_BAHAN,
   BATAS_CATATAN_KEMBALI,
@@ -151,7 +152,7 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
           consumptionPlan: true,
           vendor: { select: { name: true } },
           issues: { select: { id: true, items: true, totalCost: true } },
-          receipts: { select: { totalCostValue: true } },
+          receipts: { select: { materialCost: true, totalCostValue: true } },
         },
       });
       if (!wo) return { ok: false, code: "WO_TIDAK_DITEMUKAN" };
@@ -183,7 +184,8 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
         adaPenerimaan: wo.receipts.length > 0,
         biayaBahanWo: wo.issues.reduce((s, i) => s.plus(String(i.totalCost)), new Decimal(0)),
         sudahKembali: await nilaiBahanKembaliWo(tx, m.woId),
-        sudahDibebankan: wo.receipts.reduce((s, r) => s.plus(String(r.totalCostValue ?? 0)), new Decimal(0)),
+        // Bagian BAHAN penerimaan, bukan totalCostValue (yang kini memuat ongkos jahit).
+        sudahDibebankan: wo.receipts.reduce((s, r) => s.plus(bagianBahanPenerimaan(r)), new Decimal(0)),
       });
       const nilaiPenuh = perBaris.reduce((s, b) => s.plus(b.qty.mul(b.harga)), new Decimal(0));
       const { harga: hargaAkhir, dibatasi } = hargaDalamBatas(perBaris, batas);

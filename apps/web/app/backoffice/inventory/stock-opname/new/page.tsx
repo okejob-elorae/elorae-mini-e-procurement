@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { kunciGalatOpname } from "@/lib/inventory/galat-opname";
 import { Button } from "@/components/ui/button";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,13 +33,13 @@ export default function NewStockOpnamePage() {
     try {
       const result = await createOpname({ scope, notes: notes || undefined });
       if (!result.success || !result.opnameId) {
-        toast.error(result.error ?? t("failed"));
+        toast.error(t(kunciGalatOpname(result.code)));
         return;
       }
       toast.success(t("createdToast"));
       router.push(`/backoffice/inventory/stock-opname/${result.opnameId}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("failed"));
+    } catch {
+      toast.error(t("failed"));
     } finally {
       setSaving(false);
     }
@@ -44,19 +47,24 @@ export default function NewStockOpnamePage() {
 
   return (
     <div className="max-w-lg space-y-6">
-      <div className="flex items-center gap-1">
-        <h1 className="text-2xl font-bold">{t("new")}</h1>
-        <TombolBantuan judul={t("new")} />
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" asChild className="shrink-0">
+          <Link href="/backoffice/inventory/stock-opname" aria-label={t("backToList")} title={t("backToList")}>
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+        </Button>
+        <h1 className="text-2xl font-bold">{t("judulBaru")}</h1>
+        <TombolBantuan judul={t("judulBaru")} />
       </div>
       <Card>
         <CardHeader>
-          <CardTitle>{t("new")}</CardTitle>
+          <CardTitle>{t("cakupanDanCatatan")}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>{t("scope")}</Label>
+            <Label htmlFor="opname-cakupan">{t("scope")}</Label>
             <Select value={scope} onValueChange={(v) => setScope(v as typeof scope)}>
-              <SelectTrigger>
+              <SelectTrigger id="opname-cakupan">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -69,11 +77,13 @@ export default function NewStockOpnamePage() {
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>{t("notes")}</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
+            <Label htmlFor="opname-catatan">{t("notes")}</Label>
+            <Textarea id="opname-catatan" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} />
           </div>
+          {/* Apa yang terjadi saat menekan tombol: angka sistem dibekukan sebagai pembanding. */}
+          <p className="text-sm text-muted-foreground">{t("penjelasanBuat")}</p>
           <Button onClick={handleCreate} disabled={saving}>
-            {saving ? t("creating") : t("new")}
+            {saving ? t("creating") : t("tombolBuat")}
           </Button>
         </CardContent>
       </Card>

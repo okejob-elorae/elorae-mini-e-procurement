@@ -167,7 +167,7 @@ export function CouriersPageClient(props: Props) {
             {props.couriers.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={3} className="text-center py-8 text-muted-foreground">
-                  {props.search ? t("emptyFiltered") : t("empty")}
+                  {props.search ? t("emptyFiltered") : t("kosongTersimpan")}
                 </TableCell>
               </TableRow>
             ) : (

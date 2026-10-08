@@ -38,6 +38,13 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // menanyai pemasok, jadi izin lihat juga izin bertindak.
   productionStepsOverdue: ["production_planning:view"],
   productionStepsDueToday: ["production_planning:view"],
+  // /backoffice/finance/integritas: ROUTE_PERMISSIONS journals:view; memposting (Sapu sekarang) = journals:manage.
+  ledgerDocsWithoutJournal: ["journals:view", "journals:manage"],
+  // /backoffice/finance/pajak: ROUTE_PERMISSIONS + penjaga halaman journals:view; mencatat setoran = journals:manage.
+  taxDueSoon: ["journals:view", "journals:manage"],
+  taxOverdue: ["journals:view", "journals:manage"],
+  // /backoffice/finance/journals: penjaga halaman journals:view; menyetujui draf = journals:manage.
+  manualJournalsPendingApproval: ["journals:view", "journals:manage"],
 };
 
 /** Saringan yang WAJIB ada di tautan tiap baris — angka Beranda dihitung dengan saringan ini. */
@@ -61,6 +68,10 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   spgCommissionsUnset: { bulan: "lalu" },
   productionStepsOverdue: { saring: "terlambat" },
   productionStepsDueToday: { saring: "hari-ini" },
+  ledgerDocsWithoutJournal: { tanpaJurnal: "diam" },
+  taxDueSoon: { saring: "segera" },
+  taxOverdue: { saring: "lewat" },
+  manualJournalsPendingApproval: { status: "draf" },
 };
 
 const nol: BuildActionItemsInput = {

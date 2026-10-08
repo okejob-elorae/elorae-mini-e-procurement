@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { AlertTriangle, CalendarClock, Clock, PackageOpen, Scale, Wallet } from 'lucide-react';
+import { AlertTriangle, CalendarClock, Clock, PackageOpen, RotateCcw, Scale, Wallet } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -10,7 +10,7 @@ import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import type { Dasbor, TindakanHariIni } from '@/lib/receivables/dashboard-queries';
 import type { KeadaanTampil } from '@/lib/receivables/jatuh-tempo';
-import { tautanPiutang } from '@/lib/receivables/tindakan-dasbor';
+import { tautanPiutang, tautanRetur } from '@/lib/receivables/tindakan-dasbor';
 import { dinamis } from '@/lib/i18n/dinamis';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
@@ -52,12 +52,13 @@ export function DasborClient({ data }: { data: Dasbor }) {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t('pageTitle')}
+        title={t('judulHalaman')}
         meta={t('summary', { count: data.jumlahPiutang, value: rupiah(data.totalPiutang) })}
       />
 
-      {/* Setiap kartu membuka daftar yang SUDAH tersaring pada angka yang ia sebut. */}
-      <div className="anim-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+      {/* Setiap kartu membuka daftar yang SUDAH tersaring pada angka yang ia sebut.
+          Baris pertama uang di faktur, baris kedua retur — empat kolom. */}
+      <div className="anim-stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kartu
           ikon={Wallet}
           label={t('kpiTotal')}
@@ -88,13 +89,26 @@ export function DasborClient({ data }: { data: Dasbor }) {
           kaki={t('kpiAwaitingFoot', { count: data.menungguVerifikasi })}
           href="/backoffice/pelunasan?status=DIKIRIM"
         />
+        {/* Dua ukuran yang dulu bercampur di satu kartu ("Rp 0 — 2 retur perlu
+            dikerjakan"): uang yang ditahan, dan nota retur yang menunggu orang. */}
         <Kartu
           ikon={PackageOpen}
           label={t('kpiHeld')}
           nilai={rupiah(data.tertahanRetur)}
-          kaki={t('kpiHeldFoot', { count: data.returPerluDikerjakan })}
-          nada={data.tertahanRetur > 0 ? 'text-amber-600 dark:text-amber-500' : undefined}
-          href="/backoffice/retur-toko"
+          kaki={t('kpiHeldFootFaktur', { count: data.fakturTertahan })}
+          nada={data.tertahanRetur > 0 ? 'text-amber-800 dark:text-amber-400' : undefined}
+          href={tautanPiutang({ keadaan: 'tertahan' })}
+        />
+        <Kartu
+          ikon={RotateCcw}
+          label={t('kpiReturns')}
+          nilai={t('kpiReturnsValue', { count: data.returPerluDikerjakan })}
+          kaki={t('kpiReturnsFoot', {
+            cek: data.returPerLangkah.cek,
+            jodoh: data.returPerLangkah.jodoh,
+            keputusan: data.returPerLangkah.keputusan,
+          })}
+          href={tautanRetur({})}
         />
         <Kartu
           ikon={Scale}
@@ -202,32 +216,6 @@ export function DasborClient({ data }: { data: Dasbor }) {
           </CardContent>
         </Card>
       </div>
-
-      {/* Foto disimpan sebagai bytes DI DALAM basis data, jadi yang menumpuk di
-          sini ikut ke setiap cadangan. Ditampilkan hanya kalau memang ada
-          isinya — kartu yang selalu menulis nol cuma jadi derau. */}
-      {data.foto.jumlah > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">{t('photoTitle')}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5 text-sm">
-            <p className="text-muted-foreground">
-              {t('photoStored', { count: data.foto.jumlah, size: mb(data.foto.totalByte) })}
-            </p>
-            {data.foto.yatimJumlah > 0 ? (
-              <p className="text-muted-foreground">
-                {t('photoOrphan', {
-                  count: data.foto.yatimJumlah,
-                  size: mb(data.foto.yatimByte),
-                })}
-              </p>
-            ) : (
-              <p className="text-muted-foreground">{t('photoClean')}</p>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
@@ -241,11 +229,6 @@ function kunciTindakan(a: TindakanHariIni): string {
   if (a.jenis !== 'klaim') return a.jenis;
   if (a.konteks.milikSaya) return 'klaim_milikSaya';
   return a.konteks.pelapor ? 'klaim_oleh' : 'klaim';
-}
-
-/** Byte ke MB dengan satu desimal. Angka byte mentah tidak berarti apa pun. */
-function mb(byte: number): string {
-  return `${(byte / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function Kartu({
@@ -265,8 +248,10 @@ function Kartu({
 }) {
   return (
     <Link href={href}>
+      {/* Jarak atas-bawah dari kartu itu sendiri: `py-4` di isinya dulu
+          menumpuk di atas padding kartu, jadi tiap kotak setinggi dua kali isinya. */}
       <Card className="h-full transition-colors hover:bg-muted/40">
-        <CardContent className="space-y-1 py-4">
+        <CardContent className="space-y-1">
           <span className="flex items-center gap-2 text-sm text-muted-foreground">
             <Ikon className="h-4 w-4" />
             {label}

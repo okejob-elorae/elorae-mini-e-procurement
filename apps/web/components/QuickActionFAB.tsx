@@ -14,8 +14,8 @@ import {
 
 const actions = [
   { labelKey: 'newPO', href: '/backoffice/purchase-orders/new', icon: ShoppingCart },
-  { labelKey: 'newWO', href: '/backoffice/work-orders/new', icon: ClipboardList },
-  { labelKey: 'newItem', href: '/backoffice/items/new', icon: Package },
+  { labelKey: 'buatPerintahKerja', href: '/backoffice/work-orders/new', icon: ClipboardList },
+  { labelKey: 'tambahBarang', href: '/backoffice/items/new', icon: Package },
 ];
 
 /**
@@ -35,19 +35,19 @@ export function QuickActionFAB() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-1.5 no-print" aria-label={t('quickAction')}>
-          <Zap className="h-4 w-4" />
-          <span className="hidden sm:inline">{t('quickAction')}</span>
+        <Button variant="ghost" size="sm" className="gap-1.5 no-print" aria-label={t('judul')}>
+          <Zap aria-hidden className="h-4 w-4" />
+          <span className="hidden sm:inline">{t('judul')}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={8}>
-        <DropdownMenuLabel>{t('quickAction')}</DropdownMenuLabel>
+        <DropdownMenuLabel>{t('judul')}</DropdownMenuLabel>
         {actions.map((action) => {
           const Icon = action.icon;
           return (
             <DropdownMenuItem key={action.href} asChild>
               <Link href={action.href} className="flex cursor-pointer items-center gap-2">
-                <Icon className="h-4 w-4" />
+                <Icon aria-hidden className="h-4 w-4" />
                 {t(action.labelKey as never)}
               </Link>
             </DropdownMenuItem>

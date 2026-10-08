@@ -3,6 +3,8 @@ import {
   gabungGerakan,
   kunciPasanganMovement,
   susunKartuStok,
+  tautanMovement,
+  tautanPenyesuaian,
   type BarisPenyesuaianKartu,
   type BarisMovementKartu,
 } from "./kartu-stok";
@@ -256,5 +258,45 @@ describe("susunKartuStok", () => {
     expect(kartu.movements.map((m) => m.balance)).toEqual([0.1, 0.3]);
     expect(kartu.openingBalance).toBe(0);
     expect(kartu.closingValue).toBe(0.9);
+  });
+});
+
+describe("tautan dokumen di kartu stok", () => {
+  it("jenis yang refId-nya id dokumen menaut ke rinciannya", () => {
+    expect(tautanMovement("GRN", "g1")).toBe("/backoffice/inventory/grn/g1");
+    expect(tautanMovement("GRN_OWNER_DECLINE", "g1")).toBe("/backoffice/inventory/grn/g1");
+    expect(tautanMovement("OPNAME", "o1")).toBe("/backoffice/inventory/stock-opname/o1");
+    expect(tautanMovement("VENDOR_RETURN", "r1")).toBe("/backoffice/vendor-returns/r1");
+    expect(tautanMovement("RECON", "run1")).toBe("/backoffice/inventory/reconciliation/run1");
+    expect(tautanMovement("ADJUSTMENT", "a1")).toBe("/backoffice/inventory/adjustment/a1");
+  });
+
+  it("dokumen tanpa halaman, refId kosong, atau penanda sementara → tanpa tautan", () => {
+    expect(tautanMovement("WO_ISSUE", "i1")).toBeNull();
+    expect(tautanMovement("FG_RECEIPT", "f1")).toBeNull();
+    expect(tautanMovement("GRN", "")).toBeNull();
+    expect(tautanMovement("GRN", "temp")).toBeNull();
+    expect(tautanPenyesuaian("")).toBeNull();
+    expect(tautanPenyesuaian("a/1")).toBe("/backoffice/inventory/adjustment/a%2F1");
+  });
+
+  it("baris kartu membawa tautannya dari kedua buku", () => {
+    const g = gabungGerakan(
+      [mv({ id: "m1", qty: 5, createdAt: t("2026-09-01T00:00:00Z") })],
+      [adj({ id: "a2", type: "NEGATIVE", qtyChange: 2, createdAt: t("2026-09-02T00:00:00Z"), source: "FULFILLMENT_CONSUME" })],
+      new Set(),
+    );
+    const kartu = susunKartuStok({
+      gerakan: g,
+      saldoSekarang: 3,
+      nilaiSekarang: 30_000,
+      dari: t("2026-08-01T00:00:00Z"),
+      sampai: t("2026-10-01T00:00:00Z"),
+      qtySebelumDari: 0,
+    });
+    expect(kartu.movements.map((m) => m.tautan)).toEqual([
+      "/backoffice/inventory/grn/ref-m1",
+      "/backoffice/inventory/adjustment/a2",
+    ]);
   });
 });

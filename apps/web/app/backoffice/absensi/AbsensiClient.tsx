@@ -121,7 +121,7 @@ export function AbsensiClient(props: Props) {
       {!props.pengaturan.aktif ? (
         <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           {t("nonaktif")}{" "}
-          <Link href="/backoffice/settings/salesman" className="font-medium underline underline-offset-2">
+          <Link href="/backoffice/settings/salesman#absensi" className="font-medium underline underline-offset-2">
             {t("bukaPengaturan")}
           </Link>
         </p>

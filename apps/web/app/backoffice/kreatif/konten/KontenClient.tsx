@@ -88,7 +88,6 @@ const NADA: Record<string, StatusTone> = {
   BATAL: 'inactive',
 };
 
-const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
   iso
     ? new Date(iso).toLocaleDateString('id-ID', {
@@ -390,16 +389,11 @@ export function KontenClient({
       />
 
       {/*
-        Beban yang SUDAH diakui dan fee yang baru dijanjikan berdiri sebagai dua
-        angka, tidak dijumlahkan. Menjumlahkannya membuat marketing terbaca sudah
-        menghabiskan uang yang belum keluar.
+        Angka fee KOL TIDAK di sini (audit ulang 2026-10-08): rencana konten adalah
+        konten akun sendiri. Fee yang disepakati, biaya bruto termasuk PPh, beban
+        yang sudah diakui, dan yang sudah dibayar ada di Kreatif → Pembayaran,
+        dibaca dari termin — satu arti "fee" di semua layar.
       */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Angka label={t('kpiRunningBrief')} nilai={String(ringkas.briefBerjalan)} />
-        <Angka label={t('kpiFeeRecognised')} nilai={rupiah(ringkas.bebanDiakui)} />
-        <Angka label={t('kpiFeeCommitted')} nilai={rupiah(ringkas.feeBelumDiakui)} />
-      </div>
-
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-md border p-0.5">
           {(['grid', 'daftar'] as const).map((v) => (
@@ -706,17 +700,6 @@ export function KontenClient({
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-function Angka({ label, nilai }: { label: string; nilai: string }) {
-  return (
-    <Card>
-      <CardContent className="space-y-1 py-4">
-        <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="text-xl font-semibold tabular-nums">{nilai}</p>
-      </CardContent>
-    </Card>
   );
 }
 

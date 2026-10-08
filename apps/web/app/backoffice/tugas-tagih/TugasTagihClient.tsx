@@ -125,7 +125,7 @@ export function TugasTagihClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t("pageTitle")}
+        title={t("judulHalaman")}
         meta={t("summary", { open: terbuka, late: terlambat })}
         actions={
           bolehMengelola ? (

@@ -30,6 +30,7 @@ export function UnggahFoto({
   wajib = false,
   disabled = false,
   simpanDiHp = false,
+  labelLepas,
 }: {
   label: string;
   petunjuk?: string;
@@ -42,6 +43,12 @@ export function UnggahFoto({
    * Formulir kantor tidak memakainya — di sana galat unggah harus terlihat.
    */
   simpanDiHp?: boolean;
+  /**
+   * Nama tombol × untuk pembaca layar (dan tooltip). Bawaannya "Hapus foto";
+   * pemanggil yang × tidak menghapus apa pun di server — foto lama tetap
+   * tersimpan sampai ada pengganti — wajib menyebutnya.
+   */
+  labelLepas?: string;
 }) {
   const t = useTranslations('foto');
   const input = useRef<HTMLInputElement>(null);
@@ -92,7 +99,8 @@ export function UnggahFoto({
             size="icon"
             variant="secondary"
             className="absolute right-2 top-2"
-            aria-label={t('remove')}
+            aria-label={labelLepas ?? t('remove')}
+            title={labelLepas}
             disabled={disabled}
             onClick={() => {
               if (nilai.berkas) URL.revokeObjectURL(nilai.url);

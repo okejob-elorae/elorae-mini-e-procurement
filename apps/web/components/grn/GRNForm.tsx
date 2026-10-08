@@ -57,6 +57,8 @@ import {
   type DrafGrn,
 } from '@/lib/offline/grn-draf';
 import { formatDisplayDateTime } from '@/lib/date-only';
+import { labelPemasok, urutPemasok } from '@/lib/suppliers/label-pemasok';
+import { adaYangBisaDiisi, bisaDiisiSisa, isiKosongDenganSisa, lebihDariSisa, sisaPo } from '@/lib/inventory/grn-sisa-po';
 import { newLocalId } from '@/lib/pwa/id-lokal';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
@@ -214,6 +216,13 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
   const drafTertunda = useRef<{ draf: DrafGrn; foto: Blob[] } | null>(null);
   /** PO dari draf: barisnya sudah ada di draf, jangan ditimpa baris PO kosong. */
   const lewatiBarisPo = useRef<string | null>(null);
+  /**
+   * Pengguna sudah mengubah isian (qty, roll, harga, barang, catatan, foto…)?
+   * Draf hanya ditulis sesudahnya: membuka "Terima barang" dari PO lalu pergi
+   * tanpa mengetik apa pun dulu menyimpan draf, dan lain kali Terima Barang
+   * (tanpa PO) memulihkan PO lama itu dengan "Draf dipulihkan".
+   */
+  const [diubah, setDiubah] = useState(false);
 
   const loadPOs = useCallback(async () => {
     try {
@@ -327,6 +336,7 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
     setNotes(draf.notes);
     setLines(barisDariDraf(draf));
     setPendingLamaId(draf.pendingLamaId);
+    setDiubah(true);
     setKunciKirim(draf.kunciKirim || newLocalId());
     setPhotoFiles(
       foto.map((b, i) =>
@@ -385,14 +395,14 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
 
   // Setiap perubahan isian → draf (ditunda sebentar; foto bisa besar).
   useEffect(() => {
-    if (!drafSiap) return;
+    if (!drafSiap || !diubah) return;
     drafTertunda.current = {
       draf: drafDariIsian({ poId, supplierId, categoryId, notes, pendingLamaId, kunciKirim, lines }, Date.now()),
       foto: photoFiles,
     };
     const pewaktu = window.setTimeout(siramDraf, 400);
     return () => window.clearTimeout(pewaktu);
-  }, [drafSiap, poId, supplierId, categoryId, notes, pendingLamaId, kunciKirim, lines, photoFiles, siramDraf]);
+  }, [drafSiap, diubah, poId, supplierId, categoryId, notes, pendingLamaId, kunciKirim, lines, photoFiles, siramDraf]);
 
   // Tab ditutup/disembunyikan atau pindah halaman: sisa isian ditulis segera.
   useEffect(() => {
@@ -422,6 +432,10 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
   };
 
   const buangDraf = () => {
+    // Draf tersimpan dihapus langsung: sesudah dibuang, isian kosong tidak ditulis lagi (belum diubah).
+    drafTertunda.current = null;
+    antreanDraf.current = antreanDraf.current.then(() => hapusDrafGrn(offlineDB.drafGRN, kunciDraf));
+    setDiubah(false);
     setPoTautanTertunda(null);
     lewatiBarisPo.current = null;
     setPoId('');
@@ -468,17 +482,20 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
   };
 
   const addLine = () => {
+    setDiubah(true);
     setErrors((e) => ({ ...e, lines: undefined }));
     setLines((prev) => [...prev, barisKosong(`line-${nextLineId}`)]);
     setNextLineId((n) => n + 1);
   };
 
   const removeLine = (id: string) => {
+    setDiubah(true);
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)));
   };
 
   const setLineItem = (lineId: string, item: ItemOption | null) => {
     if (!item) return;
+    setDiubah(true);
     const vOpts = variantSelectOptions(parseItemVariants(item.variants));
     setLines((prev) =>
       prev.map((r) =>
@@ -500,12 +517,14 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
   };
 
   const setLineVariantSku = (lineId: string, variantSku: string | undefined) => {
+    setDiubah(true);
     setLines((prev) =>
       prev.map((r) => (r.id === lineId ? { ...r, variantSku } : r))
     );
   };
 
   const setLineQty = (lineId: string, qty: number) => {
+    setDiubah(true);
     setLines((prev) =>
       prev.map((r) => (r.id === lineId ? { ...r, qty } : r))
     );
@@ -517,6 +536,7 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
       .filter((n) => Number.isFinite(n) && n > 0);
 
   const setLineRollValues = (lineId: string, rollValues: string[]) => {
+    setDiubah(true);
     setLines((prev) =>
       prev.map((r) => {
         if (r.id !== lineId) return r;
@@ -527,6 +547,7 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
   };
 
   const setLineUnitCost = (lineId: string, unitCost: number) => {
+    setDiubah(true);
     setLines((prev) =>
       prev.map((r) => (r.id === lineId ? { ...r, unitCost } : r))
     );
@@ -586,11 +607,13 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    if (files.length > 0) setDiubah(true);
     setPhotoFiles((prev) => [...prev, ...files]);
     e.target.value = '';
   };
 
   const removePhoto = (index: number) => {
+    setDiubah(true);
     setPhotoFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
@@ -687,7 +710,8 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
       if (galatSambungan(err)) {
         toast.error(t('sambunganPutus'));
       } else {
-        toast.error(err instanceof Error ? err.message : t('createFailed'));
+        // Pesan lemparan disamarkan di build produksi; selalu teks terjemahan.
+        toast.error(t('createFailed'));
       }
     } finally {
       setIsLoading(false);
@@ -706,12 +730,13 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
     if (id) setPoId(id);
   };
 
-  const labelPemasok = (s: Supplier) =>
-    `${s.code} – ${s.name}${s.disetujui === false ? ` · ${t('belumDisetujui')}` : ''}`;
+  // Satu format pemasok di semua formulir: "Nama (KODE)", urut nama (`lib/suppliers/label-pemasok`).
+  const labelPilihanPemasok = (s: Supplier) =>
+    `${labelPemasok(s)}${s.disetujui === false ? ` · ${t('belumDisetujui')}` : ''}`;
 
   const namaPemasok = (id: string) => {
     const s = suppliers.find((x) => x.id === id);
-    return s ? `${s.code} – ${s.name}` : t('grnLama.pemasokTakDikenal');
+    return s ? labelPemasok(s) : t('grnLama.pemasokTakDikenal');
   };
 
   return (
@@ -793,7 +818,7 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
       )}
       <Card>
         <CardHeader>
-          <CardTitle>{t('cardTitle')}</CardTitle>
+          <CardTitle>{t('judulKartu')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
@@ -839,13 +864,14 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
                 id="supplierId"
                 // Pemasok belum disetujui hanya ada di pilihan sebagai pemasok PO/draf yang
                 // sedang dipakai; GRN baru tanpa PO tetap untuk pemasok disetujui saja.
-                options={suppliers.map((s) => ({
+                options={urutPemasok(suppliers).map((s) => ({
                   value: s.id,
-                  label: labelPemasok(s),
+                  label: labelPilihanPemasok(s),
                   disabled: s.disetujui === false && s.id !== supplierId,
                 }))}
                 value={supplierId}
                 onValueChange={(v) => {
+                  setDiubah(true);
                   setSupplierId(v);
                   setErrors((e) => ({ ...e, supplierId: undefined }));
                 }}
@@ -888,17 +914,33 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
                 {errors.lines}
               </p>
             )}
+            {adaYangBisaDiisi(lines) && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">{t('isiSisaPenjelasan')}</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-[44px]"
+                  onClick={() => {
+                    setDiubah(true);
+                    setLines((prev) => isiKosongDenganSisa(prev));
+                  }}
+                >
+                  {t('isiSemuaSisa')}
+                </Button>
+              </div>
+            )}
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t('colItem')}</TableHead>
+                    <TableHead className="min-w-[16rem]">{t('colItem')}</TableHead>
                     <TableHead>{t('colVariant')}</TableHead>
                     <TableHead>{t('colUom')}</TableHead>
-                    <TableHead className="min-w-[280px]">{t('colRollLengths')}</TableHead>
-                    <TableHead className="w-24">{t('colQty')}</TableHead>
-                    <TableHead className="w-32">{t('colUnitCost')}</TableHead>
-                    <TableHead className="w-32">{t('colTotal')}</TableHead>
+                    <TableHead className="min-w-[8rem] text-right">{t('colQty')}</TableHead>
+                    <TableHead className="min-w-[9rem] text-right">{t('colUnitCost')}</TableHead>
+                    <TableHead className="text-right">{t('colTotal')}</TableHead>
                     <TableHead className="w-10 sticky right-0 bg-card">
                       <span className="sr-only">{t('colActions')}</span>
                     </TableHead>
@@ -908,10 +950,17 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
                   {lines.map((row) => {
                     const rowItem = items.find((i) => i.id === row.itemId);
                     const rowVOpts = variantSelectOptions(parseItemVariants(rowItem?.variants));
+                    const kain = row.itemType === 'FABRIC';
+                    const sisa = sisaPo(row);
+                    const satuan = row.uomCode || (kain ? 'MTR' : '');
+                    const lebih = lebihDariSisa(row);
+                    const rollVals = row.rollValues ?? [];
+                    const lengths = parseRollValuesToLengths(rollVals);
+                    const invalidCount = rollVals.length - lengths.length;
                     return (
                     <Fragment key={row.id}>
-                      <TableRow>
-                        <TableCell>
+                      <TableRow className={kain ? 'border-b-0' : undefined}>
+                        <TableCell className="align-top whitespace-normal">
                           <SearchableCombobox
                             options={items
                               .filter((i) => !categoryId || i.categoryId === categoryId)
@@ -925,6 +974,17 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
                             searchPlaceholder={t('cariBarang')}
                             triggerClassName="min-h-[44px]"
                           />
+                          {/* Angka PO baris ini: gudang tidak perlu membuka rincian PO di tab lain. */}
+                          {sisa != null && (
+                            <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                              {t('angkaPo', {
+                                dipesan: Number(row.poOrderedQty ?? 0).toLocaleString('id-ID'),
+                                sudah: Number(row.poAlreadyReceivedQty ?? 0).toLocaleString('id-ID'),
+                                sisa: sisa.toLocaleString('id-ID'),
+                                satuan,
+                              })}
+                            </p>
+                          )}
                         </TableCell>
                         <TableCell className="min-w-[10rem] max-w-[14rem] align-top">
                           {rowVOpts.length === 0 ? (
@@ -950,52 +1010,63 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
                             </Select>
                           )}
                         </TableCell>
-                        <TableCell>{row.uomCode || '-'}</TableCell>
-                        <TableCell className="align-top">
-                          {row.itemType === 'FABRIC' ? (
-                            <FabricRollInput
-                              value={row.rollValues ?? []}
-                              onChange={(v) => setLineRollValues(row.id, v)}
-                              uomCode={row.uomCode || 'MTR'}
-                              poOrderedQty={row.poOrderedQty}
-                              placeholder="100, 50, 100..."
-                              showRackPreview={false}
-                              aria-label={t('rollLengthsFor', { sku: row.sku || t('fabricFallback') })}
-                              className="min-w-[260px]"
-                            />
+                        <TableCell className="align-top pt-4">{row.uomCode || '-'}</TableCell>
+                        <TableCell className="align-top whitespace-normal">
+                          {kain ? (
+                            // Kain: qty = jumlah panjang roll di baris di bawahnya, bukan diketik.
+                            <div className="min-h-[44px] text-right">
+                              <p className="pt-2 font-medium tabular-nums">
+                                {(row.qty || 0).toLocaleString('id-ID')}
+                              </p>
+                              <p className="text-xs text-muted-foreground">{t('qtyDariRoll')}</p>
+                            </div>
                           ) : (
-                            <span className="text-muted-foreground">-</span>
+                            <>
+                              <Input
+                                type="number"
+                                min={0}
+                                step="any"
+                                inputMode="decimal"
+                                className="min-h-[44px] w-full min-w-[6rem] text-right tabular-nums"
+                                aria-label={t('qtyUntuk', { barang: row.sku || t('barisBaru') })}
+                                value={row.qty || ''}
+                                onChange={(e) => setLineQty(row.id, parseFloat(e.target.value) || 0)}
+                              />
+                              {bisaDiisiSisa(row) && row.qty !== sisa && (
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  size="sm"
+                                  className="h-auto px-0 py-1 text-xs"
+                                  onClick={() => setLineQty(row.id, sisa as number)}
+                                >
+                                  {t('isiSisa', { sisa: (sisa as number).toLocaleString('id-ID') })}
+                                </Button>
+                              )}
+                            </>
+                          )}
+                          {lebih && (
+                            <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-400" role="status">
+                              {t('melebihiSisa', { sisa: (sisa ?? 0).toLocaleString('id-ID') })}
+                            </p>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min={0}
-                            step="any"
-                            inputMode="decimal"
-                            className="min-h-[44px]"
-                            aria-label={t('colQty')}
-                            value={row.qty || ''}
-                            disabled={row.itemType === 'FABRIC'}
-                            onChange={(e) => setLineQty(row.id, parseFloat(e.target.value) || 0)}
-                          />
-                        </TableCell>
-                        <TableCell>
+                        <TableCell className="align-top">
                           <Input
                             type="number"
                             min={0}
                             step="0.01"
                             inputMode="decimal"
-                            className="min-h-[44px]"
-                            aria-label={t('colUnitCost')}
+                            className="min-h-[44px] w-full min-w-[7rem] text-right tabular-nums"
+                            aria-label={t('hargaUntuk', { barang: row.sku || t('barisBaru') })}
                             value={row.unitCost || ''}
                             onChange={(e) => setLineUnitCost(row.id, parseFloat(e.target.value) || 0)}
                           />
                         </TableCell>
-                        <TableCell>
-                          {((row.qty || 0) * (row.unitCost || 0)).toLocaleString('id-ID')}
+                        <TableCell className="align-top pt-4 text-right tabular-nums">
+                          Rp {((row.qty || 0) * (row.unitCost || 0)).toLocaleString('id-ID')}
                         </TableCell>
-                        <TableCell className="sticky right-0 bg-card">
+                        <TableCell className="sticky right-0 bg-card align-top">
                           <Button
                             type="button"
                             variant="ghost"
@@ -1009,52 +1080,57 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
                           </Button>
                         </TableCell>
                       </TableRow>
-                      {row.itemType === 'FABRIC' && (row.rollValues?.length ?? 0) > 0 && (() => {
-                        const rollVals = row.rollValues ?? [];
-                        const lengths = parseRollValuesToLengths(rollVals);
-                        const totalLength = lengths.reduce((a, b) => a + b, 0);
-                        const invalidCount = rollVals.length - lengths.length;
-                        return (
-                          <TableRow>
-                            <TableCell colSpan={8} className="bg-muted/20 py-2">
-                              <p className="text-sm text-muted-foreground mb-3">
-                                {t('rollCount', { count: rollVals.length })}
-                                {invalidCount > 0 && (
-                                  <span className="text-destructive"> {t('rollInvalid', { count: invalidCount })}</span>
-                                )}{' '}
-                                · {totalLength.toLocaleString('id-ID')} {row.uomCode || 'MTR'}
-                                {row.poOrderedQty != null && Number.isFinite(row.poOrderedQty) && (
-                                  <span className="ml-1">
-                                    ({t('receivedOfOrdered', {
-                                      received: totalLength.toLocaleString('id-ID'),
-                                      ordered: Number(row.poOrderedQty).toLocaleString('id-ID'),
-                                      uom: row.uomCode || 'MTR',
-                                    })}
-                                    {(row.poAlreadyReceivedQty != null && Number(row.poAlreadyReceivedQty) > 0) || poGrnCount > 0
-                                      ? ` · ${t('alreadyReceived', {
-                                          qty: Number(row.poAlreadyReceivedQty ?? 0).toLocaleString('id-ID'),
-                                          uom: row.uomCode || 'MTR',
-                                          count: poGrnCount,
-                                        })}`
-                                      : ''}
-                                    )
-                                  </span>
-                                )}
-                              </p>
-                              <FabricRackPreview
-                                rollValues={rollVals}
-                                uomCode={row.uomCode || 'MTR'}
-                                onRemoveRoll={(index) =>
-                                  setLineRollValues(
-                                    row.id,
-                                    (row.rollValues ?? []).filter((_, i) => i !== index)
-                                  )
-                                }
+                      {kain && (
+                        // Panjang roll di baris sendiri, hanya untuk kain — dulu kolom 238 px
+                        // berisi "-" untuk barang lain dan memeras isian Qty jadi 26 px.
+                        <TableRow>
+                          <TableCell colSpan={7} className="bg-muted/20 py-3 whitespace-normal">
+                            <div className="space-y-3">
+                              <Label className="text-sm">{t('colRollLengths')}</Label>
+                              <FabricRollInput
+                                value={rollVals}
+                                onChange={(v) => setLineRollValues(row.id, v)}
+                                uomCode={satuan || 'MTR'}
+                                poOrderedQty={row.poOrderedQty}
+                                placeholder="100, 50, 100..."
+                                showRackPreview={false}
+                                aria-label={t('rollLengthsFor', { sku: row.sku || t('fabricFallback') })}
+                                className="max-w-xl"
                               />
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })()}
+                              {rollVals.length > 0 && (
+                                <>
+                                  <p className="text-sm text-muted-foreground">
+                                    {t('rollCount', { count: rollVals.length })}
+                                    {invalidCount > 0 && (
+                                      <span className="text-destructive"> {t('rollInvalid', { count: invalidCount })}</span>
+                                    )}{' '}
+                                    · {lengths.reduce((x, y) => x + y, 0).toLocaleString('id-ID')} {satuan || 'MTR'}
+                                    {(poGrnCount > 0 || Number(row.poAlreadyReceivedQty ?? 0) > 0) && row.poOrderedQty != null && (
+                                      <span className="ml-1">
+                                        · {t('alreadyReceived', {
+                                          qty: Number(row.poAlreadyReceivedQty ?? 0).toLocaleString('id-ID'),
+                                          uom: satuan || 'MTR',
+                                          count: poGrnCount,
+                                        })}
+                                      </span>
+                                    )}
+                                  </p>
+                                  <FabricRackPreview
+                                    rollValues={rollVals}
+                                    uomCode={satuan || 'MTR'}
+                                    onRemoveRoll={(index) =>
+                                      setLineRollValues(
+                                        row.id,
+                                        (row.rollValues ?? []).filter((_, i) => i !== index)
+                                      )
+                                    }
+                                  />
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </Fragment>
                   );
                   })}
@@ -1124,7 +1200,10 @@ export function GRNForm({ suppliers, onSuccess, poIdAwal = '' }: GRNFormProps) {
             <Label>{t('notes')}</Label>
             <Textarea
               value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              onChange={(e) => {
+                setDiubah(true);
+                setNotes(e.target.value);
+              }}
               placeholder={t('notesPlaceholder')}
               rows={2}
             />

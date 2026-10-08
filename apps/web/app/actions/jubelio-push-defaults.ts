@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma, recalcItemSellingPrice } from "@elorae/db";
 import { auth } from "@/lib/auth";
+import { dasarHargaJualProduksi } from "@/lib/production/biaya-dasar-harga-jual";
 import { apiFetch } from "@/lib/internal-api";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
 import {
@@ -138,6 +139,8 @@ async function simpanBawaan(
           const recalc = await recalcItemSellingPrice(tx, {
             itemId: id,
             trigger: "DEFAULTS_CHANGE",
+            // Barang jadi produksi sendiri: dasar = biaya BAHAN per pcs (lihat `dasarHargaJualProduksi`).
+            newAvgCost: await dasarHargaJualProduksi(tx, id),
             changedById: userId,
           });
           if (recalc.applied && recalc.outboxRowId) outboxRowIds.push(recalc.outboxRowId);
@@ -151,6 +154,8 @@ async function simpanBawaan(
             const recalc = await recalcItemSellingPrice(tx, {
               itemId: id,
               trigger: "DEFAULTS_CHANGE",
+              // Barang jadi produksi sendiri: dasar = biaya BAHAN per pcs (lihat `dasarHargaJualProduksi`).
+              newAvgCost: await dasarHargaJualProduksi(tx, id),
               changedById: userId,
             });
             if (recalc.applied && recalc.outboxRowId) outboxRowIds.push(recalc.outboxRowId);

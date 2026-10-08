@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, useWatch, Controller } from 'react-hook-form';
 import * as z from 'zod';
 import {
   Plus,
@@ -44,6 +44,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useTranslations } from 'next-intl';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -54,7 +55,6 @@ import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
 import { Pager } from '@/components/Pager';
 import { PilihTampilan } from '@/components/tampilan/PilihTampilan';
-import type { AktivitasBaris } from '@/lib/suppliers/aktivitas-queries';
 import {
   ambilTampilanTersimpan,
   ingatTampilan,
@@ -67,6 +67,7 @@ import {
   aksiPemasok,
   alamatSaringPemasok,
   bisaDipilihDiPo,
+  isActiveDariSaring,
   UKURAN_PAPAN_PEMASOK,
   type SaringPemasok,
   type StatusPersetujuanPemasok,
@@ -92,6 +93,9 @@ interface Supplier {
   bankName: string | null;
   bankAccountEnc: string | null;
   bankAccountName: string | null;
+  isPkp?: boolean | null;
+  taxWithholding?: string | null;
+  hasNpwp?: boolean;
   isActive: boolean;
   status?: StatusPersetujuanPemasok;
 }
@@ -109,10 +113,33 @@ function makeSupplierSchema(t: Translate) {
     bankName: z.string().optional(),
     bankAccount: z.string().optional(),
     bankAccountName: z.string().optional(),
+    // Data pajak: 'belum' = status PKP belum diisi (Select tidak menerima string kosong).
+    isPkp: z.enum(['belum', 'ya', 'tidak']),
+    taxWithholding: z.enum(['TANPA', 'PPH23', 'PPH21', 'PPH4_2']),
+    hasNpwp: z.boolean(),
+    npwp: z
+      .string()
+      .optional()
+      .refine((v) => {
+        const angka = (v ?? '').replace(/\D/g, '');
+        return !angka || angka.length === 15 || angka.length === 16;
+      }, t('npwpTidakSah')),
   });
 }
 
 type SupplierForm = z.infer<ReturnType<typeof makeSupplierSchema>>;
+
+/** Nilai formulir → isian aksi pemasok (status PKP null = belum diisi; NPWP kosong = tidak diubah). */
+function keIsianPemasok(data: SupplierForm) {
+  const { isPkp, taxWithholding, hasNpwp, npwp, ...lain } = data;
+  return {
+    ...lain,
+    isPkp: isPkp === 'ya' ? true : isPkp === 'tidak' ? false : null,
+    taxWithholding: taxWithholding === 'TANPA' ? null : taxWithholding,
+    hasNpwp,
+    ...(hasNpwp && npwp?.trim() ? { npwp: npwp.trim() } : {}),
+  };
+}
 
 /** Nilai Select untuk "semua" — Select tidak menerima string kosong. */
 const SEMUA = 'all';
@@ -192,8 +219,6 @@ export function SuppliersPageClient({
   const [rejectReason, setRejectReason] = useState('');
   const [isApproving, setIsApproving] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
-  // Ringkasan kerja per pemasok (PO, SPK, utang, terakhir, WhatsApp); null = sedang dimuat.
-  const [aktivitas, setAktivitas] = useState<Record<string, AktivitasBaris> | null>(null);
   const kunciTampilan = kunciSimpanTampilan('pemasok', userId);
   const modePapan = saring.tampilan === 'papan';
 
@@ -209,8 +234,14 @@ export function SuppliersPageClient({
     resolver: zodResolver(supplierSchema),
     defaultValues: {
       typeId: '',
+      isPkp: 'belum',
+      taxWithholding: 'TANPA',
+      hasNpwp: true,
+      npwp: '',
     },
   });
+  const isPkpIsian = useWatch({ control, name: 'isPkp' });
+  const hasNpwpIsian = useWatch({ control, name: 'hasNpwp' });
 
   /** Ubah saringan dan tulis ke alamat, supaya daftar tersaring bisa dibagikan. */
   const ubahSaring = (patch: Partial<SaringPemasok>) => {
@@ -226,11 +257,11 @@ export function SuppliersPageClient({
   const fetchSuppliers = async () => {
     setIsLoading(true);
     try {
-      const { getSuppliers, getSupplierActivityAction } = await import('@/app/actions/suppliers');
+      const { getSuppliers } = await import('@/app/actions/suppliers');
       const status = (saring.status || undefined) as import('@/lib/constants/enums').SupplierStatus | undefined;
       const search = saring.cari.trim() || undefined;
       const json = await getSuppliers(
-        { search, typeId: saring.jenis || undefined, status },
+        { search, typeId: saring.jenis || undefined, status, isActive: isActiveDariSaring(saring.aktif) },
         // Papan menampilkan semua pemasok per jenis sekaligus, tidak per halaman.
         modePapan ? { page: 1, pageSize: UKURAN_PAPAN_PEMASOK } : { page: saring.page, pageSize: saring.pageSize },
       );
@@ -243,12 +274,6 @@ export function SuppliersPageClient({
         setTotalCount(daftar.length);
       }
       setSuppliers(daftar);
-      setAktivitas(null);
-      setIsLoading(false);
-      // Ringkasan kerja menyusul: daftar sudah tampil, kolomnya terisi sesudahnya.
-      getSupplierActivityAction(daftar.map((d) => d.id))
-        .then(setAktivitas)
-        .catch(() => setAktivitas({}));
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);
       toast.error(t('failedToLoadSuppliers'));
@@ -283,7 +308,7 @@ export function SuppliersPageClient({
   useEffect(() => {
     fetchSuppliers();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSuppliers depends on filters; Tabel↔Galeri tidak memuat ulang
-  }, [saring.cari, saring.jenis, saring.status, saring.page, saring.pageSize, modePapan]);
+  }, [saring.cari, saring.jenis, saring.status, saring.aktif, saring.page, saring.pageSize, modePapan]);
 
   // Tampilan yang tersimpan di perangkat ini, kecuali alamat sudah memilih sendiri.
   useEffect(() => {
@@ -311,7 +336,7 @@ export function SuppliersPageClient({
   };
 
   const isSupplierFormOpen = supplierDialogMode !== null;
-  const adaSaringan = Boolean(saring.cari.trim() || saring.jenis || saring.status);
+  const adaSaringan = Boolean(saring.cari.trim() || saring.jenis || saring.status || saring.aktif);
 
   useEffect(() => {
     if (supplierDialogMode === 'create') {
@@ -325,6 +350,10 @@ export function SuppliersPageClient({
         bankName: '',
         bankAccount: '',
         bankAccountName: '',
+        isPkp: 'belum',
+        taxWithholding: 'TANPA',
+        hasNpwp: true,
+        npwp: '',
       });
       clearErrors();
     } else if (supplierDialogMode === 'edit' && editSupplier) {
@@ -338,13 +367,23 @@ export function SuppliersPageClient({
         bankName: editSupplier.bankName ?? '',
         bankAccount: '', // Terenkripsi; kosongkan atau ketik ulang untuk mengganti
         bankAccountName: editSupplier.bankAccountName ?? '',
+        isPkp: editSupplier.isPkp === true ? 'ya' : editSupplier.isPkp === false ? 'tidak' : 'belum',
+        taxWithholding:
+          editSupplier.taxWithholding === 'PPH23' ||
+          editSupplier.taxWithholding === 'PPH21' ||
+          editSupplier.taxWithholding === 'PPH4_2'
+            ? editSupplier.taxWithholding
+            : 'TANPA',
+        hasNpwp: editSupplier.hasNpwp ?? true,
+        npwp: '', // Terenkripsi; kosongkan untuk mempertahankan, ketik untuk mengganti
       });
       clearErrors();
     }
   }, [supplierDialogMode, editSupplier, supplierTypes, reset, clearErrors]);
 
-  const onSubmit = async (data: SupplierForm) => {
+  const onSubmit = async (nilai: SupplierForm) => {
     const isEdit = !!editSupplier;
+    const data = keIsianPemasok(nilai);
     try {
       if (!isOnline()) {
         if (isEdit) {
@@ -384,6 +423,7 @@ export function SuppliersPageClient({
         const formKeys: (keyof SupplierForm)[] = [
           'code', 'name', 'typeId', 'address', 'phone', 'email',
           'bankName', 'bankAccount', 'bankAccountName',
+          'isPkp', 'taxWithholding', 'hasNpwp', 'npwp',
         ];
         if (Array.isArray(details) && details.length > 0) {
           details.forEach((issue) => {
@@ -661,6 +701,95 @@ export function SuppliersPageClient({
                   </div>
                 </div>
 
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium mb-3">{tSupplier('pajakJudul')}</h4>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="isPkp">{tSupplier('pajakStatusPkp')}</Label>
+                      <Controller
+                        name="isPkp"
+                        control={control}
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger id="isPkp">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="belum">{tSupplier('pajakPkpBelumPilih')}</SelectItem>
+                              <SelectItem value="ya">{tSupplier('pajakPkp')}</SelectItem>
+                              <SelectItem value="tidak">{tSupplier('pajakNonPkp')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {isPkpIsian === 'belum' ? (
+                        <p className="text-sm text-amber-700 dark:text-amber-400" role="status">
+                          {tSupplier('pajakPkpBelumPeringatan')}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="taxWithholding">{tSupplier('pajakPotongLabel')}</Label>
+                      <Controller
+                        name="taxWithholding"
+                        control={control}
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger id="taxWithholding">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="TANPA">{tSupplier('pajakPotongTanpa')}</SelectItem>
+                              <SelectItem value="PPH23">{tSupplier('pajakPotongPph23')}</SelectItem>
+                              <SelectItem value="PPH21">{tSupplier('pajakPotongPph21')}</SelectItem>
+                              <SelectItem value="PPH4_2">{tSupplier('pajakPotongPph42')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Controller
+                        name="hasNpwp"
+                        control={control}
+                        render={({ field }) => (
+                          <Checkbox
+                            id="hasNpwp"
+                            checked={field.value}
+                            onCheckedChange={(v) => field.onChange(v === true)}
+                          />
+                        )}
+                      />
+                      <Label htmlFor="hasNpwp" className="font-normal">
+                        {tSupplier('pajakPunyaNpwp')}
+                      </Label>
+                    </div>
+                    {hasNpwpIsian ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="npwp">{tSupplier('pajakNpwp')}</Label>
+                        <Input
+                          id="npwp"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          {...register('npwp')}
+                          placeholder={
+                            supplierDialogMode === 'edit' ? tSupplier('pajakNpwpTetap') : undefined
+                          }
+                          aria-invalid={!!errors.npwp}
+                          className={errors.npwp ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                        />
+                        {errors.npwp && (
+                          <p className="text-sm text-destructive" role="alert">
+                            {errors.npwp.message}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">{tSupplier('pajakTanpaNpwpCatatan')}</p>
+                    )}
+                  </div>
+                </div>
+
                 <DialogFooter>
                   <Button
                     type="button"
@@ -727,6 +856,19 @@ export function SuppliersPageClient({
             <SelectItem value="REJECTED">{tSupplier('statusRejected')}</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={saring.aktif || SEMUA}
+          onValueChange={(v) => ubahSaring({ aktif: v === 'aktif' || v === 'nonaktif' ? v : '', page: 1 })}
+        >
+          <SelectTrigger className="w-[200px]" aria-label={tSupplier('aktifFilter')}>
+            <SelectValue placeholder={tSupplier('aktifFilter')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tSupplier('aktifSemua')}</SelectItem>
+            <SelectItem value="aktif">{tSupplier('aktifSaja')}</SelectItem>
+            <SelectItem value="nonaktif">{tSupplier('nonaktifSaja')}</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Card>
@@ -749,7 +891,7 @@ export function SuppliersPageClient({
             <EmptyState
               icon={Building2}
               title={adaSaringan ? tSupplier('emptyFilteredTitle') : tSupplier('emptyTitle')}
-              description={adaSaringan ? tSupplier('emptyFilteredDescription') : tSupplier('emptyDescription')}
+              description={adaSaringan ? tSupplier('emptyFilteredDescriptionV2') : tSupplier('emptyDescription')}
               action={
                 aksi.tambah ? (
                   <Button variant="outline" onClick={() => setSupplierDialogMode('create')}>
@@ -763,7 +905,6 @@ export function SuppliersPageClient({
             <TampilanPemasok
               tampilan={saring.tampilan}
               pemasok={suppliers}
-              aktivitas={aktivitas}
               jenis={supplierTypes}
               izin={izin}
               sibuk={isApproving}
@@ -826,9 +967,19 @@ export function SuppliersPageClient({
                 </div>
               </div>
               <div className="col-span-2">
+                <Label className="text-muted-foreground">{tSupplier('keaktifanLabel')}</Label>
+                <p className="font-medium">
+                  {selectedSupplier?.isActive === false ? tSupplier('keaktifanNonaktif') : tSupplier('keaktifanAktif')}
+                </p>
+              </div>
+              <div className="col-span-2">
                 <Label className="text-muted-foreground">{tSupplier('inPoLabel')}</Label>
                 <p className="font-medium">
-                  {bisaDipilihDiPo(selectedSupplier?.status) ? tSupplier('inPoYes') : tSupplier('notInPo')}
+                  {bisaDipilihDiPo(selectedSupplier?.status, selectedSupplier?.isActive)
+                    ? tSupplier('inPoYes')
+                    : selectedSupplier?.isActive === false
+                      ? tSupplier('notInPoNonaktif')
+                      : tSupplier('notInPo')}
                 </p>
               </div>
             </div>

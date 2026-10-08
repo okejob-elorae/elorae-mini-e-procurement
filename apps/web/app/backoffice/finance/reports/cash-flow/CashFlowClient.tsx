@@ -1,5 +1,6 @@
 "use client";
 
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
@@ -47,9 +48,8 @@ type Props = {
   akses: AksesSpanduk;
 };
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
+/** Satu format angka laporan keuangan: negatif dalam kurung (`format-laporan.ts`). */
+const formatRupiah = rupiahLaporan;
 
 /**
  * The server builds the period label with machine dates ("2026-07-01 — 2026-07-31")

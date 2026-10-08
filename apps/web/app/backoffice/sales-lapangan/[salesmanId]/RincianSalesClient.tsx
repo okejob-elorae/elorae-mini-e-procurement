@@ -85,6 +85,7 @@ export function RincianSalesClient({
   jadwal = [],
   alamatJadwal,
   tautan,
+  alamatTarget,
 }: {
   nama: string;
   kembali: string;
@@ -102,6 +103,8 @@ export function RincianSalesClient({
   alamatJadwal?: string;
   /** Kartu angka yang membuka dokumen sumbernya. */
   tautan?: TautanKartu;
+  /** Halaman Target sales bulan rentang ini — tempat target dilihat dan diatur. */
+  alamatTarget?: string;
 }) {
   const t = useTranslations("salesLapangan");
   const locale = useLocale();
@@ -224,6 +227,11 @@ export function RincianSalesClient({
                 {angka.target
                   ? `${formatIDR(angka.target.capai)} / ${formatIDR(angka.target.target)}`
                   : t("detail.targetNone")}
+                {alamatTarget ? (
+                  <Link href={alamatTarget} className="mt-0.5 block font-medium text-tautan underline underline-offset-2">
+                    {angka.target ? t("detail.targetLihat") : t("detail.targetAtur")}
+                  </Link>
+                ) : null}
               </Baris>
               <Baris label={t("detail.declining")} nilai={angka.tokoMenurun === null ? "—" : String(angka.tokoMenurun)}>
                 {t("detail.decliningHint")}

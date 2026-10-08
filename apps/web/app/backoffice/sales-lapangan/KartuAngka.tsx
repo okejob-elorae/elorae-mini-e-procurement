@@ -94,8 +94,9 @@ function Kartu({
   nada?: string;
 }) {
   const kartu = (
+    // Satu padding vertikal saja: milik Card (CSS kantor menimpa `py-0` pada Card, jadi isi tidak menambah `py-4`).
     <Card className={cn("h-full", href && "transition-colors group-hover:border-foreground/30 group-hover:bg-muted/40")}>
-      <CardContent className="space-y-1 py-4">
+      <CardContent className="space-y-1">
         <span className="flex items-center gap-2 text-sm text-muted-foreground">
           <Ikon className="h-4 w-4" aria-hidden />
           {label}

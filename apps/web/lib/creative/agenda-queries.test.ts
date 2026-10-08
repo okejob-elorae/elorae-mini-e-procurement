@@ -88,6 +88,7 @@ describe("kalenderKreatif", () => {
     expect(g.baris[0]).toMatchObject({ kolaborasiId: id, lewat: true });
     expect(k.dealBelumKirim.jumlah).toBe(1);
     expect(k.dealBelumKirim.contoh[0].id).toBe(id);
+    expect(k.dealBelumKirim.contoh[0].docNo).toMatch(/\S/);
 
     const sebelum = await kalenderKreatif({ dari: "2026-09-28", sampai: "2026-11-01", userId, hariIni: "2026-10-04", cakupan: { kolaborasiIds: kolabIds, campaignIds: [], agendaIds: [] } });
     expect(sebelum.hari["2026-10-04"].tenggat[0].baris[0].lewat).toBe(false);

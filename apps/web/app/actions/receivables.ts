@@ -14,6 +14,7 @@ import { formatIDR } from '@/lib/sales-orders/format';
 import { ambilTokoTetap } from '@/lib/pwa/peran';
 import { tokoTerkunci } from '@/lib/salesman/queries';
 import { daftarPiutang } from '@/lib/receivables/queries';
+import { bacaTautanPotongan, kaitKlaimBerubah } from '@/lib/finance/lapangan/kait';
 import {
   buatKlaimPembayaran,
   type AlasanGagalKlaim,
@@ -158,6 +159,8 @@ export async function verifikasiKlaimAction(
       catatan,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    // Jurnal pelunasan (dan retur yang dipotongnya) — sesudah commit, tidak pernah menggagalkan verifikasi.
+    await kaitKlaimBerubah([paymentClaimId], session.user.id);
     revalidatePath('/backoffice/pelunasan');
     revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath('/backoffice/piutang');
@@ -197,6 +200,7 @@ export async function putuskanGiroAction(
       giro: hasil,
     });
     if (!keputusan.ok) return { ok: false, kode: keputusan.alasan };
+    await kaitKlaimBerubah([paymentClaimId], session.user.id);
     revalidatePath('/backoffice/pelunasan');
     revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath(`/backoffice/pelunasan/${paymentClaimId}`);
@@ -372,6 +376,8 @@ export async function batalkanKlaimAction(
   try {
     const hasil = await batalkanKlaim({ paymentClaimId, alasan, olehUserId: session.user.id });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    // BKM yang sudah terverifikasi lalu dibatalkan: jurnalnya dibalik (generasi baru), tidak dihapus.
+    await kaitKlaimBerubah([paymentClaimId], session.user.id);
     revalidatePath('/backoffice/pelunasan');
     revalidatePath('/backoffice/pelunasan/giro');
     revalidatePath(`/backoffice/pelunasan/${paymentClaimId}`);
@@ -397,6 +403,8 @@ export async function tautkanUlangPotonganAction(
   }
 
   try {
+    // Dibaca sebelum penulis menimpanya: nota retur LAMA juga perlu diselaraskan jurnalnya.
+    const sebelum = await bacaTautanPotongan(deductionId);
     const hasil = await tautkanUlangPotongan({
       deductionId,
       storeReturnId,
@@ -404,6 +412,11 @@ export async function tautkanUlangPotonganAction(
       olehUserId: session.user.id,
     });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    if (sebelum) {
+      await kaitKlaimBerubah([sebelum.paymentClaimId], session.user.id, {
+        nrtIds: [sebelum.storeReturnId, storeReturnId].filter((x): x is string => Boolean(x)),
+      });
+    }
     revalidatePath('/backoffice/pelunasan');
     revalidatePath('/backoffice/piutang');
     return { ok: true };

@@ -87,7 +87,7 @@ export function KartuSablon({
     return susunRingkasan({
       kepala: [
         t('summaryFabric', { fabric: `${namaKain} (${kainHex.toUpperCase()})` }),
-        t('summaryRule', { rule: tPalet(`rules.${aturan}.name`), count: hex.length }),
+        t('summaryRule', { rule: tPalet(`aturanHarmoni.${aturan}.nama`), count: hex.length }),
       ],
       baris: hex.map((h, i) => {
         const r = resep[i];

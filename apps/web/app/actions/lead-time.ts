@@ -32,6 +32,12 @@ import {
   sisipkanLangkahPemasok,
   type HasilRantai,
 } from "@/lib/leadtime/rantai-pemasok-writer";
+import { galatTakTerduga, namaKembar, pesanGalatLeadTime } from "@/app/backoffice/lead-time/pesan-galat";
+import {
+  hitungPemasokTersembunyi,
+  type PemasokTersembunyi,
+  type StatusPemasok,
+} from "@/app/backoffice/lead-time/papan-aturan";
 
 type Result<T = unknown> = { success: boolean; data?: T; error?: string };
 
@@ -45,6 +51,12 @@ async function requireSession() {
 
 function serializeTemplate<T extends Record<string, unknown>>(t: T) {
   return t;
+}
+
+/** Galat yang tertangkap → kalimat Indonesia untuk toast; yang tak terduga dicatat di log server. */
+function gagal(err: unknown, cadangan: string): { success: false; error: string } {
+  if (galatTakTerduga(err)) console.error("[lead-time]", err);
+  return { success: false, error: pesanGalatLeadTime(err, cadangan) };
 }
 
 export async function getProcessTemplates(includeInactive = false) {
@@ -90,11 +102,8 @@ export async function createProcessTemplate(
     revalidatePath(LEAD_TIME_PATH);
     return { success: true, data: { id: created.id } };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to create process";
-    if (msg.includes("Unique constraint") || msg.includes("name")) {
-      return { success: false, error: "Nama proses sudah dipakai." };
-    }
-    return { success: false, error: msg };
+    if (namaKembar(err)) return { success: false, error: "Nama proses sudah dipakai." };
+    return gagal(err, "Proses gagal disimpan. Coba lagi.");
   }
 }
 
@@ -115,7 +124,7 @@ export async function updateProcessTemplate(
       parsed.rateQty !== undefined ? parsed.rateQty : existing.rateQty;
     if (leadTimeType === "FIXED") rateQty = null;
     if (leadTimeType === "PER_QTY" && (rateQty == null || rateQty < 1)) {
-      return { success: false, error: "rateQty is required for PER_QTY" };
+      return { success: false, error: "Per berapa pcs wajib diisi untuk proses per jumlah, paling sedikit 1." };
     }
 
     const updated = await prisma.processTemplate.update({
@@ -149,11 +158,8 @@ export async function updateProcessTemplate(
     revalidatePath(LEAD_TIME_PATH);
     return { success: true, data: updated };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to update process";
-    if (msg.includes("Unique constraint")) {
-      return { success: false, error: "Nama proses sudah dipakai." };
-    }
-    return { success: false, error: msg };
+    if (namaKembar(err)) return { success: false, error: "Nama proses sudah dipakai." };
+    return gagal(err, "Proses gagal disimpan. Coba lagi.");
   }
 }
 
@@ -178,10 +184,7 @@ export async function deactivateProcessTemplate(id: string): Promise<Result> {
     revalidatePath(LEAD_TIME_PATH);
     return { success: true, data: updated };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to deactivate",
-    };
+    return gagal(err, "Proses gagal dinonaktifkan. Coba lagi.");
   }
 }
 
@@ -259,6 +262,36 @@ export async function getAllSupplierChains(): Promise<SupplierChainCard[]> {
   });
 }
 
+/**
+ * Pemasok yang TIDAK dimuat papan (`getAllSupplierChains` hanya memuat yang
+ * aktif dan disetujui), per kelompok — untuk catatan di atas papan. Izin sama
+ * dengan pemuat papan. `bolehBukaPemasok` = penampil boleh membuka daftar
+ * pemasok, jadi catatannya boleh bertautan.
+ */
+export async function hitungPemasokTersembunyiPapanAction(): Promise<
+  { ok: true; jumlah: PemasokTersembunyi; bolehBukaPemasok: boolean } | { ok: false; code: "TANPA_AKSES" | "GAGAL" }
+> {
+  const session = await auth();
+  const izin = session?.user?.permissions ?? [];
+  if (!session?.user?.id || !hasPermission(izin, PERMISSIONS.LEAD_TIME_VIEW)) return { ok: false, code: "TANPA_AKSES" };
+  try {
+    const baris = await prisma.supplier.groupBy({
+      by: ["status", "isActive"],
+      _count: { _all: true },
+    });
+    return {
+      ok: true,
+      jumlah: hitungPemasokTersembunyi(
+        baris.map((b) => ({ status: b.status as StatusPemasok, isActive: b.isActive, jumlah: b._count._all })),
+      ),
+      bolehBukaPemasok: hasPermission(izin, PERMISSIONS.SUPPLIERS_VIEW),
+    };
+  } catch (e) {
+    console.error("[lead-time] hitungPemasokTersembunyiPapan", e);
+    return { ok: false, code: "GAGAL" };
+  }
+}
+
 export async function addSupplierProcessStep(data: unknown): Promise<Result> {
   try {
     const session = await requireSession();
@@ -307,10 +340,7 @@ export async function addSupplierProcessStep(data: unknown): Promise<Result> {
     revalidatePath(LEAD_TIME_PATH);
     return { success: true, data: created };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to add step",
-    };
+    return gagal(err, "Langkah gagal ditambahkan. Coba lagi.");
   }
 }
 
@@ -355,10 +385,7 @@ export async function updateSupplierProcessStep(
     revalidatePath(LEAD_TIME_PATH);
     return { success: true, data: updated };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to update step",
-    };
+    return gagal(err, "Langkah gagal disimpan. Coba lagi.");
   }
 }
 
@@ -371,7 +398,7 @@ export async function removeSupplierProcessStep(id: string): Promise<Result> {
       where: { id },
       include: { processTemplate: true },
     });
-    if (!existing) return { success: false, error: "Step tidak ditemukan." };
+    if (!existing) return { success: false, error: "Langkah tidak ditemukan. Muat ulang halaman." };
 
     await prisma.$transaction(async (tx) => {
       await tx.supplierProcess.delete({ where: { id } });
@@ -403,10 +430,7 @@ export async function removeSupplierProcessStep(id: string): Promise<Result> {
     revalidatePath(LEAD_TIME_PATH);
     return { success: true };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to remove step",
-    };
+    return gagal(err, "Langkah gagal dilepas. Coba lagi.");
   }
 }
 
@@ -443,10 +467,7 @@ export async function reorderSupplierChain(data: unknown): Promise<Result> {
     revalidatePath(LEAD_TIME_PATH);
     return { success: true };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to reorder",
-    };
+    return gagal(err, "Urutan gagal disimpan. Coba lagi.");
   }
 }
 
@@ -776,11 +797,8 @@ export async function createChainTemplate(data: unknown): Promise<Result<{ id: s
     revalidatePath(LEAD_TIME_PATH);
     return { success: true, data: { id: created.id } };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to create SOP";
-    if (msg.includes("Unique constraint")) {
-      return { success: false, error: "Nama SOP sudah dipakai." };
-    }
-    return { success: false, error: msg };
+    if (namaKembar(err)) return { success: false, error: "Nama SOP sudah dipakai." };
+    return gagal(err, "SOP gagal disimpan. Coba lagi.");
   }
 }
 
@@ -830,10 +848,7 @@ export async function updateChainTemplate(
     revalidatePath(LEAD_TIME_PATH);
     return { success: true };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to update SOP",
-    };
+    return gagal(err, "SOP gagal disimpan. Coba lagi.");
   }
 }
 
@@ -855,10 +870,7 @@ export async function deactivateChainTemplate(id: string): Promise<Result> {
     revalidatePath(LEAD_TIME_PATH);
     return { success: true };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to deactivate SOP",
-    };
+    return gagal(err, "SOP gagal dinonaktifkan. Coba lagi.");
   }
 }
 
@@ -929,9 +941,6 @@ export async function applyChainTemplateToSupplier(
     revalidatePath(LEAD_TIME_PATH);
     return { success: true };
   } catch (err) {
-    return {
-      success: false,
-      error: err instanceof Error ? err.message : "Failed to apply SOP",
-    };
+    return gagal(err, "SOP gagal diterapkan. Coba lagi.");
   }
 }

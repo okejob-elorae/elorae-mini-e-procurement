@@ -106,7 +106,7 @@ export function KisiJadwalSpg({
   const kepalaHari = (day: string) => `${td(`hari.${hariKeMinggu(day)}`)} ${Number(day.slice(8))} ${td(`bulan.${Number(day.slice(5, 7))}`)}`;
   const labelShift = (kode: string) => {
     const s = data.aturan.daftar.find((x) => x.kode === kode);
-    return s ? `${s.label} ${s.mulai}–${s.selesai}` : t("shiftDihapus", { kode });
+    return s ? `${s.label} ${jam(s.mulai)}–${jam(s.selesai)}` : t("shiftDihapus", { kode });
   };
 
   const salin = () => {
@@ -197,7 +197,7 @@ export function KisiJadwalSpg({
               <Copy className="mr-2 h-4 w-4" aria-hidden />
               {t("salinMingguLalu")}
             </Button>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Select value={kodeIsi} onValueChange={setKodeIsi}>
                 <SelectTrigger className="w-[200px]" aria-label={t("pilihShiftIsi")}>
                   <SelectValue />
@@ -205,7 +205,7 @@ export function KisiJadwalSpg({
                 <SelectContent>
                   {data.aturan.daftar.map((s) => (
                     <SelectItem key={s.kode} value={s.kode}>
-                      {s.label} {s.mulai}–{s.selesai}
+                      {s.label} {jam(s.mulai)}–{jam(s.selesai)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -223,7 +223,17 @@ export function KisiJadwalSpg({
                 {t("batalkanPerubahan")}
               </Button>
             ) : null}
-            <Button onClick={simpan} disabled={menyimpan || perubahan.length === 0}>
+            {/* Tombol pudar menyebut alasannya: belum ada sel yang diubah. */}
+            {perubahan.length === 0 && !menyimpan ? (
+              <span id="simpan-jadwal-alasan" className="text-sm text-muted-foreground">
+                {t("belumAdaPerubahan")}
+              </span>
+            ) : null}
+            <Button
+              onClick={simpan}
+              disabled={menyimpan || perubahan.length === 0}
+              aria-describedby={perubahan.length === 0 && !menyimpan ? "simpan-jadwal-alasan" : undefined}
+            >
               {menyimpan ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" aria-hidden />}
               {perubahan.length > 0 ? t("simpanN", { count: perubahan.length }) : t("simpan")}
             </Button>

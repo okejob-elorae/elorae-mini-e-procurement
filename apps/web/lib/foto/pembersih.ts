@@ -77,6 +77,11 @@ export const KOLOM_FOTO: readonly { model: string; kolom: readonly string[]; jso
   { model: "user", kolom: ["image"] },
   { model: "spgDailyClose", kolom: ["photoUrls"], json: true },
   { model: "kolPaymentTerm", kolom: ["buktiTransferUrl"] },
+  // Keuangan (akuntansi & pajak lengkap, 2026-10-08): bukti voucher kas/bank,
+  // bukti transfer pembayaran pemasok, bukti setor pajak.
+  { model: "cashVoucher", kolom: ["photoUrl"] },
+  { model: "supplierPayment", kolom: ["proofPhotoUrl"] },
+  { model: "taxPayment", kolom: ["proofPhotoUrl"] },
 ];
 
 /**

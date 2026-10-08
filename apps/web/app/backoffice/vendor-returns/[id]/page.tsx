@@ -4,7 +4,8 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
-import { ArrowLeft, Loader2, Printer, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Loader2, Printer, CheckCircle, PackageX } from 'lucide-react';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -193,12 +194,12 @@ export default function VendorReturnDetailPage() {
       formData.append('files', receiptFile);
       const res = await fetch('/api/upload/grn-photo', { method: 'POST', body: formData });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error ?? t('uploadFailed'));
+        // Pesan server (Inggris, mis. penyimpanan belum disiapkan) tidak ditampilkan mentah.
+        throw new Error('UNGGAH_GAGAL');
       }
       const data = await res.json();
       const receiptFileUrl = data.urls?.[0];
-      if (!receiptFileUrl) throw new Error(t('uploadFailed'));
+      if (!receiptFileUrl) throw new Error('UNGGAH_GAGAL');
       const hasil = await completeReturn(ret.id, session.user.id, {
         trackingNumber: tn,
         receiptFileUrl
@@ -216,18 +217,38 @@ export default function VendorReturnDetailPage() {
       setReceiptFile(null);
       refresh();
     } catch (err: unknown) {
-      setCompleteError(err instanceof Error ? err.message : t('completeFailed'));
-      toast.error(err instanceof Error ? err.message : t('completeFailed'));
+      const pesan = err instanceof Error && err.message === 'UNGGAH_GAGAL' ? t('uploadFailed') : t('completeFailed');
+      setCompleteError(pesan);
+      toast.error(pesan);
     } finally {
       setIsCompleting(false);
     }
   };
 
-  if (isLoading || !ret) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
+    );
+  }
+  // Id yang tidak ada: dulu pemutar berputar selamanya tanpa pesan atau jalan kembali.
+  if (!ret) {
+    return (
+      <Card className="py-0">
+        <CardContent className="p-0">
+          <EmptyState
+            icon={PackageX}
+            title={t('tidakDitemukan')}
+            description={t('tidakDitemukanIsi')}
+            action={
+              <Button asChild variant="outline">
+                <Link href="/backoffice/vendor-returns">{t('backToList')}</Link>
+              </Button>
+            }
+          />
+        </CardContent>
+      </Card>
     );
   }
 
@@ -302,11 +323,11 @@ export default function VendorReturnDetailPage() {
             <Badge variant={statusBadgeVariant}>{statusLabel(ret.status)}</Badge>
             <Button variant="outline" size="sm" onClick={handlePrint}>
               <Printer className="mr-2 h-4 w-4" />
-              {t('printNotaRetur')}
+              {t('cetakNotaRetur')}
             </Button>
             {ret.status === 'DRAFT' && (
               <Button onClick={() => setKonfirmasiProses(true)} disabled={isProcessing}>
-                {isProcessing ? tList('processing') : t('processReturn')}
+                {isProcessing ? tList('processing') : t('prosesRetur')}
               </Button>
             )}
             {ret.status === 'PROCESSED' && (
@@ -454,7 +475,7 @@ export default function VendorReturnDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>{t('linesTitle')}</CardTitle>
+              <CardTitle>{t('judulBaris')}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -532,7 +553,7 @@ export default function VendorReturnDetailPage() {
                 void handleProcess();
               }}
             >
-              {t('processReturn')}
+              {t('prosesRetur')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

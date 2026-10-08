@@ -3,6 +3,7 @@
 import { prisma } from '@elorae/db';
 import { Decimal } from 'decimal.js';
 import * as XLSX from 'xlsx';
+import { barisEksporKinerjaPemasok, keCsv, KOLOM_KINERJA_PEMASOK } from '@/lib/laporan/ekspor-laporan';
 import { PERMISSIONS } from '@/lib/rbac';
 import { wajibIzinLaporan } from './penjaga';
 
@@ -87,26 +88,15 @@ export async function exportVendorPerformanceReport(
 ): Promise<{ data: string; filename: string } | { base64: string; filename: string }> {
   await wajibIzinLaporan(PERMISSIONS.WORK_ORDERS_VIEW);
   const rows = await getVendorPerformanceReport(vendorId, dateFrom, dateTo);
-  const data = rows.map((r) => ({
-    'Doc Number': r.docNumber,
-    'Finished Good': r.finishedGood,
-    'Planned Qty': r.plannedQty,
-    'Actual Qty': r.actualQty,
-    'Efficiency %': r.efficiency,
-    'Material Cost': r.materialCost,
-    'Return Value': r.returnValue,
-    'Status': r.status,
-    'Completion Time (days)': r.completionTimeDays ?? '',
-  }));
+  // Kepala kolom dan status sama dengan layar (Indonesia).
+  const data = barisEksporKinerjaPemasok(rows);
 
   if (format === 'csv') {
-    const headers = data.length ? Object.keys(data[0]).join(',') : 'Doc Number,Finished Good,Planned Qty,Actual Qty,Efficiency %,Material Cost,Return Value,Status,Completion Time (days)';
-    const lines = data.map((r) => Object.values(r).map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    return { data: [headers, ...lines].join('\n'), filename: `vendor-performance-${Date.now()}.csv` };
+    return { data: keCsv(KOLOM_KINERJA_PEMASOK, data), filename: `laporan-setoran-cmt-${Date.now()}.csv` };
   }
   const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, 'Vendor Performance');
+  const ws = XLSX.utils.json_to_sheet(data, { header: [...KOLOM_KINERJA_PEMASOK] });
+  XLSX.utils.book_append_sheet(wb, ws, 'Setoran CMT');
   const buffer = Buffer.from(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
-  return { base64: buffer.toString('base64'), filename: `vendor-performance-${Date.now()}.xlsx` };
+  return { base64: buffer.toString('base64'), filename: `laporan-setoran-cmt-${Date.now()}.xlsx` };
 }

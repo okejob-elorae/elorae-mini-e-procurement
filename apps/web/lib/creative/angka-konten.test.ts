@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   angkaTerbaru,
   biayaKolaborasi,
+  feeBruto,
   cpe,
   cpm,
   angkaTitik,
@@ -77,7 +78,16 @@ describe("biaya kolaborasi", () => {
         ],
         komisi: [12_345.67, 0.33],
       }),
-    ).toEqual({ fee: 1_000_000, boost: 250_000, ongkir: 40_000, sampel: 211_001, komisi: 12_346, total: 1_513_347 });
+    ).toEqual({ fee: 1_000_000, pph: 0, boost: 250_000, ongkir: 40_000, sampel: 211_001, komisi: 12_346, total: 1_513_347 });
+  });
+
+  it("PPh gross-up berdiri di samping fee yang disepakati dan ikut total; feeBruto = fee + PPh", () => {
+    const b = biayaKolaborasi({ fee: 9_750_000, pph: 301_546.4, ongkir: [15_000] });
+    expect(b.fee).toBe(9_750_000);
+    expect(b.pph).toBe(301_546.4);
+    expect(b.total).toBe(10_066_546.4);
+    expect(feeBruto(b)).toBe(10_051_546.4);
+    expect(feeBruto({ fee: 0.1, pph: 0.2 })).toBe(0.3);
   });
 
   it("isian kosong = nol", () => {
@@ -98,6 +108,9 @@ describe("rasio biaya", () => {
     expect(cpv(500_000, 0)).toBeNull();
     expect(cpe(500_000, 0)).toBeNull();
     expect(roas(1_000, 0)).toBeNull();
+    // Belum ada GMV → belum ada ROAS ("—"), bukan 0.
+    expect(roas(0, 500_000)).toBeNull();
+    expect(roas(-5, 500_000)).toBeNull();
   });
 });
 

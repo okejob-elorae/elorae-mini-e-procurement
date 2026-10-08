@@ -76,12 +76,17 @@ export type RingkasBarangDicari = { keterangan: string; qty: number; kali: numbe
  * yang sama (tanpa beda huruf besar/kecil dan spasi) dijumlahkan, supaya yang
  * paling sering dicari muncul di atas — bahan untuk kiriman dan produksi.
  */
-export async function daftarBarangDicari(opsi: { sejak?: Date; storeId?: string } = {}): Promise<{
+export async function daftarBarangDicari(opsi: { sejak?: Date; sebelum?: Date; storeId?: string } = {}): Promise<{
   baris: BarangDicari[];
   ringkas: RingkasBarangDicari[];
 }> {
   const rows = await prisma.lostSale.findMany({
-    where: { ...(opsi.sejak ? { createdAt: { gte: opsi.sejak } } : {}), ...(opsi.storeId ? { storeId: opsi.storeId } : {}) },
+    where: {
+      ...(opsi.sejak || opsi.sebelum
+        ? { createdAt: { ...(opsi.sejak ? { gte: opsi.sejak } : {}), ...(opsi.sebelum ? { lt: opsi.sebelum } : {}) } }
+        : {}),
+      ...(opsi.storeId ? { storeId: opsi.storeId } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 500,
     select: { id: true, description: true, qty: true, createdAt: true, userId: true, storeId: true, store: { select: { name: true } } },

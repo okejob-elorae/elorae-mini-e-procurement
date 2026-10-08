@@ -4,7 +4,7 @@ import { Fragment, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertTriangle, ChevronDown, ChevronRight, ImageIcon, Loader2, RefreshCw, Settings2, Wallet } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, ChevronRight, ImageIcon, Loader2, RefreshCw, Settings2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -28,6 +28,7 @@ import { formatDisplayDateTime } from "@/lib/date-only";
 import { labelTanggal } from "@/lib/tanggal-isian";
 import { rupiahTeks } from "@/lib/creative/angka-konten";
 import { SEMUA_MODE_PAJAK, type ModePajak } from "@/lib/creative/pph";
+import { bayarSebelumTayang } from "@/lib/creative/termin-aturan";
 import type { BarisTermin, PanelTerminData } from "@/lib/creative/termin-queries";
 import { nadaBayar } from "@/lib/creative/bayar-aturan";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,8 @@ export function PanelBayarKlien({ data, hariIni, bolehMengelola, keuangan, jatuh
 
   const ubahMode = (mode: ModePajak) =>
     mulai(async () => {
+      // Mode yang sedang berlaku tidak dinonaktifkan (supaya tetap terbaca "terpilih"), jadi klik ulang diabaikan di sini.
+      if (mode === data.modePajak) return;
       const r = await ubahModePajakAction({ kolaborasiId: data.kolaborasiId, mode });
       if (!r.ok) {
         toast.error(t(`termin.err.${r.kode}`));
@@ -155,7 +158,8 @@ export function PanelBayarKlien({ data, hariIni, bolehMengelola, keuangan, jatuh
           <Wallet className="h-5 w-5" aria-hidden />
           {t("panelBayar.judul")}
         </CardTitle>
-        {bolehMengelola && !tanpaFee ? (
+        {/* Sudah lunas semua: tidak ada sisa untuk dibagi, jadi tombolnya tidak ditampilkan (bukan pudar tanpa alasan). */}
+        {bolehMengelola && !tanpaFee && !(belum.length === 0 && data.total.sisaNeto === 0 && dibayar.length > 0) ? (
           <Button
             variant="outline"
             size="sm"
@@ -163,7 +167,6 @@ export function PanelBayarKlien({ data, hariIni, bolehMengelola, keuangan, jatuh
               setAturKe((k) => k + 1);
               setAtur(true);
             }}
-            disabled={belum.length === 0 && data.total.sisaNeto === 0 && dibayar.length > 0}
           >
             <Settings2 className="h-4 w-4" aria-hidden />
             {t("termin.aturTombol")}
@@ -177,7 +180,7 @@ export function PanelBayarKlien({ data, hariIni, bolehMengelola, keuangan, jatuh
             <StatusPill tone={nadaBayar(data.payStatus)}>{t(`bayar.${data.payStatus}`)}</StatusPill>
           </Statistik>
           <Statistik label={t("panelBayar.jenis")}>{t(`jenis.${data.jenis}`)}</Statistik>
-          <Statistik label={t("termin.kolom.bruto")}>{rupiahTeks(data.total.bruto)}</Statistik>
+          <Statistik label={data.modePajak === "GROSS_UP" ? t("termin.brutoTermasukPph") : t("termin.kolom.bruto")}>{rupiahTeks(data.total.bruto)}</Statistik>
           <Statistik label={t("termin.kolom.pph")}>{rupiahTeks(data.total.pph)}</Statistik>
           <Statistik label={t("termin.kolom.neto")}>{rupiahTeks(data.total.neto)}</Statistik>
           <Statistik label={t("termin.dibayarNeto")} className="text-emerald-700 dark:text-emerald-400">
@@ -204,21 +207,32 @@ export function PanelBayarKlien({ data, hariIni, bolehMengelola, keuangan, jatuh
                   </Link>
                 </p>
               </div>
-              <div role="group" aria-label={t("termin.modeJudul")} className="flex gap-1">
-                {SEMUA_MODE_PAJAK.map((m) => (
-                  <Button
-                    key={m}
-                    type="button"
-                    size="sm"
-                    variant={data.modePajak === m ? "secondary" : "outline"}
-                    aria-pressed={data.modePajak === m}
-                    disabled={!bolehMengelola || pending || data.modePajak === m}
-                    className={cn(data.modePajak === m && "ring-1 ring-foreground/30")}
-                    onClick={() => ubahMode(m)}
-                  >
-                    {t(`termin.mode.${m}`)}
-                  </Button>
-                ))}
+              <div className="flex flex-col gap-1 sm:items-end">
+                {/*
+                  Kontrol bersegmen: mode yang BERLAKU berlatar penuh dengan centang
+                  (tidak dinonaktifkan — tombol pudar terbaca "tidak terpilih").
+                */}
+                <div role="group" aria-label={t("termin.modeJudul")} className="inline-flex rounded-md border p-0.5">
+                  {SEMUA_MODE_PAJAK.map((m) => {
+                    const aktif = data.modePajak === m;
+                    return (
+                      <Button
+                        key={m}
+                        type="button"
+                        size="sm"
+                        variant={aktif ? "default" : "ghost"}
+                        aria-pressed={aktif}
+                        disabled={!bolehMengelola || pending}
+                        className={cn("h-7 gap-1 px-3", !aktif && "text-muted-foreground")}
+                        onClick={() => ubahMode(m)}
+                      >
+                        {aktif ? <Check className="h-3.5 w-3.5" aria-hidden /> : null}
+                        {t(`termin.mode.${m}`)}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">{t("termin.modeSekarang", { mode: t(`termin.mode.${data.modePajak}`) })}</p>
               </div>
             </div>
             {kurangData ? (
@@ -318,14 +332,18 @@ export function PanelBayarKlien({ data, hariIni, bolehMengelola, keuangan, jatuh
                             </Button>
                           ) : null}
                           {bolehMengelola && b.status === "BELUM" ? (
-                            <Button size="sm" onClick={() => setBayar(b)}>
+                            <Button size="sm" variant={bayarSebelumTayang(b) ? "outline" : "default"} onClick={() => setBayar(b)}>
                               {t("termin.bayar")}
                             </Button>
                           ) : null}
                           {bolehMengelola && b.status === "DIBAYAR" && !b.warisan ? (
-                            <Button size="sm" variant="ghost" onClick={() => setBatal(b)} disabled={Boolean(b.setorAt)} title={b.setorAt ? t("termin.err.SUDAH_DISETOR") : undefined}>
-                              {t("termin.batalkan")}
-                            </Button>
+                            b.setorAt ? (
+                              <span className="self-center text-xs text-muted-foreground">{t("termin.tidakBisaBatalDisetor")}</span>
+                            ) : (
+                              <Button size="sm" variant="ghost" onClick={() => setBatal(b)}>
+                                {t("termin.batalkan")}
+                              </Button>
+                            )
                           ) : null}
                         </div>
                       </TableCell>

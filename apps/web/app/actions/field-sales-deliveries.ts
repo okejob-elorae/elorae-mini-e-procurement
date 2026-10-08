@@ -17,6 +17,7 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { JENIS_KABAR, kabariPengguna } from "@/lib/notifications/kabar-pengguna";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
+import { kaitNotaTerbit } from "@/lib/finance/lapangan/kait";
 import { logPrint } from "./audit";
 
 export type DeliveryActionResult =
@@ -233,6 +234,9 @@ export async function recordDeliveryAction(input: {
     if (cadanganTidakCocok(e)) return { ok: false, reason: "RESERVATION_MISMATCH" };
     throw e;
   }
+  // Jurnal nota tagihan (piutang toko, pendapatan, PPN, HPP) — sesudah commit, idempoten,
+  // tidak pernah menggagalkan pengiriman (gagal → JOURNAL_PENDING).
+  await kaitNotaTerbit(deliveryId, g.userId);
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
   if (!ulangan) void kabarPesananDikirim(deliveryId, g.userId);

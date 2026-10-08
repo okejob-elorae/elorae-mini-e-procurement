@@ -558,7 +558,9 @@ export function LaporanPageClient({
                         </p>
                       </div>
                       <div className="text-right">
-                        <p className="font-medium">{formatIdr(po.grandTotal)}</p>
+                        {/* Nilai PO penuh, disebut begitu (sama dengan Beranda): tab Pengadaan
+                            menyebut nilai yang BELUM diterima, yang lebih kecil. */}
+                        <p className="font-medium">{tDashboard('nilaiPoBaris', { nilai: formatIdr(po.grandTotal) })}</p>
                         <p className="text-sm text-muted-foreground">
                           {tDashboard('unitsPending', { count: formatNumber(po.pendingQty ?? 0) })}
                         </p>

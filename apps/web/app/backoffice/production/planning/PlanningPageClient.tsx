@@ -40,6 +40,7 @@ import {
   type HasilTahap,
 } from "@/app/actions/planning";
 import { PlanningPageShell, PlanningTabPanel } from "@/components/planning/planning-page-shell";
+import { usulanTahunPlan } from "./usulan-tahun";
 import { PlanGridTab } from "@/components/planning/plan-grid-tab";
 import { PlanDashboardTab } from "@/components/planning/plan-dashboard-tab";
 import { PlanDetailsTab } from "@/components/planning/plan-details-tab";
@@ -63,10 +64,10 @@ export function PlanningPageClient() {
   const tColors = useTranslations("planning.colors");
   const tToast = useTranslations("planning.toasts");
   const tEmpty = useTranslations("planning.empty");
+  const tKosong = useTranslations("planning.kosongTab");
   const tTolak = useTranslations("jadwalProduksi.plan.tolak");
   const activeTab = searchParams.get("tab") || "grid";
 
-  const isAdmin = session?.user?.role === "ADMIN";
   const canManage = hasPermission(
     session?.user?.permissions || [],
     PERMISSIONS.PRODUCTION_PLANNING_MANAGE
@@ -85,7 +86,8 @@ export function PlanningPageClient() {
   const [detail, setDetail] = useState<PlanYearDetail | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [dashboard, setDashboard] = useState<PlanDashboardData | null>(null);
-  const [newYear, setNewYear] = useState(String(new Date().getFullYear()));
+  // Usulan tahun baru mengikuti tahun bawaan Forecast (lib: ./usulan-tahun.ts).
+  const [newYear, setNewYear] = useState(() => String(usulanTahunPlan([])));
   const [itemOptions, setItemOptions] = useState<ComboboxOption[]>([]);
   const [itemCategoryOptions, setItemCategoryOptions] = useState<ComboboxOption[]>([]);
   const [accessoryOptions, setAccessoryOptions] = useState<ComboboxOption[]>([]);
@@ -94,6 +96,7 @@ export function PlanningPageClient() {
 
   const refreshAll = async (preferredYearId?: string) => {
     const planYears = await getPlanYears();
+    setNewYear(String(usulanTahunPlan(planYears.map((y) => y.year))));
     setYears(
       planYears.map((y) => ({
         id: y.id,
@@ -277,14 +280,16 @@ export function PlanningPageClient() {
 
   // Before the first load finishes there is nothing to say yet; after it, a
   // missing plan gets an explanation instead of a blank space under the tabs.
-  const emptyPlan = loaded ? (
-    <EmptyState
-      icon={CalendarPlus}
-      className="rounded-xl border bg-card"
-      title={tEmpty("title")}
-      description={canManage ? tEmpty("descriptionManage") : tEmpty("descriptionView")}
-    />
-  ) : null;
+  // Each tab says what it will hold once a plan year exists.
+  const kosong = (tab: "grid" | "dashboard" | "rincian" | "kalender" | "warna" | "jahitan" | "aksesoris") =>
+    loaded ? (
+      <EmptyState
+        icon={CalendarPlus}
+        className="rounded-xl border bg-card"
+        title={tEmpty("title")}
+        description={`${tKosong(tab)} ${canManage ? tKosong("kelola") : tKosong("lihat")}`}
+      />
+    ) : null;
 
   return (
     <PlanningPageShell
@@ -302,7 +307,7 @@ export function PlanningPageClient() {
       createdByName={detail?.createdBy.name}
       planStatus={detail?.status}
       isLocked={detail?.isLocked}
-      isAdmin={isAdmin}
+      bolehKunci={canManage}
       canManage={canManage}
       newYear={newYear}
       onNewYearChange={setNewYear}
@@ -316,14 +321,13 @@ export function PlanningPageClient() {
         try {
           const created = await createPlanYear({ year });
           await refreshAll(created.id);
-          setNewYear(String(year + 1));
           toast.success(tToast("yearCreated"));
         } catch (err: unknown) {
           toast.error(err instanceof Error ? err.message : tToast("createYearFailed"));
         }
       }}
       onToggleLock={async () => {
-        if (!detail || !isAdmin) return;
+        if (!detail || !canManage) return;
         await setPlanYearLock(detail.id, !detail.isLocked);
         await refreshAll(detail.id);
       }}
@@ -441,11 +445,11 @@ export function PlanningPageClient() {
             }}
             onCreateWo={handleCreateWo}
           />
-        ) : emptyPlan}
+        ) : kosong("grid")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="dashboard">
-        {dashboard ? <PlanDashboardTab dashboard={dashboard} /> : emptyPlan}
+        {dashboard ? <PlanDashboardTab dashboard={dashboard} /> : kosong("dashboard")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="rincian">
@@ -462,11 +466,11 @@ export function PlanningPageClient() {
             onDeleteStage={(id) => deletePlanStage(id)}
             onCreateWo={handleCreateWo}
           />
-        ) : emptyPlan}
+        ) : kosong("rincian")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="kalender">
-        {detail ? <PlanKalenderTab tahun={detail.year} lihatPo={lihatPo} lihatSpk={lihatSpk} /> : emptyPlan}
+        {detail ? <PlanKalenderTab tahun={detail.year} lihatPo={lihatPo} lihatSpk={lihatSpk} /> : kosong("kalender")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="warna">
@@ -480,7 +484,7 @@ export function PlanningPageClient() {
               toast.success(tToast("colorsSaved"));
             }}
           />
-        ) : emptyPlan}
+        ) : kosong("warna")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="jahitan">
@@ -512,7 +516,7 @@ export function PlanningPageClient() {
               return result;
             }}
           />
-        ) : emptyPlan}
+        ) : kosong("jahitan")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="aksesoris">
@@ -527,7 +531,7 @@ export function PlanningPageClient() {
             }}
             onSuggestBom={(categoryId) => suggestAccessoryFromBom(categoryId)}
           />
-        ) : emptyPlan}
+        ) : kosong("aksesoris")}
       </PlanningTabPanel>
     </PlanningPageShell>
   );

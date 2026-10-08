@@ -40,7 +40,7 @@ export function LencanaJadwal({ ringkasan, className }: { ringkasan: RingkasanJa
           ? t("semuaSelesai")
           : t("selesaiDari", { selesai: ringkasan.selesai, jumlah: ringkasan.jumlah })}
       </Badge>
-      {ringkasan.telat > 0 && <Badge variant="destructive">{t("telat", { n: ringkasan.telat })}</Badge>}
+      {ringkasan.telat > 0 && <Badge variant="destructive">{t("terlambat", { n: ringkasan.telat })}</Badge>}
     </span>
   );
 }

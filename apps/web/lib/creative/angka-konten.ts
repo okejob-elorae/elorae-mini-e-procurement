@@ -92,15 +92,35 @@ export function cpe(biaya: number, interaksi: number): number | null {
   return bagi(biaya, interaksi);
 }
 
-/** GMV ÷ biaya. `null` bila biayanya nol. */
+/**
+ * GMV ÷ biaya. `null` bila biayanya nol ATAU belum ada GMV sama sekali — satu
+ * aturan untuk semua layar (Hari ini, rincian kolaborasi, profil KOL,
+ * Laporan, rekap, CSV): sebelum ada penjualan ROAS tertulis "—", bukan "0,00×"
+ * merah yang menakut-nakuti (audit ulang 2026-10-08).
+ */
 export function roas(gmv: number, biaya: number): number | null {
+  if (!(Number.isFinite(gmv) && gmv > 0)) return null;
   return bagi(gmv, biaya);
 }
 
-export type RincianBiaya = { fee: number; boost: number; ongkir: number; sampel: number; komisi: number; total: number };
+/**
+ * Rincian biaya satu (atau beberapa) kolaborasi.
+ *
+ * `fee` SELALU angka yang disepakati dengan KOL: neto untuk gross-up, bruto
+ * untuk dipotong — sama dengan `KolBrief.fee` dan dengan yang tertulis di
+ * rincian kolaborasi. PPh gross-up yang ditanggung Elorae berdiri sendiri di
+ * `pph`, jadi `fee + pph` = biaya bruto fee (termasuk PPh) = Σ bruto termin =
+ * beban di jurnal. PPh yang DIPOTONG dari KOL bukan biaya tambahan.
+ */
+export type RincianBiaya = { fee: number; pph: number; boost: number; ongkir: number; sampel: number; komisi: number; total: number };
+
+/** Biaya bruto fee (termasuk PPh gross-up yang ditanggung Elorae). */
+export function feeBruto(b: Pick<RincianBiaya, "fee" | "pph">): number {
+  return dariSen(keSen(b.fee) + keSen(b.pph));
+}
 
 /**
- * Biaya satu kolaborasi = fee + boost + ongkir + Σ(HPP × qty) sampel + komisi
+ * Biaya satu kolaborasi = fee + PPh gross-up + boost + ongkir + Σ(HPP × qty) sampel + komisi
  * (Σ `KolSale.commission`).
  *
  * Fee dimasukkan apa adanya — pemanggil yang memutuskan apakah ia memakai fee
@@ -108,23 +128,27 @@ export type RincianBiaya = { fee: number; boost: number; ongkir: number; sampel:
  */
 export function biayaKolaborasi(input: {
   fee?: number;
+  /** PPh gross-up yang ditanggung Elorae (bukan PPh yang dipotong dari KOL). */
+  pph?: number;
   boostCost?: number;
   ongkir?: readonly number[];
   sampel?: readonly { unitCost: number; qty: number }[];
   komisi?: readonly number[];
 }): RincianBiaya {
   const fee = keSen(input.fee ?? 0);
+  const pph = keSen(input.pph ?? 0);
   const boost = keSen(input.boostCost ?? 0);
   const ongkir = (input.ongkir ?? []).reduce((s, n) => s + keSen(n), 0);
   const sampel = (input.sampel ?? []).reduce((s, b) => s + keSen(b.unitCost) * Math.trunc(sah(b.qty)), 0);
   const komisi = (input.komisi ?? []).reduce((s, n) => s + keSen(n), 0);
   return {
     fee: dariSen(fee),
+    pph: dariSen(pph),
     boost: dariSen(boost),
     ongkir: dariSen(ongkir),
     sampel: dariSen(sampel),
     komisi: dariSen(komisi),
-    total: dariSen(fee + boost + ongkir + sampel + komisi),
+    total: dariSen(fee + pph + boost + ongkir + sampel + komisi),
   };
 }
 

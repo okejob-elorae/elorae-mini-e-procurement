@@ -38,6 +38,7 @@ import { pilihanTabelUkuranAction } from "@/app/actions/size-charts";
 import { BATAS_INFO_PRODUK } from "@/lib/items/info-produk";
 import type { PilihanTabelUkuran } from "@/lib/items/size-chart-queries";
 import { rapikanNamaBarang } from "@/app/backoffice/items/nama-barang";
+import { labelJenisBarang } from "@/app/backoffice/items/tampilan-barang";
 import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
 
 type ItemFormData = z.infer<typeof itemSchema>;
@@ -153,15 +154,20 @@ interface ItemFormProps {
 
 export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormProps) {
   const tValidation = useTranslations('validation');
-  const tToasts = useTranslations('toasts');
   const tInfo = useTranslations("itemProductInfo");
   const tForm = useTranslations('itemForm');
   const locale = useLocale();
   // Nama Inggris tidak wajib: kosong diisi nama Indonesia saat disimpan (rapikanNamaBarang).
-  const itemSchemaT = useMemo(
-    () => createItemSchema((k) => tValidation(k)).extend({ nameEn: z.string().optional() }),
-    [tValidation]
-  );
+  // Pesan galat memakai istilah "barang" dan bahasa Indonesia, bukan teks bawaan zod.
+  const itemSchemaT = useMemo(() => {
+    const tidakNegatif = tForm('errTidakNegatif');
+    return createItemSchema((k) => (k === 'itemNameIdRequired' ? tForm('errNamaWajib') : tValidation(k))).extend({
+      nameEn: z.string().optional(),
+      sellingPrice: z.number(tidakNegatif).min(0, tidakNegatif).optional(),
+      targetMarginPercent: z.number(tidakNegatif).min(0, tidakNegatif).optional(),
+      additionalCost: z.number(tidakNegatif).min(0, tidakNegatif).optional(),
+    });
+  }, [tValidation, tForm]);
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [materials, setMaterials] = useState<Item[]>([]);
   const [itemCategories, setItemCategories] = useState<ItemCategoryOption[]>([]);
@@ -262,7 +268,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   useEffect(() => {
     // Load UOMs
-    getUOMs().then(setUOMs).catch(() => toast.error(tToasts('failedToLoadUOMs')));
+    getUOMs().then(setUOMs).catch(() => toast.error(tForm('errMuatSatuan')));
     getItemTypeMasters().then(setItemTypeMasters).catch(() => {});
     getItemCategories(true).then((rows) => setItemCategories(rows as ItemCategoryOption[])).catch(() => {});
     getVariantBarcodeFormatConfig()
@@ -280,14 +286,14 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     if (itemType === ItemType.FINISHED_GOOD) {
       getItems({ type: 'raw', isActive: true })
         .then((result) => setMaterials(Array.isArray(result) ? (result as unknown as Item[]) : []))
-        .catch(() => toast.error(tToasts('failedToLoadMaterials')));
+        .catch(() => toast.error(tForm('errMuatBahan')));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- itemType drives fetch
   }, [itemType]);
 
   const handleGenerateSKU = async () => {
     if (!itemType) {
-      toast.error(tToasts('pleaseSelectItemTypeFirst'));
+      toast.error(tForm('pilihJenisDulu'));
       return;
     }
     setIsGeneratingSKU(true);
@@ -295,7 +301,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       const newSku = await generateSKU(itemType);
       setSku(newSku);
     } catch {
-      toast.error(tToasts('failedToGenerateSKU'));
+      toast.error(tForm('errBuatSku'));
     } finally {
       setIsGeneratingSKU(false);
     }
@@ -367,7 +373,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   const applyVariantSkuCodeAt = (idx: number) => {
     if (!variantSkuBasePrefix) {
-      toast.error(tToasts('setParentSkuBeforeVariantCode'));
+      toast.error(tForm('variantSkuNoPrefix'));
       return;
     }
     const combo = variantCombinations[idx];
@@ -385,7 +391,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const applyVariantBarcodeAt = (idx: number) => {
     if (!barcodeFormatConfig) return;
     if (!categoryCodePrefix && !parentSku.trim()) {
-      toast.error(tToasts('setParentSkuBeforeBarcode'));
+      toast.error(tForm('barcodeTanpaAwalan'));
       return;
     }
     const combo = variantCombinations[idx];
@@ -407,7 +413,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   const applyAllVariantCodes = () => {
     if (!variantSkuBasePrefix) {
-      toast.error(tToasts('setParentSkuBeforeVariantCode'));
+      toast.error(tForm('variantSkuNoPrefix'));
       return;
     }
     if (!barcodeFormatConfig) return;
@@ -484,7 +490,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     if (hasAttributes) {
       const incomplete = attributes.find((attr) => !attr.key.trim() || attr.values.length === 0);
       if (incomplete) {
-        toast.error(tToasts('provideNameAndAttributeValues'));
+        toast.error(tForm('lengkapiAtribut'));
         return;
       }
     }
@@ -528,7 +534,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         r => !r.materialId || r.qtyRequired <= 0
       );
       if (invalidRules.length > 0) {
-        toast.error(tToasts('fillConsumptionRuleFields'));
+        toast.error(tForm('lengkapiBahan'));
         return;
       }
     }
@@ -639,7 +645,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     id="type"
                     options={
                       itemTypeMasters.length > 0
-                        ? itemTypeMasters.map((m) => ({ value: m.code, label: locale === 'en' ? m.nameEn : m.nameId }))
+                        ? itemTypeMasters.map((m) => ({
+                            value: m.code,
+                            label: labelJenisBarang(m, locale, (code) => tForm(`typeName.${code}`)),
+                          }))
                         : [
                             { value: ItemType.FABRIC, label: tForm('typeName.FABRIC') },
                             { value: ItemType.ACCESSORIES, label: tForm('typeName.ACCESSORIES') },
@@ -721,7 +730,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 {...register('overReceiveThreshold', {
                   setValueAs: parseNumberFieldDefaultZero,
                 })}
-                placeholder="0.00"
+                placeholder="0"
                 aria-invalid={!!errors.overReceiveThreshold}
                 className={errors.overReceiveThreshold ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
@@ -762,7 +771,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               {...register('reorderPoint', {
                 setValueAs: parseNumberFieldDefaultZero,
               })}
-              placeholder="0.00"
+              placeholder="0"
               aria-invalid={!!errors.reorderPoint}
               className={errors.reorderPoint ? 'border-destructive focus-visible:ring-destructive/20' : ''}
             />
@@ -798,8 +807,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   type="number"
                   step="0.01"
                   min="0"
-                  {...register('sellingPrice', { valueAsNumber: true })}
-                  placeholder="0.00"
+                  {...register('sellingPrice', {
+                    // Kosong = belum ada harga (bukan NaN, yang ditolak dengan pesan bahasa Inggris).
+                    setValueAs: (v) => (v === '' || v == null ? undefined : Number(v)),
+                  })}
+                  placeholder="0"
                   aria-invalid={!!errors.sellingPrice}
                   className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 />
@@ -1186,7 +1198,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             }
                             setConsumptionRules(updated);
                           }}
-                          placeholder="0.0000"
+                          placeholder="0"
                         />
                       </TableCell>
                       <TableCell>
@@ -1203,7 +1215,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               parseFloat(e.target.value) || 0
                             )
                           }
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                       </TableCell>
                       <TableCell>

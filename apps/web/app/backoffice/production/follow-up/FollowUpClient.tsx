@@ -149,7 +149,7 @@ export function FollowUpClient({ param, hariIni, data, pemasok, hariKerja, tangg
                 <EmptyState
                   icon={ClipboardList}
                   title={param.pemasok ? t("followUp.kosong.pemasok") : td(`followUp.kosong.${param.saring}`)}
-                  description={param.pemasok || data.jumlah.semua > 0 ? undefined : t("followUp.kosong.deskripsi")}
+                  description={param.pemasok || data.jumlah.semua > 0 ? undefined : t("followUp.kosong.deskripsiTautan")}
                   action={
                     param.pemasok ? (
                       <Button variant="outline" onClick={() => pergi({ pemasok: null, halaman: 1 })}>
@@ -159,9 +159,10 @@ export function FollowUpClient({ param, hariIni, data, pemasok, hariKerja, tangg
                       <Button variant="outline" onClick={() => pergi({ saring: "semua", halaman: 1 })}>
                         {t("followUp.kosong.lihatSemua", { n: data.jumlah.semua })}
                       </Button>
-                    ) : param.saring === "semua" ? (
+                    ) : data.jumlah.semua === 0 ? (
+                      // Tahap dibuka dari Plan Kerja tab Rincian plan, lalu ruang kerjanya.
                       <Button asChild variant="outline">
-                        <Link href="/backoffice/production/planning">{t("followUp.kosong.bukaPlan")}</Link>
+                        <Link href="/backoffice/production/planning?tab=rincian">{t("followUp.kosong.bukaPlan")}</Link>
                       </Button>
                     ) : undefined
                   }
@@ -341,7 +342,7 @@ function BarisFollowUp({
         <div className="flex flex-col items-start gap-1">
           <StatusPill tone={NADA_STATUS[b.status]}>{td(`followUp.status.${b.status}`)}</StatusPill>
           {b.keadaan === "TELAT" || b.keadaan === "HARI_INI" ? (
-            <StatusPill tone={NADA_KEADAAN[b.keadaan]}>{td(`followUp.kalender.keadaan.${b.keadaan}`)}</StatusPill>
+            <StatusPill tone={NADA_KEADAAN[b.keadaan]}>{td(`followUp.keadaanLabel.${b.keadaan}`)}</StatusPill>
           ) : null}
         </div>
       </TableCell>

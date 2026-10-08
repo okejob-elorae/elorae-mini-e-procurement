@@ -77,7 +77,7 @@ export function VanSalesListClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("pageTitle")} />
+      <PageHeader title={t("judulKanvas")} />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-2 w-full sm:w-56">
@@ -139,6 +139,8 @@ export function VanSalesListClient({
               <p className="text-muted-foreground">
                 {hasFilters ? t("noResults") : t("empty")}
               </p>
+              {/* Dari mana nota datang, seperti keadaan kosong lain di grup ini. */}
+              {!hasFilters ? <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{t("emptySumber")}</p> : null}
               {hasFilters && (
                 <Button
                   variant="outline"

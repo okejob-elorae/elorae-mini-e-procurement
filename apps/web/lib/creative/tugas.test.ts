@@ -3,6 +3,7 @@ import { AMBANG_BAWAAN } from "./ambang";
 import {
   JUDUL_TUGAS,
   jumlahTugas,
+  kurangDataKirim,
   susunTugas,
   URUTAN_TUGAS,
   type AgendaTugas,
@@ -149,6 +150,12 @@ describe("susunTugas — 13 kelompok Hari ini", () => {
     const k = kelompok("KIRIM_DOBEL", { kolaborasi: [sudah, nomorSama, orangSama, campaignLain] });
     expect(k.baris.map((b) => b.id).sort()).toEqual([nomorSama.id, orangSama.id].sort());
     expect(k.baris.find((b) => b.id === nomorSama.id)!.info.dobelDengan).toEqual([{ id: sudah.id, kolNama: sudah.kolNama, docNo: sudah.docNo }]);
+  });
+
+  it("kurangDataKirim menyebut tepat kolom yang kosong (dipakai juga kartu alamat rincian kolaborasi)", () => {
+    expect(kurangDataKirim({ alamat: " ", waNormal: "6281234", ukuranAda: false })).toEqual(["ALAMAT", "UKURAN"]);
+    expect(kurangDataKirim({ alamat: "Jl. Mawar 1", waNormal: null, ukuranAda: true })).toEqual(["HP"]);
+    expect(kurangDataKirim({ alamat: "Jl. Mawar 1", waNormal: "6281234", ukuranAda: true })).toEqual([]);
   });
 
   it("data kirim kurang hanya untuk yang belum berangkat, dan menyebut yang kurang", () => {

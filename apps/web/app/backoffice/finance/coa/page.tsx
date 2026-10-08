@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getCoaTree } from "@/lib/finance/coa/queries";
+import { pratinjauTemplatAkun } from "@/lib/finance/templat-akun/pasang";
 import { CoaPageClient } from "./CoaPageClient";
+import type { RingkasTemplatAkun } from "./KartuTemplatAkun";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +26,24 @@ export default async function CoaPage({
   const canManage = hasPermission(perms, PERMISSIONS.COA_MANAGE);
   const canViewLedger = hasPermission(perms, PERMISSIONS.JOURNALS_VIEW);
 
+  // Templat bagan akun membuat akun DAN memetakan peran: butuh kedua izin.
+  let templat: RingkasTemplatAkun | null = null;
+  if (canManage && hasPermission(perms, PERMISSIONS.JOURNALS_MANAGE)) {
+    try {
+      const r = await pratinjauTemplatAkun();
+      templat = { akunBaru: r.akunBaru.length, peranBaru: r.pemetaanBaru.length, konflik: r.konflik.length };
+    } catch (e) {
+      console.error("[coa] rencana templat gagal dibaca", e);
+    }
+  }
+
   return (
     <CoaPageClient
       tree={tree}
       includeInactive={includeInactive}
       canManage={canManage}
       canViewLedger={canViewLedger}
+      templat={templat}
     />
   );
 }

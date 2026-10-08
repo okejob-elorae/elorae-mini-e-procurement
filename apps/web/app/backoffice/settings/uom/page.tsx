@@ -54,6 +54,7 @@ import {
 import { Plus, Pencil, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { formatFaktor } from "./format-faktor";
 
 const uomSchema = z.object({
   code: z.string().min(1).max(10),
@@ -103,8 +104,7 @@ export default function UOMPage() {
   const locale = useLocale() as 'en' | 'id';
   const t = useTranslations('uom');
   const tCommon = useTranslations('common');
-  const tPlaceholders = useTranslations('placeholders');
-  const tToasts = useTranslations('toasts');
+  const tUi = useTranslations("ui");
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [conversions, setConversions] = useState<Conversion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -116,7 +116,6 @@ export default function UOMPage() {
   const pendingConversionDeleteRef = useRef<string | null>(null);
 
   const displayName = (u: { nameId: string; nameEn: string }) => (locale === 'en' ? u.nameEn : u.nameId);
-  const numberLocale = locale === 'id' ? 'id-ID' : 'en-US';
 
   const {
     register: registerUOM,
@@ -154,7 +153,7 @@ export default function UOMPage() {
       setUOMs(uomsData);
       setConversions(conversionsData.map((c) => ({ ...c, factor: Number(c.factor) })));
     } catch {
-      toast.error(tToasts('failedToLoadUOMData'));
+      toast.error(t("toast.loadFailed"));
     } finally {
       setIsLoading(false);
     }
@@ -164,36 +163,34 @@ export default function UOMPage() {
     try {
       if (editingUom) {
         await updateUOM({ id: editingUom.id, ...data });
-        toast.success(tToasts('uomUpdatedSuccessfully'));
+        toast.success(t("toast.updated"));
       } else {
         await createUOM(data);
-        toast.success(tToasts('uomCreatedSuccessfully'));
+        toast.success(t("toast.created"));
       }
       setIsUOMDialogOpen(false);
       setEditingUom(null);
       resetUOM();
       fetchData();
-    } catch (error: any) {
-      toast.error(
-        error.message ||
-          (editingUom ? tToasts('failedToUpdateUOM') : tToasts('failedToCreateUOM')),
-      );
+    } catch {
+      // Pesan galat aksi server berbahasa Inggris dan disamarkan di produksi — tampilkan kalimat sendiri.
+      toast.error(editingUom ? t("toast.updateFailed") : t("toast.createFailed"));
     }
   };
 
   const onSubmitConversion = async (data: ConversionFormData) => {
     try {
       if (data.fromUomId === data.toUomId) {
-        toast.error(tToasts('fromAndToUOMCannotBeSame'));
+        toast.error(t("toast.sameFromTo"));
         return;
       }
       await createUOMConversion(data);
-      toast.success(tToasts('conversionCreatedSuccessfully'));
+      toast.success(t("toast.conversionCreated"));
       setIsConversionDialogOpen(false);
       resetConversion();
       fetchData();
-    } catch (error: any) {
-      toast.error(error.message || tToasts('failedToCreateConversion'));
+    } catch {
+      toast.error(t("toast.conversionCreateFailed"));
     }
   };
 
@@ -208,11 +205,11 @@ export default function UOMPage() {
     setIsDeletingConversion(true);
     try {
       await deleteUOMConversion(id);
-      toast.success(tToasts('conversionDeletedSuccessfully'));
+      toast.success(t("toast.conversionDeleted"));
       setDeleteConversionId(null);
       fetchData();
-    } catch (error: any) {
-      toast.error(error.message || tToasts('failedToDeleteConversion'));
+    } catch {
+      toast.error(t("toast.conversionDeleteFailed"));
     } finally {
       setIsDeletingConversion(false);
     }
@@ -239,7 +236,7 @@ export default function UOMPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>{t('unitsTitle')}</CardTitle>
+                <CardTitle>{t("unitsTitleV2")}</CardTitle>
               </div>
               <Dialog
                 open={isUOMDialogOpen}
@@ -292,7 +289,7 @@ export default function UOMPage() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="nameEn">{t('nameEn')} *</Label>
+                        <Label htmlFor="nameEn">{t("nameEnV2")} *</Label>
                         <Input id="nameEn" {...registerUOM('nameEn')} />
                         {errorsUOM.nameEn && (
                           <p className="text-sm text-destructive">{t('errRequired')}</p>
@@ -332,16 +329,19 @@ export default function UOMPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[52px]">{tCommon('actions')}</TableHead>
                   <TableHead>{t('code')}</TableHead>
                   <TableHead>{t('nameId')}</TableHead>
-                  <TableHead>{t('nameEn')}</TableHead>
+                  <TableHead>{t("nameEnV2")}</TableHead>
+                  <TableHead className="w-24 text-right">{tUi("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {uoms.map((uom) => (
                   <TableRow key={uom.id}>
-                    <TableCell className="p-2">
+                    <TableCell className="font-medium">{uom.code}</TableCell>
+                    <TableCell className="min-w-[120px] whitespace-normal">{uom.nameId}</TableCell>
+                    <TableCell className="min-w-[120px] whitespace-normal">{uom.nameEn}</TableCell>
+                    <TableCell className="p-2 text-right">
                       <Button
                         type="button"
                         variant="ghost"
@@ -363,9 +363,6 @@ export default function UOMPage() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                     </TableCell>
-                    <TableCell className="font-medium">{uom.code}</TableCell>
-                    <TableCell className="min-w-[120px] whitespace-normal">{uom.nameId}</TableCell>
-                    <TableCell className="min-w-[120px] whitespace-normal">{uom.nameEn}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -384,7 +381,7 @@ export default function UOMPage() {
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm">
                     <Plus className="h-4 w-4 mr-2" />
-                    {t('addConversion')}
+                    {t("addConversionV2")}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
@@ -406,7 +403,7 @@ export default function UOMPage() {
                           }))}
                           value={watchConversion('fromUomId')}
                           onValueChange={(value) => setValueConversion('fromUomId', value)}
-                          placeholder={tPlaceholders('selectUOM')}
+                          placeholder={t("pilihSatuan")}
                         />
                         {errorsConversion.fromUomId && (
                           <p className="text-sm text-destructive">{t('errFromUom')}</p>
@@ -421,7 +418,7 @@ export default function UOMPage() {
                           }))}
                           value={watchConversion('toUomId')}
                           onValueChange={(value) => setValueConversion('toUomId', value)}
-                          placeholder={tPlaceholders('selectUOM')}
+                          placeholder={t("pilihSatuan")}
                         />
                         {errorsConversion.toUomId && (
                           <p className="text-sm text-destructive">{t('errToUom')}</p>
@@ -429,7 +426,7 @@ export default function UOMPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="factor">{t('factor')} *</Label>
+                      <Label htmlFor="factor">{t("factorV2")} *</Label>
                       <Input
                         id="factor"
                         type="number"
@@ -455,7 +452,7 @@ export default function UOMPage() {
                         {isSubmittingConversion && (
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         )}
-                        {t('createConversion')}
+                        {t("createConversionV2")}
                       </Button>
                     </DialogFooter>
                   </form>
@@ -467,10 +464,10 @@ export default function UOMPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[52px]">{tCommon('actions')}</TableHead>
                   <TableHead>{t('from')}</TableHead>
                   <TableHead>{t('to')}</TableHead>
                   <TableHead className="text-right">{t('factorShort')}</TableHead>
+                  <TableHead className="w-24 text-right">{tUi("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -483,7 +480,16 @@ export default function UOMPage() {
                 ) : (
                   conversions.map((conv) => (
                     <TableRow key={conv.id}>
-                      <TableCell className="p-2">
+                      <TableCell className="min-w-[120px] whitespace-normal">
+                        {conv.fromUom.code} – {displayName(conv.fromUom)}
+                      </TableCell>
+                      <TableCell className="min-w-[120px] whitespace-normal">
+                        {conv.toUom.code} – {displayName(conv.toUom)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatFaktor(conv.factor)}
+                      </TableCell>
+                      <TableCell className="p-2 text-right">
                         <Button
                           type="button"
                           variant="ghost"
@@ -498,17 +504,6 @@ export default function UOMPage() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
-                      </TableCell>
-                      <TableCell className="min-w-[120px] whitespace-normal">
-                        {conv.fromUom.code} – {displayName(conv.fromUom)}
-                      </TableCell>
-                      <TableCell className="min-w-[120px] whitespace-normal">
-                        {conv.toUom.code} – {displayName(conv.toUom)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {Number(conv.factor).toLocaleString(numberLocale, {
-                          maximumFractionDigits: 6,
-                        })}
                       </TableCell>
                     </TableRow>
                   ))

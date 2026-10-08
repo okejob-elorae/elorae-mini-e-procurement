@@ -7,8 +7,10 @@ import { Info, TrendingUp } from "lucide-react";
 import type { IncomeStatement } from "@/lib/finance/reports/income-statement";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { ReportSection } from "../ReportSection";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { Table, TableBody } from "@/components/ui/table";
+import { BarisTotalLaporan, KepalaKolomLaporan, ReportSection } from "../ReportSection";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportIncomeStatementExcel } from "@/app/actions/finance-reports";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
@@ -22,17 +24,13 @@ import { tautanBukuBesar } from "../../journals/_sumber/tautan";
 
 type Props = {
   report: IncomeStatement;
-  filters: { from: string; to: string };
+  filters: { from: string; to: string; nol: boolean };
   /** Ada baris jurnal pada periode ini — bila tidak, tampil keadaan kosong, bukan deretan Rp 0. */
   adaMutasi: boolean;
   hariIni: string;
   kesiapan: KesiapanBukuBesar | null;
   akses: AksesSpanduk;
 };
-
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
 
 export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kesiapan, akses }: Props) {
   const router = useRouter();
@@ -74,15 +72,15 @@ export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kes
           <LabelPeriode jenis="rentang" dari={periode.dari} sampai={periode.sampai} />
         </div>
         <ReportExportButtons
-          onExcel={() => exportIncomeStatementExcel({ from: filters.from, to: filters.to })}
-          printHref={`/print/finance/income-statement?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}`}
+          onExcel={() => exportIncomeStatementExcel({ from: filters.from, to: filters.to, nol: filters.nol })}
+          printHref={`/print/finance/income-statement?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}&nol=${filters.nol ? "1" : "0"}`}
         />
       </div>
 
       <SpandukBukuBesar kesiapan={kesiapan} akses={akses} />
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
             <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
             <RentangTanggalInput
@@ -91,6 +89,17 @@ export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kes
               sampai={filters.to}
               onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
             />
+          </div>
+          <div className="flex items-end gap-2">
+            <Checkbox
+              id="tampilNol"
+              checked={filters.nol}
+              disabled={isPending}
+              onCheckedChange={(checked) => pushParams({ nol: checked === true ? "1" : undefined })}
+            />
+            <Label htmlFor="tampilNol" className="text-sm font-normal cursor-pointer">
+              {t("filter.showZeroAccounts")}
+            </Label>
           </div>
           <div className="flex items-end">
             <Button variant="outline" onClick={reset} disabled={isPending}>
@@ -119,6 +128,7 @@ export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kes
             <>
               <div className="overflow-x-auto">
                 <Table>
+                  <KepalaKolomLaporan />
                   <TableBody>
                     <ReportSection
                       title={t("incomeStatement.sectionPendapatan")}
@@ -127,6 +137,7 @@ export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kes
                       totalLabel={t("incomeStatement.totalPendapatan")}
                       emptyLabel={t("incomeStatement.sectionEmpty")}
                       tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
                     />
                     <ReportSection
                       title={t("incomeStatement.sectionHpp")}
@@ -135,13 +146,9 @@ export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kes
                       totalLabel={t("incomeStatement.totalHpp")}
                       emptyLabel={t("incomeStatement.sectionEmpty")}
                       tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
                     />
-                    <TableRow className="border-t-2 font-bold">
-                      <TableCell>{t("incomeStatement.labaKotor")}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatRupiah(report.labaKotor)}
-                      </TableCell>
-                    </TableRow>
+                    <BarisTotalLaporan label={t("incomeStatement.labaKotor")} nilai={report.labaKotor} />
                     <ReportSection
                       title={t("incomeStatement.sectionBeban")}
                       nodes={report.beban}
@@ -149,15 +156,9 @@ export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kes
                       totalLabel={t("incomeStatement.totalBeban")}
                       emptyLabel={t("incomeStatement.sectionEmpty")}
                       tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
                     />
-                    <TableRow className="border-t-2 font-bold">
-                      <TableCell>{t("incomeStatement.labaBersih")}</TableCell>
-                      <TableCell
-                        className={`text-right tabular-nums ${report.labaBersih < 0 ? "text-destructive" : ""}`}
-                      >
-                        {formatRupiah(report.labaBersih)}
-                      </TableCell>
-                    </TableRow>
+                    <BarisTotalLaporan label={t("incomeStatement.labaBersih")} nilai={report.labaBersih} negatifMerah />
                   </TableBody>
                 </Table>
               </div>

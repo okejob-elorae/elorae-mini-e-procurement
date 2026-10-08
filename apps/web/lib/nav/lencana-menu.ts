@@ -80,6 +80,15 @@ export async function hitungLencanaMenu(
   ).filter((item) => !item.permission || hasPermission(izin, item.permission));
 
   const kreatifButir = kreatif > 0 ? [{ key: "kreatifHariIni", href: "/backoffice/kreatif", count: kreatif }] : [];
+  // Faktur lewat JATUH TEMPO tanpa kontrabon: Beranda piutang menyebutnya
+  // tunggakan di samping lewat janji bayar, jadi lencana Faktur & piutang =
+  // keduanya (dulu hanya lewat janji bayar — 2, sementara Beranda menyebut 5).
+  // Pagarnya sama dengan `overduePromises`: ringkasan piutang hanya dimuat untuk
+  // pembaca piutang.
+  const jatuhTempoButir =
+    piutang && piutang.jatuhTempoJumlah > 0
+      ? [{ key: "piutangJatuhTempo", href: "/backoffice/piutang?keadaan=jatuh_tempo", count: piutang.jatuhTempoJumlah }]
+      : [];
 
-  return bagiLencana([...items, ...kreatifButir], (b) => grupUntukRute(jalurTautan(b.href)));
+  return bagiLencana([...items, ...kreatifButir, ...jatuhTempoButir], (b) => grupUntukRute(jalurTautan(b.href)));
 }

@@ -219,7 +219,7 @@ function Ringkasan({
             {t("ringkasanJudul", { bulan: judulBulan })}
           </CardTitle>
           <Button asChild variant="outline" size="sm">
-            <Link href="/backoffice/settings/salesman">{t("aturTargetTotal")}</Link>
+            <Link href="/backoffice/settings/salesman#target">{t("aturTargetTotal")}</Link>
           </Button>
         </div>
       </CardHeader>

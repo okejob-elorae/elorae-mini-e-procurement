@@ -150,7 +150,7 @@ export function KalenderFollowUp({
             URUT_KEADAAN.map((k) => (
               <span key={k} className="inline-flex items-center gap-1.5">
                 <span className={cn("h-2.5 w-2.5 rounded-sm ring-1 ring-inset", WARNA_CHIP[k])} aria-hidden />
-                {t("followUp.kalender.legenda", { label: td(`followUp.kalender.keadaan.${k}`), n: jumlahPerKeadaan[k] })}
+                {t("followUp.kalender.legenda", { label: td(`followUp.keadaanLabel.${k}`), n: jumlahPerKeadaan[k] })}
               </span>
             ))
           )}

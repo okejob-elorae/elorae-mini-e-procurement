@@ -311,10 +311,16 @@ export async function getHPPListLegacy(): Promise<HPPRow[]> {
 /**
  * Automatic HPP: material cost and avg cost per unit are stored on each FG receipt in receiveFG.
  * This getter returns the effective HPP for one FG item from its latest receipt (for use in pricing/reports).
+ *
+ * `avgCostPerUnit` adalah HPP LENGKAP per pcs (bahan + ongkos jahit + biaya
+ * tambahan, sejak ongkos jahit masuk HPP). `materialCostPerUnit` hanya bahan
+ * per pcs lolos — dipakai menilai barang jadi cacat yang diretur ke pemasok
+ * (jasa tidak dibayar untuk barang cacat). Penerimaan lama: keduanya sama.
  */
 export async function getEffectiveHPPForItem(finishedGoodId: string): Promise<{
   avgCostPerUnit: number | null;
   materialCost: number | null;
+  materialCostPerUnit: number | null;
   lastReceiptAt: Date | null;
 } | null> {
   // Penulis retur pemasok menilai barang jadi reject dengan HPP ini.
@@ -326,12 +332,15 @@ export async function getEffectiveHPPForItem(finishedGoodId: string): Promise<{
   const last = await prisma.fGReceipt.findFirst({
     where: { wo: { finishedGoodId } },
     orderBy: { receivedAt: 'desc' },
-    select: { avgCostPerUnit: true, materialCost: true, receivedAt: true },
+    select: { avgCostPerUnit: true, materialCost: true, qtyAccepted: true, receivedAt: true },
   });
   if (!last) return null;
+  const lolos = Number(last.qtyAccepted);
+  const bahan = last.materialCost != null ? Number(last.materialCost) : null;
   return {
     avgCostPerUnit: last.avgCostPerUnit != null ? Number(last.avgCostPerUnit) : null,
-    materialCost: last.materialCost != null ? Number(last.materialCost) : null,
+    materialCost: bahan,
+    materialCostPerUnit: bahan != null && lolos > 0 ? Math.round((bahan / lolos) * 100) / 100 : null,
     lastReceiptAt: last.receivedAt,
   };
 }

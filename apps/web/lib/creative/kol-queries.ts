@@ -1,5 +1,6 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { cariTeks } from "@/lib/db/cari-teks";
+import { feeBruto } from "./angka-konten";
 import { angkaKolaborasi, jumlahAngkaKolaborasi, type AngkaKolaborasi } from "./angka-queries";
 import { SEMUA_PLATFORM, tierKol, type Platform, type Tier } from "./aturan";
 import { cariKembar, kelompokKembar, normalisasiHandle, type SebabKembar } from "./kembar";
@@ -316,7 +317,10 @@ export type KolaborasiProfil = {
   campaign: { id: string; nama: string } | null;
   tahap: Tahap;
   jenis: JenisKerjaSama;
+  /** Fee yang disepakati (neto bila gross-up, bruto bila dipotong). */
   fee: number;
+  /** Biaya bruto fee termasuk PPh gross-up; null bila sama dengan fee (dipotong / tanpa termin). */
+  feeBruto: number | null;
   plannedLiveAt: string | null;
   liveAtPertama: string | null;
   dibuat: string;
@@ -434,6 +438,7 @@ export async function profilKol(id: string): Promise<ProfilKol | null> {
       tahap: b.tahap as Tahap,
       jenis: b.jenis as JenisKerjaSama,
       fee: Number(b.fee),
+      feeBruto: a && a.biaya.pph > 0 ? feeBruto(a.biaya) : null,
       plannedLiveAt: b.plannedLiveAt?.toISOString() ?? null,
       liveAtPertama: tayang.length ? new Date(tayang[0]).toISOString() : null,
       dibuat: b.createdAt.toISOString(),

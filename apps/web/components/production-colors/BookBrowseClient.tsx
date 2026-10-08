@@ -161,9 +161,10 @@ export function BookBrowseClient({
                 value={jumpInput}
                 onChange={(e) => setJumpInput(e.target.value)}
                 placeholder={t("bookJumpPlaceholder")}
+                aria-label={t("kodeTcxDicari")}
                 className="font-mono"
               />
-              <Button type="submit" variant="secondary">
+              <Button type="submit" variant="secondary" aria-label={t("bookJump")}>
                 <Search className="h-4 w-4 sm:mr-1" />
                 <span className="hidden sm:inline">{t("bookJump")}</span>
               </Button>

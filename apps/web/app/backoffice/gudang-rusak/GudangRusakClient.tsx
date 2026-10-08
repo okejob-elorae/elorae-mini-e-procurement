@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { History, Loader2, PackageX } from "lucide-react";
@@ -77,7 +78,16 @@ export function GudangRusakClient({
 
   return (
     <div className="space-y-6">
-      <PageHeader title={t("kantor.judul")} meta={t("kantor.ringkas", { baris: saldo.length, pcs })} />
+      <PageHeader
+        title={t("kantor.judul")}
+        meta={t("kantor.ringkas", { baris: saldo.length, pcs })}
+        // Tautan balik: barang cacat dari produksi dicatat di tempat lain (yang itu sudah menaut ke sini).
+        actions={
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/backoffice/inventory/rejected-goods">{t("kantor.keCacatProduksi")}</Link>
+          </Button>
+        }
+      />
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("kantor.judul")}>
         <Button role="tab" aria-selected={tab === "saldo"} variant={tab === "saldo" ? "default" : "outline"} onClick={() => pindahTab("saldo")}>

@@ -7,8 +7,12 @@ import { AlertTriangle, CheckCircle2, Info, Landmark } from "lucide-react";
 import type { BalanceSheet } from "@/lib/finance/reports/balance-sheet";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { ReportSection } from "../ReportSection";
+import { BarisTotalLaporan, KepalaKolomLaporan, ReportSection } from "../ReportSection";
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
+import { BALANCE_SHEET_COVERAGE_BODY } from "@/lib/finance/reports/disclosures";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportBalanceSheetExcel } from "@/app/actions/finance-reports";
 import { formatDisplayDate } from "@/lib/date-only";
@@ -23,7 +27,7 @@ import { tautanBukuBesar } from "../../journals/_sumber/tautan";
 type Props = {
   report: BalanceSheet;
   openingWarningDate: string | null;
-  filters: { asOf: string };
+  filters: { asOf: string; nol: boolean };
   /** Tanggal posisi yang benar-benar dipakai ("YYYY-MM-DD", WIB) — hari ini bila isian kosong. */
   tanggalPosisi: string;
   /** Ada jurnal sampai tanggal posisi — tanpa itu tidak ada yang bisa disebut "seimbang". */
@@ -31,10 +35,6 @@ type Props = {
   kesiapan: KesiapanBukuBesar | null;
   akses: AksesSpanduk;
 };
-
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
 
 export function BalanceSheetClient({
   report,
@@ -53,6 +53,9 @@ export function BalanceSheetClient({
   const tautanAkun = akses.jurnal
     ? (accountId: string) => tautanBukuBesar(accountId, { dari: null, sampai: tanggalPosisi })
     : undefined;
+
+  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`disclosures.ts`).
+  const cakupan = locale.toLowerCase().startsWith("id") ? BALANCE_SHEET_COVERAGE_BODY : t("balanceSheet.coverageBody");
 
   function pushParam(key: string, value: string | undefined) {
     const params = new URLSearchParams(sp.toString());
@@ -85,15 +88,15 @@ export function BalanceSheetClient({
           <LabelPeriode jenis="per" tanggal={tanggalPosisi} />
         </div>
         <ReportExportButtons
-          onExcel={() => exportBalanceSheetExcel({ asOf: filters.asOf })}
-          printHref={`/print/finance/balance-sheet?asOf=${encodeURIComponent(filters.asOf)}`}
+          onExcel={() => exportBalanceSheetExcel({ asOf: filters.asOf, nol: filters.nol })}
+          printHref={`/print/finance/balance-sheet?asOf=${encodeURIComponent(filters.asOf)}&nol=${filters.nol ? "1" : "0"}`}
         />
       </div>
 
       <SpandukBukuBesar kesiapan={kesiapan} akses={akses} />
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
             <label htmlFor="tanggal-per" className="text-xs text-muted-foreground mb-1 block">{t("filter.asOf")}</label>
             <TanggalInput
@@ -101,6 +104,17 @@ export function BalanceSheetClient({
               value={filters.asOf}
               onChange={(e) => pushParam("asOf", e.target.value || undefined)}
             />
+          </div>
+          <div className="flex items-end gap-2">
+            <Checkbox
+              id="tampilNol"
+              checked={filters.nol}
+              disabled={isPending}
+              onCheckedChange={(checked) => pushParam("nol", checked === true ? "1" : undefined)}
+            />
+            <Label htmlFor="tampilNol" className="text-sm font-normal cursor-pointer">
+              {t("filter.showZeroAccounts")}
+            </Label>
           </div>
           <div className="flex items-end">
             <Button variant="outline" onClick={reset} disabled={isPending}>
@@ -116,7 +130,7 @@ export function BalanceSheetClient({
           <div>
             <p className="font-medium">{t("balanceSheet.openingTitle")}</p>
             <p className="text-muted-foreground">
-              {t("balanceSheet.openingBody", { date: formattedEarliest })}
+              {t("balanceSheet.openingBodySaldoAwal", { date: formattedEarliest })}
             </p>
           </div>
         </div>
@@ -139,6 +153,7 @@ export function BalanceSheetClient({
             <>
               <div className="overflow-x-auto">
                 <Table>
+                  <KepalaKolomLaporan />
                   <TableBody>
                     <ReportSection
                       title={t("balanceSheet.sectionAset")}
@@ -147,6 +162,7 @@ export function BalanceSheetClient({
                       totalLabel={t("balanceSheet.totalAset")}
                       emptyLabel={t("balanceSheet.sectionEmpty")}
                       tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
                     />
                     <ReportSection
                       title={t("balanceSheet.sectionLiabilitas")}
@@ -155,6 +171,7 @@ export function BalanceSheetClient({
                       totalLabel={t("balanceSheet.totalLiabilitas")}
                       emptyLabel={t("balanceSheet.sectionEmpty")}
                       tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
                     />
                     <ReportSection
                       title={t("balanceSheet.sectionEkuitas")}
@@ -163,19 +180,25 @@ export function BalanceSheetClient({
                       totalLabel={t("balanceSheet.totalEkuitas")}
                       emptyLabel={t("balanceSheet.sectionEmpty")}
                       tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
                     />
+                    {report.labaTahunLaluBelumDitutup !== 0 ? (
+                      <TableRow>
+                        <TableCell className="pl-6">{t("balanceSheet.labaTahunLalu")}</TableCell>
+                        <TableCell />
+                        <TableCell className="text-right tabular-nums">
+                          {rupiahLaporan(report.labaTahunLaluBelumDitutup)}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
                     <TableRow>
-                      <TableCell className="pl-6">{t("balanceSheet.unclosedEarnings")}</TableCell>
+                      <TableCell className="pl-6">{t("balanceSheet.labaTahunBerjalan")}</TableCell>
+                      <TableCell />
                       <TableCell className="text-right tabular-nums">
-                        {formatRupiah(report.unclosedEarnings)}
+                        {rupiahLaporan(report.labaTahunBerjalan)}
                       </TableCell>
                     </TableRow>
-                    <TableRow className="border-t-2 font-bold">
-                      <TableCell>{t("balanceSheet.totalLiabilitasEkuitas")}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {formatRupiah(report.totalLiabilitasEkuitas)}
-                      </TableCell>
-                    </TableRow>
+                    <BarisTotalLaporan label={t("balanceSheet.totalLiabilitasEkuitas")} nilai={report.totalLiabilitasEkuitas} />
                   </TableBody>
                 </Table>
               </div>
@@ -189,6 +212,14 @@ export function BalanceSheetClient({
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                 )}
                 <p>{report.isBalanced ? t("balanceSheet.balancedNote") : t("balanceSheet.unbalancedNote")}</p>
+              </div>
+
+              <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-medium">{t("balanceSheet.coverageTitle")}</p>
+                  <p className="text-muted-foreground">{cakupan}</p>
+                </div>
               </div>
             </>
           )}

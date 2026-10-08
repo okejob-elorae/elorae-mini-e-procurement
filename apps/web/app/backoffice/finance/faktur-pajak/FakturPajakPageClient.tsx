@@ -222,9 +222,15 @@ export function FakturPajakPageClient(props: Props) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-1">
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <TombolBantuan judul={t("pageTitle")} />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("judulHalaman")}</h1>
+          <TombolBantuan judul={t("judulHalaman")} />
+        </div>
+        {/* Ekspor XML impor Coretax dari nota yang menunggu faktur (lib/finance/pajak/coretax.ts). */}
+        <Button asChild variant="outline" size="sm">
+          <Link href="/backoffice/finance/pajak/faktur-keluaran">{t("eksporCoretax")}</Link>
+        </Button>
       </div>
 
       {props.loadError ? (
@@ -246,7 +252,8 @@ export function FakturPajakPageClient(props: Props) {
             value={props.status}
             onValueChange={(v) => pushParam("status", v === "ALL" ? undefined : v)}
           >
-            <TabsList>
+            {/* Turun baris di layar sempit: di HP 390 px keempat tab tidak muat satu baris. */}
+            <TabsList className="h-auto max-w-full flex-wrap justify-start">
               <TabsTrigger value="ALL">
                 {t("statusAll")} ({totalCount})
               </TabsTrigger>

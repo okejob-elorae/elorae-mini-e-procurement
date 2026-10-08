@@ -10,6 +10,7 @@ import { terapkanUsulanKelasAction } from "./actions";
 import type { BarisKelasToko } from "@/lib/stores/queries";
 import type { KelasToko } from "@/lib/stores/kelas-toko";
 import { formatIDR } from "@/lib/sales-orders/format";
+import { bisaDiterapkan, saringKelasToko } from "./saring-kelas";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
@@ -30,9 +31,6 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const angka = new Intl.NumberFormat("id-ID");
-
-/** Usulan yang bisa diterapkan: ada, dan berbeda dari kelas sekarang. */
-const bisaDiterapkan = (b: BarisKelasToko) => b.usulan !== null && b.usulan !== b.kelas;
 
 function LencanaKelas({ kelas, kosong }: { kelas: KelasToko | null; kosong: string }) {
   if (!kelas) return <span className="text-muted-foreground">{kosong}</span>;
@@ -70,14 +68,17 @@ export function KelasTokoClient({
   const [konfirmasi, setKonfirmasi] = useState(false);
 
   const jumlahBerbeda = useMemo(() => baris.filter(bisaDiterapkan).length, [baris]);
-  const tampil = useMemo(() => {
-    const q = cari.trim().toLowerCase();
-    return baris.filter(
-      (b) =>
-        (!hanyaBerbeda || bisaDiterapkan(b)) &&
-        (!q || b.name.toLowerCase().includes(q) || b.code.toLowerCase().includes(q)),
-    );
-  }, [baris, cari, hanyaBerbeda]);
+  const saring = useMemo(() => saringKelasToko(baris, cari, hanyaBerbeda), [baris, cari, hanyaBerbeda]);
+  const tampil = saring.tampil;
+  const rincianTersembunyi = [
+    saring.tanpaBeli > 0 ? t("tersembunyiTanpaBeli", { count: saring.tanpaBeli }) : null,
+    saring.sudahSesuai > 0 ? t("tersembunyiSesuai", { count: saring.sudahSesuai }) : null,
+  ].filter((x): x is string => x !== null);
+  // "2 dari 3 toko" saat saringan menyembunyikan sebagian; tanpa itu judul terbaca seolah tokonya hanya dua.
+  const jumlahJudul =
+    tampil.length < saring.cocokCari
+      ? t("jumlahDari", { shown: angka.format(tampil.length), total: angka.format(saring.cocokCari) })
+      : t("jumlah", { count: tampil.length });
   const tampilBisa = tampil.filter(bisaDiterapkan);
   // Pilihan yang masih terlihat dan masih bisa diterapkan — pilihan yang
   // tersaring keluar tidak ikut diterapkan diam-diam.
@@ -204,14 +205,27 @@ export function KelasTokoClient({
           <CardTitle className="flex items-center gap-2">
             <Layers className="h-5 w-5" />
             {t("daftarJudul")}
-            <span className="ml-2 text-sm font-normal text-muted-foreground">({t("jumlah", { count: tampil.length })})</span>
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              ({jumlahJudul})
+            </span>
           </CardTitle>
+          {rincianTersembunyi.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t("tersembunyi", { rincian: rincianTersembunyi.join(", ") })}
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent>
           {tampil.length === 0 ? (
             <div className="py-12 text-center">
               <Layers className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
-              <p className="text-muted-foreground">{hanyaBerbeda && !cari.trim() ? t("kosongBerbeda") : t("kosong")}</p>
+              <p className="text-muted-foreground">
+                {hanyaBerbeda && !cari.trim()
+                  ? saring.tanpaBeli === 0
+                    ? t("kosongBerbeda")
+                    : t("kosongTanpaUsulan")
+                  : t("kosong")}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">

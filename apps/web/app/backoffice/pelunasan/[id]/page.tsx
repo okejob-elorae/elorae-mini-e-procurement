@@ -5,7 +5,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { rincianKlaim } from "@/lib/receivables/claim-queries";
 import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
-import { bolehMembacaArsip, bolehMembacaPelunasan } from "@/lib/receivables/izin";
+import { bolehMembacaArsip, bolehMembacaPelunasan, bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { tautanPesanKlaim } from "@/lib/receivables/tugas-tagih-queries";
 import { RincianKlaimClient, type GiroKlaim } from "./RincianKlaimClient";
 import { pemeriksaSamaKlaim } from "./putusan-klaim";
@@ -104,6 +104,7 @@ export default async function RincianKlaimPage({
       // Pelapor/pencatat tidak boleh memutuskan BKM-nya sendiri: tombolnya mati
       // dengan alasan sejak awal, bukan baru sesudah server menolak.
       pemeriksaSama={pelaku ? pemeriksaSamaKlaim(session.user.id, pelaku) : false}
+      bolehBacaPiutang={bolehMembacaPiutang(session.user.permissions)}
     />
   );
 }

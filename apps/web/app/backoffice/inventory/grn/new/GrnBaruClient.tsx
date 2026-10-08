@@ -86,8 +86,8 @@ export function GrnBaruClient({ poIdAwal }: { poIdAwal: string }) {
           </Link>
         </Button>
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t('pageTitle')}</h1>
-          <TombolBantuan judul={t('pageTitle')} />
+          <h1 className="text-2xl font-bold tracking-tight">{t('judulHalaman')}</h1>
+          <TombolBantuan judul={t('judulHalaman')} />
         </div>
       </div>
 

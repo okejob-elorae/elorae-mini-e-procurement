@@ -30,3 +30,16 @@ export function samaHari(tersimpan: readonly number[], pilihan: ReadonlySet<numb
 export function samaLibur(a: readonly TanggalMerah[], b: readonly TanggalMerah[]): boolean {
   return a.length === b.length && a.every((l, i) => l.tanggal === b[i].tanggal && l.nama === b[i].nama);
 }
+
+/**
+ * Keterangan di samping "Simpan hari kerja" — tombol yang nonaktif selalu
+ * menyebut alasannya. `galat` = tampil merah. `bolehSimpan` false = tombol nonaktif.
+ */
+export function keteranganSimpanHari(
+  jumlahPilihan: number,
+  berubah: boolean,
+): { kunci: "hariMinimal" | "belumBerubah" | "belumDisimpan"; galat: boolean; bolehSimpan: boolean } {
+  if (jumlahPilihan === 0) return { kunci: "hariMinimal", galat: true, bolehSimpan: false };
+  if (!berubah) return { kunci: "belumBerubah", galat: false, bolehSimpan: false };
+  return { kunci: "belumDisimpan", galat: false, bolehSimpan: true };
+}

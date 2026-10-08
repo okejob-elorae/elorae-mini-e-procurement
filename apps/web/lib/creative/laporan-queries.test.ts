@@ -193,6 +193,7 @@ describe("dataRekap", () => {
       gmv: 3_000_000,
       komisi: 0,
       biayaFee: 0,
+      biayaPph: 0,
       biayaKirim: 120_000,
       biayaBoost: 0,
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TARIF_PAJAK_BAWAAN, type SubjekPajak } from "./pph";
 import { bagiJumlah } from "./pph";
-import { bobotUlang, jatuhTempoTermin, nilaiBasis, rencanaBawaan, rencanakanTermin, turunkanBayar, type RencanaTermin } from "./termin-aturan";
+import { bayarSebelumTayang, bobotUlang, jatuhTempoTermin, nilaiBasis, rencanaBawaan, rencanakanTermin, turunkanBayar, type RencanaTermin } from "./termin-aturan";
 
 const OP: SubjekPajak = { jenis: "ORANG_PRIBADI", adaNpwp: true };
 
@@ -135,5 +135,16 @@ describe("bobotUlang", () => {
     expect(bagiJumlah(12_000_001, bobot)).toEqual([6_000_001, 6_000_000]);
     expect(bobotUlang([0, 0])).toEqual([100, 0]);
     expect(bobotUlang([])).toEqual([]);
+  });
+});
+
+describe("bayarSebelumTayang", () => {
+  it("hanya termin belum dibayar yang dipicu tayang dan belum punya jatuh tempo", () => {
+    const tempo = { tanggal: "2026-10-20", lewat: false, lewatHari: 0 };
+    expect(bayarSebelumTayang({ status: "BELUM", pemicu: "TAYANG", jatuhTempo: null })).toBe(true);
+    expect(bayarSebelumTayang({ status: "BELUM", pemicu: "TAYANG", jatuhTempo: tempo })).toBe(false);
+    expect(bayarSebelumTayang({ status: "BELUM", pemicu: "DEAL", jatuhTempo: null })).toBe(false);
+    expect(bayarSebelumTayang({ status: "DIBAYAR", pemicu: "TAYANG", jatuhTempo: null })).toBe(false);
+    expect(bayarSebelumTayang({ status: "BELUM", pemicu: "TANGGAL", jatuhTempo: null })).toBe(false);
   });
 });

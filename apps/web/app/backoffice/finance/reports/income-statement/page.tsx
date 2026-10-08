@@ -11,7 +11,7 @@ import { adaMutasiLabaRugi } from "../../_kesiapan/kesiapan";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; nol?: string }>;
 };
 
 export default async function IncomeStatementPage({ searchParams }: PageProps) {
@@ -33,7 +33,7 @@ export default async function IncomeStatementPage({ searchParams }: PageProps) {
   return (
     <IncomeStatementClient
       report={report}
-      filters={{ from: sp.from ?? "", to: sp.to ?? "" }}
+      filters={{ from: sp.from ?? "", to: sp.to ?? "", nol: sp.nol === "1" }}
       adaMutasi={adaMutasiLabaRugi(report)}
       hariIni={hariIniWib()}
       kesiapan={kesiapan}

@@ -14,6 +14,7 @@ import { hasPermission, PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { catatKreditReturPo } from '@/lib/purchase-orders/kredit-retur-writer';
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { kaitReturPemasok } from "@/lib/finance/operasional/kait";
 import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
 
 async function requireSession() {
@@ -226,7 +227,9 @@ export async function createVendorReturn(
         let costValue: number;
         if (line.type === 'FG_REJECT') {
           const hpp = await getEffectiveHPPForItem(line.itemId);
-          const avgCost = hpp?.avgCostPerUnit ?? 0;
+          // Barang jadi cacat dinilai biaya BAHAN per pcs: ongkos jahit (kini
+          // bagian HPP) tidak dibayar untuk barang cacat.
+          const avgCost = hpp?.materialCostPerUnit ?? hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
           const variantKey = (line.variantSku ?? '') as string;
@@ -344,7 +347,9 @@ export async function updateVendorReturn(
         let costValue: number;
         if (line.type === 'FG_REJECT') {
           const hpp = await getEffectiveHPPForItem(line.itemId);
-          const avgCost = hpp?.avgCostPerUnit ?? 0;
+          // Barang jadi cacat dinilai biaya BAHAN per pcs: ongkos jahit (kini
+          // bagian HPP) tidak dibayar untuk barang cacat.
+          const avgCost = hpp?.materialCostPerUnit ?? hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
           const variantKey = (line.variantSku ?? '') as string;
@@ -739,6 +744,8 @@ export async function completeReturn(
     return { ok: false, code: 'GAGAL' };
   }
 
+  // Retur selesai: hutang PO berkurang, persediaan keluar → jurnalnya (sesudah commit, tidak pernah melempar).
+  await kaitReturPemasok(id, userId);
   revalidatePath('/backoffice/vendor-returns');
   revalidatePath(`/backoffice/vendor-returns/${id}`);
   if (completeResult.woId) {

@@ -146,6 +146,8 @@ export function PencocokanBukuCard({ data }: { data: PencocokanSiklus }) {
                   </Table>
                 </div>
               )}
+              {/* "0" dan "belum melapor" dulu tak bisa dibedakan. */}
+              <p className="text-xs text-muted-foreground">{t("keteranganSel")}</p>
             </section>
 
             {r.adaStok && (

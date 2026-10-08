@@ -1,4 +1,5 @@
 import { daftarJurnalTertunda } from "@/lib/finance/jurnal-tertunda";
+import { listAccountMappings } from "@/lib/finance/journals/mapping";
 import { getNotificationHref } from "@/lib/notifications/navigation";
 import { cariInfoDokumen } from "../_sumber/info-dokumen";
 import { kunciDokumen, tautanDokumenSumber } from "../_sumber/tautan";
@@ -18,6 +19,12 @@ export type BarisJurnalTertunda = {
   otomatis: boolean;
   sebab: string | null;
   peran: string | null;
+  /**
+   * Untuk sebab "peran belum dipetakan": apakah perannya SEKARANG sudah
+   * dipetakan ke akun yang jenisnya cocok (dibaca ulang saat halaman dimuat).
+   * null = tidak relevan / tidak diketahui.
+   */
+  peranKiniTerpetakan: boolean | null;
 };
 
 /**
@@ -29,7 +36,11 @@ export async function muatJurnalTertunda(opts: { notifikasiIds?: string[] } = {}
   const pasangan = daftar
     .map((r) => jenisDanIdSumber(r.sumber))
     .filter((p): p is { jenis: string; id: string } => p !== null);
-  const info = await cariInfoDokumen(pasangan);
+  const [info, pemetaan] = await Promise.all([
+    cariInfoDokumen(pasangan),
+    daftar.some((r) => r.sebab === "UNMAPPED_ROLE") ? listAccountMappings().catch(() => null) : Promise.resolve(null),
+  ]);
+  const terpetakan = new Set((pemetaan ?? []).filter((m) => m.chartAccountId && m.typeValid).map((m) => m.role as string));
 
   return daftar.map((r) => {
     const sumber = jenisDanIdSumber(r.sumber);
@@ -48,6 +59,7 @@ export async function muatJurnalTertunda(opts: { notifikasiIds?: string[] } = {}
       otomatis,
       sebab: r.sebab,
       peran: r.peran,
+      peranKiniTerpetakan: r.sebab === "UNMAPPED_ROLE" && r.peran && pemetaan ? terpetakan.has(r.peran) : null,
     };
   });
 }

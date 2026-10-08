@@ -32,6 +32,19 @@ import { IsiEntri, useTeksBantuan } from "./teks";
  * aplikasi HP adalah kolom selebar ponsel, dan breakpoint mengikuti lebar
  * jendela, bukan kolomnya.
  */
+/**
+ * Grup menu yang labelnya kini berhuruf kalimat memakai kunci `navigation`
+ * baru; id kelompok Bantuan tetap kunci lama supaya entri yang sudah ada tidak
+ * berpindah. Judul kelompok tetap sama dengan label menunya.
+ */
+const KUNCI_JUDUL_BAGIAN: Partial<Record<BagianBantuan, string>> = {
+  navGroupMasterData: "navGroupMasterDataKalimat",
+  navGroupFieldTeam: "navGroupFieldTeamKalimat",
+  navGroupReceivables: "navGroupReceivablesKalimat",
+  navGroupLedger: "navGroupLedgerKalimat",
+  navGroupArchive: "navGroupArchiveKalimat",
+};
+
 export function BantuanClient({ area, bagianHp }: { area: "kantor" | "hp"; bagianHp?: readonly BagianHp[] }) {
   const t = useTranslations("bantuan");
   const tNav = useTranslations("navigation");
@@ -40,7 +53,7 @@ export function BantuanClient({ area, bagianHp }: { area: "kantor" | "hp"; bagia
 
   const urutan: readonly BagianBantuan[] = area === "hp" ? (bagianHp ?? BAGIAN_HP) : [...BAGIAN_KANTOR, ...BAGIAN_HP];
   const judulBagian = (b: BagianBantuan) =>
-    (BAGIAN_HP as readonly string[]).includes(b) ? t(`bagian.${b}` as never) : tNav(b as never);
+    (BAGIAN_HP as readonly string[]).includes(b) ? t(`bagian.${b}` as never) : tNav((KUNCI_JUDUL_BAGIAN[b] ?? b) as never);
 
   const gabungan = useMemo(() => {
     const peta = new Map<string, string>();

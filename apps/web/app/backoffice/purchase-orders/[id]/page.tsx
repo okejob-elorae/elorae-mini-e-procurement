@@ -155,8 +155,8 @@ export default function PODetailPage() {
       }
       const updated = await getPOById(po.id);
       setPO(updated);
-    } catch (e: any) {
-      toast.error(e.message || tSupplierPayments('actionFailed'));
+    } catch {
+      toast.error(tSupplierPayments('actionFailed'));
     } finally {
       setIsTogglingPaid(false);
       setKonfirmasiBayar(null);
@@ -192,8 +192,8 @@ export default function PODetailPage() {
       }
       const updated = await getPOById(po.id);
       setPO(updated);
-    } catch (e: any) {
-      toast.error(e.message || tSupplierPayments('actionFailed'));
+    } catch {
+      toast.error(tSupplierPayments('actionFailed'));
     } finally {
       setIsPostingReversal(false);
     }
@@ -248,8 +248,9 @@ export default function PODetailPage() {
       const updated = await getPOById(po.id);
       setPO(updated);
       setCancelDialogOpen(false);
-    } catch (error: any) {
-      toast.error(error.message || tPO('updateStatusFailed'));
+    } catch {
+      // Pesan lemparan disamarkan di build produksi: selalu teks terjemahan.
+      toast.error(tPO('updateStatusFailed'));
     } finally {
       setIsSaving(false);
     }
@@ -522,8 +523,9 @@ export default function PODetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      {/* Di HP judul di atas, tombol dan lencana di baris sendiri (dulu meluber 40 px ke kanan). */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
           <Link href="/backoffice/purchase-orders">
             <Button variant="ghost" size="icon" aria-label={tPO('backToList')} title={tPO('backToList')}>
               <ArrowLeft className="h-4 w-4" />
@@ -537,7 +539,7 @@ export default function PODetailPage() {
             <p className="text-muted-foreground">{po.supplier.name}</p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
           {canReceive && (
             <Button size="sm" asChild>
               <Link href={`/backoffice/inventory/grn/new?poId=${encodeURIComponent(po.id)}`}>

@@ -24,8 +24,18 @@ import { jumlahUang, rupiahTeks } from "@/lib/creative/angka-konten";
 import { labelPasal } from "@/lib/creative/pph";
 import { geserMasa } from "@/lib/creative/termin-param";
 import type { BarisPph } from "@/lib/creative/termin-queries";
+import type { BarisPotongPemasok } from "@/lib/finance/kas/pph-dipotong-queries";
+import { PotongPemasokCard } from "./PotongPemasokCard";
 
-type Props = { masa: string; baris: BarisPph[]; gagal: boolean; hariIni: string; bolehMengelola: boolean };
+type Props = {
+  masa: string;
+  baris: BarisPph[];
+  gagal: boolean;
+  hariIni: string;
+  bolehMengelola: boolean;
+  /** PPh dipotong dari pembayaran pemasok dan voucher kas keluar masa ini. */
+  potongPemasok?: BarisPotongPemasok[];
+};
 
 function unduh(isi: string, namaBerkas: string) {
   const url = URL.createObjectURL(new Blob([isi], { type: "text/csv;charset=utf-8" }));
@@ -45,7 +55,7 @@ type Ubah = { jenis: "bukti"; baris: BarisPph } | { jenis: "setor"; baris: Baris
  * diketik keuangan sesudah dibuat di Coretax. Ekspor CSV tersamar untuk semua
  * pembaca; ekspor beridentitas lengkap hanya untuk keuangan dengan PIN.
  */
-export function PphDipotongClient({ masa, baris, gagal, hariIni, bolehMengelola }: Props) {
+export function PphDipotongClient({ masa, baris, gagal, hariIni, bolehMengelola, potongPemasok }: Props) {
   const t = useTranslations("pphDipotong");
   const locale = useLocale();
   const router = useRouter();
@@ -298,6 +308,8 @@ export function PphDipotongClient({ masa, baris, gagal, hariIni, bolehMengelola 
       </Dialog>
 
       <PinAuthModal isOpen={minta} onClose={() => setMinta(false)} onConfirm={(pin) => ekspor(pin)} action={t("pinAksi")} />
+
+      {potongPemasok && <PotongPemasokCard baris={potongPemasok} />}
     </div>
   );
 }

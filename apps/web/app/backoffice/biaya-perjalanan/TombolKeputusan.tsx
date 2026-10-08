@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { BATAS_CATATAN } from "@/lib/salesman/biaya";
@@ -36,14 +37,19 @@ import { cn } from "@/lib/utils";
  * DIAJUKAN, Tandai dibayar untuk yang DISETUJUI. Tombol hanya muncul bagi yang
  * berizin; server tetap memeriksa ulang (izin, status, bukan milik sendiri).
  * "Tandai dibayar" meminta konfirmasi: uang yang sudah ditandai keluar tidak
- * bisa ditarik kembali dari layar ini.
+ * bisa ditarik kembali dari layar ini. Dialognya meminta rekening sumber uang
+ * (`akunKas`) — jurnal pembayarannya mengkredit akun itu; kosong = akun Kas.
  */
+
+/** Pilihan "akun Kas bawaan" (Select tidak menerima nilai kosong). */
+const KAS_BAWAAN = "__kas__";
 export function TombolKeputusan({
   id,
   status,
   ringkas,
   bolehSetujui,
   bolehBayar,
+  akunKas = [],
   tata = "tumpuk",
 }: {
   id: string;
@@ -52,6 +58,8 @@ export function TombolKeputusan({
   ringkas: string;
   bolehSetujui: boolean;
   bolehBayar: boolean;
+  /** Akun kas/bank yang boleh dipilih sebagai sumber pembayaran. */
+  akunKas?: { id: string; label: string }[];
   tata?: "tumpuk" | "baris";
 }) {
   const t = useTranslations("biayaPerjalanan");
@@ -61,6 +69,7 @@ export function TombolKeputusan({
   const [tolakBuka, setTolakBuka] = useState(false);
   const [bayarBuka, setBayarBuka] = useState(false);
   const [alasan, setAlasan] = useState("");
+  const [akun, setAkun] = useState(KAS_BAWAAN);
 
   const jalankan = (aksi: () => ReturnType<typeof setujuiBiayaAction>, sukses: string, selesai?: () => void) =>
     mulai(async () => {
@@ -152,11 +161,31 @@ export function TombolKeputusan({
             <AlertDialogTitle>{t("bayarJudul")}</AlertDialogTitle>
             <AlertDialogDescription>{t("bayarIsi", { ringkas })}</AlertDialogDescription>
           </AlertDialogHeader>
+          {akunKas.length > 0 ? (
+            <div className="space-y-2">
+              <Label htmlFor={`akun-${id}`}>{t("bayarDari")}</Label>
+              <Select value={akun} onValueChange={setAkun} disabled={pending}>
+                <SelectTrigger id={`akun-${id}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={KAS_BAWAAN}>{t("bayarDariKas")}</SelectItem>
+                  {akunKas.map((a) => (
+                    <SelectItem key={a.id} value={a.id}>
+                      {a.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={pending}>{t("batal")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={pending}
-              onClick={() => jalankan(() => tandaiDibayarBiayaAction(id), t("okBayar"), () => setBayarBuka(false))}
+              onClick={() =>
+                jalankan(() => tandaiDibayarBiayaAction(id, akun === KAS_BAWAAN ? null : akun), t("okBayar"), () => setBayarBuka(false))
+              }
             >
               {t("tandaiDibayar")}
             </AlertDialogAction>

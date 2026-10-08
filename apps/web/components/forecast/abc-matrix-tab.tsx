@@ -155,9 +155,9 @@ export function ForecastAbcMatrixTab({ results, onSelectArticle }: AbcMatrixTabP
                 <TableHeader>
                   <TableRow>
                     <TableHead>#</TableHead>
-                    <TableHead>{t('matrixModal.parentSku')}</TableHead>
+                    <TableHead>{t('matrixModal.skuInduk')}</TableHead>
                     <TableHead>{t('matrixModal.product')}</TableHead>
-                    <TableHead className="text-right">{t('matrixModal.avgMonthly')}</TableHead>
+                    <TableHead className="text-right">{t('matrixModal.rataRataPerBulan')}</TableHead>
                     <TableHead className="text-right">{t('matrixModal.annual')}</TableHead>
                     <TableHead className="text-right">{t('matrixModal.planTarget')}</TableHead>
                     <TableHead className="text-right">{t('matrixModal.cv')}</TableHead>

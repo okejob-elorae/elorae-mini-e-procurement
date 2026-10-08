@@ -27,21 +27,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
-import {
-  Building2,
-  FileDigit,
-  Layers,
-  Loader2,
-  Palette,
-  Percent,
-  Ruler,
-  Shield,
-  Users,
-  UserPlus,
-  Tags,
-  Target,
-  Store,
-} from 'lucide-react';
+import { Building2, Loader2, Palette } from 'lucide-react';
+import { KELOMPOK_PENGATURAN, kunciIsiKartu, kunciJudulKartu } from "./kartu-pengaturan";
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import { UIThemePicker } from '@/components/settings/UIThemePicker';
 import { FontPicker } from '@/components/settings/FontPicker';
@@ -90,34 +77,7 @@ export default function SettingsPage() {
   const [isThemeSaving, setIsThemeSaving] = useState(false);
 
   // Pengaturan usaha di atas (dipakai bersama semua orang), tampilan pribadi di bawah.
-  const kelompok = [
-    {
-      judulKey: 'hub.groupField' as const,
-      items: [
-        { key: 'salesman' as const, href: '/backoffice/settings/salesman', icon: Target },
-        { key: 'spg' as const, href: '/backoffice/settings/spg', icon: Store },
-        { key: 'jenisPotongan' as const, href: '/backoffice/settings/jenis-potongan', icon: Tags },
-        { key: 'packRatio' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
-      ],
-    },
-    {
-      judulKey: 'hub.groupData' as const,
-      items: [
-        { key: 'documents' as const, href: '/backoffice/settings/documents', icon: FileDigit },
-        { key: 'itemCodes' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
-        { key: 'uom' as const, href: '/backoffice/settings/uom', icon: Ruler },
-        { key: 'tax' as const, href: '/backoffice/settings/tax', icon: Percent },
-      ],
-    },
-    {
-      judulKey: 'hub.groupAccess' as const,
-      items: [
-        { key: 'users' as const, href: '/backoffice/settings/users', icon: UserPlus },
-        { key: 'rbac' as const, href: '/backoffice/settings/rbac', icon: Users },
-        { key: 'security' as const, href: '/backoffice/settings/security', icon: Shield },
-      ],
-    },
-  ];
+  const kelompok = KELOMPOK_PENGATURAN;
   const [konfirmasiHapusPerusahaan, setKonfirmasiHapusPerusahaan] = useState(false);
 
   const userId = session?.user?.id ?? null;
@@ -342,7 +302,7 @@ export default function SettingsPage() {
 
       {kelompok.map((k) => (
         <section key={k.judulKey} className="space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{t(k.judulKey)}</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{t(k.judulKey as never)}</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
             {k.items.map((item) => (
               <Link key={item.href} href={item.href} className="rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
@@ -350,9 +310,9 @@ export default function SettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
                       <item.icon className="h-5 w-5" />
-                      {t(`${item.key}.title`)}
+                      {t(kunciJudulKartu(item) as never)}
                     </CardTitle>
-                    <CardDescription>{t(`${item.key}.description`)}</CardDescription>
+                    <CardDescription>{t(kunciIsiKartu(item) as never)}</CardDescription>
                   </CardHeader>
                 </Card>
               </Link>

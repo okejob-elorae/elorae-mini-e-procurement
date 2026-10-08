@@ -3,7 +3,6 @@ import { daftarPiutang, ringkasPiutang, type BarisPiutang } from './queries';
 import { daftarKerjaRetur, ringkasKerjaRetur } from './return-queries';
 import { URUT_KEADAAN_TAMPIL, type KeadaanTampil } from './jatuh-tempo';
 import { susunTindakan, type TindakanHariIni } from './tindakan-dasbor';
-import { pemakaianFoto, type PemakaianFoto } from '@/lib/foto/pembersih';
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -24,22 +23,18 @@ export type Dasbor = {
   nilaiJatuhTempo: number;
   menungguVerifikasi: number;
   nilaiMenungguVerifikasi: number;
+  /** Nilai yang ditahan retur, atas faktur berkeadaan `tertahan` — daftar `?keadaan=tertahan`. */
   tertahanRetur: number;
+  /** Jumlah faktur itu — angka yang sama dengan pil "Tertahan retur" di Faktur & piutang. */
+  fakturTertahan: number;
+  /** Nota retur yang belum beres — daftar bawaan Retur & pencocokan ("Perlu dikerjakan"). */
   returPerluDikerjakan: number;
+  returPerLangkah: { cek: number; jodoh: number; keputusan: number };
   bebanTerbuka: number;
   nilaiBebanTerbuka: number;
   tindakan: TindakanHariIni[];
   perSales: PiutangPerSales[];
   perKeadaan: { keadaan: KeadaanTampil; jumlah: number; nilai: number }[];
-  /**
-   * Berapa besar foto yang sedang disimpan, dan berapa di antaranya sampah.
-   *
-   * Ada di beranda dan bukan di halaman pengaturan tersembunyi karena foto
-   * disimpan sebagai bytes DI DALAM basis data: yang menumpuk di sini ikut ke
-   * setiap cadangan. Satu-satunya cara mengetahuinya sebelum ini adalah dengan
-   * sudah terlanjur kehabisan tempat.
-   */
-  foto: PemakaianFoto;
 };
 
 /**
@@ -55,7 +50,12 @@ export type Dasbor = {
  * bawah daftar tindakan.
  */
 export async function muatDasbor(penontonId = '', opsi?: { bolehMenghitung?: boolean }): Promise<Dasbor> {
-  const [piutang, retur, klaimMenunggu, beban, foto] = await Promise.all([
+  /*
+   * Kartu "Penyimpanan foto" sudah tidak di sini: ukuran foto di basis data
+   * bukan pekerjaan admin piutang. Angkanya tetap tersedia lewat
+   * `pemakaianFoto()` (`lib/foto/pembersih.ts`) untuk layar pengaturan sistem.
+   */
+  const [piutang, retur, klaimMenunggu, beban] = await Promise.all([
     daftarPiutang(),
     daftarKerjaRetur(),
     prisma.paymentClaim.findMany({
@@ -81,10 +81,10 @@ export async function muatDasbor(penontonId = '', opsi?: { bolehMenghitung?: boo
         store: { select: { name: true } },
       },
     }),
-    pemakaianFoto(),
   ]);
 
   const ringkas = ringkasPiutang(piutang);
+  const tertahan = piutang.filter((p) => p.keadaanTampil === 'tertahan');
   const ringkasRetur = ringkasKerjaRetur(retur);
 
   const tindakan = susunTindakan({
@@ -133,13 +133,23 @@ export async function muatDasbor(penontonId = '', opsi?: { bolehMenghitung?: boo
      * penuh, tapi tidak punya baris di daftar kerja retur untuk dihitung.
      * Mengambil angkanya dari sana membuat kartu ini menulis nol sementara
      * daftar di bawahnya pada layar yang sama menyebut angka lain.
+     *
+     * Hanya faktur berkeadaan `tertahan` — kartunya menaut ke daftar itu, jadi
+     * angkanya harus sama dengan isinya (dan dengan baris "Tertahan retur" di
+     * daftar tindakan). Faktur yang masih menunggu BKM lain dihitung di kartu
+     * "Menunggu verifikasi".
      */
-    tertahanRetur: piutang.reduce((s, p) => s + (p.alasan.nilaiTertahan ?? 0), 0),
+    tertahanRetur: tertahan.reduce((s, p) => s + (p.alasan.nilaiTertahan ?? 0), 0),
+    fakturTertahan: tertahan.length,
     returPerluDikerjakan: ringkasRetur.perluDikerjakan,
+    returPerLangkah: {
+      cek: ringkasRetur.perLangkah.cek,
+      jodoh: ringkasRetur.perLangkah.jodoh,
+      keputusan: ringkasRetur.perLangkah.keputusan,
+    },
     bebanTerbuka: beban.length,
     nilaiBebanTerbuka: beban.reduce((s, b) => s + angka(b.amount), 0),
     tindakan,
-    foto,
     perSales: [...perSales.values()].sort((a, b) => b.nilai - a.nilai),
     perKeadaan: URUT_KEADAAN_TAMPIL.map((k) => ({
       keadaan: k,

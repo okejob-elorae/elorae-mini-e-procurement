@@ -4,6 +4,7 @@ import { prisma } from "@elorae/db";
 import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
 import { createLoginThrottle } from "@/lib/auth/login-throttle";
+import { SANDI_MIN } from "@/lib/users/validasi";
 
 /**
  * Ganti kata sandi pengguna yang sedang masuk — hanya untuk diri sendiri.
@@ -41,8 +42,8 @@ export async function changePassword(
   if (typeof newPassword !== "string" || !newPassword.trim()) {
     return { success: false, messageKey: "newPasswordRequired" };
   }
-  if (newPassword.length < 6) {
-    return { success: false, messageKey: "passwordMinLength" };
+  if (newPassword.length < SANDI_MIN) {
+    return { success: false, messageKey: "passwordMinLength8" };
   }
 
   const user = await prisma.user.findUnique({

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
+import { bacaUkuranHalaman } from "./_daftar/ukuran-halaman";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { listJournals } from "@/lib/finance/journals/queries";
 import { hitungJurnalTertunda } from "@/lib/finance/jurnal-tertunda";
@@ -10,6 +10,7 @@ import { bacaStatusJurnal } from "./_tertunda/sebab";
 import { muatJurnalTertunda, type BarisJurnalTertunda } from "./_tertunda/muat";
 import { saringanSumber } from "./_sumber/tautan";
 import { aksesSpanduk, bacaKesiapanBukuBesar } from "../_kesiapan/baca";
+import { hitungDrafJurnal } from "@/lib/finance/jurnal-manual/queries";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,19 @@ type PageProps = {
     source?: string;
     q?: string;
     status?: string;
+    per?: string;
   }>;
 };
+
+/** Jumlah draf menunggu persetujuan untuk lencana tab; kegagalan membaca tidak menggagalkan halaman. */
+async function hitungDrafAman(): Promise<number> {
+  try {
+    return await hitungDrafJurnal();
+  } catch (e) {
+    console.error("[journals] gagal menghitung draf jurnal", e);
+    return 0;
+  }
+}
 
 /** Jumlah tertunda untuk lencana tab; kegagalan membaca tidak menggagalkan halaman. */
 async function hitungAman(): Promise<number> {
@@ -46,24 +58,27 @@ export default async function JournalsPage({ searchParams }: PageProps) {
   const sp = await searchParams;
   const status = bacaStatusJurnal(sp.status);
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
-  const pageSize = DEFAULT_PAGE_SIZE;
+  const pageSize = bacaUkuranHalaman(sp.per);
   const search = sp.q?.trim() || undefined;
 
   let tertunda: BarisJurnalTertunda[] | null = null;
   let items: Awaited<ReturnType<typeof listJournals>>["items"] = [];
   let totalCount = 0;
   let jumlahTertunda = 0;
+  const jumlahDrafP = hitungDrafAman();
 
   if (status === "tertunda") {
     tertunda = await muatJurnalTertunda();
     jumlahTertunda = tertunda.length;
   } else {
+    // Tab draf/ditolak: jurnal manual menurut statusnya (maker-checker); tab terposting: buku besar.
+    const statusJurnal = status === "draf" ? "DRAFT" : status === "ditolak" ? "REJECTED" : undefined;
     const [daftar, jumlah] = await Promise.all([
       listJournals(
         {
           from: parseDateOnly(sp.from ?? ""),
           to: parseDateOnlyEnd(sp.to ?? ""),
-          ...saringanSumber(sp.source),
+          ...(statusJurnal ? { status: statusJurnal, manualOnly: true } : saringanSumber(sp.source)),
           search,
         },
         { page, pageSize },
@@ -74,6 +89,7 @@ export default async function JournalsPage({ searchParams }: PageProps) {
     totalCount = daftar.totalCount;
     jumlahTertunda = jumlah;
   }
+  const jumlahDraf = await jumlahDrafP;
 
   const kesiapan = await bacaKesiapanBukuBesar({ jurnalTertunda: jumlahTertunda });
   const canManage = hasPermission(permissions, PERMISSIONS.JOURNALS_MANAGE);
@@ -88,6 +104,7 @@ export default async function JournalsPage({ searchParams }: PageProps) {
       canManage={canManage}
       tertunda={tertunda}
       jumlahTertunda={jumlahTertunda}
+      jumlahDraf={jumlahDraf}
       kesiapan={kesiapan}
       akses={aksesSpanduk(permissions)}
       filters={{

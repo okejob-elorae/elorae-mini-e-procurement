@@ -35,10 +35,22 @@ import { Loader2, Shield, History, UserX, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDisplayDateTime } from '@/lib/date-only';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { alasanPinBelum, alasanSandiBelum, SANDI_MIN_KEAMANAN } from "./alasan-keamanan";
 
 export default function SecuritySettingsPage() {
   const locale = useLocale() as 'en' | 'id';
   const t = useTranslations('security');
+  const tCommon = useTranslations("common");
   const { data: session, status } = useSession();
   const router = useRouter();
 
@@ -62,6 +74,9 @@ export default function SecuritySettingsPage() {
   const [users, setUsers] = useState<Awaited<ReturnType<typeof getUsersForAdmin>>>([]);
   const [resetTargetId, setResetTargetId] = useState('');
   const [resetting, setResetting] = useState(false);
+  const [konfirmasiReset, setKonfirmasiReset] = useState(false);
+  // Nama orang yang PIN-nya akan diatur ulang, dibekukan saat dialog dibuka — tetap terbaca selama dialog menutup.
+  const [namaReset, setNamaReset] = useState("");
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -106,8 +121,8 @@ export default function SecuritySettingsPage() {
 
   const handleChangePassword = async () => {
     if (!session?.user?.id) return;
-    if (newPassword.length < 6) {
-      toast.error(t('passwordMinLength'));
+    if (newPassword.length < SANDI_MIN_KEAMANAN) {
+      toast.error(t('passwordMinLength8'));
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -150,6 +165,9 @@ export default function SecuritySettingsPage() {
       setResetting(false);
     }
   };
+
+  const alasanSandi = alasanSandiBelum({ lama: currentPassword, baru: newPassword, ulang: confirmPassword });
+  const alasanPin = alasanPinBelum({ baru: newPin, ulang: confirmPin });
 
   // Sama dengan penjaga di server: izin, bukan kolom peran lama.
   const isAdmin = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SETTINGS_SECURITY_MANAGE);
@@ -211,18 +229,16 @@ export default function SecuritySettingsPage() {
                 autoComplete="new-password"
               />
             </div>
-            <Button
-              onClick={handleChangePassword}
-              disabled={
-                savingPassword ||
-                !currentPassword.trim() ||
-                !newPassword.trim() ||
-                newPassword !== confirmPassword ||
-                newPassword.length < 6
-              }
-            >
-              {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : t('savePassword')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={handleChangePassword} disabled={savingPassword || alasanSandi !== null}>
+                {savingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : t('savePassword')}
+              </Button>
+              {alasanSandi ? (
+                <p className="text-xs text-muted-foreground" aria-live="polite">
+                  {t(`belum.${alasanSandi}`, { min: SANDI_MIN_KEAMANAN })}
+                </p>
+              ) : null}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -231,13 +247,13 @@ export default function SecuritySettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="h-5 w-5" />
-            {t('setPin')}
+            {t("setPinV2")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-1 max-w-md">
             <div className="space-y-2">
-              <Label htmlFor="current-pin">{t('currentPinLabel')}</Label>
+              <Label htmlFor="current-pin">{t("currentPinLabelV2")}</Label>
               <Input
                 id="current-pin"
                 type="password"
@@ -272,9 +288,16 @@ export default function SecuritySettingsPage() {
                 placeholder="****"
               />
             </div>
-            <Button onClick={handleSetPin} disabled={saving || newPin.length < 4 || newPin !== confirmPin}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t('savePin')}
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <Button onClick={handleSetPin} disabled={saving || alasanPin !== null}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : t('savePin')}
+              </Button>
+              {alasanPin ? (
+                <p className="text-xs text-muted-foreground" aria-live="polite">
+                  {t(`belum.${alasanPin}`)}
+                </p>
+              ) : null}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -341,7 +364,7 @@ export default function SecuritySettingsPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <UserX className="h-5 w-5" />
-              {t('forceResetTitle')}
+              {t("forceResetTitleV2")}
             </CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-2 items-end">
@@ -355,12 +378,43 @@ export default function SecuritySettingsPage() {
               placeholder={t('selectUser')}
               triggerClassName="w-[280px]"
             />
-            <Button variant="destructive" onClick={handleForceReset} disabled={!resetTargetId || resetting}>
-              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : t('resetPin')}
+            <Button variant="destructive" onClick={() => {
+                const target = users.find((u) => u.id === resetTargetId);
+                setNamaReset(target ? target.name || target.email : "");
+                setKonfirmasiReset(true);
+              }} disabled={!resetTargetId || resetting}>
+              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : t("resetPinV2")}
             </Button>
+            {!resetTargetId ? (
+              <p className="self-center text-xs text-muted-foreground">{t("belum.resetUser")}</p>
+            ) : null}
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={konfirmasiReset} onOpenChange={(buka) => !resetting && setKonfirmasiReset(buka)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("resetConfirmTitle", { nama: namaReset })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("resetConfirmBody")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>{tCommon("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={resetting}
+              onClick={(e) => {
+                e.preventDefault();
+                void handleForceReset().finally(() => setKonfirmasiReset(false));
+              }}
+            >
+              {resetting ? <Loader2 className="h-4 w-4 animate-spin" /> : t("resetPinV2")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

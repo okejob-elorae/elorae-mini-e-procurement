@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowRightLeft, ChevronDown, ChevronRight, PackageOpen, PackagePlus, Search, Snail } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, ChevronDown, ChevronRight, PackageOpen, PackagePlus, Search, Snail } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,6 +40,9 @@ export type BarisTidakLaku = {
   tujuan: { storeId: string; storeName: string; terjual60: number } | null;
 };
 
+/** Nama toko tanpa target yang disebut langsung; sisanya "dan N toko lain". */
+const BATAS_TANPA_TARGET = 8;
+
 /** Titik ribuan tanpa `Intl` — keluaran server dan browser harus sama persis. */
 const ribuan = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 
@@ -67,7 +70,11 @@ export function IsiUlangClient({
 
   const perluIsi = toko.filter((s) => s.ringkas.barisIsiUlang > 0);
   const totalPcs = perluIsi.reduce((n, s) => n + s.ringkas.pcsIsiUlang, 0);
-  const tanpaTarget = toko.filter((s) => !s.ringkas.adaTarget).length;
+  // Toko tanpa target tidak pernah "perlu isi ulang", jadi saringan bawaan
+  // menyembunyikannya — namanya disebut di sini, masing-masing dengan jalan
+  // ke halaman targetnya.
+  const tanpaTarget = toko.filter((s) => !s.ringkas.adaTarget);
+  const tanpaTargetTampil = tanpaTarget.slice(0, BATAS_TANPA_TARGET);
 
   function alih(id: string) {
     setTerbuka((m) => {
@@ -80,6 +87,13 @@ export function IsiUlangClient({
 
   return (
     <div className="space-y-6">
+      <Button variant="ghost" size="sm" asChild className="-ml-2">
+        <Link href="/backoffice/konsinyasi">
+          <ArrowLeft className="mr-1.5 h-4 w-4" />
+          {t("kembaliKonsinyasi")}
+        </Link>
+      </Button>
+
       <PageHeader
         title={t("title")}
         meta={t("meta", { stores: perluIsi.length, pcs: ribuan(totalPcs), slow: tidakLaku.length })}
@@ -108,7 +122,31 @@ export function IsiUlangClient({
             <PackagePlus className="h-5 w-5" />
             {t("refillTitle")}
           </CardTitle>
-          {tanpaTarget > 0 ? <p className="text-sm text-muted-foreground">{t("noTargetCount", { count: tanpaTarget })}</p> : null}
+          {tanpaTarget.length > 0 ? (
+            <div className="space-y-1.5 text-sm">
+              <p className="text-muted-foreground">{t("tanpaTargetJudul", { count: tanpaTarget.length })}</p>
+              <ul className="flex flex-wrap gap-x-4 gap-y-1">
+                {tanpaTargetTampil.map((s) => (
+                  <li key={s.id}>
+                    {/* Teks tautan menyebut tujuannya — bukan nama toko saja yang
+                        diam-diam membuka halaman target. */}
+                    <Link
+                      href={bolehAturTarget ? `/backoffice/stores/${s.id}/target-stok` : `/backoffice/stores/${s.id}`}
+                      className="font-medium text-foreground underline decoration-primary underline-offset-2 hover:decoration-2"
+                    >
+                      {s.name}
+                      {bolehAturTarget ? ` · ${t("setTargets")}` : ""}
+                    </Link>
+                  </li>
+                ))}
+                {tanpaTarget.length > tanpaTargetTampil.length ? (
+                  <li className="text-muted-foreground">
+                    {t("danLainnya", { count: tanpaTarget.length - tanpaTargetTampil.length })}
+                  </li>
+                ) : null}
+              </ul>
+            </div>
+          ) : null}
         </CardHeader>
         <CardContent>
           {daftarToko.length === 0 ? (
@@ -116,6 +154,13 @@ export function IsiUlangClient({
               icon={PackageOpen}
               title={hanyaPerlu ? t("refillEmpty") : t("storesEmpty")}
               description={hanyaPerlu ? t("refillEmptyBody") : undefined}
+              action={
+                hanyaPerlu && toko.length > 0 ? (
+                  <Button variant="outline" size="sm" onClick={() => setHanyaPerlu(false)}>
+                    {t("tampilkanSemuaToko")}
+                  </Button>
+                ) : undefined
+              }
             />
           ) : (
             <div className="overflow-x-auto">

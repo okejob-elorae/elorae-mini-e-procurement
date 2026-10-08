@@ -6,6 +6,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { UnggahFoto, type NilaiFoto } from "@/components/foto/UnggahFoto";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +14,7 @@ import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Textarea } from "@/components/ui/textarea";
 import { bayarTerminAction, bayarTerminBanyakAction } from "@/app/actions/kreatif-termin";
 import { jumlahUang, rupiahTeks } from "@/lib/creative/angka-konten";
+import { bayarSebelumTayang } from "@/lib/creative/termin-aturan";
 import type { BarisTermin } from "@/lib/creative/termin-queries";
 
 type Props = {
@@ -38,6 +40,7 @@ export function DialogBayarTermin({ open, onOpenChange, termin, hariIni, onSeles
   const [foto, setFoto] = useState<NilaiFoto>(null);
   const [nomor, setNomor] = useState("");
   const [catatan, setCatatan] = useState("");
+  const [setujuAwal, setSetujuAwal] = useState(false);
   const [menyimpan, mulai] = useTransition();
   const satu = termin.length === 1 ? termin[0] : null;
   const neto = jumlahUang(termin.map((b) => b.neto));
@@ -47,6 +50,10 @@ export function DialogBayarTermin({ open, onOpenChange, termin, hariIni, onSeles
   const tanpaData = termin.filter((b) => b.jenisPajak !== "TIDAK_DIPOTONG" && !b.dataPajakLengkap);
   // Satu termin: baris rekening di atas sudah menyebut rekening kosong — kotak peringatan tidak mengulanginya.
   const tanpaRekening = satu ? [] : termin.filter((b) => !b.rekening.last4);
+  // Termin yang menunggu tayang (mis. Pelunasan) boleh dibayar lebih awal, tetapi
+  // harus dikonfirmasi — bukan larangan (keputusan sementara 2026-10-08).
+  const sebelumTayang = termin.filter(bayarSebelumTayang);
+  const perluSetuju = sebelumTayang.length > 0 && !setujuAwal;
 
   const simpan = () =>
     mulai(async () => {
@@ -127,6 +134,23 @@ export function DialogBayarTermin({ open, onOpenChange, termin, hariIni, onSeles
             </p>
           ) : null}
 
+          {sebelumTayang.length > 0 ? (
+            <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200" role="status">
+              <p className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                {satu
+                  ? t("termin.dialog.sebelumTayang", { label: satu.label, n: satu.hariSesudah })
+                  : t("termin.dialog.sebelumTayangBanyak", { n: sebelumTayang.length })}
+              </p>
+              <div className="flex items-start gap-2">
+                <Checkbox id="bayar-termin-setuju-awal" checked={setujuAwal} onCheckedChange={(v) => setSetujuAwal(v === true)} className="mt-0.5" />
+                <Label htmlFor="bayar-termin-setuju-awal" className="text-sm font-normal leading-snug">
+                  {t("termin.dialog.setujuAwal")}
+                </Label>
+              </div>
+            </div>
+          ) : null}
+
           <div className="space-y-1.5">
             <Label htmlFor="bayar-termin-tanggal">{t("termin.dialog.tanggal")}</Label>
             <TanggalInput id="bayar-termin-tanggal" value={tanggal} max={hariIni} required onChange={(e) => setTanggal(e.target.value)} />
@@ -157,11 +181,20 @@ export function DialogBayarTermin({ open, onOpenChange, termin, hariIni, onSeles
           ) : null}
         </div>
 
+        {perluSetuju ? (
+          <p className="text-right text-xs text-muted-foreground" id="bayar-termin-alasan">
+            {t("termin.dialog.centangDulu")}
+          </p>
+        ) : null}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={menyimpan}>
             {t("termin.dialog.batal")}
           </Button>
-          <Button onClick={simpan} disabled={menyimpan || tanggalSalah || termin.length === 0}>
+          <Button
+            onClick={simpan}
+            disabled={menyimpan || tanggalSalah || termin.length === 0 || perluSetuju}
+            aria-describedby={perluSetuju ? "bayar-termin-alasan" : undefined}
+          >
             {menyimpan ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
             {t("termin.dialog.simpan", { neto: rupiahTeks(neto) })}
           </Button>

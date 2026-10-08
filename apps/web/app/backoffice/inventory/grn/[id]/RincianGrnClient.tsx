@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useLocale, useTranslations } from 'next-intl';
-import { ArrowLeft, ImageIcon, PackageCheck, PackageX } from 'lucide-react';
+import { ArrowLeft, ImageIcon, PackageCheck, PackageX, Undo2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,6 +34,7 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
   // Tautan hanya ke halaman yang boleh dibuka; selain itu nomornya teks biasa.
   const bolehBukaPo = hasPermission(perms, PERMISSIONS.PURCHASE_ORDERS_VIEW);
   const bolehBukaRetur = hasPermission(perms, PERMISSIONS.VENDOR_RETURNS_VIEW);
+  const bolehBuatRetur = hasPermission(perms, PERMISSIONS.VENDOR_RETURNS_CREATE);
 
   const kembali = (
     <Button variant="ghost" size="icon" asChild>
@@ -83,6 +84,15 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
                   {tp('declinedByOwner')}
                 </Badge>
               )}
+              {/* Jalan pintas: retur barang GRN ini ke pemasoknya, pemasok dan barang terisi. */}
+              {bolehBuatRetur && keadaan !== 'ditolak' && (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/backoffice/vendor-returns/new?grnId=${encodeURIComponent(grn.id)}`}>
+                    <Undo2 className="mr-2 h-4 w-4" />
+                    {t('returKePemasok')}
+                  </Link>
+                </Button>
+              )}
             </>
           }
         />
@@ -122,6 +132,9 @@ export function RincianGrnClient({ grn }: { grn: RincianGRN | null }) {
           <div>
             <p className="text-sm text-muted-foreground">{t('nilai')}</p>
             <p className="text-lg font-semibold tabular-nums">{rp(grn.totalAmount)}</p>
+            {grn.ppnAmount ? (
+              <p className="text-xs text-muted-foreground">{t('ppnMasukan', { ppn: rp(grn.ppnAmount), hutang: rp(grn.totalAmount + grn.ppnAmount) })}</p>
+            ) : null}
           </div>
           {grn.notes && (
             <div className="sm:col-span-2 xl:col-span-3">

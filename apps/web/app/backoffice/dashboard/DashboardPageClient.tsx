@@ -144,8 +144,11 @@ export function DashboardPageClient({
       format: formatIdr,
       // Disebut apa adanya: pengiriman putus dan nota van — bukan "transaksi",
       // yang terbaca sebagai jumlah pesanan di daftar tujuannya.
-      konteks: tDashboard('kpiRealisedCtxRinci', {
+      // Menyebut juga jumlah PESANAN berbeda: daftar tujuannya berisi pesanan,
+      // dan satu pesanan bisa dikirim dua kali.
+      konteks: tDashboard('kpiRealisedCtxPesanan', {
         kirim: formatNumber(salesmenSales.totals.realisedRincian.pengiriman),
+        pesanan: formatNumber(salesmenSales.totals.realisedRincian.pesanan),
         van: formatNumber(salesmenSales.totals.realisedRincian.van),
       }),
       // Daftar pesanan bawaannya "menunggu persetujuan"; yang
@@ -198,8 +201,10 @@ export function DashboardPageClient({
       <Kelompok id="beranda-penjualan" judul={tDashboard('groupSales')} delay={80}>
         {/* Tanpa tabel per salesman, ringkasan selebar kartu produksi, bukan sepertiga layar. */}
         <div
+          // `grid-cols-1` = minmax(0, 1fr): tanpa itu lajur bawaan HP selebar
+          // isi terlebarnya (tabel 648 px di layar 390), dan angkanya terpotong.
           className={cn(
-            'grid gap-4',
+            'grid grid-cols-1 gap-4',
             salesmenSales ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]' : 'md:grid-cols-2',
           )}
         >
@@ -265,9 +270,10 @@ export function DashboardPageClient({
                         <div className="font-medium">
                           {formatIdr(row.realised.amount)}
                         </div>
-                        <div className="text-xs text-muted-foreground">
-                          {tDashboard('kpiRealisedCtxRinci', {
+                        <div className="text-xs text-muted-foreground whitespace-normal">
+                          {tDashboard('kpiRealisedCtxPesanan', {
                             kirim: formatNumber(row.realisedRincian.pengiriman),
+                            pesanan: formatNumber(row.realisedRincian.pesanan),
                             van: formatNumber(row.realisedRincian.van),
                           })}
                         </div>
@@ -308,9 +314,10 @@ export function DashboardPageClient({
                       <div className="font-semibold">
                         {formatIdr(salesmenSales.totals.realised.amount)}
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {tDashboard('kpiRealisedCtxRinci', {
+                      <div className="text-xs text-muted-foreground whitespace-normal">
+                        {tDashboard('kpiRealisedCtxPesanan', {
                           kirim: formatNumber(salesmenSales.totals.realisedRincian.pengiriman),
+                          pesanan: formatNumber(salesmenSales.totals.realisedRincian.pesanan),
                           van: formatNumber(salesmenSales.totals.realisedRincian.van),
                         })}
                       </div>
@@ -358,9 +365,12 @@ export function DashboardPageClient({
 
       {piutang ? (
       <Kelompok id="beranda-piutang" judul={tDashboard('groupReceivables')} delay={120}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <BatangKomposisi
-            judul={tDashboard('agingTitle', {
+            // "Semua": kartu ini mengelompokkan SEMUA piutang terbuka menurut umurnya,
+            // termasuk yang sudah dikontrabon atau menunggu BKM — beda dari baris
+            // "Lewat jatuh tempo" di sebelahnya yang hanya menghitung yang belum ditagih.
+            judul={tDashboard('agingTitleSemua', {
               // Dihitung dari kelompoknya, bukan `piutang.jumlah`: faktur terbuka
               // yang sisanya nol tidak masuk kelompok mana pun, dan judul yang
               // menyebut 7 di atas keterangan yang menjumlah 6 terbaca sebagai galat.
@@ -389,6 +399,14 @@ export function DashboardPageClient({
                 nada: piutang.lewatJumlah > 0 ? 'buruk' : 'netral',
               },
               {
+                label: tDashboard('kpiDueOverdue'),
+                nilai: piutang.jatuhTempoNilai,
+                format: formatIdr,
+                konteks: tDashboard('kpiDueOverdueCtx', { count: formatNumber(piutang.jatuhTempoJumlah) }),
+                href: '/backoffice/piutang?keadaan=jatuh_tempo',
+                nada: piutang.jatuhTempoJumlah > 0 ? 'perhatian' : 'netral',
+              },
+              {
                 label: tDashboard('kpiHeld'),
                 nilai: piutang.tertahanNilai,
                 format: formatIdr,
@@ -405,7 +423,7 @@ export function DashboardPageClient({
       ) : null}
 
       <Kelompok id="beranda-produksi" judul={tDashboard('groupProduction')} delay={160}>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <KpiDaftar
             judul={tDashboard('kpiProductionOnly')}
             baris={[
@@ -460,7 +478,8 @@ export function DashboardPageClient({
                 nilai: s.suppliers.activeCount,
                 format: formatNumber,
                 konteks: tDashboard('kpiSuppliersCtx', { count: formatNumber(s.grnsThisWeek) }),
-                href: '/backoffice/suppliers',
+                // Saringan aktif — daftar tanpa saringan memuat pemasok nonaktif juga.
+                href: '/backoffice/suppliers?aktif=aktif',
               },
             ]}
           />
@@ -469,7 +488,7 @@ export function DashboardPageClient({
 
       {cogsRawVsFinished && oversoldCount !== null && s.items ? (
       <Kelompok id="beranda-stok" judul={tDashboard('groupStock')} delay={200}>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <BatangKomposisi
             judul={tDashboard('stockMixTitle')}
             total={cogsRawVsFinished.rawValue + cogsRawVsFinished.finishedValue}

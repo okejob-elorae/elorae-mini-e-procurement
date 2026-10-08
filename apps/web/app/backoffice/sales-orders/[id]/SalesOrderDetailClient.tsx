@@ -185,14 +185,21 @@ export function SalesOrderDetailClient({ order, items, canFulfill, lineImages = 
           </div>
         </Card>
 
-        <Card className="p-4 space-y-2">
-          <h2 className="font-semibold">{t("detail.section.rawStatus")}</h2>
-          <Field label={t("detail.field.channelStatus")} value={order.channelStatus} />
-          <Field label={t("detail.field.internalStatus")} value={order.internalStatus} />
-          <Field label={t("detail.field.wmsStatus")} value={order.wmsStatus} />
-          <Field label={t("detail.field.isCanceled")} value={order.isCanceled ? t("yes") : t("no")} />
-          <Field label={t("detail.field.isPaid")} value={order.isPaid ? t("yes") : t("no")} />
-          <Field label={t("detail.field.markedAsComplete")} value={order.markedAsComplete ? t("yes") : t("no")} />
+        {/* Kode sistem Jubelio (mis. READY_TO_SHIP / PROCESSING / SHIPPED) tampak saling
+            bertentangan di samping lencana yang sudah diterjemahkan — dilipat sebagai detail teknis. */}
+        <Card className="p-4">
+          <details>
+            <summary className="cursor-pointer font-semibold">{t("detail.section.detailTeknis")}</summary>
+            <p className="mt-2 text-xs text-muted-foreground">{t("detail.section.detailTeknisKet")}</p>
+            <div className="mt-3 space-y-2">
+              <Field label={t("detail.field.channelStatus")} value={order.channelStatus} />
+              <Field label={t("detail.field.internalStatus")} value={order.internalStatus} />
+              <Field label={t("detail.field.wmsStatus")} value={order.wmsStatus} />
+              <Field label={t("detail.field.isCanceled")} value={order.isCanceled ? t("yes") : t("no")} />
+              <Field label={t("detail.field.isPaid")} value={order.isPaid ? t("yes") : t("no")} />
+              <Field label={t("detail.field.markedAsComplete")} value={order.markedAsComplete ? t("yes") : t("no")} />
+            </div>
+          </details>
         </Card>
       </div>
 

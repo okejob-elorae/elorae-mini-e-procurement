@@ -44,9 +44,9 @@ export function LeadTimePageClient({ initialTab, canManage, bolehAturKalender }:
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="pustaka">{t("tabs.pustaka")}</TabsTrigger>
-          <TabsTrigger value="papan">{t("tabs.papan")}</TabsTrigger>
-          <TabsTrigger value="sop">{t("tabs.sop")}</TabsTrigger>
+          <TabsTrigger value="pustaka">{t("tabs.pustakaV2")}</TabsTrigger>
+          <TabsTrigger value="papan">{t("tabs.papanV2")}</TabsTrigger>
+          <TabsTrigger value="sop">{t("tabs.sopV2")}</TabsTrigger>
           <TabsTrigger value="hari-kerja">{tJadwal("hariKerja.tab")}</TabsTrigger>
         </TabsList>
         <TabsContent value="pustaka">

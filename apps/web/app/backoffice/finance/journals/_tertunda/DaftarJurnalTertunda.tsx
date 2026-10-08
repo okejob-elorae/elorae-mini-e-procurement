@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { journalSourceLabel } from "../journal-source-label";
-import { kunciSebab, perluPemetaanAkun } from "./sebab";
+import { langkahPostingUlang, perluPemetaanAkun, sebabTerkini } from "./sebab";
 import type { BarisJurnalTertunda } from "./muat";
 
 type Props = {
@@ -32,7 +32,11 @@ export function DaftarJurnalTertunda({ rows }: Props) {
   }
 
   function teksSebab(r: BarisJurnalTertunda): string {
-    const kunci = kunciSebab(r.sebab);
+    const kunci = sebabTerkini(r.sebab, r.peranKiniTerpetakan);
+    if (kunci === "UNMAPPED_ROLE_SUDAH") {
+      // Sebab tersimpan sudah basi: perannya kini terpetakan, jurnalnya tinggal diposting ulang.
+      return t("tertunda.sebabTerkini.UNMAPPED_ROLE_SUDAH", { peran: namaPeran(r.peran) ?? r.peran ?? "" });
+    }
     if (kunci === "UNMAPPED_ROLE") {
       const peran = namaPeran(r.peran);
       return peran ? t("tertunda.sebab.UNMAPPED_ROLE", { peran }) : t("tertunda.sebab.UNMAPPED_ROLE_TANPA_PERAN");
@@ -87,14 +91,15 @@ export function DaftarJurnalTertunda({ rows }: Props) {
                       )}
                     </TableCell>
                     <TableCell className="whitespace-normal min-w-[240px] max-w-[420px] text-sm">
-                      {teksSebab(r)}
+                      <p>{teksSebab(r)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{t(`tertunda.langkah.${langkahPostingUlang(r.jenis)}`)}</p>
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
                       {formatDisplayDateTime(r.dicatatPada, locale)}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
-                        {perluPemetaanAkun(r.sebab) && (
+                        {perluPemetaanAkun(r.sebab) && r.peranKiniTerpetakan !== true && (
                           <Button variant="outline" size="sm" asChild>
                             <Link href="/backoffice/finance/account-mapping">{t("tertunda.actionMapping")}</Link>
                           </Button>

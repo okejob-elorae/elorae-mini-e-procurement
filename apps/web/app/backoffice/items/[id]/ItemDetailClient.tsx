@@ -28,6 +28,7 @@ import { useTranslations } from 'next-intl';
 import { ItemType } from '@/lib/constants/enums';
 import { PriceHistoryTable } from './PriceHistoryTable';
 import { alamatLabel } from "@/lib/items/label";
+import { GaleriBelumSimpanContext } from '@/components/items/ItemGalleryEditor';
 
 type ItemDetailClientProps = {
   initialData: Parameters<typeof ItemForm>[0]['initialData'];
@@ -36,12 +37,6 @@ type ItemDetailClientProps = {
   nameEn: string;
   isActive: boolean;
   gallerySlot?: React.ReactNode;
-};
-
-const itemTypeKeys: Record<ItemType, 'fabric' | 'accessories' | 'finishedGood'> = {
-  FABRIC: 'fabric',
-  ACCESSORIES: 'accessories',
-  FINISHED_GOOD: 'finishedGood',
 };
 
 export function ItemDetailClient({
@@ -59,7 +54,10 @@ export function ItemDetailClient({
   const [isSaving, setIsSaving] = useState(false);
   const [konfirmasiPush, setKonfirmasiPush] = useState(false);
   const tDetail = useTranslations('itemDetail');
-  const itemTypeLabel = tItems(itemTypeKeys[itemType]);
+  const tForm = useTranslations('itemForm');
+  const itemTypeLabel = tForm(`typeName.${itemType}`);
+  // Galeri foto punya tombol simpan sendiri; jumlah perubahannya dilaporkan lewat konteks.
+  const [galeriBelumSimpan, setGaleriBelumSimpan] = useState(0);
   const isAdmin = session?.user?.permissions?.includes("*") ?? false;
 
   const handlePushStock = async () => {
@@ -86,10 +84,16 @@ export function ItemDetailClient({
       if (data.type === ItemType.FINISHED_GOOD && consumptionRules) {
         await saveConsumptionRules(initialData.id, consumptionRules);
       }
-      toast.success(tItems('detail.updatedToast'));
+      if (galeriBelumSimpan > 0) {
+        // Tetap di halaman: pindah ke daftar membuang gambar yang belum disimpan.
+        toast.warning(tDetail('tersimpanGaleriBelum'), { duration: 10000 });
+        router.refresh();
+        return;
+      }
+      toast.success(tDetail('tersimpan'));
       router.push('/backoffice/items');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : tItems('detail.updateFailed');
+      const message = error instanceof Error ? error.message : tDetail('gagalSimpan');
       toast.error(message);
     } finally {
       setIsSaving(false);
@@ -104,8 +108,8 @@ export function ItemDetailClient({
             <Button
               variant="ghost"
               size="icon"
-              aria-label={tItems('detail.backToItems')}
-              title={tItems('detail.backToItems')}
+              aria-label={tDetail('kembali')}
+              title={tDetail('kembali')}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -140,11 +144,15 @@ export function ItemDetailClient({
       <Tabs defaultValue="details" className="space-y-4">
         <TabsList>
           <TabsTrigger value="details">{tItems('detail.tabDetails')}</TabsTrigger>
-          <TabsTrigger value="price-history">{tItems('priceHistory.tab')}</TabsTrigger>
+          <TabsTrigger value="price-history">{tDetail('tabRiwayatHarga')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="details" className="space-y-4">
-          <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
-          {gallerySlot}
+        {/* Tetap terpasang saat tab lain dibuka: isian formulir dan gambar yang
+            belum disimpan tidak boleh hilang hanya karena melihat riwayat harga. */}
+        <TabsContent value="details" forceMount className="space-y-4 data-[state=inactive]:hidden">
+          <GaleriBelumSimpanContext.Provider value={setGaleriBelumSimpan}>
+            <ItemForm initialData={initialData} onSubmit={handleSubmit} isLoading={isSaving} />
+            {gallerySlot}
+          </GaleriBelumSimpanContext.Provider>
         </TabsContent>
         <TabsContent value="price-history">
           {initialData?.id ? (
@@ -161,7 +169,7 @@ export function ItemDetailClient({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{tItems('detail.pushStock')}</AlertDialogTitle>
-            <AlertDialogDescription>{tItems('detail.pushStockConfirm')}</AlertDialogDescription>
+            <AlertDialogDescription>{tDetail('pushStockConfirmV2')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{tDetail('cancel')}</AlertDialogCancel>

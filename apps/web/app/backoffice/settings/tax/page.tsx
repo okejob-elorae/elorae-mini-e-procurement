@@ -18,6 +18,7 @@ import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { KartuSuratPo } from './KartuSuratPo';
+import { KartuPajakPerusahaan } from './KartuPajakPerusahaan';
 
 export default function TaxSettingsPage() {
   const t = useTranslations('tax');
@@ -73,13 +74,15 @@ export default function TaxSettingsPage() {
         <TombolBantuan judul={t('pageTitle')} />
       </div>
 
+      <KartuPajakPerusahaan />
+
       <Card className="max-w-md">
         <CardHeader>
-          <CardTitle>{t('cardTitle')}</CardTitle>
+          <CardTitle>{t('tarifPo.judul')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="ppn-rate">{t('ppnRateLabel')}</Label>
+            <Label htmlFor="ppn-rate">{t('tarifPo.label')}</Label>
             <Input
               id="ppn-rate"
               type="number"

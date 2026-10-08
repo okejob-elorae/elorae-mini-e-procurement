@@ -56,7 +56,9 @@ vi.mock("@/lib/purchase-orders/queries", () => ({
   getDraftPOCount: catat("poDraf", 2),
 }));
 vi.mock("@/lib/sales-orders/queries", () => ({ getMarketplaceKpi: catat("marketplace", { pendingFulfillmentCount: 6 }) }));
-vi.mock("@/lib/dashboard/piutang-ringkas", () => ({ ringkasPiutangBeranda: catat("piutang", { lewatJumlah: 7, lewatNilai: 70 }) }));
+vi.mock("@/lib/dashboard/piutang-ringkas", () => ({
+  ringkasPiutangBeranda: catat("piutang", { lewatJumlah: 7, lewatNilai: 70, jatuhTempoJumlah: 3, jatuhTempoNilai: 30 }),
+}));
 vi.mock("@/lib/creative/tugas-queries", () => ({ hitungTugasKreatif: catat("kreatif", 9) }));
 
 const { hitungLencanaMenu } = await import("./lencana-menu");
@@ -74,9 +76,9 @@ describe("hitungLencanaMenu", () => {
     expect(grup["/backoffice/finance/journals"]).toBe(3);
     expect(halaman["/backoffice/finance/journals"]).toBe(2);
     expect(halaman["/backoffice/finance/faktur-pajak"]).toBe(1);
-    // Lewat janji bayar 7 + BKM yang BISA diputuskan 3 + koreksi BKM 1 — BKM milik sendiri (5) bukan pekerjaannya.
-    expect(grup["/backoffice/pelunasan-dasbor"]).toBe(11);
-    expect(halaman["/backoffice/piutang"]).toBe(7);
+    // Lewat janji bayar 7 + lewat jatuh tempo 3 + BKM yang BISA diputuskan 3 + koreksi BKM 1 — BKM milik sendiri (5) bukan pekerjaannya.
+    expect(grup["/backoffice/pelunasan-dasbor"]).toBe(14);
+    expect(halaman["/backoffice/piutang"]).toBe(10);
     expect(halaman["/backoffice/pelunasan"]).toBe(4);
   });
 
@@ -112,11 +114,12 @@ describe("hitungLencanaMenu", () => {
     expect(kueri).not.toContain("stokMinusPerBarang");
   });
 
-  it("pembaca piutang tanpa keuangan: lewat janji bayar berlencana, BKM tidak", async () => {
+  it("pembaca piutang tanpa keuangan: lewat janji bayar + lewat jatuh tempo berlencana, BKM tidak", async () => {
     const { grup, halaman } = await hitungLencanaMenu(["receivables:view"], "u-piutang");
-    expect(halaman["/backoffice/piutang"]).toBe(7);
+    // Angka yang sama dengan Beranda piutang: lewat janji bayar 7 + lewat jatuh tempo 3.
+    expect(halaman["/backoffice/piutang"]).toBe(10);
     expect(halaman["/backoffice/pelunasan"]).toBeUndefined();
-    expect(grup["/backoffice/pelunasan-dasbor"]).toBe(7);
+    expect(grup["/backoffice/pelunasan-dasbor"]).toBe(10);
     expect(kueri).not.toContain("klaim");
   });
 

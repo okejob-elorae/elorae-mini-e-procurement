@@ -12,13 +12,10 @@ import { generateMaterialPlan } from '@/lib/production/planning';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { getActorName, notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
-import { getPpnRatePercent } from '@/app/actions/settings/ppn';
 import { auth } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
-import { postFgReceiptJournal } from '@/lib/production/fg-receipt-journal';
-import type { GenerateAutoJournalResult } from '@/lib/finance/journal';
-import { dokumenJurnal, tandaiJurnalTertundaSelesai } from '@/lib/finance/jurnal-tertunda';
+import { postFgReceiptJournalAman, type HasilPostingPenerimaanFG } from '@/lib/production/fg-receipt-journal-aman';
 import {
   listWorkOrders as listWorkOrdersLib,
   type ListWorkOrdersFilters,
@@ -27,12 +24,12 @@ import {
 import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
-import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { runSerializable } from "@/lib/db/tx-retry";
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
-import { bagiBiayaPerBaris, hitungBiayaPenerimaanFG } from "@/lib/production/biaya-penerimaan";
+import { bagiBiayaPerBaris, rincianBiayaPenerimaan, type DasarBiayaPenerimaan } from "@/lib/production/biaya-penerimaan";
+import { bacaDasarBiayaPenerimaan } from "@/lib/production/biaya-penerimaan-queries";
 import { ProduksiDitolakError, type KodeTolakProduksi } from "@/lib/production/galat-produksi";
-import { bacaSisaBahanWo, kembalikanBahanWo, nilaiBahanKembaliWo, type HasilKembaliBahan } from "@/lib/production/kembali-bahan-writer";
+import { bacaSisaBahanWo, kembalikanBahanWo, type HasilKembaliBahan } from "@/lib/production/kembali-bahan-writer";
 import { BATAS_ALASAN_BATAL_WO, bahanMasihDiCmt, type KodeTolakKembaliBahan } from "@/lib/production/kembali-bahan";
 import { ringkasanBahanWo, type RingkasanBahanWo } from "@/lib/production/kembali-bahan-queries";
 
@@ -132,7 +129,7 @@ function serializeWorkOrder(wo: {
   vendor?: unknown;
   finishedGood?: unknown;
   issues?: Array<{ id: string; docNumber: string; issueType: string; totalCost: unknown; issuedAt: Date; [k: string]: unknown }>;
-  receipts?: Array<{ id: string; docNumber: string; qtyReceived: unknown; qtyRejected?: unknown; qtyAccepted: unknown; materialCost?: unknown; avgCostPerUnit?: unknown; totalCostValue?: unknown; receivedAt: Date; [k: string]: unknown }>;
+  receipts?: Array<{ id: string; docNumber: string; qtyReceived: unknown; qtyRejected?: unknown; qtyAccepted: unknown; materialCost?: unknown; serviceCost?: unknown; additionalCost?: unknown; avgCostPerUnit?: unknown; totalCostValue?: unknown; receivedAt: Date; [k: string]: unknown }>;
   returns?: unknown[];
   steps?: Array<{
     id: string;
@@ -225,6 +222,9 @@ function serializeWorkOrder(wo: {
       qcNotes: r.qcNotes ?? null,
       qcPhotos: r.qcPhotos ?? null,
       materialCost: r.materialCost != null ? Number(r.materialCost) : null,
+      // Ongkos jahit & biaya tambahan (null = penerimaan sebelum keduanya masuk HPP).
+      serviceCost: r.serviceCost != null ? Number(r.serviceCost) : null,
+      additionalCost: r.additionalCost != null ? Number(r.additionalCost) : null,
       avgCostPerUnit: r.avgCostPerUnit != null ? Number(r.avgCostPerUnit) : null,
       totalCostValue: r.totalCostValue != null ? Number(r.totalCostValue) : null,
       receivedById: r.receivedById,
@@ -939,8 +939,13 @@ export async function issueMaterials(data: IssueFormData, _userId?: string) {
         return b.qtyOnHand - a.qtyOnHand;
       });
 
+      // Nilai yang dicatat = nilai yang BENAR-BENAR keluar dari stok (qty × biaya
+      // rata-rata baris gudangnya, dalam sen) — sama dengan kartu stok bahan, jadi
+      // biaya bahan yang dipikul barang jadi (dan dikredit dari persediaan bahan
+      // di jurnal penerimaan) sama dengan yang keluar dari gudang. Dulu dicatat
+      // dengan harga ketik / harga PO (+PPN), yang menyimpang dari kartu stok.
       let remainingToDeduct = item.qty;
-      let weightedCostSum = 0;
+      let nilaiKeluarBaris = new Decimal(0);
       for (const row of rowsToUse) {
         if (remainingToDeduct <= 0) break;
         const take = Math.min(row.qtyOnHand, remainingToDeduct);
@@ -951,7 +956,8 @@ export async function issueMaterials(data: IssueFormData, _userId?: string) {
           where: { id: row.id },
           data: { qtyOnHand: newQty, totalValue: newValue }
         });
-        weightedCostSum += take * row.avgCost;
+        const nilaiGerak = new Decimal(take).mul(row.avgCost).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        nilaiKeluarBaris = nilaiKeluarBaris.plus(nilaiGerak);
         remainingToDeduct -= take;
         const effectiveSku = row.variantSku ?? '';
         movementData.push({
@@ -959,32 +965,26 @@ export async function issueMaterials(data: IssueFormData, _userId?: string) {
           variantSku: effectiveSku,
           qty: -take,
           unitCost: row.avgCost,
-          totalCost: take * row.avgCost,
+          totalCost: nilaiGerak.toNumber(),
           balanceQty: newQty,
           balanceValue: newValue
         });
       }
 
-      const avgCostNum = remainingToDeduct < item.qty ? weightedCostSum / item.qty : (rowsToUse[0]?.avgCost ?? 0);
-      let unitCost = item.unitPrice ?? avgCostNum;
+      const avgCostNum = item.qty > 0 ? nilaiKeluarBaris.div(item.qty).toNumber() : (rowsToUse[0]?.avgCost ?? 0);
+      // Penanda PPN baris (dari PO WO ini, atau bawaan barang) hanya untuk
+      // tampilan laporan HPP; tidak lagi mengubah nilai yang dicatat.
       let ppnIncluded = itemRow?.defaultPpnIncluded ?? true;
       if (wo.poId) {
         const poItem = await tx.pOItem.findFirst({
           where: { poId: wo.poId, itemId: item.itemId },
-          select: { ppnIncluded: true, price: true },
+          select: { ppnIncluded: true },
         });
-        if (poItem) {
-          ppnIncluded = poItem.ppnIncluded;
-          const baseCost = item.unitPrice ?? Number(poItem.price);
-          const ppnRatePercent = await getPpnRatePercent();
-          const ppnMultiplier = 1 + ppnRatePercent / 100;
-          unitCost = poItem.ppnIncluded ? baseCost : baseCost * ppnMultiplier;
-        }
+        if (poItem) ppnIncluded = poItem.ppnIncluded;
       }
-      const cost = new Decimal(unitCost).mul(item.qty);
-      totalCost = totalCost.plus(cost);
+      totalCost = totalCost.plus(nilaiKeluarBaris);
 
-      const lineTotalCostRaw = avgCostNum * item.qty;
+      // Harga ketik di layar (bila ada) tetap tersimpan untuk nota CMT, tetapi bukan nilai bahan.
       const sellingPrice = item.unitPrice != null && item.unitPrice > 0 ? item.unitPrice : undefined;
       const totalSellingPrice = sellingPrice != null ? sellingPrice * item.qty : undefined;
       issueItemsForJson.push({
@@ -993,7 +993,7 @@ export async function issueMaterials(data: IssueFormData, _userId?: string) {
         uomId: item.uomId,
         avgCostAtIssue: avgCostNum,
         ppnIncluded,
-        totalCost: lineTotalCostRaw,
+        totalCost: nilaiKeluarBaris.toNumber(),
         ...(sellingPrice != null && { sellingPrice, totalSellingPrice }),
       });
     }
@@ -1397,10 +1397,6 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
 
     const wo = await tx.workOrder.findUnique({
       where: { id: data.woId },
-      include: {
-        issues: { select: { totalCost: true } },
-        receipts: { select: { qtyReceived: true, totalCostValue: true } },
-      },
     });
 
     if (!wo) throw new ProduksiDitolakError('WO_TIDAK_DITEMUKAN');
@@ -1409,29 +1405,20 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
 
     const docNumber = await generateDocNumber('RECEIPT', tx);
 
-    // Bahan yang sudah kembali ke gudang tidak ikut dipikul barang jadi.
-    const totalMaterialCost = Decimal.max(
-      0,
-      wo.issues
-        .reduce((sum, issue) => sum.plus(issue.totalCost.toString()), new Decimal(0))
-        .minus(await nilaiBahanKembaliWo(tx, data.woId))
-    );
-
-    // Penerimaan ini hanya memikul bagiannya dari biaya bahan (dulu: seluruhnya,
-    // pada SETIAP penerimaan sebagian). Penerimaan penutup memikul sisanya.
-    const pembebanan = hitungBiayaPenerimaanFG({
-      totalBiayaBahan: totalMaterialCost,
-      qtyRencana: wo.plannedQty.toString(),
-      sudahDibebankan: wo.receipts.reduce(
-        (s, r) => s.plus(r.totalCostValue?.toString() ?? 0),
-        new Decimal(0)
-      ),
-      sudahDiterima: wo.receipts.reduce((s, r) => s.plus(r.qtyReceived.toString()), new Decimal(0)),
+    // Biaya lengkap penerimaan ini (keputusan sementara pemilik 34 — ongkos
+    // jahit masuk HPP): bahan sebanding setoran (penerimaan penutup memikul
+    // sisanya; bahan yang sudah kembali ke gudang tidak ikut), jasa langkah WO
+    // dan biaya tambahan per pcs lolos. Dasarnya dibaca di transaksi ini juga.
+    const dasarBiaya = await bacaDasarBiayaPenerimaan(tx, data.woId);
+    if (!dasarBiaya) throw new ProduksiDitolakError('WO_TIDAK_DITEMUKAN');
+    const tanggalTerima = new Date();
+    const rincian = rincianBiayaPenerimaan(dasarBiaya, {
       qtyDiterima: data.qtyReceived,
       qtyLolos: Math.max(qtyAccepted, 0),
+      tanggal: tanggalTerima,
     });
-    const receiptCost = pembebanan.biaya;
-    const avgCostPerUnit = pembebanan.biayaPerUnit;
+    const receiptCost = rincian.total;
+    const avgCostPerUnit = rincian.perUnit;
 
     const receipt = await tx.fGReceipt.create({
       data: {
@@ -1448,10 +1435,15 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
           data.skuBreakdown && data.skuBreakdown.length > 0
             ? data.skuBreakdown
             : undefined,
-        materialCost: receiptCost.toNumber(),
+        // `serviceCost` = TAGIHAN jasa pemasok (hutang, termasuk PPN yang dipungutnya);
+        // PPN Masukan = bahan + jasa + tambahan − totalCostValue (`komponenJurnalPenerimaan`).
+        materialCost: rincian.bahan.toNumber(),
+        serviceCost: rincian.jasa.tagihan.toNumber(),
+        additionalCost: rincian.tambahan.toNumber(),
         avgCostPerUnit: avgCostPerUnit.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
         totalCostValue: receiptCost.toNumber(),
-        receivedById: userId
+        receivedById: userId,
+        receivedAt: tanggalTerima,
       }
     });
 
@@ -1482,17 +1474,22 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
       }
     });
 
+    // Ringkasan per langkah di halaman WO: pcs lolos × harga per pcs (nilai jasa
+    // sebelum PPN yang ditambahkan pemasok). Hutang jasa yang sebenarnya dijurnal
+    // per penerimaan (`FGReceipt.serviceCost`, `lib/production/hutang-jasa-queries.ts`).
     const steps = await tx.workOrderStep.findMany({
       where: { woId: data.woId },
       select: { id: true, servicePrice: true },
     });
     for (const step of steps) {
-      const price = Number(step.servicePrice);
       await tx.workOrderStep.update({
         where: { id: step.id },
         data: {
           qty: newActualQty,
-          totalCost: price * newActualQty,
+          totalCost: new Decimal(step.servicePrice.toString())
+            .mul(newActualQty)
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+            .toNumber(),
         },
       });
     }
@@ -1608,13 +1605,17 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
     const woCompleted = newActualQty >= Number(wo.plannedQty);
 
     let recalcOutboxRowId: string | null = null;
-    // Penerimaan tanpa biaya (semua biaya sudah dipikul penerimaan sebelumnya)
+    // Harga jual otomatis tetap dihitung dari biaya BAHAN per pcs, bukan HPP
+    // lengkap: ongkos jahit yang kini masuk HPP tidak boleh menaikkan harga jual
+    // diam-diam (margin barang ditetapkan terhadap biaya bahan).
+    // Penerimaan tanpa biaya bahan (semua sudah dipikul penerimaan sebelumnya)
     // bukan dasar harga: harga jual 0 + biaya tambahan jangan sampai terdorong ke Jubelio.
-    if (wo.finishedGoodId && qtyAccepted > 0 && avgCostPerUnit.gt(0)) {
+    const bahanPerUnit = rincian.bahanPerUnit;
+    if (wo.finishedGoodId && qtyAccepted > 0 && bahanPerUnit.gt(0)) {
       const recalc = await recalcItemSellingPrice(tx, {
         itemId: wo.finishedGoodId,
         trigger: "FG_RECEIPT",
-        newAvgCost: avgCostPerUnit.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
+        newAvgCost: bahanPerUnit.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(),
         fgReceiptId: receipt.id,
         changedById: userId,
       });
@@ -1652,36 +1653,9 @@ export async function receiveFG(data: ReceiptFormData, _userId: string) {
     });
   }
 
-  try {
-    const jr = await postFgReceiptJournal(receiveResult.receipt.id, userId);
-    if (!jr.ok && jr.code !== "NOTHING_TO_POST") {
-      const fgReceiptJournalPendingNotification = await prisma.adminNotification.create({
-        data: {
-          category: "JOURNAL_PENDING",
-          severity: "WARNING",
-          title: "FG receipt journal not posted",
-          message: `FG receipt journal could not be posted (${jr.code}${jr.role ? `: ${jr.role}` : ""}). Map the account, then post from the work order.`,
-          metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: jr.code, role: jr.role ?? null },
-        },
-      });
-      void fanOutAdminNotification(fgReceiptJournalPendingNotification);
-    }
-  } catch (e) {
-    try {
-      const fgReceiptJournalErrorNotification = await prisma.adminNotification.create({
-        data: {
-          category: "JOURNAL_PENDING",
-          severity: "WARNING",
-          title: "FG receipt journal errored",
-          message: `FG receipt journal errored (${e instanceof Error ? e.message : "unknown"}). Verify the account mapping, then post from the work order.`,
-          metadata: { receiptId: receiveResult.receipt.id, woId: data.woId, kind: "fg_receipt", reason: "ERROR", role: null },
-        },
-      });
-      void fanOutAdminNotification(fgReceiptJournalErrorNotification);
-    } catch {
-      // best-effort: never fail receiveFG on a journal/notification error
-    }
-  }
+  // Jurnal sesudah commit, best-effort: tidak pernah menggagalkan penerimaan.
+  // Gagal → JOURNAL_PENDING (posting ulang dari halaman WO, atau oleh sapuan).
+  await postFgReceiptJournalAman(receiveResult.receipt.id, userId);
 
   return {
     id: receiveResult.receipt.id,
@@ -1710,7 +1684,7 @@ export async function terimaBarangJadi(data: ReceiptFormData): Promise<TerimaBar
 
 export async function postFgReceiptJournalAction(
   receiptId: string,
-): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+): Promise<HasilPostingPenerimaanFG | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
@@ -1719,11 +1693,21 @@ export async function postFgReceiptJournalAction(
   const receipt = await prisma.fGReceipt.findUnique({ where: { id: receiptId }, select: { woId: true } });
   if (!receipt) return { ok: false, code: "BAD_STATE" };
 
-  const r = await postFgReceiptJournal(receiptId, session.user.id);
-  // Jurnal berdiri → tanda "Jurnal gagal" penerimaan ini selesai (Beranda).
-  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal('FG_RECEIPT', receiptId)]);
+  // Berhasil → tanda "Jurnal gagal" penerimaan ini selesai (Beranda); gagal →
+  // JOURNAL_PENDING (tanpa dobel). Tidak pernah melempar.
+  const r = await postFgReceiptJournalAman(receiptId, session.user.id);
   revalidatePath(`/backoffice/work-orders/${receipt.woId}`);
   return r;
+}
+
+/**
+ * Dasar pratinjau biaya di layar Terima barang jadi — angka yang sama dengan
+ * yang akan dicatat `receiveFG` (`rincianBiayaPenerimaan`), termasuk ongkos
+ * jahit dan pengaturan PPN. Izin sama dengan menerima barang jadi.
+ */
+export async function getDasarBiayaPenerimaan(woId: string): Promise<DasarBiayaPenerimaan | null> {
+  await wajibBolehBaca([PERMISSIONS.WORK_ORDERS_MANAGE]);
+  return bacaDasarBiayaPenerimaan(prisma, woId);
 }
 
 export type KodeTolakBatalWo =

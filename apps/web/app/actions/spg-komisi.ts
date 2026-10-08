@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { periodeSah } from "@/lib/spg/komisi";
 import { tandaiKomisiDibayar, tetapkanKomisiToko, type KodeTolakTetapkan } from "@/lib/spg/komisi-writer";
+import { kaitBayarKomisiSpg, kaitKomisiSpg } from "@/lib/finance/operasional/kait";
 
 /**
  * Komisi SPG toko putus — kantor. Melihat = `spg_sales:view` (halamannya);
@@ -36,6 +37,8 @@ export async function tetapkanKomisiSpgAction(isi: { storeId: unknown; periode: 
   if (typeof isi?.storeId !== "string" || !isi.storeId || !periodeSah(isi.periode)) return { ok: false, code: "INVALID" };
   const h = await tetapkanKomisiToko({ storeId: isi.storeId, periode: isi.periode, olehUserId: g.userId });
   if (!h.ok) return h;
+  // Komisi toko × bulan ini ke buku besar (diselaraskan: penetapan ulang membuat penyesuaian).
+  await kaitKomisiSpg(isi.storeId, isi.periode, g.userId);
   segarkan();
   return { ok: true, ulang: h.ulang, ditulis: h.ditulis, dihapus: h.dihapus };
 }
@@ -47,6 +50,7 @@ export async function tandaiKomisiSpgDibayarAction(isi: { commissionId: unknown;
   if (isi.catatan !== undefined && isi.catatan !== null && typeof isi.catatan !== "string") return { ok: false, code: "INVALID" };
   const h = await tandaiKomisiDibayar({ commissionId: isi.commissionId, olehUserId: g.userId, catatan: isi.catatan });
   if (!h.ok) return h;
+  await kaitBayarKomisiSpg(isi.commissionId, g.userId);
   segarkan();
   return { ok: true };
 }

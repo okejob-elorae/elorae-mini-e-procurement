@@ -30,6 +30,14 @@ describe("peran wajib dan opsional", () => {
     expect(PERAN_OPSIONAL).toContain("MARKETPLACE_FEE_OTHER");
     expect(PERAN_WAJIB).toHaveLength(11);
   });
+
+  it("peran akuntansi & pajak lengkap (2026-10-08) semuanya opsional — tidak mengubah 11 peran wajib", () => {
+    for (const p of ["PPN_KELUARAN", "PPN_MASUKAN", "AR_STORE", "FIXED_ASSET", "RETAINED_EARNINGS", "PPH22_PREPAID", "PPH25_PREPAID"] as const) {
+      expect(PERAN_OPSIONAL).toContain(p);
+      expect(PERAN_WAJIB).not.toContain(p);
+    }
+    expect(new Set(PERAN_OPSIONAL).size).toBe(PERAN_OPSIONAL.length);
+  });
 });
 
 describe("nilaiKesiapan", () => {
@@ -38,8 +46,8 @@ describe("nilaiKesiapan", () => {
     expect(k.aktif).toBe(false);
     expect(k.alasan).toEqual(["PEMETAAN", "TANPA_JURNAL", "TANPA_TANGGAL_MULAI"]);
     expect(k.jumlahTerpetakan).toBe(0);
-    // 17 peran inti + 5 peran Ruang KOL (opsional).
-    expect(k.totalPeran).toBe(22);
+    // 17 peran inti + 5 peran Ruang KOL + 32 peran akuntansi & pajak lengkap (opsional).
+    expect(k.totalPeran).toBe(54);
     expect(k.jumlahWajibTerpetakan).toBe(0);
     expect(k.totalPeranWajib).toBe(11);
     expect(k.peranWajibBelum).toEqual(SEMUA_WAJIB);
@@ -165,5 +173,32 @@ describe("adaMutasiLabaRugi — keadaan kosong Laba Rugi (layar dan cetak sama)"
   it("beban saja (biaya 75 rb) juga berisi", () => {
     const report = buildIncomeStatement([baris("1101", "ASET", 0, 75_000), baris("6101", "BEBAN", 75_000, 0)]);
     expect(adaMutasiLabaRugi(report)).toBe(true);
+  });
+});
+
+describe("status PKP di kesiapan buku besar (pajak, 2026-10-08)", () => {
+  const lengkap = { peranTerpetakan: [...PERAN_WAJIB], jumlahJurnal: 5, tanggalMulai: "2026-08-01", jurnalTertunda: 0 };
+
+  it("tanpa status (tidak dibaca) perilakunya sama seperti sebelum PPN ada", () => {
+    const k = nilaiKesiapan(lengkap);
+    expect(k.aktif).toBe(true);
+    expect(perluSpanduk(k)).toBe(false);
+  });
+
+  it("belum ditetapkan: buku besar tetap aktif, tetapi spanduk tampil", () => {
+    const k = nilaiKesiapan({ ...lengkap, statusPkp: "BELUM_DITETAPKAN" });
+    expect(k.aktif).toBe(true);
+    expect(perluSpanduk(k)).toBe(true);
+    expect(perluSpanduk(nilaiKesiapan({ ...lengkap, statusPkp: "NON_PKP" }))).toBe(false);
+  });
+
+  it("PKP: peran PPN ikut wajib — tanpa pemetaannya buku besar belum aktif", () => {
+    const k = nilaiKesiapan({ ...lengkap, statusPkp: "PKP" });
+    expect(k.aktif).toBe(false);
+    expect(k.peranWajibBelum).toEqual(["PPN_KELUARAN", "PPN_MASUKAN", "PPN_PAYABLE"]);
+    expect(k.totalPeranWajib).toBe(PERAN_WAJIB.length + 3);
+    const siap = nilaiKesiapan({ ...lengkap, statusPkp: "PKP", peranTerpetakan: [...PERAN_WAJIB, "PPN_KELUARAN", "PPN_MASUKAN", "PPN_PAYABLE"] });
+    expect(siap.aktif).toBe(true);
+    expect(perluSpanduk(siap)).toBe(false);
   });
 });

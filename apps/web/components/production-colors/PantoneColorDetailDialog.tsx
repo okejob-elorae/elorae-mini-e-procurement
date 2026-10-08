@@ -114,8 +114,8 @@ export function PantoneColorDetailDialog({
         </DialogTitle>
 
         {loading && (
-          <p className="px-6 py-12 text-center text-sm text-muted-foreground">
-            Loading…
+          <p className="px-6 py-12 text-center text-sm text-muted-foreground" role="status">
+            {t("memuatWarna")}
           </p>
         )}
 
@@ -223,7 +223,7 @@ export function PantoneColorDetailDialog({
                     {t("gradientTitle")}
                   </div>
                   <span className="text-xs text-muted-foreground">
-                    {t("gradientCopyHint")}
+                    {t("gradientSalinHint")}
                   </span>
                 </div>
                 <div className="grid w-full min-w-0 grid-cols-10 gap-1 rounded-md border p-1">
@@ -234,6 +234,7 @@ export function PantoneColorDetailDialog({
                       className="h-10 min-w-0 w-full rounded-sm hover:opacity-90"
                       style={{ backgroundColor: h }}
                       title={h}
+                      aria-label={t("salinHexCip", { hex: h.toUpperCase() })}
                       onClick={() => copy(h)}
                     />
                   ))}

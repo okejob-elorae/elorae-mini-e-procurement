@@ -55,7 +55,10 @@ export type BarisPerformaCsv = {
   docNo: string;
   tahap: Tahap;
   jenis: JenisKerjaSama;
+  /** Fee yang disepakati (neto untuk gross-up, bruto untuk dipotong). */
   fee: number;
+  /** PPh gross-up yang ditanggung Elorae (0 bila dipotong). */
+  pphGrossUp: number;
   views: number;
   jumlahKonten: number;
   orders: number;
@@ -84,7 +87,8 @@ export function csvPerforma(baris: readonly BarisPerformaCsv[], periode: { dari:
     "No. kolaborasi",
     "Tahap",
     "Jenis",
-    "Fee",
+    "Fee disepakati",
+    "PPh gross-up",
     "Konten",
     "Views",
     "Order",
@@ -107,6 +111,7 @@ export function csvPerforma(baris: readonly BarisPerformaCsv[], periode: { dari:
     LABEL_TAHAP[b.tahap],
     LABEL_JENIS[b.jenis],
     b.fee,
+    b.pphGrossUp,
     b.jumlahKonten,
     b.views,
     b.orders,
@@ -133,6 +138,7 @@ export function csvPerforma(baris: readonly BarisPerformaCsv[], periode: { dari:
     "",
     "",
     jumlah((b) => b.fee),
+    jumlah((b) => b.pphGrossUp),
     baris.reduce((s, b) => s + b.jumlahKonten, 0),
     views,
     baris.reduce((s, b) => s + b.orders, 0),

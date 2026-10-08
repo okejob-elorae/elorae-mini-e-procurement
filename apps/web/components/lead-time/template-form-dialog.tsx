@@ -104,11 +104,11 @@ export function TemplateFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{initial ? t("name") : t("name")}</DialogTitle>
+          <DialogTitle>{initial ? t("editTitle") : t("createTitle")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label>{t("name")}</Label>
+            <Label>{t("nameV2")}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div className="space-y-1">
@@ -122,7 +122,7 @@ export function TemplateFormDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="FIXED">{t("fixed")}</SelectItem>
-                <SelectItem value="PER_QTY">{t("perQty")}</SelectItem>
+                <SelectItem value="PER_QTY">{t("perQtyV2")}</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -101,7 +101,7 @@ export function ReconcileVanForm({ canvasserId, rows }: Props) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>{t("colItem")}</TableHead>
+              <TableHead>{t("kolomBarang")}</TableHead>
               <TableHead className="text-right">{t("colExpected")}</TableHead>
               <TableHead className="text-right">{t("colCounted")}</TableHead>
               <TableHead className="text-right">{t("colVariance")}</TableHead>

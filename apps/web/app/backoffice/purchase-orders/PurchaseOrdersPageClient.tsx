@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useLocale, useTranslations } from 'next-intl';
 import { 
@@ -57,6 +57,7 @@ import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { cn } from '@/lib/utils';
 import { formatDisplayDate } from '@/lib/date-only';
 import { parsePOStatusFilter, type POStatusFilter } from '@/lib/purchase-orders/overdue';
+import { alamatDaftarPo } from '@/lib/purchase-orders/cari-po';
 
 export interface PurchaseOrder {
   id: string;
@@ -100,11 +101,13 @@ export function PurchaseOrdersPageClient({
   initialTotalCount,
   initialPage = 1,
   initialStatus = '',
+  initialCari = '',
 }: {
   initialPOs?: PurchaseOrder[];
   initialTotalCount?: number;
   initialPage?: number;
   initialStatus?: POStatusFilter;
+  initialCari?: string;
 } = {}) {
   const { data: session } = useSession();
   const tToasts = useTranslations('toasts');
@@ -117,23 +120,12 @@ export function PurchaseOrdersPageClient({
   // PO yang statusnya baru berubah (dikirim, dibatalkan, atau di halaman rinciannya) menyala sebentar.
   const { sorot, tandai } = useSorotBaris('po', pos.map((po) => ({ id: po.id, tanda: po.status })));
   const [isLoading, setIsLoading] = useState(!initialPOs);
-  const [searchQuery, setSearchQuery] = useState('');
+  /** Isi kotak cari (setiap ketukan). */
+  const [searchQuery, setSearchQuery] = useState(initialCari);
+  /** Kata kunci yang dikirim ke server — sesudah jeda mengetik. */
+  const [cariAktif, setCariAktif] = useState(initialCari);
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [statusFilter, setStatusFilterState] = useState<POStatusFilter>(initialStatus);
-  // Saringan ditulis balik ke URL (replace, bukan push): tautannya bisa dibagikan
-  // dan "Kembali" tidak berjalan mundur melewati setiap pilihan saringan.
-  const setStatusFilter = (next: POStatusFilter) => {
-    setStatusFilterState(next);
-    const params = new URLSearchParams(searchParams.toString());
-    if (next) params.set('status', next);
-    else params.delete('status');
-    const qs = params.toString();
-    // `history.replaceState`, bukan `router.replace`: Next menyelaraskannya
-    // dengan useSearchParams tanpa memuat ulang halaman server — saringan ini
-    // bekerja di klien, jadi perjalanan ke server hanya membuang waktu.
-    window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
-  };
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [cancelTargetId, setCancelTargetId] = useState<string | null>(null);
   const [cancelTargetDoc, setCancelTargetDoc] = useState('');
@@ -142,16 +134,29 @@ export function PurchaseOrdersPageClient({
   const [page, setPage] = useState(initialPage);
   const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(initialTotalCount ?? 0);
+  /** Hanya jawaban permintaan TERAKHIR yang dipakai (ketikan cepat → jawaban lama datang belakangan). */
+  const permintaanRef = useRef(0);
+  /** Muat pertama sudah dikerjakan server dengan saringan yang sama. */
+  const lewatiMuatAwal = useRef(Boolean(initialPOs));
+
+  const setStatusFilter = (next: POStatusFilter) => {
+    setStatusFilterState(next);
+    setPage(1);
+  };
 
   const fetchPOs = async () => {
+    const nomor = ++permintaanRef.current;
     setIsLoading(true);
     try {
+      // Cari, saring, dan halaman semuanya di server: jumlah halaman dihitung dari hasil saringan.
       const result = await getPOs(
-        statusFilter === 'overdue'
-          ? { overdue: true }
-          : { status: statusFilter || undefined },
+        {
+          ...(statusFilter === 'overdue' ? { overdue: true } : { status: statusFilter || undefined }),
+          ...(cariAktif ? { cari: cariAktif } : {}),
+        },
         { page, pageSize }
       );
+      if (nomor !== permintaanRef.current) return;
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
         setPOs((result as unknown as { items: PurchaseOrder[]; totalCount: number }).items);
         setTotalCount((result as unknown as { items: PurchaseOrder[]; totalCount: number }).totalCount);
@@ -160,21 +165,43 @@ export function PurchaseOrdersPageClient({
         setPOs(list);
         setTotalCount(list.length);
       }
+      /*
+       * Saringan ditulis balik ke alamat SESUDAH jawaban datang (replace, bukan
+       * push): tautannya bisa dibagikan, "Kembali" tidak berjalan mundur melewati
+       * setiap ketikan, dan — penting — `history.replaceState` di Next masuk
+       * antrean router sebagai navigasi yang membuang aksi server yang sedang
+       * berjalan, jadi tidak boleh terjadi saat `getPOs` masih menunggu.
+       */
+      const qs = alamatDaftarPo({ status: statusFilter, cari: cariAktif, halaman: page });
+      if (window.location.search.replace(/^\?/, '') !== qs) {
+        window.history.replaceState(null, '', qs ? `${pathname}?${qs}` : pathname);
+      }
     } catch {
-      toast.error(tPO('loadFailed'));
+      if (nomor === permintaanRef.current) toast.error(tPO('loadFailed'));
     } finally {
-      setIsLoading(false);
+      if (nomor === permintaanRef.current) setIsLoading(false);
     }
   };
 
+  // Jeda mengetik sebelum kata kunci dikirim; setiap kata kunci baru mulai dari halaman 1.
   useEffect(() => {
-    setPage(1);
-  }, [statusFilter]);
+    const k = searchQuery.trim();
+    if (k === cariAktif) return;
+    const id = window.setTimeout(() => {
+      setCariAktif(k);
+      setPage(1);
+    }, 350);
+    return () => window.clearTimeout(id);
+  }, [searchQuery, cariAktif]);
 
   useEffect(() => {
+    if (lewatiMuatAwal.current) {
+      lewatiMuatAwal.current = false;
+      return;
+    }
     fetchPOs();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPOs depends on filters/page
-  }, [statusFilter, page, pageSize]);
+  }, [statusFilter, cariAktif, page, pageSize]);
 
   const handleSubmit = async (id: string) => {
     if (!session?.user?.id) {
@@ -261,16 +288,14 @@ export function PurchaseOrdersPageClient({
     };
   };
 
-  const filteredPOs = pos.filter(po => 
-    po.docNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    po.supplier.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Sudah disaring (cari + status) dan dipotong per halaman di server.
+  const filteredPOs = pos;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        title={tPO('pageTitle')}
+        title={tPO('judulHalaman')}
         actions={
           <Link href="/backoffice/purchase-orders/new">
             <Button>
@@ -286,7 +311,9 @@ export function PurchaseOrdersPageClient({
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
+            type="search"
             placeholder={tPO('searchPlaceholder')}
+            aria-label={tPO('searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="pl-9"
@@ -325,7 +352,7 @@ export function PurchaseOrdersPageClient({
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
           ) : filteredPOs.length === 0 ? (
-            searchQuery || statusFilter ? (
+            cariAktif || statusFilter ? (
               <EmptyState
                 icon={ShoppingCart}
                 title={tPO('emptyFilteredTitle')}
@@ -417,7 +444,10 @@ export function PurchaseOrdersPageClient({
                         Rp {Number(po.grandTotal).toLocaleString('id-ID')}
                         {po.utang && po.utang.utang !== po.utang.nilaiPo && (
                           <div className="text-xs text-muted-foreground">
-                            {tPO('ringkasan.utangSingkat', { nilai: `Rp ${po.utang.utang.toLocaleString('id-ID')}` })}
+                            {/* PO lunas: nilai akhirnya, bukan "Utang" yang terbaca masih terbuka. */}
+                            {tPO(po.paidAt ? 'ringkasan.nilaiAkhirSingkat' : 'ringkasan.utangSingkat', {
+                              nilai: `Rp ${po.utang.utang.toLocaleString('id-ID')}`,
+                            })}
                           </div>
                         )}
                       </TableCell>

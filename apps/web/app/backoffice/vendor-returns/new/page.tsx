@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
@@ -36,7 +36,10 @@ import { toast } from 'sonner';
 import { createVendorReturn, getReturnableFabricRolls, getAvailableRejectQtyByItem } from '@/app/actions/vendor-returns';
 import { getWorkOrders } from '@/app/actions/production';
 import { getItems } from '@/app/actions/items';
-import { getGRNs } from '@/app/actions/grn';
+import { getGRNs, getRincianGRN } from '@/app/actions/grn';
+import { BuktiRetur, PerkiraanNilaiRetur } from '../BuktiDanNilaiRetur';
+import { pisahTautanBukti, type BarisPerkiraan } from '../perkiraan-nilai';
+import { labelPemasok, urutPemasok } from '@/lib/suppliers/label-pemasok';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
@@ -55,6 +58,7 @@ interface WorkOrderOption {
 interface GRNOption {
   id: string;
   docNumber: string;
+  supplierId?: string;
 }
 
 type ItemTypeOption = 'FABRIC' | 'ACCESSORIES' | 'FINISHED_GOOD';
@@ -107,6 +111,12 @@ export default function NewVendorReturnPage() {
     { type: 'FABRIC', itemId: '', rollIds: [], qty: '', reason: '', condition: 'GOOD' }
   ]);
   const [evidenceUrls, setEvidenceUrls] = useState<string>('');
+  // `?grnId=` dari tombol "Retur ke pemasok" di rincian GRN: GRN, pemasok, dan barangnya terisi.
+  const grnIdAwal = useSearchParams().get('grnId') ?? '';
+  const [dariGrn, setDariGrn] = useState<string | null>(null);
+  const [fabricRollOptions, setFabricRollOptions] = useState<
+    Record<string, Array<{ value: string; label: string; qty: number }>>
+  >({});
 
   useEffect(() => {
     const load = async () => {
@@ -129,12 +139,12 @@ export default function NewVendorReturnPage() {
             docNumber: w.docNumber
           }))
         );
-        setGrns(
-          (grnList as { id: string; docNumber: string }[]).map((g) => ({
-            id: g.id,
-            docNumber: g.docNumber,
-          }))
-        );
+        const daftarGrn = (grnList as { id: string; docNumber: string; supplierId?: string }[]).map((g) => ({
+          id: g.id,
+          docNumber: g.docNumber,
+          supplierId: g.supplierId,
+        }));
+        setGrns(daftarGrn);
         const raw =
           Array.isArray(itemsRes) ? itemsRes : (itemsRes as { items?: unknown[] })?.items ?? [];
         const itemList: ItemOption[] = Array.isArray(raw)
@@ -157,6 +167,41 @@ export default function NewVendorReturnPage() {
               }))
           : [];
         setItems(itemList);
+
+        const grnAwal = grnIdAwal ? daftarGrn.find((g) => g.id === grnIdAwal) : undefined;
+        if (grnAwal) {
+          setGrnId(grnAwal.id);
+          if (grnAwal.supplierId) setVendorId(grnAwal.supplierId);
+          setDariGrn(grnAwal.docNumber);
+          // Barang GRN (butuh izin inventori; tanpa itu hanya GRN dan pemasok yang terisi).
+          const rincian = await getRincianGRN(grnAwal.id).catch(() => null);
+          const jenisBarang = new Map(itemList.map((it) => [it.id, it.type]));
+          const baris: FormLine[] = (rincian?.baris ?? []).flatMap((b): FormLine[] => {
+            const jenis = jenisBarang.get(b.itemId);
+            if (jenis === 'FABRIC') return [{ type: 'FABRIC', itemId: b.itemId, rollIds: [], qty: '', reason: '', condition: 'GOOD' }];
+            if (jenis === 'ACCESSORIES') return [{ type: 'ACCESSORIES', itemId: b.itemId, qty: '', reason: '', condition: 'GOOD' }];
+            return [];
+          });
+          if (baris.length > 0) {
+            setLines(baris);
+            // Roll kain yang bisa diretur untuk setiap baris kain (sama dengan memilih barangnya).
+            const kain = [...new Set(baris.filter((b) => b.type === 'FABRIC').map((b) => b.itemId))];
+            const rollPerBarang = await Promise.all(
+              kain.map(async (itemId) => [itemId, await getReturnableFabricRolls(itemId).catch(() => [])] as const)
+            );
+            setFabricRollOptions((prev) => {
+              const baru = { ...prev };
+              for (const [itemId, rolls] of rollPerBarang) {
+                baru[itemId] = rolls.map((r) => ({
+                  value: r.id,
+                  label: `${r.rollRef} (${r.remainingLength.toLocaleString('id-ID')} MTR)`,
+                  qty: r.remainingLength,
+                }));
+              }
+              return baru;
+            });
+          }
+        }
       } catch {
         toast.error(t('form.loadDataFailed'));
       } finally {
@@ -164,6 +209,8 @@ export default function NewVendorReturnPage() {
       }
     };
     load();
+    // grnIdAwal hanya dibaca saat formulir dibuka.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t]);
 
   const addLine = () => {
@@ -192,9 +239,6 @@ export default function NewVendorReturnPage() {
     );
   };
 
-  const [fabricRollOptions, setFabricRollOptions] = useState<
-    Record<string, Array<{ value: string; label: string; qty: number }>>
-  >({});
 
   /** Filter items by line type: FABRIC → fabric items, ACCESSORIES → accessories, FG_REJECT → finished goods. */
   const itemOptionsForLineType = (lineType: LineType): ItemOption[] => {
@@ -290,10 +334,7 @@ export default function NewVendorReturnPage() {
 
     setIsSubmitting(true);
     try {
-      const urls = evidenceUrls
-        .split(/[\n,]/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      const urls = pisahTautanBukti(evidenceUrls);
       const invalidUrl = urls.find((u) => {
         try {
           new URL(u);
@@ -320,12 +361,26 @@ export default function NewVendorReturnPage() {
       );
       toast.success(t('form.created'));
       router.replace('/backoffice/vendor-returns');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('form.createFailed'));
+    } catch {
+      // Pesan lemparan disamarkan di build produksi: selalu teks terjemahan.
+      toast.error(t('form.createFailed'));
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Perkiraan nilai: kain = jumlah panjang roll yang dipilih, lainnya = qty yang diketik.
+  const barisPerkiraan: BarisPerkiraan[] = lines.map((l) => ({
+    type: l.type,
+    itemId: l.itemId,
+    qty:
+      l.type === 'FABRIC'
+        ? (l.rollIds ?? []).reduce(
+            (n, id) => n + ((fabricRollOptions[l.itemId] ?? []).find((o) => o.value === id)?.qty ?? 0),
+            0
+          )
+        : Number(l.qty) || 0,
+  }));
 
   if (isLoading) {
     return (
@@ -344,25 +399,27 @@ export default function NewVendorReturnPage() {
           </Button>
         </Link>
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold">{t('form.newTitle')}</h1>
-          <TombolBantuan judul={t('form.newTitle')} />
+          <h1 className="text-2xl font-bold">{t('form.judulBaru')}</h1>
+          <TombolBantuan judul={t('form.judulBaru')} />
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>{t('form.cardTitle')}</CardTitle>
+            <CardTitle>{t('form.judulKartu')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {dariGrn && <p className="text-sm text-muted-foreground">{t('form.dariGrn', { grn: dariGrn })}</p>}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
                 <Label>{t('form.vendorLabel')}</Label>
                 <SearchableCombobox
-                  options={vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` }))}
+                  options={urutPemasok(vendors).map((v) => ({ value: v.id, label: labelPemasok(v) }))}
                   value={vendorId}
                   onValueChange={setVendorId}
                   placeholder={t('form.selectVendor')}
+                  searchPlaceholder={t('form.cariPemasok')}
                 />
               </div>
               <div className="space-y-2">
@@ -375,6 +432,7 @@ export default function NewVendorReturnPage() {
                   value={woId}
                   onValueChange={setWoId}
                   placeholder={t('form.none')}
+                  searchPlaceholder={t('form.cariPerintahKerja')}
                 />
               </div>
               <div className="space-y-2">
@@ -387,6 +445,7 @@ export default function NewVendorReturnPage() {
                   value={grnId}
                   onValueChange={setGrnId}
                   placeholder={t('form.selectGrn')}
+                  searchPlaceholder={t('form.cariGrn')}
                 />
               </div>
             </div>
@@ -450,6 +509,7 @@ export default function NewVendorReturnPage() {
                               if (lines[i].type === 'FABRIC' && v) void loadFabricRollsForItem(v);
                             }}
                             placeholder={t('form.selectItem')}
+                            searchPlaceholder={t('form.cariBarang')}
                             triggerClassName="min-w-[180px]"
                           />
                         </TableCell>
@@ -471,6 +531,7 @@ export default function NewVendorReturnPage() {
                                 );
                               }}
                               placeholder={t('form.selectRoll')}
+                              searchPlaceholder={t('form.cariRoll')}
                               triggerClassName="min-w-[160px]"
                             />
                           ) : (
@@ -573,26 +634,16 @@ export default function NewVendorReturnPage() {
                 </TableBody>
               </Table>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {t('form.totalValueNote')}
-            </p>
+            <PerkiraanNilaiRetur baris={barisPerkiraan} />
             </div>
 
-            <div className="space-y-2">
-              <Label>{t('form.evidenceLabel')}</Label>
-              <textarea
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={evidenceUrls}
-                onChange={(e) => setEvidenceUrls(e.target.value)}
-                placeholder={t('form.evidencePlaceholder')}
-              />
-            </div>
+            <BuktiRetur teks={evidenceUrls} onTeksChange={setEvidenceUrls} />
           </CardContent>
         </Card>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? t('form.creating') : t('form.createReturn')}
+            {isSubmitting ? t('form.creating') : t('form.tombolBuat')}
           </Button>
           <Link href="/backoffice/vendor-returns">
             <Button type="button" variant="outline">

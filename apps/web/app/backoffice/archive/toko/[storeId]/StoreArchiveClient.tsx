@@ -47,7 +47,7 @@ export function StoreArchiveClient({
           className="mb-2 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          {t('backToArchive')}
+          {t('kembaliKeArsip')}
         </Link>
         <PageHeader
           title={storeName}
@@ -77,11 +77,12 @@ export function StoreArchiveClient({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{t('docNo')}</TableHead>
-                    <TableHead>{t('deliveredAt')}</TableHead>
-                    <TableHead>{t('dueDate')}</TableHead>
+                    <TableHead>{t('kolomNoNota')}</TableHead>
+                    {/* Tanggal nota tagihan, dengan nama yang sama seperti di antrean Faktur pajak. */}
+                    <TableHead>{t('kolomTanggalNota')}</TableHead>
+                    <TableHead>{t('kolomJatuhTempo')}</TableHead>
                     <TableHead className="text-right">{tTable('amount')}</TableHead>
-                    <TableHead>{t('taxInvoice')}</TableHead>
+                    <TableHead>{t('kolomFakturPajak')}</TableHead>
                     <TableHead />
                   </TableRow>
                 </TableHeader>
@@ -96,7 +97,7 @@ export function StoreArchiveClient({
                             {row.orderNo}
                           </span>
                         </TableCell>
-                        <TableCell>{fmtDate(row.deliveredAt)}</TableCell>
+                        <TableCell>{fmtDate(row.invoiceDate)}</TableCell>
                         <TableCell>{fmtDate(row.dueDate)}</TableCell>
                         <TableCell className="text-right">
                           Rp {Math.round(row.total).toLocaleString('id-ID')}

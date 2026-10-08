@@ -214,12 +214,12 @@ export default function VendorReturnsPage() {
     <div className="space-y-6">
       {/* Header */}
       <PageHeader
-        title={t('pageTitle')}
+        title={t('judul')}
         actions={
           <Link href="/backoffice/vendor-returns/new">
             <Button>
               <Plus className="mr-2 h-4 w-4" />
-              {t('newReturn')}
+              {t('buatRetur')}
             </Button>
           </Link>
         }
@@ -271,7 +271,7 @@ export default function VendorReturnsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Package className="h-5 w-5" />
-            {t('listTitle')}
+            {t('judulDaftar')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -296,7 +296,7 @@ export default function VendorReturnsPage() {
                       <TableHead className="text-right">{tUi('totalValue')}</TableHead>
                       <TableHead>{tTable('status')}</TableHead>
                       <TableHead>{t('colCreated')}</TableHead>
-                      <TableHead className="sticky right-0 w-[100px] bg-card">{tUi('actions')}</TableHead>
+                      <TableHead className="sticky right-0 w-[100px] bg-card">{t('colAksi')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -317,7 +317,6 @@ export default function VendorReturnsPage() {
                               <div className="flex flex-col gap-0.5">
                                 {r.wo && (
                                   <span>
-                                    <span className="text-muted-foreground">{t('refWo')} </span>
                                     <Link
                                       href={`/backoffice/work-orders/${(r.wo as { id: string }).id}`}
                                       className={TAUTAN_DOKUMEN}
@@ -328,7 +327,6 @@ export default function VendorReturnsPage() {
                                 )}
                                 {r.po && (
                                   <span>
-                                    <span className="text-muted-foreground">{t('refPo')} </span>
                                     <Link href={`/backoffice/purchase-orders/${r.po.id}`} className={TAUTAN_DOKUMEN}>
                                       {r.po.docNumber}
                                     </Link>

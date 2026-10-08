@@ -172,7 +172,7 @@ export function KontrabonClient({
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t('pageTitle')}
+        title={t('judulHalaman')}
         meta={t('summary', { running: jumlah.berjalan, late: jumlah.lewat })}
         actions={
           bolehMengelola ? (
@@ -273,7 +273,9 @@ export function KontrabonClient({
                             <span
                               className={cn(
                                 'block text-xs',
-                                terlambat ? 'text-destructive' : 'text-muted-foreground',
+                                // Teks 12 px di baris berlatar merah tipis: warna
+                                // `destructive` turun ke ±4,25:1 — merah-700 tetap ≥ 4,5:1.
+                                terlambat ? 'font-medium text-red-700 dark:text-red-400' : 'text-muted-foreground',
                               )}
                             >
                               {terlambat
@@ -313,10 +315,21 @@ export function KontrabonClient({
                                    uangnya sudah masuk — penulis menolaknya juga,
                                    tombolnya dimatikan supaya alasannya terbaca. */
                                 title={b.sisaSekarang > 0 ? t('finishBlocked') : undefined}
+                                aria-describedby={b.sisaSekarang > 0 ? `selesai-terhalang-${b.id}` : undefined}
                                 onClick={() => tutup(b.id, 'SELESAI')}
                               >
                                 {t('finish')}
                               </Button>
+                              {/* Alasan tombol mati terlihat, bukan hanya di tooltip
+                                  yang tidak terbaca di layar sentuh. */}
+                              {b.sisaSekarang > 0 && (
+                                <span
+                                  id={`selesai-terhalang-${b.id}`}
+                                  className="max-w-[9rem] whitespace-normal text-xs text-muted-foreground"
+                                >
+                                  {t('selesaiTerhalangSingkat')}
+                                </span>
+                              )}
                               <Button
                                 size="sm"
                                 variant="ghost"

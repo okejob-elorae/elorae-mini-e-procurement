@@ -107,6 +107,37 @@ const KASUS_JURNAL: { nama: string; metadata: Record<string, unknown>; href: str
     metadata: { docId: "kirim-1", kind: "kol_sampel", reason: "UNMAPPED_ROLE", role: "KOL_EXPENSE", collabId: "kolab-1" },
     href: "/backoffice/kreatif/kolaborasi/kolab-1?tab=pembayaran",
   },
+  // Jurnal lapangan (lib/finance/lapangan/tertunda.ts): posting ulang di layar rekonsiliasi piutang.
+  ...(["nota_putus", "bkm_lapangan", "retur_toko", "tukar_barang"] as const).map((kind) => ({
+    nama: `jurnal lapangan ${kind}`,
+    metadata: { docId: `${kind}-1`, kind, reason: "UNMAPPED_ROLE", role: "AR_STORE", docNo: "X/1" },
+    href: "/backoffice/finance/rekonsiliasi-piutang#tertunda",
+  })),
+  // Jurnal operasional (lib/finance/operasional/tertunda.ts): posting ulang di layar rekonsiliasi persediaan.
+  ...(
+    [
+      "konsi_kirim",
+      "konsi_pesanan",
+      "konsi_retur",
+      "konsi_siklus",
+      "konsi_komisi",
+      "konsi_gaji_bayar",
+      "konsi_bayar_toko",
+      "komisi_spg",
+      "komisi_spg_bayar",
+      "barang_hilang",
+      "potong_sales",
+      "gudang_rusak",
+      "stok_manual",
+      "retur_pemasok",
+      "biaya_perjalanan",
+      "biaya_perjalanan_bayar",
+    ] as const
+  ).map((kind) => ({
+    nama: `jurnal operasional ${kind}`,
+    metadata: { docId: `${kind}-1`, kind, reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT", docNo: "X/1" },
+    href: "/backoffice/finance/rekonsiliasi-persediaan#tertunda",
+  })),
 ];
 
 describe("getNotificationHref — JOURNAL_PENDING menaut ke dokumennya", () => {

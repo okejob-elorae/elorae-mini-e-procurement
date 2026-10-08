@@ -31,6 +31,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { tautanPiutang } from '@/lib/receivables/tindakan-dasbor';
 import {
   Select,
   SelectContent,
@@ -97,6 +98,7 @@ export function RincianKlaimClient({
   koreksi = null,
   riwayat = [],
   pemeriksaSama = false,
+  bolehBacaPiutang = false,
 }: {
   data: RincianKlaim;
   /** `null` kalau klaim ini bukan giro. */
@@ -118,6 +120,8 @@ export function RincianKlaimClient({
    * di server dari sesi). Tombol putusan tetap tampil tapi mati dengan alasannya.
    */
   pemeriksaSama?: boolean;
+  /** Boleh membuka Faktur & piutang — nomor faktur jadi tautan ke sana. */
+  bolehBacaPiutang?: boolean;
 }) {
   const t = useTranslations('payments');
   const tPesan = useTranslations('pesanToko');
@@ -185,7 +189,7 @@ export function RincianKlaimClient({
                 .join(' · ')}
             </span>
             <span className="mt-1 inline-flex">
-              <StatusPill tone={NADA[data.status]}>{t(`status${data.status}` as never)}</StatusPill>
+              <StatusPill tone={NADA[data.status]}>{t(`keadaan${data.status}` as never)}</StatusPill>
             </span>
           </>
         }
@@ -383,7 +387,21 @@ export function RincianKlaimClient({
               <TableBody>
                 {data.faktur.map((f) => (
                   <TableRow key={f.id}>
-                    <TableCell className="font-medium">{f.invoiceNo}</TableCell>
+                    <TableCell>
+                      {/* Ke daftar piutang yang tersaring pada faktur ini — keadaan
+                          dan alasannya terbaca di sana tanpa mencari lagi. Keuangan
+                          yang hanya memverifikasi tidak boleh membukanya. */}
+                      {bolehBacaPiutang ? (
+                        <Link
+                          href={tautanPiutang({ cari: f.invoiceNo })}
+                          className="whitespace-nowrap font-medium text-foreground underline decoration-primary underline-offset-2 hover:decoration-2"
+                        >
+                          {f.invoiceNo}
+                        </Link>
+                      ) : (
+                        <span className="font-medium">{f.invoiceNo}</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums text-muted-foreground">
                       {rupiah(f.nilaiFaktur)}
                     </TableCell>

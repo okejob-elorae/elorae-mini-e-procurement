@@ -376,7 +376,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
               {suggestions.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    {t("emptyTable")}
+                    {t("tabelKosong")}
                   </TableCell>
                 </TableRow>
               )}

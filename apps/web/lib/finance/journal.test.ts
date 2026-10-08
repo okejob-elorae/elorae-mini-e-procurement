@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { generateAutoJournal } from "./journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "./journals/mapping-test-fixture";
 
@@ -9,14 +9,18 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 d("generateAutoJournal (test bed only)", () => {
-  let token: string;
-  let userId: string;
-  let inventoryId: string;
-  let varianceId: string;
+  let token = "";
+  let userId = "";
+  let inventoryId = "";
+  let varianceId = "";
   let mappingSnapshot: MappingSnapshot;
   const sourceId = () => `test-src-${token}`;
 
   beforeEach(async () => {
+    /* Kosongkan dulu: hook yang gagal di tengah hanya membersihkan yang benar-benar dibuatnya. */
+    userId = "";
+    inventoryId = "";
+    varianceId = "";
     token = Math.floor(Math.random() * 10_000_000).toString();
     mappingSnapshot = await snapshotMappings(["INVENTORY", "INVENTORY_VARIANCE"]);
     const user = await prisma.user.create({
@@ -47,17 +51,17 @@ d("generateAutoJournal (test bed only)", () => {
 
   afterEach(async () => {
     const journals = await prisma.journal.findMany({
-      where: { postedById: userId },
+      where: { postedById: seededId(userId) },
       select: { id: true },
     });
     const journalIds = journals.map((j) => j.id);
     if (journalIds.length) {
-      await prisma.journalLine.deleteMany({ where: { journalId: { in: journalIds } } });
-      await prisma.journal.deleteMany({ where: { id: { in: journalIds } } });
+      await prisma.journalLine.deleteMany({ where: { journalId: { in: seededIds(journalIds) } } });
+      await prisma.journal.deleteMany({ where: { id: { in: seededIds(journalIds) } } });
     }
     await restoreMappings(mappingSnapshot);
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [inventoryId, varianceId] } } });
-    await prisma.user.delete({ where: { id: userId } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(inventoryId), seededId(varianceId)] } } });
+    if (userId) await prisma.user.delete({ where: { id: seededId(userId) } });
   });
 
   it("resolves roles and posts a balanced journal", async () => {
@@ -81,6 +85,31 @@ d("generateAutoJournal (test bed only)", () => {
     const totalDebit = j!.lines.reduce((s, l) => s + Number(l.debit), 0);
     const totalCredit = j!.lines.reduce((s, l) => s + Number(l.credit), 0);
     expect(totalDebit).toBe(totalCredit);
+  });
+
+  it("persists the channel and store dimensions on each line; lines without them stay null", async () => {
+    const r = await generateAutoJournal(
+      prisma,
+      "TEST",
+      sourceId(),
+      [
+        { role: "INVENTORY", debit: 300, credit: 0, channel: "KONSINYASI", storeId: "toko-uji-kanal" },
+        { role: "INVENTORY_VARIANCE", debit: 0, credit: 200, channel: "SHOPEE" },
+        { role: "INVENTORY_VARIANCE", debit: 0, credit: 100 },
+      ],
+      { date: new Date(), description: "test", postedById: userId },
+    );
+    expect(r).toMatchObject({ ok: true, created: true });
+    const j = await prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "TEST", sourceId: sourceId() } },
+      include: { lines: { orderBy: [{ debit: "desc" }, { credit: "desc" }] } },
+    });
+    expect(j!.status).toBe("POSTED");
+    expect(j!.lines.map((l) => [Number(l.debit), Number(l.credit), l.channel, l.storeId])).toEqual([
+      [300, 0, "KONSINYASI", "toko-uji-kanal"],
+      [0, 200, "SHOPEE", null],
+      [0, 100, null, null],
+    ]);
   });
 
   it("returns NOTHING_TO_POST for empty lines", async () => {

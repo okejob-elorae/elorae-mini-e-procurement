@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bacaParamKartuStok, tulisParamKartuStok } from "./param-kartu-stok";
+import { alamatBerubah, bacaParamKartuStok, tulisParamKartuStok } from "./param-kartu-stok";
 
 /*
  * Kartu stok dulu tidak bisa dibuka langsung untuk satu barang dan pilihan
@@ -38,5 +38,19 @@ describe("tulisParamKartuStok", () => {
       "itemId=item-1&varian=V-S&dari=2026-01-01&sampai=2026-10-06",
     );
     expect(tulisParamKartuStok({ itemId: "", varian: "", ...BAWAAN }, BAWAAN)).toBe("");
+  });
+});
+
+describe("alamatBerubah", () => {
+  it("alamat yang sama (termasuk urutan lain dan awalan ?) tidak ditulis ulang", () => {
+    expect(alamatBerubah("?itemId=item-1", "itemId=item-1")).toBe(false);
+    expect(alamatBerubah("?varian=V-S&itemId=item-1", "itemId=item-1&varian=V-S")).toBe(false);
+    expect(alamatBerubah("", "")).toBe(false);
+  });
+
+  it("isi berbeda ditulis", () => {
+    expect(alamatBerubah("?itemId=item-1", "itemId=item-2")).toBe(true);
+    expect(alamatBerubah("", "itemId=item-1")).toBe(true);
+    expect(alamatBerubah("?itemId=item-1", "")).toBe(true);
   });
 });

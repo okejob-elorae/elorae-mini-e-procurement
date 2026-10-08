@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { BATAS_CATATAN_GUDANG_RUSAK, KEPUTUSAN_GUDANG_RUSAK } from "@/lib/spg/gudang-rusak";
 import { putuskanGudangRusak } from "@/lib/spg/gudang-rusak-writer";
+import { kaitGudangRusak } from "@/lib/finance/operasional/kait";
 
 /**
  * Kantor memutuskan barang di gudang barang rusak: PERBAIKI (kembali ke stok
@@ -37,6 +38,8 @@ export async function putuskanGudangRusakAction(input: unknown): Promise<HasilGu
   try {
     const hasil = await putuskanGudangRusak({ ...isi.data, olehUserId: session.user.id });
     if (!hasil.ok) return { ok: false, code: hasil.alasan };
+    // Nilai gudang rusak yang keluar ke buku besar (sesudah commit, tidak pernah melempar).
+    await kaitGudangRusak(hasil.gerakId, session.user.id);
     revalidatePath("/backoffice/gudang-rusak");
     if (isi.data.keputusan === "PERBAIKI") revalidatePath("/backoffice/inventory");
     return { ok: true, saldoSesudah: hasil.saldoSesudah };

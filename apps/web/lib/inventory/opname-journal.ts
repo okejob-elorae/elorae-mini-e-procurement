@@ -26,7 +26,7 @@ export async function postOpnameJournal(
   const delta = await opnameNetDelta(opnameId, client);
   if (Math.abs(delta) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
 
-  const opname = await client.stockOpname.findUnique({ where: { id: opnameId }, select: { docNumber: true, scope: true } });
+  const opname = await client.stockOpname.findUnique({ where: { id: opnameId }, select: { docNumber: true, scope: true, approvedAt: true } });
   // Lingkup opname memakai nama yang sama dengan tipe barang (FINISHED_GOOD / FABRIC / ACCESSORIES).
   const persediaan = peranPersediaan(opname?.scope);
 
@@ -41,9 +41,10 @@ export async function postOpnameJournal(
           { role: persediaan, debit: 0, credit: -delta },
         ];
 
+  // Bertanggal saat opname disetujui (saat kartu stoknya bergerak), bukan saat jurnalnya diposting ulang.
   return generateAutoJournal(client, "OPNAME", opnameId, lines, {
-    date: new Date(),
-    description: `Opname adjustment ${opname?.docNumber ?? opnameId}`,
+    date: opname?.approvedAt ?? new Date(),
+    description: `Selisih stock opname ${opname?.docNumber ?? opnameId}`,
     postedById,
   });
 }

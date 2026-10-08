@@ -160,6 +160,21 @@ describe('daftarBrief — Aturan 1 diterapkan di KUERI', () => {
     expect((await briefSaya()).bebanDiakui).toBe(3_000_000);
   });
 
+  it('beban yang diakui dibaca dari BRUTO termin hidup (gross-up ikut PPh-nya), seperti jurnal', async () => {
+    await prisma.kolPaymentTerm.deleteMany({ where: { collabId: seededId(briefId) } });
+    await prisma.kolPaymentTerm.createMany({
+      data: [
+        { collabId: briefId, urutan: 1, label: 'DP', neto: 1_500_000, bruto: 1_538_462, pph: 38_462, grossUp: true, status: 'DIBAYAR' },
+        { collabId: briefId, urutan: 2, label: 'Pelunasan', neto: 1_500_000, bruto: 1_538_462, pph: 38_462, grossUp: true },
+        { collabId: briefId, urutan: 3, label: 'Lama', neto: 500_000, bruto: 512_821, pph: 12_821, grossUp: true, status: 'BATAL' },
+      ],
+    });
+    // DP sudah dibayar tapi belum tayang: uang muka, belum beban.
+    expect((await briefSaya()).bebanDiakui).toBe(0);
+    await pindahTahapKolaborasi({ kolaborasiId: briefId, ke: 'TAYANG', olehUserId: userId });
+    expect((await briefSaya()).bebanDiakui).toBe(3_076_924);
+  });
+
   it('menjumlahkan deliverable, bukan menghitung barisnya', async () => {
     // Dua reels + satu video = tiga konten, bukan dua baris.
     expect((await briefSaya()).jumlahDeliverable).toBe(3);

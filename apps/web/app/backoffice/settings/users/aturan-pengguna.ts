@@ -33,11 +33,3 @@ export function alasanBelumBisaSimpan(
   if (!draf.roleId) galat.push("PERAN_WAJIB");
   return URUTAN.find((k) => galat.includes(k)) ?? null;
 }
-
-/** Peran bawaan yang punya nama tampilan; peran buatan pemilik tampil dengan namanya sendiri. */
-const PERAN_BAWAAN = ["ADMIN", "PURCHASER", "WAREHOUSE", "PRODUCTION", "SALESMAN", "SPG"] as const;
-
-/** Kunci i18n (relatif `settings.users`) nama tampilan peran, atau null. */
-export function kunciNamaPeran(nama: string): string | null {
-  return (PERAN_BAWAAN as readonly string[]).includes(nama) ? `roleName.${nama}` : null;
-}

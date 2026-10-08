@@ -129,6 +129,8 @@ export function OpnameDetailReviewTable({ lines, isFabric }: OpnameDetailReviewT
                           <div className="text-muted-foreground text-xs mt-0.5 font-mono">
                             {line.sublabel}
                           </div>
+                        ) : line.gabungan ? (
+                          <div className="text-muted-foreground text-xs mt-0.5">{t("tanpaVarian")}</div>
                         ) : null}
                         {line.hadDriftWarning ? (
                           <Badge variant="outline" className="mt-1 text-amber-700 border-amber-300">

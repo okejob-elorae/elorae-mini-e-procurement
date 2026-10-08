@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
 import { hasPermission } from '@/lib/rbac';
 import { bolehAnak, grupUntukRute, navItems } from '@/lib/nav/menu';
+import { entriHalamanAktif, geserAgarTerlihat, geserKeJangkar, idJangkar } from '@/lib/nav/halaman-aktif';
 import { grupTerbuka, saringNav, type ItemTerlabel } from '@/lib/nav/saring';
 import { BAHASA, keadaanTema } from '@/lib/nav/tampilan-pengguna';
 import { bacaFavorit, tulisFavorit, ubahFavorit, BATAS_FAVORIT } from '@/lib/nav/favorit';
@@ -42,6 +43,7 @@ import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
 import { NotificationIcon } from '@/components/notifications/NotificationIcon';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
+import { useNamaPeran } from '@/app/backoffice/settings/rbac/pakai-nama-peran';
 import { useLocaleContext } from '@/components/providers/LocaleProvider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
@@ -109,19 +111,9 @@ export { navItems, bolehAnak } from '@/lib/nav/menu';
 function useCurrentPageLabel(): string | null {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
-  let best: { href: string; key: string } | null = null;
-  for (const item of navItems) {
-    for (const candidate of [
-      { href: item.href, key: item.labelKey },
-      ...(item.children ?? []).map((c) => ({ href: c.href, key: c.labelKey })),
-    ]) {
-      if (candidate.href === '#' || candidate.href === '') continue;
-      if (pathname === candidate.href || pathname.startsWith(`${candidate.href}/`)) {
-        if (!best || candidate.href.length > best.href.length) best = candidate;
-      }
-    }
-  }
-  return best ? tNav(best.key as never) : null;
+  // Anak menang seri atas induknya (Laporan → Neraca Saldo, Data Master → Pemasok).
+  const best = entriHalamanAktif(pathname, navItems);
+  return best ? tNav(best.labelKey as never) : null;
 }
 
 function ThemeDropdownItems() {
@@ -195,6 +187,7 @@ function Sidebar({
   const [cari, setCari] = useState('');
   const [favorit, setFavorit] = useState<string[]>([]);
   const kotakCari = useRef<HTMLInputElement>(null);
+  const daftarMenu = useRef<HTMLElement>(null);
 
   /*
    * Sematan dibaca SETELAH terpasang, bukan saat state dibuat.
@@ -223,6 +216,30 @@ function Sidebar({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- sync nav open state to pathname
     if (key) setOpenNavKey(key);
   }, [pathname]);
+
+  /*
+   * Tautan aktif selalu terlihat. Di laptop 768–800 px menu terakhir sebuah
+   * grup panjang (SPG, Tim Lapangan) berada di bawah tepi menu, jadi orang
+   * tidak melihat di mana ia berada. Diulang sesudah animasi buka/tutup grup,
+   * karena grup lain yang menutup menggeser posisinya.
+   */
+  useEffect(() => {
+    const wadah = daftarMenu.current;
+    if (!wadah) return;
+    const geser = () => {
+      const semua = wadah.querySelectorAll<HTMLElement>('[aria-current="page"]');
+      const aktif = semua[semua.length - 1];
+      if (!aktif) return;
+      const d = geserAgarTerlihat(wadah.getBoundingClientRect(), aktif.getBoundingClientRect());
+      if (d !== 0) wadah.scrollTop += d;
+    };
+    const bingkai = requestAnimationFrame(geser);
+    const tunda = setTimeout(geser, 320);
+    return () => {
+      cancelAnimationFrame(bingkai);
+      clearTimeout(tunda);
+    };
+  }, [pathname, openNavKey]);
 
   /** Yang boleh dilihat pengguna ini. Penyaringan izin selalu lebih dulu. */
   const terizinkan = useMemo(
@@ -296,14 +313,14 @@ function Sidebar({
   }, [favorit, terizinkan, permissions, sedangMencari]);
 
   return (
-    <div className={cn('flex flex-col h-full text-primary-foreground', className)}>
+    <div data-menu-samping className={cn('flex flex-col h-full text-primary-foreground', className)}>
       <div className="flex items-center gap-3 px-4 py-4 border-b border-primary-foreground/20">
         <div className="w-10 h-10 bg-primary-foreground rounded-lg flex items-center justify-center">
           <span className="text-primary font-bold text-lg">E</span>
         </div>
         <div>
           <h1 className="font-bold text-lg">Elorae ERP</h1>
-          <p className="text-xs text-primary-foreground/60">v1.0.0</p>
+          <p className="text-xs text-primary-foreground/75">v1.0.0</p>
         </div>
       </div>
 
@@ -318,7 +335,7 @@ function Sidebar({
           tebakan itu salah separuh waktu. */}
       <div className="px-3 pt-3">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary-foreground/50" />
+          <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary-foreground/75" />
           <input
             ref={kotakCari}
             value={cari}
@@ -326,7 +343,7 @@ function Sidebar({
             onKeyDown={(e) => e.key === 'Escape' && setCari('')}
             placeholder={tNav('cariMenu')}
             aria-label={tNav('cariMenu')}
-            className="w-full rounded-lg bg-primary-foreground/10 py-2 pl-8 pr-8 text-sm text-primary-foreground outline-none transition-colors placeholder:text-primary-foreground/40 focus:bg-primary-foreground/[0.16]"
+            className="w-full rounded-lg bg-primary-foreground/10 py-2 pl-8 pr-8 text-sm text-primary-foreground outline-none transition-colors placeholder:text-primary-foreground/80 focus:bg-primary-foreground/[0.16]"
           />
           {cari && (
             <button
@@ -345,12 +362,12 @@ function Sidebar({
       </div>
 
       <div className="relative flex-1 min-h-0">
-        <nav className="h-full overflow-y-auto py-4 px-3 space-y-1">
+        <nav ref={daftarMenu} className="h-full overflow-y-auto py-4 px-3 space-y-1">
         {/* Sematan. Seseorang membuka tiga halaman yang sama sepanjang hari
             dan tiap kali harus membuka grupnya lagi. */}
         {barisFavorit.length > 0 && (
           <div className="mb-3 space-y-0.5">
-            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/65">
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/80">
               {tNav('favorit')}
             </p>
             {barisFavorit.map((f) => (
@@ -358,6 +375,7 @@ function Sidebar({
                 <Link
                   href={f.href}
                   onClick={onClose}
+                  aria-current={pathname === f.href ? 'page' : undefined}
                   className={cn(
                     'flex items-center gap-3 rounded-lg py-2 pl-3 pr-9 text-sm transition-colors',
                     pathname === f.href
@@ -383,7 +401,7 @@ function Sidebar({
         )}
 
         {sedangMencari && filteredItems.length === 0 && (
-          <p className="px-3 py-6 text-center text-sm text-primary-foreground/50">
+          <p className="px-3 py-6 text-center text-sm text-primary-foreground/80">
             {tNav('cariKosong', { kueri: cari.trim() })}
           </p>
         )}
@@ -406,7 +424,7 @@ function Sidebar({
           const bagian = judulBagian ? (
             <p
               key={`sec-${judulBagian}`}
-              className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/65"
+              className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/80"
             >
               {tNav(judulBagian as never)}
             </p>
@@ -465,6 +483,7 @@ function Sidebar({
                             <Link
                               href={child.href}
                               onClick={onClose}
+                              aria-current={isChildActive ? 'page' : undefined}
                               className={cn(
                                 'flex items-center gap-2 rounded-md py-1.5 pl-2 pr-7 text-sm transition-colors',
                                 isChildActive
@@ -518,6 +537,7 @@ function Sidebar({
             <Link
               href={item.href}
               onClick={onClose}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 isActive
@@ -549,11 +569,66 @@ export function BackofficeShell({
 }) {
   const pageLabel = useCurrentPageLabel();
   const tRole = useTranslations('auth.roles');
+  // Nama peran yang SAMA dengan Pengaturan → Pengguna dan Peran & izin (Keuangan, Admin pajak…);
+  // `auth.roles` hanya mengenal enum lama dan menyebut PURCHASER "Pembeli".
+  const namaPeran = useNamaPeran();
   const tAuth = useTranslations('auth');
   const tNav = useTranslations('navigation');
   const { data: session, status } = useSession();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Laci tertutup setiap kali halaman berganti, lewat jalan mana pun (tautan menu, sematan, tombol kembali).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- menutup laci saat rute berganti
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  /*
+   * Jangkar `#…` di alamat (mis. Pengaturan → Salesman `#target`). Yang
+   * menggulir di kantor adalah `<main>`, bukan dokumen, dan kartu tujuan sering
+   * baru muncul sesudah kerangka muat diganti isi — jadi penggulir bawaan
+   * peramban/Next tidak menemukannya. Ditunggu sampai elemennya ada (paling
+   * lama 5 detik), lalu `<main>` digeser sampai jangkar di tepi atasnya.
+   */
+  const isiHalaman = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const ikuti = () => {
+      const id = idJangkar(window.location.hash);
+      if (!id) return () => {};
+      const geser = () => {
+        const el = document.getElementById(id);
+        const wadah = isiHalaman.current;
+        if (!el || !wadah) return false;
+        wadah.scrollTop += geserKeJangkar(wadah.getBoundingClientRect().top, el.getBoundingClientRect().top);
+        return true;
+      };
+      // Diulang sekali sesudah isi di atasnya selesai dimuat (posisinya bisa bergeser).
+      const ulang = setTimeout(geser, 700);
+      if (geser()) return () => clearTimeout(ulang);
+      const amati = new MutationObserver(() => {
+        if (geser()) amati.disconnect();
+      });
+      amati.observe(document.body, { childList: true, subtree: true });
+      const batas = setTimeout(() => amati.disconnect(), 5000);
+      return () => {
+        amati.disconnect();
+        clearTimeout(batas);
+        clearTimeout(ulang);
+      };
+    };
+    let lepas = ikuti();
+    const gantiHash = () => {
+      lepas();
+      lepas = ikuti();
+    };
+    window.addEventListener('hashchange', gantiHash);
+    return () => {
+      lepas();
+      window.removeEventListener('hashchange', gantiHash);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -605,25 +680,24 @@ export function BackofficeShell({
         <Sidebar permissions={session.user.permissions} />
       </aside>
 
-      {/* Mobile Sidebar */}
-      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
-          <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
-        </SheetContent>
-      </Sheet>
-
       {/* Main Content — min-h-0 so flex-1 + overflow-auto actually scroll inside the viewport */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header */}
         <header className="h-16 shrink-0 border-b bg-card flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
-            <Sheet>
+            {/* Laci menu HP: SATU lembar terkendali. Dulu ada dua — pemicunya membuka
+                lembar yang tidak terkendali, sedangkan memilih halaman menutup lembar
+                yang lain, jadi laci tetap menutupi halaman tujuan. */}
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild className="lg:hidden">
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-5 w-5" />
+                <Button variant="ghost" size="icon" aria-label={tNav('bukaMenu')}>
+                  <Menu aria-hidden className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 bg-primary border-primary-foreground/10">
+              {/* `text-primary-foreground`: tombol tutup lembar (X) mengikuti warna teks menu, terbaca di tema gelap maupun terang. */}
+              <SheetContent side="left" className="p-0 w-64 bg-primary text-primary-foreground border-primary-foreground/10">
+                <SheetTitle className="sr-only">{tNav('judulMenuSamping')}</SheetTitle>
+                <SheetDescription className="sr-only">{tNav('keteranganMenuSamping')}</SheetDescription>
                 <Sidebar permissions={session.user.permissions} onClose={() => setMobileMenuOpen(false)} />
               </SheetContent>
             </Sheet>
@@ -647,7 +721,7 @@ export function BackofficeShell({
                   <div className="hidden sm:block text-left">
                     <p className="text-sm font-medium">{session.user.name || session.user.email}</p>
                     <p className="text-xs text-muted-foreground">
-                      {tRole(userRole as any)}
+                      {session.user.roleName ? namaPeran(session.user.roleName) : tRole(userRole as any)}
                     </p>
                   </div>
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -676,7 +750,7 @@ export function BackofficeShell({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">
+        <main ref={isiHalaman} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">
           {children}
         </main>
         <FcmRegistration />

@@ -31,6 +31,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { BadgeGanda, type UnggahanPertamaTampil } from "./ganda";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 
 const UPLOAD_MARKETPLACES = ["SHOPEE", "TIKTOK"] as const;
 type UploadMarketplace = (typeof UPLOAD_MARKETPLACES)[number];
@@ -163,8 +164,8 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-1">
-          <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-          <TombolBantuan judul={t("pageTitle")} />
+          <h1 className="text-2xl font-bold tracking-tight">{t("judulHalaman")}</h1>
+          <TombolBantuan judul={t("judulHalaman")} />
         </div>
       </div>
 
@@ -321,7 +322,14 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
                         }
                       >
                         <TableCell className="whitespace-nowrap">
-                          {formatDate(row.periodFromIso)} – {formatDate(row.periodToIso)}
+                          {/* Tautan sungguhan: bisa difokus papan ketik dan dibuka di tab baru; klik baris tetap jalan pintas. */}
+                          <Link
+                            href={`/backoffice/finance/settlements/${row.id}`}
+                            className={TAUTAN_DOKUMEN}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {formatDate(row.periodFromIso)} – {formatDate(row.periodToIso)}
+                          </Link>
                         </TableCell>
                         <TableCell className="font-medium">{marketplaceLabel(row.marketplace)}</TableCell>
                         <TableCell className="whitespace-normal min-w-[120px] max-w-[220px]">{row.seller}</TableCell>

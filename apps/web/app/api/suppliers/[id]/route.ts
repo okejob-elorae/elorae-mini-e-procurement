@@ -85,6 +85,7 @@ export async function GET(
     const maskedSupplier = {
       ...supplier,
       bankAccountEnc: supplier.bankAccountEnc ? '***ENCRYPTED***' : null,
+      npwpEnc: supplier.npwpEnc ? '***ENCRYPTED***' : null,
     };
 
     return NextResponse.json(maskedSupplier);

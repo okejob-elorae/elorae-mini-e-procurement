@@ -294,24 +294,38 @@ export function RincianSiklusClient({
         bolehCatatBayar={bolehCatatBayar}
       />
 
-      {/* Dua laporan disandingkan per barang. */}
+      {/* Laporan SPG dan toko: sudah masuk atau belum, dan tombol mencatatnya.
+          Angka per barang TIDAK diulang di sini — kartu pencocokan di bawahnya
+          sudah menyandingkan kedua laporan dengan buku stok dan angka resmi.
+          Dulu dua kartu berdampingan menulis data yang sama dengan dua cara. */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">{t('compareTitle')}</CardTitle>
+          <CardTitle className="text-base">{t('laporanJudul')}</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-2">
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-x-8 gap-y-3">
             {(['SPG', 'TOKO'] as const).map((s) => {
               const ada = s === 'SPG' ? data.laporanSpg : data.laporanToko;
               return (
-                <span key={s} className="inline-flex items-center gap-2">
-                  <StatusPill tone={ada ? 'settled' : 'waiting'}>
+                <span key={s} className="inline-flex items-start gap-2">
+                  <StatusPill
+                    tone={ada ? 'settled' : 'waiting'}
+                    detail={
+                      ada
+                        ? t('laporanRingkas', {
+                            items: ada.length,
+                            pcs: ada.reduce((n, i) => n + i.qty, 0).toLocaleString('id-ID'),
+                          })
+                        : t('laporanBelumMasuk')
+                    }
+                  >
                     {td(`report${s}`)}
                   </StatusPill>
                   {bolehMengelola && !data.terkunci && (
                     <Button
                       size="sm"
                       variant="ghost"
+                      className="-mt-1"
                       onClick={() => {
                         setLaporanTerbuka(s);
                         setBarisLaporan(ada ? ada.map((i) => ({ ...i })) : []);
@@ -324,54 +338,9 @@ export function RincianSiklusClient({
               );
             })}
           </div>
-
-          {data.banding.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t('noReports')}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t('colItem')}</TableHead>
-                    <TableHead className="text-right">{t('colSpg')}</TableHead>
-                    <TableHead className="text-right">{t('colToko')}</TableHead>
-                    <TableHead className="text-right">{t('colGap')}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {data.banding.map((x) => {
-                    const beda = x.selisih !== null && x.selisih > 0;
-                    const sepihak = x.selisih === null;
-                    return (
-                      <TableRow
-                        key={x.itemName}
-                        className={cn((beda || sepihak) && 'bg-destructive/[0.06]')}
-                      >
-                        <TableCell className="font-medium">{x.itemName}</TableCell>
-                        {/* "—" hanya untuk laporan yang belum masuk; barang yang tidak
-                            ada di laporan yang SUDAH masuk berarti nol terjual —
-                            sama dengan kartu pencocokan buku stok di bawahnya. */}
-                        <TableCell className="text-right tabular-nums">
-                          {x.qtySpg ?? (data.laporanSpg ? 0 : '—')}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {x.qtyToko ?? (data.laporanToko ? 0 : '—')}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            'text-right tabular-nums',
-                            beda && 'font-semibold text-destructive',
-                          )}
-                        >
-                          {x.selisih === null ? t('oneSided') : x.selisih === 0 ? '0' : x.selisih}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <p className="text-sm text-muted-foreground">
+            {data.laporanSpg || data.laporanToko ? t('laporanDiCocokkan') : t('noReports')}
+          </p>
         </CardContent>
       </Card>
 

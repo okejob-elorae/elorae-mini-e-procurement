@@ -9,7 +9,7 @@ import { jurnalKolTertunda } from "./jurnal-kol";
 import { bacaTarifPajakKreatif } from "./pajak-pengaturan";
 import { ringkasPajakKol, type RingkasPajakKol } from "./pajak-kol-queries";
 import { bacaTarifInfo, hitungTermin, type JenisPajak, type ModePajak, type TarifInfo, type TarifPajakKreatif } from "./pph";
-import { JALUR_KELUAR, type JenisKerjaSama, type StatusBayar, type Tahap } from "./tahap";
+import { feeDiakui, JALUR_KELUAR, type JenisKerjaSama, type StatusBayar, type Tahap } from "./tahap";
 import { selisihHari } from "./tenggat";
 import { jatuhTempoTermin, nilaiBasis, type PemicuTermin, type StatusTermin } from "./termin-aturan";
 import { UKURAN_HALAMAN_TERMIN, type ChipTermin } from "./termin-param";
@@ -235,24 +235,60 @@ function urutkan(a: BarisTermin, b: BarisTermin): number {
   );
 }
 
-export type RingkasTerminDaftar = { jumlah: number; bruto: number; pph: number; neto: number; belumNeto: number; belumJumlah: number };
+export type RingkasTerminDaftar = {
+  jumlah: number;
+  /** Σ jumlah termin dalam basis fee = fee yang DISEPAKATI (neto untuk gross-up, bruto untuk dipotong). */
+  fee: number;
+  /** Σ bruto = biaya bruto fee termasuk PPh gross-up. */
+  bruto: number;
+  pph: number;
+  /** PPh termin dipotong (dipotong dari KOL). */
+  pphDipotong: number;
+  /** PPh termin gross-up (ditanggung Elorae, menambah biaya). */
+  pphDitanggung: number;
+  neto: number;
+  /** Bruto termin yang SUDAH menjadi beban: kolaborasinya sudah tayang (aturan jurnal `feeDiakui`). */
+  bebanDiakui: number;
+  belumNeto: number;
+  belumJumlah: number;
+};
 
-function ringkas(baris: readonly BarisTermin[]): RingkasTerminDaftar {
+/** Ringkasan termin yang tampil — dipakai kartu Pembayaran; murni, diekspor untuk diuji. */
+export function ringkasTermin(baris: readonly Pick<BarisTermin, "jumlah" | "bruto" | "pph" | "neto" | "grossUp" | "status" | "tahap">[]): RingkasTerminDaftar {
+  let fee = 0;
   let bruto = 0;
   let pph = 0;
+  let pphDipotong = 0;
+  let pphDitanggung = 0;
   let neto = 0;
+  let bebanDiakui = 0;
   let belumNeto = 0;
   let belumJumlah = 0;
   for (const b of baris) {
+    fee += keSen(b.jumlah);
     bruto += keSen(b.bruto);
     pph += keSen(b.pph);
+    if (b.grossUp) pphDitanggung += keSen(b.pph);
+    else pphDipotong += keSen(b.pph);
     neto += keSen(b.neto);
+    if (b.status !== "BATAL" && feeDiakui(b.tahap)) bebanDiakui += keSen(b.bruto);
     if (b.status === "BELUM") {
       belumNeto += keSen(b.neto);
       belumJumlah++;
     }
   }
-  return { jumlah: baris.length, bruto: bruto / 100, pph: pph / 100, neto: neto / 100, belumNeto: belumNeto / 100, belumJumlah };
+  return {
+    jumlah: baris.length,
+    fee: fee / 100,
+    bruto: bruto / 100,
+    pph: pph / 100,
+    pphDipotong: pphDipotong / 100,
+    pphDitanggung: pphDitanggung / 100,
+    neto: neto / 100,
+    bebanDiakui: bebanDiakui / 100,
+    belumNeto: belumNeto / 100,
+    belumJumlah,
+  };
 }
 
 /** Semua termin yang cocok saringannya (tanpa halaman), sudah diurut. */
@@ -300,7 +336,7 @@ export async function daftarTermin(
     halaman,
     perHalaman,
     jumlahPerChip,
-    ringkas: ringkas(tersaring),
+    ringkas: ringkasTermin(tersaring),
   };
 }
 

@@ -16,6 +16,7 @@ import { getActorName, notifyStockAdjustmentCreated } from '@/app/actions/notifi
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { kaitStokManual } from "@/lib/finance/operasional/kait";
 
 /**
  * Penjaga aksi baca inventori: butuh sesi dan `inventory:view` — atau salah
@@ -230,6 +231,8 @@ export async function createStockAdjustment(
     ref: adjustmentResult.docNumber,
     userId: effectiveUserId,
   });
+  // Perubahan nilai kartu stok ke buku besar: persediaan vs selisih persediaan (tidak pernah melempar).
+  await kaitStokManual(adjustmentResult.id, effectiveUserId);
 
   getActorName(effectiveUserId)
     .then((triggeredByName) =>
@@ -439,6 +442,8 @@ export type RejectedGoodsRecapRow = {
   refType: string;
   refDocNumber: string;
   woId: string | null;
+  /** Nomor perintah kerja (`woId` saja tidak terbaca orang); null bila WO-nya tidak ada lagi. */
+  woDocNumber: string | null;
   receivedAt: Date;
   notes: string | null;
   createdAt: Date;
@@ -477,6 +482,15 @@ export async function getRejectedGoodsRecap(filters?: {
     }),
     prisma.rejectedGoodsLedger.count({ where }),
   ]);
+  // Satu kueri untuk seluruh halaman: nomor WO menggantikan id mentah di layar.
+  const woIds = [...new Set(rows.map((r) => r.woId).filter((v): v is string => Boolean(v)))];
+  const nomorWo = new Map(
+    woIds.length
+      ? (await prisma.workOrder.findMany({ where: { id: { in: woIds } }, select: { id: true, docNumber: true } })).map(
+          (w) => [w.id, w.docNumber] as const,
+        )
+      : [],
+  );
 
   const items = rows.map((r) => {
     const variantSku = r.variantSku ?? null;
@@ -489,6 +503,7 @@ export async function getRejectedGoodsRecap(filters?: {
       refType: r.refType,
       refDocNumber: r.refDocNumber,
       woId: r.woId,
+      woDocNumber: r.woId ? nomorWo.get(r.woId) ?? null : null,
       receivedAt: r.receivedAt,
       notes: r.notes,
       createdAt: r.createdAt,

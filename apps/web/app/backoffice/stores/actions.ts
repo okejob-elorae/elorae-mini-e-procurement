@@ -17,6 +17,7 @@ import { lingkupPindah, type LingkupPindah } from "@/lib/stores/penanggung-jawab
 import { bacaAturanKelasToko, bacaKelas, KUNCI_KELAS_TOKO, type KelasToko } from "@/lib/stores/kelas-toko";
 import { bacaBatasHari, KUNCI_BATAS_HARI } from "@/lib/salesman/pengaturan";
 import { pindahkanToko } from "@/lib/stores/penanggung-jawab-writer";
+import { pesanValidasiToko } from "./pesan-validasi-toko";
 
 type ActionResult<T = never> = { ok: true; data?: T } | { ok: false; code: string; message: string };
 
@@ -89,7 +90,7 @@ export async function createStoreAction(input: StoreFields): Promise<ActionResul
   if (!gate.ok) return gate;
   const parsed = storeInputSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, code: "validation", message: parsed.error.message };
+    return { ok: false, code: "validation", message: pesanValidasiToko(parsed.error.issues) };
   }
   if (!(await rujukanAda(parsed.data.groupId, parsed.data.salesmanId))) {
     return { ok: false, code: "invalid_ref", message: "Area or salesperson not found." };
@@ -111,7 +112,7 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
   if (!gate.ok) return gate;
   const parsed = storeInputSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, code: "validation", message: parsed.error.message };
+    return { ok: false, code: "validation", message: pesanValidasiToko(parsed.error.issues) };
   }
   if (!(await rujukanAda(parsed.data.groupId, parsed.data.salesmanId))) {
     return { ok: false, code: "invalid_ref", message: "Area or salesperson not found." };

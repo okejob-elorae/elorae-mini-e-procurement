@@ -4,10 +4,10 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/pelunasan-dasbor",
     bagian: "navGroupReceivables",
-    judul: { kunci: "dasborPelunasan.pageTitle" },
+    judul: { kunci: "dasborPelunasan.judulHalaman" },
     isi: [
       { kunci: "dasborPelunasan.pageDescription" },
-      "Kotak angka di atas menunjukkan total piutang (hanya faktur yang belum lunas), faktur yang lewat janji bayar, faktur yang lewat jatuh tempo, klaim yang menunggu verifikasi, nilai yang tertahan retur, dan beban selisih yang belum ditanggung; setiap kotak membuka daftar yang sudah tersaring pada angka itu.",
+      "Kotak angka di atas menunjukkan total piutang (hanya faktur yang belum lunas), faktur yang lewat janji bayar, faktur yang lewat jatuh tempo, BKM yang menunggu verifikasi, nilai faktur yang tertahan retur, nota retur yang masih perlu dikerjakan (cek fisik, jodohkan, atau putuskan), dan beban selisih yang belum ditanggung; setiap kotak membuka daftar yang sudah tersaring pada angka itu.",
       "Lewat janji bayar dan lewat jatuh tempo adalah dua hal berbeda. Lewat janji bayar dihitung dari tanggal janji di kontrabon. Lewat jatuh tempo dihitung dari tanggal jatuh tempo faktur, untuk faktur yang belum dikontrabon, belum dilaporkan bayar, dan tidak tertahan retur.",
       "BKM yang Anda laporkan atau catat sendiri berlabel \"Menunggu rekan Anda\" dan berada di bawah daftar tindakan: admin keuangan lain yang mencocokkannya dengan mutasi rekening.",
       "Klaim pembayaran tidak mengurangi piutang sebelum diverifikasi keuangan, dan potongan retur ditahan sampai gudang selesai menghitung barangnya.",
@@ -17,7 +17,7 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/piutang",
     bagian: "navGroupReceivables",
-    judul: { kunci: "receivables.pageTitle" },
+    judul: { kunci: "receivables.judulHalaman" },
     isi: [
       { kunci: "receivables.pageDescription" },
       "Sisa piutang tidak pernah diketik: setiap kali ada klaim, retur, atau keputusan baru, sisanya dihitung ulang dari seluruh klaim yang menyentuh faktur itu. Toko konsinyasi tidak pernah muncul di sini.",
@@ -59,7 +59,7 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/kontrabon",
     bagian: "navGroupReceivables",
-    judul: { kunci: "collections.pageTitle" },
+    judul: { kunci: "collections.judulHalaman" },
     isi: [
       { kunci: "collections.pageDescription" },
       "Kontrabon tidak mengurangi piutang; ia hanya mencatat bahwa fakturnya sudah dipegang toko. Kontrabon bisa disusun kantor atau dicatat salesman di lapangan. Yang dari lapangan langsung berlaku untuk penagihan, tetapi perlu dikonfirmasi kantor dengan mencocokkan foto lembar tanda terima dengan faktur dan tanggal janjinya.",
@@ -81,12 +81,13 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/pelunasan",
     bagian: "navGroupReceivables",
-    judul: { kunci: "payments.pageTitle" },
+    judul: { kunci: "payments.judulHalaman" },
     isi: [
       { kunci: "payments.pageDescription" },
       "Admin keuangan (izin mengelola jurnal) memverifikasi atau menolak setiap klaim setelah mencocokkannya dengan mutasi rekening. Klaim dengan bilyet giro baru mengurangi piutang setelah gironya cair; giro dikelola di Daftar giro.",
       "Klaim yang salah catat tidak dihapus: dibatalkan dengan alasan, lalu dilaporkan ulang. Menolak berbeda dari membatalkan — menolak berarti uangnya memang tidak ada di rekening.",
       "Kotak cari mencocokkan nomor BKM, toko, salesman, dan nomor giro. Setiap daftar di modul ini menampilkan 25 baris per halaman.",
+      "Angka di tab mengikuti kotak cari. Tautan dari layar lain bisa membawa periode tanggal (keping di samping kotak cari, hapus dengan ×): di tab Terverifikasi periodenya atas tanggal verifikasi, di tab lain atas tanggal transfer di BKM.",
     ],
   },
   {
@@ -131,7 +132,7 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/tugas-tagih",
     bagian: "navGroupReceivables",
-    judul: { kunci: "tugasTagih.pageTitle" },
+    judul: { kunci: "tugasTagih.judulHalaman" },
     isi: [
       { kunci: "tugasTagih.pageDescription" },
       "Orang yang ditugaskan ikut melihat faktur itu di daftar tagihan HP-nya; pemegang toko tetap bisa menagihnya juga. Membuat tugas butuh izin mengelola piutang.",
@@ -151,7 +152,7 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/retur-toko",
     bagian: "navGroupReceivables",
-    judul: { kunci: "storeReturns.pageTitle" },
+    judul: { kunci: "storeReturns.judulHalaman" },
     isi: [
       { kunci: "storeReturns.pageDescription" },
       "Setiap retur adalah dua dokumen: nota retur toko (NRT) yang nomornya milik toko, dan hitungan gudang (NRI) yang nomornya milik kita. Barang bisa tiba lewat ekspedisi mendahului notanya; hitungan gudang seperti itu dijodohkan ke notanya belakangan.",
@@ -198,13 +199,13 @@ export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/beban-selisih",
     bagian: "navGroupReceivables",
-    judul: { kunci: "bebanSelisih.pageTitle" },
+    judul: { kunci: "bebanSelisih.judulHalaman" },
     isi: [{ kunci: "bebanSelisih.pageDescription" }, { kunci: "bebanSelisih.explain" }],
   },
   {
     rute: "/backoffice/arsip-retur",
     bagian: "navGroupReceivables",
-    judul: { kunci: "arsipRetur.pageTitle" },
+    judul: { kunci: "arsipRetur.judulHalaman" },
     isi: [
       { kunci: "arsipRetur.pageDescription" },
       "Penerimaan gudang yang belum punya nota toko dikumpulkan di folder Tanpa Nota Toko. Isi folder bisa ditampilkan sebagai ikon atau daftar.",

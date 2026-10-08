@@ -15,7 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Select, SelectContent, SelectItem, SelectLabel, SelectGroup, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Pager } from "@/components/Pager";
+import { Pagination } from "@/components/ui/pagination";
 import { PilihTampilan } from "@/components/tampilan/PilihTampilan";
 import { TombolWa } from "@/components/kreatif/TombolWa";
 import { ambilFormKolAction } from "@/app/actions/kreatif-kol";
@@ -27,7 +27,6 @@ import {
   alamatSaringKol,
   SEMUA_TIER,
   TAMPILAN_KOL,
-  UKURAN_HALAMAN_KOL,
   URUT_KOL,
   type SaringKol,
   type StatusSaringKol,
@@ -527,14 +526,13 @@ export function KolClient({
           )}
 
           {hasil.total > 0 && (
-            <Pager
-              className="mt-4 px-4 sm:px-0"
+            // Satu bentuk paginasi di seluruh Kreatif (sama dengan Kolaborasi, Pembayaran, Laporan).
+            <Pagination
               page={hasil.halaman}
-              pageSize={hasil.ukuran}
-              total={hasil.total}
-              pageSizeOptions={[...UKURAN_HALAMAN_KOL]}
+              totalPages={Math.max(1, Math.ceil(hasil.total / hasil.ukuran))}
               onPageChange={(p) => pergi({ halaman: p }, "push")}
-              onPageSizeChange={(n) => pergi({ ukuran: n })}
+              totalCount={hasil.total}
+              pageSize={hasil.ukuran}
             />
           )}
         </CardContent>

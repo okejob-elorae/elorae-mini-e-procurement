@@ -61,12 +61,15 @@ import type { CoaTreeNode } from "@/lib/finance/coa/queries";
 import { ACCOUNT_TYPE_VALUES } from "@/lib/constants/enums";
 import type { AccountType } from "@/lib/constants/enums";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { KartuTemplatAkun, type RingkasTemplatAkun } from "./KartuTemplatAkun";
 
 type Props = {
   tree: CoaTreeNode[];
   includeInactive: boolean;
   canManage: boolean;
   canViewLedger: boolean;
+  /** Ringkasan templat bagan akun; null = pembaca tidak berhak memasangnya. */
+  templat?: RingkasTemplatAkun | null;
 };
 
 type CreateDialogState = {
@@ -141,7 +144,7 @@ function StatusBadge({ isActive }: { isActive: boolean }) {
   );
 }
 
-export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger }: Props) {
+export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger, templat = null }: Props) {
   const t = useTranslations("finance.coa");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -454,6 +457,8 @@ export function CoaPageClient({ tree, includeInactive, canManage, canViewLedger 
           </Button>
         )}
       </div>
+
+      {templat ? <KartuTemplatAkun ringkas={templat} /> : null}
 
       <div className="flex flex-col sm:flex-row gap-3">
         <Input

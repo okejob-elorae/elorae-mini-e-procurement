@@ -23,6 +23,7 @@ import {
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { grupTercakup, kunciDeskripsiPeran } from "@/lib/rbac/penjelasan-izin";
 import { EditorPeran, type IzinDb, type ModeEditor } from "./EditorPeran";
+import { useNamaPeran } from "./pakai-nama-peran";
 
 type Role = Awaited<ReturnType<typeof getRoles>>[number];
 
@@ -30,6 +31,7 @@ export default function RBACSettingsPage() {
   const tUi = useTranslations("ui");
   const t = useTranslations("settings.rbac");
   const tIzin = useTranslations("izinPeran");
+  const namaPeran = useNamaPeran();
   const { data: session, update } = useSession();
   const [roles, setRoles] = useState<Role[]>([]);
   const [izin, setIzin] = useState<IzinDb[]>([]);
@@ -89,7 +91,7 @@ export default function RBACSettingsPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t("pageTitle")}
+        title={t("title")}
         actions={
           canManage ? (
             <Button onClick={() => bukaEditor("buat", null)}>
@@ -115,7 +117,7 @@ export default function RBACSettingsPage() {
             <Card key={role.id} className="h-full">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
-                  {role.name}
+                  {namaPeran(role.name)}
                   {role.isSystem && (
                     <Badge variant="secondary" className="text-xs">
                       {t("system")}
@@ -152,8 +154,8 @@ export default function RBACSettingsPage() {
                         variant="destructive"
                         size="sm"
                         onClick={() => setRoleToDelete(role)}
-                        aria-label={t("deleteAria", { name: role.name })}
-                        title={t("deleteAria", { name: role.name })}
+                        aria-label={t("deleteAria", { name: namaPeran(role.name) })}
+                        title={t("deleteAria", { name: namaPeran(role.name) })}
                       >
                         <Trash2 className="h-3 w-3" />
                       </Button>
@@ -186,8 +188,8 @@ export default function RBACSettingsPage() {
       <AlertDialog open={roleToDelete !== null} onOpenChange={(buka) => !buka && !menghapus && setRoleToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("deleteTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("deleteBody", { name: roleToDelete?.name ?? "" })}</AlertDialogDescription>
+            <AlertDialogTitle>{t("deleteTitleV2")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteBody", { name: roleToDelete ? namaPeran(roleToDelete.name) : "" })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={menghapus}>{tUi("cancel")}</AlertDialogCancel>

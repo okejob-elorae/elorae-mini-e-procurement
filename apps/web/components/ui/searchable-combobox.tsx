@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useTranslations } from "next-intl";
 import { CheckIcon, ChevronDownIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -46,15 +47,20 @@ export function SearchableCombobox({
   options,
   value,
   onValueChange,
-  placeholder = "Select...",
-  searchPlaceholder = "Search...",
-  emptyMessage = "No results found.",
+  placeholder: placeholderProp,
+  searchPlaceholder: searchPlaceholderProp,
+  emptyMessage: emptyMessageProp,
   disabled = false,
   className,
   id,
   "aria-invalid": ariaInvalid,
   triggerClassName,
 }: SearchableComboboxProps) {
+  // Bawaan lewat i18n: formulir yang tidak mengisinya dulu tampil berbahasa Inggris (Search…).
+  const t = useTranslations("common");
+  const placeholder = placeholderProp ?? t("pilihElipsis");
+  const searchPlaceholder = searchPlaceholderProp ?? t("cariElipsis");
+  const emptyMessage = emptyMessageProp ?? t("tidakAdaHasil");
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
 

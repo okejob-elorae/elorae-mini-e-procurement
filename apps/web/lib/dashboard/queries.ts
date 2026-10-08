@@ -322,7 +322,15 @@ export type SalesmenSalesBucket = {
 };
 
 /** Apa yang dihitung `realised.count` — disebut apa adanya, bukan "transaksi". */
-export type RincianTerealisasi = { pengiriman: number; van: number };
+export type RincianTerealisasi = {
+  pengiriman: number;
+  van: number;
+  /**
+   * Pesanan putus BERBEDA yang sudah punya pengiriman — supaya angka di beranda bisa
+   * dicocokkan dengan daftar pesanan tujuannya (satu pesanan bisa dikirim dua kali).
+   */
+  pesanan: number;
+};
 
 export type SalesmanSalesRow = {
   salesmanId: string;
@@ -351,6 +359,7 @@ export type SalesmenSalesSummary = {
 type RealisedDeliveryRow = {
   salesmanId: string;
   deliveryCount: bigint | number;
+  orderCount: bigint | number;
   totalAmount: string | number | null;
 };
 
@@ -374,6 +383,7 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     prisma.$queryRaw<RealisedDeliveryRow[]>(Prisma.sql`
       SELECT o.${sqlId('salesmanId')} AS ${sqlId('salesmanId')},
              COUNT(*) AS ${sqlId('deliveryCount')},
+             COUNT(DISTINCT d.${sqlId('orderId')}) AS ${sqlId('orderCount')},
              SUM(d.${sqlId('total')}) AS ${sqlId('totalAmount')}
       FROM ${sqlId('FieldSalesDelivery')} d
       JOIN ${sqlId('FieldSalesOrder')} o ON o.${sqlId('id')} = d.${sqlId('orderId')}
@@ -412,7 +422,7 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     if (!rec) {
       rec = {
         realised: { count: 0, amount: 0 },
-        realisedRincian: { pengiriman: 0, van: 0 },
+        realisedRincian: { pengiriman: 0, van: 0, pesanan: 0 },
         outstanding: { count: 0, amount: 0 },
         menungguKirim: { count: 0, amount: 0 },
       };
@@ -426,6 +436,7 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     const n = Number(r.deliveryCount ?? 0);
     rec.realised.count += n;
     rec.realisedRincian.pengiriman += n;
+    rec.realisedRincian.pesanan += Number(r.orderCount ?? 0);
     rec.realised.amount += Number(r.totalAmount ?? 0);
   }
   for (const r of realisedVan) {
@@ -472,6 +483,7 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
       acc.realised.amount += r.realised.amount;
       acc.realisedRincian.pengiriman += r.realisedRincian.pengiriman;
       acc.realisedRincian.van += r.realisedRincian.van;
+      acc.realisedRincian.pesanan += r.realisedRincian.pesanan;
       acc.outstanding.count += r.outstanding.count;
       acc.outstanding.amount += r.outstanding.amount;
       acc.menungguKirim.count += r.menungguKirim.count;
@@ -480,7 +492,7 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     },
     {
       realised: { count: 0, amount: 0 },
-      realisedRincian: { pengiriman: 0, van: 0 },
+      realisedRincian: { pengiriman: 0, van: 0, pesanan: 0 },
       outstanding: { count: 0, amount: 0 },
       menungguKirim: { count: 0, amount: 0 },
     },
