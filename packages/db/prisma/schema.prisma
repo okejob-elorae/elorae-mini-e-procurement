@@ -193,6 +193,11 @@ model Supplier {
   bankName         String?
   bankAccountEnc   String?
   bankAccountName  String?
+  taxWithholding   String?
+  isPkp            Boolean?
+  hasNpwp          Boolean          @default(true)
+  npwpEnc          String?          @db.Text
+  npwpLast4        String?
   isActive         Boolean          @default(true)
   status           SupplierStatus  @default(PENDING_APPROVAL)
   approvedById     String?
@@ -337,6 +342,8 @@ model Store {
   maxOpenInvoices Int?
   storeClass     String?
   isPkp          Boolean        @default(false)
+  npwp           String?
+  nitku          String?
   isActive       Boolean        @default(true)
   groupId        String?
   salesmanId     String?
@@ -907,6 +914,7 @@ model GRN {
   grnDate       DateTime  @default(now())
   receivedBy    String
   totalAmount   Decimal   @db.Decimal(15,2)
+  ppnAmount     Decimal?  @db.Decimal(15,2)
   notes         String?
   photoUrls     String?
   items         Json      
@@ -1232,6 +1240,8 @@ model FGReceipt {
   qcNotes        String?
   qcPhotos       String?
   materialCost   Decimal?  @db.Decimal(15,2)
+  serviceCost    Decimal?  @db.Decimal(15,2)
+  additionalCost Decimal?  @db.Decimal(15,2)
   avgCostPerUnit Decimal?  @db.Decimal(15,2)
   totalCostValue Decimal?  @db.Decimal(15,2)
   receivedById   String
@@ -2073,6 +2083,11 @@ enum DocType {
   VANRECON
   SPGSALE
   DELIVERY
+  CASHOUT
+  CASHIN
+  CASHTRF
+  SUPPAY
+  ASSET
 }
 
 enum OpnameScope {
@@ -2602,19 +2617,28 @@ model SettlementLine {
 // FINANCE — JOURNAL ENGINE
 // ==========================================
 model Journal {
-  id          String        @id @default(cuid())
-  date        DateTime
-  description String
-  sourceType  String?
-  sourceId    String?
-  isManual    Boolean       @default(false)
-  postedById  String
-  createdAt   DateTime      @default(now())
-  lines       JournalLine[]
+  id           String        @id @default(cuid())
+  date         DateTime
+  description  String
+  sourceType   String?
+  sourceId     String?
+  isManual     Boolean       @default(false)
+  status       String        @default("POSTED")
+  postedById   String
+  approvedById String?
+  approvedAt   DateTime?
+  rejectedById String?
+  rejectedAt   DateTime?
+  rejectReason String?       @db.Text
+  reversalOfId String?       @unique
+  originalDate DateTime?
+  createdAt    DateTime      @default(now())
+  lines        JournalLine[]
 
   @@unique([sourceType, sourceId])
   @@index([date])
   @@index([sourceType, sourceId])
+  @@index([status, date])
 }
 
 model JournalLine {
@@ -2624,11 +2648,15 @@ model JournalLine {
   debit          Decimal      @db.Decimal(18, 2) @default(0)
   credit         Decimal      @db.Decimal(18, 2) @default(0)
   memo           String?
+  channel        String?
+  storeId        String?
   journal        Journal      @relation(fields: [journalId], references: [id], onDelete: Cascade)
   account        ChartAccount @relation(fields: [chartAccountId], references: [id])
 
   @@index([journalId])
   @@index([chartAccountId])
+  @@index([channel])
+  @@index([storeId])
 }
 
 model JournalAccountMapping {
@@ -2639,6 +2667,356 @@ model JournalAccountMapping {
   updatedAt      DateTime     @updatedAt
 
   @@index([chartAccountId])
+}
+
+// ==========================================
+// FINANCE — PERIODS, ASSETS, CASH & BANK, TAX, BUDGET
+// ==========================================
+model AccountingPeriod {
+  id           String    @id @default(cuid())
+  year         Int
+  month        Int
+  status       String    @default("OPEN")
+  closedAt     DateTime?
+  closedById   String?
+  closeNote    String?   @db.Text
+  reopenedAt   DateTime?
+  reopenedById String?
+  reopenReason String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([year, month])
+  @@index([status])
+}
+
+model AccountingYear {
+  id               String    @id @default(cuid())
+  year             Int       @unique
+  status           String    @default("OPEN")
+  closedAt         DateTime?
+  closedById       String?
+  closingJournalId String?
+  reopenedAt       DateTime?
+  reopenedById     String?
+  reopenReason     String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model FixedAsset {
+  id                           String                   @id @default(cuid())
+  code                         String                   @unique
+  name                         String
+  category                     String
+  acquisitionDate              DateTime
+  cost                         Decimal                  @db.Decimal(18, 2)
+  residualValue                Decimal                  @default(0) @db.Decimal(18, 2)
+  usefulLifeMonths             Int
+  method                       String                   @default("STRAIGHT_LINE")
+  decliningRatePercent         Decimal?                 @db.Decimal(5, 2)
+  depreciationStartDate        DateTime
+  accumulatedAtStart           Decimal                  @default(0) @db.Decimal(18, 2)
+  assetAccountId               String?
+  accumDepreciationAccountId   String?
+  depreciationExpenseAccountId String?
+  supplierId                   String?
+  location                     String?
+  status                       String                   @default("ACTIVE")
+  disposedAt                   DateTime?
+  disposalProceeds             Decimal?                 @db.Decimal(18, 2)
+  disposalNote                 String?                  @db.Text
+  disposedById                 String?
+  notes                        String?                  @db.Text
+  createdById                  String
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
+  depreciations                FixedAssetDepreciation[]
+
+  @@index([status])
+  @@index([category])
+  @@index([acquisitionDate])
+}
+
+model FixedAssetDepreciation {
+  id        String     @id @default(cuid())
+  assetId   String
+  period    String
+  amount    Decimal    @db.Decimal(18, 2)
+  journalId String?
+  createdAt DateTime   @default(now())
+  asset     FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, period])
+  @@index([period])
+}
+
+model RecurringJournal {
+  id            String                 @id @default(cuid())
+  name          String
+  description   String?                @db.Text
+  frequency     String                 @default("MONTHLY")
+  dayOfMonth    Int                    @default(1)
+  startDate     DateTime
+  endDate       DateTime?
+  autoReverse   Boolean                @default(false)
+  active        Boolean                @default(true)
+  lastRunPeriod String?
+  createdById   String
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  lines         RecurringJournalLine[]
+
+  @@index([active])
+}
+
+model RecurringJournalLine {
+  id                 String           @id @default(cuid())
+  recurringJournalId String
+  chartAccountId     String
+  debit              Decimal          @default(0) @db.Decimal(18, 2)
+  credit             Decimal          @default(0) @db.Decimal(18, 2)
+  memo               String?
+  channel            String?
+  storeId            String?
+  sortOrder          Int              @default(0)
+  recurringJournal   RecurringJournal @relation(fields: [recurringJournalId], references: [id], onDelete: Cascade)
+
+  @@index([recurringJournalId])
+  @@index([chartAccountId])
+}
+
+model CashCategory {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  type            String   @default("OUT")
+  chartAccountId  String
+  withholdingType String?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([type, isActive])
+  @@index([chartAccountId])
+}
+
+model CashVoucher {
+  id                String            @id @default(cuid())
+  docNumber         String            @unique
+  type              String
+  date              DateTime
+  cashAccountId     String
+  transferAccountId String?
+  counterpart       String?
+  supplierId        String?
+  description       String?           @db.Text
+  totalAmount       Decimal           @default(0) @db.Decimal(18, 2)
+  withholdingType   String?
+  withholdingAmount Decimal           @default(0) @db.Decimal(18, 2)
+  netAmount         Decimal           @default(0) @db.Decimal(18, 2)
+  status            String            @default("POSTED")
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?           @db.Text
+  photoUrl          String?
+  idempotencyKey    String?           @unique
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  lines             CashVoucherLine[]
+
+  @@index([type, date])
+  @@index([cashAccountId, date])
+  @@index([status])
+  @@index([supplierId])
+}
+
+model CashVoucherLine {
+  id             String      @id @default(cuid())
+  voucherId      String
+  categoryId     String?
+  chartAccountId String
+  amount         Decimal     @db.Decimal(18, 2)
+  memo           String?
+  channel        String?
+  storeId        String?
+  sortOrder      Int         @default(0)
+  voucher        CashVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  @@index([voucherId])
+  @@index([chartAccountId])
+}
+
+model BankStatementImport {
+  id              String              @id @default(cuid())
+  chartAccountId  String
+  bankFormat      String?
+  fileName        String
+  periodFrom      DateTime?
+  periodTo        DateTime?
+  openingBalance  Decimal?            @db.Decimal(18, 2)
+  closingBalance  Decimal?            @db.Decimal(18, 2)
+  lineCount       Int                 @default(0)
+  importedById    String
+  createdAt       DateTime            @default(now())
+  lines           BankStatementLine[]
+
+  @@index([chartAccountId, periodFrom])
+}
+
+model BankStatementLine {
+  id                   String              @id @default(cuid())
+  importId             String
+  chartAccountId       String
+  date                 DateTime
+  description          String              @db.Text
+  amount               Decimal             @db.Decimal(18, 2)
+  balance              Decimal?            @db.Decimal(18, 2)
+  externalRef          String?
+  fingerprint          String?
+  status               String              @default("UNMATCHED")
+  matchedJournalLineId String?             @unique
+  matchedAt            DateTime?
+  matchedById          String?
+  createdJournalId     String?
+  note                 String?             @db.Text
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  statementImport      BankStatementImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([chartAccountId, fingerprint])
+  @@index([importId])
+  @@index([chartAccountId, date])
+  @@index([status])
+}
+
+model SupplierPayment {
+  id                String                      @id @default(cuid())
+  docNumber         String                      @unique
+  supplierId        String
+  date              DateTime
+  method            String                      @default("TRANSFER")
+  cashAccountId     String?
+  reference         String?
+  giroDueDate       DateTime?
+  grossAmount       Decimal                     @db.Decimal(18, 2)
+  withholdingType   String?
+  withholdingAmount Decimal                     @default(0) @db.Decimal(18, 2)
+  netAmount         Decimal                     @db.Decimal(18, 2)
+  isAdvance         Boolean                     @default(false)
+  status            String                      @default("POSTED")
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?                     @db.Text
+  note              String?                     @db.Text
+  proofPhotoUrl     String?
+  idempotencyKey    String?                     @unique
+  createdById       String
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  allocations       SupplierPaymentAllocation[]
+
+  @@index([supplierId, date])
+  @@index([status])
+  @@index([date])
+}
+
+model SupplierPaymentAllocation {
+  id         String          @id @default(cuid())
+  paymentId  String
+  targetType String
+  targetId   String?
+  amount     Decimal         @db.Decimal(18, 2)
+  note       String?
+  createdAt  DateTime        @default(now())
+  payment    SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([targetType, targetId])
+}
+
+model Budget {
+  id             String   @id @default(cuid())
+  chartAccountId String
+  year           Int
+  month          Int
+  amount         Decimal  @db.Decimal(18, 2)
+  note           String?
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([chartAccountId, year, month])
+  @@index([year, month])
+}
+
+model TaxPayment {
+  id             String    @id @default(cuid())
+  type           String
+  period         String
+  amount         Decimal   @db.Decimal(18, 2)
+  paidAt         DateTime
+  ntpn           String?
+  billingCode    String?
+  cashAccountId  String?
+  status         String    @default("POSTED")
+  cancelledAt    DateTime?
+  cancelledById  String?
+  cancelReason   String?   @db.Text
+  note           String?   @db.Text
+  proofPhotoUrl  String?
+  idempotencyKey String?   @unique
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([type, period])
+  @@index([paidAt])
+  @@index([status])
+}
+
+model TaxPeriodRecap {
+  id            String    @id @default(cuid())
+  type          String
+  period        String
+  outputDpp     Decimal   @default(0) @db.Decimal(18, 2)
+  outputTax     Decimal   @default(0) @db.Decimal(18, 2)
+  inputDpp      Decimal   @default(0) @db.Decimal(18, 2)
+  inputTax      Decimal   @default(0) @db.Decimal(18, 2)
+  compensation  Decimal   @default(0) @db.Decimal(18, 2)
+  balance       Decimal   @default(0) @db.Decimal(18, 2)
+  status        String    @default("DRAFT")
+  finalizedAt   DateTime?
+  finalizedById String?
+  journalId     String?
+  note          String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([type, period])
+  @@index([status])
+}
+
+model OpeningBalanceImport {
+  id          String    @id @default(cuid())
+  kind        String
+  cutoverDate DateTime
+  fileName    String?
+  entries     Json
+  totalAmount Decimal   @default(0) @db.Decimal(18, 2)
+  status      String    @default("DRAFT")
+  journalId   String?
+  postedAt    DateTime?
+  postedById  String?
+  note        String?   @db.Text
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([kind, status])
 }
 
 // ==========================================
@@ -3159,6 +3537,7 @@ model DeductionType {
   allowManual   Boolean @default(true)
   pkpOnly       Boolean @default(false)
   noteRequired  Boolean @default(false)
+  postingRole   String?
   isActive      Boolean @default(true)
 
   deductions    PaymentClaimDeduction[]
@@ -4030,6 +4409,7 @@ model ExpenseClaim {
   reviewNote     String?   @db.Text
   paidById       String?
   paidAt         DateTime?
+  paidAccountId  String?
   idempotencyKey String?   @unique
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt

@@ -131,3 +131,15 @@ export {
   type JournalLineInput,
   type PostJournalInput,
 } from "./journal-writer";
+export {
+  STATUS_PERIODE,
+  wibYearMonth,
+  firstDayOfMonthWib,
+  nextYearMonth,
+  wibDayLabel,
+  lockPeriodForPosting,
+  ensurePeriodRows,
+  resolvePostingDate,
+  PeriodClosedError,
+  type ClosedPeriodMode,
+} from "./period-lock";

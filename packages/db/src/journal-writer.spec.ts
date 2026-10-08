@@ -155,6 +155,73 @@ d("postJournal (test bed only)", () => {
     expect(dr).toBe(cr); // exactly, post-round
   });
 
+  it("persists the channel and store dimensions per line; lines without them stay null; status defaults to POSTED", async () => {
+    const r = await postJournal(prisma, {
+      date: new Date(),
+      description: "dim",
+      postedById: adminId,
+      lines: [
+        { chartAccountId: aId, debit: 250, credit: 0, channel: "PUTUS", storeId: "toko-uji-dimensi" },
+        { chartAccountId: bId, debit: 0, credit: 200, channel: "SHOPEE" },
+        { chartAccountId: bId, debit: 0, credit: 50 },
+      ],
+    });
+    const j = await prisma.journal.findUnique({
+      where: { id: r.journalId },
+      include: { lines: { orderBy: { credit: "asc" } } },
+    });
+    expect(j!.status).toBe("POSTED");
+    expect(j!.reversalOfId).toBeNull();
+    expect(j!.originalDate).toBeNull();
+    const dims = j!.lines.map((l) => [Number(l.debit), Number(l.credit), l.channel, l.storeId]);
+    expect(dims).toEqual([
+      [250, 0, "PUTUS", "toko-uji-dimensi"],
+      [0, 50, null, null],
+      [0, 200, "SHOPEE", null],
+    ]);
+  });
+
+  it("stores DRAFT status, the reversed journal and the original date when given", async () => {
+    const asal = await postJournal(prisma, {
+      date: new Date("2026-01-15T05:00:00Z"),
+      description: "asal",
+      postedById: adminId,
+      lines: [
+        { chartAccountId: aId, debit: 10, credit: 0 },
+        { chartAccountId: bId, debit: 0, credit: 10 },
+      ],
+    });
+    const balik = await postJournal(prisma, {
+      date: new Date("2026-02-01T00:00:00Z"),
+      originalDate: new Date("2026-01-20T05:00:00Z"),
+      description: "balik",
+      postedById: adminId,
+      status: "DRAFT",
+      reversalOfId: asal.journalId,
+      lines: [
+        { chartAccountId: bId, debit: 10, credit: 0 },
+        { chartAccountId: aId, debit: 0, credit: 10 },
+      ],
+    });
+    const j = await prisma.journal.findUnique({ where: { id: balik.journalId } });
+    expect(j!.status).toBe("DRAFT");
+    expect(j!.reversalOfId).toBe(asal.journalId);
+    expect(j!.originalDate?.toISOString()).toBe("2026-01-20T05:00:00.000Z");
+    // Satu jurnal hanya punya satu pembalik (`reversalOfId` unik).
+    await expect(
+      postJournal(prisma, {
+        date: new Date("2026-02-01T00:00:00Z"),
+        description: "balik lagi",
+        postedById: adminId,
+        reversalOfId: asal.journalId,
+        lines: [
+          { chartAccountId: bId, debit: 10, credit: 0 },
+          { chartAccountId: aId, debit: 0, credit: 10 },
+        ],
+      }),
+    ).rejects.toThrow();
+  });
+
   it("rejects an imbalance that only appears after cents rounding", async () => {
     // 33.33 + 33.33 + 33.34 = 100.00 debit vs 100.005 credit → credit rounds 100.01 ≠ 100.00
     await expect(
