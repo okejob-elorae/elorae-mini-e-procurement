@@ -31,6 +31,7 @@ export const SUMBER_BERJURNAL: readonly string[] = [
   "hasil produksi",
   "penyesuaian stock opname",
   "pembayaran ke pemasok",
+  "fee, pembayaran, dan sampel KOL",
   "jurnal manual",
 ];
 
