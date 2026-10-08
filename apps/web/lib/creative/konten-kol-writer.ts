@@ -378,13 +378,7 @@ export async function mintaRevisi(input: { kontenId: string; catatan: string; ol
 
 /* ──────────────────────────── Angka ──────────────────────────── */
 
-/**
- * Catat angka konten — SELALU baris baru. Hanya untuk konten yang sudah
- * tayang; tanggal catat tidak boleh sebelum hari tayang (WIB) dan tidak boleh
- * di masa depan. Angka nol semua ditolak: baris kosong menghapus pengingat
- * H+N padahal belum ada angka.
- */
-export async function catatAngka(input: {
+export type IsiAngkaKonten = {
   kontenId: string;
   views?: number;
   likes?: number;
@@ -394,8 +388,27 @@ export async function catatAngka(input: {
   recordedAt?: Date | null;
   source?: string | null;
   note?: string | null;
+  /** Perangkat pantau yang membaca angkanya (ekstensi); kosong untuk isian tangan. */
+  perangkatId?: string | null;
   olehUserId: string;
-}): Promise<HasilKontenKol> {
+};
+
+/**
+ * Catat angka konten — SELALU baris baru. Hanya untuk konten yang sudah
+ * tayang; tanggal catat tidak boleh sebelum hari tayang (WIB) dan tidak boleh
+ * di masa depan. Angka nol semua ditolak: baris kosong menghapus pengingat
+ * H+N padahal belum ada angka.
+ */
+export async function catatAngka(input: IsiAngkaKonten): Promise<HasilKontenKol> {
+  return runSerializable((tx) => catatAngkaDiTx(tx, input));
+}
+
+/**
+ * Isi `catatAngka` di dalam transaksi PEMANGGIL — dipakai penerima hasil
+ * ekstensi pantau (`pantau-writer.ts`), yang menandai tugasnya selesai di
+ * transaksi yang sama. Satu penulis angka konten, bukan dua.
+ */
+export async function catatAngkaDiTx(tx: Klien, input: IsiAngkaKonten): Promise<HasilKontenKol> {
   const angka = {
     views: input.views ?? 0,
     likes: input.likes ?? 0,
@@ -409,33 +422,32 @@ export async function catatAngka(input: {
   const note = input.note?.trim() || null;
   if (note && note.length > MAKS_CATATAN) return gagal("CATATAN_TERLALU_PANJANG");
   const source = input.source?.trim().slice(0, 191) || null;
+  const perangkatId = input.perangkatId?.trim() || null;
 
-  return runSerializable(async (tx) => {
-    const sekarang = new Date();
-    const lama = await tx.kolContent.findUnique({
-      where: { id: input.kontenId },
-      select: { id: true, link: true, liveAt: true, collab: { select: { id: true, docNo: true, kol: { select: { name: true } } } } },
-    });
-    if (!lama) return gagal("TIDAK_DITEMUKAN");
-    if (!lama.link?.trim()) return gagal("BELUM_TAYANG");
-    const waktu = input.recordedAt ?? sekarang;
-    // Lima menit kelonggaran untuk jam peramban yang sedikit maju.
-    if (waktu.getTime() > sekarang.getTime() + 5 * 60_000) return gagal("TANGGAL_TIDAK_SAH");
-    if (lama.liveAt && formatDateOnlyJakarta(waktu) < formatDateOnlyJakarta(lama.liveAt)) return gagal("TANGGAL_TIDAK_SAH");
-
-    const baris = await tx.kolContentMetric.create({
-      data: { contentId: lama.id, recordedAt: waktu, ...angka, source, note, createdById: input.olehUserId },
-      select: { id: true },
-    });
-    await catatJejak(tx, {
-      userId: input.olehUserId,
-      action: JEJAK.ANGKA_KONTEN_DICATAT,
-      entityType: "KolBrief",
-      entityId: lama.collab.id,
-      changes: { after: { ...angka, recordedAt: waktu.toISOString() } },
-      metadata: { kontenId: lama.id, angkaId: baris.id, docNo: lama.collab.docNo, kol: lama.collab.kol.name, source },
-    });
-    const maju = await terapkanMajuOtomatis(tx, { kolaborasiId: lama.collab.id, olehUserId: input.olehUserId, sebab: "angka konten" });
-    return { ok: true as const, id: lama.id, maju };
+  const sekarang = new Date();
+  const lama = await tx.kolContent.findUnique({
+    where: { id: input.kontenId },
+    select: { id: true, link: true, liveAt: true, collab: { select: { id: true, docNo: true, kol: { select: { name: true } } } } },
   });
+  if (!lama) return gagal("TIDAK_DITEMUKAN");
+  if (!lama.link?.trim()) return gagal("BELUM_TAYANG");
+  const waktu = input.recordedAt ?? sekarang;
+  // Lima menit kelonggaran untuk jam peramban yang sedikit maju.
+  if (waktu.getTime() > sekarang.getTime() + 5 * 60_000) return gagal("TANGGAL_TIDAK_SAH");
+  if (lama.liveAt && formatDateOnlyJakarta(waktu) < formatDateOnlyJakarta(lama.liveAt)) return gagal("TANGGAL_TIDAK_SAH");
+
+  const baris = await tx.kolContentMetric.create({
+    data: { contentId: lama.id, recordedAt: waktu, ...angka, source, note, perangkatId, createdById: input.olehUserId },
+    select: { id: true },
+  });
+  await catatJejak(tx, {
+    userId: input.olehUserId,
+    action: JEJAK.ANGKA_KONTEN_DICATAT,
+    entityType: "KolBrief",
+    entityId: lama.collab.id,
+    changes: { after: { ...angka, recordedAt: waktu.toISOString() } },
+    metadata: { kontenId: lama.id, angkaId: baris.id, docNo: lama.collab.docNo, kol: lama.collab.kol.name, source, ...(perangkatId ? { perangkatId } : {}) },
+  });
+  const maju = await terapkanMajuOtomatis(tx, { kolaborasiId: lama.collab.id, olehUserId: input.olehUserId, sebab: "angka konten" });
+  return { ok: true as const, id: lama.id, maju };
 }

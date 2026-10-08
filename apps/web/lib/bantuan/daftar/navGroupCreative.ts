@@ -39,7 +39,9 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Hal yang perlu ditindaklanjuti",
         isi: [
-          "Tiga belas kelompok: agenda hari ini dan yang terlewat (agenda Anda sendiri, termasuk yang masuk masa ingat H-n), deal belum kirim sampel, sampel belum diterima, sampel diterima belum tayang, draf menunggu review, jadwal tayang lewat, belum dibalas (disarankan ghosting bila terlalu lama), tayang belum ada angka (H+1, H+3, H+7), tayang belum dibayar, berpotensi kirim dobel, data kirim belum lengkap, KOL diblokir dengan kolaborasi berjalan, dan budget campaign hampir habis.",
+          "Lima belas kelompok: agenda hari ini dan yang terlewat (agenda Anda sendiri, termasuk yang masuk masa ingat H-n), deal belum kirim sampel, sampel belum diterima, sampel diterima belum tayang, draf menunggu review, jadwal tayang lewat, belum dibalas (disarankan ghosting bila terlalu lama), tayang belum ada angka (H+1, H+3, H+7), tayang belum dibayar, berpotensi kirim dobel, data kirim belum lengkap, KOL diblokir dengan kolaborasi berjalan, budget campaign hampir habis, anomali akun, dan perangkat pemantau berhenti.",
+          "Anomali akun (dari pemantauan ekstensi): pengikut akun TikTok naik lebih dari 30% dibanding catatan sebelumnya dalam 14 hari, atau ER akunnya turun lebih dari 40% dibanding catatan ber-ER sebelumnya. Tampil selama catatan terbarunya berumur paling lama 7 hari; ambangnya diatur di Kreatif → Pemantauan. Buka membuka profil KOL di tab Pengikut & ER.",
+          "Perangkat pemantau berhenti: perangkat yang dijeda otomatis (captcha, diminta login, atau gagal berturut-turut) atau tidak melapor lebih dari 24 jam. Jeda yang Anda pasang sendiri dari Pemantauan tidak dihitung.",
           "Kelompok yang kosong tidak ditampilkan. Kelompok dengan lima baris atau kurang langsung terbuka; yang lebih banyak terbuka saat diklik. Baris diurut dari yang paling lama menunggu; 'telat N hari' dihitung dari tenggatnya, 'H-N' untuk agenda yang akan datang.",
           "Setiap baris punya tombol WhatsApp bertemplate, pintasan ke layar kerjanya (kirim sampel, tandai diterima, tempel link, review draf, isi angka, bayar, lengkapi data), dan Buka. Baris agenda membuka agendanya di Kalender dan bisa langsung ditandai selesai.",
         ],
@@ -186,7 +188,11 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "kreatifRuang.kol.profil.tab.pengikut" },
-        isi: "Setiap kali jumlah pengikut sebuah akun berubah (lewat formulir atau tambah massal), angka barunya dicatat sebagai baris riwayat, tidak menimpa yang lama. Garis kecil di samping nama akun menunjukkan arahnya.",
+        isi: [
+          "Setiap kali jumlah pengikut sebuah akun berubah (lewat formulir atau tambah massal), angka barunya dicatat sebagai baris riwayat, tidak menimpa yang lama. Garis kecil di samping nama akun menunjukkan arahnya.",
+          "Akun TikTok yang dipantau ekstensi menampilkan ER akun, rata-rata views, pengikut, kapan terakhir dicek, dan hasil ceknya (terbaca, tidak ditemukan, privat, tidak terbaca). Setiap cek menambah satu baris riwayat bersumber Ekstensi, lengkap dengan ER dan rata-rata views saat itu.",
+          "ER akun = rata-rata ER per posting atas paling banyak 12 posting terbaru yang tidak disematkan dan berumur minimal 48 jam; ER satu posting = (like + komentar + share + save) ÷ views × 100, rumus yang sama dengan ER konten. Posting tanpa views dilewati. Kurang dari 3 posting yang memenuhi syarat: ER tidak dihitung (tanda —), dan ER terakhir yang terukur tetap tampil beserta tanggalnya.",
+        ],
       },
       {
         judul: { kunci: "kreatifRuang.kol.catatan.judul" },
@@ -423,6 +429,46 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Angka fee KOL",
         isi: "Rencana konten adalah konten akun sendiri, jadi angka fee KOL tidak ada di sini. Fee yang disepakati, biaya bruto termasuk PPh, beban yang sudah diakui, dan yang sudah ditransfer ada di Kreatif → Pembayaran.",
+      },
+    ],
+  },
+  {
+    rute: "/backoffice/kreatif/pemantauan",
+    bagian: "navGroupCreative",
+    judul: { kunci: "kreatifRuang.halaman.pemantauan" },
+    isi: [
+      "Pemantauan angka TikTok KOL lewat ekstensi Chrome (uji coba): ekstensi di satu komputer membuka profil dan video TikTok di tab latar, membaca angkanya, lalu mengirimkannya ke Elorae. Instagram belum.",
+      "Risikonya sudah disepakati: syarat layanan TikTok melarang pengambilan otomatis, jadi akun TikTok yang dipakai di Chrome itu bisa dibatasi — pakai profil Chrome dan akun TikTok khusus. Ekstensi perlu diperbarui bila halaman TikTok berubah, dan komputernya harus menyala.",
+      "Yang dicek: setiap konten kolaborasi yang sudah tayang dengan link TikTok pada H+1, H+3, H+7, dan H+30 (hari WIB); akun TikTok KOL yang punya kolaborasi berjalan seminggu sekali; akun lain sebulan sekali. KOL yang diblokir tidak pernah dicek. Konten yang tertinggal hanya dicek di titik terbarunya, sekali; titik yang terlambat lebih dari 14 hari tidak diantrekan lagi.",
+      "Antrean disusun otomatis setiap hari pukul 06.00 WIB. Susun antrean sekarang menyusunnya saat itu juga — aman ditekan berkali-kali, tugas yang sudah ada tidak dibuat dua kali.",
+      "Melihat cukup izin lihat Kreatif; menyambungkan, menjeda, mencabut, menyusun antrean, dan mengubah pengaturan butuh izin kelola Kreatif. Setiap tindakan itu tercatat di jejak audit.",
+    ],
+    kartu: [
+      {
+        judul: { kunci: "kreatifRuang.pantau.kpi.label" },
+        isi: "Selesai dan percobaan gagal dihitung per hari WIB untuk semua perangkat bersama; satu tugas yang gagal lalu berhasil terhitung di keduanya. Sisa kuota = kuota harian dikurangi yang selesai, percobaan gagal, dan yang sedang dicek. Simpan ke Elorae dari panel di halaman TikTok (mode manual) tidak memakan kuota.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.pantau.antrean.judul" },
+        isi: "Menunggu dan sedang dicek adalah keadaan sekarang; selesai, gagal, dan dilewati dihitung untuk hari ini saja. Satu tugas dipinjam satu perangkat selama 5 menit; bila tidak ada kabar, tugas itu kembali ke antrean. Gagal muat atau angka tidak terbaca dicoba lagi sampai tiga kali.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.pantau.perangkat.judul" },
+        isi: [
+          "Sambungkan perangkat membuat kode 8 tanda yang berlaku 15 menit dan sekali pakai. Ketik kode itu dan alamat Elorae di popup ekstensi. Kodenya hanya ditampilkan sekali; yang disimpan Elorae hanya sidik (hash) kode dan tokennya, jadi kode yang hilang tidak bisa dilihat lagi — buat kode baru.",
+          "Perangkat berhenti sendiri pada captcha atau permintaan login pertama, atau sesudah gagal beberapa kali berturut-turut, lalu jalan lagi sendiri sesudah jeda otomatis (bawaan 60 menit). Jeda dari Elorae berlaku sampai dilanjutkan. Kode baru menyambungkan ulang perangkat yang sama (misalnya Chrome-nya dipasang ulang); sambungan lamanya berhenti begitu kode baru dipakai. Cabut menghentikan perangkat untuk selamanya.",
+        ],
+      },
+      {
+        judul: { kunci: "kreatifRuang.pantau.masalah.judul" },
+        isi: "Tiga puluh laporan masalah dan jeda terakhir dari semua perangkat. Akun berbeda berarti nama akun yang terbaca di TikTok tidak sama dengan handle di Elorae — hasilnya tidak disimpan; periksa handle akun KOL itu.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.pantau.pengaturan.judul" },
+        isi: [
+          "Semua angka ini keputusan sementara pemilik: kuota 300 pengecekan per hari, jam kerja 08.00–17.00 WIB, jeda acak 15–40 detik antar tugas, istirahat 5–10 menit setiap 45 menit, jeda otomatis 60 menit, jeda sesudah 3 gagal berturut-turut, akun aktif setiap 7 hari, akun lain setiap 30 hari, anomali pengikut di atas 30% dalam 14 hari dan ER turun di atas 40%.",
+          "Mematikan Pemantauan aktif menghentikan pemberian tugas ke semua perangkat. Isian di luar batas ditolak dan ditandai, tidak diganti diam-diam. Setiap simpanan tercatat di jejak audit (sebelum dan sesudah).",
+        ],
       },
     ],
   },

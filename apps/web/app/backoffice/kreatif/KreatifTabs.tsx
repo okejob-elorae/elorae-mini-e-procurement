@@ -15,6 +15,7 @@ import {
   Handshake,
   PackageCheck,
   PlaySquare,
+  Radar,
   Settings2,
   Users,
   Wallet,
@@ -46,6 +47,7 @@ export const TAB_KREATIF = [
   { href: '/backoffice/kreatif/kalender', key: 'kalender', ikon: CalendarDays },
   { href: '/backoffice/kreatif/laporan', key: 'laporan', ikon: BarChart3 },
   { href: '/backoffice/kreatif/konten', key: 'rencanaKonten', ikon: CalendarRange },
+  { href: '/backoffice/kreatif/pemantauan', key: 'pemantauan', ikon: Radar },
   { href: '/backoffice/kreatif/pengaturan', key: 'pengaturan', ikon: Settings2 },
 ] as const;
 
@@ -65,7 +67,7 @@ export function KreatifTabs({ jumlahTugas = 0 }: { jumlahTugas?: number }) {
   const nav = useRef<HTMLElement>(null);
   const [tepi, setTepi] = useState({ kiri: false, kanan: false });
 
-  // Sebelas tab lebih lebar dari layar laptop: tab yang aktif selalu digulir ke
+  // Dua belas tab lebih lebar dari layar laptop: tab yang aktif selalu digulir ke
   // dalam pandangan, dan tepi yang masih bisa digulir diberi bayangan + tombol
   // (audit ulang 2026-10-08 — tab Pengaturan pernah tersembunyi di luar layar).
   useEffect(() => {

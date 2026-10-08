@@ -327,6 +327,7 @@ export const navItems: NavItem[] = [
       { labelKey: "navKolKalender", href: "/backoffice/kreatif/kalender", permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: "navKolLaporan", href: "/backoffice/kreatif/laporan", permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: "navContentCalendar", href: "/backoffice/kreatif/konten", permission: PERMISSIONS.CREATIVE_VIEW },
+      { labelKey: "navKolPemantauan", href: "/backoffice/kreatif/pemantauan", permission: PERMISSIONS.CREATIVE_VIEW },
       { labelKey: "navKreatifPengaturan", href: "/backoffice/kreatif/pengaturan", permission: PERMISSIONS.CREATIVE_VIEW },
     ],
   },

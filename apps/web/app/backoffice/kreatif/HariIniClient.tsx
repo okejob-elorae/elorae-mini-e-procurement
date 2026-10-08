@@ -358,7 +358,7 @@ function BarisTugasView({
       }
     });
 
-  const sub = [b.sub ? (b.jenis === "KOLABORASI" ? `@${b.sub.replace(/^@+/, "")}` : b.sub) : null, b.docNo, b.tahap ? td(`tahap.${b.tahap}`) : null]
+  const sub = [b.sub ? (b.jenis === "KOLABORASI" || b.jenis === "AKUN" ? `@${b.sub.replace(/^@+/, "")}` : b.sub) : null, b.docNo, b.tahap ? td(`tahap.${b.tahap}`) : null]
     .filter(Boolean)
     .join(" · ");
 
@@ -397,7 +397,15 @@ function BarisTugasView({
         ) : null}
         <Button asChild variant={pintasan && bolehMengelola ? "ghost" : "outline"} size="sm">
           <Link href={tautanBuka(b)}>
-            {b.jenis === "AGENDA" ? t("hariIni.tugas.bukaKalender") : b.jenis === "CAMPAIGN" ? t("hariIni.tugas.bukaCampaign") : t("hariIni.tugas.buka")}
+            {b.jenis === "AGENDA"
+              ? t("hariIni.tugas.bukaKalender")
+              : b.jenis === "CAMPAIGN"
+                ? t("hariIni.tugas.bukaCampaign")
+                : b.jenis === "AKUN"
+                  ? t("hariIni.tugas.bukaProfil")
+                  : b.jenis === "PERANGKAT"
+                    ? t("hariIni.tugas.bukaPemantauan")
+                    : t("hariIni.tugas.buka")}
           </Link>
         </Button>
       </div>
@@ -492,6 +500,29 @@ function InfoBaris({ kunci, b, locale }: { kunci: KunciTugas; b: BarisTugas; loc
     case "DITERIMA_BELUM_TAYANG":
       bagian.push(t("hariIni.tugas.info.tenggat", { tanggal: tgl(i.tanggal) }));
       break;
+    case "ANOMALI_AKUN": {
+      const a = i.anomali;
+      const persen = (n: number) => String(n).replace(".", ",");
+      if (a?.pengikut) {
+        bagian.push(
+          <span className="font-medium text-amber-700 dark:text-amber-300">
+            {t("hariIni.tugas.info.pengikutNaik", { dari: angkaTitik(a.pengikut.dari), ke: angkaTitik(a.pengikut.ke), persen: persen(a.pengikut.persen) })}
+          </span>,
+        );
+      }
+      if (a?.er) {
+        bagian.push(
+          <span className="font-medium text-red-700 dark:text-red-300">
+            {t("hariIni.tugas.info.erTurun", { dari: persen(a.er.dari), ke: persen(a.er.ke), persen: persen(a.er.persen) })}
+          </span>,
+        );
+      }
+      break;
+    }
+    case "PERANGKAT_BERHENTI":
+      if (i.alasanJeda) bagian.push(td(`pantau.alasanJeda.${i.alasanJeda}`));
+      if (i.sampai) bagian.push(t("hariIni.tugas.info.jedaSampai", { jam: jamLokal(i.sampai, locale) }));
+      break;
     default:
       break;
   }
@@ -506,6 +537,11 @@ function InfoBaris({ kunci, b, locale }: { kunci: KunciTugas; b: BarisTugas; loc
       ))}
     </p>
   );
+}
+
+/** "14.05" dari ISO, di WIB. */
+function jamLokal(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale.startsWith("en") ? "en-GB" : "id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(iso));
 }
 
 function TautanLuar({ href, label }: { href: string; label: string }) {

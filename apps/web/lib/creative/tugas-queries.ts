@@ -5,15 +5,18 @@ import { geserHari, hariIniWib } from "@/lib/tanggal-isian";
 import { bacaChecklist, jumlahBelum } from "./agenda-aturan";
 import { angkaKolaborasi, jumlahAngkaKolaborasi, type AngkaKolaborasi, type Periode } from "./angka-queries";
 import { bacaAmbangKreatif } from "./pengaturan";
+import { anomaliTugas, perangkatBerhentiTugas } from "./pantau-queries";
 import { TAHAP_BERJALAN, type StatusBayar, type StatusDraf, type Tahap } from "./tahap";
 import {
   jumlahTugas,
   susunTugas,
   type AgendaTugas,
+  type AnomaliTugas,
   type CampaignTugas,
   type KelompokTugas,
   type KolaborasiTugas,
   type MasukanTugas,
+  type PerangkatTugas,
 } from "./tugas";
 import { normalisasiWa } from "./wa";
 import { keTerminTenggat, PILIH_TERMIN_TENGGAT } from "./termin-tenggat-queries";
@@ -21,7 +24,7 @@ import { keTerminTenggat, PILIH_TERMIN_TENGGAT } from "./termin-tenggat-queries"
 /*
  * Pembaca "Hari ini" Ruang KOL — KHUSUS SERVER (klien hanya `import type`).
  *
- * Membaca baris yang dibutuhkan `susunTugas` (aturan 13 kelompoknya murni, di
+ * Membaca baris yang dibutuhkan `susunTugas` (aturan 15 kelompoknya murni, di
  * `tugas.ts`) dan angka KPI. Tidak ada tenggat atau status yang disimpan:
  * semuanya dihitung ulang dari tanggal-tanggal kolaborasi setiap kali dibaca.
  *
@@ -41,6 +44,10 @@ export type CakupanTugas = {
   kolaborasiIds?: readonly string[];
   agendaIds?: readonly string[];
   campaignIds?: readonly string[];
+  /** Akun untuk "Anomali akun"; tanpa ini cakupan tidak membaca anomali sama sekali. */
+  akunIds?: readonly string[];
+  /** Perangkat untuk "Perangkat pemantau berhenti"; tanpa ini cakupan tidak membacanya. */
+  perangkatIds?: readonly string[];
 };
 
 const TAHAP_RAWAN_DOBEL: readonly Tahap[] = ["DEAL", "BRIEF_DIKIRIM", "SAMPEL_DIKIRIM"];
@@ -244,19 +251,35 @@ async function muatCampaignTugas(cakupan?: CakupanTugas): Promise<CampaignTugas[
   }));
 }
 
+/**
+ * Bahan dua kelompok pantau KOL. Gagal membaca tidak boleh merobohkan Hari
+ * ini (tabelnya baru): kelompoknya kosong dan galatnya dicatat. Dengan
+ * `cakupan` (tes), hanya dibaca bila id-nya disebut.
+ */
+async function muatPantauTugas(cakupan?: CakupanTugas): Promise<{ anomali: AnomaliTugas[]; perangkat: PerangkatTugas[] }> {
+  const bacaAnomali = !cakupan || cakupan.akunIds !== undefined;
+  const bacaPerangkat = !cakupan || cakupan.perangkatIds !== undefined;
+  const [anomali, perangkat] = await Promise.all([
+    bacaAnomali ? anomaliTugas({ akunIds: cakupan?.akunIds }).catch((e) => (console.error("anomali akun gagal dibaca:", e), [])) : [],
+    bacaPerangkat ? perangkatBerhentiTugas({ perangkatIds: cakupan?.perangkatIds }).catch((e) => (console.error("perangkat pemantau gagal dibaca:", e), [])) : [],
+  ]);
+  return { anomali, perangkat };
+}
+
 export async function muatMasukanTugas(o: { userId: string | null; hariIni?: string; cakupan?: CakupanTugas }): Promise<MasukanTugas> {
   const hariIni = o.hariIni ?? hariIniWib();
-  const [kolaborasi, agenda, campaign, ambang] = await Promise.all([
+  const [kolaborasi, agenda, campaign, ambang, pantau] = await Promise.all([
     muatKolaborasiTugas(o.cakupan),
     muatAgendaTugas(o.userId, hariIni, o.cakupan),
     muatCampaignTugas(o.cakupan),
     bacaAmbangKreatif(),
+    muatPantauTugas(o.cakupan),
   ]);
-  return { kolaborasi, agenda, campaign, hariIni, ambang };
+  return { kolaborasi, agenda, campaign, hariIni, ambang, anomali: pantau.anomali, perangkat: pantau.perangkat };
 }
 
 /**
- * 13 kelompok Hari ini untuk satu orang (agendanya pribadi). Dibungkus `cache`
+ * 15 kelompok Hari ini untuk satu orang (agendanya pribadi). Dibungkus `cache`
  * supaya tata letak Kreatif (lencana tab) dan halaman Hari ini dalam satu
  * permintaan hanya membaca sekali.
  */

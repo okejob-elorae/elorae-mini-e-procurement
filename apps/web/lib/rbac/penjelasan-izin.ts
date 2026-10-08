@@ -338,6 +338,7 @@ const ISIAN: Record<KodeIzin, Isian> = {
       "/backoffice/kreatif/kalender",
       "/backoffice/kreatif/laporan",
       "/backoffice/kreatif/konten",
+      "/backoffice/kreatif/pemantauan",
       "/backoffice/kreatif/pengaturan",
     ],
   },

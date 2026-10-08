@@ -261,7 +261,8 @@
     "navFinanceJurnalBerulang": "Recurring journals",
     "navFinanceKas": "Cash & bank",
     "navFinanceRekonsiliasiBank": "Bank reconciliation",
-    "navUmurHutang": "Payables aging"
+    "navUmurHutang": "Payables aging",
+    "navKolPemantauan": "Monitoring"
   },
   "notifications": {
     "title": "Notifications",
@@ -12363,7 +12364,13 @@
       "PO_UNPAID_BY_PAYMENT_CANCEL": "PO paid mark removed (payment cancelled)",
       "JOURNAL_SWEEP_NOTHING_TO_POST": "Journal sweep: nothing to post",
       "SUPPLIER_SKB_CHANGED": "Supplier SKB changed",
-      "STORE_CONSIGNMENT_VAT_CHANGED": "Store consignment VAT changed"
+      "STORE_CONSIGNMENT_VAT_CHANGED": "Store consignment VAT changed",
+      "KOL_MONITOR_DEVICE_CODE_CREATED": "Monitoring device pairing code created",
+      "KOL_MONITOR_DEVICE_PAUSED": "Monitoring device paused",
+      "KOL_MONITOR_DEVICE_RESUMED": "Monitoring device resumed",
+      "KOL_MONITOR_DEVICE_REVOKED": "Monitoring device revoked",
+      "KOL_MONITOR_QUEUE_BUILT": "Monitoring queue built",
+      "KOL_MONITOR_SETTINGS_UPDATED": "Monitoring settings updated"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -12470,7 +12477,9 @@
       "CashCategory": "Cash category",
       "BankStatementImport": "Bank statement import",
       "BankStatementLine": "Bank statement line",
-      "SupplierPayment": "Supplier payment"
+      "SupplierPayment": "Supplier payment",
+      "KolPerangkat": "Monitoring device",
+      "KolTugasPantau": "Monitoring queue"
     },
     "fields": {
       "value": "Value",
@@ -19660,7 +19669,8 @@
       "pengaturan": "Settings",
       "lencana": "{n} things need follow-up",
       "gulirKiri": "Scroll tabs left",
-      "gulirKanan": "Scroll tabs right"
+      "gulirKanan": "Scroll tabs right",
+      "pemantauan": "Monitoring"
     },
     "halaman": {
       "hariIni": "Today",
@@ -19674,7 +19684,8 @@
       "pembayaran": "KOL payments",
       "kalender": "Calendar",
       "laporan": "Reports",
-      "pengaturan": "Creative settings"
+      "pengaturan": "Creative settings",
+      "pemantauan": "KOL monitoring"
     },
     "disiapkan": {
       "judul": "Coming soon",
@@ -19743,7 +19754,9 @@
       "KIRIM_DOBEL": "Possible double shipment",
       "DATA_KIRIM_KURANG": "Shipping details incomplete",
       "KOL_DIBLOKIR": "Blocked KOL with a running collaboration",
-      "BUDGET_CAMPAIGN": "Campaign budget nearly used or exceeded"
+      "BUDGET_CAMPAIGN": "Campaign budget nearly used or exceeded",
+      "ANOMALI_AKUN": "Account anomaly",
+      "PERANGKAT_BERHENTI": "Monitoring device stopped"
     },
     "tugasSaran": {
       "AGENDA": "Open the calendar to see the preparations.",
@@ -19758,7 +19771,9 @@
       "KIRIM_DOBEL": "Check before shipping — this number or person has already received a sample.",
       "DATA_KIRIM_KURANG": "Complete the address, phone number or size before shipping.",
       "KOL_DIBLOKIR": "Decide: continue or close the collaboration.",
-      "BUDGET_CAMPAIGN": "Check campaign spending before adding collaborations."
+      "BUDGET_CAMPAIGN": "Check campaign spending before adding collaborations.",
+      "ANOMALI_AKUN": "Check the profile: a follower spike or a collapsing ER needs a look before working together again.",
+      "PERANGKAT_BERHENTI": "Open Chrome on that device, solve the TikTok captcha or log in, then resume it from Monitoring."
     },
     "tenggat": {
       "FOLLOW_UP": "Follow-up",
@@ -19895,8 +19910,13 @@
           "budgetSisa": "{sisa} left",
           "budgetLewat": "over by {sisa}",
           "fee": "Fee {fee}",
-          "termin": "Instalment {jumlah}"
-        }
+          "termin": "Instalment {jumlah}",
+          "pengikutNaik": "Followers {dari} → {ke} (+{persen}%)",
+          "erTurun": "ER {dari}% → {ke}% (−{persen}%)",
+          "jedaSampai": "paused until {jam}"
+        },
+        "bukaProfil": "Open profile",
+        "bukaPemantauan": "Open monitoring"
       },
       "posisi": {
         "judul": "Pipeline position",
@@ -21193,7 +21213,7 @@
           "kolaborasi": "Collaborations",
           "konten": "Content",
           "ukuran": "Sizes, address & tax",
-          "pengikut": "Follower history",
+          "pengikut": "Followers & ER",
           "catatan": "Notes & history"
         },
         "kolom": {
@@ -21236,7 +21256,8 @@
         "pengikutKosong": "No follower history yet.",
         "sumber": {
           "formulir": "Form",
-          "massal": "Bulk add"
+          "massal": "Bulk add",
+          "ekstensi": "Extension"
         },
         "rateCard": "Rate card",
         "rateNote": "Rate note",
@@ -21613,6 +21634,200 @@
       "errTidakValid": "Some rate fields are invalid.",
       "errAkses": "You don't have access to change rates.",
       "errGagal": "Could not save the rates."
+    },
+    "pantau": {
+      "meta": "Working hours {mulai}–{selesai} WIB",
+      "nonaktif": "Monitoring is off",
+      "diLuarJam": "outside working hours",
+      "okSusun": "{dibuat} new tasks, {dilewati} skipped",
+      "okJeda": "Device paused",
+      "okLanjut": "Device resumed",
+      "okCabut": "Device revoked",
+      "aksi": {
+        "susun": "Build queue now",
+        "sambungkan": "Connect a device",
+        "jeda": "Pause",
+        "lanjutkan": "Resume",
+        "kodeBaru": "New code",
+        "cabut": "Revoke",
+        "cabutNama": "Revoke {nama}"
+      },
+      "kpi": {
+        "label": "Checks today",
+        "selesai": "Done today",
+        "gagal": "Failed attempts",
+        "kuota": "Daily quota",
+        "sisa": "Quota left",
+        "dipinjam": "{n} being checked"
+      },
+      "antrean": {
+        "judul": "Queue",
+        "status": "Status",
+        "profil": "Profile",
+        "konten": "Content",
+        "total": "Total"
+      },
+      "status": {
+        "ANTRE": "Waiting",
+        "DIPINJAM": "Being checked",
+        "SELESAI": "Done today",
+        "GAGAL": "Failed today",
+        "DILEWATI": "Skipped today"
+      },
+      "jenisTugas": {
+        "PROFIL": "Profile",
+        "KONTEN": "Content"
+      },
+      "perangkat": {
+        "judul": "Devices",
+        "kosong": "No devices yet",
+        "nama": "Name",
+        "status": "Status",
+        "terakhirLapor": "Last report",
+        "aksi": "Actions",
+        "sampai": "until {jam}",
+        "sampaiDilanjutkan": "until resumed",
+        "kodeSampai": "code valid until {jam}",
+        "versi": "version {versi}",
+        "oleh": "connected by {nama}",
+        "belumLapor": "Never"
+      },
+      "keadaan": {
+        "BELUM_TERSAMBUNG": "Waiting to connect",
+        "KODE_KEDALUWARSA": "Code expired",
+        "AKTIF": "Active",
+        "DIJEDA": "Paused",
+        "DICABUT": "Revoked"
+      },
+      "alasanJeda": {
+        "MANUAL": "Paused from Elorae",
+        "CAPTCHA": "TikTok captcha",
+        "LOGIN": "TikTok asked to log in",
+        "GAGAL_BERUNTUN": "Repeated failures",
+        "TIDAK_LAPOR": "No report for more than 24 hours"
+      },
+      "cabut": {
+        "judul": "Revoke {nama}?",
+        "isi": "The extension on this device stops working at once and the task it is checking goes back to the queue. To use it again, connect it as a new device.",
+        "batal": "Cancel"
+      },
+      "masalah": {
+        "judul": "Recent problems",
+        "kosong": "No problems yet",
+        "waktu": "Time",
+        "perangkat": "Device",
+        "masalah": "Problem",
+        "kol": "KOL",
+        "pesan": "Message",
+        "dijeda": "Paused: {alasan}"
+      },
+      "kode": {
+        "CAPTCHA": "Captcha",
+        "LOGIN": "Login required",
+        "GAGAL_MUAT": "Page failed to load",
+        "TIDAK_TERBACA": "Numbers unreadable",
+        "TIDAK_DITEMUKAN": "Not found",
+        "PRIVAT": "Private account",
+        "AKUN_BERBEDA": "Different account",
+        "KONTEN_BERBEDA": "Different video",
+        "ANGKA_KOSONG": "Empty numbers",
+        "GAGAL_BERUNTUN": "Repeated failures",
+        "MANUAL": "From Elorae"
+      },
+      "sambung": {
+        "judul": "Connect a device",
+        "judulUlang": "New code for {nama}",
+        "ulangIsi": "The old connection stops as soon as the new code is used in the extension.",
+        "nama": "Device name",
+        "namaContoh": "Creative laptop",
+        "buat": "Create code",
+        "batal": "Cancel",
+        "selesai": "Done",
+        "kode": "Pairing code",
+        "salinKode": "Copy code",
+        "berlaku": "Valid until {jam} WIB, single use",
+        "sekaliTampil": "This code is shown only once.",
+        "alamat": "Elorae address",
+        "salinAlamat": "Copy address",
+        "disalin": "Copied",
+        "gagalSalin": "Could not copy"
+      },
+      "pengaturan": {
+        "judul": "Monitoring settings",
+        "simpan": "Save settings",
+        "bawaan": "Restore defaults",
+        "ok": "Monitoring settings saved",
+        "galatBatas": "Must be a whole number {min}–{maks}",
+        "galatJam": "Invalid time",
+        "galatUrutan": "Must be larger than its pair",
+        "kunci": {
+          "aktif": "Monitoring on",
+          "kuotaHarian": "Daily quota",
+          "jamMulai": "Start time",
+          "jamSelesai": "End time",
+          "jedaMinDetik": "Gap between tasks, shortest",
+          "jedaMaksDetik": "Gap between tasks, longest",
+          "istirahatSetiapMenit": "Break every",
+          "istirahatMinMenit": "Break length, shortest",
+          "istirahatMaksMenit": "Break length, longest",
+          "jedaOtomatisMenit": "Automatic pause after a captcha",
+          "maksGagalBeruntun": "Pause after failures in a row",
+          "hariAkunAktif": "Check active KOL accounts every",
+          "hariAkunLain": "Check other accounts every",
+          "naikPengikutPersen": "Anomaly: followers up by more than",
+          "naikPengikutHari": "Anomaly: within at most",
+          "turunErPersen": "Anomaly: ER down by more than"
+        }
+      },
+      "satuan": {
+        "pengecekan": "checks",
+        "detik": "seconds",
+        "menit": "minutes",
+        "hari": "days",
+        "persen": "%",
+        "kali": "times"
+      },
+      "profil": {
+        "er": "Account ER",
+        "per": "as of {tanggal}",
+        "avgViews": "Average views",
+        "pengikut": "Followers",
+        "terakhirDicek": "Last checked",
+        "belumDicek": "Not checked yet",
+        "status": "Status",
+        "dariPosting": "from {n} posts"
+      },
+      "statusAkun": {
+        "OK": "Read",
+        "TIDAK_DITEMUKAN": "Not found",
+        "PRIVAT": "Private",
+        "TIDAK_TERBACA": "Unreadable"
+      },
+      "err": {
+        "TOKEN_TIDAK_SAH": "The device token is invalid or revoked.",
+        "KODE_TIDAK_SAH": "The pairing code is unknown or already used.",
+        "KODE_KEDALUWARSA": "The pairing code has expired. Create a new one.",
+        "MUATAN_TIDAK_SAH": "The data from the extension is invalid.",
+        "TUGAS_TIDAK_ADA": "Task not found.",
+        "TUGAS_TIDAK_AKTIF": "This task is already closed.",
+        "JENIS_BERBEDA": "The result type does not match the task type.",
+        "AKUN_BERBEDA": "The TikTok account read differs from the account in Elorae.",
+        "KONTEN_BERBEDA": "The video read differs from the content link in Elorae.",
+        "TIDAK_ADA_DI_ELORAE": "This account or video is not in Elorae yet.",
+        "TERLALU_SERING": "Too many requests. Try again shortly.",
+        "BELUM_TAYANG": "This content has no live link yet.",
+        "ANGKA_KOSONG": "All numbers are zero — not saved.",
+        "ANGKA_TIDAK_SAH": "The numbers are invalid.",
+        "TANGGAL_TIDAK_SAH": "The record date is invalid.",
+        "TIDAK_DITEMUKAN": "Not found.",
+        "PERANGKAT_TIDAK_ADA": "Device not found.",
+        "SUDAH_DICABUT": "This device has been revoked.",
+        "NAMA_WAJIB": "The device name is required.",
+        "NAMA_TERLALU_PANJANG": "The device name may have at most 80 characters.",
+        "TIDAK_VALID": "Some fields are invalid.",
+        "TANPA_AKSES": "You do not have permission for this action.",
+        "GAGAL": "Failed. Please try again."
+      }
     }
   },
   "pphDipotong": {

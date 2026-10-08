@@ -1,7 +1,8 @@
 /**
- * "Hari ini" Ruang KOL — 13 kelompok tugas, murni dan aman untuk klien.
+ * "Hari ini" Ruang KOL — 15 kelompok tugas, murni dan aman untuk klien.
  *
- * Menerima baris yang sudah dibaca (kolaborasi, agenda, campaign) dan
+ * Menerima baris yang sudah dibaca (kolaborasi, agenda, campaign, dan —
+ * sejak pantau KOL 2026-10-08 — anomali akun serta perangkat pemantau) dan
  * mengembalikan kelompok {kunci, jumlah, baris[]} dalam urutan tetap, baris
  * diurut dari yang paling lama menunggu. Kelompok bernilai nol TETAP
  * dikembalikan; layar yang memutuskan menyembunyikannya.
@@ -13,6 +14,7 @@
 
 import type { AmbangKreatif } from "./ambang";
 import { keadaanBudget } from "./angka-konten";
+import type { PerubahanAnomali } from "./pantau-anomali";
 import { tahapAktif, type StatusBayar, type StatusDraf, type Tahap } from "./tahap";
 import { tenggatKolaborasi, umurHari, type JenisTenggat, type PengirimanTenggat, type Tenggat, type TerminTenggat } from "./tenggat";
 
@@ -29,7 +31,9 @@ export type KunciTugas =
   | "KIRIM_DOBEL"
   | "DATA_KIRIM_KURANG"
   | "KOL_DIBLOKIR"
-  | "BUDGET_CAMPAIGN";
+  | "BUDGET_CAMPAIGN"
+  | "ANOMALI_AKUN"
+  | "PERANGKAT_BERHENTI";
 
 export const URUTAN_TUGAS: readonly KunciTugas[] = [
   "AGENDA",
@@ -45,6 +49,8 @@ export const URUTAN_TUGAS: readonly KunciTugas[] = [
   "DATA_KIRIM_KURANG",
   "KOL_DIBLOKIR",
   "BUDGET_CAMPAIGN",
+  "ANOMALI_AKUN",
+  "PERANGKAT_BERHENTI",
 ];
 
 /**
@@ -65,6 +71,8 @@ export const JUDUL_TUGAS: Record<KunciTugas, string> = {
   DATA_KIRIM_KURANG: "Data kirim belum lengkap",
   KOL_DIBLOKIR: "KOL diblokir tapi kolaborasinya berjalan",
   BUDGET_CAMPAIGN: "Budget campaign hampir habis atau lewat",
+  ANOMALI_AKUN: "Anomali akun",
+  PERANGKAT_BERHENTI: "Perangkat pemantau berhenti",
 };
 
 export type PengirimanTugas = PengirimanTenggat & { courier?: string | null };
@@ -124,6 +132,29 @@ export type AgendaTugas = {
 
 export type CampaignTugas = { id: string; name: string; budget: number | null; terpakai: number; archivedAt: string | null };
 
+/** Akun TikTok yang catatan terbarunya anomali (`cekAnomaliAkun`, keputusan P6). */
+export type AnomaliTugas = {
+  akunId: string;
+  kolId: string;
+  kolNama: string;
+  handle: string;
+  /** Hari WIB catatan terbaru. */
+  hari: string;
+  pengikut: PerubahanAnomali | null;
+  er: PerubahanAnomali | null;
+};
+
+/** Perangkat pemantau yang dijeda otomatis (captcha, login, gagal beruntun) atau lama tidak melapor. */
+export type PerangkatTugas = {
+  id: string;
+  nama: string;
+  /** Hari WIB sejak berhenti. */
+  sejak: string;
+  alasan: "CAPTCHA" | "LOGIN" | "GAGAL_BERUNTUN" | "TIDAK_LAPOR";
+  /** Jeda otomatis berakhir (ISO); null untuk yang tidak melapor. */
+  sampai: string | null;
+};
+
 export type KurangDataKirim = "ALAMAT" | "HP" | "UKURAN";
 
 /**
@@ -160,11 +191,16 @@ export type InfoTugas = {
   fee?: number;
   /** `fee` adalah jumlah SATU termin (basis fee), bukan fee kolaborasi utuh — ditulis "Termin …". */
   feeTermin?: boolean;
+  /** Anomali akun: perubahan pengikut dan/atau ER. */
+  anomali?: { pengikut: PerubahanAnomali | null; er: PerubahanAnomali | null };
+  /** Perangkat pemantau: kenapa berhenti, dan sampai kapan jeda otomatisnya. */
+  alasanJeda?: PerangkatTugas["alasan"];
+  sampai?: string | null;
 };
 
 export type BarisTugas = {
-  jenis: "KOLABORASI" | "AGENDA" | "CAMPAIGN";
-  /** Id yang dibuka: kolaborasi, agenda, atau campaign. */
+  jenis: "KOLABORASI" | "AGENDA" | "CAMPAIGN" | "AKUN" | "PERANGKAT";
+  /** Id yang dibuka: kolaborasi, agenda, campaign, akun KOL, atau perangkat pemantau. */
   id: string;
   /** Nama KOL, judul agenda, atau nama campaign. */
   judul: string;
@@ -190,6 +226,10 @@ export type MasukanTugas = {
   /** Agenda yang mau ditampilkan — biasanya milik orang yang melihat. */
   agenda: readonly AgendaTugas[];
   campaign: readonly CampaignTugas[];
+  /** Anomali akun dari pantau KOL; kosong bila tidak dibaca. */
+  anomali?: readonly AnomaliTugas[];
+  /** Perangkat pemantau yang berhenti; kosong bila tidak dibaca. */
+  perangkat?: readonly PerangkatTugas[];
   hariIni: string;
   ambang: AmbangKreatif;
 };
@@ -356,6 +396,42 @@ export function susunTugas(m: MasukanTugas): KelompokTugas[] {
       umurHari: 0,
       saranGhosting: false,
       info: { persen: b.persen, lewatBudget: b.keadaan === "LEWAT", sisa: b.sisa },
+    });
+  }
+
+  for (const a of m.anomali ?? []) {
+    tambah("ANOMALI_AKUN", {
+      jenis: "AKUN",
+      id: a.akunId,
+      judul: a.kolNama,
+      sub: a.handle,
+      kolId: a.kolId,
+      docNo: null,
+      waNormal: null,
+      platform: "TIKTOK",
+      tahap: null,
+      sejak: a.hari,
+      umurHari: umurHari(a.hari, m.hariIni),
+      saranGhosting: false,
+      info: { anomali: { pengikut: a.pengikut, er: a.er } },
+    });
+  }
+
+  for (const p of m.perangkat ?? []) {
+    tambah("PERANGKAT_BERHENTI", {
+      jenis: "PERANGKAT",
+      id: p.id,
+      judul: p.nama,
+      sub: null,
+      kolId: null,
+      docNo: null,
+      waNormal: null,
+      platform: null,
+      tahap: null,
+      sejak: p.sejak,
+      umurHari: umurHari(p.sejak, m.hariIni),
+      saranGhosting: false,
+      info: { alasanJeda: p.alasan, sampai: p.sampai },
     });
   }
 

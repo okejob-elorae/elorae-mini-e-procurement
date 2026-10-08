@@ -8,6 +8,7 @@ import { kirimRingkasanHarian } from "@/lib/salesman/ringkasan-harian";
 import { kirimPengumumanTerjadwal } from "@/lib/pengumuman/writer";
 import { ingatkanMutasiMacet, kabarkanKirimanMenunggu } from "@/lib/spg/mutasi-pengingat";
 import { ingatkanTutupHari } from "@/lib/spg/tutup-hari-pengingat";
+import { susunAntrean as susunAntreanPantau } from "@/lib/creative/pantau-writer";
 
 let registered = false;
 
@@ -278,6 +279,28 @@ export function registerCronJobs(): void {
         if (r.toko > 0) console.log(`[cron] tutup-hari: ${r.toko} toko, ${r.orang} SPG diingatkan`);
       } catch (err) {
         console.error("[cron] tutup-hari gagal:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /*
+   * Setiap hari 06:00 WIB — antrean pantau KOL (ekstensi Chrome, uji coba).
+   *
+   * Konten kolaborasi yang jatuh di H+1/H+3/H+7/H+30 dan akun TikTok KOL yang
+   * sudah waktunya dicek masuk antrean sebelum jam kerja ekstensi (bawaan
+   * 08.00). Kunci tugas unik, jadi aman bila server dinyalakan ulang dan
+   * tombol "Susun antrean sekarang" ditekan di hari yang sama.
+   */
+  cron.schedule(
+    "0 6 * * *",
+    async () => {
+      if (process.env.VITEST) return;
+      try {
+        const r = await susunAntreanPantau();
+        console.log(`[cron] antrean-pantau: ${r.dibuat} tugas baru, ${r.dilewati} dilewati`);
+      } catch (err) {
+        console.error("[cron] antrean-pantau gagal:", err);
       }
     },
     { timezone: "Asia/Jakarta" },

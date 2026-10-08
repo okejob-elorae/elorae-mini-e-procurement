@@ -103,6 +103,8 @@ describe("tautan baris", () => {
     );
     expect(tautanBuka(baris({ jenis: "CAMPAIGN", id: "cp1" }))).toBe("/backoffice/kreatif/campaign/cp1");
     expect(tautanBuka(baris())).toBe("/backoffice/kreatif/kolaborasi/c1");
+    expect(tautanBuka(baris({ jenis: "AKUN", id: "akun1", kolId: "k9" }))).toBe("/backoffice/kreatif/kol/k9?tab=pengikut");
+    expect(tautanBuka(baris({ jenis: "PERANGKAT", id: "p1", kolId: null }))).toBe("/backoffice/kreatif/pemantauan");
   });
 });
 

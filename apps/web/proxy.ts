@@ -23,7 +23,9 @@ export async function proxy(request: NextRequest) {
     // Aset pihak ketiga yang disajikan sendiri (mis. mesin WASM pemindai barcode).
     pathname.startsWith('/vendor/') ||
     // Portal pesan mandiri toko: tanpa masuk; token tautannya diperiksa ulang di setiap halaman dan aksi.
-    pathname.startsWith('/toko/')
+    pathname.startsWith('/toko/') ||
+    // API ekstensi Chrome pantau KOL: tanpa sesi; setiap handler memeriksa token perangkatnya sendiri.
+    pathname.startsWith('/api/kreatif/ekstensi/')
   ) {
     return NextResponse.next();
   }

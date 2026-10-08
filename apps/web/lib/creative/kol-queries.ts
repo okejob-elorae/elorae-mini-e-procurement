@@ -309,7 +309,24 @@ export async function dataFormKol(id: string): Promise<DataFormKol | null> {
 
 /* ───────────────────────────── profil ───────────────────────────── */
 
-export type RiwayatPengikut = { followers: number; recordedAt: string; source: string | null };
+export type RiwayatPengikut = {
+  followers: number;
+  recordedAt: string;
+  source: string | null;
+  /** ER akun (persen) dan rata-rata views dari pantau ekstensi; null untuk catatan tangan. */
+  er: number | null;
+  avgViews: number | null;
+  postsCounted: number | null;
+};
+
+/** Angka pantau ekstensi per akun (`KolAccount`). */
+export type PantauAkun = {
+  er: number | null;
+  avgViews: number | null;
+  erUpdatedAt: string | null;
+  lastCheckedAt: string | null;
+  checkStatus: string | null;
+};
 
 export type KolaborasiProfil = {
   id: string;
@@ -355,7 +372,7 @@ export type ProfilKol = {
   kontakTerakhir: string | null;
   dibuat: string;
   label: string[];
-  akun: (AkunRingkas & { riwayat: RiwayatPengikut[] })[];
+  akun: (AkunRingkas & { riwayat: RiwayatPengikut[]; pantau: PantauAkun })[];
   kolaborasi: KolaborasiProfil[];
   konten: KontenProfil[];
   ringkas: HitunganKolaborasiKol & {
@@ -384,7 +401,16 @@ export async function profilKol(id: string): Promise<ProfilKol | null> {
           handle: true,
           followers: true,
           url: true,
-          snapshots: { select: { followers: true, recordedAt: true, source: true }, orderBy: [{ recordedAt: "asc" }, { id: "asc" }], take: 120 },
+          er: true,
+          avgViews: true,
+          erUpdatedAt: true,
+          lastCheckedAt: true,
+          checkStatus: true,
+          snapshots: {
+            select: { followers: true, recordedAt: true, source: true, er: true, avgViews: true, postsCounted: true },
+            orderBy: [{ recordedAt: "desc" }, { id: "desc" }],
+            take: 120,
+          },
         },
       },
       briefs: {
@@ -472,7 +498,22 @@ export async function profilKol(id: string): Promise<ProfilKol | null> {
     label: bacaLabel(k.label),
     akun: akunUrut.map((a, i) => ({
       ...akunTanpaRiwayat[i],
-      riwayat: a.snapshots.map((s) => ({ followers: s.followers, recordedAt: s.recordedAt.toISOString(), source: s.source })),
+      // 120 catatan TERBARU, ditampilkan urut lama → baru (garis kecil dan kolom "perubahan" membutuhkannya).
+      riwayat: [...a.snapshots].reverse().map((s) => ({
+        followers: s.followers,
+        recordedAt: s.recordedAt.toISOString(),
+        source: s.source,
+        er: s.er === null ? null : Number(s.er),
+        avgViews: s.avgViews,
+        postsCounted: s.postsCounted,
+      })),
+      pantau: {
+        er: a.er === null ? null : Number(a.er),
+        avgViews: a.avgViews,
+        erUpdatedAt: a.erUpdatedAt?.toISOString() ?? null,
+        lastCheckedAt: a.lastCheckedAt?.toISOString() ?? null,
+        checkStatus: a.checkStatus,
+      },
     })),
     kolaborasi,
     konten: k.briefs.flatMap((b) =>

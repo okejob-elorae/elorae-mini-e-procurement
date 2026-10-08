@@ -261,7 +261,8 @@
     "navFinanceJurnalBerulang": "Jurnal berulang",
     "navFinanceKas": "Kas & bank",
     "navFinanceRekonsiliasiBank": "Rekonsiliasi bank",
-    "navUmurHutang": "Umur utang"
+    "navUmurHutang": "Umur utang",
+    "navKolPemantauan": "Pemantauan"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -12363,7 +12364,13 @@
       "PO_UNPAID_BY_PAYMENT_CANCEL": "Tanda lunas PO dibuka (pembayaran dibatalkan)",
       "JOURNAL_SWEEP_NOTHING_TO_POST": "Sapuan jurnal: tidak ada yang perlu dijurnal",
       "SUPPLIER_SKB_CHANGED": "SKB pemasok diubah",
-      "STORE_CONSIGNMENT_VAT_CHANGED": "PPN tagihan konsinyasi toko diubah"
+      "STORE_CONSIGNMENT_VAT_CHANGED": "PPN tagihan konsinyasi toko diubah",
+      "KOL_MONITOR_DEVICE_CODE_CREATED": "Kode sambung perangkat pemantau dibuat",
+      "KOL_MONITOR_DEVICE_PAUSED": "Perangkat pemantau dijeda",
+      "KOL_MONITOR_DEVICE_RESUMED": "Perangkat pemantau dilanjutkan",
+      "KOL_MONITOR_DEVICE_REVOKED": "Perangkat pemantau dicabut",
+      "KOL_MONITOR_QUEUE_BUILT": "Antrean pemantauan disusun",
+      "KOL_MONITOR_SETTINGS_UPDATED": "Pengaturan pemantauan diubah"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -12470,7 +12477,9 @@
       "CashCategory": "Kategori kas",
       "BankStatementImport": "Impor mutasi bank",
       "BankStatementLine": "Baris mutasi bank",
-      "SupplierPayment": "Pembayaran pemasok"
+      "SupplierPayment": "Pembayaran pemasok",
+      "KolPerangkat": "Perangkat pemantau",
+      "KolTugasPantau": "Antrean pemantauan"
     },
     "fields": {
       "value": "Nilai",
@@ -19660,7 +19669,8 @@
       "pengaturan": "Pengaturan",
       "lencana": "{n} hal perlu ditindaklanjuti",
       "gulirKiri": "Gulir tab ke kiri",
-      "gulirKanan": "Gulir tab ke kanan"
+      "gulirKanan": "Gulir tab ke kanan",
+      "pemantauan": "Pemantauan"
     },
     "halaman": {
       "hariIni": "Hari ini",
@@ -19674,7 +19684,8 @@
       "pembayaran": "Pembayaran KOL",
       "kalender": "Kalender",
       "laporan": "Laporan",
-      "pengaturan": "Pengaturan Kreatif"
+      "pengaturan": "Pengaturan Kreatif",
+      "pemantauan": "Pemantauan KOL"
     },
     "disiapkan": {
       "judul": "Sedang disiapkan",
@@ -19743,7 +19754,9 @@
       "KIRIM_DOBEL": "Berpotensi kirim dobel",
       "DATA_KIRIM_KURANG": "Data kirim belum lengkap",
       "KOL_DIBLOKIR": "KOL diblokir tapi kolaborasinya berjalan",
-      "BUDGET_CAMPAIGN": "Budget campaign hampir habis atau lewat"
+      "BUDGET_CAMPAIGN": "Budget campaign hampir habis atau lewat",
+      "ANOMALI_AKUN": "Anomali akun",
+      "PERANGKAT_BERHENTI": "Perangkat pemantau berhenti"
     },
     "tugasSaran": {
       "AGENDA": "Buka Kalender untuk melihat persiapannya.",
@@ -19758,7 +19771,9 @@
       "KIRIM_DOBEL": "Cek dulu sebelum mengirim — nomor atau orangnya sudah pernah dikirimi.",
       "DATA_KIRIM_KURANG": "Lengkapi alamat, nomor HP, atau ukuran sebelum mengirim.",
       "KOL_DIBLOKIR": "Putuskan: lanjutkan atau keluarkan kolaborasinya.",
-      "BUDGET_CAMPAIGN": "Cek pengeluaran campaign sebelum menambah kolaborasi."
+      "BUDGET_CAMPAIGN": "Cek pengeluaran campaign sebelum menambah kolaborasi.",
+      "ANOMALI_AKUN": "Periksa profilnya: lonjakan pengikut atau ER yang anjlok perlu dilihat sebelum diajak kerja sama lagi.",
+      "PERANGKAT_BERHENTI": "Buka Chrome di perangkat itu, selesaikan captcha atau login TikTok, lalu lanjutkan dari Pemantauan."
     },
     "tenggat": {
       "FOLLOW_UP": "Follow-up",
@@ -19895,8 +19910,13 @@
           "budgetSisa": "sisa {sisa}",
           "budgetLewat": "lewat {sisa}",
           "fee": "Fee {fee}",
-          "termin": "Termin {jumlah}"
-        }
+          "termin": "Termin {jumlah}",
+          "pengikutNaik": "Pengikut {dari} → {ke} (+{persen}%)",
+          "erTurun": "ER {dari}% → {ke}% (−{persen}%)",
+          "jedaSampai": "dijeda sampai {jam}"
+        },
+        "bukaProfil": "Buka profil",
+        "bukaPemantauan": "Buka pemantauan"
       },
       "posisi": {
         "judul": "Posisi pipeline",
@@ -21193,7 +21213,7 @@
           "kolaborasi": "Kolaborasi",
           "konten": "Konten",
           "ukuran": "Ukuran, alamat & pajak",
-          "pengikut": "Riwayat pengikut",
+          "pengikut": "Pengikut & ER",
           "catatan": "Catatan & riwayat"
         },
         "kolom": {
@@ -21236,7 +21256,8 @@
         "pengikutKosong": "Belum ada riwayat pengikut.",
         "sumber": {
           "formulir": "Formulir",
-          "massal": "Tambah massal"
+          "massal": "Tambah massal",
+          "ekstensi": "Ekstensi"
         },
         "rateCard": "Rate card",
         "rateNote": "Catatan rate",
@@ -21613,6 +21634,200 @@
       "errTidakValid": "Ada isian tarif yang tidak sah.",
       "errAkses": "Anda tidak punya akses untuk mengubah tarif.",
       "errGagal": "Gagal menyimpan tarif."
+    },
+    "pantau": {
+      "meta": "Jam kerja {mulai}–{selesai} WIB",
+      "nonaktif": "Pemantauan dimatikan",
+      "diLuarJam": "di luar jam kerja",
+      "okSusun": "{dibuat} tugas baru, {dilewati} dilewati",
+      "okJeda": "Perangkat dijeda",
+      "okLanjut": "Perangkat dilanjutkan",
+      "okCabut": "Perangkat dicabut",
+      "aksi": {
+        "susun": "Susun antrean sekarang",
+        "sambungkan": "Sambungkan perangkat",
+        "jeda": "Jeda",
+        "lanjutkan": "Lanjutkan",
+        "kodeBaru": "Kode baru",
+        "cabut": "Cabut",
+        "cabutNama": "Cabut {nama}"
+      },
+      "kpi": {
+        "label": "Pengecekan hari ini",
+        "selesai": "Selesai hari ini",
+        "gagal": "Percobaan gagal",
+        "kuota": "Kuota harian",
+        "sisa": "Sisa kuota",
+        "dipinjam": "{n} sedang dicek"
+      },
+      "antrean": {
+        "judul": "Antrean",
+        "status": "Status",
+        "profil": "Profil",
+        "konten": "Konten",
+        "total": "Total"
+      },
+      "status": {
+        "ANTRE": "Menunggu",
+        "DIPINJAM": "Sedang dicek",
+        "SELESAI": "Selesai hari ini",
+        "GAGAL": "Gagal hari ini",
+        "DILEWATI": "Dilewati hari ini"
+      },
+      "jenisTugas": {
+        "PROFIL": "Profil",
+        "KONTEN": "Konten"
+      },
+      "perangkat": {
+        "judul": "Perangkat",
+        "kosong": "Belum ada perangkat",
+        "nama": "Nama",
+        "status": "Status",
+        "terakhirLapor": "Terakhir melapor",
+        "aksi": "Aksi",
+        "sampai": "sampai {jam}",
+        "sampaiDilanjutkan": "sampai dilanjutkan",
+        "kodeSampai": "kode berlaku sampai {jam}",
+        "versi": "versi {versi}",
+        "oleh": "disambungkan {nama}",
+        "belumLapor": "Belum pernah"
+      },
+      "keadaan": {
+        "BELUM_TERSAMBUNG": "Menunggu disambungkan",
+        "KODE_KEDALUWARSA": "Kode kedaluwarsa",
+        "AKTIF": "Aktif",
+        "DIJEDA": "Dijeda",
+        "DICABUT": "Dicabut"
+      },
+      "alasanJeda": {
+        "MANUAL": "Dijeda dari Elorae",
+        "CAPTCHA": "Captcha TikTok",
+        "LOGIN": "TikTok meminta login",
+        "GAGAL_BERUNTUN": "Gagal berturut-turut",
+        "TIDAK_LAPOR": "Tidak melapor lebih dari 24 jam"
+      },
+      "cabut": {
+        "judul": "Cabut {nama}?",
+        "isi": "Ekstensi di perangkat ini langsung berhenti bekerja dan tugas yang sedang dicek kembali ke antrean. Untuk memakainya lagi, sambungkan sebagai perangkat baru.",
+        "batal": "Batal"
+      },
+      "masalah": {
+        "judul": "Masalah terbaru",
+        "kosong": "Belum ada masalah",
+        "waktu": "Waktu",
+        "perangkat": "Perangkat",
+        "masalah": "Masalah",
+        "kol": "KOL",
+        "pesan": "Pesan",
+        "dijeda": "Dijeda: {alasan}"
+      },
+      "kode": {
+        "CAPTCHA": "Captcha",
+        "LOGIN": "Diminta login",
+        "GAGAL_MUAT": "Halaman gagal dimuat",
+        "TIDAK_TERBACA": "Angka tidak terbaca",
+        "TIDAK_DITEMUKAN": "Tidak ditemukan",
+        "PRIVAT": "Akun privat",
+        "AKUN_BERBEDA": "Akun berbeda",
+        "KONTEN_BERBEDA": "Video berbeda",
+        "ANGKA_KOSONG": "Angka kosong",
+        "GAGAL_BERUNTUN": "Gagal berturut-turut",
+        "MANUAL": "Dari Elorae"
+      },
+      "sambung": {
+        "judul": "Sambungkan perangkat",
+        "judulUlang": "Kode baru untuk {nama}",
+        "ulangIsi": "Sambungan lama berhenti begitu kode baru dipakai di ekstensi.",
+        "nama": "Nama perangkat",
+        "namaContoh": "Laptop kreatif",
+        "buat": "Buat kode",
+        "batal": "Batal",
+        "selesai": "Selesai",
+        "kode": "Kode sambung",
+        "salinKode": "Salin kode",
+        "berlaku": "Berlaku sampai {jam} WIB, sekali pakai",
+        "sekaliTampil": "Kode ini hanya ditampilkan sekali.",
+        "alamat": "Alamat Elorae",
+        "salinAlamat": "Salin alamat",
+        "disalin": "Disalin",
+        "gagalSalin": "Gagal menyalin"
+      },
+      "pengaturan": {
+        "judul": "Pengaturan pemantauan",
+        "simpan": "Simpan pengaturan",
+        "bawaan": "Kembalikan bawaan",
+        "ok": "Pengaturan pemantauan disimpan",
+        "galatBatas": "Harus bilangan bulat {min}–{maks}",
+        "galatJam": "Jam tidak sah",
+        "galatUrutan": "Harus lebih besar dari pasangannya",
+        "kunci": {
+          "aktif": "Pemantauan aktif",
+          "kuotaHarian": "Kuota harian",
+          "jamMulai": "Jam mulai",
+          "jamSelesai": "Jam selesai",
+          "jedaMinDetik": "Jeda antar tugas, paling cepat",
+          "jedaMaksDetik": "Jeda antar tugas, paling lama",
+          "istirahatSetiapMenit": "Istirahat setiap",
+          "istirahatMinMenit": "Lama istirahat, paling singkat",
+          "istirahatMaksMenit": "Lama istirahat, paling lama",
+          "jedaOtomatisMenit": "Jeda otomatis sesudah captcha",
+          "maksGagalBeruntun": "Jeda sesudah gagal berturut-turut",
+          "hariAkunAktif": "Cek akun KOL aktif setiap",
+          "hariAkunLain": "Cek akun lain setiap",
+          "naikPengikutPersen": "Anomali: pengikut naik lebih dari",
+          "naikPengikutHari": "Anomali: dalam rentang paling lama",
+          "turunErPersen": "Anomali: ER turun lebih dari"
+        }
+      },
+      "satuan": {
+        "pengecekan": "pengecekan",
+        "detik": "detik",
+        "menit": "menit",
+        "hari": "hari",
+        "persen": "%",
+        "kali": "kali"
+      },
+      "profil": {
+        "er": "ER akun",
+        "per": "per {tanggal}",
+        "avgViews": "Rata-rata views",
+        "pengikut": "Pengikut",
+        "terakhirDicek": "Terakhir dicek",
+        "belumDicek": "Belum dicek",
+        "status": "Status",
+        "dariPosting": "dari {n} posting"
+      },
+      "statusAkun": {
+        "OK": "Terbaca",
+        "TIDAK_DITEMUKAN": "Tidak ditemukan",
+        "PRIVAT": "Privat",
+        "TIDAK_TERBACA": "Tidak terbaca"
+      },
+      "err": {
+        "TOKEN_TIDAK_SAH": "Token perangkat tidak sah atau sudah dicabut.",
+        "KODE_TIDAK_SAH": "Kode sambung tidak dikenal atau sudah dipakai.",
+        "KODE_KEDALUWARSA": "Kode sambung sudah kedaluwarsa. Buat kode baru.",
+        "MUATAN_TIDAK_SAH": "Data dari ekstensi tidak sah.",
+        "TUGAS_TIDAK_ADA": "Tugas tidak ditemukan.",
+        "TUGAS_TIDAK_AKTIF": "Tugas ini sudah ditutup.",
+        "JENIS_BERBEDA": "Jenis hasil tidak sama dengan jenis tugasnya.",
+        "AKUN_BERBEDA": "Akun TikTok yang terbaca berbeda dengan akun di Elorae.",
+        "KONTEN_BERBEDA": "Video yang terbaca berbeda dengan link konten di Elorae.",
+        "TIDAK_ADA_DI_ELORAE": "Akun atau video ini belum tercatat di Elorae.",
+        "TERLALU_SERING": "Terlalu banyak permintaan. Coba lagi sebentar lagi.",
+        "BELUM_TAYANG": "Konten ini belum punya link tayang.",
+        "ANGKA_KOSONG": "Semua angka nol — tidak disimpan.",
+        "ANGKA_TIDAK_SAH": "Angkanya tidak sah.",
+        "TANGGAL_TIDAK_SAH": "Tanggal catat tidak sah.",
+        "TIDAK_DITEMUKAN": "Tidak ditemukan.",
+        "PERANGKAT_TIDAK_ADA": "Perangkat tidak ditemukan.",
+        "SUDAH_DICABUT": "Perangkat ini sudah dicabut.",
+        "NAMA_WAJIB": "Nama perangkat wajib diisi.",
+        "NAMA_TERLALU_PANJANG": "Nama perangkat paling banyak 80 huruf.",
+        "TIDAK_VALID": "Ada isian yang tidak sah.",
+        "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini.",
+        "GAGAL": "Gagal. Coba lagi."
+      }
     }
   },
   "pphDipotong": {

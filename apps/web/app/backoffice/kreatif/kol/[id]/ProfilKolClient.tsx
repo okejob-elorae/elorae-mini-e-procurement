@@ -17,7 +17,7 @@ import { TombolWa } from "@/components/kreatif/TombolWa";
 import { inisial, urlProfil } from "@/lib/creative/kol-aturan";
 import { alamatLengkap, nadaTahap, teksAlamatKirim } from "@/lib/creative/kolaborasi-tampil";
 import type { ProfilKol, RiwayatPengikut } from "@/lib/creative/kol-queries";
-import { formatDisplayDate } from "@/lib/date-only";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { DialogKol } from "../DialogKol";
 import { angkaPenuh, NADA_TIER, persenTeks, ringkasAngka, roasTeks, rupiahLayar } from "../format-kol";
@@ -41,6 +41,16 @@ function Garis({ titik }: { titik: readonly RiwayatPengikut[] }) {
     <svg viewBox={`0 0 ${L} ${T}`} className="h-9 w-40 text-primary" aria-hidden>
       <polyline points={xy.join(" ")} fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
     </svg>
+  );
+}
+
+function AngkaPantau({ label, nilai, children }: { label: string; nilai: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 font-semibold tabular-nums">{nilai}</dd>
+      {children ? <dd className="text-xs text-muted-foreground">{children}</dd> : null}
+    </div>
   );
 }
 
@@ -423,7 +433,8 @@ export function ProfilKolClient({
         </TabsContent>
 
         <TabsContent value="pengikut">
-          <div className="grid gap-4 lg:grid-cols-2">
+          {/* Satu kolom: riwayatnya enam kolom (tanggal, pengikut, perubahan, ER, rata-rata views, sumber). */}
+          <div className="grid gap-4">
             {profil.akun.map((a) => (
               <Card key={a.id}>
                 <CardHeader className="flex flex-row items-center justify-between gap-3">
@@ -435,6 +446,33 @@ export function ProfilKolClient({
                   </div>
                   <Garis titik={a.riwayat} />
                 </CardHeader>
+                {a.platform === "TIKTOK" ? (
+                  <CardContent className="pb-0">
+                    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                      <AngkaPantau label={t("pantau.profil.er")} nilai={a.pantau.er !== null ? persenTeks(a.pantau.er) : "—"}>
+                        {a.pantau.erUpdatedAt ? t("pantau.profil.per", { tanggal: formatDisplayDate(a.pantau.erUpdatedAt, locale) }) : null}
+                      </AngkaPantau>
+                      <AngkaPantau label={t("pantau.profil.avgViews")} nilai={a.pantau.avgViews !== null ? angkaPenuh(a.pantau.avgViews) : "—"} />
+                      <AngkaPantau label={t("pantau.profil.pengikut")} nilai={angkaPenuh(a.followers)} />
+                      <AngkaPantau
+                        label={t("pantau.profil.terakhirDicek")}
+                        nilai={a.pantau.lastCheckedAt ? formatDisplayDateTime(a.pantau.lastCheckedAt, locale) : t("pantau.profil.belumDicek")}
+                      />
+                      <AngkaPantau
+                        label={t("pantau.profil.status")}
+                        nilai={
+                          a.pantau.checkStatus ? (
+                            <StatusPill tone={a.pantau.checkStatus === "OK" ? "settled" : a.pantau.checkStatus === "TIDAK_TERBACA" ? "waiting" : "attention"}>
+                              {t.has(`pantau.statusAkun.${a.pantau.checkStatus}`) ? t(`pantau.statusAkun.${a.pantau.checkStatus}`) : a.pantau.checkStatus}
+                            </StatusPill>
+                          ) : (
+                            "—"
+                          )
+                        }
+                      />
+                    </dl>
+                  </CardContent>
+                ) : null}
                 <CardContent className="px-0 sm:px-6">
                   {a.riwayat.length === 0 ? (
                     <p className="px-6 text-sm text-muted-foreground sm:px-0">{t("kol.profil.pengikutKosong")}</p>
@@ -446,6 +484,8 @@ export function ProfilKolClient({
                             <TableHead>{t("kol.profil.kolom.tanggal")}</TableHead>
                             <TableHead className="text-right">{t("kol.profil.kolom.pengikut")}</TableHead>
                             <TableHead className="text-right">{t("kol.profil.kolom.perubahan")}</TableHead>
+                            <TableHead className="text-right">{t("pantau.profil.er")}</TableHead>
+                            <TableHead className="text-right">{t("pantau.profil.avgViews")}</TableHead>
                             <TableHead>{t("kol.profil.kolom.sumber")}</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -466,6 +506,13 @@ export function ProfilKolClient({
                                 >
                                   {s.beda === null ? "—" : `${s.beda > 0 ? "+" : ""}${angkaPenuh(s.beda)}`}
                                 </TableCell>
+                                <TableCell className="text-right tabular-nums">
+                                  {s.er !== null ? persenTeks(s.er) : "—"}
+                                  {s.postsCounted !== null ? (
+                                    <span className="block text-xs text-muted-foreground">{t("pantau.profil.dariPosting", { n: s.postsCounted })}</span>
+                                  ) : null}
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums">{s.avgViews !== null ? angkaPenuh(s.avgViews) : "—"}</TableCell>
                                 <TableCell className="text-sm text-muted-foreground">
                                   {s.source && t.has(`kol.profil.sumber.${s.source}`) ? t(`kol.profil.sumber.${s.source}`) : (s.source ?? "—")}
                                 </TableCell>

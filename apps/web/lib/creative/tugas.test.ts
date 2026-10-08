@@ -7,9 +7,11 @@ import {
   susunTugas,
   URUTAN_TUGAS,
   type AgendaTugas,
+  type AnomaliTugas,
   type CampaignTugas,
   type KolaborasiTugas,
   type KunciTugas,
+  type PerangkatTugas,
 } from "./tugas";
 
 const HARI_INI = "2026-10-20";
@@ -43,17 +45,23 @@ function kol(isi: Partial<KolaborasiTugas> = {}): KolaborasiTugas {
   };
 }
 
-const kosong = { kolaborasi: [] as KolaborasiTugas[], agenda: [] as AgendaTugas[], campaign: [] as CampaignTugas[] };
+const kosong = {
+  kolaborasi: [] as KolaborasiTugas[],
+  agenda: [] as AgendaTugas[],
+  campaign: [] as CampaignTugas[],
+  anomali: [] as AnomaliTugas[],
+  perangkat: [] as PerangkatTugas[],
+};
 
 function kelompok(kunci: KunciTugas, isi: Partial<typeof kosong>) {
   return susunTugas({ ...kosong, ...isi, hariIni: HARI_INI, ambang: AMBANG_BAWAAN }).find((k) => k.kunci === kunci)!;
 }
 
-describe("susunTugas — 13 kelompok Hari ini", () => {
-  it("selalu mengembalikan 13 kelompok dalam urutan tetap, berjudul bahasa Indonesia", () => {
+describe("susunTugas — 15 kelompok Hari ini", () => {
+  it("selalu mengembalikan 15 kelompok dalam urutan tetap, berjudul bahasa Indonesia", () => {
     const k = susunTugas({ ...kosong, hariIni: HARI_INI, ambang: AMBANG_BAWAAN });
     expect(k.map((x) => x.kunci)).toEqual(URUTAN_TUGAS);
-    expect(URUTAN_TUGAS).toHaveLength(13);
+    expect(URUTAN_TUGAS).toHaveLength(15);
     for (const x of URUTAN_TUGAS) expect(JUDUL_TUGAS[x].length).toBeGreaterThan(0);
     expect(jumlahTugas(k)).toBe(0);
   });
@@ -197,5 +205,34 @@ describe("susunTugas — 13 kelompok Hari ini", () => {
     const semua = susunTugas({ ...kosong, kolaborasi: [a, b], hariIni: HARI_INI, ambang: AMBANG_BAWAAN });
     expect(semua.find((k) => k.kunci === "BELUM_DIBALAS")!.jumlah).toBe(2);
     expect(jumlahTugas(semua)).toBe(2);
+  });
+});
+
+describe("susunTugas — pantau KOL", () => {
+  it("anomali akun: satu baris per akun, judul nama KOL, sub handle, info perubahan; urut paling lama dulu", () => {
+    const anomali: AnomaliTugas[] = [
+      { akunId: "a1", kolId: "k1", kolNama: "Rina", handle: "rina", hari: "2026-10-19", pengikut: { dari: 1000, ke: 1500, persen: 50 }, er: null },
+      { akunId: "a2", kolId: "k2", kolNama: "Budi", handle: "budi", hari: "2026-10-17", pengikut: null, er: { dari: 6, ke: 3, persen: 50 } },
+    ];
+    const k = kelompok("ANOMALI_AKUN", { anomali });
+    expect(k.jumlah).toBe(2);
+    expect(k.baris.map((b) => [b.jenis, b.id, b.judul, b.sub, b.kolId, b.umurHari])).toEqual([
+      ["AKUN", "a2", "Budi", "budi", "k2", 3],
+      ["AKUN", "a1", "Rina", "rina", "k1", 1],
+    ]);
+    expect(k.baris[1].info.anomali).toEqual({ pengikut: { dari: 1000, ke: 1500, persen: 50 }, er: null });
+  });
+
+  it("perangkat pemantau berhenti: alasan dan batas jedanya ikut", () => {
+    const perangkat: PerangkatTugas[] = [{ id: "p1", nama: "Laptop kantor", sejak: "2026-10-20", alasan: "CAPTCHA", sampai: "2026-10-20T05:00:00.000Z" }];
+    const k = kelompok("PERANGKAT_BERHENTI", { perangkat });
+    expect(k.baris).toHaveLength(1);
+    expect(k.baris[0]).toMatchObject({ jenis: "PERANGKAT", id: "p1", judul: "Laptop kantor", umurHari: 0, info: { alasanJeda: "CAPTCHA", sampai: "2026-10-20T05:00:00.000Z" } });
+  });
+
+  it("tanpa data pantau kedua kelompok ada tapi kosong", () => {
+    const semua = susunTugas({ ...kosong, hariIni: HARI_INI, ambang: AMBANG_BAWAAN });
+    expect(semua.find((k) => k.kunci === "ANOMALI_AKUN")!.jumlah).toBe(0);
+    expect(semua.find((k) => k.kunci === "PERANGKAT_BERHENTI")!.jumlah).toBe(0);
   });
 });
