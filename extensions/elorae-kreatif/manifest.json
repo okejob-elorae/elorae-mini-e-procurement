@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Elorae Kreatif — Pantau KOL",
   "short_name": "Elorae Kreatif",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Membaca angka profil dan video TikTok KOL lalu mengirimkannya ke Elorae (uji coba pemantauan).",
   "minimum_chrome_version": "111",
   "permissions": ["storage", "alarms", "tabs", "scripting"],
@@ -26,6 +26,11 @@
       "matches": ["https://www.tiktok.com/*"],
       "js": ["konten.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["http://localhost:3000/*", "https://elorae.cloud/*"],
+      "js": ["jembatan-elorae.js"],
+      "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [

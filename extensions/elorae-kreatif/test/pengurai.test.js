@@ -481,7 +481,15 @@ describe("perluHalamanSegar", () => {
 
 describe("diagnosaHalaman", () => {
   test("tanpa skrip data", () => {
-    assert.equal(p.diagnosaHalaman("<html><body>halo</body></html>"), "skrip data tidak ada");
+    assert.equal(p.diagnosaHalaman("<html><body>halo</body></html>"), "skrip data tidak ada (html: 30 b)");
+  });
+  test("halaman perantara: judul, panjang, dan kata penanda dilaporkan; isi halaman tidak", () => {
+    const html = "<html><head><title>Security Check</title></head><body><div id=captcha-verify-container>rahasia 123</div></body></html>";
+    const d = p.diagnosaHalaman(html);
+    assert.match(d, /^skrip data tidak ada \(judul: Security Check; html: \d+ b; tanda: captcha,verify\)$/);
+    assert.doesNotMatch(d, /rahasia/);
+    const h = p.bacaHalaman(html, { url: "https://www.tiktok.com/@a/video/7301234567890123456" });
+    assert.equal(h.tanpaSkrip, true);
   });
   test("skrip ada tapi bagian video kosong → kunci dan statusCode dilaporkan, tanpa angka", () => {
     const html = `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify({

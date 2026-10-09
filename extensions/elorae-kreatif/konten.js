@@ -66,6 +66,13 @@
     querySelector(sel) {
       return document.querySelector(sel);
     },
+    // Untuk diagnosa saat angka tidak terbaca (judul, panjang, kata penanda) — tidak dikirim utuh.
+    get title() {
+      return document.title;
+    },
+    get html() {
+      return document.documentElement?.outerHTML ?? "";
+    },
   };
 
   // ------------------------------------------------ tangkapan daftar video
@@ -273,6 +280,14 @@
     .lencana.netral { background: var(--kartu-2); color: var(--teks); white-space: normal; }
     .lencana { white-space: normal; }
 
+    .atur { display: grid; gap: 8px; }
+    .atur .baris-atur { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .atur .baris-atur > span { color: var(--redup); font-size: 12px; }
+    .swatch-baris { display: flex; gap: 6px; align-items: center; }
+    .swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 2px solid transparent;
+      box-shadow: inset 0 0 0 1px var(--garis); position: relative; overflow: hidden; }
+    .swatch[aria-pressed="true"] { border-color: var(--teks); }
+    .swatch input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; padding: 0; border: 0; }
     .chip-baris { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 10px;
       background: var(--kartu-2); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -322,6 +337,7 @@
     lebar: ["M4 9V4h5", "M20 15v5h-5", "M4 4l6 6", "M20 20l-6-6"],
     sempit: ["M9 4v5H4", "M15 20v-5h5", "M9 9L3 3", "M15 15l6 6"],
     centang: ["M5 12.5l4.5 4.5L19 7.5"],
+    atur: ["M4 7h9", "M17 7h3", "M15 5v4", "M4 17h3", "M11 17h9", "M9 15v4"],
     awas: ["M12 8v5", "M12 16.5v.01", "M12 3.5l9.5 16.5h-19z"],
   };
   const NS = "http://www.w3.org/2000/svg";
@@ -656,6 +672,41 @@
     return el("div", { kelas: "blok" }, ...isi);
   }
 
+  /** Pengaturan tampilan langsung di panel (tombol gerigi) — sama dengan bagian Tampilan di popup. */
+  function blokAtur() {
+    const t = panel.tampilan;
+    const segmen = (kunci, pilihan) => {
+      const g = el("div", { kelas: "segmen", role: "group" });
+      for (const [nilai, label] of pilihan) {
+        g.append(el("button", { type: "button", "aria-pressed": String(t[kunci] === nilai), teks: label, onclick: () => ubahTampilan({ [kunci]: nilai }) }));
+      }
+      return g;
+    };
+    const warna = el("div", { kelas: "swatch-baris", role: "group", "aria-label": "Warna" });
+    for (const [kunci, { nama }] of Object.entries(gaya.AKSEN)) {
+      const b = el("button", { type: "button", kelas: "swatch", title: nama, "aria-label": nama, "aria-pressed": String(t.aksen === kunci), onclick: () => ubahTampilan({ aksen: kunci }) });
+      b.style.background = kunci === "mono" ? "linear-gradient(135deg, #f5f3fb 50%, #17151d 50%)" : gaya.warnaAksen(kunci, "gelap").aksen;
+      warna.append(b);
+    }
+    const sendiri = !(t.aksen in gaya.AKSEN);
+    const pilih = el("input", { type: "color", value: sendiri ? t.aksen : "#c9b8ff", "aria-label": "Pilih warna sendiri" });
+    pilih.addEventListener("change", () => ubahTampilan({ aksen: pilih.value }));
+    for (const jenis of ["keydown", "keyup", "keypress"]) pilih.addEventListener(jenis, (ev) => ev.stopPropagation());
+    const lain = el("span", { kelas: "swatch", title: "Pilih warna sendiri", "aria-pressed": String(sendiri) }, pilih);
+    lain.style.background = sendiri ? t.aksen : "conic-gradient(#ff8a73, #ffd75e, #7fe3b4, #7cb7ff, #c9b8ff, #ff8a73)";
+    warna.append(lain);
+    const baris = (label, isi) => el("div", { kelas: "baris-atur" }, el("span", { teks: label }), isi);
+    return el(
+      "div",
+      { kelas: "blok atur" },
+      el("div", { kelas: "judul-blok" }, el("span", { teks: "Tampilan" })),
+      baris("Tema", segmen("tema", [["otomatis", "Otomatis"], ["terang", "Terang"], ["gelap", "Gelap"]])),
+      baris("Warna", warna),
+      baris("Ukuran", segmen("ukuran", [["lengkap", "Lengkap"], ["ringkas", "Ringkas"]])),
+      baris("Posisi", segmen("posisi", [["kiri", "Kiri"], ["kanan", "Kanan"]])),
+    );
+  }
+
   function isiProfil(h, data, lengkap) {
     const r = alat.ringkasAkun(data.posting, data.pengikut, Date.now(), { jumlahVideo: data.jumlahVideo });
     const judulEr =
@@ -766,6 +817,20 @@
           "button",
           {
             kelas: "kecil",
+            title: "Tema, warna, ukuran, posisi",
+            "aria-label": "Atur tampilan panel",
+            "aria-expanded": String(Boolean(panel.atur)),
+            onclick: () => {
+              panel.atur = !panel.atur;
+              gambar(pengurai?.jenisHalaman(location.href));
+            },
+          },
+          ikon("atur"),
+        ),
+        el(
+          "button",
+          {
+            kelas: "kecil",
             title: lengkap ? "Tampilan ringkas" : "Tampilan lengkap",
             "aria-label": lengkap ? "Tampilan ringkas" : "Tampilan lengkap",
             onclick: () => ubahTampilan({ ukuran: lengkap ? "ringkas" : "lengkap" }),
@@ -783,7 +848,7 @@
       el("div", { style: "min-width:0" }, el("div", { kelas: "nama", teks: "@" + handle }), el("div", { kelas: "jenis", teks: target.jenis === "PROFIL" ? "Profil TikTok" : "Video TikTok" })),
     );
 
-    const kartu = el("div", { kelas: `kotak${posisi}${panel.animasi ? " masuk" : ""}`, role: "region", "aria-label": "Panel Elorae" }, kepala, siapa);
+    const kartu = el("div", { kelas: `kotak${posisi}${panel.animasi ? " masuk" : ""}`, role: "region", "aria-label": "Panel Elorae" }, kepala, panel.atur ? blokAtur() : null, siapa);
     panel.animasi = false;
 
     if (isi) {

@@ -509,7 +509,7 @@ function postingDariTangkapan(tangkapan, profil) {
  */
 export function bacaHalaman(masukan, opsi = {}) {
   const status = deteksiHalaman(masukan, opsi);
-  if (status === "TIDAK_TERBACA") return { status, diagnosa: diagnosaHalaman(masukan) };
+  if (status === "TIDAK_TERBACA") return { status, diagnosa: diagnosaHalaman(masukan), tanpaSkrip: !ambilTeksRehidrasi(masukan) };
   if (status !== "OK") return { status };
   const lingkup = bacaLingkup(masukan);
   const target = typeof opsi.url === "string" ? jenisHalaman(opsi.url) : null;
@@ -530,16 +530,40 @@ export function bacaHalaman(masukan, opsi = {}) {
   return { status: "OK", data, adaItemList };
 }
 
+/** Kata yang menandai halaman perantara (pemeriksaan robot, verifikasi) alih-alih halaman TikTok biasa. */
+const TANDA_PERANTARA = ["captcha", "verify", "verification", "challenge", "waf", "slider", "robot", "SIGI_STATE", "__NEXT_DATA__"];
+
+function htmlDari(masukan) {
+  if (typeof masukan === "string") return masukan;
+  try {
+    return typeof masukan?.html === "string" ? masukan.html : "";
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Ringkasan singkat isi halaman saat angkanya tidak terbaca — dikirim bersama laporan masalah
- * supaya penyebabnya terlihat di Elorae (Kreatif → Pemantauan). Tidak memuat angka atau teks halaman:
- * hanya ada/tidaknya skrip data, kunci bagian datanya, dan kode status TikTok.
+ * supaya penyebabnya terlihat di Elorae (Kreatif → Pemantauan). Tidak memuat angka atau isi
+ * halaman: ada/tidaknya skrip data, kunci bagian datanya, kode status TikTok, judul halaman,
+ * panjang HTML, dan kata penanda halaman perantara yang ditemukan.
  */
 export function diagnosaHalaman(masukan) {
   const teks = ambilTeksRehidrasi(masukan);
-  if (!teks) return "skrip data tidak ada";
+  const html = htmlDari(masukan);
+  const judul = (typeof masukan === "string" ? /<title[^>]*>([\s\S]*?)<\/title>/i.exec(masukan)?.[1] : masukan?.title) ?? "";
+  const ciri = [];
+  if (judul) ciri.push(`judul: ${String(judul).trim().slice(0, 60)}`);
+  if (html) {
+    ciri.push(`html: ${html.length} b`);
+    const bawah = html.toLowerCase();
+    const tanda = TANDA_PERANTARA.filter((t) => bawah.includes(t.toLowerCase()));
+    if (tanda.length) ciri.push(`tanda: ${tanda.join(",")}`);
+  }
+  const ekor = ciri.length ? ` (${ciri.join("; ")})` : "";
+  if (!teks) return `skrip data tidak ada${ekor}`.slice(0, 400);
   const lingkup = bacaLingkup(masukan);
-  if (!lingkup) return "skrip data tidak terbaca";
+  if (!lingkup) return `skrip data tidak terbaca${ekor}`.slice(0, 400);
   const bagian = [`kunci: ${Object.keys(lingkup).slice(0, 12).join(",") || "-"}`];
   for (const k of [KUNCI_PROFIL, KUNCI_KONTEN]) {
     const b = lingkup[k];
@@ -548,7 +572,7 @@ export function diagnosaHalaman(masukan) {
       bagian.push(`${k}: statusCode=${b.statusCode ?? "-"}${k === KUNCI_KONTEN ? ` item=${item ? "ada" : "tidak"}` : ` user=${b.userInfo?.user ? "ada" : "tidak"}`}`);
     }
   }
-  return bagian.join("; ").slice(0, 400);
+  return (bagian.join("; ") + ekor).slice(0, 400);
 }
 
 /**

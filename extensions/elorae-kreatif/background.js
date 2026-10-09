@@ -138,6 +138,32 @@ async function bacaPatokan(paksa) {
   return { ok: true, patokan: r.json.patokan };
 }
 
+/**
+ * Halaman Elorae baru saja mengantrekan video ("Cek sekarang" / "Tempel link"): jangan tunggu
+ * alarm per menit. Hanya dari Elorae yang tersambung (asal halaman = alamat Elorae), paling sering
+ * sekali per 5 detik. Mundur karena antrean kosong dibatalkan, lalu detak berjalan seketika.
+ */
+let terakhirDibangunkan = 0;
+async function bangunkan(pengirim) {
+  const koneksi = await koneksiAktif();
+  if (!koneksi) return { ok: false, kode: "BELUM_TERSAMBUNG" };
+  let asalHalaman = null;
+  let asalElorae = null;
+  try {
+    asalHalaman = new URL(pengirim.url).origin;
+    asalElorae = new URL(koneksi.eloraeUrl).origin;
+  } catch {
+    return { ok: false, kode: "ASAL_TIDAK_SAH" };
+  }
+  if (asalHalaman !== asalElorae) return { ok: false, kode: "ASAL_TIDAK_SAH" };
+  if (Date.now() - terakhirDibangunkan < 5000) return { ok: true, ulang: true };
+  terakhirDibangunkan = Date.now();
+  const { jadwal } = await baca("jadwal");
+  if (jadwal?.alasanMundur) await tulis({ jadwal: { ...jadwal, berikutnyaAt: null, alasanMundur: null } });
+  detak();
+  return { ok: true };
+}
+
 async function koneksiAktif() {
   const { koneksi } = await baca("koneksi");
   return koneksi?.token && koneksi?.eloraeUrl ? koneksi : null;
@@ -329,6 +355,7 @@ async function mintaHasil(tabId, tugas) {
       sejakMs,
       status: terakhir?.status ?? null,
       adaItemList: Boolean(terakhir?.adaItemList),
+      tanpaSkrip: Boolean(terakhir?.tanpaSkrip),
     });
     if (keputusan === "KIRIM") {
       return terakhir ?? { status: "GAGAL_MUAT", pesan: "Skrip ekstensi tidak menjawab di halaman TikTok" };
@@ -508,6 +535,8 @@ async function perbaruiLencana() {
 
 const DARI_HALAMAN_EKSTENSI = new Set(["ringkasan", "sambung", "putuskan", "setelOtomatis"]);
 const DARI_TIKTOK = new Set(["simpanManual", "apakahTabOtomatis", "bacaPanel", "setelPanel", "bacaPatokan"]);
+/** Dari halaman Elorae (jembatan-elorae.js): "Cek sekarang"/"Tempel link" baru saja mengantrekan video. */
+const DARI_ELORAE = new Set(["bangunkan"]);
 
 chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
   if (pengirim.id !== chrome.runtime.id || !pesan || typeof pesan.jenis !== "string") return false;
@@ -515,7 +544,8 @@ chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
   const dariTikTok = Boolean(pengirim.tab) && typeof pengirim.url === "string" && pengirim.url.startsWith(ASAL_TIKTOK);
   if (DARI_HALAMAN_EKSTENSI.has(pesan.jenis) && !dariEkstensi) return false;
   if (DARI_TIKTOK.has(pesan.jenis) && !dariTikTok) return false;
-  if (!DARI_HALAMAN_EKSTENSI.has(pesan.jenis) && !DARI_TIKTOK.has(pesan.jenis)) return false;
+  if (DARI_ELORAE.has(pesan.jenis) && !pengirim.tab) return false;
+  if (!DARI_HALAMAN_EKSTENSI.has(pesan.jenis) && !DARI_TIKTOK.has(pesan.jenis) && !DARI_ELORAE.has(pesan.jenis)) return false;
   tanganiPesan(pesan, pengirim)
     .then(balas)
     .catch((e) => balas({ ok: false, kode: "GALAT", pesan: pesanGalat(e) }));
@@ -553,6 +583,8 @@ async function tanganiPesan(pesan, pengirim) {
       return simpanManual(pesan.url, pesan.data);
     case "bacaPatokan":
       return bacaPatokan(Boolean(pesan.paksa));
+    case "bangunkan":
+      return bangunkan(pengirim);
     default:
       return { ok: false, kode: "TIDAK_DIKENAL" };
   }

@@ -32,6 +32,7 @@ import type { BarisPerforma, HasilPerforma } from "@/lib/creative/performa-queri
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { cn } from "@/lib/utils";
+import { bangunkanEkstensi } from "./bangunkan-ekstensi";
 import { DialogTempelLink } from "./DialogTempelLink";
 
 const RUTE_KOLABORASI = (id: string) => `/backoffice/kreatif/kolaborasi/${id}`;
@@ -234,6 +235,7 @@ function useCekSekarang() {
           : td(`performa.cek.keadaan.${p.keadaan}`);
       if (p && p.keadaan !== "SIAP") toast.warning([...bagian, keadaan].join(" "), { duration: 12_000 });
       else toast.success([...bagian, keadaan].join(" "));
+      if (r.diantrekan || r.sudahAntre) bangunkanEkstensi();
       router.refresh();
     } catch {
       toast.error(t("performa.cek.err.GAGAL"));

@@ -26,6 +26,11 @@ export const JEDA_GAGAL_BERUNTUN_MS = 60 * MENIT;
 export const TENGGANG_LAPOR_MS = 2 * MENIT;
 export const BATAS_TUNGGU_DATA_MS = 8 * DETIK;
 export const BATAS_TUNGGU_ITEMLIST_MS = 10 * DETIK;
+/**
+ * Halaman yang termuat TANPA skrip data sama sekali (terlihat di tab latar 2026-10-09; dugaan:
+ * halaman perantara TikTok yang lalu memuat ulang dirinya) ditunggu lebih lama sebelum dilaporkan.
+ */
+export const BATAS_TUNGGU_TANPA_SKRIP_MS = 25 * DETIK;
 
 /** Mundur (menit) saat /tugas tidak memberi tugas. */
 export const MUNDUR_MENIT = Object.freeze({
@@ -231,13 +236,14 @@ export function jadwalSetelahAlasan(jadwal, alasan, sekarang) {
  * Masih menunggu halaman atau kirim sekarang? `status` = jawaban skrip halaman (null bila belum
  * menjawab), `sejakMs` = sejak tab selesai dimuat.
  */
-export function putuskanTunggu({ jenis, sejakMs, status, adaItemList }) {
+export function putuskanTunggu({ jenis, sejakMs, status, adaItemList, tanpaSkrip = false }) {
   if (status === "CAPTCHA") return "KIRIM";
   if (status === "OK") {
     if (jenis !== "PROFIL" || adaItemList) return "KIRIM";
     return sejakMs >= BATAS_TUNGGU_ITEMLIST_MS ? "KIRIM" : "TUNGGU";
   }
-  return sejakMs >= BATAS_TUNGGU_DATA_MS ? "KIRIM" : "TUNGGU";
+  const batas = (status === "TIDAK_TERBACA" || status === null) && tanpaSkrip ? BATAS_TUNGGU_TANPA_SKRIP_MS : BATAS_TUNGGU_DATA_MS;
+  return sejakMs >= batas ? "KIRIM" : "TUNGGU";
 }
 
 // ---------------------------------------------------------------- teks untuk popup

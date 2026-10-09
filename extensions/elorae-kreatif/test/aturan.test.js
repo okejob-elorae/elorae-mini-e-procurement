@@ -340,3 +340,12 @@ describe("perbaruiJedaLokal — jeda berwaktu dilepas saat Elorae melepasnya", (
     assert.deepEqual(a.perbaruiJedaLokal({ ...jeda, terlihatDijeda: true }, null, SIANG), { ...jeda, terlihatDijeda: true });
   });
 });
+
+describe("putuskanTunggu — halaman tanpa skrip data ditunggu lebih lama", () => {
+  test("tanpa skrip: tunggu sampai 25 detik; dengan skrip tapi angka kurang: 8 detik", () => {
+    assert.equal(a.putuskanTunggu({ jenis: "KONTEN", sejakMs: 10_000, status: "TIDAK_TERBACA", tanpaSkrip: true }), "TUNGGU");
+    assert.equal(a.putuskanTunggu({ jenis: "KONTEN", sejakMs: 25_000, status: "TIDAK_TERBACA", tanpaSkrip: true }), "KIRIM");
+    assert.equal(a.putuskanTunggu({ jenis: "KONTEN", sejakMs: 10_000, status: "TIDAK_TERBACA", tanpaSkrip: false }), "KIRIM");
+    assert.equal(a.putuskanTunggu({ jenis: "KONTEN", sejakMs: 1_000, status: "CAPTCHA", tanpaSkrip: true }), "KIRIM");
+  });
+});

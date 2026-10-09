@@ -15,6 +15,7 @@ import { BATAS_LINK_TEMPEL, bacaLinkVideo, JENIS_ORANG_VIDEO, type JenisOrangVid
 import type { HasilTempelLink } from "@/lib/creative/tempel-link-writer";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { cn } from "@/lib/utils";
+import { bangunkanEkstensi } from "./bangunkan-ekstensi";
 
 type HasilBerhasil = Extract<HasilTempelLink, { ok: true }>;
 
@@ -49,6 +50,7 @@ export function DialogTempelLink() {
       }
       setHasil(r);
       if (r.ditambahkan > 0 || r.kolBaru > 0) router.refresh();
+      if (r.ditambahkan > 0) bangunkanEkstensi();
     });
 
   const terlaluBanyak = baca.link.length > BATAS_LINK_TEMPEL;
