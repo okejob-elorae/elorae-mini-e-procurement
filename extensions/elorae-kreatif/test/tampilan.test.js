@@ -8,7 +8,15 @@ describe("bersihkanTampilan", () => {
   });
   test("nilai sah dipakai, rusak diganti bawaan; kunci lama (asumsi harga) dibuang", () => {
     const s = t.bersihkanTampilan({ tema: "gelap", aksen: "#FF00AA", ukuran: "x", posisi: "kiri", periode: "90", cpmMin: 30000 });
-    assert.deepEqual(s, { tema: "gelap", aksen: "#ff00aa", ukuran: "lengkap", posisi: "kiri", periode: 90 });
+    assert.deepEqual(s, { tema: "gelap", aksen: "#ff00aa", ukuran: "lengkap", posisi: "kiri", periode: 90, rentang: null });
+  });
+  test("periode rentang sendiri disimpan bersama tanggalnya; tanggal rusak dibuang", () => {
+    assert.deepEqual(t.bersihkanTampilan({ periode: "atur", rentang: { dari: "2026-09-01", sampai: "2026-09-30" } }), {
+      ...t.TAMPILAN_BAWAAN,
+      periode: "atur",
+      rentang: { dari: "2026-09-01", sampai: "2026-09-30" },
+    });
+    assert.equal(t.bersihkanTampilan({ periode: "atur", rentang: { dari: "1/9", sampai: "2026-09-30" } }).rentang, null);
   });
   test("aksen dan periode tak dikenal → bawaan", () => {
     const s = t.bersihkanTampilan({ aksen: "ungu", periode: 14 });
@@ -69,5 +77,7 @@ describe("PALET", () => {
     assert.equal(v["--aksen"], "#7fe3b4");
     assert.equal(v["--ink"], "#ffffff");
     assert.equal(v["--aksen-teks"], "#16121f");
+    assert.equal(v["--skema"], "light");
+    assert.equal(t.variabelCss("gelap", "mint")["--skema"], "dark");
   });
 });

@@ -21831,7 +21831,9 @@
         "NAMA_TERLALU_PANJANG": "The device name may have at most 80 characters.",
         "TIDAK_VALID": "Some fields are invalid.",
         "TANPA_AKSES": "You do not have permission for this action.",
-        "GAGAL": "Failed. Please try again."
+        "GAGAL": "Failed. Please try again.",
+        "TANPA_IZIN": "The person who paired this device cannot manage Creative, so a new KOL cannot be created from the extension.",
+        "KOL_DIBLOKIR": "This KOL is blocked in Elorae; the video was not added."
       }
     },
     "performa": {

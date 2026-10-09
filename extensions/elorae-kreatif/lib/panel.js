@@ -166,21 +166,88 @@ function blok(daftar) {
  * (`opsi.jumlahVideo`). Kalau tidak, angkanya sebagian dan panel meminta menggulir daftar video.
  */
 export function ringkasPeriode(posting, hari, sekarangMs, opsi = {}) {
+  return { hari, ...ringkasJendela(posting, jendelaPeriode(hari, sekarangMs), { ...opsi, sekarangMs }) };
+}
+
+/** Jendela periode siap pakai: `hari` terakhir yang berakhir 48 jam lalu (detik unix). */
+export function jendelaPeriode(hari, sekarangMs) {
   const akhir = Math.floor(sekarangMs / 1000) - UMUR_MIN_POSTING_JAM * 3600;
-  const awal = akhir - hari * HARI_DETIK;
-  const awalLalu = awal - hari * HARI_DETIK;
+  return { awal: akhir - hari * HARI_DETIK, akhir };
+}
+
+const WIB_DETIK = 7 * 3600;
+const POLA_TANGGAL = /^(\d{4})-(\d{2})-(\d{2})$/;
+/** Rentang pilihan paling panjang (hari). */
+export const MAKS_HARI_RENTANG = 366;
+
+/** "2026-09-01" → detik unix pukul 00.00 WIB hari itu; null bila bukan tanggal yang sah. */
+export function awalHariWib(tanggal) {
+  const m = POLA_TANGGAL.exec(String(tanggal ?? ""));
+  if (!m) return null;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = new Date(ms);
+  if (d.getUTCFullYear() !== Number(m[1]) || d.getUTCMonth() !== Number(m[2]) - 1 || d.getUTCDate() !== Number(m[3])) return null;
+  return ms / 1000 - WIB_DETIK;
+}
+
+/**
+ * Jendela rentang pilihan sendiri: dari 00.00 WIB `dari` sampai akhir hari `sampai` (WIB), dipangkas
+ * ke 48 jam lalu — video yang lebih baru masih mengumpulkan views, sama dengan periode siap pakai.
+ * `{ galat }` bila tidak bisa: TANGGAL_TIDAK_SAH, TERBALIK (dari > sampai), TERLALU_PANJANG
+ * (> MAKS_HARI_RENTANG), TERLALU_BARU (seluruhnya di 48 jam terakhir).
+ */
+export function jendelaRentang(dari, sampai, sekarangMs) {
+  const awal = awalHariWib(dari);
+  const ujung = awalHariWib(sampai);
+  if (awal === null || ujung === null) return { galat: "TANGGAL_TIDAK_SAH" };
+  if (ujung < awal) return { galat: "TERBALIK" };
+  if ((ujung - awal) / HARI_DETIK + 1 > MAKS_HARI_RENTANG) return { galat: "TERLALU_PANJANG" };
+  const batasBaru = Math.floor(sekarangMs / 1000) - UMUR_MIN_POSTING_JAM * 3600;
+  const akhirPilihan = ujung + HARI_DETIK;
+  const akhir = Math.min(akhirPilihan, batasBaru);
+  if (akhir <= awal) return { galat: "TERLALU_BARU" };
+  return { awal, akhir, akhirPilihan, dipangkas: akhir < akhirPilihan };
+}
+
+/** Jendela pembanding: panjang sama, tepat sebelum jendela itu. */
+export function jendelaPembanding(j) {
+  return { awal: j.awal - (j.akhir - j.awal), akhir: j.awal };
+}
+
+/**
+ * Performa video yang DIUNGGAH dalam jendela `j` dibanding jendela sepanjang itu tepat sebelumnya.
+ * `lengkapKini`/`lengkapLalu`: daftar video yang tertangkap memang mencakup jendela itu — ada video
+ * (bukan pin) yang lebih tua dari awal jendela, atau seluruh video akun sudah tertangkap
+ * (`opsi.jumlahVideo`). Kalau tidak, angkanya sebagian dan panel memuat video lama dulu.
+ */
+export function ringkasJendela(posting, j, opsi = {}) {
+  const lalu = jendelaPembanding(j);
   const semua = unik(posting);
   const biasa = semua.filter((p) => !p.disematkan);
   const tertua = biasa.length ? biasa[biasa.length - 1].dibuatPada : null;
   const seluruhAkun = Number.isFinite(opsi.jumlahVideo) && semua.length >= opsi.jumlahVideo;
+  const tercakup = (detik) => seluruhAkun || (tertua !== null && tertua < detik);
   const dalam = (a, b) => semua.filter((p) => p.dibuatPada >= a && p.dibuatPada < b);
+  const kini = blok(dalam(j.awal, j.akhir));
+  const sebelum = blok(dalam(lalu.awal, lalu.akhir));
+  // Jumlah video diunggah = SEMUA video di tanggal yang dipilih, termasuk yang < 48 jam: itu fakta,
+  // bukan angka yang masih naik. Pembandingnya rentang sepanjang pilihan itu tepat sebelumnya.
+  const akhirPilihan = j.akhirPilihan ?? j.akhir;
+  const panjangPilihan = akhirPilihan - j.awal;
+  const awalLaluPilihan = j.awal - panjangPilihan;
   return {
-    hari,
-    kini: blok(dalam(awal, akhir)),
-    lalu: blok(dalam(awalLalu, awal)),
-    lengkapKini: seluruhAkun || (tertua !== null && tertua < awal),
-    lengkapLalu: seluruhAkun || (tertua !== null && tertua < awalLalu),
-    mudaDilewati: semua.filter((p) => p.dibuatPada >= akhir).length,
+    kini,
+    lalu: sebelum,
+    lengkapKini: tercakup(j.awal),
+    lengkapLalu: tercakup(lalu.awal),
+    diunggah: {
+      kini: dalam(j.awal, akhirPilihan).length,
+      lalu: dalam(awalLaluPilihan, j.awal).length,
+      lengkapLalu: tercakup(awalLaluPilihan),
+      awalLalu: awalLaluPilihan,
+      belumDihitung: dalam(j.akhir, akhirPilihan).length,
+    },
+    mudaDilewati: semua.filter((p) => p.dibuatPada >= Math.floor((opsi.sekarangMs ?? Date.now()) / 1000) - UMUR_MIN_POSTING_JAM * 3600).length,
   };
 }
 
@@ -247,17 +314,21 @@ export function rupiahPendek(n) {
  * `ringkasPeriode` (berakhir 48 jam lalu), jadi grafik dan tabel tidak pernah berbeda.
  */
 export function deretHarian(posting, hari, sekarangMs) {
-  const akhir = Math.floor(sekarangMs / 1000) - UMUR_MIN_POSTING_JAM * 3600;
-  const awal = akhir - hari * HARI_DETIK;
-  const awalLalu = awal - hari * HARI_DETIK;
+  return deretJendela(posting, jendelaPeriode(hari, sekarangMs));
+}
+
+/** Seperti deretHarian, untuk jendela apa pun (rentang pilihan sendiri). */
+export function deretJendela(posting, j) {
+  const lalu = jendelaPembanding(j);
+  const hari = Math.max(1, Math.ceil((j.akhir - j.awal) / HARI_DETIK));
   const kini = Array(hari).fill(0);
-  const lalu = Array(hari).fill(0);
+  const sebelum = Array(hari).fill(0);
   for (const p of unik(posting)) {
     if (!Number.isFinite(p.views)) continue;
-    if (p.dibuatPada >= awal && p.dibuatPada < akhir) kini[Math.floor((p.dibuatPada - awal) / HARI_DETIK)] += p.views;
-    else if (p.dibuatPada >= awalLalu && p.dibuatPada < awal) lalu[Math.floor((p.dibuatPada - awalLalu) / HARI_DETIK)] += p.views;
+    if (p.dibuatPada >= j.awal && p.dibuatPada < j.akhir) kini[Math.min(hari - 1, Math.floor((p.dibuatPada - j.awal) / HARI_DETIK))] += p.views;
+    else if (p.dibuatPada >= lalu.awal && p.dibuatPada < lalu.akhir) sebelum[Math.min(hari - 1, Math.floor((p.dibuatPada - lalu.awal) / HARI_DETIK))] += p.views;
   }
-  return { kini, lalu };
+  return { kini, lalu: sebelum };
 }
 
 /** Detik unix paling lama yang harus tercakup daftar video agar periode `hari` bisa dibandingkan. */

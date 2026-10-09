@@ -7,6 +7,9 @@ export const TEMA = ["otomatis", "terang", "gelap"];
 export const UKURAN = ["lengkap", "ringkas"];
 export const POSISI = ["kanan", "kiri"];
 export const PERIODE_HARI = [7, 30, 90];
+/** Periode "atur" = rentang tanggal pilihan sendiri (`rentang: { dari, sampai }`, "YYYY-MM-DD" WIB). */
+export const PERIODE_ATUR = "atur";
+const TANGGAL = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Warna aksen siap pakai. "mono" mengikuti tema: terang di panel gelap, gelap di panel terang. */
 export const AKSEN = {
@@ -24,6 +27,7 @@ export const TAMPILAN_BAWAAN = Object.freeze({
   ukuran: "lengkap",
   posisi: "kanan",
   periode: 30,
+  rentang: null,
 });
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -37,7 +41,9 @@ export function bersihkanTampilan(x) {
     aksen,
     ukuran: UKURAN.includes(s.ukuran) ? s.ukuran : TAMPILAN_BAWAAN.ukuran,
     posisi: POSISI.includes(s.posisi) ? s.posisi : TAMPILAN_BAWAAN.posisi,
-    periode: PERIODE_HARI.includes(Number(s.periode)) ? Number(s.periode) : TAMPILAN_BAWAAN.periode,
+    periode: s.periode === PERIODE_ATUR ? PERIODE_ATUR : PERIODE_HARI.includes(Number(s.periode)) ? Number(s.periode) : TAMPILAN_BAWAAN.periode,
+    rentang:
+      s.rentang && TANGGAL.test(s.rentang.dari) && TANGGAL.test(s.rentang.sampai) ? { dari: s.rentang.dari, sampai: s.rentang.sampai } : null,
   };
 }
 
@@ -135,5 +141,7 @@ export function variabelCss(tema, aksen) {
     "--bayangan": p.bayangan,
     "--aksen": a.aksen,
     "--aksen-teks": a.teks,
+    // Isian bawaan browser (kalender tanggal) mengikuti tema PANEL, bukan tema sistem.
+    "--skema": tema === "terang" ? "light" : "dark",
   };
 }

@@ -696,7 +696,7 @@ async function simpanManual(url, data) {
   const r = await panggilDenganToken("/manual", { body: { url, data } });
   if (["BELUM_TERSAMBUNG", "TOKEN_TIDAK_SAH", "JARINGAN", "TERLALU_SERING"].includes(r.gagal)) return { ok: false, kode: r.gagal };
   if (r.gagal) return { ok: false, kode: `HTTP_${r.status ?? "?"}` };
-  if (r.json?.ok === true) return { ok: true, cocok: r.json.cocok ?? null };
+  if (r.json?.ok === true) return { ok: true, cocok: r.json.cocok ?? null, dibuat: r.json.dibuat ?? null };
   return { ok: false, kode: r.json?.kode ?? "DITOLAK" };
 }
 

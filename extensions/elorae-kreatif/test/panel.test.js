@@ -248,3 +248,68 @@ describe("deretHarian", () => {
     assert.equal(p.batasCakupan(7, SEKARANG), Math.floor(SEKARANG / 1000) - 48 * 3600 - 14 * 86_400);
   });
 });
+
+describe("rentang tanggal pilihan sendiri", () => {
+  // SEKARANG = 2026-10-09 10.00 WIB.
+  const wib = (iso) => Date.parse(iso + "+07:00") / 1000;
+  test("tanggal → 00.00 WIB; tanggal tidak sah → null", () => {
+    assert.equal(p.awalHariWib("2026-09-01"), wib("2026-09-01T00:00:00"));
+    assert.equal(p.awalHariWib("2026-02-30"), null);
+    assert.equal(p.awalHariWib("1/9/2026"), null);
+  });
+  test("jendela dari 00.00 WIB 'dari' sampai akhir hari 'sampai'", () => {
+    assert.deepEqual(p.jendelaRentang("2026-09-01", "2026-09-30", SEKARANG), {
+      awal: wib("2026-09-01T00:00:00"),
+      akhir: wib("2026-10-01T00:00:00"),
+      akhirPilihan: wib("2026-10-01T00:00:00"),
+      dipangkas: false,
+    });
+  });
+  test("ujung yang masuk 48 jam terakhir dipangkas", () => {
+    const j = p.jendelaRentang("2026-10-01", "2026-10-09", SEKARANG);
+    assert.equal(j.akhir, Math.floor(SEKARANG / 1000) - 48 * 3600);
+    assert.equal(j.dipangkas, true);
+  });
+  test("terbalik, terlalu panjang, seluruhnya terlalu baru → galat", () => {
+    assert.deepEqual(p.jendelaRentang("2026-09-30", "2026-09-01", SEKARANG), { galat: "TERBALIK" });
+    assert.deepEqual(p.jendelaRentang("2025-01-01", "2026-09-01", SEKARANG), { galat: "TERLALU_PANJANG" });
+    assert.deepEqual(p.jendelaRentang("2026-10-08", "2026-10-09", SEKARANG), { galat: "TERLALU_BARU" });
+    assert.deepEqual(p.jendelaRentang("x", "2026-10-09", SEKARANG), { galat: "TANGGAL_TIDAK_SAH" });
+  });
+  test("dibanding rentang sepanjang itu tepat sebelumnya; grafik per hari sama dengan tabel", () => {
+    const j = p.jendelaRentang("2026-09-11", "2026-09-20", SEKARANG); // 10 hari
+    const pada = (iso) => wib(iso);
+    const daftar = [
+      { id: "a", dibuatPada: pada("2026-09-11T08:00:00"), disematkan: false, views: 100, like: 10, komentar: 0, share: 0, save: 0 },
+      { id: "b", dibuatPada: pada("2026-09-20T23:00:00"), disematkan: false, views: 50, like: 5, komentar: 0, share: 0, save: 0 },
+      { id: "c", dibuatPada: pada("2026-09-05T08:00:00"), disematkan: false, views: 40, like: 1, komentar: 0, share: 0, save: 0 },
+      { id: "d", dibuatPada: pada("2026-08-20T08:00:00"), disematkan: false, views: 1, like: 0, komentar: 0, share: 0, save: 0 },
+    ];
+    const r = p.ringkasJendela(daftar, j, { sekarangMs: SEKARANG });
+    assert.deepEqual([r.kini.video, r.kini.views, r.lalu.video, r.lalu.views], [2, 150, 1, 40]);
+    assert.equal(r.lengkapLalu, true);
+    const d = p.deretJendela(daftar, j);
+    assert.equal(d.kini.length, 10);
+    assert.deepEqual([d.kini[0], d.kini[9], d.lalu[4]], [100, 50, 40]);
+    assert.deepEqual(r.diunggah, { kini: 2, lalu: 1, lengkapLalu: true, awalLalu: wib("2026-09-01T00:00:00"), belumDihitung: 0 });
+  });
+  test("video diunggah menghitung SEMUA tanggal pilihan, termasuk < 48 jam; angka views tidak", () => {
+    // 1–9 Okt dipilih pada 9 Okt 10.00 WIB: views dihitung sampai 7 Okt 10.00, jumlah video sampai 9 Okt.
+    const j = p.jendelaRentang("2026-10-01", "2026-10-09", SEKARANG);
+    const v = (id, iso) => ({ id, dibuatPada: wib(iso), disematkan: false, views: 1000, like: 50, komentar: 0, share: 0, save: 0 });
+    const daftar = [
+      v("baru1", "2026-10-09T08:00:00"),
+      v("baru2", "2026-10-08T20:00:00"),
+      v("baru3", "2026-10-07T12:00:00"),
+      v("matang1", "2026-10-06T09:00:00"),
+      v("matang2", "2026-10-01T07:00:00"),
+      v("laluA", "2026-09-28T09:00:00"), // di 22–30 Sep dan di jendela views pembanding
+      v("laluB", "2026-09-23T09:00:00"), // di 22–30 Sep saja (jendela views pembanding mulai 24 Sep 10.00)
+      v("tua", "2026-09-10T09:00:00"),
+    ];
+    const r = p.ringkasJendela(daftar, j, { sekarangMs: SEKARANG });
+    assert.equal(r.kini.video, 2);
+    assert.equal(r.lalu.video, 1);
+    assert.deepEqual(r.diunggah, { kini: 5, lalu: 2, lengkapLalu: true, awalLalu: wib("2026-09-22T00:00:00"), belumDihitung: 3 });
+  });
+});

@@ -162,6 +162,8 @@
   let alat = null;
   const muatAlat = import(chrome.runtime.getURL("lib/panel.js")).then((m) => (alat = m));
   // Setelan tampilan (tema, warna, ukuran, posisi, periode, asumsi harga) — juga modul murni.
+  let kal = null;
+  const muatKalender = import(chrome.runtime.getURL("lib/kalender.js")).then((m) => (kal = m));
   let gaya = null;
   const muatGaya = import(chrome.runtime.getURL("lib/tampilan.js")).then((m) => (gaya = m));
   const TEKS_STATUS = {
@@ -172,7 +174,10 @@
     TIDAK_TERBACA: "Angka belum terbaca. Tekan tombol putar di bawah; kalau masih gagal, muat ulang halaman (⌘R).",
   };
   const TEKS_SIMPAN = {
+    // Elorae lama (sebelum KOL dibuat otomatis) masih bisa menjawab ini.
     TIDAK_ADA_DI_ELORAE: "Belum ada di Elorae. Tambahkan KOL atau kontennya di Elorae dulu.",
+    TANPA_IZIN: "Orang yang menyambungkan ekstensi ini tidak punya izin mengelola Kreatif, jadi KOL baru tidak bisa dibuat. Sambungkan ulang dengan akun yang punya izin itu.",
+    KOL_DIBLOKIR: "KOL ini diblokir di Elorae, jadi videonya tidak ditambahkan.",
     BELUM_TERSAMBUNG: "Ekstensi belum tersambung ke Elorae. Klik ikon ekstensi untuk menyambungkan.",
     TOKEN_TIDAK_SAH: "Sambungan ke Elorae sudah dicabut. Sambungkan ulang lewat ikon ekstensi.",
     JARINGAN: "Elorae tidak terjangkau. Pastikan Elorae menyala, lalu coba lagi.",
@@ -274,6 +279,7 @@
 
     .tabel { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 10px; align-items: baseline; font-variant-numeric: tabular-nums; }
     .tabel .l { color: var(--redup); }
+    .tabel .sub-tabel { grid-column: 1 / -1; color: var(--redup); font-size: 11.5px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--garis); }
     .tabel .v { font-weight: 700; text-align: right; white-space: nowrap; }
     .tabel .p { text-align: right; font-size: 11.5px; font-weight: 700; white-space: nowrap; min-width: 58px; }
     .naik { color: var(--naik); }
@@ -288,6 +294,78 @@
     .kaki { display: flex; justify-content: space-between; gap: 8px; color: var(--redup); font-size: 12px; }
     .kaki b { color: var(--teks); font-weight: 700; }
 
+    .pemicu-rentang { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; background: var(--ink);
+      border: 1px solid var(--garis); border-radius: 12px; padding: 8px 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pemicu-rentang:hover, .pemicu-rentang[aria-expanded="true"] { border-color: var(--aksen); }
+    .pemicu-rentang > span:first-of-type { flex: 1; min-width: 0; }
+    .pemicu-rentang svg:first-child { color: var(--aksen); }
+    .kal-jumlah-kecil { color: var(--redup); font-weight: 600; font-size: 11.5px; white-space: nowrap; }
+
+    .kal-pop { position: fixed; z-index: 2147483647; display: flex; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px);
+      overflow: auto; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--teks);
+      background: var(--ink); border: 1px solid color-mix(in srgb, var(--aksen) 35%, var(--garis)); border-radius: 18px;
+      box-shadow: var(--bayangan); -webkit-font-smoothing: antialiased; animation: muncul 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both; }
+    .kal-pop.sempit { flex-direction: column; }
+    .ikon-bulat { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--aksen); color: var(--aksen-teks);
+      display: inline-grid; place-items: center; }
+    .ikon-bulat svg { width: 12px; height: 12px; }
+    .kal-cepat { flex: none; width: 228px; padding: 10px; display: flex; flex-direction: column; gap: 2px;
+      background: color-mix(in srgb, var(--aksen) 9%, var(--kartu)); border-right: 1px solid color-mix(in srgb, var(--aksen) 22%, transparent); }
+    .kal-cepat-judul { display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px 8px 8px; font-weight: 700; font-size: 12px; }
+    .kal-cepat button { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+      background: transparent; border-radius: 10px; padding: 7px 8px; text-align: left; }
+    .kal-cepat button:hover { background: color-mix(in srgb, var(--aksen) 18%, transparent); }
+    .kal-cepat button[aria-pressed="true"] { background: var(--aksen); color: var(--aksen-teks); font-weight: 700; }
+    .kal-cepat-nama { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .kal-cepat-tgl { color: var(--redup); font-size: 11.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .kal-cepat button[aria-pressed="true"] .kal-cepat-tgl { color: color-mix(in srgb, var(--aksen-teks) 75%, transparent); }
+    .kal-chip-baris { display: flex; gap: 6px; overflow-x: auto; padding: 10px 12px 0; scrollbar-width: none; width: 0; min-width: 100%; }
+    .kal-chip { flex: none; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 700;
+      background: color-mix(in srgb, var(--aksen) 14%, transparent); border: 1px solid color-mix(in srgb, var(--aksen) 40%, transparent); }
+    .kal-chip[aria-pressed="true"] { background: var(--aksen); color: var(--aksen-teks); border-color: var(--aksen); }
+    .kal-utama { display: flex; flex-direction: column; min-width: 0; }
+    /* width 0 + min-width 100%: ringkasan dan kaki mengikuti lebar kalender, tidak melebarkannya. */
+    .kal-ringkas { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--garis); width: 0; min-width: 100%; }
+    .kal-kotak { flex: 1; min-width: 0; border: 1px solid var(--garis); background: var(--kartu); border-radius: 10px; padding: 5px 10px; }
+    .kal-kotak.aktif { border-color: var(--aksen); background: color-mix(in srgb, var(--aksen) 14%, transparent); }
+    .kal-kotak small { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--redup); }
+    .kal-kotak b { display: block; font-size: 13.5px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kal-kotak.kosong b { color: var(--redup); font-weight: 500; }
+    .kal-jumlah { flex: none; border-radius: 999px; padding: 2px 8px; font-size: 11.5px; font-weight: 800; background: var(--aksen);
+      color: var(--aksen-teks); font-variant-numeric: tabular-nums; }
+    .kal-panah { flex: none; color: var(--redup); display: inline-flex; }
+    .kal-bulan-bulan { display: flex; justify-content: center; gap: 20px; padding: 10px 12px 6px; touch-action: none; user-select: none; }
+    .kal-bulan { width: 252px; }
+    .kal-kepala { display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; margin-bottom: 4px; }
+    .kal-nav { width: 30px; height: 30px; border-radius: 9px; background: transparent; display: grid; place-items: center; color: var(--teks); }
+    .kal-nav:hover { background: var(--kartu-2); }
+    .kal-label { justify-self: center; display: inline-flex; align-items: center; gap: 4px; background: transparent; border-radius: 9px;
+      padding: 5px 8px; font-weight: 800; letter-spacing: -0.01em; }
+    .kal-label:hover { background: var(--kartu-2); }
+    .kal-label.statis { cursor: default; }
+    .kal-label svg { width: 12px; height: 12px; color: var(--redup); }
+    .kal-grid { display: grid; grid-template-columns: repeat(7, 36px); row-gap: 2px; }
+    .kal-grid .hd { text-align: center; font-size: 11.5px; color: var(--redup); padding: 4px 0 6px; }
+    .kal-grid .hd.min { color: var(--turun); }
+    .kal-hari { height: 34px; background: transparent; border-radius: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .kal-hari.minggu { color: var(--turun); }
+    .kal-hari.hariini { font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+    .kal-hari:hover:not(:disabled) { box-shadow: inset 0 0 0 1.5px var(--aksen); }
+    .kal-hari.dalam { background: color-mix(in srgb, var(--aksen) 22%, transparent); border-radius: 0; }
+    .kal-hari.awal, .kal-hari.akhir { background: var(--aksen); color: var(--aksen-teks); font-weight: 800; }
+    .kal-hari.awal { border-radius: 10px 0 0 10px; }
+    .kal-hari.akhir { border-radius: 0 10px 10px 0; }
+    .kal-hari.awal.akhir { border-radius: 10px; }
+    .kal-hari:disabled { opacity: 0.28; cursor: default; }
+    .kal-grid-bulan { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding-top: 4px; }
+    .kal-grid-bulan button { border-radius: 10px; padding: 12px 0; background: var(--kartu); font-weight: 700; }
+    .kal-grid-bulan button:hover:not(:disabled) { background: color-mix(in srgb, var(--aksen) 18%, transparent); }
+    .kal-grid-bulan button[aria-pressed="true"] { background: var(--aksen); color: var(--aksen-teks); }
+    .kal-grid-bulan button:disabled { opacity: 0.3; cursor: default; }
+    .kal-kaki { display: flex; align-items: center; gap: 8px; padding: 8px 12px 10px; border-top: 1px solid var(--garis); width: 0; min-width: 100%; }
+    .kal-kaki p { flex: 1; min-width: 0; margin: 0; display: flex; align-items: flex-start; gap: 8px; color: var(--redup); font-size: 12px; }
+    .kal-tombol { flex: none; border-radius: 999px; padding: 5px 11px; background: var(--kartu-2); font-weight: 700; font-size: 12px; }
+    .kal-tombol:hover { background: color-mix(in srgb, var(--aksen) 18%, var(--kartu-2)); }
     .grafik-periode { width: 100%; height: 64px; display: block; }
     .grafik-periode .area-kini { fill: color-mix(in srgb, var(--aksen) 22%, transparent); stroke: none; }
     .grafik-periode .garis-kini { fill: none; stroke: var(--aksen); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
@@ -368,6 +446,13 @@
     centang: ["M5 12.5l4.5 4.5L19 7.5"],
     atur: ["M4 7h9", "M17 7h3", "M15 5v4", "M4 17h3", "M11 17h9", "M9 15v4"],
     awas: ["M12 8v5", "M12 16.5v.01", "M12 3.5l9.5 16.5h-19z"],
+    kalender: ["M4.5 6h15v14h-15z", "M4.5 10h15", "M8.5 3.5v4", "M15.5 3.5v4", "M8 14h3", "M13 14h3", "M8 17h3"],
+    kilat: ["M13 3L5 13.5h6L10 21l8-10.5h-6z"],
+    tunjuk: ["M9 11V5.5a1.5 1.5 0 0 1 3 0V11", "M12 10.5a1.5 1.5 0 0 1 3 0v1", "M15 11a1.5 1.5 0 0 1 3 0v3.5a6 6 0 0 1-6 6h-.5a6 6 0 0 1-5-2.7L4.3 15a1.6 1.6 0 0 1 2.6-1.8L9 15.5"],
+    kiri: ["M14.5 6l-6 6 6 6"],
+    kanan: ["M9.5 6l6 6-6 6"],
+    bawah: ["M6.5 9.5l5.5 5.5 5.5-5.5"],
+    panah: ["M5 12h14", "M13 6l6 6-6 6"],
   };
   const NS = "http://www.w3.org/2000/svg";
   function ikon(nama) {
@@ -460,7 +545,7 @@
     const wadah = el("div", { kelas: "wadah" });
     akar.append(wadah);
     document.documentElement.append(host);
-    panel = { host, wadah, kecil: Boolean(setelan?.kecil), animasi: true, tampilan, mengetik: false, tertunda: false, patokan: null };
+    panel = { host, akar, wadah, kecil: Boolean(setelan?.kecil), animasi: true, tampilan, mengetik: false, tertunda: false, patokan: null };
     panel.patokan = await kirimKeLatar({ jenis: "bacaPatokan" });
     pantauTemaHalaman();
     await perbaruiPanel();
@@ -479,6 +564,7 @@
     if (!panel) return;
     const m = await muatPengurai.catch(() => null);
     await muatAlat.catch(() => null);
+    await muatKalender.catch(() => null);
     const target = m ? m.jenisHalaman(location.href) : null;
     if (!target) {
       panel.host.style.display = "none";
@@ -516,6 +602,8 @@
     el("span", { kelas: "chip", title: judul }, ikon(namaIkon), el("b", { teks: nilai }), el("span", { teks: label }));
 
   const tanggalPendek = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Jakarta" });
+  const tanggalTahun = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
+  const tanggalJam = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
   const tanggalPanjang = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
   const persen1 = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 });
 
@@ -584,15 +672,15 @@
     window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
   }
 
-  async function muatVideoLama(hari) {
-    const kunci = `${location.href}|${hari}`;
+  async function muatVideoLama(kunciPeriode, batas) {
+    const kunci = `${location.href}|${kunciPeriode}`;
     if (muatLama.aktif || muatLama.dicoba.has(kunci)) return;
     muatLama.aktif = true;
     muatLama.dicoba.add(kunci);
-    gambar(pengurai?.jenisHalaman(location.href));
+    if (panel.mengetik) panel.tertunda = true;
+    else gambar(pengurai?.jenisHalaman(location.href));
     const awalX = window.scrollX;
     const awalY = window.scrollY;
-    const batas = alat.batasCakupan(hari, Date.now());
     let sebelum = -1;
     let diam = 0;
     try {
@@ -645,21 +733,448 @@
     return svg;
   }
 
+  const TEKS_GALAT_RENTANG = {
+    TANGGAL_TIDAK_SAH: "Pilih tanggal dari dan sampai.",
+    TERBALIK: "Tanggal 'dari' harus sebelum tanggal 'sampai'.",
+    TERLALU_PANJANG: "Rentang paling panjang 366 hari.",
+    TERLALU_BARU: "Video 48 jam terakhir belum dihitung (views-nya masih naik) — pilih rentang yang lebih lama.",
+  };
+
+  // ------------------------------------------------ kalender rentang (meniru isian rentang Elorae)
+  // Kalender bawaan Chrome tidak bisa diberi warna tema, jadi panel menggambar kalendernya sendiri:
+  // pilihan cepat, Mulai → Selesai, dua bulan (atau satu bila ruang di samping panel sempit),
+  // ketuk tanggal awal lalu tanggal akhir atau tekan dan tarik. Rentang yang selesai langsung dipakai.
+  const MAKS_HARI_KALENDER = 366;
+
+  function rentangSekarang() {
+    if (panel.tampilan.rentang) return panel.tampilan.rentang;
+    const hariIni = kal.hariIniWib(Date.now());
+    return { dari: kal.geserHari(hariIni, -32), sampai: kal.geserHari(hariIni, -3) };
+  }
+
+  function bukaKalender() {
+    const r = rentangSekarang();
+    const b = kal.bacaTanggal(r.sampai) ?? kal.bacaTanggal(kal.hariIniWib(Date.now()));
+    panel.kal = { buka: true, jangkar: "", ujung: "", kanan: { tahun: b.tahun, bulan: b.bulan }, pilihBulan: null, tekan: null, abaikanKlik: false };
+    panel.mengetik = true; // pembaruan latar menunggu kalender ditutup
+    gambar(pengurai?.jenisHalaman(location.href));
+  }
+
+  function tutupKalender() {
+    if (!panel.kal?.buka) return;
+    panel.kal = null;
+    panel.mengetik = false;
+    panel.tertunda = false;
+    gambar(pengurai?.jenisHalaman(location.href));
+  }
+
+  function terapkanRentang(r) {
+    panel.kal = null;
+    panel.mengetik = false;
+    panel.tertunda = false;
+    ubahTampilan({ periode: "atur", rentang: r });
+  }
+
+  /** Bulan yang tampil: kanan = bulan rentang berakhir; dua bulan → bulan sebelumnya di kiri. */
+  function bulanTampil(tata) {
+    const k = panel.kal.kanan;
+    return tata === "dua" ? [kal.geserBulan(k, -1), k] : [k];
+  }
+
+  function sorotan() {
+    const k = panel.kal;
+    if (k.jangkar) return kal.urutkanRentang(k.jangkar, k.ujung || k.jangkar);
+    return rentangSekarang();
+  }
+
+  function ringkasanKalender() {
+    const k = panel.kal;
+    const memilih = Boolean(k.jangkar);
+    const bergerak = memilih && k.ujung && k.ujung !== k.jangkar;
+    const r = sorotan();
+    const awal = memilih ? (bergerak ? r.dari : k.jangkar) : r.dari;
+    const akhir = memilih ? (bergerak ? r.sampai : "") : r.sampai;
+    const n = kal.jumlahHari(awal, akhir);
+    const kotak = (label, nilai, aktif) =>
+      el(
+        "div",
+        { kelas: `kal-kotak${aktif ? " aktif" : ""}${nilai ? "" : " kosong"}` },
+        el("small", { teks: label }),
+        el("b", { teks: nilai ? kal.labelTanggal(nilai) : "Belum dipilih" }),
+      );
+    return el(
+      "div",
+      { kelas: "kal-ringkas", "aria-hidden": "true" },
+      kotak("Mulai", awal, !memilih),
+      n > 0 ? el("span", { kelas: "kal-jumlah", teks: `${n} hari` }) : el("span", { kelas: "kal-panah" }, ikon("panah")),
+      kotak("Selesai", akhir, memilih),
+    );
+  }
+
+  function petunjukKalender() {
+    const k = panel.kal;
+    return k.jangkar
+      ? `Sekarang pilih tanggal akhir — pilih ${kal.labelTanggal(k.jangkar)} lagi untuk satu hari saja.`
+      : "Ketuk tanggal awal lalu tanggal akhir — atau tekan tanggal awal dan tarik sampai tanggal akhir.";
+  }
+
+  /** Perbarui sorotan tanpa membangun ulang kalender (dipakai saat kursor/jari bergerak). */
+  function segarkanKalender(pop) {
+    const r = sorotan();
+    const k = panel.kal;
+    const batas = hariMatiKalender();
+    for (const t of pop.querySelectorAll("[data-tanggal]")) {
+      const d = t.dataset.tanggal;
+      t.disabled = d > batas.akhir || (batas.awal !== null && d < batas.awal);
+      t.classList.toggle("dalam", d >= r.dari && d <= r.sampai);
+      t.classList.toggle("awal", d === r.dari);
+      t.classList.toggle("akhir", d === r.sampai);
+      t.setAttribute("aria-pressed", String(d === r.dari || d === r.sampai));
+    }
+    pop.querySelector(".kal-ringkas")?.replaceWith(ringkasanKalender());
+    const p = pop.querySelector(".kal-petunjuk-teks");
+    if (p) p.textContent = petunjukKalender();
+    const ulangi = pop.querySelector(".kal-ulangi");
+    if (ulangi) ulangi.hidden = !k.jangkar;
+  }
+
+  /** Hari yang bisa dipilih: sampai hari ini; sesudah tanggal awal, rentang paling 366 hari. */
+  function hariMatiKalender() {
+    const hariIni = kal.hariIniWib(Date.now());
+    const k = panel.kal;
+    if (!k.jangkar) return { awal: null, akhir: hariIni };
+    const maks = kal.geserHari(k.jangkar, MAKS_HARI_KALENDER - 1);
+    return { awal: kal.geserHari(k.jangkar, -(MAKS_HARI_KALENDER - 1)), akhir: maks < hariIni ? maks : hariIni };
+  }
+
+  function satuBulan(b, tata, sisi) {
+    const k = panel.kal;
+    const hariIni = kal.hariIniWib(Date.now());
+    const navKiri = sisi === "kiri" || tata !== "dua";
+    const navKanan = sisi === "kanan" || tata !== "dua";
+    const geser = (n) => {
+      k.kanan = kal.geserBulan(k.kanan, n);
+      k.pilihBulan = null;
+      gambarKalender();
+    };
+    const kepala = el(
+      "div",
+      { kelas: "kal-kepala" },
+      navKiri ? el("button", { type: "button", kelas: "kal-nav", "aria-label": "Bulan sebelumnya", onclick: () => geser(-1) }, ikon("kiri")) : el("span"),
+      el(
+        "button",
+        {
+          type: "button",
+          kelas: "kal-label",
+          "aria-label": `Pilih bulan (${kal.NAMA_BULAN[b.bulan - 1]} ${b.tahun})`,
+          onclick: () => {
+            k.pilihBulan = { sisi, tahun: b.tahun };
+            gambarKalender();
+          },
+        },
+        `${kal.NAMA_BULAN[b.bulan - 1]} ${b.tahun}`,
+        ikon("bawah"),
+      ),
+      navKanan && `${b.tahun}-${String(b.bulan).padStart(2, "0")}` < hariIni.slice(0, 7)
+        ? el("button", { type: "button", kelas: "kal-nav", "aria-label": "Bulan berikutnya", onclick: () => geser(1) }, ikon("kanan"))
+        : el("span"),
+    );
+    const grid = el("div", { kelas: "kal-grid", role: "grid" });
+    kal.HARI_PENDEK.forEach((h, i) => grid.append(el("span", { kelas: `hd${i === 6 ? " min" : ""}`, teks: h })));
+    for (const minggu of kal.gridBulan(b.tahun, b.bulan)) {
+      minggu.forEach((t, i) => {
+        if (!t) return grid.append(el("span"));
+        grid.append(
+          el("button", {
+            type: "button",
+            kelas: `kal-hari${i === 6 ? " minggu" : ""}${t === hariIni ? " hariini" : ""}`,
+            "data-tanggal": t,
+            "aria-label": kal.labelTanggal(t),
+            teks: String(Number(t.slice(8))),
+          }),
+        );
+      });
+    }
+    return el("div", { kelas: "kal-bulan" }, kepala, grid);
+  }
+
+  function pilihBulanKalender(tata) {
+    const k = panel.kal;
+    const p = k.pilihBulan;
+    const hariIni = kal.hariIniWib(Date.now());
+    const tahunIni = Number(hariIni.slice(0, 4));
+    const kepala = el(
+      "div",
+      { kelas: "kal-kepala" },
+      el("button", { type: "button", kelas: "kal-nav", "aria-label": "Tahun sebelumnya", onclick: () => ((p.tahun -= 1), gambarKalender()) }, ikon("kiri")),
+      el("span", { kelas: "kal-label statis", teks: String(p.tahun) }),
+      p.tahun < tahunIni
+        ? el("button", { type: "button", kelas: "kal-nav", "aria-label": "Tahun berikutnya", onclick: () => ((p.tahun += 1), gambarKalender()) }, ikon("kanan"))
+        : el("span"),
+    );
+    const grid = el("div", { kelas: "kal-grid-bulan" });
+    kal.BULAN_PENDEK.forEach((nama, i) => {
+      const kode = `${p.tahun}-${String(i + 1).padStart(2, "0")}`;
+      const [kiri, kanan] = bulanTampil(tata).length === 2 ? bulanTampil(tata) : [null, bulanTampil(tata)[0]];
+      const tampil = p.sisi === "kiri" ? kiri : kanan;
+      const b = el("button", {
+        type: "button",
+        teks: nama,
+        "aria-pressed": String(tampil && tampil.tahun === p.tahun && tampil.bulan === i + 1),
+        onclick: () => {
+          const dipilih = { tahun: p.tahun, bulan: i + 1 };
+          // Bulan kiri yang dipilih → bulan kanan tepat sesudahnya.
+          k.kanan = p.sisi === "kiri" ? kal.geserBulan(dipilih, 1) : dipilih;
+          k.pilihBulan = null;
+          gambarKalender();
+        },
+      });
+      b.disabled = kode > hariIni.slice(0, 7);
+      grid.append(b);
+    });
+    return el("div", { kelas: "kal-bulan" }, kepala, grid);
+  }
+
+  function bangunKalender(tata) {
+    const k = panel.kal;
+    const r = rentangSekarang();
+    const hariIni = kal.hariIniWib(Date.now());
+    const cepat = kal.PILIHAN_CEPAT.map((p) => {
+      const rr = kal.rentangCepat(p.kunci, hariIni);
+      return { ...p, r: rr, aktif: Boolean(panel.tampilan.rentang) && rr.dari === r.dari && rr.sampai === r.sampai };
+    });
+
+    const bulan = el("div", { kelas: "kal-bulan-bulan" });
+    if (k.pilihBulan) bulan.append(pilihBulanKalender(tata));
+    else {
+      const daftar = bulanTampil(tata);
+      daftar.forEach((b, i) => bulan.append(satuBulan(b, tata, daftar.length === 2 ? (i === 0 ? "kiri" : "kanan") : "satu")));
+    }
+
+    // Klik / tarik di hari mana pun.
+    const tanggalDi = (x, y) => {
+      const t = panel.akar.elementFromPoint(x, y)?.closest?.("[data-tanggal]");
+      return t && !t.disabled ? t.dataset.tanggal : "";
+    };
+    bulan.addEventListener("pointerdown", (ev) => {
+      k.abaikanKlik = false;
+      if (ev.button !== 0) return;
+      const t = ev.target.closest?.("[data-tanggal]");
+      if (!t || t.disabled) return;
+      k.tekan = { jangkar: t.dataset.tanggal, terakhir: t.dataset.tanggal, pindah: false };
+    });
+    bulan.addEventListener("pointermove", (ev) => {
+      const t = tanggalDi(ev.clientX, ev.clientY);
+      const p = k.tekan;
+      if (p) {
+        if (!t || (!p.pindah && t === p.jangkar)) return;
+        p.pindah = true;
+        p.terakhir = t;
+        k.jangkar = p.jangkar;
+        k.ujung = t;
+        segarkanKalender(pop);
+        return;
+      }
+      if (k.jangkar && t && ev.pointerType === "mouse" && t !== k.ujung) {
+        k.ujung = t;
+        segarkanKalender(pop);
+      }
+    });
+    const lepas = () => {
+      const p = k.tekan;
+      k.tekan = null;
+      if (!p?.pindah) return;
+      k.abaikanKlik = true; // klik yang menyusul tarikan bukan klik pertama rentang baru
+      terapkanRentang(kal.urutkanRentang(p.jangkar, p.terakhir));
+    };
+    bulan.addEventListener("pointerup", lepas);
+    bulan.addEventListener("pointercancel", () => (k.tekan = null));
+    bulan.addEventListener("click", (ev) => {
+      const t = ev.target.closest?.("[data-tanggal]");
+      if (!t || t.disabled) return;
+      if (k.abaikanKlik) {
+        k.abaikanKlik = false;
+        return;
+      }
+      if (!k.jangkar) {
+        k.jangkar = t.dataset.tanggal;
+        k.ujung = t.dataset.tanggal;
+        segarkanKalender(pop);
+        return;
+      }
+      terapkanRentang(kal.urutkanRentang(k.jangkar, t.dataset.tanggal));
+    });
+
+    const kaki = el(
+      "div",
+      { kelas: "kal-kaki" },
+      el("p", { "aria-live": "polite" }, el("span", { kelas: "ikon-bulat" }, ikon("tunjuk")), el("span", { kelas: "kal-petunjuk-teks", teks: petunjukKalender() })),
+      el("button", {
+        type: "button",
+        kelas: "kal-tombol kal-ulangi",
+        teks: "Ulangi",
+        onclick: () => {
+          k.jangkar = "";
+          k.ujung = "";
+          segarkanKalender(pop);
+        },
+      }),
+      el("button", { type: "button", kelas: "kal-tombol", teks: "Tutup", onclick: tutupKalender }),
+    );
+
+    const tombolCepat = (p, chip) =>
+      el(
+        "button",
+        { type: "button", kelas: chip ? "kal-chip" : "", "aria-pressed": String(p.aktif), onclick: () => terapkanRentang(p.r) },
+        chip ? p.label : el("span", { kelas: "kal-cepat-nama" }, p.aktif ? ikon("centang") : null, p.label),
+        chip ? null : el("span", { kelas: "kal-cepat-tgl", teks: kal.labelRentang(p.r.dari, p.r.sampai, { tahun: false }) }),
+      );
+
+    const utama = el(
+      "div",
+      { kelas: "kal-utama" },
+      tata === "sempit" ? el("div", { kelas: "kal-chip-baris", role: "group", "aria-label": "Pilihan cepat" }, ...cepat.map((p) => tombolCepat(p, true))) : null,
+      ringkasanKalender(),
+      bulan,
+      kaki,
+    );
+    const pop = el(
+      "div",
+      { kelas: `kal-pop ${tata}`, role: "dialog", "aria-label": "Pilih rentang tanggal" },
+      tata === "sempit"
+        ? null
+        : el(
+            "div",
+            { kelas: "kal-cepat", role: "group", "aria-label": "Pilihan cepat" },
+            el("p", { kelas: "kal-cepat-judul" }, el("span", { kelas: "ikon-bulat" }, ikon("kilat")), "Pilihan cepat"),
+            ...cepat.map((p) => tombolCepat(p, false)),
+          ),
+      utama,
+    );
+    for (const jenis of ["keydown", "keyup", "keypress"]) pop.addEventListener(jenis, (ev) => ev.stopPropagation());
+    pop.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") tutupKalender();
+    });
+    segarkanKalender(pop);
+    return pop;
+  }
+
+  /** Gambar (ulang) kalender di samping panel. Dipanggil di akhir gambar() dan saat ganti bulan. */
+  function gambarKalender() {
+    if (!panel.kal?.buka || !kal) return;
+    const kotak = panel.wadah.querySelector(".kotak");
+    const pemicu = panel.wadah.querySelector(".pemicu-rentang");
+    if (!kotak || !pemicu) return;
+    const rk = kotak.getBoundingClientRect();
+    const kiri = panel.tampilan.posisi === "kiri";
+    const ruang = (kiri ? innerWidth - rk.right : rk.left) - 24;
+    const tata = kal.tataLetakKalender(ruang);
+    const pop = bangunKalender(tata);
+    const lama = panel.wadah.querySelector(".kal-pop");
+    if (lama) lama.replaceWith(pop);
+    else panel.wadah.append(pop);
+    // Di samping panel; "sempit" menumpang di atas panel itu sendiri.
+    if (tata === "sempit") {
+      pop.style.left = `${rk.left}px`;
+      pop.style.width = `${rk.width}px`;
+    } else if (kiri) pop.style.left = `${rk.right + 12}px`;
+    else pop.style.right = `${innerWidth - rk.left + 12}px`;
+    const tinggi = pop.getBoundingClientRect().height;
+    const atas = Math.max(12, Math.min(pemicu.getBoundingClientRect().top, innerHeight - 12 - tinggi));
+    pop.style.top = `${atas}px`;
+  }
+
+  // Klik di luar kalender (di halaman, atau di bagian panel lain) menutupnya.
+  document.addEventListener(
+    "pointerdown",
+    (ev) => {
+      if (panel?.kal?.buka && !ev.composedPath().includes(panel.host)) tutupKalender();
+    },
+    true,
+  );
+  addEventListener("resize", () => {
+    if (panel?.kal?.buka) gambarKalender();
+  });
+
   function periodeProfil(data, adaItemList) {
-    const hari = panel.tampilan.periode;
-    const r = alat.ringkasPeriode(data.posting, hari, Date.now(), { jumlahVideo: data.jumlahVideo });
-    const lengkap = r.lengkapLalu && r.lengkapKini;
-    const akhirMs = Date.now() - alat.UMUR_MIN_POSTING_JAM * 3600_000;
-    const awalMs = akhirMs - hari * 86_400_000;
+    const atur = panel.tampilan.periode === "atur";
+    const hari = atur ? null : panel.tampilan.periode;
+    const rentang = rentangSekarang();
     const segmen = el("div", { kelas: "segmen", role: "group", "aria-label": "Periode" });
     for (const n of [7, 30, 90]) {
       segmen.append(el("button", { type: "button", "aria-pressed": String(n === hari), teks: `${n}H`, title: `${n} hari`, onclick: () => ubahTampilan({ periode: n }) }));
     }
+    segmen.append(
+      el("button", {
+        type: "button",
+        "aria-pressed": String(atur),
+        teks: "Atur",
+        title: "Pilih tanggal sendiri",
+        onclick: () => {
+          const pertama = !panel.tampilan.rentang;
+          ubahTampilan({ periode: "atur", rentang });
+          if (pertama) bukaKalender(); // belum pernah memilih tanggal → langsung tampilkan kalendernya
+        },
+      }),
+    );
+    const isi = [el("div", { kelas: "judul-blok" }, el("span", { teks: "Periode" }), segmen)];
+
+    let j;
+    if (atur) {
+      const terbuka = Boolean(panel.kal?.buka);
+      isi.push(
+        el(
+          "button",
+          {
+            type: "button",
+            kelas: "pemicu-rentang",
+            "aria-haspopup": "dialog",
+            "aria-expanded": String(terbuka),
+            onclick: () => (terbuka ? tutupKalender() : bukaKalender()),
+          },
+          ikon("kalender"),
+          el("span", { teks: kal.labelRentang(rentang.dari, rentang.sampai) }),
+          el("span", { kelas: "kal-jumlah-kecil", teks: `${kal.jumlahHari(rentang.dari, rentang.sampai)} hari` }),
+          ikon("bawah"),
+        ),
+      );
+      j = alat.jendelaRentang(rentang.dari, rentang.sampai, Date.now());
+      if (j.galat) {
+        isi.push(el("div", { kelas: "status galat", role: "status" }, ikon("awas"), el("span", { teks: TEKS_GALAT_RENTANG[j.galat] })));
+        return el("div", { kelas: "blok" }, ...isi);
+      }
+    } else {
+      j = alat.jendelaPeriode(hari, Date.now());
+    }
+    const panjangHari = Math.round((j.akhir - j.awal) / 86_400);
+    const pembanding = alat.jendelaPembanding(j);
+    const r = alat.ringkasJendela(data.posting, j, { jumlahVideo: data.jumlahVideo });
+    const fmt = atur ? tanggalTahun : tanggalPendek;
+    const lengkap = r.lengkapLalu && r.lengkapKini;
+    const u = r.diunggah;
+    // Rentang pilihan yang ujungnya masuk 48 jam terakhir: jumlah video dihitung penuh, angka views
+    // hanya dari video yang sudah ≥ 48 jam (jendela j).
+    const terpisah = atur && u.belumDihitung > 0;
+    const lengkapUnggah = r.lengkapKini && u.lengkapLalu;
+
     const tabel = el("div", { kelas: "tabel" });
-    const baris = (label, kini, lama, format, poin = false) =>
-      tabel.append(el("span", { kelas: "l", teks: label }), el("span", { kelas: "v", teks: format(kini) }), lencanaUbah(kini, lama, lengkap, poin));
+    // Video periode ini belum termuat semua → angkanya sebagian; tampilkan "—", bukan angka yang salah.
+    const baris = (label, kini, lama, format, poin = false, lengkapBaris = lengkap) =>
+      tabel.append(
+        el("span", { kelas: "l", teks: label }),
+        el("span", { kelas: "v", teks: r.lengkapKini ? format(kini) : "—" }),
+        lencanaUbah(kini, lama, lengkapBaris, poin),
+      );
     const n = (x) => alat.angkaPendek(x ?? undefined);
-    baris("Video diunggah", r.kini.video, r.lalu.video, n);
+    baris("Video diunggah", u.kini, u.lalu, n, false, lengkapUnggah);
+    if (terpisah && r.lengkapKini) {
+      tabel.append(
+        el("span", {
+          kelas: "sub-tabel",
+          teks: `Dari ${r.kini.video} video yang sudah ≥ 48 jam (${u.belumDihitung} terbaru belum, views-nya masih naik):`,
+        }),
+      );
+    }
     baris("Total views", r.kini.views, r.lalu.views, n);
     baris("Rata-rata views", r.kini.rataViews, r.lalu.rataViews, n);
     baris("Like", r.kini.like, r.lalu.like, n);
@@ -668,36 +1183,49 @@
     baris("Simpan", r.kini.save, r.lalu.save, n);
     baris("ER", r.kini.er, r.lalu.er, (x) => alat.teksPersen(x), true);
 
-    const isi = [el("div", { kelas: "judul-blok" }, el("span", { teks: "Periode" }), segmen)];
     if (r.lengkapKini) {
       isi.push(
-        grafikPeriode(alat.deretHarian(data.posting, hari, Date.now()), lengkap),
+        grafikPeriode(alat.deretJendela(data.posting, j), lengkap),
         el(
           "div",
           { kelas: "legenda" },
           el("span", {}, el("i", { kelas: "kini" }), "Periode ini"),
-          lengkap ? el("span", {}, el("i", { kelas: "lalu" }), `${hari} hari sebelumnya`) : null,
+          lengkap ? el("span", {}, el("i", { kelas: "lalu" }), `${panjangHari} hari sebelumnya`) : null,
           el("span", { kelas: "redup", teks: "views per hari unggah" }),
         ),
       );
     }
     isi.push(tabel);
-    isi.push(el("div", { kelas: "catatan", teks: `Video yang diunggah ${tanggalPendek.format(awalMs)} – ${tanggalPendek.format(akhirMs - 1000)}, dibanding ${hari} hari sebelumnya.` }));
+    const tgl = (detik) => fmt.format(detik * 1000);
+    const jam = (detik) => tanggalJam.format(detik * 1000);
+    isi.push(
+      el("div", {
+        kelas: "catatan",
+        teks: terpisah
+          ? `Jumlah video: ${tgl(j.awal)} – ${tgl(j.akhirPilihan - 1)}, dibanding ${tgl(u.awalLalu)} – ${tgl(j.awal - 1)}. ` +
+            `Views, like, komentar, share, simpan, ER: video sampai ${jam(j.akhir)}, dibanding ${jam(pembanding.awal)} – ${jam(pembanding.akhir)}.`
+          : `Video yang diunggah ${tgl(j.awal)} – ${tgl(j.akhir - 1)}, dibanding ${tgl(pembanding.awal)} – ${tgl(pembanding.akhir - 1)}.` +
+            (j.dipangkas ? " Ujungnya dipotong ke 48 jam lalu (video lebih baru masih mengumpulkan views)." : ""),
+      }),
+    );
 
-    if (!lengkap) {
-      const kunci = `${location.href}|${hari}`;
+    // Pembanding jumlah video bisa mulai lebih awal dari pembanding views (rentang pilihan lebih panjang).
+    const batasMuat = Math.min(pembanding.awal, u.awalLalu);
+    if (!lengkap || !lengkapUnggah) {
+      const kunciPeriode = atur ? `${rentang.dari}_${rentang.sampai}` : String(hari);
+      const kunci = `${location.href}|${kunciPeriode}`;
       if (muatLama.aktif) {
         isi.push(el("div", { kelas: "status baik", role: "status" }, ikon("ulang"), el("span", { teks: `Memuat video lama untuk pembanding… (${data.posting.length} video terbaca)` })));
       } else if (adaItemList && !muatLama.dicoba.has(kunci)) {
         // Jalan sesudah gambar selesai dan sesudah TikTok sempat menampilkan daftar videonya.
-        setTimeout(() => muatVideoLama(hari).catch(() => {}), 1500);
+        setTimeout(() => muatVideoLama(kunciPeriode, batasMuat).catch(() => {}), 1500);
       } else {
         const batasPenuh = data.posting.length >= pengurai.MAKS_POSTING;
         isi.push(
           el("div", {
             kelas: "catatan",
             teks: batasPenuh
-              ? `Pembanding ${hari} hari butuh lebih dari ${pengurai.MAKS_POSTING} video untuk akun ini — pakai periode yang lebih pendek.`
+              ? `Pembanding ini butuh lebih dari ${pengurai.MAKS_POSTING} video untuk akun ini — pakai rentang yang lebih pendek atau lebih baru.`
               : "Video lama belum termuat semua, jadi naik/turun belum bisa dihitung.",
           }),
         );
@@ -709,14 +1237,16 @@
               teks: "Coba muat lagi",
               onclick: () => {
                 muatLama.dicoba.delete(kunci);
-                muatVideoLama(hari).catch(() => {});
+                muatVideoLama(kunciPeriode, batasMuat).catch(() => {});
               },
             }),
           );
         }
       }
     }
-    if (r.mudaDilewati) isi.push(el("div", { kelas: "catatan", teks: `${r.mudaDilewati} video < 48 jam belum dihitung (views-nya masih naik).` }));
+    // Rentang "Atur" yang berakhir di masa lalu tidak menyentuh video < 48 jam; catatan itu hanya relevan
+    // untuk periode yang ujungnya dipotong.
+    if (r.mudaDilewati && !atur) isi.push(el("div", { kelas: "catatan", teks: `${r.mudaDilewati} video < 48 jam belum dihitung (views-nya masih naik).` }));
     return el("div", { kelas: "blok" }, ...isi);
   }
 
@@ -1030,6 +1560,10 @@
     );
     kartu.append(el("div", { kelas: "tombol" }, tombolSimpan, tombolBaca));
     w.append(kartu);
+    if (panel.kal?.buka) {
+      if (panel.tampilan.periode === "atur" && kal) gambarKalender();
+      else panel.kal = null;
+    }
   }
 
   async function simpan() {
@@ -1042,7 +1576,16 @@
     menyimpan = false;
     if (jawaban?.ok) {
       const nama = jawaban.cocok?.nama ? jawaban.cocok.nama : "KOL ini";
-      pesanSimpan = { baik: true, teks: `Tersimpan untuk ${nama}.` };
+      const d = jawaban.dibuat ?? {};
+      const teks =
+        d.kol && d.konten
+          ? `KOL baru ${nama} dibuat di Elorae, videonya mulai dipantau, angkanya tersimpan.`
+          : d.kol
+            ? `KOL baru ${nama} dibuat di Elorae dan angkanya tersimpan.`
+            : d.konten
+              ? `Video ini ditambahkan ke ${nama} dan mulai dipantau; angkanya tersimpan.`
+              : `Tersimpan untuk ${nama}.`;
+      pesanSimpan = { baik: true, teks };
     } else {
       const kode = jawaban?.kode ?? "JARINGAN";
       pesanSimpan = { baik: false, teks: TEKS_SIMPAN[kode] ?? `Gagal menyimpan (${kode}).` };

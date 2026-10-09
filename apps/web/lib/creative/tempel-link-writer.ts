@@ -71,15 +71,15 @@ export type HasilTempelLink =
     }
   | { ok: false; kode: "JENIS_TIDAK_SAH" | "KOSONG" | "TERLALU_PANJANG" | "TERLALU_BANYAK" };
 
-type VideoTempel = { baris: string; videoId: string; handle: string; url: string };
+export type VideoTempel = { baris: string; videoId: string; handle: string; url: string };
 
-type HasilSatu =
+export type HasilSatu =
   | { status: "DITAMBAHKAN"; kontenId: string; kolaborasiId: string; kolBaru: boolean }
   | { status: "SUDAH_ADA"; kontenId: string }
   | { status: "GAGAL"; alasan: AlasanGagalTempel };
 
 /** Akun TikTok yang handle-nya sama (tersimpan dengan/tanpa "@", huruf apa pun, atau sebagai URL profil). */
-async function akunTiktok(tx: Klien, handle: string) {
+export async function akunTiktok(tx: Klien, handle: string) {
   const calon = await tx.kolAccount.findMany({
     where: {
       platform: "TIKTOK",
@@ -99,10 +99,16 @@ async function akunTiktok(tx: Klien, handle: string) {
     );
 }
 
-async function tempelSatuDiTx(
+/**
+ * Satu video ke Elorae: KOL (dibuat bila belum ada) → kolaborasi berjalan yang cocok (dibuat bila belum
+ * ada) → konten. Dipakai juga oleh "Simpan ke Elorae" di ekstensi (`sumber: "EKSTENSI"`), yang langsung
+ * menyimpan angkanya sendiri sehingga tidak perlu tugas cek segera (`tanpaTugasSegera`).
+ */
+export async function tempelSatuDiTx(
   tx: Klien,
-  v: VideoTempel & { liveAt: Date; jenis: JenisOrangVideo; olehUserId: string; sekarang: Date },
+  v: VideoTempel & { liveAt: Date; jenis: JenisOrangVideo; olehUserId: string; sekarang: Date; sumber?: string; tanpaTugasSegera?: boolean },
 ): Promise<HasilSatu> {
+  const sumber = v.sumber ?? SUMBER_TEMPEL;
   const ada = await tx.kolContent.findMany({ where: { link: cariTeks(v.videoId) }, select: { id: true, link: true }, take: 50 });
   const sama = ada.find((k) => videoIdDariLink(k.link) === v.videoId);
   if (sama) return { status: "SUDAH_ADA", kontenId: sama.id };
@@ -118,7 +124,7 @@ async function tempelSatuDiTx(
       isi: { name: `@${v.handle}`, akun: [{ platform: "TIKTOK", handle: v.handle, followers: 0, url: urlProfilTiktok(v.handle) }] },
       olehUserId: v.olehUserId,
       periksaKembar: false,
-      sumber: SUMBER_TEMPEL,
+      sumber,
     });
     if (!r.ok) throw new Error(`TEMPEL_KOL_${r.alasan}`);
     kolId = r.id;
@@ -137,7 +143,7 @@ async function tempelSatuDiTx(
       jenis: v.jenis === "AFILIASI" ? "KOMISI" : undefined,
       fee: 0,
       olehUserId: v.olehUserId,
-      sumber: SUMBER_TEMPEL,
+      sumber,
       sekarang: v.sekarang,
     });
     if (!r.ok) {
@@ -154,9 +160,10 @@ async function tempelSatuDiTx(
     link: v.url,
     liveAt: v.liveAt,
     olehUserId: v.olehUserId,
-    sumber: SUMBER_TEMPEL,
+    sumber,
   });
   if (!k.ok) throw new Error(`TEMPEL_KONTEN_${k.kode}`);
+  if (v.tanpaTugasSegera) return { status: "DITAMBAHKAN", kontenId: k.id, kolaborasiId, kolBaru };
 
   const t = tugasSegera({ contentId: k.id, url: v.url, hariIni: hariIniWib(v.sekarang) });
   await tx.kolTugasPantau.create({

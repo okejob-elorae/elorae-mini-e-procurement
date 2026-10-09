@@ -611,10 +611,43 @@ describe("susunAntrean", () => {
 });
 
 describe("simpanManual", () => {
+  // KOL, akun, kolaborasi dan konten yang DIBUAT oleh "Simpan ke Elorae" — dibersihkan di sini.
+  let kolBaruIds: string[] = [];
+  let penggunaUjiId = "";
+  beforeEach(() => {
+    kolBaruIds = [];
+    penggunaUjiId = "";
+  });
+  afterEach(async () => {
+    const ids = seededIds(kolBaruIds);
+    // Kolaborasi KOL baru, plus kolaborasi tambahan yang mungkin dibuat untuk KOL fixture (bukan briefId fixture).
+    const brief = await prisma.kolBrief.findMany({ where: { OR: [{ kolId: { in: ids } }, { kolId: seededId(kolId), id: { not: seededId(briefId) } }] }, select: { id: true } });
+    const briefIds = brief.map((b) => b.id);
+    const kontenIds = (await prisma.kolContent.findMany({ where: { collabId: { in: seededIds(briefIds) } }, select: { id: true } })).map((k) => k.id);
+    const akunIds = (await prisma.kolAccount.findMany({ where: { kolId: { in: ids } }, select: { id: true } })).map((a) => a.id);
+    await prisma.kolContentMetric.deleteMany({ where: { contentId: { in: seededIds(kontenIds) } } });
+    await prisma.kolTugasPantau.deleteMany({ where: { OR: [{ contentId: { in: seededIds(kontenIds) } }, { accountId: { in: seededIds(akunIds) } }] } });
+    await prisma.auditLog.deleteMany({ where: { entityId: { in: [...ids, ...seededIds(briefIds), ...seededIds(kontenIds)] } } });
+    await prisma.kolContent.deleteMany({ where: { id: { in: seededIds(kontenIds) } } });
+    await prisma.kolBrief.deleteMany({ where: { id: { in: seededIds(briefIds) } } });
+    await prisma.kolFollowerSnapshot.deleteMany({ where: { accountId: { in: seededIds(akunIds) } } });
+    await prisma.kolAccount.deleteMany({ where: { id: { in: seededIds(akunIds) } } });
+    await prisma.kol.deleteMany({ where: { id: { in: seededIds(kolBaruIds) } } });
+    if (penggunaUjiId) await prisma.user.delete({ where: { id: penggunaUjiId } });
+  });
+
+  /** Perangkat yang dipasang ADMIN (izin `*`), supaya "Simpan ke Elorae" boleh membuat KOL. */
+  async function perangkatAdmin(): Promise<PerangkatSah> {
+    const admin = await prisma.user.findFirstOrThrow({ where: { roleDefinition: { isSystem: true } }, select: { id: true } });
+    const p = await perangkat("Laptop admin");
+    await prisma.kolPerangkat.update({ where: { id: p.id }, data: { dibuatOlehId: admin.id } });
+    return { ...p, dibuatOlehId: admin.id };
+  }
+
   it("profil dicocokkan lewat handle tanpa memandang huruf besar dan @; tidak memakan kuota", async () => {
     const a = await perangkat();
     const r = await simpanManual({ perangkat: a, url: `https://www.tiktok.com/@${handle}`, data: hasilProfil(20_000, handle.toUpperCase()), sekarang: SEKARANG });
-    expect(r).toEqual({ ok: true, cocok: { kolId, nama: `${tag} KOL` } });
+    expect(r).toEqual({ ok: true, cocok: { kolId, nama: `${tag} KOL` }, dibuat: { kol: false, konten: false } });
     expect((await prisma.kolAccount.findUniqueOrThrow({ where: { id: akunId } })).followers).toBe(20_000);
     expect(await prisma.kolLogPantau.count({ where: { perangkatId: a.id, jenis: "HASIL", tugasId: null } })).toBe(1);
   });
@@ -627,14 +660,82 @@ describe("simpanManual", () => {
       data: { jenis: "KONTEN", videoId: "7301234567890123456", uniqueId: handle, views: 10, like: 1, komentar: 0, share: 0, save: 0 },
       sekarang: SEKARANG,
     });
-    expect(r).toEqual({ ok: true, cocok: { kolId, nama: `${tag} KOL` } });
+    expect(r).toEqual({ ok: true, cocok: { kolId, nama: `${tag} KOL` }, dibuat: { kol: false, konten: false } });
   });
 
-  it("yang tidak ada di Elorae ditolak", async () => {
-    const a = await perangkat();
-    expect(await simpanManual({ perangkat: a, url: "https://www.tiktok.com/@bukan", data: hasilProfil(1, `${handle}zzz`), sekarang: SEKARANG })).toEqual({
-      ok: false,
-      kode: "TIDAK_ADA_DI_ELORAE",
+  it("profil yang belum ada → KOL baru \"@handle\" + akun TikTok-nya, angka langsung tersimpan, jejak bersumber EKSTENSI", async () => {
+    const a = await perangkatAdmin();
+    const baru = `${handle}baru`;
+    const r = await simpanManual({ perangkat: a, url: `https://www.tiktok.com/@${baru}`, data: hasilProfil(33_000, baru), sekarang: SEKARANG });
+    if (!r.ok) throw new Error(r.kode);
+    kolBaruIds.push(r.cocok.kolId);
+    expect(r).toEqual({ ok: true, cocok: { kolId: r.cocok.kolId, nama: `@${baru}` }, dibuat: { kol: true, konten: false } });
+    const kol = await prisma.kol.findUniqueOrThrow({ where: { id: r.cocok.kolId }, select: { createdById: true, accounts: { select: { id: true, platform: true, handle: true, followers: true, url: true } } } });
+    expect(kol.createdById).toBe(a.dibuatOlehId);
+    expect(kol.accounts).toHaveLength(1);
+    expect(kol.accounts[0]).toMatchObject({ platform: "TIKTOK", followers: 33_000, url: `https://www.tiktok.com/@${baru}` });
+    expect(await prisma.kolFollowerSnapshot.count({ where: { accountId: kol.accounts[0].id } })).toBe(1);
+    const jejak = await prisma.auditLog.findMany({ where: { entityId: r.cocok.kolId }, select: { metadata: true } });
+    expect(JSON.stringify(jejak)).toContain("EKSTENSI");
+
+    // Simpan kedua kali: KOL yang sama, tidak dibuat lagi.
+    const r2 = await simpanManual({ perangkat: a, url: `https://www.tiktok.com/@${baru}`, data: hasilProfil(34_000, baru), sekarang: tambahMenit(SEKARANG, 5) });
+    expect(r2).toEqual({ ok: true, cocok: { kolId: r.cocok.kolId, nama: `@${baru}` }, dibuat: { kol: false, konten: false } });
+  });
+
+  it("video baru dari akun yang sudah ada → konten di kolaborasi berjalan KOL itu, angkanya tersimpan, tanpa tugas segera", async () => {
+    const a = await perangkatAdmin();
+    const videoId = "7301234567890999999";
+    const r = await simpanManual({
+      perangkat: a,
+      url: `https://www.tiktok.com/@${handle}/video/${videoId}?is_from_webapp=1`,
+      data: { jenis: "KONTEN", videoId, uniqueId: handle, views: 500, like: 40, komentar: 3, share: 1, save: 2, dibuatPada: Math.floor(SEKARANG.getTime() / 1000) - 86_400 },
+      sekarang: SEKARANG,
     });
+    expect(r).toEqual({ ok: true, cocok: { kolId, nama: `${tag} KOL` }, dibuat: { kol: false, konten: true } });
+    const k = await prisma.kolContent.findFirstOrThrow({ where: { link: { contains: videoId } }, select: { id: true, collabId: true, link: true, metrics: { select: { views: true } } } });
+    expect(k.collabId).toBe(briefId); // kolaborasi TAYANG fixture masih berjalan → dipakai, bukan kolaborasi baru
+    expect(k.link).toBe(`https://www.tiktok.com/@${handle}/video/${videoId}`);
+    expect(k.metrics.map((m) => m.views)).toEqual([500]);
+    expect(await prisma.kolTugasPantau.count({ where: { contentId: k.id } })).toBe(0);
+    await prisma.kolContentMetric.deleteMany({ where: { contentId: k.id } });
+    await prisma.auditLog.deleteMany({ where: { entityId: k.id } });
+    await prisma.kolContent.delete({ where: { id: k.id } });
+  });
+
+  it("video dari akun yang belum ada → KOL, kolaborasi tanpa fee dan konten dibuat sekaligus", async () => {
+    const a = await perangkatAdmin();
+    const baru = `${handle}vid`;
+    const videoId = "7301234567890888888";
+    const r = await simpanManual({
+      perangkat: a,
+      url: `https://www.tiktok.com/@${baru}/video/${videoId}`,
+      data: { jenis: "KONTEN", videoId, uniqueId: baru, views: 9, like: 1, komentar: 0, share: 0, save: 0 },
+      sekarang: SEKARANG,
+    });
+    if (!r.ok) throw new Error(r.kode);
+    kolBaruIds.push(r.cocok.kolId);
+    expect(r.dibuat).toEqual({ kol: true, konten: true });
+    const brief = await prisma.kolBrief.findMany({ where: { kolId: r.cocok.kolId }, select: { fee: true, jenis: true } });
+    expect(brief).toHaveLength(1);
+    expect(Number(brief[0].fee)).toBe(0);
+    expect(brief[0].jenis).not.toBe("KOMISI");
+  });
+
+  it("pemasang perangkat tanpa creative:manage tidak bisa membuat KOL baru (TANPA_IZIN), dan tidak ada yang dibuat", async () => {
+    penggunaUjiId = (await prisma.user.create({ data: { email: `${handle}@uji.invalid`, name: tag }, select: { id: true } })).id;
+    const p = await perangkat("Laptop tanpa izin");
+    await prisma.kolPerangkat.update({ where: { id: p.id }, data: { dibuatOlehId: penggunaUjiId } });
+    const a = { ...p, dibuatOlehId: penggunaUjiId };
+    const baru = `${handle}tolak`;
+    expect(await simpanManual({ perangkat: a, url: `https://www.tiktok.com/@${baru}`, data: hasilProfil(1, baru), sekarang: SEKARANG })).toEqual({
+      ok: false,
+      kode: "TANPA_IZIN",
+    });
+    expect(await prisma.kolAccount.count({ where: { handle: { contains: baru } } })).toBe(0);
+    // Yang SUDAH ada tetap boleh diperbarui angkanya tanpa izin itu.
+    const r = await simpanManual({ perangkat: a, url: `https://www.tiktok.com/@${handle}`, data: hasilProfil(2, handle), sekarang: SEKARANG });
+    expect(r.ok).toBe(true);
+    await prisma.kolPerangkat.update({ where: { id: p.id }, data: { dibuatOlehId: userId } });
   });
 });

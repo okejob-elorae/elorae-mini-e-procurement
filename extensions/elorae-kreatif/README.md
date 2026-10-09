@@ -75,16 +75,23 @@ yang belum terkirim disimpan dan dikirim ulang (paling lama 30 menit).
 
 Saat Anda membuka profil atau video TikTok sendiri, panel Elorae di kanan bawah menampilkan
 angka yang terbaca. **Simpan ke Elorae** mengirim angka itu ke KOL yang cocok ("Tersimpan untuk
-…") atau memberi tahu bila KOL/konten itu belum ada di Elorae. Simpan manual tidak memakai kuota.
+…"). Yang belum ada di Elorae langsung dibuat, tanpa isian: profil baru menjadi KOL bernama
+"@handle" dengan akun TikTok-nya; video baru masuk ke kolaborasi berjalan KOL itu (atau kolaborasi
+baru tanpa fee), sama seperti "Tempel link" di Performa video. Membuat KOL butuh izin mengelola
+Kreatif milik orang yang menyambungkan ekstensi. Simpan manual tidak memakai kuota.
 Bila Anda berpindah halaman di TikTok tanpa memuat ulang, panel meminta Anda menekan F5 dulu
 supaya angka yang dibaca memang milik halaman itu. Panel bisa dikecilkan dengan tombol –.
 
 Di profil, panel lengkap juga menampilkan:
 
 - **Median views, views/pengikut, video/minggu** — median tidak terangkat oleh satu video viral.
-- **Periode 7H / 30H / 90H** — video yang diunggah dalam periode itu (jumlah, total dan rata-rata
+- **Periode 7H / 30H / 90H / Atur** — video yang diunggah dalam periode itu (jumlah, total dan rata-rata
   views, like, komentar, share, simpan, ER) dibanding periode yang sama sebelumnya, dengan ▲/▼.
-  Kedua periode berakhir 48 jam lalu, karena video yang lebih baru masih mengumpulkan views. Grafik
+  7H/30H/90H berakhir 48 jam lalu, karena video yang lebih baru masih mengumpulkan views. **Atur**
+  membuka kalender panel sendiri (warna mengikuti tema panel): pilihan cepat, lalu ketuk tanggal awal
+  dan akhir atau tekan dan tarik. Untuk rentang yang ujungnya masuk 48 jam terakhir, "Video diunggah"
+  tetap menghitung SEMUA video di tanggal itu, sedangkan views/like/ER hanya dari video yang sudah
+  ≥ 48 jam (panel menyebut berapa yang belum dihitung). Grafik
   di atas tabel menunjukkan views per hari unggah: garis warna = periode ini, garis putus = periode
   sebelumnya. Bila video lama belum termuat, panel menggulir daftar video sendiri (lalu mengembalikan
   posisi halaman) sampai periode pembanding tercakup; ekstensi menyimpan paling banyak 200 video per

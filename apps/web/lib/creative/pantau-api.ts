@@ -34,6 +34,8 @@ const HTTP: Partial<Record<KodeGalatPantau, number>> = {
   BELUM_TAYANG: 422,
   TIDAK_DITEMUKAN: 404,
   TIDAK_ADA_DI_ELORAE: 404,
+  TANPA_IZIN: 403,
+  KOL_DIBLOKIR: 409,
   GAGAL: 500,
 };
 

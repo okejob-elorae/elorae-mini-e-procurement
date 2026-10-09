@@ -21831,7 +21831,9 @@
         "NAMA_TERLALU_PANJANG": "Nama perangkat paling banyak 80 huruf.",
         "TIDAK_VALID": "Ada isian yang tidak sah.",
         "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini.",
-        "GAGAL": "Gagal. Coba lagi."
+        "GAGAL": "Gagal. Coba lagi.",
+        "TANPA_IZIN": "Orang yang memasang perangkat ini tidak punya izin mengelola Kreatif, jadi KOL baru tidak bisa dibuat dari ekstensi.",
+        "KOL_DIBLOKIR": "KOL ini diblokir di Elorae; videonya tidak ditambahkan."
       }
     },
     "performa": {
