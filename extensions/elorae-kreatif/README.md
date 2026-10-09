@@ -42,8 +42,9 @@ di `chrome://extensions`, lalu muat ulang tab TikTok yang terbuka.
 
 Popup menampilkan jumlah pemeriksaan hari ini (selesai, gagal, kuota, sisa), keadaan
 (berjalan, di luar jam kerja, dijeda, kuota habis, antrean kosong, istirahat), waktu pemeriksaan
-berikutnya, dan masalah terakhir. **Putuskan** hanya menghapus sambungan di ekstensi; cabut juga
-perangkatnya di Elorae → Kreatif → Pemantauan.
+berikutnya, dan masalah terakhir. **Putuskan** menghapus sambungan di ekstensi sekaligus mencabut
+perangkatnya di Elorae. Kalau Elorae sedang tidak terjangkau, popup memberi tahu; cabut perangkatnya
+dari Elorae → Kreatif → Pemantauan.
 
 ## Cara kerjanya
 
