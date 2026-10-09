@@ -102,6 +102,9 @@
   // Hitungan panel (ER, grafik, format angka) — modul murni yang juga diuji node --test.
   let alat = null;
   const muatAlat = import(chrome.runtime.getURL("lib/panel.js")).then((m) => (alat = m));
+  // Setelan tampilan (tema, warna, ukuran, posisi, periode, asumsi harga) — juga modul murni.
+  let gaya = null;
+  const muatGaya = import(chrome.runtime.getURL("lib/tampilan.js")).then((m) => (gaya = m));
   const TEKS_STATUS = {
     CAPTCHA: "TikTok meminta captcha. Selesaikan dulu, lalu tekan Baca ulang.",
     LOGIN: "TikTok meminta masuk (login).",
@@ -144,38 +147,43 @@
     });
   }
 
-  // Kartu gelap yang sengaja satu tema: ia melayang di atas TikTok terang maupun gelap, jadi
-  // warnanya ditetapkan sendiri (bukan mengikuti prefers-color-scheme) dan dipisah dari halaman
-  // oleh garis tipis + bayangan. Angka memakai ui-rounded (SF Pro Rounded di Mac), cadangan system-ui.
+  // Warna panel datang dari variabel CSS yang dipasang di pembungkus (`variabelCss` di
+  // lib/tampilan.js: tema terang/gelap/otomatis + warna aksen pilihan). Nilai di `.wadah` di bawah
+  // hanya cadangan sebelum setelan terbaca. Angka memakai ui-rounded (SF Pro Rounded di Mac).
   const CSS = `
     :host { all: initial; }
     * { box-sizing: border-box; }
-    .kotak, .pil {
+    .wadah {
       --ink: #0e0d13; --kartu: #18161f; --kartu-2: #221f2b; --garis: rgba(255, 255, 255, 0.09);
-      --teks: #f5f3fb; --redup: #a19cb2; --aksen: #c9b8ff; --aksen-teks: #1a1426;
-      --baik: #7fe3b4; --galat: #ff98a6;
+      --teks: #f5f3fb; --redup: #a19cb2; --aksen: #c9b8ff; --aksen-teks: #16121f;
+      --naik: #7fe3b4; --turun: #ff98a6;
+      --bayangan: 0 18px 48px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.25);
+    }
+    .kotak, .pil {
       position: fixed; right: 16px; bottom: 16px; z-index: 2147483647;
       font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
       color: var(--teks); background: var(--ink); border: 1px solid var(--garis);
-      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.25);
-      -webkit-font-smoothing: antialiased;
+      box-shadow: var(--bayangan); -webkit-font-smoothing: antialiased;
     }
+    .kiri.kotak, .kiri.pil { right: auto; left: 16px; }
     .bulat { font-family: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif; }
-    .kotak { width: 304px; border-radius: 24px; padding: 14px; display: grid; gap: 12px; }
+    .kotak { width: 316px; max-height: calc(100vh - 32px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+      border-radius: 24px; padding: 14px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; scrollbar-width: thin; }
     .kotak.masuk { animation: muncul 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
     @keyframes muncul { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
 
     .pil { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 8px 14px 8px 10px;
       cursor: pointer; font-weight: 700; font-size: 13px; }
     .pil:hover { background: var(--kartu-2); }
-    .pil .er { color: var(--aksen); font-weight: 700; }
+    .pil .er { color: var(--teks); background: color-mix(in srgb, var(--aksen) 26%, transparent);
+      border-radius: 999px; padding: 2px 8px; font-weight: 700; }
 
     .logo { width: 22px; height: 22px; border-radius: 7px; background: var(--aksen); color: var(--aksen-teks);
-      display: grid; place-items: center; font-weight: 900; font-size: 13px; line-height: 1; }
+      display: grid; place-items: center; font-weight: 900; font-size: 13px; line-height: 1; flex: none; }
     .kepala { display: flex; align-items: center; gap: 8px; }
     .kepala .merek { font-weight: 800; letter-spacing: -0.01em; }
     .kepala .sub { color: var(--redup); }
-    .kepala .isi-kanan { margin-left: auto; }
+    .kepala .isi-kanan { margin-left: auto; display: flex; gap: 2px; }
 
     .siapa { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .avatar { flex: none; width: 38px; height: 38px; border-radius: 50%; background: var(--kartu-2);
@@ -190,17 +198,45 @@
       font-variant-numeric: tabular-nums; white-space: nowrap; }
     .tile .label { color: var(--redup); font-size: 12px; margin-top: 3px; }
     .tile.aksen { background: var(--aksen); border-color: transparent; color: var(--aksen-teks); }
-    .tile.aksen .label { color: rgba(26, 20, 38, 0.72); }
+    .tile.aksen .label { color: color-mix(in srgb, var(--aksen-teks) 74%, transparent); }
 
-    .grafik { background: var(--kartu); border: 1px solid var(--garis); border-radius: 16px; padding: 10px 12px; display: grid; gap: 8px; }
+    .statistik { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .statistik div { background: var(--kartu); border: 1px solid var(--garis); border-radius: 12px; padding: 7px 8px; min-width: 0; }
+    .statistik b { display: block; font-size: 15px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .statistik span { color: var(--redup); font-size: 11px; }
+
+    .blok { background: var(--kartu); border: 1px solid var(--garis); border-radius: 16px; padding: 10px 12px; display: grid; gap: 8px; }
+    .blok .judul-blok { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 700; }
+    .blok .catatan { color: var(--redup); font-size: 11.5px; }
+
+    .segmen { display: inline-flex; background: var(--kartu-2); border-radius: 999px; padding: 2px; }
+    .segmen button { border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 700; color: var(--redup); background: transparent; }
+    .segmen button[aria-pressed="true"] { background: var(--aksen); color: var(--aksen-teks); }
+
+    .tabel { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 10px; align-items: baseline; font-variant-numeric: tabular-nums; }
+    .tabel .l { color: var(--redup); }
+    .tabel .v { font-weight: 700; text-align: right; white-space: nowrap; }
+    .tabel .p { text-align: right; font-size: 11.5px; font-weight: 700; white-space: nowrap; min-width: 58px; }
+    .naik { color: var(--naik); }
+    .turun { color: var(--turun); }
+    .tetap { color: var(--redup); }
+
     .batang { display: flex; align-items: flex-end; gap: 4px; height: 46px; }
-    .batang i { flex: 1; min-height: 3px; border-radius: 4px 4px 2px 2px; background: var(--aksen);
-      transform-origin: bottom; }
-    .batang i.muda { background: transparent; border: 1.5px dashed rgba(201, 184, 255, 0.55); }
+    .batang i { flex: 1; min-height: 3px; border-radius: 4px 4px 2px 2px; background: var(--aksen); transform-origin: bottom; }
+    .batang i.muda { background: transparent; border: 1.5px dashed color-mix(in srgb, var(--aksen) 60%, transparent); }
     .masuk .batang i { animation: tumbuh 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
     @keyframes tumbuh { from { transform: scaleY(0.05); } }
-    .grafik .kaki { display: flex; justify-content: space-between; gap: 8px; color: var(--redup); font-size: 12px; }
-    .grafik .kaki b { color: var(--teks); font-weight: 700; }
+    .kaki { display: flex; justify-content: space-between; gap: 8px; color: var(--redup); font-size: 12px; }
+    .kaki b { color: var(--teks); font-weight: 700; }
+
+    .harga { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .isian { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+    .isian input { flex: 1 1 100%; min-width: 0; font: inherit; color: var(--teks); background: var(--ink);
+      border: 1px solid var(--garis); border-radius: 10px; padding: 7px 10px; }
+    .isian input:focus-visible { outline: 2px solid var(--aksen); outline-offset: 1px; }
+    .lencana { border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+    .lencana.MURAH, .lencana.WAJAR { background: color-mix(in srgb, var(--naik) 16%, transparent); color: var(--naik); }
+    .lencana.MAHAL { background: color-mix(in srgb, var(--turun) 16%, transparent); color: var(--turun); }
 
     .chip-baris { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 10px;
@@ -213,8 +249,8 @@
     .catatan { color: var(--redup); font-size: 12px; }
     .status { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; border-radius: 12px; padding: 8px 10px; }
     .status svg { margin-top: 1px; }
-    .status.galat { background: rgba(255, 152, 166, 0.12); color: var(--galat); }
-    .status.baik { background: rgba(127, 227, 180, 0.12); color: var(--baik); }
+    .status.galat { background: color-mix(in srgb, var(--turun) 14%, transparent); color: var(--turun); }
+    .status.baik { background: color-mix(in srgb, var(--naik) 14%, transparent); color: var(--naik); }
 
     .tombol { display: flex; gap: 8px; }
     button { font: inherit; color: inherit; cursor: pointer; border: none; }
@@ -225,7 +261,7 @@
     button.utama:active:not(:disabled) { transform: scale(0.97); }
     button.bundar { width: 42px; height: 42px; border-radius: 50%; background: var(--kartu-2); display: grid;
       place-items: center; flex: none; }
-    button.bundar:hover { background: #2c2838; }
+    button.bundar:hover { background: color-mix(in srgb, var(--teks) 10%, var(--kartu-2)); }
     button.bundar svg { width: 18px; height: 18px; }
     button.kecil { width: 28px; height: 28px; border-radius: 50%; background: transparent; display: grid; place-items: center; color: var(--redup); }
     button.kecil:hover { background: var(--kartu-2); color: var(--teks); }
@@ -241,7 +277,6 @@
 
   // Ikon garis 24×24, dibangun dengan createElementNS (tanpa innerHTML: TikTok bisa memasang Trusted Types).
   const IKON = {
-    pengikut: ["M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z", "M4 21a8 8 0 0 1 16 0"],
     like: ["M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"],
     komentar: ["M4.5 5.5h15v10.5H9l-4.5 3.5z"],
     share: ["M14 4.5l6 6-6 6", "M20 10.5H10a6 6 0 0 0-6 6v3"],
@@ -249,6 +284,8 @@
     video: ["M4 6.5h11v11H4z", "M15 10.5l5-3v9l-5-3"],
     ulang: ["M20 12a8 8 0 1 1-2.4-5.7", "M20 4.5V9h-4.5"],
     kecil: ["M6 12h12"],
+    lebar: ["M4 9V4h5", "M20 15v5h-5", "M4 4l6 6", "M20 20l-6-6"],
+    sempit: ["M9 4v5H4", "M15 20v-5h5", "M9 9L3 3", "M15 15l6 6"],
     centang: ["M5 12.5l4.5 4.5L19 7.5"],
     awas: ["M12 8v5", "M12 16.5v.01", "M12 3.5l9.5 16.5h-19z"],
   };
@@ -268,6 +305,7 @@
   function el(tag, atribut = {}, ...anak) {
     const e = document.createElement(tag);
     for (const [k, v] of Object.entries(atribut)) {
+      if (v === undefined || v === null) continue;
       if (k === "teks") e.textContent = v;
       else if (k === "kelas") e.className = v;
       else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
@@ -277,17 +315,73 @@
     return e;
   }
 
+  // ------------------------------------------------ setelan tampilan & tema
+  const mediaGelap = window.matchMedia("(prefers-color-scheme: dark)");
+
+  /** Warna latar halaman TikTok (tema TikTok sendiri), dari elemen terluar yang berlatar. */
+  function latarHalaman() {
+    for (const e of [document.body, document.documentElement, document.getElementById("app")]) {
+      if (!e) continue;
+      const rgb = gaya.bacaRgb(getComputedStyle(e).backgroundColor);
+      if (rgb) return rgb;
+    }
+    return null;
+  }
+
+  function terapkanTema() {
+    const tema = gaya.temaEfektif(panel.tampilan.tema, latarHalaman(), mediaGelap.matches);
+    for (const [k, v] of Object.entries(gaya.variabelCss(tema, panel.tampilan.aksen))) panel.wadah.style.setProperty(k, v);
+  }
+
+  async function bacaTampilan() {
+    try {
+      const r = await chrome.storage.local.get(gaya.KUNCI_TAMPILAN);
+      return gaya.bersihkanTampilan(r?.[gaya.KUNCI_TAMPILAN]);
+    } catch {
+      return gaya.bersihkanTampilan(null);
+    }
+  }
+
+  function ubahTampilan(sebagian) {
+    panel.tampilan = gaya.bersihkanTampilan({ ...panel.tampilan, ...sebagian });
+    chrome.storage.local.set({ [gaya.KUNCI_TAMPILAN]: panel.tampilan }).catch(() => {});
+    gambar(pengurai?.jenisHalaman(location.href));
+  }
+
+  let tundaTema = null;
+  function pantauTemaHalaman() {
+    // Tema TikTok berganti → cukup pasang ulang variabel warna; isi panel (dan isian harga) tetap.
+    const ulang = () => {
+      clearTimeout(tundaTema);
+      tundaTema = setTimeout(() => panel && gaya && terapkanTema(), 200);
+    };
+    mediaGelap.addEventListener("change", ulang);
+    const pengamat = new MutationObserver(ulang);
+    for (const e of [document.documentElement, document.body]) {
+      if (e) pengamat.observe(e, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
+    }
+    chrome.storage.onChanged.addListener((perubahan, area) => {
+      if (area !== "local" || !(gaya.KUNCI_TAMPILAN in perubahan) || !panel) return;
+      panel.tampilan = gaya.bersihkanTampilan(perubahan[gaya.KUNCI_TAMPILAN].newValue);
+      if (panel.mengetik) panel.tertunda = true;
+      else gambar(pengurai?.jenisHalaman(location.href));
+    });
+  }
+
+  // ------------------------------------------------ siklus panel
   async function bangunPanel() {
     const tabOtomatis = await kirimKeLatar({ jenis: "apakahTabOtomatis" });
     if (tabOtomatis?.otomatis) return;
-    const setelan = await kirimKeLatar({ jenis: "bacaPanel" });
+    await muatGaya;
+    const [setelan, tampilan] = await Promise.all([kirimKeLatar({ jenis: "bacaPanel" }), bacaTampilan()]);
     const host = document.createElement("elorae-kreatif-panel");
     const akar = host.attachShadow({ mode: "closed" });
     akar.append(el("style", { teks: CSS }));
-    const wadah = el("div");
+    const wadah = el("div", { kelas: "wadah" });
     akar.append(wadah);
     document.documentElement.append(host);
-    panel = { host, wadah, kecil: Boolean(setelan?.kecil), animasi: true };
+    panel = { host, wadah, kecil: Boolean(setelan?.kecil), animasi: true, tampilan, mengetik: false, tertunda: false };
+    pantauTemaHalaman();
     await perbaruiPanel();
     setInterval(() => {
       if (location.href !== urlTerakhir) {
@@ -317,6 +411,11 @@
       hasilTerakhir = { status: "TIDAK_TERBACA", pesan: String(e?.message ?? e) };
     }
     membaca = false;
+    // Jangan gambar ulang di tengah orang mengetik harga — isiannya akan kehilangan fokus.
+    if (panel.mengetik) {
+      panel.tertunda = true;
+      return;
+    }
     gambar(target);
   }
 
@@ -327,11 +426,16 @@
     gambar(pengurai?.jenisHalaman(location.href));
   }
 
+  // ------------------------------------------------ potongan isi
   const ubin = (nilai, label, judul, aksen = false) =>
     el("div", { kelas: aksen ? "tile aksen" : "tile", title: judul }, el("div", { kelas: "nilai bulat", teks: nilai }), el("div", { kelas: "label", teks: label }));
 
   const chip = (namaIkon, nilai, label, judul) =>
     el("span", { kelas: "chip", title: judul }, ikon(namaIkon), el("b", { teks: nilai }), el("span", { teks: label }));
+
+  const tanggalPendek = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Jakarta" });
+  const tanggalPanjang = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
+  const persen1 = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 });
 
   function grafikViews(posting, ringkas) {
     const batang = alat.batangViews(posting, Date.now());
@@ -346,19 +450,142 @@
       t.style.animationDelay = `${i * 25}ms`;
       baris.append(t);
     });
-    const kiri = ringkas.avgViews != null
-      ? el("span", {}, "Rata-rata ", el("b", { teks: alat.angkaPendek(ringkas.avgViews) }), " views")
-      : el("span", { teks: `${batang.length} video terbaru` });
+    const kiri =
+      ringkas.avgViews != null
+        ? el("span", {}, "Rata-rata ", el("b", { teks: alat.angkaPendek(ringkas.avgViews) }), " views")
+        : el("span", { teks: `${batang.length} video terbaru` });
     return el(
       "div",
-      { kelas: "grafik", role: "img", "aria-label": `Views ${batang.length} video terbaru` },
+      { kelas: "blok", role: "img", "aria-label": `Views ${batang.length} video terbaru` },
       baris,
       el("div", { kelas: "kaki" }, kiri, el("span", { teks: "lama → baru" })),
     );
   }
 
-  function isiProfil(h, data) {
-    const ringkas = alat.hitungErAkun(data.posting, Date.now());
+  function statistikAkun(r) {
+    const sel = (nilai, label, judul) => el("div", { title: judul }, el("b", { kelas: "bulat", teks: nilai }), el("span", { teks: label }));
+    return el(
+      "div",
+      { kelas: "statistik" },
+      sel(alat.angkaPendek(r.medianViews ?? undefined), "median views", "Nilai tengah views dari video yang dipakai ER — tidak terangkat oleh satu video viral."),
+      sel(r.rasioViews == null ? "—" : `${persen1.format(r.rasioViews)}%`, "views/pengikut", "Rata-rata views dibagi jumlah pengikut: berapa persen pengikut yang benar-benar menonton."),
+      sel(r.perMinggu == null ? "—" : persen1.format(r.perMinggu), "video/minggu", `Rata-rata unggahan per minggu dalam ${r.hariDasar || 28} hari terakhir.`),
+    );
+  }
+
+  /** Lencana perubahan: ▲ naik / ▼ turun / = tetap; `poin` untuk ER (selisih poin persen). */
+  function lencanaUbah(baru, lama, lengkap, poin = false) {
+    if (!lengkap || baru == null || lama == null) return el("span", { kelas: "p tetap", teks: "—" });
+    const d = poin ? Math.round((baru - lama) * 10) / 10 : alat.perubahanPersen(baru, lama);
+    if (d == null) return el("span", { kelas: "p tetap", teks: lama === 0 && baru > 0 ? "baru" : "—" });
+    if (d === 0) return el("span", { kelas: "p tetap", teks: "= 0" });
+    const teks = `${d > 0 ? "▲" : "▼"} ${persen1.format(Math.abs(d))}${poin ? " poin" : "%"}`;
+    return el("span", { kelas: `p ${d > 0 ? "naik" : "turun"}`, teks });
+  }
+
+  function periodeProfil(data) {
+    const hari = panel.tampilan.periode;
+    const r = alat.ringkasPeriode(data.posting, hari, Date.now(), { jumlahVideo: data.jumlahVideo });
+    const akhirMs = Date.now() - alat.UMUR_MIN_POSTING_JAM * 3600_000;
+    const awalMs = akhirMs - hari * 86_400_000;
+    const segmen = el("div", { kelas: "segmen", role: "group", "aria-label": "Periode" });
+    for (const n of [7, 30, 90]) {
+      segmen.append(el("button", { type: "button", "aria-pressed": String(n === hari), teks: `${n}H`, title: `${n} hari`, onclick: () => ubahTampilan({ periode: n }) }));
+    }
+    const tabel = el("div", { kelas: "tabel" });
+    const baris = (label, kini, lama, format, poin = false) =>
+      tabel.append(el("span", { kelas: "l", teks: label }), el("span", { kelas: "v", teks: format(kini) }), lencanaUbah(kini, lama, r.lengkapLalu && r.lengkapKini, poin));
+    const n = (x) => alat.angkaPendek(x ?? undefined);
+    baris("Video diunggah", r.kini.video, r.lalu.video, n);
+    baris("Total views", r.kini.views, r.lalu.views, n);
+    baris("Rata-rata views", r.kini.rataViews, r.lalu.rataViews, n);
+    baris("Like", r.kini.like, r.lalu.like, n);
+    baris("Komentar", r.kini.komentar, r.lalu.komentar, n);
+    baris("Share", r.kini.share, r.lalu.share, n);
+    baris("Simpan", r.kini.save, r.lalu.save, n);
+    baris("ER", r.kini.er, r.lalu.er, (x) => alat.teksPersen(x), true);
+
+    const catatan = [];
+    catatan.push(`Video yang diunggah ${tanggalPendek.format(awalMs)} – ${tanggalPendek.format(akhirMs - 1000)}, dibanding ${hari} hari sebelumnya.`);
+    if (!r.lengkapKini || !r.lengkapLalu) {
+      catatan.push(
+        `Daftar video yang terbaca belum mencakup ${r.lengkapKini ? "periode pembanding" : "periode ini"} — gulir daftar video ke bawah, lalu tekan baca ulang.`,
+      );
+    }
+    if (r.mudaDilewati) catatan.push(`${r.mudaDilewati} video < 48 jam belum dihitung (views-nya masih naik).`);
+    return el(
+      "div",
+      { kelas: "blok" },
+      el("div", { kelas: "judul-blok" }, el("span", { teks: "Periode" }), segmen),
+      tabel,
+      ...catatan.map((t) => el("div", { kelas: "catatan", teks: t })),
+    );
+  }
+
+  /** Harga yang diketik per akun selama halaman terbuka (tidak disimpan ke mana pun). */
+  const hargaDiketik = new Map();
+
+  function hargaProfil(handle, r) {
+    const { cpmMin, cpmMaks } = panel.tampilan;
+    const perkiraan = alat.perkiraanHarga(r.medianViews, cpmMin, cpmMaks);
+    const isi = [el("div", { kelas: "judul-blok" }, el("span", { teks: "Perkiraan harga per video" }))];
+    if (!perkiraan) {
+      isi.push(el("div", { kelas: "catatan", teks: "Belum bisa diperkirakan: butuh paling sedikit 3 video berumur 48 jam." }));
+      return el("div", { kelas: "blok" }, ...isi);
+    }
+    isi.push(
+      el("div", { kelas: "harga bulat", teks: `${alat.rupiahPendek(perkiraan.min)} – ${alat.rupiahPendek(perkiraan.maks)}` }),
+      el("div", {
+        kelas: "catatan",
+        teks: `Median ${alat.angkaPendek(r.medianViews)} views × ${alat.rupiahPendek(cpmMin)}–${alat.rupiahPendek(cpmMaks)} per 1.000 views. Angka per 1.000 views adalah asumsi — ubah di popup ekstensi.`,
+      }),
+    );
+    const lencana = el("span", { kelas: "lencana", hidden: "" });
+    const perbaruiLencana = (teks) => {
+      const nilai = alat.nilaiHargaDiminta(alat.bacaRupiah(teks), r.medianViews, cpmMin, cpmMaks);
+      if (!nilai) {
+        lencana.hidden = true;
+        return;
+      }
+      const label = { MURAH: "Murah", WAJAR: "Wajar", MAHAL: "Mahal" }[nilai.nilai];
+      lencana.hidden = false;
+      lencana.className = `lencana ${nilai.nilai}`;
+      lencana.textContent = `${label} · ${alat.rupiahPendek(nilai.cpm)}/1.000 views`;
+    };
+    const masukan = el("input", {
+      type: "text",
+      inputmode: "decimal",
+      placeholder: "Harga diminta, mis. 15jt",
+      "aria-label": "Harga yang diminta KOL",
+      value: hargaDiketik.get(handle) ?? "",
+    });
+    // Tombol keyboard TikTok (panah, spasi, L…) tidak boleh ikut bereaksi saat mengetik di sini.
+    for (const jenis of ["keydown", "keyup", "keypress"]) masukan.addEventListener(jenis, (ev) => ev.stopPropagation());
+    masukan.addEventListener("input", () => {
+      hargaDiketik.set(handle, masukan.value);
+      perbaruiLencana(masukan.value);
+    });
+    masukan.addEventListener("focus", () => {
+      panel.mengetik = true;
+    });
+    masukan.addEventListener("blur", () => {
+      panel.mengetik = false;
+      if (!panel.tertunda) return;
+      // Ditunda sedikit: blur terjadi saat tombol ditekan, dan menggambar ulang seketika akan
+      // menghapus tombol yang sedang diklik (mis. 7H) sebelum kliknya sampai.
+      setTimeout(() => {
+        if (panel.mengetik || !panel.tertunda) return;
+        panel.tertunda = false;
+        gambar(pengurai?.jenisHalaman(location.href));
+      }, 300);
+    });
+    perbaruiLencana(masukan.value);
+    isi.push(el("div", { kelas: "isian" }, masukan, lencana));
+    return el("div", { kelas: "blok" }, ...isi);
+  }
+
+  function isiProfil(h, data, lengkap) {
+    const r = alat.ringkasAkun(data.posting, data.pengikut, Date.now(), { jumlahVideo: data.jumlahVideo });
     const judulEr =
       "Rata-rata ER per video atas ≤ 12 video terbaru (bukan pin, berumur ≥ 48 jam): " +
       "(like + komentar + share + save) ÷ views. Rumusnya sama dengan yang disimpan Elorae.";
@@ -367,64 +594,85 @@
         "div",
         { kelas: "ubin" },
         ubin(alat.angkaPendek(data.pengikut), "pengikut", `${alat.angkaLengkap(data.pengikut)} pengikut`),
-        ubin(alat.teksPersen(ringkas.er), ringkas.er == null ? "ER belum terhitung" : `ER · ${ringkas.postsCounted} video`, judulEr, true),
+        ubin(alat.teksPersen(r.er), r.er == null ? "ER belum terhitung" : `ER · ${r.postsCounted} video`, judulEr, true),
       ),
     ];
-    const grafik = grafikViews(data.posting, ringkas);
-    if (grafik) bagian.push(grafik);
-    bagian.push(
-      el(
-        "div",
-        { kelas: "chip-baris" },
-        chip("like", alat.angkaPendek(data.totalLike), "like", `${alat.angkaLengkap(data.totalLike)} like`),
-        chip("video", alat.angkaPendek(data.jumlahVideo), "video", `${alat.angkaLengkap(data.jumlahVideo)} video`),
-      ),
-    );
-    if (!h.adaItemList) {
-      bagian.push(el("div", { kelas: "catatan", teks: "Daftar video belum tertangkap. Gulir sedikit ke daftar video atau muat ulang halaman agar ER terhitung." }));
-    } else if (ringkas.er == null) {
-      bagian.push(el("div", { kelas: "catatan", teks: "ER butuh paling sedikit 3 video yang berumur 48 jam dan bukan pin." }));
-    }
-    return { bagian, er: ringkas.er };
-  }
-
-  function isiKonten(data) {
-    const er = alat.erPosting(data);
-    return {
-      er,
-      bagian: [
+    if (lengkap) {
+      bagian.push(statistikAkun(r), periodeProfil(data));
+      const grafik = grafikViews(data.posting, r);
+      if (grafik) bagian.push(grafik);
+      bagian.push(hargaProfil(data.uniqueId, r));
+      bagian.push(
         el(
           "div",
-          { kelas: "ubin" },
-          ubin(alat.angkaPendek(data.views), "views", `${alat.angkaLengkap(data.views)} views`),
-          ubin(alat.teksPersen(er), "ER video ini", "(like + komentar + share + save) ÷ views", true),
+          { kelas: "chip-baris" },
+          chip("like", alat.angkaPendek(data.totalLike), "like", `${alat.angkaLengkap(data.totalLike)} like`),
+          chip("video", alat.angkaPendek(data.jumlahVideo), "video", `${alat.angkaLengkap(data.jumlahVideo)} video`),
         ),
+      );
+    }
+    if (!h.adaItemList) {
+      bagian.push(el("div", { kelas: "catatan", teks: "Daftar video belum tertangkap. Gulir sedikit ke daftar video atau muat ulang halaman agar ER dan periode terhitung." }));
+    } else if (r.er == null) {
+      bagian.push(el("div", { kelas: "catatan", teks: "ER butuh paling sedikit 3 video yang berumur 48 jam dan bukan pin." }));
+    }
+    return { bagian, er: r.er };
+  }
+
+  function isiKonten(data, lengkap) {
+    const er = alat.erPosting(data);
+    const bagian = [
+      el(
+        "div",
+        { kelas: "ubin" },
+        ubin(alat.angkaPendek(data.views), "views", `${alat.angkaLengkap(data.views)} views`),
+        ubin(alat.teksPersen(er), "ER video ini", "(like + komentar + share + save) ÷ views", true),
+      ),
+    ];
+    if (lengkap) {
+      bagian.push(
         el(
           "div",
           { kelas: "chip-baris" },
           chip("like", alat.angkaPendek(data.like), "like", `${alat.angkaLengkap(data.like)} like`),
           chip("komentar", alat.angkaPendek(data.komentar), "komentar", `${alat.angkaLengkap(data.komentar)} komentar`),
           chip("share", alat.angkaPendek(data.share), "share", `${alat.angkaLengkap(data.share)} share`),
-          chip("save", alat.angkaPendek(data.save), "save", `${alat.angkaLengkap(data.save)} save`),
+          chip("save", alat.angkaPendek(data.save), "simpan", `${alat.angkaLengkap(data.save)} simpan`),
         ),
-      ],
-    };
+      );
+      if (Number.isFinite(data.dibuatPada) && data.dibuatPada > 0) {
+        const umurHari = Math.max(0, (Date.now() - data.dibuatPada * 1000) / 86_400_000);
+        const perHari = umurHari >= 1 ? Math.round(data.views / umurHari) : null;
+        bagian.push(
+          el("div", {
+            kelas: "catatan",
+            teks:
+              `Diunggah ${tanggalPanjang.format(data.dibuatPada * 1000)} · ${umurHari < 1 ? "kurang dari sehari" : `${Math.floor(umurHari)} hari`} lalu` +
+              (perHari != null ? ` · ± ${alat.angkaPendek(perHari)} views/hari` : ""),
+          }),
+        );
+      }
+    }
+    return { bagian, er };
   }
 
   function gambar(target) {
-    if (!panel || !target || !alat) return;
+    if (!panel || !target || !alat || !gaya) return;
+    terapkanTema();
     const w = panel.wadah;
     w.replaceChildren();
+    const posisi = panel.tampilan.posisi === "kiri" ? " kiri" : "";
+    const lengkap = panel.tampilan.ukuran === "lengkap";
     const h = hasilTerakhir ?? { status: "TIDAK_TERBACA" };
     const data = h.data;
     const ok = Boolean(data && h.status === "OK");
-    const isi = ok ? (data.jenis === "PROFIL" ? isiProfil(h, data) : isiKonten(data)) : null;
+    const isi = ok ? (data.jenis === "PROFIL" ? isiProfil(h, data, lengkap) : isiKonten(data, lengkap)) : null;
 
     if (panel.kecil) {
       w.append(
         el(
           "button",
-          { kelas: "pil", title: "Buka panel Elorae", "aria-label": "Buka panel Elorae", onclick: () => setelKecil(false) },
+          { kelas: `pil${posisi}`, title: "Buka panel Elorae", "aria-label": "Buka panel Elorae", onclick: () => setelKecil(false) },
           el("span", { kelas: "logo bulat", teks: "e" }),
           "Elorae",
           isi?.er != null ? el("span", { kelas: "er bulat", teks: `ER ${alat.teksPersen(isi.er)}` }) : null,
@@ -439,7 +687,21 @@
       el("span", { kelas: "logo bulat", teks: "e" }),
       el("span", { kelas: "merek bulat", teks: "Elorae" }),
       el("span", { kelas: "sub", teks: "pantau KOL" }),
-      el("span", { kelas: "isi-kanan" }, el("button", { kelas: "kecil", title: "Kecilkan", "aria-label": "Kecilkan panel", onclick: () => setelKecil(true) }, ikon("kecil"))),
+      el(
+        "span",
+        { kelas: "isi-kanan" },
+        el(
+          "button",
+          {
+            kelas: "kecil",
+            title: lengkap ? "Tampilan ringkas" : "Tampilan lengkap",
+            "aria-label": lengkap ? "Tampilan ringkas" : "Tampilan lengkap",
+            onclick: () => ubahTampilan({ ukuran: lengkap ? "ringkas" : "lengkap" }),
+          },
+          ikon(lengkap ? "sempit" : "lebar"),
+        ),
+        el("button", { kelas: "kecil", title: "Kecilkan", "aria-label": "Kecilkan panel", onclick: () => setelKecil(true) }, ikon("kecil")),
+      ),
     );
     const handle = data?.uniqueId ?? target.handle;
     const siapa = el(
@@ -449,7 +711,7 @@
       el("div", { style: "min-width:0" }, el("div", { kelas: "nama", teks: "@" + handle }), el("div", { kelas: "jenis", teks: target.jenis === "PROFIL" ? "Profil TikTok" : "Video TikTok" })),
     );
 
-    const kartu = el("div", { kelas: panel.animasi ? "kotak masuk" : "kotak", role: "region", "aria-label": "Panel Elorae" }, kepala, siapa);
+    const kartu = el("div", { kelas: `kotak${posisi}${panel.animasi ? " masuk" : ""}`, role: "region", "aria-label": "Panel Elorae" }, kepala, siapa);
     panel.animasi = false;
 
     if (isi) {

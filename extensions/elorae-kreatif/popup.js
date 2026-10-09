@@ -1,6 +1,7 @@
 // Popup ekstensi: sambungkan ke Elorae, lihat keadaan, nyalakan/matikan pemantauan otomatis.
 // Semua kerja sungguhan di service worker; popup hanya mengirim pesan dan menampilkan ringkasan.
 import { waktuWib } from "./lib/aturan.js";
+import { AKSEN, KUNCI_TAMPILAN, bersihkanTampilan, warnaAksen } from "./lib/tampilan.js";
 
 const $ = (id) => document.getElementById(id);
 const angka = new Intl.NumberFormat("id-ID");
@@ -126,3 +127,77 @@ chrome.storage.onChanged.addListener((perubahan, area) => {
 });
 
 segarkan(true);
+
+// ------------------------------------------------------------ tampilan panel di TikTok
+// Disimpan langsung di storage.local; panel yang sedang terbuka di TikTok ikut berubah seketika.
+const rupiah = new Intl.NumberFormat("id-ID");
+let tampilan = bersihkanTampilan(null);
+
+async function simpanTampilan(sebagian) {
+  tampilan = bersihkanTampilan({ ...tampilan, ...sebagian });
+  await chrome.storage.local.set({ [KUNCI_TAMPILAN]: tampilan });
+  gambarTampilan();
+}
+
+function gambarTampilan() {
+  for (const grup of document.querySelectorAll(".segmen[data-kunci]")) {
+    for (const b of grup.querySelectorAll("button")) b.setAttribute("aria-checked", String(tampilan[grup.dataset.kunci] === b.dataset.nilai));
+  }
+  for (const b of $("pilihWarna").querySelectorAll("button[data-aksen]")) b.setAttribute("aria-checked", String(tampilan.aksen === b.dataset.aksen));
+  const sendiri = !(tampilan.aksen in AKSEN);
+  $("warnaSendiri").setAttribute("aria-checked", String(sendiri));
+  if (sendiri) $("warnaSendiri").querySelector("input").value = tampilan.aksen;
+  if (document.activeElement !== $("cpmMin")) $("cpmMin").value = `Rp ${rupiah.format(tampilan.cpmMin)}`;
+  if (document.activeElement !== $("cpmMaks")) $("cpmMaks").value = `Rp ${rupiah.format(tampilan.cpmMaks)}`;
+}
+
+function siapkanTampilan() {
+  for (const grup of document.querySelectorAll(".segmen[data-kunci]")) {
+    grup.addEventListener("click", (ev) => {
+      const b = ev.target.closest("button[data-nilai]");
+      if (b) simpanTampilan({ [grup.dataset.kunci]: b.dataset.nilai });
+    });
+  }
+  const wadah = $("pilihWarna");
+  for (const [kunci, { nama }] of Object.entries(AKSEN)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("role", "radio");
+    b.dataset.aksen = kunci;
+    b.title = nama;
+    b.setAttribute("aria-label", nama);
+    b.style.setProperty("--contoh", warnaAksen(kunci, "gelap").aksen);
+    b.addEventListener("click", () => simpanTampilan({ aksen: kunci }));
+    wadah.append(b);
+  }
+  const lain = document.createElement("label");
+  lain.id = "warnaSendiri";
+  lain.className = "warna-sendiri";
+  lain.title = "Pilih warna sendiri";
+  lain.setAttribute("role", "radio");
+  const masukan = document.createElement("input");
+  masukan.type = "color";
+  masukan.value = "#c9b8ff";
+  masukan.setAttribute("aria-label", "Pilih warna sendiri");
+  masukan.addEventListener("change", () => simpanTampilan({ aksen: masukan.value }));
+  lain.append(masukan);
+  wadah.append(lain);
+
+  for (const id of ["cpmMin", "cpmMaks"]) {
+    $(id).addEventListener("change", async () => {
+      const angkaSaja = Number($(id).value.replace(/[^\d]/g, ""));
+      const sebelum = tampilan[id];
+      await simpanTampilan({ [id]: angkaSaja });
+      $("pesanCpm").textContent =
+        tampilan[id] === sebelum && angkaSaja !== sebelum
+          ? "Isi antara Rp 1.000 dan Rp 10.000.000 per 1.000 views."
+          : "Tersimpan. Panel di TikTok langsung memakai angka ini.";
+    });
+  }
+}
+
+siapkanTampilan();
+chrome.storage.local.get(KUNCI_TAMPILAN).then((r) => {
+  tampilan = bersihkanTampilan(r?.[KUNCI_TAMPILAN]);
+  gambarTampilan();
+});

@@ -79,6 +79,21 @@ angka yang terbaca. **Simpan ke Elorae** mengirim angka itu ke KOL yang cocok ("
 Bila Anda berpindah halaman di TikTok tanpa memuat ulang, panel meminta Anda menekan F5 dulu
 supaya angka yang dibaca memang milik halaman itu. Panel bisa dikecilkan dengan tombol –.
 
+Di profil, panel lengkap juga menampilkan:
+
+- **Median views, views/pengikut, video/minggu** — median tidak terangkat oleh satu video viral.
+- **Periode 7H / 30H / 90H** — video yang diunggah dalam periode itu (jumlah, total dan rata-rata
+  views, like, komentar, share, simpan, ER) dibanding periode yang sama sebelumnya, dengan ▲/▼.
+  Kedua periode berakhir 48 jam lalu, karena video yang lebih baru masih mengumpulkan views. Bila
+  panel menulis "belum mencakup", gulir daftar video di profil ke bawah lalu tekan tombol baca ulang.
+- **Perkiraan harga per video** = median views × harga per 1.000 views. Ketik harga yang diminta KOL
+  (mis. `15jt`) untuk melihat apakah murah, wajar, atau mahal. Harga per 1.000 views adalah ASUMSI
+  (bawaan Rp 30.000–60.000); ubah di popup sesuai harga yang pernah Anda bayar.
+
+**Tampilan** diatur di popup ekstensi → "Tampilan panel di TikTok": tema (otomatis mengikuti
+TikTok, terang, gelap), warna, ukuran lengkap/ringkas, dan posisi kiri/kanan bawah. Tombol ⤡ di
+panel juga berganti lengkap/ringkas.
+
 ## Untuk pengembang
 
 - JavaScript polos (modul ES), Manifest V3, tanpa dependensi dan tanpa langkah build. Folder ini

@@ -11,7 +11,7 @@ export const KUNCI_KONTEN = "webapp.video-detail";
 /** Sama dengan POLA di halaman-utama.js (skrip dunia MAIN tidak bisa mengimpor modul ini). */
 export const POLA_URL_ITEM_LIST = "/api/post/item_list/";
 /** Batas posting yang dikirim per profil (server hanya memakai ≤ 12 terakhir yang sah). */
-export const MAKS_POSTING = 60;
+export const MAKS_POSTING = 200;
 
 /**
  * SATU-SATUNYA daftar tanda halaman. Perbarui di sini saja bila TikTok mengubah halamannya.

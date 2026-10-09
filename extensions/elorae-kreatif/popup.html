@@ -75,6 +75,45 @@
       <p class="petunjuk">Memutuskan juga mencabut perangkat ini di Elorae. Untuk memakainya lagi, buat kode sambung baru.</p>
     </section>
 
+    <details id="bagianTampilan" class="kartu tampilan">
+      <summary>Tampilan panel di TikTok</summary>
+      <div class="pilihan">
+        <span class="redup">Tema</span>
+        <div class="segmen" role="radiogroup" aria-label="Tema" data-kunci="tema">
+          <button type="button" role="radio" data-nilai="otomatis">Otomatis</button>
+          <button type="button" role="radio" data-nilai="terang">Terang</button>
+          <button type="button" role="radio" data-nilai="gelap">Gelap</button>
+        </div>
+      </div>
+      <div class="pilihan">
+        <span class="redup">Warna</span>
+        <div class="warna" id="pilihWarna" role="radiogroup" aria-label="Warna aksen"></div>
+      </div>
+      <div class="pilihan">
+        <span class="redup">Ukuran</span>
+        <div class="segmen" role="radiogroup" aria-label="Ukuran" data-kunci="ukuran">
+          <button type="button" role="radio" data-nilai="lengkap">Lengkap</button>
+          <button type="button" role="radio" data-nilai="ringkas">Ringkas</button>
+        </div>
+      </div>
+      <div class="pilihan">
+        <span class="redup">Posisi</span>
+        <div class="segmen" role="radiogroup" aria-label="Posisi" data-kunci="posisi">
+          <button type="button" role="radio" data-nilai="kiri">Kiri bawah</button>
+          <button type="button" role="radio" data-nilai="kanan">Kanan bawah</button>
+        </div>
+      </div>
+      <div class="pilihan kolom">
+        <span class="redup">Harga per 1.000 views (asumsi untuk perkiraan harga)</span>
+        <div class="rentang">
+          <input id="cpmMin" type="text" inputmode="numeric" aria-label="Harga per 1.000 views terendah" />
+          <span class="redup">–</span>
+          <input id="cpmMaks" type="text" inputmode="numeric" aria-label="Harga per 1.000 views tertinggi" />
+        </div>
+        <p class="petunjuk" id="pesanCpm">Bawaan Rp 30.000 – Rp 60.000. Ubah sesuai harga yang pernah Anda bayar.</p>
+      </div>
+    </details>
+
     <footer class="redup" id="versi"></footer>
     <script type="module" src="popup.js"></script>
   </body>
