@@ -90,13 +90,14 @@ supaya angka yang dibaca memang milik halaman itu. Panel bisa dikecilkan dengan 
 Di profil, panel lengkap juga menampilkan:
 
 - **Median views, views/pengikut, video/minggu** — median tidak terangkat oleh satu video viral.
-- **Periode 7H / 30H / 90H / Atur** — video yang diunggah dalam periode itu (jumlah, total dan rata-rata
-  views, like, komentar, share, simpan, ER) dibanding periode yang sama sebelumnya, dengan ▲/▼.
-  7H/30H/90H berakhir 48 jam lalu, karena video yang lebih baru masih mengumpulkan views. **Atur**
-  membuka kalender panel sendiri (warna mengikuti tema panel): pilihan cepat, lalu ketuk tanggal awal
-  dan akhir atau tekan dan tarik. Untuk rentang yang ujungnya masuk 48 jam terakhir, "Video diunggah"
-  tetap menghitung SEMUA video di tanggal itu, sedangkan views/like/ER hanya dari video yang sudah
-  ≥ 48 jam (panel menyebut berapa yang belum dihitung). Grafik
+- **Periode 7H / 30H / 90H / Atur** — video yang diunggah dalam periode itu (jumlah, total, rata-rata
+  dan median views, like, komentar, share, simpan, ER) dibanding periode yang sama sebelumnya, dengan
+  ▲/▼. Semua baris memakai video yang sama. 7H/30H/90H berakhir 48 jam lalu, karena video yang lebih
+  baru masih mengumpulkan views. **Atur** membuka kalender panel sendiri (warna mengikuti tema panel):
+  pilihan cepat, lalu ketuk tanggal awal dan akhir atau tekan dan tarik. Atur menghitung PERSIS tanggal
+  yang dipilih, termasuk video yang baru diunggah; panel menyebut berapa video yang berumur < 48 jam
+  (views-nya masih naik). Median views tidak terangkat satu video viral — bila total turun jauh tetapi
+  median tidak, penyebabnya satu video viral di periode pembanding. Grafik
   di atas tabel menunjukkan views per hari unggah: garis warna = periode ini, garis putus = periode
   sebelumnya. Bila video lama belum termuat, panel menggulir daftar video sendiri (lalu mengembalikan
   posisi halaman) sampai periode pembanding tercakup; ekstensi menyimpan paling banyak 200 video per

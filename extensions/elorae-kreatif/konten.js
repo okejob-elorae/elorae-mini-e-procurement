@@ -279,7 +279,6 @@
 
     .tabel { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 10px; align-items: baseline; font-variant-numeric: tabular-nums; }
     .tabel .l { color: var(--redup); }
-    .tabel .sub-tabel { grid-column: 1 / -1; color: var(--redup); font-size: 11.5px; margin-top: 4px; padding-top: 6px; border-top: 1px dashed var(--garis); }
     .tabel .v { font-weight: 700; text-align: right; white-space: nowrap; }
     .tabel .p { text-align: right; font-size: 11.5px; font-weight: 700; white-space: nowrap; min-width: 58px; }
     .naik { color: var(--naik); }
@@ -603,7 +602,6 @@
 
   const tanggalPendek = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "Asia/Jakarta" });
   const tanggalTahun = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
-  const tanggalJam = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" });
   const tanggalPanjang = new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" });
   const persen1 = new Intl.NumberFormat("id-ID", { maximumFractionDigits: 1 });
 
@@ -737,7 +735,7 @@
     TANGGAL_TIDAK_SAH: "Pilih tanggal dari dan sampai.",
     TERBALIK: "Tanggal 'dari' harus sebelum tanggal 'sampai'.",
     TERLALU_PANJANG: "Rentang paling panjang 366 hari.",
-    TERLALU_BARU: "Video 48 jam terakhir belum dihitung (views-nya masih naik) — pilih rentang yang lebih lama.",
+    BELUM_TERJADI: "Tanggal itu belum terjadi.",
   };
 
   // ------------------------------------------------ kalender rentang (meniru isian rentang Elorae)
@@ -1148,14 +1146,9 @@
     }
     const panjangHari = Math.round((j.akhir - j.awal) / 86_400);
     const pembanding = alat.jendelaPembanding(j);
-    const r = alat.ringkasJendela(data.posting, j, { jumlahVideo: data.jumlahVideo });
+    const r = alat.ringkasJendela(data.posting, j, { jumlahVideo: data.jumlahVideo, sekarangMs: Date.now() });
     const fmt = atur ? tanggalTahun : tanggalPendek;
     const lengkap = r.lengkapLalu && r.lengkapKini;
-    const u = r.diunggah;
-    // Rentang pilihan yang ujungnya masuk 48 jam terakhir: jumlah video dihitung penuh, angka views
-    // hanya dari video yang sudah ≥ 48 jam (jendela j).
-    const terpisah = atur && u.belumDihitung > 0;
-    const lengkapUnggah = r.lengkapKini && u.lengkapLalu;
 
     const tabel = el("div", { kelas: "tabel" });
     // Video periode ini belum termuat semua → angkanya sebagian; tampilkan "—", bukan angka yang salah.
@@ -1166,17 +1159,11 @@
         lencanaUbah(kini, lama, lengkapBaris, poin),
       );
     const n = (x) => alat.angkaPendek(x ?? undefined);
-    baris("Video diunggah", u.kini, u.lalu, n, false, lengkapUnggah);
-    if (terpisah && r.lengkapKini) {
-      tabel.append(
-        el("span", {
-          kelas: "sub-tabel",
-          teks: `Dari ${r.kini.video} video yang sudah ≥ 48 jam (${u.belumDihitung} terbaru belum, views-nya masih naik):`,
-        }),
-      );
-    }
+    baris("Video diunggah", r.kini.video, r.lalu.video, n);
     baris("Total views", r.kini.views, r.lalu.views, n);
     baris("Rata-rata views", r.kini.rataViews, r.lalu.rataViews, n);
+    // Median di samping rata-rata: satu video viral menarik total dan rata-rata, median tidak.
+    baris("Median views", r.kini.medianViews, r.lalu.medianViews, n);
     baris("Like", r.kini.like, r.lalu.like, n);
     baris("Komentar", r.kini.komentar, r.lalu.komentar, n);
     baris("Share", r.kini.share, r.lalu.share, n);
@@ -1197,21 +1184,20 @@
     }
     isi.push(tabel);
     const tgl = (detik) => fmt.format(detik * 1000);
-    const jam = (detik) => tanggalJam.format(detik * 1000);
     isi.push(
       el("div", {
         kelas: "catatan",
-        teks: terpisah
-          ? `Jumlah video: ${tgl(j.awal)} – ${tgl(j.akhirPilihan - 1)}, dibanding ${tgl(u.awalLalu)} – ${tgl(j.awal - 1)}. ` +
-            `Views, like, komentar, share, simpan, ER: video sampai ${jam(j.akhir)}, dibanding ${jam(pembanding.awal)} – ${jam(pembanding.akhir)}.`
-          : `Video yang diunggah ${tgl(j.awal)} – ${tgl(j.akhir - 1)}, dibanding ${tgl(pembanding.awal)} – ${tgl(pembanding.akhir - 1)}.` +
-            (j.dipangkas ? " Ujungnya dipotong ke 48 jam lalu (video lebih baru masih mengumpulkan views)." : ""),
+        teks:
+          `Semua angka dari video yang diunggah ${tgl(j.awal)} – ${tgl(j.akhir - 1)}, dibanding video ${tgl(pembanding.awal)} – ${tgl(pembanding.akhir - 1)}.` +
+          (r.mudaKini > 0
+            ? ` ${r.mudaKini} video berumur < 48 jam — views-nya masih naik, jadi periode ini bisa tampak lebih rendah.`
+            : "") +
+          (atur ? "" : " Periode berakhir 48 jam lalu supaya video yang masih muda tidak membuatnya tampak turun."),
       }),
     );
 
-    // Pembanding jumlah video bisa mulai lebih awal dari pembanding views (rentang pilihan lebih panjang).
-    const batasMuat = Math.min(pembanding.awal, u.awalLalu);
-    if (!lengkap || !lengkapUnggah) {
+    const batasMuat = pembanding.awal;
+    if (!lengkap) {
       const kunciPeriode = atur ? `${rentang.dari}_${rentang.sampai}` : String(hari);
       const kunci = `${location.href}|${kunciPeriode}`;
       if (muatLama.aktif) {
@@ -1244,8 +1230,7 @@
         }
       }
     }
-    // Rentang "Atur" yang berakhir di masa lalu tidak menyentuh video < 48 jam; catatan itu hanya relevan
-    // untuk periode yang ujungnya dipotong.
+    // Periode siap pakai berakhir 48 jam lalu: sebutkan video yang lebih baru yang tidak ikut.
     if (r.mudaDilewati && !atur) isi.push(el("div", { kelas: "catatan", teks: `${r.mudaDilewati} video < 48 jam belum dihitung (views-nya masih naik).` }));
     return el("div", { kelas: "blok" }, ...isi);
   }

@@ -257,23 +257,25 @@ describe("rentang tanggal pilihan sendiri", () => {
     assert.equal(p.awalHariWib("2026-02-30"), null);
     assert.equal(p.awalHariWib("1/9/2026"), null);
   });
-  test("jendela dari 00.00 WIB 'dari' sampai akhir hari 'sampai'", () => {
+  test("jendela = tanggal yang dipilih persis: 00.00 WIB 'dari' sampai akhir hari 'sampai'", () => {
     assert.deepEqual(p.jendelaRentang("2026-09-01", "2026-09-30", SEKARANG), {
       awal: wib("2026-09-01T00:00:00"),
       akhir: wib("2026-10-01T00:00:00"),
-      akhirPilihan: wib("2026-10-01T00:00:00"),
-      dipangkas: false,
+    });
+    // Ujung yang masuk 48 jam terakhir TIDAK dipotong lagi: tanggal yang dipilih orang itulah yang dihitung.
+    assert.deepEqual(p.jendelaRentang("2026-10-01", "2026-10-09", SEKARANG), {
+      awal: wib("2026-10-01T00:00:00"),
+      akhir: wib("2026-10-10T00:00:00"),
+    });
+    assert.deepEqual(p.jendelaRentang("2026-10-08", "2026-10-09", SEKARANG), {
+      awal: wib("2026-10-08T00:00:00"),
+      akhir: wib("2026-10-10T00:00:00"),
     });
   });
-  test("ujung yang masuk 48 jam terakhir dipangkas", () => {
-    const j = p.jendelaRentang("2026-10-01", "2026-10-09", SEKARANG);
-    assert.equal(j.akhir, Math.floor(SEKARANG / 1000) - 48 * 3600);
-    assert.equal(j.dipangkas, true);
-  });
-  test("terbalik, terlalu panjang, seluruhnya terlalu baru → galat", () => {
+  test("terbalik, terlalu panjang, belum terjadi, tidak sah → galat", () => {
     assert.deepEqual(p.jendelaRentang("2026-09-30", "2026-09-01", SEKARANG), { galat: "TERBALIK" });
     assert.deepEqual(p.jendelaRentang("2025-01-01", "2026-09-01", SEKARANG), { galat: "TERLALU_PANJANG" });
-    assert.deepEqual(p.jendelaRentang("2026-10-08", "2026-10-09", SEKARANG), { galat: "TERLALU_BARU" });
+    assert.deepEqual(p.jendelaRentang("2026-10-10", "2026-10-12", SEKARANG), { galat: "BELUM_TERJADI" });
     assert.deepEqual(p.jendelaRentang("x", "2026-10-09", SEKARANG), { galat: "TANGGAL_TIDAK_SAH" });
   });
   test("dibanding rentang sepanjang itu tepat sebelumnya; grafik per hari sama dengan tabel", () => {
@@ -288,28 +290,42 @@ describe("rentang tanggal pilihan sendiri", () => {
     const r = p.ringkasJendela(daftar, j, { sekarangMs: SEKARANG });
     assert.deepEqual([r.kini.video, r.kini.views, r.lalu.video, r.lalu.views], [2, 150, 1, 40]);
     assert.equal(r.lengkapLalu, true);
+    assert.equal(r.mudaKini, 0);
     const d = p.deretJendela(daftar, j);
     assert.equal(d.kini.length, 10);
     assert.deepEqual([d.kini[0], d.kini[9], d.lalu[4]], [100, 50, 40]);
-    assert.deepEqual(r.diunggah, { kini: 2, lalu: 1, lengkapLalu: true, awalLalu: wib("2026-09-01T00:00:00"), belumDihitung: 0 });
   });
-  test("video diunggah menghitung SEMUA tanggal pilihan, termasuk < 48 jam; angka views tidak", () => {
-    // 1–9 Okt dipilih pada 9 Okt 10.00 WIB: views dihitung sampai 7 Okt 10.00, jumlah video sampai 9 Okt.
+  test("1–9 Okt dipilih: SEMUA video di tanggal itu masuk ke setiap baris (jumlah video, views, like…), dibanding 22–30 Sep", () => {
+    // Kasus nyata 9 Okt 2026: panel lama menjumlah views 7 video saja (yang ≥ 48 jam) padahal baris
+    // "Video diunggah" menyebut 10, dan membandingkannya dengan 24 Sep 08.38 – 1 Okt — angka yang tidak
+    // bisa dicocokkan dengan profil. Sekarang satu set video, satu set tanggal.
     const j = p.jendelaRentang("2026-10-01", "2026-10-09", SEKARANG);
-    const v = (id, iso) => ({ id, dibuatPada: wib(iso), disematkan: false, views: 1000, like: 50, komentar: 0, share: 0, save: 0 });
+    const v = (id, iso, views) => ({ id, dibuatPada: wib(iso), disematkan: false, views, like: 10, komentar: 1, share: 1, save: 1 });
     const daftar = [
-      v("baru1", "2026-10-09T08:00:00"),
-      v("baru2", "2026-10-08T20:00:00"),
-      v("baru3", "2026-10-07T12:00:00"),
-      v("matang1", "2026-10-06T09:00:00"),
-      v("matang2", "2026-10-01T07:00:00"),
-      v("laluA", "2026-09-28T09:00:00"), // di 22–30 Sep dan di jendela views pembanding
-      v("laluB", "2026-09-23T09:00:00"), // di 22–30 Sep saja (jendela views pembanding mulai 24 Sep 10.00)
-      v("tua", "2026-09-10T09:00:00"),
+      v("baru1", "2026-10-09T08:00:00", 5_109),
+      v("baru2", "2026-10-08T20:00:00", 82_800),
+      v("baru3", "2026-10-07T12:00:00", 111_400),
+      v("matang1", "2026-10-06T09:00:00", 35_400),
+      v("matang2", "2026-10-01T07:00:00", 7_067),
+      v("laluA", "2026-09-28T09:00:00", 54_300),
+      v("laluB", "2026-09-22T09:00:00", 39_300),
+      v("tua", "2026-09-10T09:00:00", 1),
     ];
     const r = p.ringkasJendela(daftar, j, { sekarangMs: SEKARANG });
-    assert.equal(r.kini.video, 2);
-    assert.equal(r.lalu.video, 1);
-    assert.deepEqual(r.diunggah, { kini: 5, lalu: 2, lengkapLalu: true, awalLalu: wib("2026-09-22T00:00:00"), belumDihitung: 3 });
+    assert.equal(r.kini.video, 5);
+    assert.equal(r.kini.views, 5_109 + 82_800 + 111_400 + 35_400 + 7_067);
+    assert.equal(r.kini.medianViews, 35_400);
+    assert.equal(r.lalu.video, 2);
+    assert.equal(r.lalu.views, 54_300 + 39_300);
+    assert.equal(r.mudaKini, 3); // diunggah < 48 jam lalu — views-nya masih naik (catatan, bukan dikeluarkan)
+    assert.deepEqual(p.jendelaPembanding(j), { awal: wib("2026-09-22T00:00:00"), akhir: wib("2026-10-01T00:00:00") });
+  });
+  test("periode siap pakai (7H/30H/90H) tetap berakhir 48 jam lalu; mudaKini selalu 0 di sana", () => {
+    const j = p.jendelaPeriode(7, SEKARANG);
+    const daftar = [{ id: "x", dibuatPada: Math.floor(SEKARANG / 1000) - 3600, disematkan: false, views: 9, like: 0, komentar: 0, share: 0, save: 0 }];
+    const r = p.ringkasJendela(daftar, j, { sekarangMs: SEKARANG });
+    assert.equal(r.kini.video, 0);
+    assert.equal(r.mudaKini, 0);
+    assert.equal(r.mudaDilewati, 1);
   });
 });

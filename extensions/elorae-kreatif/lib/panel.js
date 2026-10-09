@@ -191,10 +191,12 @@ export function awalHariWib(tanggal) {
 }
 
 /**
- * Jendela rentang pilihan sendiri: dari 00.00 WIB `dari` sampai akhir hari `sampai` (WIB), dipangkas
- * ke 48 jam lalu — video yang lebih baru masih mengumpulkan views, sama dengan periode siap pakai.
+ * Jendela rentang pilihan sendiri: PERSIS tanggal yang dipilih, dari 00.00 WIB `dari` sampai akhir
+ * hari `sampai` (WIB). Tidak dipotong ke 48 jam lalu (pemilik 2026-10-09: total views 1–9 Okt yang
+ * hanya menjumlah video ≥ 48 jam "tidak masuk akal" di samping 10 video yang terlihat di profil);
+ * video yang masih muda disebut di catatan (`mudaKini`), tidak dikeluarkan.
  * `{ galat }` bila tidak bisa: TANGGAL_TIDAK_SAH, TERBALIK (dari > sampai), TERLALU_PANJANG
- * (> MAKS_HARI_RENTANG), TERLALU_BARU (seluruhnya di 48 jam terakhir).
+ * (> MAKS_HARI_RENTANG), BELUM_TERJADI (seluruhnya di masa depan).
  */
 export function jendelaRentang(dari, sampai, sekarangMs) {
   const awal = awalHariWib(dari);
@@ -202,11 +204,8 @@ export function jendelaRentang(dari, sampai, sekarangMs) {
   if (awal === null || ujung === null) return { galat: "TANGGAL_TIDAK_SAH" };
   if (ujung < awal) return { galat: "TERBALIK" };
   if ((ujung - awal) / HARI_DETIK + 1 > MAKS_HARI_RENTANG) return { galat: "TERLALU_PANJANG" };
-  const batasBaru = Math.floor(sekarangMs / 1000) - UMUR_MIN_POSTING_JAM * 3600;
-  const akhirPilihan = ujung + HARI_DETIK;
-  const akhir = Math.min(akhirPilihan, batasBaru);
-  if (akhir <= awal) return { galat: "TERLALU_BARU" };
-  return { awal, akhir, akhirPilihan, dipangkas: akhir < akhirPilihan };
+  if (awal > Math.floor(sekarangMs / 1000)) return { galat: "BELUM_TERJADI" };
+  return { awal, akhir: ujung + HARI_DETIK };
 }
 
 /** Jendela pembanding: panjang sama, tepat sebelum jendela itu. */
@@ -216,6 +215,8 @@ export function jendelaPembanding(j) {
 
 /**
  * Performa video yang DIUNGGAH dalam jendela `j` dibanding jendela sepanjang itu tepat sebelumnya.
+ * Setiap baris (jumlah video, views, like, …) memakai set video yang SAMA: semua video yang diunggah
+ * di jendela itu. `mudaKini` = berapa di antaranya berumur < 48 jam (views-nya masih naik).
  * `lengkapKini`/`lengkapLalu`: daftar video yang tertangkap memang mencakup jendela itu — ada video
  * (bukan pin) yang lebih tua dari awal jendela, atau seluruh video akun sudah tertangkap
  * (`opsi.jumlahVideo`). Kalau tidak, angkanya sebagian dan panel memuat video lama dulu.
@@ -228,26 +229,15 @@ export function ringkasJendela(posting, j, opsi = {}) {
   const seluruhAkun = Number.isFinite(opsi.jumlahVideo) && semua.length >= opsi.jumlahVideo;
   const tercakup = (detik) => seluruhAkun || (tertua !== null && tertua < detik);
   const dalam = (a, b) => semua.filter((p) => p.dibuatPada >= a && p.dibuatPada < b);
-  const kini = blok(dalam(j.awal, j.akhir));
-  const sebelum = blok(dalam(lalu.awal, lalu.akhir));
-  // Jumlah video diunggah = SEMUA video di tanggal yang dipilih, termasuk yang < 48 jam: itu fakta,
-  // bukan angka yang masih naik. Pembandingnya rentang sepanjang pilihan itu tepat sebelumnya.
-  const akhirPilihan = j.akhirPilihan ?? j.akhir;
-  const panjangPilihan = akhirPilihan - j.awal;
-  const awalLaluPilihan = j.awal - panjangPilihan;
+  const batasMuda = Math.floor((opsi.sekarangMs ?? Date.now()) / 1000) - UMUR_MIN_POSTING_JAM * 3600;
+  const isiKini = dalam(j.awal, j.akhir);
   return {
-    kini,
-    lalu: sebelum,
+    kini: blok(isiKini),
+    lalu: blok(dalam(lalu.awal, lalu.akhir)),
     lengkapKini: tercakup(j.awal),
     lengkapLalu: tercakup(lalu.awal),
-    diunggah: {
-      kini: dalam(j.awal, akhirPilihan).length,
-      lalu: dalam(awalLaluPilihan, j.awal).length,
-      lengkapLalu: tercakup(awalLaluPilihan),
-      awalLalu: awalLaluPilihan,
-      belumDihitung: dalam(j.akhir, akhirPilihan).length,
-    },
-    mudaDilewati: semua.filter((p) => p.dibuatPada >= Math.floor((opsi.sekarangMs ?? Date.now()) / 1000) - UMUR_MIN_POSTING_JAM * 3600).length,
+    mudaKini: isiKini.filter((p) => p.dibuatPada >= batasMuda).length,
+    mudaDilewati: semua.filter((p) => p.dibuatPada >= batasMuda).length,
   };
 }
 
