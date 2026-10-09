@@ -70,8 +70,8 @@ describe("isiTemplate", () => {
 
 describe("TEMPLATE_BAWAAN", () => {
   it("tujuh template berkunci unik, hanya memakai variabel yang dikenal", () => {
-    expect(TEMPLATE_BAWAAN).toHaveLength(7);
-    expect(new Set(TEMPLATE_BAWAAN.map((t) => t.kunci)).size).toBe(7);
+    expect(TEMPLATE_BAWAAN).toHaveLength(8);
+    expect(new Set(TEMPLATE_BAWAAN.map((t) => t.kunci)).size).toBe(8);
     for (const t of TEMPLATE_BAWAAN) {
       expect(t.nama.trim().length).toBeGreaterThan(0);
       expect(variabelTakDikenal(t.isi)).toEqual([]);

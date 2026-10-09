@@ -71,6 +71,7 @@ export function ProfilKolClient({
   labelSaran,
   panelCatatan,
   kartuPajak,
+  kartuFormulir,
   tabAwal = "kolaborasi",
 }: {
   /** Tab pertama yang terbuka (`?tab=`), mis. "ukuran" dari tautan "Lengkapi data". */
@@ -82,6 +83,8 @@ export function ProfilKolClient({
   panelCatatan: ReactNode;
   /** Kartu "Pajak & rekening" (komponen server `KartuPajakKol`). */
   kartuPajak?: ReactNode;
+  /** Kartu "Link formulir data" (komponen server `KartuFormulirKol`). */
+  kartuFormulir?: ReactNode;
 }) {
   const t = useTranslations("kreatifRuang");
   const tc = useTranslations("creative");
@@ -381,6 +384,7 @@ export function ProfilKolClient({
         </TabsContent>
 
         <TabsContent value="ukuran" className="space-y-4">
+          {kartuFormulir}
           <div className="grid gap-4 lg:grid-cols-2">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-2">

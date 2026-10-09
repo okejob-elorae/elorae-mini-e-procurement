@@ -269,6 +269,7 @@ function KartuTemplate({ awal, identitas, bolehMengelola }: { awal: TemplateWa[]
         resi: "JNE0012345678",
         ekspedisi: "JNE",
         fee: 1_500_000,
+        link: "https://elorae.cloud/data-kol/contoh",
         identitas,
       }),
     [identitas],

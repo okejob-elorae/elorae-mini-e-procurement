@@ -49,6 +49,7 @@ export const VARIABEL_WA = [
   "brand",
   "pengirim",
   "fee",
+  "link",
 ] as const;
 
 export type VariabelWa = Record<(typeof VARIABEL_WA)[number], string | null>;
@@ -164,6 +165,21 @@ export const TEMPLATE_BAWAAN: TemplateWa[] = [
     ].join("\n"),
   },
   {
+    // Hanya dipakai dari kartu "Link formulir data" di profil KOL: {link} baru ada saat link dibuat.
+    kunci: "minta-data",
+    nama: "Kirim link formulir data",
+    isi: [
+      "Halo kak {nama} 👋",
+      "",
+      "Supaya kiriman dari {brand} tidak salah alamat atau ukuran, boleh dibantu isi data di link ini ya, kak:",
+      "{link}",
+      "",
+      "Isinya alamat kirim, ukuran, dan rekening untuk pembayaran bila kerja samanya berbayar. Data rekening tersimpan aman dan hanya dibuka tim keuangan kami. Link-nya berlaku 14 hari.",
+      "",
+      "Terima kasih, kak 🙏",
+    ].join("\n"),
+  },
+  {
     kunci: "resi",
     nama: "Info resi",
     isi: [
@@ -271,6 +287,7 @@ export function susunVariabel(i: {
   resi?: string | null;
   ekspedisi?: string | null;
   fee?: number | null;
+  link?: string | null;
   identitas: IdentitasKreatif;
 }): VariabelWa {
   const t = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
@@ -286,5 +303,6 @@ export function susunVariabel(i: {
     brand: t(i.identitas.brand),
     pengirim: t(i.identitas.pengirim),
     fee: i.fee && i.fee > 0 ? rupiahTeks(i.fee) : null,
+    link: t(i.link),
   };
 }

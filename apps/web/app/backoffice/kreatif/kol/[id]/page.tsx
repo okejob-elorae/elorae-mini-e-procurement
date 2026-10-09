@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { KartuFormulirKol } from "@/components/kreatif/KartuFormulirKol";
 import { KartuPajakKol } from "@/components/kreatif/KartuPajakKol";
 import { PanelCatatan } from "@/components/kreatif/PanelCatatan";
 import { pilihanSaringKol, profilKol } from "@/lib/creative/kol-queries";
@@ -37,6 +38,7 @@ export default async function ProfilKolPage({
       labelSaran={pilihan?.label ?? []}
       panelCatatan={<PanelCatatan kolId={id} bolehMengelola={bolehMengelola} />}
       kartuPajak={<KartuPajakKol kolId={id} />}
+      kartuFormulir={<KartuFormulirKol kolId={id} />}
     />
   );
 }

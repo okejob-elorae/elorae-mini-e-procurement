@@ -1,4 +1,4 @@
-import { prisma } from "@elorae/db";
+import { prisma, type Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
 import {
@@ -130,11 +130,23 @@ export async function simpanDataSensitifKol(input: {
   isi: Partial<Record<KolomSensitif, string | null>>;
   olehUserId: string;
 }): Promise<HasilPajakKol<{ diubah: KolomSensitif[]; lengkap: boolean }>> {
-  const kolom = SEMUA_KOLOM_SENSITIF.filter((k) => input.isi[k] !== undefined);
+  const r = rapikanIsiSensitif(input.isi);
+  if (!r.ok) return r;
+  return runSerializable((tx) => simpanDataSensitifKolDiTx(tx, { kolId: input.kolId, rapi: r.rapi, olehUserId: input.olehUserId }));
+}
+
+/**
+ * Periksa dan rapikan isian rekening/NIK/NPWP (di luar transaksi). Kolom `undefined` tidak disentuh;
+ * `null`/kosong berarti hapus. Mengisi butuh kunci enkripsi.
+ */
+export function rapikanIsiSensitif(
+  isi: Partial<Record<KolomSensitif, string | null>>,
+): { ok: true; rapi: Partial<Record<KolomSensitif, string | null>> } | { ok: false; kode: KodeGagalPajakKol; kolom?: KolomSensitif } {
+  const kolom = SEMUA_KOLOM_SENSITIF.filter((k) => isi[k] !== undefined);
   if (kolom.length === 0) return { ok: false, kode: "KOSONG" };
   const rapi: Partial<Record<KolomSensitif, string | null>> = {};
   for (const k of kolom) {
-    const v = input.isi[k];
+    const v = isi[k];
     if (v === null || v === undefined || !v.trim()) {
       rapi[k] = null;
       continue;
@@ -143,47 +155,56 @@ export async function simpanDataSensitifKol(input: {
     if (!r.ok) return { ok: false, kode: r.kode, kolom: k };
     rapi[k] = r.nilai;
   }
-  const adaYangDiisi = kolom.some((k) => rapi[k] !== null);
-  if (adaYangDiisi && !kunciTersedia()) return { ok: false, kode: "KUNCI_TIDAK_ADA" };
+  if (kolom.some((k) => rapi[k] !== null) && !kunciTersedia()) return { ok: false, kode: "KUNCI_TIDAK_ADA" };
+  return { ok: true, rapi };
+}
 
-  return runSerializable(async (tx): Promise<HasilPajakKol<{ diubah: KolomSensitif[]; lengkap: boolean }>> => {
-    const k = await tx.kol.findUnique({
-      where: { id: input.kolId },
-      select: { id: true, name: true, jenisPajak: true, bankNameEnc: true, bankAccountEnc: true, bankHolderEnc: true, nikEnc: true, npwpEnc: true },
-    });
-    if (!k) return { ok: false, kode: "TIDAK_DITEMUKAN" };
-    const data: Record<string, string | null> = {};
-    try {
-      for (const kol of kolom) {
-        const nilai = rapi[kol];
-        data[KOLOM_ENC[kol]] = nilai === null || nilai === undefined ? null : enkripsi(nilai, konteksKol(k.id, kol));
-      }
-    } catch (e) {
-      if (e instanceof KunciEnkripsiTidakAda) return { ok: false, kode: "KUNCI_TIDAK_ADA" };
-      throw e;
-    }
-    if (rapi.bankAccount !== undefined) data.bankLast4 = rapi.bankAccount ? empatTerakhir(rapi.bankAccount) : null;
-    if (rapi.nik !== undefined) data.nikLast4 = rapi.nik ? empatTerakhir(rapi.nik) : null;
-    const ada = (kol: KolomSensitif) => (KOLOM_ENC[kol] in data ? data[KOLOM_ENC[kol]] !== null : adaIsi(k[KOLOM_ENC[kol]]));
-    const lengkap = dataPajakLengkap(k.jenisPajak, {
-      bankName: ada("bankName"),
-      bankAccount: ada("bankAccount"),
-      bankHolder: ada("bankHolder"),
-      nik: ada("nik"),
-      npwp: ada("npwp"),
-    });
-    await tx.kol.update({ where: { id: k.id }, data: { ...data, dataPajakLengkap: lengkap } });
-    await catatJejak(tx, {
-      userId: input.olehUserId,
-      action: JEJAK.DATA_SENSITIF_KOL_DIUBAH,
-      entityType: "Kol",
-      entityId: k.id,
-      // TANPA nilai — hanya kolom yang diisi/dihapus.
-      changes: { after: { diisi: kolom.filter((x) => rapi[x] !== null), dihapus: kolom.filter((x) => rapi[x] === null) } },
-      metadata: { kol: k.name },
-    });
-    return { ok: true, diubah: kolom, lengkap };
+/**
+ * Tulis rekening/NIK/NPWP yang sudah dirapikan (`rapikanIsiSensitif`) di transaksi pemanggil —
+ * dipakai juga formulir data KOL (`sumber: "FORMULIR_KOL"`, jejak ikut transaksi pengirimannya).
+ */
+export async function simpanDataSensitifKolDiTx(
+  tx: Prisma.TransactionClient,
+  input: { kolId: string; rapi: Partial<Record<KolomSensitif, string | null>>; olehUserId: string; sumber?: string },
+): Promise<HasilPajakKol<{ diubah: KolomSensitif[]; lengkap: boolean }>> {
+  const rapi = input.rapi;
+  const kolom = SEMUA_KOLOM_SENSITIF.filter((k) => rapi[k] !== undefined);
+  const k = await tx.kol.findUnique({
+    where: { id: input.kolId },
+    select: { id: true, name: true, jenisPajak: true, bankNameEnc: true, bankAccountEnc: true, bankHolderEnc: true, nikEnc: true, npwpEnc: true },
   });
+  if (!k) return { ok: false, kode: "TIDAK_DITEMUKAN" };
+  const data: Record<string, string | null> = {};
+  try {
+    for (const kol of kolom) {
+      const nilai = rapi[kol];
+      data[KOLOM_ENC[kol]] = nilai === null || nilai === undefined ? null : enkripsi(nilai, konteksKol(k.id, kol));
+    }
+  } catch (e) {
+    if (e instanceof KunciEnkripsiTidakAda) return { ok: false, kode: "KUNCI_TIDAK_ADA" };
+    throw e;
+  }
+  if (rapi.bankAccount !== undefined) data.bankLast4 = rapi.bankAccount ? empatTerakhir(rapi.bankAccount) : null;
+  if (rapi.nik !== undefined) data.nikLast4 = rapi.nik ? empatTerakhir(rapi.nik) : null;
+  const ada = (kol: KolomSensitif) => (KOLOM_ENC[kol] in data ? data[KOLOM_ENC[kol]] !== null : adaIsi(k[KOLOM_ENC[kol]]));
+  const lengkap = dataPajakLengkap(k.jenisPajak, {
+    bankName: ada("bankName"),
+    bankAccount: ada("bankAccount"),
+    bankHolder: ada("bankHolder"),
+    nik: ada("nik"),
+    npwp: ada("npwp"),
+  });
+  await tx.kol.update({ where: { id: k.id }, data: { ...data, dataPajakLengkap: lengkap } });
+  await catatJejak(tx, {
+    userId: input.olehUserId,
+    action: JEJAK.DATA_SENSITIF_KOL_DIUBAH,
+    entityType: "Kol",
+    entityId: k.id,
+    // TANPA nilai — hanya kolom yang diisi/dihapus.
+    changes: { after: { diisi: kolom.filter((x) => rapi[x] !== null), dihapus: kolom.filter((x) => rapi[x] === null) } },
+    metadata: { kol: k.name, ...(input.sumber ? { sumber: input.sumber } : {}) },
+  });
+  return { ok: true, diubah: kolom, lengkap };
 }
 
 export type IsiSensitifKol = Record<KolomSensitif, string | null>;

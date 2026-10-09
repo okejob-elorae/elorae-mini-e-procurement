@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertTriangle, Loader2, Plus, X } from "lucide-react";
+import { AlertTriangle, ClipboardPaste, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { simpanKolAction } from "@/app/actions/kreatif-kol";
 import { bacaAngka, bacaBilanganBulat } from "@/lib/creative/angka-masuk";
 import { samaDenganTerukur, TOLERANSI_ER } from "@/lib/creative/angka-terukur";
+import { bacaBalasanWa, type KolomTempel } from "@/lib/creative/tempel-data-kol";
+import { dinamis } from "@/lib/i18n/dinamis";
 import { formatDisplayDate } from "@/lib/date-only";
 import { SEMUA_PLATFORM, type Platform } from "@/lib/creative/aturan";
 import { bacaLabel } from "@/lib/creative/kol-aturan";
@@ -146,6 +148,25 @@ function IsiDialogKol({
 
   const er = bacaOpsional(form.er);
   const avgViews = bacaOpsional(form.avgViews, true);
+
+  // "Tempel balasan WhatsApp": teks balasan KOL dipilah ke isian formulir; pemilik memeriksa lalu menyimpan.
+  const td = dinamis(t);
+  const [tempelBuka, setTempelBuka] = useState(false);
+  const [tempelTeks, setTempelTeks] = useState("");
+  const [tempelHasil, setTempelHasil] = useState<string | null>(null);
+  const labelKolomTempel = (k: KolomTempel) => td(`formulirKol.kolom.${k === "tinggi" ? "tinggiCm" : k}`);
+  const isiDariTempel = () => {
+    const r = bacaBalasanWa(tempelTeks);
+    const kolom = Object.keys(r.isi) as KolomTempel[];
+    if (!kolom.length) {
+      setTempelHasil(t("kol.form.tempel.kosong"));
+      return;
+    }
+    setForm(r.isi as Partial<Form>);
+    const bagian = [t("kol.form.tempel.terisi", { daftar: kolom.map(labelKolomTempel).join(", ") })];
+    if (r.tidakTerbaca.length) bagian.push(t("kol.form.tempel.takTerbaca", { n: r.tidakTerbaca.length }));
+    setTempelHasil(bagian.join(" "));
+  };
 
   // Angka terukur akun TikTok utama: isian ER/rata-rata views mengikutinya selama tidak diketik lain.
   const locale = useLocale();
@@ -320,7 +341,41 @@ function IsiDialogKol({
         </section>
 
         <section className="space-y-3">
-          <h3 className="text-sm font-medium">{t("kol.form.bagianKontak")}</h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-medium">{t("kol.form.bagianKontak")}</h3>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setTempelBuka((b) => !b)} aria-expanded={tempelBuka}>
+              <ClipboardPaste className="h-4 w-4" aria-hidden />
+              {t("kol.form.tempel.judul")}
+            </Button>
+          </div>
+          {tempelBuka ? (
+            <div className="space-y-2 rounded-md border border-dashed p-3">
+              <p className="text-xs text-muted-foreground">{t("kol.form.tempel.petunjuk")}</p>
+              <Textarea
+                rows={6}
+                value={tempelTeks}
+                onChange={(e) => {
+                  setTempelTeks(e.target.value);
+                  setTempelHasil(null);
+                }}
+                aria-label={t("kol.form.tempel.judul")}
+                placeholder={"Nama penerima: …\nNo. HP: …\nAlamat lengkap: …\nKota: …\nKode pos: …\nUkuran: M / 28"}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" size="sm" onClick={isiDariTempel} disabled={!tempelTeks.trim()}>
+                  {t("kol.form.tempel.baca")}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setTempelBuka(false)}>
+                  {t("kol.form.tempel.tutup")}
+                </Button>
+              </div>
+              {tempelHasil ? (
+                <p className="text-xs" role="status">
+                  {tempelHasil}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             {bidang("kol-nama", t("kol.form.nama"), (
               <Input id="kol-nama" placeholder={t("kol.form.namaPh")} value={form.name} onChange={(e) => setForm({ name: e.target.value })} />

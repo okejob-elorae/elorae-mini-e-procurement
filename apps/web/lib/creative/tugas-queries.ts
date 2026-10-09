@@ -5,6 +5,7 @@ import { geserHari, hariIniWib } from "@/lib/tanggal-isian";
 import { bacaChecklist, jumlahBelum } from "./agenda-aturan";
 import { angkaKolaborasi, jumlahAngkaKolaborasi, type AngkaKolaborasi, type Periode } from "./angka-queries";
 import { bacaAmbangKreatif } from "./pengaturan";
+import { kirimanBelumDicekTugas } from "./formulir-kol-queries";
 import { anomaliTugas, perangkatBerhentiTugas } from "./pantau-queries";
 import { TAHAP_BERJALAN, type StatusBayar, type StatusDraf, type Tahap } from "./tahap";
 import {
@@ -13,6 +14,7 @@ import {
   type AgendaTugas,
   type AnomaliTugas,
   type CampaignTugas,
+  type FormulirTugas,
   type KelompokTugas,
   type KolaborasiTugas,
   type MasukanTugas,
@@ -48,6 +50,8 @@ export type CakupanTugas = {
   akunIds?: readonly string[];
   /** Perangkat untuk "Perangkat pemantau berhenti"; tanpa ini cakupan tidak membacanya. */
   perangkatIds?: readonly string[];
+  /** Kiriman untuk "Data dari KOL"; tanpa ini cakupan tidak membacanya. */
+  kirimanIds?: readonly string[];
 };
 
 const TAHAP_RAWAN_DOBEL: readonly Tahap[] = ["DEAL", "BRIEF_DIKIRIM", "SAMPEL_DIKIRIM"];
@@ -266,16 +270,29 @@ async function muatPantauTugas(cakupan?: CakupanTugas): Promise<{ anomali: Anoma
   return { anomali, perangkat };
 }
 
+/** Kiriman formulir data KOL yang belum dicek. Gagal membaca tidak merobohkan Hari ini (tabelnya baru). */
+async function muatFormulirTugas(cakupan?: CakupanTugas): Promise<FormulirTugas[]> {
+  if (cakupan && cakupan.kirimanIds === undefined) return [];
+  try {
+    const baris = await kirimanBelumDicekTugas({ kirimanIds: cakupan?.kirimanIds });
+    return baris.map((b) => ({ ...b, hari: hari(b.dikirim)! }));
+  } catch (e) {
+    console.error("kiriman formulir KOL gagal dibaca:", e);
+    return [];
+  }
+}
+
 export async function muatMasukanTugas(o: { userId: string | null; hariIni?: string; cakupan?: CakupanTugas }): Promise<MasukanTugas> {
   const hariIni = o.hariIni ?? hariIniWib();
-  const [kolaborasi, agenda, campaign, ambang, pantau] = await Promise.all([
+  const [kolaborasi, agenda, campaign, ambang, pantau, formulir] = await Promise.all([
     muatKolaborasiTugas(o.cakupan),
     muatAgendaTugas(o.userId, hariIni, o.cakupan),
     muatCampaignTugas(o.cakupan),
     bacaAmbangKreatif(),
     muatPantauTugas(o.cakupan),
+    muatFormulirTugas(o.cakupan),
   ]);
-  return { kolaborasi, agenda, campaign, hariIni, ambang, anomali: pantau.anomali, perangkat: pantau.perangkat };
+  return { kolaborasi, agenda, campaign, hariIni, ambang, anomali: pantau.anomali, perangkat: pantau.perangkat, formulir };
 }
 
 /**

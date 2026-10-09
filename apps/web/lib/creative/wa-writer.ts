@@ -3,7 +3,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
 import { bacaIdentitasKreatif, bacaTemplateWaKreatif } from "./pengaturan";
 import { LABEL_PLATFORM } from "./aturan";
-import { isiTemplate, normalisasiWa, susunVariabel } from "./wa";
+import { isiTemplate, normalisasiWa, susunVariabel, TEMPLATE_BAWAAN, variabelDalam } from "./wa";
 
 /*
  * WhatsApp ke KOL — dipakai tombol WA di semua layar Kreatif (2026-10-07).
@@ -66,8 +66,29 @@ export async function siapkanPesanWa(input: { kolId: string; kolaborasiId?: stri
     ok: true,
     nomor: normalisasiWa(kol.phone),
     namaKol: kol.name,
-    pesan: template.map((t) => ({ kunci: t.kunci, nama: t.nama, isi: isiTemplate(t.isi, vars) })),
+    // Template ber-{link} (minta data) hanya bisa dikirim dari kartu link formulir, saat link-nya baru dibuat.
+    pesan: template.filter((t) => !variabelDalam(t.isi).includes("link")).map((t) => ({ kunci: t.kunci, nama: t.nama, isi: isiTemplate(t.isi, vars) })),
   };
+}
+
+export const KUNCI_TEMPLATE_MINTA_DATA = "minta-data";
+
+/**
+ * Pesan WhatsApp berisi link formulir data KOL. Memakai template `minta-data` yang tersimpan di
+ * Pengaturan; organisasi yang menyimpan templatenya sebelum template ini ada memakai bawaannya.
+ */
+export async function siapkanPesanMintaData(input: { kolId: string; link: string }): Promise<{ nomor: string | null; templateNama: string; pesan: string } | null> {
+  const kol = await prisma.kol.findUnique({
+    where: { id: input.kolId },
+    select: { name: true, phone: true, accounts: { select: { handle: true, platform: true }, orderBy: [{ followers: "desc" }, { id: "asc" }], take: 1 } },
+  });
+  if (!kol) return null;
+  const [identitas, template] = await Promise.all([bacaIdentitasKreatif(), bacaTemplateWaKreatif()]);
+  const t = template.find((x) => x.kunci === KUNCI_TEMPLATE_MINTA_DATA) ?? TEMPLATE_BAWAAN.find((x) => x.kunci === KUNCI_TEMPLATE_MINTA_DATA)!;
+  const vars = susunVariabel({ namaKol: kol.name, username: kol.accounts[0]?.handle ?? null, link: input.link, identitas });
+  // Link wajib ada di pesan: template yang diubah tanpa {link} tetap membawa link-nya di akhir.
+  const isi = isiTemplate(t.isi, vars);
+  return { nomor: normalisasiWa(kol.phone), templateNama: t.nama, pesan: isi.includes(input.link) ? isi : `${isi}\n\n${input.link}` };
 }
 
 export type HasilCatatWa = { ok: true; tahapBaru: string | null } | { ok: false; kode: "TIDAK_DITEMUKAN" };

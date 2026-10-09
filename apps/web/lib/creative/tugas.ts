@@ -30,6 +30,7 @@ export type KunciTugas =
   | "BELUM_DIBAYAR"
   | "KIRIM_DOBEL"
   | "DATA_KIRIM_KURANG"
+  | "DATA_DARI_KOL"
   | "KOL_DIBLOKIR"
   | "BUDGET_CAMPAIGN"
   | "ANOMALI_AKUN"
@@ -47,6 +48,7 @@ export const URUTAN_TUGAS: readonly KunciTugas[] = [
   "BELUM_DIBAYAR",
   "KIRIM_DOBEL",
   "DATA_KIRIM_KURANG",
+  "DATA_DARI_KOL",
   "KOL_DIBLOKIR",
   "BUDGET_CAMPAIGN",
   "ANOMALI_AKUN",
@@ -69,6 +71,7 @@ export const JUDUL_TUGAS: Record<KunciTugas, string> = {
   BELUM_DIBAYAR: "Termin jatuh tempo, belum dibayar",
   KIRIM_DOBEL: "Berpotensi kirim dobel",
   DATA_KIRIM_KURANG: "Data kirim belum lengkap",
+  DATA_DARI_KOL: "Data dari KOL, belum dicek",
   KOL_DIBLOKIR: "KOL diblokir tapi kolaborasinya berjalan",
   BUDGET_CAMPAIGN: "Budget campaign hampir habis atau lewat",
   ANOMALI_AKUN: "Anomali akun",
@@ -155,6 +158,20 @@ export type PerangkatTugas = {
   sampai: string | null;
 };
 
+/** Kiriman formulir data KOL (link WhatsApp) yang belum ditandai dicek kantor. */
+export type FormulirTugas = {
+  id: string;
+  kolId: string;
+  kolNama: string;
+  handle: string | null;
+  waNormal: string | null;
+  /** Hari WIB kiriman masuk. */
+  hari: string;
+  jumlahKolom: number;
+  menimpa: number;
+  npwpBaru: boolean;
+};
+
 export type KurangDataKirim = "ALAMAT" | "HP" | "UKURAN";
 
 /**
@@ -196,11 +213,13 @@ export type InfoTugas = {
   /** Perangkat pemantau: kenapa berhenti, dan sampai kapan jeda otomatisnya. */
   alasanJeda?: PerangkatTugas["alasan"];
   sampai?: string | null;
+  /** Kiriman formulir data KOL: berapa kolom diisi, berapa menimpa isian kantor, NPWP baru. */
+  formulir?: { jumlahKolom: number; menimpa: number; npwpBaru: boolean };
 };
 
 export type BarisTugas = {
-  jenis: "KOLABORASI" | "AGENDA" | "CAMPAIGN" | "AKUN" | "PERANGKAT";
-  /** Id yang dibuka: kolaborasi, agenda, campaign, akun KOL, atau perangkat pemantau. */
+  jenis: "KOLABORASI" | "AGENDA" | "CAMPAIGN" | "AKUN" | "PERANGKAT" | "FORMULIR";
+  /** Id yang dibuka: kolaborasi, agenda, campaign, akun KOL, perangkat pemantau, atau kiriman formulir. */
   id: string;
   /** Nama KOL, judul agenda, atau nama campaign. */
   judul: string;
@@ -230,6 +249,8 @@ export type MasukanTugas = {
   anomali?: readonly AnomaliTugas[];
   /** Perangkat pemantau yang berhenti; kosong bila tidak dibaca. */
   perangkat?: readonly PerangkatTugas[];
+  /** Kiriman formulir data KOL yang belum dicek; kosong bila tidak dibaca. */
+  formulir?: readonly FormulirTugas[];
   hariIni: string;
   ambang: AmbangKreatif;
 };
@@ -432,6 +453,24 @@ export function susunTugas(m: MasukanTugas): KelompokTugas[] {
       umurHari: umurHari(p.sejak, m.hariIni),
       saranGhosting: false,
       info: { alasanJeda: p.alasan, sampai: p.sampai },
+    });
+  }
+
+  for (const f of m.formulir ?? []) {
+    tambah("DATA_DARI_KOL", {
+      jenis: "FORMULIR",
+      id: f.id,
+      judul: f.kolNama,
+      sub: f.handle,
+      kolId: f.kolId,
+      docNo: null,
+      waNormal: f.waNormal,
+      platform: null,
+      tahap: null,
+      sejak: f.hari,
+      umurHari: umurHari(f.hari, m.hariIni),
+      saranGhosting: false,
+      info: { formulir: { jumlahKolom: f.jumlahKolom, menimpa: f.menimpa, npwpBaru: f.npwpBaru } },
     });
   }
 

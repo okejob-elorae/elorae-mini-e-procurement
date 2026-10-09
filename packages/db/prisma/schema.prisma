@@ -4072,6 +4072,33 @@ model KolPerangkat {
   @@index([dibuatOlehId])
 }
 
+model KolFormLink {
+  id          String    @id @default(cuid())
+  kolId       String
+  tokenHash   String    @unique
+  createdById String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([kolId])
+}
+
+model KolFormSubmission {
+  id           String    @id @default(cuid())
+  linkId       String
+  kolId        String
+  submittedAt  DateTime  @default(now())
+  changes      String    @db.Text
+  replacedCount Int      @default(0)
+  reviewedAt   DateTime?
+  reviewedById String?
+
+  @@index([kolId])
+  @@index([reviewedAt])
+}
+
 model KolTugasPantau {
   id            String      @id @default(cuid())
   jenis         String

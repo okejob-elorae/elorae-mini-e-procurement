@@ -12371,7 +12371,10 @@
       "KOL_MONITOR_DEVICE_RESUMED": "Monitoring device resumed",
       "KOL_MONITOR_DEVICE_REVOKED": "Monitoring device revoked",
       "KOL_MONITOR_QUEUE_BUILT": "Monitoring queue built",
-      "KOL_MONITOR_SETTINGS_UPDATED": "Monitoring settings updated"
+      "KOL_MONITOR_SETTINGS_UPDATED": "Monitoring settings updated",
+      "KOL_FORM_LINK_CREATED": "KOL data form link created",
+      "KOL_FORM_LINK_REVOKED": "KOL data form link revoked",
+      "KOL_FORM_SUBMISSION_REVIEWED": "KOL submission marked reviewed"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -19759,7 +19762,8 @@
       "KOL_DIBLOKIR": "Blocked KOL with a running collaboration",
       "BUDGET_CAMPAIGN": "Campaign budget nearly used or exceeded",
       "ANOMALI_AKUN": "Account anomaly",
-      "PERANGKAT_BERHENTI": "Monitoring device stopped"
+      "PERANGKAT_BERHENTI": "Monitoring device stopped",
+      "DATA_DARI_KOL": "Data from KOLs, not reviewed"
     },
     "tugasSaran": {
       "AGENDA": "Open the calendar to see the preparations.",
@@ -19776,7 +19780,8 @@
       "KOL_DIBLOKIR": "Decide: continue or close the collaboration.",
       "BUDGET_CAMPAIGN": "Check campaign spending before adding collaborations.",
       "ANOMALI_AKUN": "Check the profile: a follower spike or a collapsing ER needs a look before working together again.",
-      "PERANGKAT_BERHENTI": "Open Chrome on that device, solve the TikTok captcha or log in, then resume it from Monitoring."
+      "PERANGKAT_BERHENTI": "Open Chrome on that device, solve the TikTok captcha or log in, then resume it from Monitoring.",
+      "DATA_DARI_KOL": "Open the Data form link card, check the fields that replaced your values (revert any that are wrong), then mark it reviewed."
     },
     "tenggat": {
       "FOLLOW_UP": "Follow-up",
@@ -19916,7 +19921,10 @@
           "termin": "Instalment {jumlah}",
           "pengikutNaik": "Followers {dari} → {ke} (+{persen}%)",
           "erTurun": "ER {dari}% → {ke}% (−{persen}%)",
-          "jedaSampai": "paused until {jam}"
+          "jedaSampai": "paused until {jam}",
+          "formulirDiisi": "{n} fields filled",
+          "formulirMenimpa": "{n} replaced your values",
+          "formulirNpwp": "New NPWP"
         },
         "bukaProfil": "Open profile",
         "bukaPemantauan": "Open monitoring"
@@ -21102,7 +21110,16 @@
         "terukurIkut": "Automatic from TikTok monitoring · {tanggal}",
         "terukurBeda": "Typed by hand. TikTok monitoring: {nilai} ({tanggal}).",
         "terukurKosong": "Empty. TikTok monitoring: {nilai} ({tanggal}).",
-        "terukurPakai": "Use the monitored number"
+        "terukurPakai": "Use the monitored number",
+        "tempel": {
+          "judul": "Paste WhatsApp reply",
+          "petunjuk": "Copy the KOL's WhatsApp reply and paste it here. Whatever is recognised fills the form below; check it, then save.",
+          "baca": "Fill form",
+          "tutup": "Close",
+          "terisi": "Filled: {daftar}. Check, then save.",
+          "kosong": "Nothing recognised. Make sure each line looks like \"Label: value\", e.g. \"Alamat: Jl. Mawar 5\".",
+          "takTerbaca": "{n} lines not recognised."
+        }
       },
       "kembar": {
         "judul": "Possibly the same person",
@@ -21966,6 +21983,69 @@
           "TERLALU_BANYAK": "Too many videos at once."
         },
         "dilanjutkan": "The extension that was paused is running again."
+      }
+    },
+    "formulirKol": {
+      "judul": "Data form link",
+      "aktif": "Link active until {tanggal} · opened {dibuka}",
+      "belumDibuka": "not opened yet",
+      "tidakAdaLink": "No active link. Create one and send it to the KOL via WhatsApp — the KOL fills in their own address, sizes and bank account.",
+      "buat": "Create link",
+      "buatBaru": "Create new link",
+      "cabut": "Revoke link",
+      "dicabut": "Link revoked.",
+      "linkSiap": "Link ready to send",
+      "kirimWa": "Send via WhatsApp",
+      "salinLink": "Copy link",
+      "salinPesan": "Copy message",
+      "linkDisalin": "Link copied.",
+      "pesanDisalin": "Message copied.",
+      "sekaliTampil": "The link is only shown now. If you lose it, create a new link (the old one is revoked automatically).",
+      "tanpaWa": "The KOL has no WhatsApp number yet: copy the message and send it manually. The link is only shown now.",
+      "belumAdaKiriman": "Nothing has been sent through the link yet.",
+      "kirimanPada": "Sent {waktu}",
+      "menimpaN": "{n} replaced your values",
+      "sudahDicek": "Reviewed",
+      "belumDicek": "Not reviewed",
+      "sudahDikembalikan": "reverted",
+      "kembalikan": "Revert",
+      "dikembalikan": "Old value restored.",
+      "sensitifDiisi": "{daftar} filled in (stored encrypted)",
+      "npwpBaru": "A new NPWP was filled in. The \"has NPWP\" status under Tax & bank account was not changed — check it before paying the fee.",
+      "tandaiDicek": "Mark as reviewed",
+      "kolom": {
+        "recipientName": "Recipient name",
+        "phone": "WhatsApp",
+        "email": "Email",
+        "address": "Address",
+        "city": "City",
+        "province": "Province",
+        "postalCode": "Postal code",
+        "atasan": "Top",
+        "bawahan": "Bottom",
+        "tinggiCm": "Height (cm)",
+        "hijab": "Wears hijab",
+        "catatanFit": "Fit notes",
+        "rekening": "Bank account & tax"
+      },
+      "sensitif": {
+        "bankName": "bank name",
+        "bankAccount": "account number",
+        "bankHolder": "account holder",
+        "nik": "NIK",
+        "npwp": "NPWP"
+      },
+      "err": {
+        "TANPA_AKSES": "You are not allowed to manage Creative.",
+        "TIDAK_DITEMUKAN": "Not found; reload the page.",
+        "KOL_DIBLOKIR": "This KOL is blocked; no form link can be created.",
+        "ALAMAT_TIDAK_SAH": "Page address not recognised; reload the page.",
+        "SUDAH_DICABUT": "The link was already revoked.",
+        "SUDAH_DICEK": "This submission was already reviewed.",
+        "TIDAK_BISA_DIKEMBALIKAN": "This field cannot be reverted.",
+        "BERUBAH_LAGI": "This field changed again after the KOL's submission, so it was not reverted.",
+        "SALIN": "Copy failed; copy it manually from the link box.",
+        "GAGAL": "Failed; try again."
       }
     }
   },
@@ -23895,6 +23975,93 @@
       "mutasiBelumCocok": "In the bank but not booked yet",
       "tidakAda": "None.",
       "terpotong": "… and {jumlah} more."
+    }
+  },
+  "formulirKol": {
+    "judul": "Collaboration details",
+    "pembuka": "Hi {nama}! Fill in the details below so shipments from {brand} reach the right address in the right size.",
+    "berlaku": "This link is valid until {tanggal}.",
+    "opsional": "(optional)",
+    "bagian": {
+      "kirim": "Contact & shipping address",
+      "ukuran": "Sizes",
+      "rekening": "Bank account & tax"
+    },
+    "isian": {
+      "recipientName": "Recipient name",
+      "phone": "WhatsApp number",
+      "email": "Email",
+      "address": "Full address",
+      "city": "City / regency",
+      "province": "Province",
+      "postalCode": "Postal code",
+      "atasan": "Top",
+      "bawahan": "Bottom",
+      "tinggi": "Height (cm)",
+      "hijab": "Wears hijab",
+      "catatanFit": "Fit notes",
+      "bankName": "Bank name",
+      "bankAccount": "Account number",
+      "bankHolder": "Account holder",
+      "nik": "NIK (ID card)",
+      "npwp": "NPWP"
+    },
+    "contoh": {
+      "atasan": "e.g. M",
+      "bawahan": "e.g. 28",
+      "catatanFit": "e.g. likes loose fit, long sleeves",
+      "bankName": "e.g. BCA"
+    },
+    "hijab": {
+      "ya": "Yes",
+      "tidak": "No"
+    },
+    "petunjuk": {
+      "address": "Street, house number, RT/RW, village, district.",
+      "rekening": "Fill in if the collaboration is paid. This data is stored encrypted and only opened by our finance team for transfers and tax slips.",
+      "nik": "16 digits as on the ID card, for income-tax slips.",
+      "npwp": "If you have an NPWP. Without one, the income-tax deduction is higher."
+    },
+    "tersimpan": {
+      "rekening": "An account ending in {akhir} is already saved. Fill in again only to replace it.",
+      "nik": "An NIK ending in {akhir} is already saved. Fill in again only to replace it.",
+      "npwp": "An NPWP is already saved. Fill in again only to replace it."
+    },
+    "setuju": "I agree that {brand} may use this data for shipping goods and paying for the collaboration.",
+    "kirim": "Send details",
+    "periksaLagi": "Some fields need fixing — see the red text.",
+    "galat": {
+      "WAJIB": "Required.",
+      "WA_TIDAK_SAH": "WhatsApp number not recognised. Example: 0812 3456 7890.",
+      "EMAIL_TIDAK_SAH": "Email address not recognised.",
+      "KODE_POS_TIDAK_SAH": "Postal code must be 5 digits.",
+      "TINGGI_TIDAK_SAH": "Height in cm, between 50 and 250.",
+      "TERLALU_PANJANG": "Too long.",
+      "REKENING_TIDAK_LENGKAP": "Fill in bank name, account number and holder together.",
+      "BELUM_SETUJU": "Tick the agreement first.",
+      "BANK_NAMA_TIDAK_VALID": "Bank name 2–60 characters.",
+      "REKENING_TIDAK_VALID": "Account number 5–20 digits.",
+      "ATAS_NAMA_TIDAK_VALID": "Account holder 2–100 characters.",
+      "NIK_TIDAK_VALID": "NIK must be 16 digits.",
+      "NPWP_TIDAK_VALID": "NPWP must be 15 or 16 digits.",
+      "TIDAK_SAH": "This value cannot be used."
+    },
+    "gagal": {
+      "TIDAK_BERLAKU": "This link is no longer valid. Ask for a new link via WhatsApp.",
+      "TERLALU_SERING": "Sent too often. Wait a few minutes and try again.",
+      "KUNCI_TIDAK_ADA": "Bank details cannot be accepted right now. Leave the bank section empty and send, or try again later.",
+      "GAGAL": "Sending failed. Check your connection and try again."
+    },
+    "terimaKasih": {
+      "judul": "Thank you!",
+      "isi": "We have received your details. The {brand} team will use them for the next shipment.",
+      "tanpaUbahan": "Your details already match what we have.",
+      "ubahLagi": "Something wrong? Open this link again and resend until {tanggal}.",
+      "lihatLagi": "Change details"
+    },
+    "mati": {
+      "judul": "Link no longer valid",
+      "isi": "This form link has been revoked or has expired. Ask our team for a new link via WhatsApp."
     }
   }
 }

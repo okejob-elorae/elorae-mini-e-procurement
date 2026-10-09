@@ -162,6 +162,8 @@ export function tautanBuka(b: BarisTugas): string {
   // Anomali akun: profil KOL di tab riwayat pengikut & ER.
   if (b.jenis === "AKUN") return b.kolId ? `/backoffice/kreatif/kol/${encodeURIComponent(b.kolId)}?tab=pengikut` : "/backoffice/kreatif/kol";
   if (b.jenis === "PERANGKAT") return "/backoffice/kreatif/pemantauan";
+  // Kiriman formulir data KOL: diperiksa di kartu "Link formulir data" (tab Alamat & ukuran).
+  if (b.jenis === "FORMULIR") return b.kolId ? `/backoffice/kreatif/kol/${encodeURIComponent(b.kolId)}?tab=ukuran` : "/backoffice/kreatif/kol";
   return `/backoffice/kreatif/kolaborasi/${encodeURIComponent(b.id)}`;
 }
 

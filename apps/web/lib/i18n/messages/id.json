@@ -12371,7 +12371,10 @@
       "KOL_MONITOR_DEVICE_RESUMED": "Perangkat pemantau dilanjutkan",
       "KOL_MONITOR_DEVICE_REVOKED": "Perangkat pemantau dicabut",
       "KOL_MONITOR_QUEUE_BUILT": "Antrean pemantauan disusun",
-      "KOL_MONITOR_SETTINGS_UPDATED": "Pengaturan pemantauan diubah"
+      "KOL_MONITOR_SETTINGS_UPDATED": "Pengaturan pemantauan diubah",
+      "KOL_FORM_LINK_CREATED": "Link formulir data KOL dibuat",
+      "KOL_FORM_LINK_REVOKED": "Link formulir data KOL dicabut",
+      "KOL_FORM_SUBMISSION_REVIEWED": "Data kiriman KOL ditandai dicek"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -19759,7 +19762,8 @@
       "KOL_DIBLOKIR": "KOL diblokir tapi kolaborasinya berjalan",
       "BUDGET_CAMPAIGN": "Budget campaign hampir habis atau lewat",
       "ANOMALI_AKUN": "Anomali akun",
-      "PERANGKAT_BERHENTI": "Perangkat pemantau berhenti"
+      "PERANGKAT_BERHENTI": "Perangkat pemantau berhenti",
+      "DATA_DARI_KOL": "Data dari KOL, belum dicek"
     },
     "tugasSaran": {
       "AGENDA": "Buka Kalender untuk melihat persiapannya.",
@@ -19776,7 +19780,8 @@
       "KOL_DIBLOKIR": "Putuskan: lanjutkan atau keluarkan kolaborasinya.",
       "BUDGET_CAMPAIGN": "Cek pengeluaran campaign sebelum menambah kolaborasi.",
       "ANOMALI_AKUN": "Periksa profilnya: lonjakan pengikut atau ER yang anjlok perlu dilihat sebelum diajak kerja sama lagi.",
-      "PERANGKAT_BERHENTI": "Buka Chrome di perangkat itu, selesaikan captcha atau login TikTok, lalu lanjutkan dari Pemantauan."
+      "PERANGKAT_BERHENTI": "Buka Chrome di perangkat itu, selesaikan captcha atau login TikTok, lalu lanjutkan dari Pemantauan.",
+      "DATA_DARI_KOL": "Buka kartu Link formulir data, periksa kolom yang menimpa isian Anda (kembalikan bila salah), lalu tandai sudah dicek."
     },
     "tenggat": {
       "FOLLOW_UP": "Follow-up",
@@ -19916,7 +19921,10 @@
           "termin": "Termin {jumlah}",
           "pengikutNaik": "Pengikut {dari} → {ke} (+{persen}%)",
           "erTurun": "ER {dari}% → {ke}% (−{persen}%)",
-          "jedaSampai": "dijeda sampai {jam}"
+          "jedaSampai": "dijeda sampai {jam}",
+          "formulirDiisi": "{n} data diisi",
+          "formulirMenimpa": "{n} menimpa isian Anda",
+          "formulirNpwp": "NPWP baru"
         },
         "bukaProfil": "Buka profil",
         "bukaPemantauan": "Buka pemantauan"
@@ -21102,7 +21110,16 @@
         "terukurIkut": "Otomatis dari pemantauan TikTok · {tanggal}",
         "terukurBeda": "Diketik manual. Pemantauan TikTok: {nilai} ({tanggal}).",
         "terukurKosong": "Kosong. Pemantauan TikTok: {nilai} ({tanggal}).",
-        "terukurPakai": "Pakai angka pemantauan"
+        "terukurPakai": "Pakai angka pemantauan",
+        "tempel": {
+          "judul": "Tempel balasan WhatsApp",
+          "petunjuk": "Salin balasan KOL di WhatsApp lalu tempel di sini. Yang terbaca langsung mengisi formulir di bawah; periksa dulu lalu simpan.",
+          "baca": "Isi formulir",
+          "tutup": "Tutup",
+          "terisi": "Terisi: {daftar}. Periksa lalu simpan.",
+          "kosong": "Tidak ada data yang terbaca. Pastikan tiap baris berbentuk \"Label: isi\", misalnya \"Alamat: Jl. Mawar 5\".",
+          "takTerbaca": "{n} baris tidak terbaca."
+        }
       },
       "kembar": {
         "judul": "Mungkin orang yang sama",
@@ -21966,6 +21983,69 @@
           "TERLALU_BANYAK": "Terlalu banyak video sekaligus."
         },
         "dilanjutkan": "Ekstensi yang tadi berhenti sementara dijalankan lagi."
+      }
+    },
+    "formulirKol": {
+      "judul": "Link formulir data",
+      "aktif": "Link aktif sampai {tanggal} · dibuka {dibuka}",
+      "belumDibuka": "belum dibuka",
+      "tidakAdaLink": "Belum ada link aktif. Buat link lalu kirim ke KOL lewat WhatsApp — KOL mengisi sendiri alamat, ukuran, dan rekening.",
+      "buat": "Buat link",
+      "buatBaru": "Buat link baru",
+      "cabut": "Cabut link",
+      "dicabut": "Link dicabut.",
+      "linkSiap": "Link siap dikirim",
+      "kirimWa": "Kirim lewat WhatsApp",
+      "salinLink": "Salin link",
+      "salinPesan": "Salin pesan",
+      "linkDisalin": "Link disalin.",
+      "pesanDisalin": "Pesan disalin.",
+      "sekaliTampil": "Link hanya tampil sekarang. Kalau hilang, buat link baru (link lama otomatis dicabut).",
+      "tanpaWa": "Nomor WhatsApp KOL belum ada: salin pesan lalu kirim manual. Link hanya tampil sekarang.",
+      "belumAdaKiriman": "Belum ada data yang dikirim lewat link.",
+      "kirimanPada": "Dikirim {waktu}",
+      "menimpaN": "{n} menimpa isian Anda",
+      "sudahDicek": "Sudah dicek",
+      "belumDicek": "Belum dicek",
+      "sudahDikembalikan": "dikembalikan",
+      "kembalikan": "Kembalikan",
+      "dikembalikan": "Nilai lama dikembalikan.",
+      "sensitifDiisi": "{daftar} diisi (tersimpan terenkripsi)",
+      "npwpBaru": "NPWP baru diisi. Status \"ada NPWP\" di Pajak & rekening belum diubah — periksa sebelum membayar fee.",
+      "tandaiDicek": "Tandai sudah dicek",
+      "kolom": {
+        "recipientName": "Nama penerima",
+        "phone": "WhatsApp",
+        "email": "Email",
+        "address": "Alamat",
+        "city": "Kota",
+        "province": "Provinsi",
+        "postalCode": "Kode pos",
+        "atasan": "Atasan",
+        "bawahan": "Bawahan",
+        "tinggiCm": "Tinggi (cm)",
+        "hijab": "Berhijab",
+        "catatanFit": "Catatan ukuran",
+        "rekening": "Rekening & pajak"
+      },
+      "sensitif": {
+        "bankName": "nama bank",
+        "bankAccount": "nomor rekening",
+        "bankHolder": "atas nama",
+        "nik": "NIK",
+        "npwp": "NPWP"
+      },
+      "err": {
+        "TANPA_AKSES": "Anda tidak punya izin mengelola Kreatif.",
+        "TIDAK_DITEMUKAN": "Data tidak ditemukan; muat ulang halaman.",
+        "KOL_DIBLOKIR": "KOL ini diblokir; link formulir tidak bisa dibuat.",
+        "ALAMAT_TIDAK_SAH": "Alamat halaman tidak dikenali; muat ulang halaman.",
+        "SUDAH_DICABUT": "Link sudah dicabut.",
+        "SUDAH_DICEK": "Kiriman ini sudah ditandai dicek.",
+        "TIDAK_BISA_DIKEMBALIKAN": "Kolom ini tidak bisa dikembalikan.",
+        "BERUBAH_LAGI": "Kolom ini sudah diubah lagi sesudah kiriman KOL, jadi tidak dikembalikan.",
+        "SALIN": "Gagal menyalin; salin manual dari kotak link.",
+        "GAGAL": "Gagal; coba lagi."
       }
     }
   },
@@ -23895,6 +23975,93 @@
       "mutasiBelumCocok": "Ada di bank tetapi belum dibukukan",
       "tidakAda": "Tidak ada.",
       "terpotong": "… dan {jumlah} baris lain."
+    }
+  },
+  "formulirKol": {
+    "judul": "Data kerja sama",
+    "pembuka": "Halo kak {nama}! Isi data di bawah supaya kiriman dari {brand} sampai ke alamat yang benar dengan ukuran yang pas.",
+    "berlaku": "Link ini berlaku sampai {tanggal}.",
+    "opsional": "(opsional)",
+    "bagian": {
+      "kirim": "Kontak & alamat kirim",
+      "ukuran": "Ukuran",
+      "rekening": "Rekening & pajak"
+    },
+    "isian": {
+      "recipientName": "Nama penerima",
+      "phone": "No. WhatsApp",
+      "email": "Email",
+      "address": "Alamat lengkap",
+      "city": "Kota / kabupaten",
+      "province": "Provinsi",
+      "postalCode": "Kode pos",
+      "atasan": "Atasan",
+      "bawahan": "Bawahan",
+      "tinggi": "Tinggi badan (cm)",
+      "hijab": "Berhijab",
+      "catatanFit": "Catatan ukuran",
+      "bankName": "Nama bank",
+      "bankAccount": "Nomor rekening",
+      "bankHolder": "Atas nama",
+      "nik": "NIK (KTP)",
+      "npwp": "NPWP"
+    },
+    "contoh": {
+      "atasan": "mis. M",
+      "bawahan": "mis. 28",
+      "catatanFit": "mis. suka longgar, lengan panjang",
+      "bankName": "mis. BCA"
+    },
+    "hijab": {
+      "ya": "Ya",
+      "tidak": "Tidak"
+    },
+    "petunjuk": {
+      "address": "Jalan, nomor rumah, RT/RW, kelurahan, kecamatan.",
+      "rekening": "Diisi bila kerja samanya berbayar. Data ini tersimpan terenkripsi dan hanya dibuka tim keuangan untuk transfer dan bukti potong pajak.",
+      "nik": "16 angka sesuai KTP, untuk bukti potong PPh.",
+      "npwp": "Bila punya NPWP. Tanpa NPWP, potongan PPh lebih besar."
+    },
+    "tersimpan": {
+      "rekening": "Rekening berakhiran {akhir} sudah tersimpan. Isi lagi hanya bila ingin mengganti.",
+      "nik": "NIK berakhiran {akhir} sudah tersimpan. Isi lagi hanya bila ingin mengganti.",
+      "npwp": "NPWP sudah tersimpan. Isi lagi hanya bila ingin mengganti."
+    },
+    "setuju": "Saya setuju data ini dipakai {brand} untuk pengiriman barang dan pembayaran kerja sama.",
+    "kirim": "Kirim data",
+    "periksaLagi": "Ada isian yang perlu diperbaiki — lihat tulisan merah.",
+    "galat": {
+      "WAJIB": "Wajib diisi.",
+      "WA_TIDAK_SAH": "Nomor WhatsApp tidak dikenali. Contoh: 0812 3456 7890.",
+      "EMAIL_TIDAK_SAH": "Alamat email tidak dikenali.",
+      "KODE_POS_TIDAK_SAH": "Kode pos harus 5 angka.",
+      "TINGGI_TIDAK_SAH": "Tinggi badan dalam cm, antara 50 dan 250.",
+      "TERLALU_PANJANG": "Terlalu panjang.",
+      "REKENING_TIDAK_LENGKAP": "Isi nama bank, nomor rekening, dan atas nama sekaligus.",
+      "BELUM_SETUJU": "Centang persetujuan dulu.",
+      "BANK_NAMA_TIDAK_VALID": "Nama bank 2–60 huruf.",
+      "REKENING_TIDAK_VALID": "Nomor rekening 5–20 angka.",
+      "ATAS_NAMA_TIDAK_VALID": "Nama pemilik rekening 2–100 huruf.",
+      "NIK_TIDAK_VALID": "NIK harus 16 angka.",
+      "NPWP_TIDAK_VALID": "NPWP harus 15 atau 16 angka.",
+      "TIDAK_SAH": "Isian ini tidak bisa dipakai."
+    },
+    "gagal": {
+      "TIDAK_BERLAKU": "Link ini sudah tidak berlaku. Minta link baru lewat WhatsApp.",
+      "TERLALU_SERING": "Terlalu sering mengirim. Tunggu beberapa menit lalu coba lagi.",
+      "KUNCI_TIDAK_ADA": "Data rekening belum bisa diterima saat ini. Kosongkan bagian rekening lalu kirim, atau coba lagi nanti.",
+      "GAGAL": "Gagal mengirim. Periksa sinyal lalu coba lagi."
+    },
+    "terimaKasih": {
+      "judul": "Terima kasih!",
+      "isi": "Data sudah kami terima. Tim {brand} akan memakainya untuk pengiriman berikutnya.",
+      "tanpaUbahan": "Data Anda sudah sama dengan yang kami simpan.",
+      "ubahLagi": "Ada yang salah? Buka link ini lagi dan kirim ulang sampai {tanggal}.",
+      "lihatLagi": "Ubah data"
+    },
+    "mati": {
+      "judul": "Link tidak berlaku",
+      "isi": "Link formulir ini sudah dicabut atau habis masa berlakunya. Minta link baru ke tim kami lewat WhatsApp."
     }
   }
 }

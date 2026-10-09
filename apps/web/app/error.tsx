@@ -19,7 +19,7 @@ type Props = { error: Error & { digest?: string }; reset: () => void };
  */
 function berandaUntuk(pathname: string | null): string | null {
   if (!pathname) return "/";
-  if (pathname.startsWith("/toko/")) return null;
+  if (pathname.startsWith("/toko/") || pathname.startsWith("/data-kol/")) return null;
   for (const area of ["/pwa", "/gudang-retur", "/backoffice"]) {
     if (pathname === area || pathname.startsWith(`${area}/`)) return area;
   }

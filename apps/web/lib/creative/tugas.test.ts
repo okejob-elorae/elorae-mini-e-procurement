@@ -11,6 +11,7 @@ import {
   type CampaignTugas,
   type KolaborasiTugas,
   type KunciTugas,
+  type FormulirTugas,
   type PerangkatTugas,
 } from "./tugas";
 
@@ -51,17 +52,18 @@ const kosong = {
   campaign: [] as CampaignTugas[],
   anomali: [] as AnomaliTugas[],
   perangkat: [] as PerangkatTugas[],
+  formulir: [] as FormulirTugas[],
 };
 
 function kelompok(kunci: KunciTugas, isi: Partial<typeof kosong>) {
   return susunTugas({ ...kosong, ...isi, hariIni: HARI_INI, ambang: AMBANG_BAWAAN }).find((k) => k.kunci === kunci)!;
 }
 
-describe("susunTugas — 15 kelompok Hari ini", () => {
-  it("selalu mengembalikan 15 kelompok dalam urutan tetap, berjudul bahasa Indonesia", () => {
+describe("susunTugas — 16 kelompok Hari ini", () => {
+  it("selalu mengembalikan 16 kelompok dalam urutan tetap, berjudul bahasa Indonesia", () => {
     const k = susunTugas({ ...kosong, hariIni: HARI_INI, ambang: AMBANG_BAWAAN });
     expect(k.map((x) => x.kunci)).toEqual(URUTAN_TUGAS);
-    expect(URUTAN_TUGAS).toHaveLength(15);
+    expect(URUTAN_TUGAS).toHaveLength(16);
     for (const x of URUTAN_TUGAS) expect(JUDUL_TUGAS[x].length).toBeGreaterThan(0);
     expect(jumlahTugas(k)).toBe(0);
   });
@@ -228,6 +230,19 @@ describe("susunTugas — pantau KOL", () => {
     const k = kelompok("PERANGKAT_BERHENTI", { perangkat });
     expect(k.baris).toHaveLength(1);
     expect(k.baris[0]).toMatchObject({ jenis: "PERANGKAT", id: "p1", judul: "Laptop kantor", umurHari: 0, info: { alasanJeda: "CAPTCHA", sampai: "2026-10-20T05:00:00.000Z" } });
+  });
+
+  it("data dari KOL: satu baris per kiriman belum dicek, yang paling lama di atas", () => {
+    const formulir: FormulirTugas[] = [
+      { id: "f1", kolId: "k1", kolNama: "Rina", handle: "rina", waNormal: "6281", hari: "2026-10-19", jumlahKolom: 6, menimpa: 1, npwpBaru: false },
+      { id: "f2", kolId: "k2", kolNama: "Budi", handle: null, waNormal: null, hari: "2026-10-17", jumlahKolom: 3, menimpa: 0, npwpBaru: true },
+    ];
+    const k = kelompok("DATA_DARI_KOL", { formulir });
+    expect(k.baris.map((b) => [b.jenis, b.id, b.kolId, b.umurHari])).toEqual([
+      ["FORMULIR", "f2", "k2", 3],
+      ["FORMULIR", "f1", "k1", 1],
+    ]);
+    expect(k.baris[0].info.formulir).toEqual({ jumlahKolom: 3, menimpa: 0, npwpBaru: true });
   });
 
   it("tanpa data pantau kedua kelompok ada tapi kosong", () => {

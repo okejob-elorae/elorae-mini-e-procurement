@@ -24,6 +24,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith('/vendor/') ||
     // Portal pesan mandiri toko: tanpa masuk; token tautannya diperiksa ulang di setiap halaman dan aksi.
     pathname.startsWith('/toko/') ||
+    // Formulir data KOL (link dari WhatsApp): tanpa masuk; token linknya diperiksa ulang di halaman dan aksinya.
+    pathname.startsWith('/data-kol/') ||
     // API ekstensi Chrome pantau KOL: tanpa sesi; setiap handler memeriksa token perangkatnya sendiri.
     pathname.startsWith('/api/kreatif/ekstensi/')
   ) {

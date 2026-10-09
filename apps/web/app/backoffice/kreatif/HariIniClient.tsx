@@ -358,7 +358,7 @@ function BarisTugasView({
       }
     });
 
-  const sub = [b.sub ? (b.jenis === "KOLABORASI" || b.jenis === "AKUN" ? `@${b.sub.replace(/^@+/, "")}` : b.sub) : null, b.docNo, b.tahap ? td(`tahap.${b.tahap}`) : null]
+  const sub = [b.sub ? (b.jenis === "KOLABORASI" || b.jenis === "AKUN" || b.jenis === "FORMULIR" ? `@${b.sub.replace(/^@+/, "")}` : b.sub) : null, b.docNo, b.tahap ? td(`tahap.${b.tahap}`) : null]
     .filter(Boolean)
     .join(" · ");
 
@@ -401,7 +401,7 @@ function BarisTugasView({
               ? t("hariIni.tugas.bukaKalender")
               : b.jenis === "CAMPAIGN"
                 ? t("hariIni.tugas.bukaCampaign")
-                : b.jenis === "AKUN"
+                : b.jenis === "AKUN" || b.jenis === "FORMULIR"
                   ? t("hariIni.tugas.bukaProfil")
                   : b.jenis === "PERANGKAT"
                     ? t("hariIni.tugas.bukaPemantauan")
@@ -516,6 +516,15 @@ function InfoBaris({ kunci, b, locale }: { kunci: KunciTugas; b: BarisTugas; loc
             {t("hariIni.tugas.info.erTurun", { dari: persen(a.er.dari), ke: persen(a.er.ke), persen: persen(a.er.persen) })}
           </span>,
         );
+      }
+      break;
+    }
+    case "DATA_DARI_KOL": {
+      const f = i.formulir;
+      if (f) {
+        bagian.push(t("hariIni.tugas.info.formulirDiisi", { n: f.jumlahKolom }));
+        if (f.menimpa > 0) bagian.push(<span className="font-medium text-amber-700 dark:text-amber-300">{t("hariIni.tugas.info.formulirMenimpa", { n: f.menimpa })}</span>);
+        if (f.npwpBaru) bagian.push(<span className="font-medium text-amber-700 dark:text-amber-300">{t("hariIni.tugas.info.formulirNpwp")}</span>);
       }
       break;
     }

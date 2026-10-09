@@ -17,7 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 function berandaUntuk(pathname: string | null): string | null {
   if (!pathname) return "/";
   if (pathname === "/pwa" || pathname.startsWith("/pwa/")) return "/pwa";
-  if (pathname.startsWith("/toko/")) return null;
+  if (pathname.startsWith("/toko/") || pathname.startsWith("/data-kol/")) return null;
   if (pathname === "/backoffice" || pathname.startsWith("/backoffice/")) return "/backoffice";
   if (pathname === "/gudang-retur" || pathname.startsWith("/gudang-retur/")) return "/gudang-retur";
   return "/";
