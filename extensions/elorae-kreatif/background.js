@@ -6,8 +6,9 @@
 // Semua keputusan ada di lib/aturan.js (dites); berkas ini hanya menjalankannya.
 // Token TIDAK PERNAH ditulis ke log.
 
-import { urlTugasSah } from "./lib/pengurai.js";
+import { halamanPemeriksaan, jenisHalaman, urlTugasSah } from "./lib/pengurai.js";
 import {
+  BATAS_TUNGGU_ITEMLIST_MS,
   bersihkanPengaturan,
   jadwalSetelahAlasan,
   jadwalSetelahTugas,
@@ -364,6 +365,44 @@ async function mintaHasil(tabId, tugas) {
   }
 }
 
+/**
+ * Jalan pengganti untuk tugas KONTEN: halaman videonya kena pemeriksaan keamanan TikTok (tab latar
+ * tidak bisa melewatinya), jadi tab yang sama diarahkan ke profil kreatornya dan angka video diambil
+ * dari daftar video profil. Null bila tidak bisa dicoba; selain itu hasil (OK atau masalah dengan
+ * diagnosa kedua halaman).
+ */
+async function lewatProfil(tabId, tugas, hasilVideo) {
+  const target = jenisHalaman(urlTugasSah(tugas.url) ?? "");
+  const handle = tugas.handle ?? target?.handle;
+  if (!target?.videoId || !handle) return null;
+  try {
+    await chrome.tabs.update(tabId, { url: `${ASAL_TIKTOK}@${encodeURIComponent(handle)}` });
+  } catch {
+    return null;
+  }
+  const muat = await tungguMuat(tabId);
+  if (!muat.ok) return { status: "GAGAL_MUAT", pesan: `Halaman video kena pemeriksaan keamanan; profil gagal dimuat: ${muat.pesan}` };
+  const mulai = Date.now();
+  let terakhir = null;
+  while (Date.now() - mulai < BATAS_TUNGGU_ITEMLIST_MS + 5000) {
+    try {
+      const j = await chrome.tabs.sendMessage(tabId, { jenis: "bacaKontenDariProfil", videoId: target.videoId }, { frameId: 0 });
+      if (j && typeof j.status === "string") terakhir = j;
+    } catch {
+      // skrip halaman belum siap
+    }
+    if (terakhir?.status === "OK") return terakhir;
+    if (terakhir?.alasan === "VIDEO_TIDAK_DI_PROFIL" && terakhir.adaItemList && Date.now() - mulai > 6000) break;
+    await tidur(1000);
+  }
+  const lewat = terakhir?.diagnosa ?? terakhir?.alasan ?? terakhir?.status ?? "tidak menjawab";
+  return {
+    status: "TIDAK_TERBACA",
+    diagnosa: `halaman video: pemeriksaan keamanan TikTok | profil: ${lewat}`,
+    tanpaSkrip: hasilVideo.tanpaSkrip,
+  };
+}
+
 function pesanMasalah(hasil) {
   if (hasil.pesan) return String(hasil.pesan).slice(0, 500);
   if (hasil.alasan === "ANGKA_TIDAK_TERBACA" && hasil.kurang?.length) return `Angka tidak terbaca: ${hasil.kurang.join(", ")}`;
@@ -386,6 +425,9 @@ async function kerjakanTugas(tugas) {
       await tulis({ kunci: { sejak: Date.now(), tugasId: tugas.id } });
       const muat = await tungguMuat(tabId);
       hasil = muat.ok ? await mintaHasil(tabId, tugas) : { status: "GAGAL_MUAT", pesan: muat.pesan };
+      if (tugas.jenis === "KONTEN" && hasil.status !== "OK" && halamanPemeriksaan(hasil)) {
+        hasil = (await lewatProfil(tabId, tugas, hasil)) ?? hasil;
+      }
     } catch (e) {
       hasil = { status: "GAGAL_MUAT", pesan: pesanGalat(e) };
     } finally {

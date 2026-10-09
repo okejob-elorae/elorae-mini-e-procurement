@@ -575,6 +575,34 @@ export function diagnosaHalaman(masukan) {
   return (bagian.join("; ") + ekor).slice(0, 400);
 }
 
+/** Halaman pemeriksaan keamanan TikTok (WAF / challenge) — terlihat 2026-10-09 di tab latar halaman video. */
+export function halamanPemeriksaan(hasil) {
+  return Boolean(hasil?.tanpaSkrip) && /tanda: [^)]*\b(challenge|waf|captcha|verify)\b/.test(String(hasil?.diagnosa ?? ""));
+}
+
+/**
+ * Angka satu video dari daftar video PROFIL kreatornya (jalan pengganti saat halaman videonya kena
+ * pemeriksaan keamanan). `hasilProfil` = data HasilProfil yang sudah terbaca; null bila video itu
+ * tidak ada di daftar yang tertangkap (video lama di luar halaman pertama profil).
+ */
+export function kontenDariProfil(hasilProfil, videoId) {
+  if (!hasilProfil || hasilProfil.jenis !== "PROFIL" || !teksSah(hasilProfil.uniqueId)) return null;
+  const p = (hasilProfil.posting ?? []).find((x) => x?.id === videoId);
+  if (!p) return null;
+  const hasil = {
+    jenis: "KONTEN",
+    videoId: p.id,
+    uniqueId: hasilProfil.uniqueId,
+    views: p.views,
+    like: p.like,
+    komentar: p.komentar,
+    share: p.share,
+    save: p.save,
+  };
+  if (Number.isFinite(p.dibuatPada) && p.dibuatPada > 0) hasil.dibuatPada = p.dibuatPada;
+  return kurangWajib(hasil).length ? null : hasil;
+}
+
 /**
  * Perlu mengambil HTML halaman yang segar? Ya bila data halaman tidak ada atau milik halaman lain —
  * terjadi saat TikTok berpindah halaman tanpa memuat ulang (klik dari beranda ke profil): skrip

@@ -503,3 +503,37 @@ describe("diagnosaHalaman", () => {
     assert.equal(h.diagnosa, d);
   });
 });
+
+describe("jalan pengganti lewat profil", () => {
+  const profil = {
+    jenis: "PROFIL",
+    uniqueId: "lystianovilda",
+    pengikut: 555_300,
+    posting: [
+      { id: "7689069333120634120", dibuatPada: 1_790_000_000, disematkan: false, views: 31_900, like: 1_498, komentar: 27, share: 127, save: 506 },
+      { id: "7600000000000000001", dibuatPada: 1_789_000_000, disematkan: false, views: 10, like: 1, komentar: 0, share: 0, save: 0 },
+    ],
+  };
+  test("angka video diambil dari daftar video profil", () => {
+    assert.deepEqual(p.kontenDariProfil(profil, "7689069333120634120"), {
+      jenis: "KONTEN",
+      videoId: "7689069333120634120",
+      uniqueId: "lystianovilda",
+      views: 31_900,
+      like: 1_498,
+      komentar: 27,
+      share: 127,
+      save: 506,
+      dibuatPada: 1_790_000_000,
+    });
+  });
+  test("video tidak ada di daftar / bukan profil → null", () => {
+    assert.equal(p.kontenDariProfil(profil, "7999999999999999999"), null);
+    assert.equal(p.kontenDariProfil({ jenis: "KONTEN" }, "7689069333120634120"), null);
+  });
+  test("halaman pemeriksaan keamanan dikenali dari diagnosa", () => {
+    assert.equal(p.halamanPemeriksaan({ tanpaSkrip: true, diagnosa: "skrip data tidak ada (html: 1519 b; tanda: challenge,waf)" }), true);
+    assert.equal(p.halamanPemeriksaan({ tanpaSkrip: true, diagnosa: "skrip data tidak ada (html: 300000 b)" }), false);
+    assert.equal(p.halamanPemeriksaan({ tanpaSkrip: false, diagnosa: "tanda: waf" }), false);
+  });
+});

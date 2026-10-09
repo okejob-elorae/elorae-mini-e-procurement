@@ -130,7 +130,26 @@
 
   // ------------------------------------------------ permintaan dari service worker
   chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
-    if (pengirim.id !== chrome.runtime.id || pesan?.jenis !== "bacaHalaman") return false;
+    if (pengirim.id !== chrome.runtime.id) return false;
+    // Jalan pengganti: halaman video kena pemeriksaan keamanan → angka video diambil dari daftar
+    // video profil kreatornya (tab yang sama sudah diarahkan ke profil oleh service worker).
+    if (pesan?.jenis === "bacaKontenDariProfil" && typeof pesan.videoId === "string") {
+      bacaLengkap()
+        .then((h) => {
+          if (h.status !== "OK" || h.data?.jenis !== "PROFIL") return balas({ ...h, data: undefined });
+          const k = pengurai.kontenDariProfil(h.data, pesan.videoId);
+          if (k) return balas({ status: "OK", data: k, lewatProfil: true });
+          balas({
+            status: "TIDAK_TERBACA",
+            alasan: "VIDEO_TIDAK_DI_PROFIL",
+            adaItemList: h.adaItemList,
+            diagnosa: `profil terbaca (${h.data.posting.length} video), video ini tidak ada di daftar`,
+          });
+        })
+        .catch((e) => balas({ status: "TIDAK_TERBACA", pesan: "Pengurai gagal: " + String(e?.message ?? e) }));
+      return true;
+    }
+    if (pesan?.jenis !== "bacaHalaman") return false;
     // Putaran otomatis juga memakai cadangan HTML segar bila data halaman tidak ada.
     bacaLengkap()
       .then((h) => balas(h))
