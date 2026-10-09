@@ -663,6 +663,44 @@ describe("simpanManual", () => {
     expect(r).toEqual({ ok: true, cocok: { kolId, nama: `${tag} KOL` }, dibuat: { kol: false, konten: false } });
   });
 
+  it("ER dan rata-rata views KOL mengikuti akun TikTok utamanya, kecuali yang diketik tangan", async () => {
+    const a = await perangkat();
+    const simpan = (pengikut: number, menit: number, views = 1000) =>
+      simpanManual({
+        perangkat: a,
+        url: `https://www.tiktok.com/@${handle}`,
+        data: { ...hasilProfil(pengikut), posting: hasilProfil(pengikut).posting.map((p) => ({ ...p, views })) },
+        sekarang: tambahMenit(SEKARANG, menit),
+      });
+    const kolNow = async () => {
+      const k = await prisma.kol.findUniqueOrThrow({ where: { id: kolId }, select: { engagementRate: true, avgViews: true } });
+      return { er: k.engagementRate === null ? null : Number(k.engagementRate), avgViews: k.avgViews };
+    };
+
+    // Kosong → terisi angka terukur (4 posting: (80+10+5+5)/1000 = 10%, rata-rata 1.000 views).
+    expect((await simpan(20_000, 0)).ok).toBe(true);
+    expect(await kolNow()).toEqual({ er: 10, avgViews: 1000 });
+
+    // Masih sama dengan terukur sebelumnya → ikut angka baru (views 2.000 → ER 5%).
+    await simpan(20_000, 5, 2000);
+    expect(await kolNow()).toEqual({ er: 5, avgViews: 2000 });
+
+    // Pemilik mengetik ER lain → ER dibiarkan, rata-rata views tetap mengikuti.
+    await prisma.kol.update({ where: { id: kolId }, data: { engagementRate: 4.8 } });
+    await simpan(20_000, 10, 4000);
+    expect(await kolNow()).toEqual({ er: 4.8, avgViews: 4000 });
+
+    // Akun TikTok kedua yang lebih kecil tidak menggeser angka KOL.
+    const kecil = await prisma.kolAccount.create({ data: { kolId, platform: "TIKTOK", handle: `${handle}kecil`, followers: 5 }, select: { id: true } });
+    try {
+      await simpanManual({ perangkat: a, url: `https://www.tiktok.com/@${handle}kecil`, data: hasilProfil(5, `${handle}kecil`), sekarang: tambahMenit(SEKARANG, 15) });
+      expect(await kolNow()).toEqual({ er: 4.8, avgViews: 4000 });
+    } finally {
+      await prisma.kolFollowerSnapshot.deleteMany({ where: { accountId: seededId(kecil.id) } });
+      await prisma.kolAccount.delete({ where: { id: kecil.id } });
+    }
+  });
+
   it("profil yang belum ada → KOL baru \"@handle\" + akun TikTok-nya, angka langsung tersimpan, jejak bersumber EKSTENSI", async () => {
     const a = await perangkatAdmin();
     const baru = `${handle}baru`;

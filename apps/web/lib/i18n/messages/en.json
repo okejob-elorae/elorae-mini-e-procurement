@@ -21098,7 +21098,11 @@
         "buangJudul": "Discard changes?",
         "buangIsi": "Unsaved input will be lost.",
         "buang": "Discard",
-        "lanjutIsi": "Keep editing"
+        "lanjutIsi": "Keep editing",
+        "terukurIkut": "Automatic from TikTok monitoring · {tanggal}",
+        "terukurBeda": "Typed by hand. TikTok monitoring: {nilai} ({tanggal}).",
+        "terukurKosong": "Empty. TikTok monitoring: {nilai} ({tanggal}).",
+        "terukurPakai": "Use the monitored number"
       },
       "kembar": {
         "judul": "Possibly the same person",

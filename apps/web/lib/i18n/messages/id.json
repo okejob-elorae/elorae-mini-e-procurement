@@ -21098,7 +21098,11 @@
         "buangJudul": "Buang perubahan?",
         "buangIsi": "Isian yang belum disimpan akan hilang.",
         "buang": "Buang",
-        "lanjutIsi": "Lanjut mengisi"
+        "lanjutIsi": "Lanjut mengisi",
+        "terukurIkut": "Otomatis dari pemantauan TikTok · {tanggal}",
+        "terukurBeda": "Diketik manual. Pemantauan TikTok: {nilai} ({tanggal}).",
+        "terukurKosong": "Kosong. Pemantauan TikTok: {nilai} ({tanggal}).",
+        "terukurPakai": "Pakai angka pemantauan"
       },
       "kembar": {
         "judul": "Mungkin orang yang sama",

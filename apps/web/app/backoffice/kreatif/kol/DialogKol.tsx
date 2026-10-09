@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { simpanKolAction } from "@/app/actions/kreatif-kol";
 import { bacaAngka, bacaBilanganBulat } from "@/lib/creative/angka-masuk";
+import { samaDenganTerukur, TOLERANSI_ER } from "@/lib/creative/angka-terukur";
+import { formatDisplayDate } from "@/lib/date-only";
 import { SEMUA_PLATFORM, type Platform } from "@/lib/creative/aturan";
 import { bacaLabel } from "@/lib/creative/kol-aturan";
 import type { DataFormKol } from "@/lib/creative/kol-queries";
@@ -144,6 +146,29 @@ function IsiDialogKol({
 
   const er = bacaOpsional(form.er);
   const avgViews = bacaOpsional(form.avgViews, true);
+
+  // Angka terukur akun TikTok utama: isian ER/rata-rata views mengikutinya selama tidak diketik lain.
+  const locale = useLocale();
+  const terukur = awal?.terukur ?? null;
+  const keteranganTerukur = (jenis: "er" | "avgViews") => {
+    const nilai = terukur?.[jenis] ?? null;
+    if (terukur === null || nilai === null) return null;
+    const tanggal = terukur.pada ? formatDisplayDate(terukur.pada, locale) : "—";
+    const isian = jenis === "er" ? er : avgViews;
+    if (samaDenganTerukur(isian, nilai, jenis === "er" ? TOLERANSI_ER : 0)) {
+      return <p className="text-xs text-muted-foreground">{t("kol.form.terukurIkut", { tanggal })}</p>;
+    }
+    const angka = new Intl.NumberFormat(locale === "en" ? "en-GB" : "id-ID", { maximumFractionDigits: 2 }).format(nilai);
+    const teks = jenis === "er" ? `${angka}%` : angka;
+    return (
+      <p className="text-xs text-muted-foreground">
+        {t(isian === null ? "kol.form.terukurKosong" : "kol.form.terukurBeda", { nilai: teks, tanggal })}{" "}
+        <button type="button" className="font-medium text-tautan underline underline-offset-2" onClick={() => setForm({ [jenis]: angkaKeTeks(nilai) })}>
+          {t("kol.form.terukurPakai")}
+        </button>
+      </p>
+    );
+  };
   const rateCard = bacaOpsional(form.rateCard);
   const tinggi = bacaOpsional(form.tinggi, true);
   const pengikut = form.akun.map((a) => bacaOpsional(a.pengikut, true));
@@ -315,10 +340,16 @@ function IsiDialogKol({
             ))}
             <div className="grid grid-cols-2 gap-3">
               {bidang("kol-er", t("kol.form.er"), (
-                <Input id="kol-er" inputMode="decimal" className="tabular-nums" placeholder={t("kol.form.erPh")} aria-invalid={Number.isNaN(er)} value={form.er} onChange={(e) => setForm({ er: e.target.value })} />
+                <>
+                  <Input id="kol-er" inputMode="decimal" className="tabular-nums" placeholder={t("kol.form.erPh")} aria-invalid={Number.isNaN(er)} value={form.er} onChange={(e) => setForm({ er: e.target.value })} />
+                  {keteranganTerukur("er")}
+                </>
               ), galatAngka(er))}
               {bidang("kol-views", t("kol.form.avgViews"), (
-                <Input id="kol-views" inputMode="decimal" className="tabular-nums" placeholder={t("kol.form.avgViewsPh")} aria-invalid={Number.isNaN(avgViews)} value={form.avgViews} onChange={(e) => setForm({ avgViews: e.target.value })} />
+                <>
+                  <Input id="kol-views" inputMode="decimal" className="tabular-nums" placeholder={t("kol.form.avgViewsPh")} aria-invalid={Number.isNaN(avgViews)} value={form.avgViews} onChange={(e) => setForm({ avgViews: e.target.value })} />
+                  {keteranganTerukur("avgViews")}
+                </>
               ), galatAngka(avgViews))}
             </div>
             {bidang("kol-wa", t("kol.form.wa"), (

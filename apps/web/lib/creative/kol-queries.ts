@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { cariTeks } from "@/lib/db/cari-teks";
 import { feeBruto } from "./angka-konten";
+import { akunUtama } from "./angka-terukur";
 import { angkaKolaborasi, jumlahAngkaKolaborasi, type AngkaKolaborasi } from "./angka-queries";
 import { SEMUA_PLATFORM, tierKol, type Platform, type Tier } from "./aturan";
 import { cariKembar, kelompokKembar, normalisasiHandle, type SebabKembar } from "./kembar";
@@ -251,7 +252,20 @@ export type DataFormKol = {
   avgViews: number | null;
   ukuran: ProfilUkuran;
   akun: AkunRingkas[];
+  /** Angka terukur akun TikTok utama (pemantauan) — keterangan di bawah isian ER/rata-rata views. */
+  terukur: AngkaTerukurKol | null;
 };
+
+export type AngkaTerukurKol = { er: number | null; avgViews: number | null; pada: string | null };
+
+type AkunBerangka = { id: string; platform: string; followers: number; er: Prisma.Decimal | null; avgViews: number | null; erUpdatedAt: Date | null };
+
+/** Angka terukur akun TikTok utama (pengikut terbanyak), sama dengan yang diikuti angka KOL (`angka-terukur.ts`). */
+function terukurKol(akun: readonly AkunBerangka[]): AngkaTerukurKol | null {
+  const utama = akunUtama(akun.filter((a) => a.platform === "TIKTOK"));
+  if (!utama || (utama.er === null && utama.avgViews === null)) return null;
+  return { er: utama.er === null ? null : Number(utama.er), avgViews: utama.avgViews, pada: utama.erUpdatedAt?.toISOString() ?? null };
+}
 
 const PILIH_FORM = {
   id: true,
@@ -275,7 +289,7 @@ const PILIH_FORM = {
 
 type BarisForm = Prisma.KolGetPayload<{ select: typeof PILIH_FORM }>;
 
-function keDataForm(k: BarisForm, akun: AkunRingkas[]): DataFormKol {
+function keDataForm(k: BarisForm, akun: AkunRingkas[], terukur: AngkaTerukurKol | null): DataFormKol {
   return {
     id: k.id,
     name: k.name,
@@ -295,16 +309,21 @@ function keDataForm(k: BarisForm, akun: AkunRingkas[]): DataFormKol {
     avgViews: k.avgViews,
     ukuran: bacaProfilUkuran(k.sizeProfile),
     akun,
+    terukur,
   };
 }
 
 export async function dataFormKol(id: string): Promise<DataFormKol | null> {
   const k = await prisma.kol.findUnique({
     where: { id },
-    select: { ...PILIH_FORM, accounts: { select: { id: true, platform: true, handle: true, followers: true, url: true } } },
+    select: {
+      ...PILIH_FORM,
+      accounts: { select: { id: true, platform: true, handle: true, followers: true, url: true, er: true, avgViews: true, erUpdatedAt: true } },
+    },
   });
   if (!k) return null;
-  return keDataForm(k, urutkanAkun(k.accounts.map((a) => ({ ...a, platform: a.platform as Platform }))));
+  const akun = urutkanAkun(k.accounts.map((a) => ({ id: a.id, platform: a.platform as Platform, handle: a.handle, followers: a.followers, url: a.url })));
+  return keDataForm(k, akun, terukurKol(k.accounts));
 }
 
 /* ───────────────────────────── profil ───────────────────────────── */
@@ -486,7 +505,7 @@ export async function profilKol(id: string): Promise<ProfilKol | null> {
   }));
 
   return {
-    form: keDataForm(k, akunTanpaRiwayat),
+    form: keDataForm(k, akunTanpaRiwayat, terukurKol(k.accounts)),
     nama: k.name,
     tier: tierKol(akunUrut.map((a) => a.followers)),
     pengikut: akunTerbesar(akunUrut)?.followers ?? 0,

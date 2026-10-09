@@ -26,6 +26,7 @@ import {
   type JenisLogPantau,
   type PengaturanPantau,
 } from "./pantau-aturan";
+import { akunUtama, ikutiTerukur, TOLERANSI_ER } from "./angka-terukur";
 import { sinkronJurnalKolAman } from "./jurnal-kol";
 import { simpanProfilKolDiTx } from "./kol-writer";
 import { waktuTayangDariId } from "./link-video";
@@ -719,6 +720,8 @@ export type HasilSimpan = { ok: true; ulang?: true } | { ok: false; kode: KodeTo
 /** Simpan hasil profil ke akun: catatan pengikut baru (selalu baris baru) + angka akun terbaru. */
 async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, perangkatId: string, sekarang: Date) {
   const er = hitungErAkun(data.posting, sekarang);
+  // Angka terukur SEBELUM pembaruan: dasar untuk tahu apakah angka KOL masih mengikuti pemantauan.
+  const lama = await tx.kolAccount.findUnique({ where: { id: akunId }, select: { kolId: true, platform: true, er: true, avgViews: true } });
   await tx.kolFollowerSnapshot.create({
     data: {
       accountId: akunId,
@@ -740,6 +743,41 @@ async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, pe
       ...(data.secUid ? { platformUserId: data.secUid.slice(0, 191) } : {}),
       lastCheckedAt: sekarang,
       checkStatus: "OK",
+    },
+  });
+  if (er.er !== null && lama && lama.platform === "TIKTOK") {
+    await ikutiAngkaKolDiTx(tx, akunId, lama, { er: er.er, avgViews: er.avgViews });
+  }
+}
+
+/**
+ * ER dan rata-rata views di tingkat KOL mengikuti akun TikTok UTAMA-nya (pengikut terbanyak) selama
+ * tidak diketik tangan — aturannya murni di `angka-terukur.ts`. Akun TikTok lain milik KOL yang sama
+ * tidak menggeser angka KOL.
+ */
+async function ikutiAngkaKolDiTx(
+  tx: Klien,
+  akunId: string,
+  lama: { kolId: string; er: Prisma.Decimal | null; avgViews: number | null },
+  baru: { er: number; avgViews: number | null },
+) {
+  const akun = await tx.kolAccount.findMany({ where: { kolId: lama.kolId, platform: "TIKTOK" }, select: { id: true, followers: true } });
+  if (akunUtama(akun)?.id !== akunId) return;
+  const kol = await tx.kol.findUnique({ where: { id: lama.kolId }, select: { engagementRate: true, avgViews: true } });
+  if (!kol) return;
+  const erKol = ikutiTerukur(
+    kol.engagementRate === null ? null : Number(kol.engagementRate),
+    lama.er === null ? null : Number(lama.er),
+    baru.er,
+    TOLERANSI_ER,
+  );
+  const viewsKol = ikutiTerukur(kol.avgViews, lama.avgViews, baru.avgViews);
+  if (erKol === null && viewsKol === null) return;
+  await tx.kol.update({
+    where: { id: lama.kolId },
+    data: {
+      ...(erKol !== null ? { engagementRate: new Prisma.Decimal(erKol) } : {}),
+      ...(viewsKol !== null ? { avgViews: viewsKol } : {}),
     },
   });
 }
