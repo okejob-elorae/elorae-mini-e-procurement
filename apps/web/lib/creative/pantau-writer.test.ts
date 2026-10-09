@@ -11,6 +11,7 @@ import {
   laporMasalah,
   perangkatDariToken,
   pinjamTugas,
+  UMUR_MAKS_TUGAS_HARI,
   putuskanSendiri,
   sambungPerangkat,
   simpanHasil,
@@ -235,6 +236,17 @@ describe("pinjamTugas", () => {
     ]);
     expect(ra.tugas && rb.tugas).toBeTruthy();
     expect(ra.tugas!.id).not.toBe(rb.tugas!.id);
+  });
+
+  it(`tugas yang jatuh tempo lebih dari ${UMUR_MAKS_TUGAS_HARI} hari lalu tidak pernah dipinjamkan`, async () => {
+    // Penjaga ini membuat ekstensi yang sedang berjalan tidak mengambil tugas tes (bertanggal 2000–2004)
+    // dari basis data lokal yang sama — kejadian nyata 2026-10-09.
+    const a = await perangkat();
+    const basi = await tugas({ prioritas: 99, jatuhAt: tambahHari(SEKARANG, -(UMUR_MAKS_TUGAS_HARI + 1)) });
+    const r = await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan: { tugasIds: [basi] } });
+    expect(r).toEqual({ tugas: null, alasan: "ANTREAN_KOSONG" });
+    const pas = await tugas({ prioritas: 99, jatuhAt: tambahHari(SEKARANG, -UMUR_MAKS_TUGAS_HARI) });
+    expect((await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan: { tugasIds: [basi, pas] } })).tugas?.id).toBe(pas);
   });
 
   it("prioritas tertinggi dulu; payload membawa url dan handle tanpa @", async () => {

@@ -598,6 +598,14 @@ function keTugasEkstensi(t: Prisma.KolTugasPantauGetPayload<{ select: typeof PIL
  * diperpanjang), bukan tugas kedua. Prioritas tertinggi, jatuh tempo paling
  * awal dulu.
  */
+/**
+ * Tugas yang jatuh temponya lebih tua dari ini tidak pernah dipinjamkan. Tugas sungguhan selalu
+ * baru (antrean tidak menyusun titik yang terlambat > 14 hari); yang setua ini hanya sisa — atau
+ * baris tes bertanggal 2000–2004 di basis data lokal yang sama, yang pada 2026-10-09 sempat
+ * diambil ekstensi pemilik dan dicoba dibuka di TikTok.
+ */
+export const UMUR_MAKS_TUGAS_HARI = 30;
+
 export async function pinjamTugas(input: {
   perangkatId: string;
   sekarang?: Date;
@@ -635,7 +643,7 @@ export async function pinjamTugas(input: {
     if (h.sisa <= 0) return { tugas: null, alasan: "KUOTA_HABIS" };
 
     const calon = await tx.kolTugasPantau.findFirst({
-      where: { ...lingkup, status: "ANTRE", jatuhAt: { lte: sekarang } },
+      where: { ...lingkup, status: "ANTRE", jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) } },
       orderBy: [{ prioritas: "desc" }, { jatuhAt: "asc" }, { id: "asc" }],
       select: PILIH_TUGAS,
     });
