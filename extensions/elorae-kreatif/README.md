@@ -84,8 +84,11 @@ Di profil, panel lengkap juga menampilkan:
 - **Median views, views/pengikut, video/minggu** — median tidak terangkat oleh satu video viral.
 - **Periode 7H / 30H / 90H** — video yang diunggah dalam periode itu (jumlah, total dan rata-rata
   views, like, komentar, share, simpan, ER) dibanding periode yang sama sebelumnya, dengan ▲/▼.
-  Kedua periode berakhir 48 jam lalu, karena video yang lebih baru masih mengumpulkan views. Bila
-  panel menulis "belum mencakup", gulir daftar video di profil ke bawah lalu tekan tombol baca ulang.
+  Kedua periode berakhir 48 jam lalu, karena video yang lebih baru masih mengumpulkan views. Grafik
+  di atas tabel menunjukkan views per hari unggah: garis warna = periode ini, garis putus = periode
+  sebelumnya. Bila video lama belum termuat, panel menggulir daftar video sendiri (lalu mengembalikan
+  posisi halaman) sampai periode pembanding tercakup; ekstensi menyimpan paling banyak 200 video per
+  profil, jadi 90H untuk akun yang sangat sering mengunggah bisa tetap tanpa pembanding.
 - **Harga per video** — dari data Elorae sendiri, bukan tebakan. Elorae menghitung harga per
   1.000 views setiap kolaborasi berbayar yang sudah tayang (fee yang disepakati ÷ views video
   TikTok-nya yang tercatat ≥ 7 hari sesudah tayang × 1.000), lalu panel memakai kuartil bawah–atas

@@ -224,3 +224,27 @@ describe("harga", () => {
     assert.equal(p.bacaRupiah("99999999999"), null);
   });
 });
+
+describe("deretHarian", () => {
+  const H = 24;
+  test("views dijumlah per hari unggah; jendela sama dengan ringkasPeriode", () => {
+    const daftar = [
+      posting("muda", 10, 9_999), // < 48 jam: tidak di mana pun
+      posting("a", 2 * H + 1, 100), // hari terakhir periode ini
+      posting("b", 2 * H + 2, 50), // hari yang sama
+      posting("c", 8 * H + 1, 30), // hari pertama periode ini (7 hari: 48 jam + 7 hari)
+      posting("d", 9 * H + 1, 7), // hari terakhir periode lalu
+    ];
+    const d = p.deretHarian(daftar, 7, SEKARANG);
+    assert.equal(d.kini.length, 7);
+    assert.equal(d.kini[6], 150);
+    assert.equal(d.kini[0], 30);
+    assert.equal(d.lalu[6], 7);
+    const r = p.ringkasPeriode(daftar, 7, SEKARANG);
+    assert.equal(d.kini.reduce((s, x) => s + x, 0), r.kini.views);
+    assert.equal(d.lalu.reduce((s, x) => s + x, 0), r.lalu.views);
+  });
+  test("batas cakupan = 48 jam + dua kali periode ke belakang", () => {
+    assert.equal(p.batasCakupan(7, SEKARANG), Math.floor(SEKARANG / 1000) - 48 * 3600 - 14 * 86_400);
+  });
+});

@@ -269,6 +269,16 @@
     .kaki { display: flex; justify-content: space-between; gap: 8px; color: var(--redup); font-size: 12px; }
     .kaki b { color: var(--teks); font-weight: 700; }
 
+    .grafik-periode { width: 100%; height: 64px; display: block; }
+    .grafik-periode .area-kini { fill: color-mix(in srgb, var(--aksen) 22%, transparent); stroke: none; }
+    .grafik-periode .garis-kini { fill: none; stroke: var(--aksen); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+    .grafik-periode .garis-lalu { fill: none; stroke: var(--redup); stroke-width: 1.5; stroke-dasharray: 4 3; stroke-linejoin: round; }
+    .legenda { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; align-items: center; }
+    .legenda span { display: inline-flex; align-items: center; gap: 5px; }
+    .legenda .redup { color: var(--redup); margin-left: auto; }
+    .legenda i { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--aksen); }
+    .legenda i.lalu { border-top: 2px dashed var(--redup); }
+    button.tautan { justify-self: start; background: transparent; color: var(--aksen); font-weight: 700; font-size: 12px; padding: 0; text-decoration: underline; }
     .harga { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
     .isian { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
     .isian input { flex: 1 1 100%; min-width: 0; font: inherit; color: var(--teks); background: var(--ink);
@@ -536,9 +546,90 @@
     return el("span", { kelas: `p ${d > 0 ? "naik" : "turun"}`, teks });
   }
 
-  function periodeProfil(data) {
+  // ------------------------------------------------ memuat video lama (untuk periode pembanding)
+  // TikTok baru memuat video lama saat daftar videonya digulir. Bila periode pembanding belum
+  // tercakup, panel menggulir halaman sendiri — seperti orang menggulir — sampai video tertua yang
+  // tertangkap melewati awal periode pembanding, seluruh video akun tertangkap, batas
+  // MAKS_POSTING tercapai, atau tiga guliran berturut-turut tidak menambah video; lalu posisi
+  // halaman dikembalikan. Sekali per alamat × periode; tombol "Coba muat lagi" mengulang.
+  const tidurPanel = (ms) => new Promise((r) => setTimeout(r, ms));
+  const muatLama = { aktif: false, dicoba: new Set() };
+
+  async function gulirKeBawah() {
+    // Naik sedikit lalu turun lagi: pemicu muat TikTok (pengamat di ujung daftar) baru bereaksi
+    // bila ujung daftar keluar lalu masuk layar lagi.
+    window.scrollBy({ top: -600, behavior: "instant" });
+    await tidurPanel(150);
+    const item = document.querySelectorAll('[data-e2e="user-post-item"]');
+    if (item.length) item[item.length - 1].scrollIntoView({ block: "end", behavior: "instant" });
+    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
+  }
+
+  async function muatVideoLama(hari) {
+    const kunci = `${location.href}|${hari}`;
+    if (muatLama.aktif || muatLama.dicoba.has(kunci)) return;
+    muatLama.aktif = true;
+    muatLama.dicoba.add(kunci);
+    gambar(pengurai?.jenisHalaman(location.href));
+    const awalX = window.scrollX;
+    const awalY = window.scrollY;
+    const batas = alat.batasCakupan(hari, Date.now());
+    let sebelum = -1;
+    let diam = 0;
+    try {
+      for (let i = 0; i < 40; i++) {
+        const h = await baca();
+        const posting = h.data?.posting ?? [];
+        const biasa = posting.filter((p) => !p.disematkan);
+        const tertua = biasa.length ? Math.min(...biasa.map((p) => p.dibuatPada)) : Infinity;
+        const semua = Number.isFinite(h.data?.jumlahVideo) && posting.length >= h.data.jumlahVideo;
+        if (tertua < batas || semua || posting.length >= pengurai.MAKS_POSTING) break;
+        if (posting.length === sebelum) {
+          if (++diam >= 3) break;
+        } else diam = 0;
+        sebelum = posting.length;
+        await gulirKeBawah();
+        await tidurPanel(1400);
+      }
+    } finally {
+      window.scrollTo({ left: awalX, top: awalY, behavior: "instant" });
+      muatLama.aktif = false;
+    }
+    await perbaruiPanel();
+  }
+
+  /** Grafik views per hari unggah: periode ini (garis + area warna aksen) vs periode lalu (garis putus). */
+  function grafikPeriode(deret, adaLalu) {
+    const L = 268;
+    const T = 64;
+    const n = deret.kini.length;
+    const puncak = Math.max(1, ...deret.kini, ...(adaLalu ? deret.lalu : []));
+    const x = (i) => (n === 1 ? L / 2 : (i / (n - 1)) * (L - 4) + 2);
+    const y = (v) => T - 3 - (v / puncak) * (T - 8);
+    const titik = (arr) => arr.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", `0 0 ${L} ${T}`);
+    svg.setAttribute("class", "grafik-periode");
+    svg.setAttribute("aria-hidden", "true");
+    const garis = (titikTeks, kelas) => {
+      const p = document.createElementNS(NS, "polyline");
+      p.setAttribute("points", titikTeks);
+      p.setAttribute("class", kelas);
+      return p;
+    };
+    const area = document.createElementNS(NS, "polygon");
+    area.setAttribute("points", `${x(0).toFixed(1)},${T} ${titik(deret.kini)} ${x(n - 1).toFixed(1)},${T}`);
+    area.setAttribute("class", "area-kini");
+    svg.append(area);
+    if (adaLalu) svg.append(garis(titik(deret.lalu), "garis-lalu"));
+    svg.append(garis(titik(deret.kini), "garis-kini"));
+    return svg;
+  }
+
+  function periodeProfil(data, adaItemList) {
     const hari = panel.tampilan.periode;
     const r = alat.ringkasPeriode(data.posting, hari, Date.now(), { jumlahVideo: data.jumlahVideo });
+    const lengkap = r.lengkapLalu && r.lengkapKini;
     const akhirMs = Date.now() - alat.UMUR_MIN_POSTING_JAM * 3600_000;
     const awalMs = akhirMs - hari * 86_400_000;
     const segmen = el("div", { kelas: "segmen", role: "group", "aria-label": "Periode" });
@@ -547,7 +638,7 @@
     }
     const tabel = el("div", { kelas: "tabel" });
     const baris = (label, kini, lama, format, poin = false) =>
-      tabel.append(el("span", { kelas: "l", teks: label }), el("span", { kelas: "v", teks: format(kini) }), lencanaUbah(kini, lama, r.lengkapLalu && r.lengkapKini, poin));
+      tabel.append(el("span", { kelas: "l", teks: label }), el("span", { kelas: "v", teks: format(kini) }), lencanaUbah(kini, lama, lengkap, poin));
     const n = (x) => alat.angkaPendek(x ?? undefined);
     baris("Video diunggah", r.kini.video, r.lalu.video, n);
     baris("Total views", r.kini.views, r.lalu.views, n);
@@ -558,21 +649,56 @@
     baris("Simpan", r.kini.save, r.lalu.save, n);
     baris("ER", r.kini.er, r.lalu.er, (x) => alat.teksPersen(x), true);
 
-    const catatan = [];
-    catatan.push(`Video yang diunggah ${tanggalPendek.format(awalMs)} – ${tanggalPendek.format(akhirMs - 1000)}, dibanding ${hari} hari sebelumnya.`);
-    if (!r.lengkapKini || !r.lengkapLalu) {
-      catatan.push(
-        `Daftar video yang terbaca belum mencakup ${r.lengkapKini ? "periode pembanding" : "periode ini"} — gulir daftar video ke bawah, lalu tekan baca ulang.`,
+    const isi = [el("div", { kelas: "judul-blok" }, el("span", { teks: "Periode" }), segmen)];
+    if (r.lengkapKini) {
+      isi.push(
+        grafikPeriode(alat.deretHarian(data.posting, hari, Date.now()), lengkap),
+        el(
+          "div",
+          { kelas: "legenda" },
+          el("span", {}, el("i", { kelas: "kini" }), "Periode ini"),
+          lengkap ? el("span", {}, el("i", { kelas: "lalu" }), `${hari} hari sebelumnya`) : null,
+          el("span", { kelas: "redup", teks: "views per hari unggah" }),
+        ),
       );
     }
-    if (r.mudaDilewati) catatan.push(`${r.mudaDilewati} video < 48 jam belum dihitung (views-nya masih naik).`);
-    return el(
-      "div",
-      { kelas: "blok" },
-      el("div", { kelas: "judul-blok" }, el("span", { teks: "Periode" }), segmen),
-      tabel,
-      ...catatan.map((t) => el("div", { kelas: "catatan", teks: t })),
-    );
+    isi.push(tabel);
+    isi.push(el("div", { kelas: "catatan", teks: `Video yang diunggah ${tanggalPendek.format(awalMs)} – ${tanggalPendek.format(akhirMs - 1000)}, dibanding ${hari} hari sebelumnya.` }));
+
+    if (!lengkap) {
+      const kunci = `${location.href}|${hari}`;
+      if (muatLama.aktif) {
+        isi.push(el("div", { kelas: "status baik", role: "status" }, ikon("ulang"), el("span", { teks: `Memuat video lama untuk pembanding… (${data.posting.length} video terbaca)` })));
+      } else if (adaItemList && !muatLama.dicoba.has(kunci)) {
+        // Jalan sesudah gambar selesai dan sesudah TikTok sempat menampilkan daftar videonya.
+        setTimeout(() => muatVideoLama(hari).catch(() => {}), 1500);
+      } else {
+        const batasPenuh = data.posting.length >= pengurai.MAKS_POSTING;
+        isi.push(
+          el("div", {
+            kelas: "catatan",
+            teks: batasPenuh
+              ? `Pembanding ${hari} hari butuh lebih dari ${pengurai.MAKS_POSTING} video untuk akun ini — pakai periode yang lebih pendek.`
+              : "Video lama belum termuat semua, jadi naik/turun belum bisa dihitung.",
+          }),
+        );
+        if (!batasPenuh) {
+          isi.push(
+            el("button", {
+              type: "button",
+              kelas: "tautan",
+              teks: "Coba muat lagi",
+              onclick: () => {
+                muatLama.dicoba.delete(kunci);
+                muatVideoLama(hari).catch(() => {});
+              },
+            }),
+          );
+        }
+      }
+    }
+    if (r.mudaDilewati) isi.push(el("div", { kelas: "catatan", teks: `${r.mudaDilewati} video < 48 jam belum dihitung (views-nya masih naik).` }));
+    return el("div", { kelas: "blok" }, ...isi);
   }
 
   /** Harga yang diketik per akun selama halaman terbuka (tidak disimpan ke mana pun). */
@@ -721,7 +847,7 @@
       ),
     ];
     if (lengkap) {
-      bagian.push(statistikAkun(r), periodeProfil(data));
+      bagian.push(statistikAkun(r), periodeProfil(data, h.adaItemList));
       const grafik = grafikViews(data.posting, r);
       if (grafik) bagian.push(grafik);
       bagian.push(hargaProfil(data.uniqueId, r));

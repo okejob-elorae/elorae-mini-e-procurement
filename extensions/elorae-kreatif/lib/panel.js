@@ -238,3 +238,29 @@ export function rupiahPendek(n) {
   if (typeof n !== "number" || !Number.isFinite(n)) return "—";
   return `Rp ${angkaPendek(n)}`;
 }
+
+// ---------------------------------------------------------------- grafik periode & cakupan
+
+/**
+ * Views per HARI UNGGAH untuk grafik periode: `kini[i]` dan `lalu[i]` = jumlah views video yang
+ * diunggah pada hari ke-i jendelanya (0 = hari paling lama). Jendelanya sama persis dengan
+ * `ringkasPeriode` (berakhir 48 jam lalu), jadi grafik dan tabel tidak pernah berbeda.
+ */
+export function deretHarian(posting, hari, sekarangMs) {
+  const akhir = Math.floor(sekarangMs / 1000) - UMUR_MIN_POSTING_JAM * 3600;
+  const awal = akhir - hari * HARI_DETIK;
+  const awalLalu = awal - hari * HARI_DETIK;
+  const kini = Array(hari).fill(0);
+  const lalu = Array(hari).fill(0);
+  for (const p of unik(posting)) {
+    if (!Number.isFinite(p.views)) continue;
+    if (p.dibuatPada >= awal && p.dibuatPada < akhir) kini[Math.floor((p.dibuatPada - awal) / HARI_DETIK)] += p.views;
+    else if (p.dibuatPada >= awalLalu && p.dibuatPada < awal) lalu[Math.floor((p.dibuatPada - awalLalu) / HARI_DETIK)] += p.views;
+  }
+  return { kini, lalu };
+}
+
+/** Detik unix paling lama yang harus tercakup daftar video agar periode `hari` bisa dibandingkan. */
+export function batasCakupan(hari, sekarangMs) {
+  return Math.floor(sekarangMs / 1000) - UMUR_MIN_POSTING_JAM * 3600 - 2 * hari * HARI_DETIK;
+}
