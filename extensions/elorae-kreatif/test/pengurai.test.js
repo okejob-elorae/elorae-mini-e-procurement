@@ -478,3 +478,20 @@ describe("perluHalamanSegar", () => {
     assert.equal(h.data.uniqueId.toLowerCase(), "budi.santoso");
   });
 });
+
+describe("diagnosaHalaman", () => {
+  test("tanpa skrip data", () => {
+    assert.equal(p.diagnosaHalaman("<html><body>halo</body></html>"), "skrip data tidak ada");
+  });
+  test("skrip ada tapi bagian video kosong → kunci dan statusCode dilaporkan, tanpa angka", () => {
+    const html = `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify({
+      __DEFAULT_SCOPE__: { "webapp.app-context": {}, "webapp.video-detail": { statusCode: 99999, itemInfo: {} } },
+    })}</script>`;
+    const d = p.diagnosaHalaman(html);
+    assert.match(d, /kunci: webapp\.app-context,webapp\.video-detail/);
+    assert.match(d, /webapp\.video-detail: statusCode=99999 item=tidak/);
+    const h = p.bacaHalaman(html, { url: "https://www.tiktok.com/@a/video/7301234567890123456" });
+    assert.equal(h.status, "TIDAK_TERBACA");
+    assert.equal(h.diagnosa, d);
+  });
+});

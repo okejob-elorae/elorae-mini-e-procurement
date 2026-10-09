@@ -509,6 +509,7 @@ function postingDariTangkapan(tangkapan, profil) {
  */
 export function bacaHalaman(masukan, opsi = {}) {
   const status = deteksiHalaman(masukan, opsi);
+  if (status === "TIDAK_TERBACA") return { status, diagnosa: diagnosaHalaman(masukan) };
   if (status !== "OK") return { status };
   const lingkup = bacaLingkup(masukan);
   const target = typeof opsi.url === "string" ? jenisHalaman(opsi.url) : null;
@@ -527,6 +528,27 @@ export function bacaHalaman(masukan, opsi = {}) {
   if (kurang.length > 0) return { status: "TIDAK_TERBACA", alasan: "ANGKA_TIDAK_TERBACA", kurang, data };
   if (target && !cocokDenganUrl(data, target)) return { status: "TIDAK_TERBACA", alasan: "DATA_TIDAK_COCOK", data };
   return { status: "OK", data, adaItemList };
+}
+
+/**
+ * Ringkasan singkat isi halaman saat angkanya tidak terbaca — dikirim bersama laporan masalah
+ * supaya penyebabnya terlihat di Elorae (Kreatif → Pemantauan). Tidak memuat angka atau teks halaman:
+ * hanya ada/tidaknya skrip data, kunci bagian datanya, dan kode status TikTok.
+ */
+export function diagnosaHalaman(masukan) {
+  const teks = ambilTeksRehidrasi(masukan);
+  if (!teks) return "skrip data tidak ada";
+  const lingkup = bacaLingkup(masukan);
+  if (!lingkup) return "skrip data tidak terbaca";
+  const bagian = [`kunci: ${Object.keys(lingkup).slice(0, 12).join(",") || "-"}`];
+  for (const k of [KUNCI_PROFIL, KUNCI_KONTEN]) {
+    const b = lingkup[k];
+    if (b && typeof b === "object") {
+      const item = b.itemInfo?.itemStruct;
+      bagian.push(`${k}: statusCode=${b.statusCode ?? "-"}${k === KUNCI_KONTEN ? ` item=${item ? "ada" : "tidak"}` : ` user=${b.userInfo?.user ? "ada" : "tidak"}`}`);
+    }
+  }
+  return bagian.join("; ").slice(0, 400);
 }
 
 /**

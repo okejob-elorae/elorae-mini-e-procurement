@@ -339,7 +339,8 @@ async function mintaHasil(tabId, tugas) {
 function pesanMasalah(hasil) {
   if (hasil.pesan) return String(hasil.pesan).slice(0, 500);
   if (hasil.alasan === "ANGKA_TIDAK_TERBACA" && hasil.kurang?.length) return `Angka tidak terbaca: ${hasil.kurang.join(", ")}`;
-  if (hasil.alasan === "DATA_TIDAK_COCOK") return "Data halaman tidak cocok dengan alamat yang dibuka";
+  if (hasil.alasan === "DATA_TIDAK_COCOK") return `Data halaman tidak cocok dengan alamat yang dibuka${hasil.diagnosa ? ` (${hasil.diagnosa})` : ""}`.slice(0, 500);
+  if (hasil.diagnosa) return `Data halaman tidak ditemukan — ${hasil.diagnosa}`.slice(0, 500);
   return undefined;
 }
 

@@ -89,9 +89,10 @@
     return m.bacaHalaman(dokumenBaca, { url: location.href, itemList: tangkapan });
   }
 
-  // HTML segar halaman ini, untuk panel saja (putaran otomatis membuka tab baru, datanya selalu ada).
-  // Dipakai bila TikTok berpindah halaman tanpa memuat ulang. Satu alamat diambil paling sering
-  // sekali per 2 menit; "Baca ulang" memaksa ambil lagi.
+  // HTML segar halaman ini, bila data di halaman tidak ada: TikTok berpindah halaman tanpa memuat
+  // ulang (panel), atau tab latar putaran otomatis termuat tanpa data (terlihat 2026-10-09). Satu
+  // alamat diambil paling sering sekali per 2 menit; "Baca ulang" di panel memaksa ambil lagi.
+  // Bila tetap gagal, `diagnosa` dari kedua bacaan ikut dilaporkan.
   const BATAS_ULANG_SEGAR_MS = 120_000;
   let segar = null;
 
@@ -108,21 +109,23 @@
     }
   }
 
-  async function bacaUntukPanel(paksa = false) {
+  async function bacaLengkap(paksa = false) {
     const m = await muatPengurai;
     const opsi = { url: location.href, itemList: tangkapan };
     const h = m.bacaHalaman(dokumenBaca, opsi);
     if (!m.perluHalamanSegar(h)) return h;
     const html = await ambilHalamanSegar(location.href, paksa);
-    if (!html) return h;
+    if (!html) return { ...h, diagnosa: `halaman: ${h.diagnosa ?? h.alasan ?? "-"} | ambil ulang gagal` };
     const h2 = m.bacaHalaman(html, opsi);
-    return m.perluHalamanSegar(h2) ? h : h2;
+    if (!m.perluHalamanSegar(h2)) return h2;
+    return { ...h, diagnosa: `halaman: ${h.diagnosa ?? h.alasan ?? "-"} | ambil ulang: ${h2.diagnosa ?? h2.alasan ?? "-"}` };
   }
 
   // ------------------------------------------------ permintaan dari service worker
   chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
     if (pengirim.id !== chrome.runtime.id || pesan?.jenis !== "bacaHalaman") return false;
-    baca()
+    // Putaran otomatis juga memakai cadangan HTML segar bila data halaman tidak ada.
+    bacaLengkap()
       .then((h) => balas(h))
       .catch((e) => balas({ status: "TIDAK_TERBACA", pesan: "Pengurai gagal: " + String(e?.message ?? e) }));
     return true;
@@ -440,7 +443,7 @@
     membaca = true;
     if (paksa) panel.patokan = await kirimKeLatar({ jenis: "bacaPatokan", paksa: true });
     try {
-      hasilTerakhir = await bacaUntukPanel(paksa);
+      hasilTerakhir = await bacaLengkap(paksa);
     } catch (e) {
       hasilTerakhir = { status: "TIDAK_TERBACA", pesan: String(e?.message ?? e) };
     }
