@@ -29,6 +29,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { gayaKeping } from '@/lib/ui/warna-kode';
+import { CategoryBadge } from '@/components/ui/category-badge';
+import { PemilihWarna } from '@/components/ui/pemilih-warna';
+import { warnaOtomatisKategori } from '@/lib/ui/category-color';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +55,8 @@ function makeSchema(t: Translate) {
   return z.object({
     code: z.string().min(1, t('codeRequired')).max(50),
     name: z.string().min(1, t('nameRequired')),
+    // Warna jenis pilihan pemilik ("#rrggbb"); null = otomatis. Dipilih lewat PemilihWarna.
+    color: z.string().nullable(),
     isActive: z.boolean(),
     // Coerce empty string from number input to undefined so validation passes
     sortOrder: z.preprocess(
@@ -67,6 +72,7 @@ interface SupplierTypeRecord {
   id: string;
   code: string;
   name: string;
+  color: string | null;
   isActive: boolean;
   sortOrder: number | null;
   createdAt: string;
@@ -98,10 +104,12 @@ export default function SupplierTypesPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
-    defaultValues: { code: '', name: '', isActive: true, sortOrder: undefined },
+    defaultValues: { code: '', name: '', color: null, isActive: true, sortOrder: undefined },
   });
 
   const isActive = watch('isActive');
+  const warna = watch('color');
+  const namaKetik = watch('name');
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const fetchTypes = async () => {
@@ -139,7 +147,7 @@ export default function SupplierTypesPage() {
 
   const openCreate = () => {
     setEditingId(null);
-    reset({ code: '', name: '', isActive: true, sortOrder: undefined });
+    reset({ code: '', name: '', color: null, isActive: true, sortOrder: undefined });
     setIsDialogOpen(true);
   };
 
@@ -148,6 +156,7 @@ export default function SupplierTypesPage() {
     reset({
       code: row.code,
       name: row.name,
+      color: row.color ?? null,
       isActive: row.isActive,
       sortOrder: row.sortOrder ?? undefined,
     });
@@ -266,7 +275,10 @@ export default function SupplierTypesPage() {
                             {row.code}
                           </span>
                         </TableCell>
-                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell>
+                          {/* Tampil persis seperti lencananya di daftar pemasok — dengan warna pilihan bila ada. */}
+                          <CategoryBadge label={row.name} warna={row.color} />
+                        </TableCell>
                         <TableCell className="tabular-nums text-muted-foreground">
                           {dipakai > 0 ? tSupplierTypes('usageCount', { count: dipakai }) : tSupplierTypes('usageNone')}
                         </TableCell>
@@ -366,6 +378,19 @@ export default function SupplierTypesPage() {
               {errors.name && (
                 <p className="text-sm text-destructive">{errors.name.message}</p>
               )}
+            </div>
+            <div className="space-y-2">
+              <Label>{tSupplierTypes('color')}</Label>
+              <div className="flex flex-wrap items-center gap-3">
+                <PemilihWarna
+                  nilai={warna}
+                  bawaan={warnaOtomatisKategori(namaKetik)}
+                  label={tSupplierTypes('color')}
+                  onPilih={(hex) => setValue('color', hex, { shouldDirty: true })}
+                />
+                <CategoryBadge label={namaKetik || tSupplierTypes('colorPreview')} warna={warna} />
+              </div>
+              <p className="text-xs text-muted-foreground">{tSupplierTypes('colorHelp')}</p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="sortOrder">{tSupplierTypes('sortOrder')}</Label>

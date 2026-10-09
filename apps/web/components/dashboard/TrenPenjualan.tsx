@@ -40,6 +40,7 @@ import {
   type TitikTren,
 } from '@/lib/dashboard/tren';
 import { AngkaNaik } from '@/components/gerak/AngkaNaik';
+import { warnaSlot } from '@/lib/tampilan/warna-pilihan';
 
 /**
  * Tren penjualan beranda: marketplace dan lapangan, dua garis sendiri-sendiri,
@@ -68,15 +69,16 @@ import { AngkaNaik } from '@/components/gerak/AngkaNaik';
  * bersamaan (kelompok vs salurannya ada di pilihan yang berbeda).
  */
 const WARNA: Record<KunciSeri, string> = {
-  marketplace: 'var(--viz-1)',
-  lapangan: 'var(--viz-3)',
-  shopee: 'var(--viz-2)',
-  tiktok: 'var(--viz-5)',
-  tokopedia: 'var(--viz-6)',
-  mpLain: 'var(--muted-foreground)',
-  putus: 'var(--viz-3)',
-  van: 'var(--viz-4)',
-  spg: 'var(--viz-1)',
+  // Warna pilihan orang ini (Pengaturan → Warna grafik beranda) bila ada; selain itu palet kategoris.
+  marketplace: warnaSlot("tren.marketplace"),
+  lapangan: warnaSlot("tren.lapangan"),
+  shopee: warnaSlot("tren.shopee"),
+  tiktok: warnaSlot("tren.tiktok"),
+  tokopedia: warnaSlot("tren.tokopedia"),
+  mpLain: warnaSlot("tren.mpLain"),
+  putus: warnaSlot("tren.putus"),
+  van: warnaSlot("tren.van"),
+  spg: warnaSlot("tren.spg"),
 };
 
 type Pilihan = { mulai: string; akhir: string; panjang: number; tren: TitikTren[] };

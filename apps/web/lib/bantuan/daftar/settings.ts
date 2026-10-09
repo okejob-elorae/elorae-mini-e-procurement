@@ -23,6 +23,14 @@ export const ENTRI: EntriBantuan[] = [
           { kunci: "settings.developerThemes.popularHint" },
         ],
       },
+      {
+        judul: { kunci: "warnaPilihan.grafik.judul" },
+        isi: [
+          "Warna batang dan garis di Beranda, pilihan Anda sendiri — orang lain tidak terpengaruh. Klik kotak warna di samping tiap bagian: pilih salah satu dari 24 warna, ketik kode hex (mis. #2563eb), atau pilih Otomatis. Contoh batang di kartu ini berubah seketika; tekan Simpan warna untuk memakainya di Beranda.",
+          "Ikut tema: umur piutang dan komposisi stok memakai nada dari warna tema Anda, dari redup sampai terang — makin lama lewat jatuh tempo, makin menonjol. Otomatis untuk grafik tren: setiap saluran punya warnanya sendiri supaya garisnya bisa dibedakan.",
+          "Kembalikan semua ke otomatis menghapus semua pilihan sekaligus.",
+        ],
+      },
       { judul: { kunci: "settings.theme.companyTitle" }, isi: { kunci: "settings.theme.companyDescription" } },
       { judul: { kunci: "settings.security.title" }, isi: { kunci: "settings.security.description" } },
       { judul: { kunci: "settings.documents.title" }, isi: { kunci: "settings.documents.description" } },

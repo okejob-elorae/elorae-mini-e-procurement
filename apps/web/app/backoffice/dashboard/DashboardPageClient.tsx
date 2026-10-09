@@ -27,6 +27,7 @@ import { TrenPenjualan } from '@/components/dashboard/TrenPenjualan';
 import type { KelompokUmur, TitikTren } from '@/lib/dashboard/tren';
 import type { RingkasPiutangBeranda } from '@/lib/dashboard/piutang-ringkas';
 import { formatRupiah as formatIdr } from '@/lib/format/rupiah';
+import { varCssGrafik, warnaSlot, type WarnaGrafik } from '@/lib/tampilan/warna-pilihan';
 
 function formatNumber(n: number): string {
   return new Intl.NumberFormat('id-ID').format(n);
@@ -42,10 +43,11 @@ const tunda = (ms: number) => ({ '--anim-delay': `${ms}ms` }) as CSSProperties;
  * di globals.css menjaga ketiganya tetap jelas berbeda di tema apa pun).
  */
 const WARNA_UMUR: Record<KelompokUmur['kunci'], string> = {
-  belum: "var(--viz-netral)",
-  h1_30: "var(--viz-tema-lemah)",
-  h31_60: "var(--viz-tema-sedang)",
-  lebih60: "var(--viz-tema-kuat)",
+  // Warna pilihan orang ini (Pengaturan → Warna grafik beranda) bila ada; selain itu bawaannya.
+  belum: warnaSlot("umur.belum"),
+  h1_30: warnaSlot("umur.h1_30"),
+  h31_60: warnaSlot("umur.h31_60"),
+  lebih60: warnaSlot("umur.lebih60"),
 };
 
 /**
@@ -95,6 +97,8 @@ type DashboardPageClientProps = {
   oversoldCount: number | null;
   initialSalesmenSales: SalesmenSalesSummary | null;
   trenPenjualan: TitikTren[] | null;
+  /** Warna grafik pilihan orang ini (User.chartColors); slot kosong = bawaan. */
+  warnaGrafik: WarnaGrafik;
   /** Tanggal WIB hari ini (YYYY-MM-DD) — untuk tautan "hari ini" ke daftar pesanan. */
   hariIniWib: string;
   /** Kapan server memuat angka-angka ini — untuk "Diperbarui … lalu". */
@@ -119,6 +123,7 @@ export function DashboardPageClient({
   oversoldCount,
   initialSalesmenSales,
   trenPenjualan,
+  warnaGrafik,
   hariIniWib,
   dimuatPada,
 }: DashboardPageClientProps) {
@@ -188,7 +193,7 @@ export function DashboardPageClient({
   }
 
   return (
-    <div className="viz beranda-halaman space-y-6">
+    <div className="viz beranda-halaman space-y-6" style={varCssGrafik(warnaGrafik) as CSSProperties}>
       <div className="anim-rise space-y-3">
         <SalamBeranda nama={session.user.name ?? ''} dimuatPada={dimuatPada} />
         {/* Grafik penjualan paling atas (permintaan pemilik, 2026-10-01): yang
@@ -501,13 +506,13 @@ export function DashboardPageClient({
                 label: tDashboard('kpiRawValue'),
                 nilai: cogsRawVsFinished.rawValue,
                 // Dua bagian dari SATU ukuran: dua nada satu rona — rona tema.
-                warna: "var(--viz-tema-kuat)",
+                warna: warnaSlot("stok.bahan"),
                 keterangan: tDashboard('kpiRawValueCtx', { count: formatNumber(cogsRawVsFinished.rawCount) }),
               },
               {
                 label: tDashboard('kpiFinishedValue'),
                 nilai: cogsRawVsFinished.finishedValue,
-                warna: "var(--viz-tema-lemah)",
+                warna: warnaSlot("stok.jadi"),
                 keterangan: tDashboard('kpiFinishedValueCtx', {
                   count: formatNumber(cogsRawVsFinished.finishedCount),
                 }),

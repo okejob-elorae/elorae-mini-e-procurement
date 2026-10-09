@@ -64,6 +64,7 @@ const LENGKAP: Props = {
   } as unknown as Props["initialSalesmenSales"],
   piutang: { total: 18_450_000, umur: [], lewatJumlah: 2, lewatNilai: 3_100_000, tertahanNilai: 0 } as unknown as Props["piutang"],
   trenPenjualan: [],
+  warnaGrafik: {},
   hariIniWib: "2026-10-05",
   dimuatPada: "2026-10-05T01:00:00.000Z",
 };

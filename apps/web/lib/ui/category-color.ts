@@ -1,3 +1,6 @@
+import type { CSSProperties } from "react";
+import { normalHex } from "@/lib/tampilan/warna-pilihan";
+
 /**
  * Stable hues for content categories — supplier types, item types, channels.
  *
@@ -68,4 +71,28 @@ export function categoryToneClass(label: string | null | undefined): string {
   const key = label.trim().toLowerCase();
   const slot = PINNED[key] ?? hashSlot(key);
   return CATEGORY_TONES[slot];
+}
+
+/** Warna inti tiap nada di atas (nada 500), untuk contoh "Otomatis" di pemilih warna. */
+const WARNA_INTI = ["#0ea5e9", "#8b5cf6", "#f97316", "#06b6d4", "#d946ef", "#6366f1", "#14b8a6", "#f43f5e"] as const;
+
+/** Warna yang dipakai otomatis untuk kategori ini bila pemilik belum memilih warnanya. */
+export function warnaOtomatisKategori(label: string | null | undefined): string {
+  if (!label) return "var(--muted-foreground)";
+  const key = label.trim().toLowerCase();
+  return WARNA_INTI[PINNED[key] ?? hashSlot(key)];
+}
+
+/**
+ * Nada kategori untuk dipasang di elemen: warna PILIHAN pemilik (mis. SupplierType.color, 2026-10-09)
+ * bila ada — lewat kelas `kat-kustom` di globals.css yang menurunkan latar, teks, dan cincin dari satu
+ * warna dengan kontras yang dijaga per mode — selain itu nada otomatis di atas.
+ */
+export function nadaKategori(
+  label: string | null | undefined,
+  warna?: string | null,
+): { className: string; style?: CSSProperties } {
+  const hex = normalHex(warna);
+  if (hex) return { className: "kat-kustom", style: { "--kat": hex } as CSSProperties };
+  return { className: categoryToneClass(label) };
 }

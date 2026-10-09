@@ -70,7 +70,7 @@ export async function GET(
     const supplier = await prisma.supplier.findUnique({
       where: { id },
       include: {
-        type: { select: { id: true, code: true, name: true } },
+        type: { select: { id: true, code: true, name: true, color: true } },
       },
     });
 

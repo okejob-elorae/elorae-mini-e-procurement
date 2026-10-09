@@ -988,6 +988,24 @@ html.backoffice-shell [data-slot="card-content"].px-0 {
   }
 }
 
+/* Warna kategori PILIHAN pemilik (lencana jenis pemasok, kartu galeri, papan) — satu warna --kat,
+   latar/teks/cincin diturunkan darinya. Teks diberi terang tetap per mode supaya terbaca di atas
+   latar tipisnya apa pun warna yang dipilih (≥ 4,5:1 di tema terang dan gelap). Lihat nadaKategori. */
+.kat-kustom {
+  background-color: color-mix(in oklab, var(--kat) 16%, transparent);
+  color: var(--kat);
+  --tw-ring-color: color-mix(in oklab, var(--kat) 40%, transparent);
+}
+
+@supports (color: oklch(from red l c h)) {
+  .kat-kustom {
+    color: oklch(from var(--kat) 0.42 min(c, 0.16) h);
+  }
+  .dark .kat-kustom {
+    color: oklch(from var(--kat) 0.86 min(c, 0.12) h);
+  }
+}
+
 /* SATU bentuk kartu untuk beranda backoffice dan aplikasi HP. Kartu shadcn di
    dalam `.beranda-halaman` ditarik ke bentuk yang sama lewat pemilih di bawah,
    jadi kartu laporan yang ditambahkan nanti otomatis ikut. */

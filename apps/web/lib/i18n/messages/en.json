@@ -2634,7 +2634,10 @@
     "codeHelp": "Capital letters, no spaces. Cannot be changed after saving.",
     "codeLocked": "The code cannot be changed — suppliers store it.",
     "sortHelp": "Smaller numbers appear first in the type choices.",
-    "activeHelp": "Inactive types are not offered when adding a new supplier, but existing suppliers keep them."
+    "activeHelp": "Inactive types are not offered when adding a new supplier, but existing suppliers keep them.",
+    "color": "Colour",
+    "colorHelp": "Used for the badge, gallery cards and the supplier board. Automatic = the default colour.",
+    "colorPreview": "Preview"
   },
   "notaRegister": {
     "pageSubtitle": "List of material delivery (nota) to CMT",
@@ -24066,6 +24069,50 @@
     "mati": {
       "judul": "Link no longer valid",
       "isi": "This form link has been revoked or has expired. Ask our team for a new link via WhatsApp."
+    }
+  },
+  "warnaPilihan": {
+    "pilihWarna": "Choose a colour for {label}",
+    "otomatis": "Automatic",
+    "ikutTema": "Follow theme",
+    "kodeHex": "Colour code (hex)",
+    "pakai": "Use",
+    "hexTidakSah": "Type 6 digits, e.g. #2563eb",
+    "memuat": "Loading colours…",
+    "simpan": "Save colours",
+    "kembalikan": "Reset all to automatic",
+    "tersimpan": "Chart colours saved",
+    "gagal": "Colours could not be saved. Try again.",
+    "grafik": {
+      "judul": "Home chart colours",
+      "grup": {
+        "umur": "Receivables age",
+        "stok": "Stock value mix",
+        "tren": "Sales trend chart"
+      },
+      "slot": {
+        "umur": {
+          "belum": "Not yet due",
+          "h1_30": "1–30 days",
+          "h31_60": "31–60 days",
+          "lebih60": "> 60 days"
+        },
+        "stok": {
+          "bahan": "Raw material value",
+          "jadi": "Finished goods value"
+        },
+        "tren": {
+          "marketplace": "Marketplace",
+          "lapangan": "Field",
+          "shopee": "Shopee",
+          "tiktok": "TikTok",
+          "tokopedia": "Tokopedia",
+          "mpLain": "Other Jubelio",
+          "putus": "Putus",
+          "van": "Van",
+          "spg": "SPG"
+        }
+      }
     }
   }
 }

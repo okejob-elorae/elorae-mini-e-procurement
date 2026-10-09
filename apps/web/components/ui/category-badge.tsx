@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { categoryToneClass } from '@/lib/ui/category-color';
+import { nadaKategori } from '@/lib/ui/category-color';
 
 /**
  * A badge whose colour identifies the category, not the brand.
@@ -12,22 +12,27 @@ import { categoryToneClass } from '@/lib/ui/category-color';
  */
 export function CategoryBadge({
   label,
+  warna,
   className,
   children,
 }: {
   /** Drives the colour. Pass the raw category name, not a translated one, so
    *  the same category keeps its colour in both locales. */
   label: string | null | undefined;
+  /** Warna pilihan pemilik untuk kategori ini ("#rrggbb", mis. SupplierType.color); kosong = otomatis. */
+  warna?: string | null;
   className?: string;
   children?: ReactNode;
 }) {
+  const nada = nadaKategori(label, warna);
   return (
     <span
       className={cn(
         'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset whitespace-nowrap',
-        categoryToneClass(label),
+        nada.className,
         className,
       )}
+      style={nada.style}
     >
       {children ?? label ?? '—'}
     </span>

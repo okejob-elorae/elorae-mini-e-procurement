@@ -2634,7 +2634,10 @@
     "codeHelp": "Huruf besar, tanpa spasi. Tidak bisa diubah sesudah disimpan.",
     "codeLocked": "Kode tidak bisa diubah — pemasok menyimpannya.",
     "sortHelp": "Angka kecil tampil lebih dulu di pilihan jenis.",
-    "activeHelp": "Jenis nonaktif tidak muncul saat menambah pemasok baru, tapi pemasok lama tetap memakainya."
+    "activeHelp": "Jenis nonaktif tidak muncul saat menambah pemasok baru, tapi pemasok lama tetap memakainya.",
+    "color": "Warna",
+    "colorHelp": "Dipakai untuk lencana, kartu galeri, dan papan pemasok. Otomatis = warna bawaan.",
+    "colorPreview": "Contoh"
   },
   "notaRegister": {
     "pageSubtitle": "Daftar pengiriman material (nota) ke CMT",
@@ -24066,6 +24069,50 @@
     "mati": {
       "judul": "Link tidak berlaku",
       "isi": "Link formulir ini sudah dicabut atau habis masa berlakunya. Minta link baru ke tim kami lewat WhatsApp."
+    }
+  },
+  "warnaPilihan": {
+    "pilihWarna": "Pilih warna {label}",
+    "otomatis": "Otomatis",
+    "ikutTema": "Ikut tema",
+    "kodeHex": "Kode warna (hex)",
+    "pakai": "Pakai",
+    "hexTidakSah": "Tulis 6 digit, misalnya #2563eb",
+    "memuat": "Memuat warna…",
+    "simpan": "Simpan warna",
+    "kembalikan": "Kembalikan semua ke otomatis",
+    "tersimpan": "Warna grafik tersimpan",
+    "gagal": "Warna gagal disimpan. Coba lagi.",
+    "grafik": {
+      "judul": "Warna grafik beranda",
+      "grup": {
+        "umur": "Umur piutang",
+        "stok": "Komposisi nilai stok",
+        "tren": "Grafik tren penjualan"
+      },
+      "slot": {
+        "umur": {
+          "belum": "Belum jatuh tempo",
+          "h1_30": "1–30 hari",
+          "h31_60": "31–60 hari",
+          "lebih60": "> 60 hari"
+        },
+        "stok": {
+          "bahan": "Nilai bahan baku",
+          "jadi": "Nilai barang jadi"
+        },
+        "tren": {
+          "marketplace": "Marketplace",
+          "lapangan": "Lapangan",
+          "shopee": "Shopee",
+          "tiktok": "TikTok",
+          "tokopedia": "Tokopedia",
+          "mpLain": "Jubelio lain",
+          "putus": "Putus",
+          "van": "Van",
+          "spg": "SPG"
+        }
+      }
     }
   }
 }

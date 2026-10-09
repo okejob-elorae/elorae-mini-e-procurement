@@ -16,7 +16,7 @@ import type { PropsSorot } from '@/components/gerak/useSorotBaris';
 import { nomorTelepon, nomorWhatsApp } from '@/lib/salesman/dasbor';
 import { inisialPemasok } from '@/lib/suppliers/inisial';
 import type { JenisTampilan } from '@/lib/tampilan/tampilan';
-import { categoryToneClass } from '@/lib/ui/category-color';
+import { nadaKategori } from '@/lib/ui/category-color';
 import { formatDateOnlyJakarta } from '@/lib/date-only';
 import { keadaanSkb } from '@/lib/finance/pajak/pemotongan';
 import { hariIniWib, labelTanggal } from '@/lib/tanggal-isian';
@@ -41,7 +41,7 @@ export type BarisPemasok = {
   code: string;
   name: string;
   typeId: string;
-  type?: { id: string; code: string; name: string } | null;
+  type?: { id: string; code: string; name: string; color?: string | null } | null;
   phone: string | null;
   email?: string | null;
   address?: string | null;
@@ -85,15 +85,18 @@ export function TampilanPemasok(props: Props) {
 // ─── Bagian bersama ────────────────────────────────────────────────────────
 
 function Avatar({ s, besar, className }: { s: BarisPemasok; besar?: boolean; className?: string }) {
+  // Warna jenis pilihan pemilik (Jenis pemasok → Warna) bila ada; selain itu otomatis.
+  const nada = nadaKategori(s.type?.name, s.type?.color);
   return (
     <span
       aria-hidden
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-full font-semibold ring-1 ring-inset',
-        categoryToneClass(s.type?.name),
+        nada.className,
         besar ? 'h-10 w-10 text-sm' : 'h-9 w-9 text-xs',
         className,
       )}
+      style={nada.style}
     >
       {inisialPemasok(s.name)}
     </span>
@@ -321,7 +324,7 @@ function TabelPemasok({ pemasok, izin, sibuk, sorot, aksi }: Props) {
                       </button>
                       <p className="font-mono text-xs text-muted-foreground">{s.code}</p>
                       <div className="mt-1 flex flex-wrap gap-1 md:hidden">
-                        <CategoryBadge label={s.type?.name} />
+                        <CategoryBadge label={s.type?.name} warna={s.type?.color} />
                       </div>
                       <div className="flex flex-wrap gap-1">
                         <CatatanPersetujuan s={s} />
@@ -331,7 +334,7 @@ function TabelPemasok({ pemasok, izin, sibuk, sorot, aksi }: Props) {
                   </div>
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
-                  <CategoryBadge label={s.type?.name} />
+                  <CategoryBadge label={s.type?.name} warna={s.type?.color} />
                 </TableCell>
                 <TableCell className="max-w-[16rem] whitespace-normal text-sm">
                   <Kontak s={s} />
@@ -385,7 +388,10 @@ function KartuPemasok({ s, izin, sibuk, aksi, sorotProps }: {
       }}
       className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-card text-left transition-colors hover:border-foreground/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <div className={cn('flex h-12 items-center justify-center', categoryToneClass(s.type?.name), 'ring-0')}>
+      <div
+        className={cn('flex h-12 items-center justify-center', nadaKategori(s.type?.name, s.type?.color).className, 'ring-0')}
+        style={nadaKategori(s.type?.name, s.type?.color).style}
+      >
         <Avatar s={s} besar className="bg-background shadow-sm" />
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-3 text-sm">
@@ -400,7 +406,7 @@ function KartuPemasok({ s, izin, sibuk, aksi, sorotProps }: {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <CategoryBadge label={s.type?.name} />
+          <CategoryBadge label={s.type?.name} warna={s.type?.color} />
           <CatatanPersetujuan s={s} />
           <LencanaNonaktif s={s} />
         </div>
@@ -456,10 +462,16 @@ function PapanPemasok({ pemasok, jenis, izin, sibuk, sorot, aksi }: Props) {
     else perJenis.set(s.typeId, [s]);
   }
   const urutan = [
-    ...jenis.filter((j) => perJenis.has(j.id)).map((j) => ({ id: j.id, name: j.name })),
+    ...jenis
+      .filter((j) => perJenis.has(j.id))
+      .map((j) => ({ id: j.id, name: j.name, color: perJenis.get(j.id)?.[0]?.type?.color ?? null })),
     ...[...perJenis.keys()]
       .filter((id) => !jenis.some((j) => j.id === id))
-      .map((id) => ({ id, name: perJenis.get(id)?.[0]?.type?.name ?? t('typeFilter') })),
+      .map((id) => ({
+        id,
+        name: perJenis.get(id)?.[0]?.type?.name ?? t('typeFilter'),
+        color: perJenis.get(id)?.[0]?.type?.color ?? null,
+      })),
   ];
   return (
     <GulirPapan>
@@ -469,7 +481,7 @@ function PapanPemasok({ pemasok, jenis, izin, sibuk, sorot, aksi }: Props) {
           return (
             <section key={kol.id} aria-label={kol.name} className="flex w-72 shrink-0 flex-col gap-2 rounded-xl bg-muted/60 p-2">
               <header className="flex items-center justify-between px-1 py-1">
-                <CategoryBadge label={kol.name} />
+                <CategoryBadge label={kol.name} warna={kol.color} />
                 <span className="text-xs tabular-nums text-muted-foreground">{isi.length}</span>
               </header>
               {isi.map((s) => {

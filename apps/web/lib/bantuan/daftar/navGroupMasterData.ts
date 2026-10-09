@@ -21,7 +21,10 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/suppliers/types",
     bagian: "navGroupMasterData",
     judul: { kunci: "supplierTypes.pageTitle" },
-    isi: { kunci: "supplierTypes.pageDescription" },
+    isi: [
+      { kunci: "supplierTypes.pageDescription" },
+      "Warna: setiap jenis bisa diberi warna sendiri lewat tombol ubah (pensil). Warna itu dipakai untuk lencana jenis, pita dan lingkaran inisial di kartu galeri, serta kolom papan di daftar pemasok — sama di layar semua orang. Otomatis = warna bawaan menurut nama jenisnya.",
+    ],
   },
   {
     rute: "/backoffice/stores",

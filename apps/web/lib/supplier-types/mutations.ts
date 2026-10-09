@@ -1,9 +1,24 @@
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
+import { normalHex } from '@/lib/tampilan/warna-pilihan';
+
+/** Warna jenis (pilihan pemilik 2026-10-09): "#rrggbb", atau null/"" = otomatis. Selain itu ditolak. */
+const warnaJenis = z
+  .union([z.string(), z.null()])
+  .transform((v, ctx) => {
+    if (v === null || v.trim() === "") return null;
+    const hex = normalHex(v);
+    if (!hex) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Warna harus kode hex 6 digit" });
+      return z.NEVER;
+    }
+    return hex;
+  });
 
 export const createSupplierTypeSchema = z.object({
   code: z.string().min(1).max(50),
   name: z.string().min(1),
+  color: warnaJenis.optional(),
   isActive: z.boolean().optional().default(true),
   sortOrder: z.number().int().optional(),
 });
@@ -39,6 +54,7 @@ export async function createSupplierType(input: z.infer<typeof createSupplierTyp
     data: {
       code: validated.code,
       name: validated.name,
+      color: validated.color ?? null,
       isActive: validated.isActive,
       sortOrder: validated.sortOrder,
     },

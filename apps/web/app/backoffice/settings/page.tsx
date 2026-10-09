@@ -31,6 +31,7 @@ import { Building2, Loader2, Palette } from 'lucide-react';
 import { KELOMPOK_PENGATURAN, kunciIsiKartu, kunciJudulKartu } from "./kartu-pengaturan";
 import { generatePaletteFromSeed } from '@/lib/theme/generate-palette-from-seed';
 import { UIThemePicker } from '@/components/settings/UIThemePicker';
+import { WarnaGrafikCard } from '@/components/settings/WarnaGrafikCard';
 import { FontPicker } from '@/components/settings/FontPicker';
 import { getUserFont } from '@/app/actions/settings/theme';
 import { FONT_BAWAAN } from '@/lib/theme/fonts';
@@ -476,6 +477,9 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Warna grafik beranda pilihan orang ini sendiri (pemilik 2026-10-09). */}
+      <WarnaGrafikCard />
 
       {bolehAturPerusahaan ? (
         <Card>

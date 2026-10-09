@@ -51,6 +51,7 @@ model User {
   themePantoneTcx  String?
   themePrimaryHex  String    @default("#334155")
   themeFontId      String?
+  chartColors      String?   @db.Text
   themePantone     PantoneColor? @relation(fields: [themePantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: NoAction)
   emailVerified DateTime?
   image         String?
@@ -174,6 +175,7 @@ model SupplierType {
   id        String     @id @default(cuid())
   code      String     @unique
   name      String
+  color     String?
   isActive  Boolean    @default(true)
   sortOrder Int?
   createdAt DateTime   @default(now())

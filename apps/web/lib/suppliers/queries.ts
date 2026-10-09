@@ -53,7 +53,7 @@ export async function listSuppliers(filters?: ListSuppliersFilters, opts?: ListS
   if (opts?.sync) {
     const suppliers = await prisma.supplier.findMany({
       where,
-      include: { type: { select: { id: true, code: true, name: true } } },
+      include: { type: { select: { id: true, code: true, name: true, color: true } } },
       orderBy: { createdAt: 'desc' },
     });
     return suppliers.map((s) => ({
@@ -81,7 +81,7 @@ export async function listSuppliers(filters?: ListSuppliersFilters, opts?: ListS
         where,
         skip: (page - 1) * pageSize,
         take: pageSize,
-        include: { type: { select: { id: true, code: true, name: true } } },
+        include: { type: { select: { id: true, code: true, name: true, color: true } } },
         orderBy: { createdAt: 'desc' },
       }),
       prisma.supplier.count({ where }),
@@ -91,7 +91,7 @@ export async function listSuppliers(filters?: ListSuppliersFilters, opts?: ListS
 
   const suppliers = await prisma.supplier.findMany({
     where,
-    include: { type: { select: { id: true, code: true, name: true } } },
+    include: { type: { select: { id: true, code: true, name: true, color: true } } },
     orderBy: { createdAt: 'desc' },
   });
   return suppliers.map(maskBank);
@@ -100,7 +100,7 @@ export async function listSuppliers(filters?: ListSuppliersFilters, opts?: ListS
 export async function getSupplierById(id: string) {
   const supplier = await prisma.supplier.findUnique({
     where: { id },
-    include: { type: { select: { id: true, code: true, name: true } } },
+    include: { type: { select: { id: true, code: true, name: true, color: true } } },
   });
   if (!supplier) return null;
   return maskBank(supplier);

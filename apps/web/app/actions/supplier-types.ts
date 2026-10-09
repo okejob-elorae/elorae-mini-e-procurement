@@ -66,6 +66,7 @@ export async function createSupplierTypeAction(
     return keHasil(e);
   }
   revalidatePath('/backoffice/suppliers/types');
+  revalidatePath('/backoffice/suppliers');
   return { ok: true };
 }
 
@@ -81,6 +82,8 @@ export async function updateSupplierTypeAction(
     return keHasil(e);
   }
   revalidatePath('/backoffice/suppliers/types');
+  // Warna jenis tampil di daftar pemasok (lencana, galeri, papan).
+  revalidatePath('/backoffice/suppliers');
   return { ok: true };
 }
 

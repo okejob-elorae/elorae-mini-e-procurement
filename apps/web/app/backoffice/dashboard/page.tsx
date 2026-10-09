@@ -19,6 +19,8 @@ import {
 import { getAntreanKantor, hitungBarangStokMinus } from "@/lib/dashboard/antrean-kantor";
 import { batasHariIniWib } from "@/lib/dashboard/hari-wib";
 import { hasPermission } from "@/lib/rbac";
+import { prisma } from "@elorae/db";
+import { bacaWarnaGrafik } from "@/lib/tampilan/warna-pilihan";
 import { kartuBeranda, statistikBeranda } from "./kartu-beranda";
 import { DashboardPageClient } from "./DashboardPageClient";
 
@@ -61,6 +63,8 @@ export default async function DashboardPage() {
     // Antrean kantor: hanya baris yang boleh dilihat penonton ini yang dihitung.
     getAntreanKantor(izin),
   ]);
+  // Warna grafik pilihan orang ini sendiri (Pengaturan → Warna grafik beranda).
+  const pengguna = await prisma.user.findUnique({ where: { id: session.user.id }, select: { chartColors: true } });
 
   /*
    * Folded from data the page already loaded rather than re-counted. The
@@ -95,6 +99,7 @@ export default async function DashboardPage() {
         initialSalesmenSales={salesmenSales}
         piutang={piutang}
         trenPenjualan={trenPenjualan}
+        warnaGrafik={bacaWarnaGrafik(pengguna?.chartColors)}
         hariIniWib={batasHariIniWib().tanggal}
         dimuatPada={new Date().toISOString()}
       />
