@@ -77,6 +77,25 @@ async function tugas(isi: { jenis?: "PROFIL" | "KONTEN"; prioritas?: number; jat
   return t.id;
 }
 
+/** Tugas konten ANTRE berkunci tertentu (mis. titik H7 yang belum dikerjakan). */
+async function tugasBerkunci(kunci: string) {
+  const t = await prisma.kolTugasPantau.create({
+    data: {
+      jenis: "KONTEN",
+      platform: "TIKTOK",
+      contentId: kontenId,
+      url: `https://www.tiktok.com/@${handle}/video/7301234567890123456`,
+      titikH: 7,
+      prioritas: 80,
+      jatuhAt: tambahHari(SEKARANG, -1),
+      kunci,
+    },
+    select: { id: true },
+  });
+  tugasIds.push(t.id);
+  return t.id;
+}
+
 /** Pinjamkan tugas `id` ke perangkat `p` (laporan hanya dihitung untuk pinjaman milik pelapornya). */
 const pinjam = (p: PerangkatSah, id: string, sekarang = SEKARANG) =>
   pinjamTugas({ perangkatId: p.id, sekarang, pengaturan: PG, cakupan: { tugasIds: [id] } });
@@ -520,6 +539,28 @@ describe("susunAntrean", () => {
     expect(ada.find((t) => t.jenis === "PROFIL")?.url).toBe(`https://www.tiktok.com/@${handle}`);
 
     expect(await susunAntrean({ sekarang: malam, pengaturan: PG, cakupan: { kontenIds: [kontenId], akunIds: [akunId] } })).toEqual({ dibuat: 0, dilewati: 0 });
+  });
+
+  it("sesudah H+30: cek berkala 7 hari sejak angka terakhir; tugas yang masih terbuka menahannya", async () => {
+    const lingkup = { kontenIds: [kontenId], akunIds: [] };
+    await prisma.kolContent.update({ where: { id: kontenId }, data: { liveAt: tambahHari(SEKARANG, -60) } });
+    await prisma.kolContentMetric.create({ data: { contentId: kontenId, recordedAt: tambahHari(SEKARANG, -3), views: 10 } });
+    expect(await susunAntrean({ sekarang: SEKARANG, pengaturan: PG, cakupan: lingkup })).toEqual({ dibuat: 0, dilewati: 0 });
+
+    await prisma.kolContentMetric.updateMany({ where: { contentId: seededId(kontenId) }, data: { recordedAt: tambahHari(SEKARANG, -7) } });
+    expect(await susunAntrean({ sekarang: SEKARANG, pengaturan: PG, cakupan: lingkup })).toEqual({ dibuat: 1, dilewati: 0 });
+    const ada = await prisma.kolTugasPantau.findMany({ where: { contentId: kontenId } });
+    expect(ada.map((t) => [t.kunci, t.prioritas, t.titikH])).toEqual([[`KONTEN:${kontenId}:B${formatDateOnlyJakarta(SEKARANG)}`, 60, null]]);
+    // Tugas berkala kemarin belum dikerjakan: hari ini tidak ditambah lagi.
+    expect(await susunAntrean({ sekarang: tambahHari(SEKARANG, 1), pengaturan: PG, cakupan: lingkup })).toEqual({ dibuat: 0, dilewati: 0 });
+  });
+
+  it("bacaan hari ini menutup titik H7 yang masih antre (dilewati), tanpa tugas baru", async () => {
+    const lingkup = { kontenIds: [kontenId], akunIds: [] };
+    await tugasBerkunci(`KONTEN:${kontenId}:H7`);
+    await prisma.kolContentMetric.create({ data: { contentId: kontenId, recordedAt: tambahMenit(SEKARANG, -60), views: 10 } });
+    expect(await susunAntrean({ sekarang: SEKARANG, pengaturan: PG, cakupan: lingkup })).toEqual({ dibuat: 0, dilewati: 1 });
+    expect((await prisma.kolTugasPantau.findUniqueOrThrow({ where: { kunci: `KONTEN:${kontenId}:H7` } })).status).toBe("DILEWATI");
   });
 
   it("KOL diblokir tidak pernah dicek", async () => {

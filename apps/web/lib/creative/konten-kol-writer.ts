@@ -98,6 +98,8 @@ export type IsiKontenKol = {
   adCode?: string | null;
   adCodeUntil?: Date | null;
   olehUserId: string;
+  /** Asal penulisan untuk jejak (mis. "TEMPEL_LINK" dari Performa video). */
+  sumber?: string;
 };
 
 /**
@@ -110,6 +112,19 @@ export type IsiKontenKol = {
  * lamanya dilepas.
  */
 export async function simpanKontenKol(input: IsiKontenKol): Promise<HasilKontenKol> {
+  const hasil = await runSerializable((tx) => simpanKontenKolDiTx(tx, input));
+  // Sesudah commit: link tayang bisa membuat fee kolaborasi diakui — selaraskan jurnalnya (best-effort).
+  if (hasil.ok) await sinkronJurnalKolAman([input.kolaborasiId], input.olehUserId);
+  return hasil;
+}
+
+/**
+ * Isi `simpanKontenKol` di dalam transaksi PEMANGGIL — dipakai penulis tempel
+ * link video (`tempel-link-writer.ts`), yang membuat KOL, kolaborasi, konten,
+ * dan tugas cek pertamanya dalam satu transaksi. Satu penulis konten, bukan
+ * dua. Pemanggil yang menyelaraskan jurnal kolaborasinya sesudah commit.
+ */
+export async function simpanKontenKolDiTx(tx: Klien, input: IsiKontenKol): Promise<HasilKontenKol> {
   if (input.platform !== undefined && !platformSah(input.platform)) return gagal("PLATFORM_TIDAK_SAH");
   if (input.format !== undefined && !formatSah(input.format)) return gagal("FORMAT_TIDAK_SAH");
   if (![input.liveAt, input.plannedAt, input.adCodeUntil].every(tanggalSah)) return gagal("TANGGAL_TIDAK_SAH");
@@ -118,120 +133,116 @@ export async function simpanKontenKol(input: IsiKontenKol): Promise<HasilKontenK
   const draf = linkMasuk(input.draftLink);
   if (draf === "LINK_TIDAK_SAH") return gagal("LINK_TIDAK_SAH");
   const adCode = input.adCode === undefined ? undefined : input.adCode?.trim().slice(0, MAKS_KODE_IKLAN) || null;
+  const sumber = input.sumber ? { sumber: input.sumber } : {};
 
-  const hasil = await runSerializable(async (tx) => {
-    const sekarang = new Date();
-    const kolab = await kolaborasiDanTebakan(tx, input.kolaborasiId);
-    if (!kolab) return gagal("KOLABORASI_TIDAK_DITEMUKAN");
+  const sekarang = new Date();
+  const kolab = await kolaborasiDanTebakan(tx, input.kolaborasiId);
+  if (!kolab) return gagal("KOLABORASI_TIDAK_DITEMUKAN");
 
-    if (input.id) {
-      const lama = await tx.kolContent.findFirst({
-        where: { id: input.id, collabId: kolab.id },
-        select: {
-          id: true,
-          platform: true,
-          format: true,
-          link: true,
-          liveAt: true,
-          plannedAt: true,
-          draftLink: true,
-          draftStatus: true,
-          adCode: true,
-          adCodeUntil: true,
-        },
-      });
-      if (!lama) return gagal("TIDAK_DITEMUKAN");
+  if (input.id) {
+    const lama = await tx.kolContent.findFirst({
+      where: { id: input.id, collabId: kolab.id },
+      select: {
+        id: true,
+        platform: true,
+        format: true,
+        link: true,
+        liveAt: true,
+        plannedAt: true,
+        draftLink: true,
+        draftStatus: true,
+        adCode: true,
+        adCodeUntil: true,
+      },
+    });
+    if (!lama) return gagal("TIDAK_DITEMUKAN");
 
-      const data: Prisma.KolContentUncheckedUpdateInput = {};
-      const sebelum: Record<string, unknown> = {};
-      const sesudah: Record<string, unknown> = {};
-      const ubah = (kolom: keyof typeof lama, nilai: unknown) => {
-        const a = lama[kolom];
-        const sama = a instanceof Date && nilai instanceof Date ? a.getTime() === nilai.getTime() : a === nilai;
-        if (sama) return;
-        (data as Record<string, unknown>)[kolom] = nilai;
-        sebelum[kolom] = a instanceof Date ? a.toISOString() : a;
-        sesudah[kolom] = nilai instanceof Date ? nilai.toISOString() : nilai;
-      };
-      if (input.platform !== undefined) ubah("platform", input.platform);
-      if (input.format !== undefined) ubah("format", input.format);
-      if (link.nilai !== undefined) ubah("link", link.nilai);
-      if (input.liveAt !== undefined) ubah("liveAt", input.liveAt);
-      else if (link.nilai && !lama.link && !lama.liveAt) ubah("liveAt", sekarang);
-      if (input.plannedAt !== undefined) ubah("plannedAt", input.plannedAt);
-      if (adCode !== undefined) ubah("adCode", adCode);
-      if (input.adCodeUntil !== undefined) ubah("adCodeUntil", input.adCodeUntil);
-      if (draf.nilai !== undefined && draf.nilai !== lama.draftLink) {
-        ubah("draftLink", draf.nilai);
-        ubah("draftStatus", draf.nilai ? "MENUNGGU" : null);
-        data.draftAt = draf.nilai ? sekarang : null;
-        data.approvedById = null;
-        data.approvedAt = null;
-      }
-
-      if (Object.keys(data).length === 0) return { ok: true as const, id: lama.id, maju: null, sudah: true };
-      await tx.kolContent.update({ where: { id: lama.id }, data });
-      await catatJejak(tx, {
-        userId: input.olehUserId,
-        action: JEJAK.KONTEN_KOL_DIUBAH,
-        entityType: "KolBrief",
-        entityId: kolab.id,
-        changes: { before: sebelum, after: sesudah },
-        metadata: { kontenId: lama.id, docNo: kolab.docNo, kol: kolab.kol.name },
-      });
-      const maju = await terapkanMajuOtomatis(tx, {
-        kolaborasiId: kolab.id,
-        olehUserId: input.olehUserId,
-        sebab: link.nilai ? "link konten" : draf.nilai ? "link draf" : "konten diubah",
-      });
-      return { ok: true as const, id: lama.id, maju };
+    const data: Prisma.KolContentUncheckedUpdateInput = {};
+    const sebelum: Record<string, unknown> = {};
+    const sesudah: Record<string, unknown> = {};
+    const ubah = (kolom: keyof typeof lama, nilai: unknown) => {
+      const a = lama[kolom];
+      const sama = a instanceof Date && nilai instanceof Date ? a.getTime() === nilai.getTime() : a === nilai;
+      if (sama) return;
+      (data as Record<string, unknown>)[kolom] = nilai;
+      sebelum[kolom] = a instanceof Date ? a.toISOString() : a;
+      sesudah[kolom] = nilai instanceof Date ? nilai.toISOString() : nilai;
+    };
+    if (input.platform !== undefined) ubah("platform", input.platform);
+    if (input.format !== undefined) ubah("format", input.format);
+    if (link.nilai !== undefined) ubah("link", link.nilai);
+    if (input.liveAt !== undefined) ubah("liveAt", input.liveAt);
+    else if (link.nilai && !lama.link && !lama.liveAt) ubah("liveAt", sekarang);
+    if (input.plannedAt !== undefined) ubah("plannedAt", input.plannedAt);
+    if (adCode !== undefined) ubah("adCode", adCode);
+    if (input.adCodeUntil !== undefined) ubah("adCodeUntil", input.adCodeUntil);
+    if (draf.nilai !== undefined && draf.nilai !== lama.draftLink) {
+      ubah("draftLink", draf.nilai);
+      ubah("draftStatus", draf.nilai ? "MENUNGGU" : null);
+      data.draftAt = draf.nilai ? sekarang : null;
+      data.approvedById = null;
+      data.approvedAt = null;
     }
 
-    const tebak = tebakPlatformFormat({
-      link: link.nilai ?? draf.nilai ?? null,
-      deliverables: kolab.deliverables,
-      akun: kolab.kol.accounts,
-    });
-    const platform = input.platform ?? tebak.platform;
-    const formatDeliverable = kolab.deliverables.find((d) => d.platform === platform && formatSah(d.format))?.format;
-    const format: FormatKonten = input.format ?? (formatSah(formatDeliverable) ? formatDeliverable : FORMAT_BAWAAN[platform]);
-    const dibuat = await tx.kolContent.create({
-      data: {
-        collabId: kolab.id,
-        platform,
-        format,
-        link: link.nilai ?? null,
-        liveAt: input.liveAt ?? (link.nilai ? sekarang : null),
-        plannedAt: input.plannedAt ?? null,
-        draftLink: draf.nilai ?? null,
-        draftStatus: draf.nilai ? "MENUNGGU" : null,
-        draftAt: draf.nilai ? sekarang : null,
-        adCode: adCode ?? null,
-        adCodeUntil: input.adCodeUntil ?? null,
-        createdById: input.olehUserId,
-      },
-      select: { id: true, liveAt: true },
-    });
+    if (Object.keys(data).length === 0) return { ok: true as const, id: lama.id, maju: null, sudah: true };
+    await tx.kolContent.update({ where: { id: lama.id }, data });
     await catatJejak(tx, {
       userId: input.olehUserId,
-      action: JEJAK.KONTEN_KOL_DICATAT,
+      action: JEJAK.KONTEN_KOL_DIUBAH,
       entityType: "KolBrief",
       entityId: kolab.id,
-      changes: {
-        after: { platform, format, link: link.nilai ?? null, liveAt: dibuat.liveAt?.toISOString() ?? null, draftLink: draf.nilai ?? null },
-      },
-      metadata: { kontenId: dibuat.id, docNo: kolab.docNo, kol: kolab.kol.name },
+      changes: { before: sebelum, after: sesudah },
+      metadata: { kontenId: lama.id, docNo: kolab.docNo, kol: kolab.kol.name, ...sumber },
     });
     const maju = await terapkanMajuOtomatis(tx, {
       kolaborasiId: kolab.id,
       olehUserId: input.olehUserId,
-      sebab: link.nilai ? "link konten" : draf.nilai ? "link draf" : "konten dicatat",
+      sebab: link.nilai ? "link konten" : draf.nilai ? "link draf" : "konten diubah",
     });
-    return { ok: true as const, id: dibuat.id, maju };
+    return { ok: true as const, id: lama.id, maju };
+  }
+
+  const tebak = tebakPlatformFormat({
+    link: link.nilai ?? draf.nilai ?? null,
+    deliverables: kolab.deliverables,
+    akun: kolab.kol.accounts,
   });
-  // Sesudah commit: link tayang bisa membuat fee kolaborasi diakui — selaraskan jurnalnya (best-effort).
-  if (hasil.ok) await sinkronJurnalKolAman([input.kolaborasiId], input.olehUserId);
-  return hasil;
+  const platform = input.platform ?? tebak.platform;
+  const formatDeliverable = kolab.deliverables.find((d) => d.platform === platform && formatSah(d.format))?.format;
+  const format: FormatKonten = input.format ?? (formatSah(formatDeliverable) ? formatDeliverable : FORMAT_BAWAAN[platform]);
+  const dibuat = await tx.kolContent.create({
+    data: {
+      collabId: kolab.id,
+      platform,
+      format,
+      link: link.nilai ?? null,
+      liveAt: input.liveAt ?? (link.nilai ? sekarang : null),
+      plannedAt: input.plannedAt ?? null,
+      draftLink: draf.nilai ?? null,
+      draftStatus: draf.nilai ? "MENUNGGU" : null,
+      draftAt: draf.nilai ? sekarang : null,
+      adCode: adCode ?? null,
+      adCodeUntil: input.adCodeUntil ?? null,
+      createdById: input.olehUserId,
+    },
+    select: { id: true, liveAt: true },
+  });
+  await catatJejak(tx, {
+    userId: input.olehUserId,
+    action: JEJAK.KONTEN_KOL_DICATAT,
+    entityType: "KolBrief",
+    entityId: kolab.id,
+    changes: {
+      after: { platform, format, link: link.nilai ?? null, liveAt: dibuat.liveAt?.toISOString() ?? null, draftLink: draf.nilai ?? null },
+    },
+    metadata: { kontenId: dibuat.id, docNo: kolab.docNo, kol: kolab.kol.name, ...sumber },
+  });
+  const maju = await terapkanMajuOtomatis(tx, {
+    kolaborasiId: kolab.id,
+    olehUserId: input.olehUserId,
+    sebab: link.nilai ? "link konten" : draf.nilai ? "link draf" : "konten dicatat",
+  });
+  return { ok: true as const, id: dibuat.id, maju };
 }
 
 /* ──────────────────────────── Draf ──────────────────────────── */

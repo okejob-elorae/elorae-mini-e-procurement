@@ -1,0 +1,292 @@
+"use client";
+
+import { useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "next-intl";
+import { ExternalLink, Search, TrendingUp } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { angkaTitik } from "@/lib/creative/angka-konten";
+import {
+  alamatPerforma,
+  JENIS_SARING_PERFORMA,
+  URUTAN_PERFORMA,
+  type JenisSaringPerforma,
+  type ParamPerforma,
+  type StatusVideo,
+  type UrutanPerforma,
+} from "@/lib/creative/performa";
+import type { BarisPerforma, HasilPerforma } from "@/lib/creative/performa-queries";
+import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
+import { dinamis } from "@/lib/i18n/dinamis";
+import { cn } from "@/lib/utils";
+import { DialogTempelLink } from "./DialogTempelLink";
+
+const RUTE_KOLABORASI = (id: string) => `/backoffice/kreatif/kolaborasi/${id}`;
+
+const NADA_STATUS: Record<StatusVideo, StatusTone> = {
+  MENUNGGU: "waiting",
+  TERBACA: "settled",
+  GAGAL: "attention",
+  BELUM: "inactive",
+};
+
+function persen(n: number | null, locale: string): string {
+  if (n === null) return "—";
+  return `${new Intl.NumberFormat(locale.startsWith("en") ? "en-GB" : "id-ID", { maximumFractionDigits: 2 }).format(n)}%`;
+}
+
+const angka = (n: number | null | undefined) => (n === null || n === undefined ? "—" : angkaTitik(n));
+
+export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPerforma; data: HasilPerforma; bolehMengelola: boolean }) {
+  const t = useTranslations("kreatifRuang");
+  const td = dinamis(t);
+  const locale = useLocale();
+  const router = useRouter();
+  const [memuat, startMuat] = useTransition();
+  const [cari, setCari] = useState(param.cari);
+
+  const pergi = (ubah: Partial<ParamPerforma>) => {
+    const baru = { ...param, ...ubah };
+    // Ganti saringan atau urutan → kembali ke halaman 1.
+    if (ubah.halaman === undefined) baru.halaman = 1;
+    startMuat(() => router.replace(alamatPerforma(baru), { scroll: false }));
+  };
+
+  // Pencarian ditulis ke alamat sesudah berhenti mengetik.
+  const jeda = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (jeda.current) clearTimeout(jeda.current);
+    },
+    [],
+  );
+  const ketik = (v: string) => {
+    setCari(v);
+    if (jeda.current) clearTimeout(jeda.current);
+    jeda.current = setTimeout(() => {
+      if (v.trim() !== param.cari) pergi({ cari: v.trim() });
+    }, 400);
+  };
+
+  const disaring = Boolean(param.cari || param.jenis !== "semua" || param.dari || param.sampai);
+  const r = data.ringkasan;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title={t("halaman.performa")}
+        meta={t("performa.meta", { n: angkaTitik(r.video) })}
+        actions={bolehMengelola ? <DialogTempelLink /> : null}
+      />
+
+      <section aria-label={t("performa.kpi.label")} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Kpi judul={t("performa.kpi.video")} nilai={angkaTitik(r.video)} />
+        <Kpi judul={t("performa.kpi.views")} nilai={angkaTitik(r.totalViews)} />
+        <Kpi judul={t("performa.kpi.er")} nilai={persen(r.rataEr, locale)} />
+        <Kpi judul={t("performa.kpi.dicek")} nilai={angkaTitik(r.dicekHariIni)} />
+      </section>
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-center">
+        <div className="relative w-full lg:max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input value={cari} onChange={(e) => ketik(e.target.value)} placeholder={t("performa.cari")} aria-label={t("performa.cari")} className="pl-9" />
+        </div>
+        <Select value={param.jenis} onValueChange={(v) => pergi({ jenis: v as JenisSaringPerforma })}>
+          <SelectTrigger className="w-full lg:w-[160px]" aria-label={t("performa.jenis.label")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {JENIS_SARING_PERFORMA.map((j) => (
+              <SelectItem key={j} value={j}>
+                {td(`performa.jenis.${j}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <RentangTanggalInput
+          dari={param.dari ?? ""}
+          sampai={param.sampai ?? ""}
+          onChange={({ dari, sampai }) => pergi({ dari: dari || null, sampai: sampai || null })}
+          placeholder={t("performa.periode")}
+          aria-label={t("performa.periode")}
+          className="w-full lg:w-[260px]"
+        />
+        <Select value={param.urut} onValueChange={(v) => pergi({ urut: v as UrutanPerforma })}>
+          <SelectTrigger className="w-full lg:w-[200px]" aria-label={t("performa.urut.label")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {URUTAN_PERFORMA.map((u) => (
+              <SelectItem key={u} value={u}>
+                {td(`performa.urut.${u}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className={cn("transition-opacity", memuat && "opacity-60")} aria-busy={memuat}>
+        <Card className="py-0">
+          <CardContent className={cn("px-0", data.baris.length === 0 && "p-0")}>
+            {data.baris.length === 0 ? (
+              <EmptyState
+                icon={TrendingUp}
+                title={disaring ? t("performa.kosong.saring") : t("performa.kosong.judul")}
+                description={disaring ? undefined : t("performa.kosong.isi")}
+              />
+            ) : (
+              <TabelPerforma baris={data.baris} />
+            )}
+            {data.total > data.perHalaman ? (
+              <div className="border-t px-4 pb-4">
+                <Pagination
+                  page={data.halaman}
+                  totalPages={Math.max(1, Math.ceil(data.total / data.perHalaman))}
+                  onPageChange={(halaman) => pergi({ halaman })}
+                  totalCount={data.total}
+                  pageSize={data.perHalaman}
+                />
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function TabelPerforma({ baris }: { baris: BarisPerforma[] }) {
+  const t = useTranslations("kreatifRuang");
+  const td = dinamis(t);
+  const ada = (k: string) => t.has(k as never);
+  const locale = useLocale();
+  const router = useRouter();
+  const buka = (b: BarisPerforma) => router.push(RUTE_KOLABORASI(b.kolaborasiId));
+
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("performa.kolom.orang")}</TableHead>
+            <TableHead>{t("performa.kolom.tayang")}</TableHead>
+            <TableHead className="text-right">{t("performa.kolom.views")}</TableHead>
+            <TableHead className="text-right">{t("performa.kolom.like")}</TableHead>
+            <TableHead className="text-right">{t("performa.kolom.komentar")}</TableHead>
+            <TableHead className="text-right">{t("performa.kolom.share")}</TableHead>
+            <TableHead className="text-right">{t("performa.kolom.simpan")}</TableHead>
+            <TableHead className="text-right">{t("performa.kolom.er")}</TableHead>
+            <TableHead className="text-right">{t("performa.kolom.naik")}</TableHead>
+            <TableHead>{t("performa.kolom.dicek")}</TableHead>
+            <TableHead>{t("performa.kolom.status")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody className="baris-berurutan">
+          {baris.map((b) => (
+            <TableRow
+              key={b.kontenId}
+              className="cursor-pointer"
+              onClick={() => buka(b)}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  buka(b);
+                }
+              }}
+              tabIndex={0}
+              aria-label={t("performa.bukaKolaborasi", { nama: b.nama })}
+            >
+              <TableCell className="whitespace-normal">
+                <div className="min-w-0 max-w-60">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <Link href={RUTE_KOLABORASI(b.kolaborasiId)} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+                      {b.nama}
+                    </Link>
+                    <Badge variant={b.afiliasi ? "secondary" : "outline"} className="h-5 px-1.5 text-[11px]">
+                      {b.afiliasi ? t("performa.badge.afiliasi") : t("performa.badge.kol")}
+                    </Badge>
+                  </div>
+                  {b.handle && `@${b.handle}` !== b.nama ? <p className="truncate text-xs text-muted-foreground">@{b.handle}</p> : null}
+                </div>
+              </TableCell>
+              <TableCell className="text-sm">
+                <span className="tabular-nums">{b.tayangAt ? formatDisplayDate(b.tayangAt, locale) : "—"}</span>
+                <a
+                  href={b.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-tautan hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {t("performa.buka")}
+                  <ExternalLink className="h-3 w-3" aria-hidden />
+                </a>
+              </TableCell>
+              <TableCell className="text-right text-sm font-medium tabular-nums">{angka(b.angka?.views)}</TableCell>
+              <TableCell className="text-right text-sm tabular-nums">{angka(b.angka?.likes)}</TableCell>
+              <TableCell className="text-right text-sm tabular-nums">{angka(b.angka?.comments)}</TableCell>
+              <TableCell className="text-right text-sm tabular-nums">{angka(b.angka?.shares)}</TableCell>
+              <TableCell className="text-right text-sm tabular-nums">{angka(b.angka?.saves)}</TableCell>
+              <TableCell className="text-right text-sm tabular-nums">{persen(b.er, locale)}</TableCell>
+              <TableCell
+                className={cn(
+                  "text-right text-sm tabular-nums",
+                  b.naik !== null && b.naik > 0 && "text-emerald-700 dark:text-emerald-300",
+                  b.naik !== null && b.naik < 0 && "text-red-700 dark:text-red-300",
+                )}
+              >
+                {b.naik === null ? "—" : b.naik > 0 ? `+${angkaTitik(b.naik)}` : angkaTitik(b.naik)}
+              </TableCell>
+              <TableCell className="text-sm">
+                {b.dicekAt ? (
+                  <>
+                    <span className="block whitespace-nowrap tabular-nums">{formatDisplayDateTime(b.dicekAt, locale)}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {b.sumber === "ekstensi" ? t("performa.sumber.ekstensi") : t("performa.sumber.manual")}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
+              </TableCell>
+              <TableCell>
+                <StatusPill
+                  tone={NADA_STATUS[b.status]}
+                  detail={b.status === "GAGAL" && b.alasanGagal ? labelAlasan(td, ada, b.alasanGagal) : undefined}
+                >
+                  {td(`performa.status.${b.status}`)}
+                </StatusPill>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/** Kode galat cek terakhir (dari ekstensi pemantau); kode yang tidak dikenal tampil apa adanya. */
+function labelAlasan(td: ReturnType<typeof dinamis>, ada: (k: string) => boolean, kode: string): string {
+  if (ada(`pantau.kode.${kode}`)) return td(`pantau.kode.${kode}`);
+  if (ada(`pantau.err.${kode}`)) return td(`pantau.err.${kode}`);
+  return kode;
+}
+
+function Kpi({ judul, nilai }: { judul: string; nilai: string }) {
+  return (
+    <Card className="gap-1 px-4 py-4">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{judul}</p>
+      <p className="text-xl font-semibold tabular-nums">{nilai}</p>
+    </Card>
+  );
+}

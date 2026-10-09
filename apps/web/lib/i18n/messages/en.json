@@ -262,7 +262,8 @@
     "navFinanceKas": "Cash & bank",
     "navFinanceRekonsiliasiBank": "Bank reconciliation",
     "navUmurHutang": "Payables aging",
-    "navKolPemantauan": "Monitoring"
+    "navKolPemantauan": "Monitoring",
+    "navKolPerforma": "Video performance"
   },
   "notifications": {
     "title": "Notifications",
@@ -19670,7 +19671,8 @@
       "lencana": "{n} things need follow-up",
       "gulirKiri": "Scroll tabs left",
       "gulirKanan": "Scroll tabs right",
-      "pemantauan": "Monitoring"
+      "pemantauan": "Monitoring",
+      "performa": "Video performance"
     },
     "halaman": {
       "hariIni": "Today",
@@ -19685,7 +19687,8 @@
       "kalender": "Calendar",
       "laporan": "Reports",
       "pengaturan": "Creative settings",
-      "pemantauan": "KOL monitoring"
+      "pemantauan": "KOL monitoring",
+      "performa": "Video performance"
     },
     "disiapkan": {
       "judul": "Coming soon",
@@ -21776,7 +21779,9 @@
           "hariAkunLain": "Check other accounts every",
           "naikPengikutPersen": "Anomaly: followers up by more than",
           "naikPengikutHari": "Anomaly: within at most",
-          "turunErPersen": "Anomaly: ER down by more than"
+          "turunErPersen": "Anomaly: ER down by more than",
+          "hariKontenBerkala": "After day 30, re-check videos every",
+          "batasHariKonten": "Stop checking videos after posting"
         }
       },
       "satuan": {
@@ -21827,6 +21832,108 @@
         "TIDAK_VALID": "Some fields are invalid.",
         "TANPA_AKSES": "You do not have permission for this action.",
         "GAGAL": "Failed. Please try again."
+      }
+    },
+    "performa": {
+      "meta": "{n} videos tracked",
+      "tempel": "Paste links",
+      "buka": "Open on TikTok",
+      "bukaKolaborasi": "Open collaboration {nama}",
+      "cari": "Search name or @handle",
+      "periode": "Posting date",
+      "kpi": {
+        "label": "Video performance summary",
+        "video": "Videos tracked",
+        "views": "Total views",
+        "er": "Average ER",
+        "dicek": "Checked today"
+      },
+      "jenis": {
+        "label": "KOL or affiliate",
+        "semua": "All",
+        "kol": "KOL",
+        "afiliasi": "Affiliate"
+      },
+      "urut": {
+        "label": "Sort by",
+        "views": "Most views",
+        "naik": "Biggest increase",
+        "er": "Highest ER",
+        "tayang": "Newest post",
+        "dicek": "Recently checked"
+      },
+      "kolom": {
+        "orang": "KOL / affiliate",
+        "tayang": "Posted",
+        "views": "Views",
+        "like": "Likes",
+        "komentar": "Comments",
+        "share": "Shares",
+        "simpan": "Saves",
+        "er": "ER",
+        "naik": "Increase",
+        "dicek": "Checked",
+        "status": "Status"
+      },
+      "badge": {
+        "kol": "KOL",
+        "afiliasi": "Affiliate"
+      },
+      "sumber": {
+        "ekstensi": "Extension",
+        "manual": "Entered manually"
+      },
+      "status": {
+        "MENUNGGU": "Waiting for check",
+        "TERBACA": "Read",
+        "GAGAL": "Failed",
+        "BELUM": "Not checked yet"
+      },
+      "kosong": {
+        "judul": "No videos tracked yet",
+        "isi": "Paste TikTok video links to start tracking.",
+        "saring": "No videos match these filters."
+      },
+      "dialog": {
+        "judul": "Paste video links",
+        "jenis": "These videos are from",
+        "jenisKOL": "KOL",
+        "jenisAFILIASI": "Affiliate",
+        "link": "TikTok video links",
+        "placeholder": "https://www.tiktok.com/@name/video/…\nhttps://vt.tiktok.com/…",
+        "hitung": "{n} video links",
+        "hitungDitolak": "{n} not supported",
+        "hitungKembar": "{n} duplicates",
+        "kirim": "Add",
+        "menambahkan": "Adding…",
+        "batal": "Cancel",
+        "lagi": "Paste more",
+        "tutup": "Done"
+      },
+      "hasil": {
+        "ditambahkan": "{n} videos added",
+        "kolBaru": "{n} new people created",
+        "sudahAda": "{n} videos were already tracked",
+        "kembar": "{n} duplicate links skipped",
+        "gagal": "{n} links could not be added"
+      },
+      "alasan": {
+        "INSTAGRAM": "Instagram is not supported yet — TikTok only",
+        "LINK_FOTO": "Photo post — only videos are supported",
+        "BUKAN_VIDEO": "Not a video link (profile or another page)",
+        "BUKAN_TIKTOK": "Not a TikTok link",
+        "LINK_TIDAK_DIKENAL": "Link not recognised",
+        "LINK_PENDEK_GAGAL": "Short link could not be opened — copy the full link from TikTok",
+        "KOL_DIBLOKIR": "This KOL is blocked",
+        "GAGAL": "Could not be saved. Try again."
+      },
+      "err": {
+        "KOSONG": "There are no links in this text.",
+        "TERLALU_BANYAK": "At most {n} links per paste.",
+        "TERLALU_PANJANG": "The text is too long. Paste part of it first.",
+        "JENIS_TIDAK_SAH": "Choose KOL or Affiliate.",
+        "TANPA_AKSES": "You do not have permission for this action.",
+        "GAGAL": "Something went wrong. Try again."
       }
     }
   },

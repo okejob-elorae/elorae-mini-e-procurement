@@ -32,6 +32,10 @@ export type PengaturanPantau = {
   hariAkunAktif: number;
   /** Akun lain dicek setiap N hari. */
   hariAkunLain: number;
+  /** Sesudah titik H+30, video dicek lagi setiap N hari sejak cek terakhirnya … */
+  hariKontenBerkala: number;
+  /** … sampai N hari sesudah tayang. 30 = tidak ada cek berkala. */
+  batasHariKonten: number;
   /** Anomali: pengikut naik lebih dari N% … */
   naikPengikutPersen: number;
   /** … dibanding catatan sebelumnya yang berjarak paling lama N hari. */
@@ -54,6 +58,8 @@ export const PANTAU_BAWAAN: PengaturanPantau = {
   maksGagalBeruntun: 3,
   hariAkunAktif: 7,
   hariAkunLain: 30,
+  hariKontenBerkala: 7,
+  batasHariKonten: 90,
   naikPengikutPersen: 30,
   naikPengikutHari: 14,
   turunErPersen: 40,
@@ -79,6 +85,8 @@ export const BATAS_PANTAU: Record<KunciAngka, { min: number; maks: number }> = {
   maksGagalBeruntun: { min: 1, maks: 20 },
   hariAkunAktif: { min: 1, maks: 90 },
   hariAkunLain: { min: 1, maks: 365 },
+  hariKontenBerkala: { min: 1, maks: 90 },
+  batasHariKonten: { min: 30, maks: 730 },
   naikPengikutPersen: { min: 1, maks: 1000 },
   naikPengikutHari: { min: 1, maks: 90 },
   turunErPersen: { min: 1, maks: 100 },

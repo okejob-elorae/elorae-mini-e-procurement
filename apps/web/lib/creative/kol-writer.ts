@@ -221,15 +221,26 @@ export type HasilSimpanKol = HasilKol<{ id: string; dibuat: boolean; riwayatPeng
  * - `periksaKembar`: nomor WA baru/berubah dan handle baru dicocokkan dengan
  *   KOL lain. Ada yang cocok dan tanpa `alasanKembar` → `KEMBAR`.
  */
-export async function simpanProfilKol(input: {
+export type IsiSimpanProfilKol = {
   id?: string | null;
   isi: IsiKol;
   olehUserId: string;
   periksaKembar: boolean;
   alasanKembar?: string | null;
-  /** Asal penulisan untuk jejak dan riwayat pengikut ("formulir", "massal"). */
+  /** Asal penulisan untuk jejak dan riwayat pengikut ("formulir", "massal", "tempel-link"). */
   sumber?: string;
-}): Promise<HasilSimpanKol> {
+};
+
+export async function simpanProfilKol(input: IsiSimpanProfilKol): Promise<HasilSimpanKol> {
+  return runSerializable((tx) => simpanProfilKolDiTx(tx, input));
+}
+
+/**
+ * Isi `simpanProfilKol` di dalam transaksi PEMANGGIL — dipakai penulis tempel
+ * link video, yang membuat KOL, kolaborasi, dan kontennya dalam satu
+ * transaksi. Satu penulis KOL, bukan dua.
+ */
+export async function simpanProfilKolDiTx(tx: Klien, input: IsiSimpanProfilKol): Promise<HasilSimpanKol> {
   const akun = bersihkanAkun(input.isi.akun ?? []);
   if (akun.length === 0) return { ok: false, alasan: "AKUN_WAJIB" };
   const nama = (input.isi.name ?? "").replace(/\s+/g, " ").trim().slice(0, BATAS_TEKS.nama) || akun[0].handle;
@@ -239,153 +250,151 @@ export async function simpanProfilKol(input: {
   const alasanKembar = input.alasanKembar?.trim().slice(0, 500) || null;
   const sumber = input.sumber ?? "formulir";
 
-  return runSerializable(async (tx): Promise<HasilSimpanKol> => {
-    const sekarang = new Date();
-    const lama = input.id
-      ? await tx.kol.findUnique({
-          where: { id: input.id },
-          select: {
-            id: true,
-            name: true,
-            recipientName: true,
-            niche: true,
-            city: true,
-            province: true,
-            postalCode: true,
-            address: true,
-            phone: true,
-            waNormal: true,
-            email: true,
-            rateCard: true,
-            rateNote: true,
-            note: true,
-            label: true,
-            engagementRate: true,
-            avgViews: true,
-            sizeProfile: true,
-            isActive: true,
-            accounts: { select: { id: true, platform: true, handle: true, followers: true, url: true } },
-          },
-        })
-      : null;
-    if (input.id && !lama) return { ok: false, alasan: "TIDAK_DITEMUKAN" };
+  const sekarang = new Date();
+  const lama = input.id
+    ? await tx.kol.findUnique({
+        where: { id: input.id },
+        select: {
+          id: true,
+          name: true,
+          recipientName: true,
+          niche: true,
+          city: true,
+          province: true,
+          postalCode: true,
+          address: true,
+          phone: true,
+          waNormal: true,
+          email: true,
+          rateCard: true,
+          rateNote: true,
+          note: true,
+          label: true,
+          engagementRate: true,
+          avgViews: true,
+          sizeProfile: true,
+          isActive: true,
+          accounts: { select: { id: true, platform: true, handle: true, followers: true, url: true } },
+        },
+      })
+    : null;
+  if (input.id && !lama) return { ok: false, alasan: "TIDAK_DITEMUKAN" };
 
-    let kembar: KembarDitemukan[] = [];
-    if (input.periksaKembar) {
-      const handleLama = new Set((lama?.accounts ?? []).map((a) => normalisasiHandle(a.handle)));
-      const waBaru = kolom.waNormal !== undefined && kolom.waNormal !== (lama?.waNormal ?? null) ? kolom.waNormal : null;
-      kembar = await kembarUntuk(
-        tx,
-        { waNormal: waBaru ?? null, handles: akun.map((a) => a.handle).filter((h) => !handleLama.has(h)) },
-        lama?.id ?? null,
-      );
-      if (kembar.length && !alasanKembar) return { ok: false, alasan: "KEMBAR", kembar };
-    }
-    const tandaKembar = kembar.length ? { kembarDengan: kembar.map((x) => x.id), alasanKembar } : {};
+  let kembar: KembarDitemukan[] = [];
+  if (input.periksaKembar) {
+    const handleLama = new Set((lama?.accounts ?? []).map((a) => normalisasiHandle(a.handle)));
+    const waBaru = kolom.waNormal !== undefined && kolom.waNormal !== (lama?.waNormal ?? null) ? kolom.waNormal : null;
+    kembar = await kembarUntuk(
+      tx,
+      { waNormal: waBaru ?? null, handles: akun.map((a) => a.handle).filter((h) => !handleLama.has(h)) },
+      lama?.id ?? null,
+    );
+    if (kembar.length && !alasanKembar) return { ok: false, alasan: "KEMBAR", kembar };
+  }
+  const tandaKembar = kembar.length ? { kembarDengan: kembar.map((x) => x.id), alasanKembar } : {};
 
-    let riwayatPengikut = 0;
-    const catatRiwayat = async (accountId: string, followers: number) => {
-      await tx.kolFollowerSnapshot.create({ data: { accountId, followers, recordedAt: sekarang, source: sumber } });
-      riwayatPengikut += 1;
-    };
+  let riwayatPengikut = 0;
+  const catatRiwayat = async (accountId: string, followers: number) => {
+    await tx.kolFollowerSnapshot.create({ data: { accountId, followers, recordedAt: sekarang, source: sumber } });
+    riwayatPengikut += 1;
+  };
 
-    if (!lama) {
-      const dibuat = await tx.kol.create({
-        data: { ...kolom, name: nama, lastContactAt: null, createdById: input.olehUserId },
+  if (!lama) {
+    const dibuat = await tx.kol.create({
+      data: { ...kolom, name: nama, lastContactAt: null, createdById: input.olehUserId },
+      select: { id: true },
+    });
+    for (const a of akun) {
+      const baru = await tx.kolAccount.create({
+        data: { kolId: dibuat.id, platform: a.platform, handle: a.handle, followers: a.followers, url: a.url },
         select: { id: true },
       });
-      for (const a of akun) {
-        const baru = await tx.kolAccount.create({
-          data: { kolId: dibuat.id, platform: a.platform, handle: a.handle, followers: a.followers, url: a.url },
-          select: { id: true },
-        });
-        if (a.followers > 0) await catatRiwayat(baru.id, a.followers);
-      }
-      await catatJejak(tx, {
-        userId: input.olehUserId,
-        action: JEJAK.KOL_DIBUAT,
-        entityType: "Kol",
-        entityId: dibuat.id,
-        changes: { after: { name: nama, akun: akun.map((a) => `${a.platform}:@${a.handle}`) } },
-        metadata: { jumlahAkun: akun.length, sumber, ...tandaKembar },
-        reason: alasanKembar,
-      });
-      return { ok: true, id: dibuat.id, dibuat: true, riwayatPengikut };
+      if (a.followers > 0) await catatRiwayat(baru.id, a.followers);
     }
-
-    /* — ubah: kolom KOL — */
-    const sebelum: Record<string, unknown> = {};
-    const sesudah: Record<string, unknown> = {};
-    for (const [kunci, nilai] of Object.entries(kolom)) {
-      if (kunci === "waNormal") continue;
-      const lamaNilai = nilaiJejak((lama as Record<string, unknown>)[kunci] ?? null);
-      const baruNilai = nilaiJejak(nilai ?? null);
-      if (JSON.stringify(lamaNilai) !== JSON.stringify(baruNilai)) {
-        sebelum[kunci] = lamaNilai;
-        sesudah[kunci] = baruNilai;
-      }
-    }
-    await tx.kol.update({ where: { id: lama.id }, data: kolom });
-
-    /* — ubah: akun di tempat — */
-    const dipakai = new Set<string>();
-    const rencana: { akun: AkunBersih; lama: (typeof lama.accounts)[number] | null }[] = akun.map((a) => {
-      const lewatId = a.id ? lama.accounts.find((x) => x.id === a.id && !dipakai.has(x.id)) : undefined;
-      const cocok =
-        lewatId ??
-        lama.accounts.find((x) => !dipakai.has(x.id) && x.platform === a.platform && normalisasiHandle(x.handle) === a.handle);
-      if (cocok) dipakai.add(cocok.id);
-      return { akun: a, lama: cocok ?? null };
-    });
-    const dibuang = lama.accounts.filter((x) => !dipakai.has(x.id));
-    if (dibuang.length) await tx.kolAccount.deleteMany({ where: { id: { in: dibuang.map((x) => x.id) } } });
-
-    const ditambah: string[] = [];
-    const diubah: string[] = [];
-    const pengikutBerubah: { akun: string; dari: number; ke: number }[] = [];
-    for (const { akun: a, lama: l } of rencana) {
-      const label = `${a.platform}:@${a.handle}`;
-      if (!l) {
-        const baru = await tx.kolAccount.create({
-          data: { kolId: lama.id, platform: a.platform, handle: a.handle, followers: a.followers, url: a.url },
-          select: { id: true },
-        });
-        if (a.followers > 0) await catatRiwayat(baru.id, a.followers);
-        ditambah.push(label);
-        continue;
-      }
-      const berubahPengikut = l.followers !== a.followers;
-      const berubahLain = l.platform !== a.platform || l.handle !== a.handle || (l.url ?? null) !== a.url;
-      if (!berubahPengikut && !berubahLain) continue;
-      await tx.kolAccount.update({
-        where: { id: l.id },
-        data: { platform: a.platform, handle: a.handle, followers: a.followers, url: a.url },
-      });
-      if (berubahPengikut) {
-        await catatRiwayat(l.id, a.followers);
-        pengikutBerubah.push({ akun: label, dari: l.followers, ke: a.followers });
-      }
-      if (berubahLain) diubah.push(label);
-    }
-
     await catatJejak(tx, {
       userId: input.olehUserId,
-      action: JEJAK.KOL_DIUBAH,
+      action: JEJAK.KOL_DIBUAT,
       entityType: "Kol",
-      entityId: lama.id,
-      changes: { before: sebelum, after: sesudah },
-      metadata: {
-        sumber,
-        akunDitambah: ditambah,
-        akunDiubah: diubah,
-        akunDihapus: dibuang.map((x) => `${x.platform}:@${x.handle}`),
-        pengikutBerubah,
-        ...tandaKembar,
-      },
+      entityId: dibuat.id,
+      changes: { after: { name: nama, akun: akun.map((a) => `${a.platform}:@${a.handle}`) } },
+      metadata: { jumlahAkun: akun.length, sumber, ...tandaKembar },
       reason: alasanKembar,
     });
-    return { ok: true, id: lama.id, dibuat: false, riwayatPengikut };
+    return { ok: true, id: dibuat.id, dibuat: true, riwayatPengikut };
+  }
+
+  /* — ubah: kolom KOL — */
+  const sebelum: Record<string, unknown> = {};
+  const sesudah: Record<string, unknown> = {};
+  for (const [kunci, nilai] of Object.entries(kolom)) {
+    if (kunci === "waNormal") continue;
+    const lamaNilai = nilaiJejak((lama as Record<string, unknown>)[kunci] ?? null);
+    const baruNilai = nilaiJejak(nilai ?? null);
+    if (JSON.stringify(lamaNilai) !== JSON.stringify(baruNilai)) {
+      sebelum[kunci] = lamaNilai;
+      sesudah[kunci] = baruNilai;
+    }
+  }
+  await tx.kol.update({ where: { id: lama.id }, data: kolom });
+
+  /* — ubah: akun di tempat — */
+  const dipakai = new Set<string>();
+  const rencana: { akun: AkunBersih; lama: (typeof lama.accounts)[number] | null }[] = akun.map((a) => {
+    const lewatId = a.id ? lama.accounts.find((x) => x.id === a.id && !dipakai.has(x.id)) : undefined;
+    const cocok =
+      lewatId ??
+      lama.accounts.find((x) => !dipakai.has(x.id) && x.platform === a.platform && normalisasiHandle(x.handle) === a.handle);
+    if (cocok) dipakai.add(cocok.id);
+    return { akun: a, lama: cocok ?? null };
   });
+  const dibuang = lama.accounts.filter((x) => !dipakai.has(x.id));
+  if (dibuang.length) await tx.kolAccount.deleteMany({ where: { id: { in: dibuang.map((x) => x.id) } } });
+
+  const ditambah: string[] = [];
+  const diubah: string[] = [];
+  const pengikutBerubah: { akun: string; dari: number; ke: number }[] = [];
+  for (const { akun: a, lama: l } of rencana) {
+    const label = `${a.platform}:@${a.handle}`;
+    if (!l) {
+      const baru = await tx.kolAccount.create({
+        data: { kolId: lama.id, platform: a.platform, handle: a.handle, followers: a.followers, url: a.url },
+        select: { id: true },
+      });
+      if (a.followers > 0) await catatRiwayat(baru.id, a.followers);
+      ditambah.push(label);
+      continue;
+    }
+    const berubahPengikut = l.followers !== a.followers;
+    const berubahLain = l.platform !== a.platform || l.handle !== a.handle || (l.url ?? null) !== a.url;
+    if (!berubahPengikut && !berubahLain) continue;
+    await tx.kolAccount.update({
+      where: { id: l.id },
+      data: { platform: a.platform, handle: a.handle, followers: a.followers, url: a.url },
+    });
+    if (berubahPengikut) {
+      await catatRiwayat(l.id, a.followers);
+      pengikutBerubah.push({ akun: label, dari: l.followers, ke: a.followers });
+    }
+    if (berubahLain) diubah.push(label);
+  }
+
+  await catatJejak(tx, {
+    userId: input.olehUserId,
+    action: JEJAK.KOL_DIUBAH,
+    entityType: "Kol",
+    entityId: lama.id,
+    changes: { before: sebelum, after: sesudah },
+    metadata: {
+      sumber,
+      akunDitambah: ditambah,
+      akunDiubah: diubah,
+      akunDihapus: dibuang.map((x) => `${x.platform}:@${x.handle}`),
+      pengikutBerubah,
+      ...tandaKembar,
+    },
+    reason: alasanKembar,
+  });
+  return { ok: true, id: lama.id, dibuat: false, riwayatPengikut };
 }
 
 /**

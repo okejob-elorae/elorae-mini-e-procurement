@@ -36,6 +36,8 @@ const SATUAN: Record<KunciAngka, "pengecekan" | "detik" | "menit" | "hari" | "pe
   maksGagalBeruntun: "kali",
   hariAkunAktif: "hari",
   hariAkunLain: "hari",
+  hariKontenBerkala: "hari",
+  batasHariKonten: "hari",
   naikPengikutPersen: "persen",
   naikPengikutHari: "hari",
   turunErPersen: "persen",

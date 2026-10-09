@@ -94,14 +94,7 @@ export function tanggalTahap(ke: Tahap, sekarang: Date, lama?: { outreachAt: Dat
   };
 }
 
-/**
- * Buat kolaborasi baru.
- *
- * Tahap awal bawaan PROSPEK. Deliverable dan rencana sampel boleh kosong —
- * kolaborasi yang baru diincar memang belum menugaskan apa pun. Brief yang
- * kosong mewarisi brief campaign-nya. Stok TIDAK bergerak di sini.
- */
-export async function buatBrief(input: {
+export type IsiBrief = {
   kolId: string;
   campaignId?: string | null;
   tahap?: Tahap;
@@ -118,7 +111,29 @@ export async function buatBrief(input: {
   deliverables?: BarisDeliverable[];
   barang?: BarisBarangKirim[];
   olehUserId: string;
-}): Promise<HasilKreatif<{ id: string; docNo: string }>> {
+  /** Asal penulisan untuk jejak (mis. 'TEMPEL_LINK' dari Performa video). */
+  sumber?: string;
+  /** Waktu tulis (tahun nomor BRIEF, tanggal tahap); bawaan sekarang. Tes memberi tahun 2000–2004. */
+  sekarang?: Date;
+};
+
+/**
+ * Buat kolaborasi baru.
+ *
+ * Tahap awal bawaan PROSPEK. Deliverable dan rencana sampel boleh kosong —
+ * kolaborasi yang baru diincar memang belum menugaskan apa pun. Brief yang
+ * kosong mewarisi brief campaign-nya. Stok TIDAK bergerak di sini.
+ */
+export async function buatBrief(input: IsiBrief): Promise<HasilKreatif<{ id: string; docNo: string }>> {
+  return denganNomorUnik(() => runSerializable((tx) => buatBriefDiTx(tx, input)));
+}
+
+/**
+ * Isi `buatBrief` di dalam transaksi PEMANGGIL — dipakai penulis tempel link
+ * video, yang membuat KOL, kolaborasi, dan kontennya dalam satu transaksi.
+ * Pemanggil membungkusnya dengan `denganNomorUnik` (nomor BRIEF bisa bentrok).
+ */
+export async function buatBriefDiTx(tx: Klien, input: IsiBrief): Promise<HasilKreatif<{ id: string; docNo: string }>> {
   const deliverables = (input.deliverables ?? []).filter((d) => d.qty > 0);
   const barang = (input.barang ?? []).filter((b) => b.itemId && b.qty !== 0);
   if (barang.some((b) => !Number.isInteger(b.qty) || b.qty <= 0)) {
@@ -131,93 +146,94 @@ export async function buatBrief(input: {
   }
   const fee = Number.isFinite(input.fee) && input.fee > 0 ? input.fee : 0;
 
-  return denganNomorUnik(() =>
-    runSerializable(async (tx) => {
-      const kol = await tx.kol.findUnique({
-        where: { id: input.kolId },
-        select: { id: true, name: true, blockedAt: true },
-      });
-      if (!kol) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
-      // KOL yang diblokir tidak diajak kerja sama baru — dicek di penulis, bukan
-      // hanya di layar, supaya jalur massal dan impor tidak bisa melewatinya.
-      if (kol.blockedAt) return { ok: false as const, alasan: 'KOL_DIBLOKIR' as const };
+  const kol = await tx.kol.findUnique({
+    where: { id: input.kolId },
+    select: { id: true, name: true, blockedAt: true },
+  });
+  if (!kol) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
+  // KOL yang diblokir tidak diajak kerja sama baru — dicek di penulis, bukan
+  // hanya di layar, supaya jalur massal dan impor tidak bisa melewatinya.
+  if (kol.blockedAt) return { ok: false as const, alasan: 'KOL_DIBLOKIR' as const };
 
-      let briefCampaign: string | null = null;
-      if (input.campaignId) {
-        const c = await tx.kolCampaign.findUnique({
-          where: { id: input.campaignId },
-          select: { id: true, brief: true, archivedAt: true },
-        });
-        if (!c) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const, detail: 'campaign' };
-        if (c.archivedAt) return { ok: false as const, alasan: 'CAMPAIGN_DIARSIPKAN' as const };
-        briefCampaign = c.brief;
-      }
+  let briefCampaign: string | null = null;
+  if (input.campaignId) {
+    const c = await tx.kolCampaign.findUnique({
+      where: { id: input.campaignId },
+      select: { id: true, brief: true, archivedAt: true },
+    });
+    if (!c) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const, detail: 'campaign' };
+    if (c.archivedAt) return { ok: false as const, alasan: 'CAMPAIGN_DIARSIPKAN' as const };
+    briefCampaign = c.brief;
+  }
 
-      const namaBarang = new Map<string, string>();
-      if (barang.length) {
-        const items = await tx.item.findMany({
-          where: { id: { in: barang.map((b) => b.itemId) } },
-          select: { id: true, nameId: true },
-        });
-        if (items.length !== new Set(barang.map((b) => b.itemId)).size) {
-          return { ok: false as const, alasan: 'BARANG_TIDAK_DITEMUKAN' as const };
-        }
-        for (const i of items) namaBarang.set(i.id, i.nameId);
-      }
+  const namaBarang = new Map<string, string>();
+  if (barang.length) {
+    const items = await tx.item.findMany({
+      where: { id: { in: barang.map((b) => b.itemId) } },
+      select: { id: true, nameId: true },
+    });
+    if (items.length !== new Set(barang.map((b) => b.itemId)).size) {
+      return { ok: false as const, alasan: 'BARANG_TIDAK_DITEMUKAN' as const };
+    }
+    for (const i of items) namaBarang.set(i.id, i.nameId);
+  }
 
-      const sekarang = new Date();
-      const brief = await tx.kolBrief.create({
-        data: {
-          docNo: await nomorBrief(tx, formatDateOnlyJakarta(input.startDate ?? sekarang).slice(0, 4)),
-          kolId: kol.id,
-          campaignId: input.campaignId || null,
-          tahap,
-          tahapAt: sekarang,
-          ...tanggalTahap(tahap, sekarang),
-          lastContactAt: indeksTahap(tahap) >= indeksTahap('DIHUBUNGI') ? sekarang : null,
-          jenis: input.jenis ?? 'BARTER',
-          fee: D(fee),
-          commissionPct: input.commissionPct == null ? null : D(input.commissionPct),
-          payStatus: statusBayarBawaan(fee),
-          picId: input.picId || null,
-          plannedLiveAt: input.plannedLiveAt ?? null,
-          briefText: input.briefText?.trim() || briefCampaign?.trim() || null,
-          doList: input.doList?.trim() || null,
-          dontList: input.dontList?.trim() || null,
-          startDate: input.startDate ?? null,
-          dueDate: input.dueDate ?? null,
-          createdById: input.olehUserId,
-          deliverables: { create: deliverables.map((d) => ({ ...d, dueDate: d.dueDate ?? null })) },
-          items: {
-            create: barang.map((b) => ({
-              itemId: b.itemId,
-              itemName: namaBarang.get(b.itemId) ?? '',
-              variantSku: b.variantSku?.trim() || null,
-              qty: b.qty,
-            })),
-          },
-        },
-        select: { id: true, docNo: true },
-      });
+  const sekarang = input.sekarang ?? new Date();
+  const brief = await tx.kolBrief.create({
+    data: {
+      docNo: await nomorBrief(tx, formatDateOnlyJakarta(input.startDate ?? sekarang).slice(0, 4)),
+      kolId: kol.id,
+      campaignId: input.campaignId || null,
+      tahap,
+      tahapAt: sekarang,
+      ...tanggalTahap(tahap, sekarang),
+      lastContactAt: indeksTahap(tahap) >= indeksTahap('DIHUBUNGI') ? sekarang : null,
+      jenis: input.jenis ?? 'BARTER',
+      fee: D(fee),
+      commissionPct: input.commissionPct == null ? null : D(input.commissionPct),
+      payStatus: statusBayarBawaan(fee),
+      picId: input.picId || null,
+      plannedLiveAt: input.plannedLiveAt ?? null,
+      briefText: input.briefText?.trim() || briefCampaign?.trim() || null,
+      doList: input.doList?.trim() || null,
+      dontList: input.dontList?.trim() || null,
+      startDate: input.startDate ?? null,
+      dueDate: input.dueDate ?? null,
+      createdById: input.olehUserId,
+      deliverables: { create: deliverables.map((d) => ({ ...d, dueDate: d.dueDate ?? null })) },
+      items: {
+        create: barang.map((b) => ({
+          itemId: b.itemId,
+          itemName: namaBarang.get(b.itemId) ?? '',
+          variantSku: b.variantSku?.trim() || null,
+          qty: b.qty,
+        })),
+      },
+    },
+    select: { id: true, docNo: true },
+  });
 
-      await catatJejak(tx, {
-        userId: input.olehUserId,
-        action: JEJAK.BRIEF_DIBUAT,
-        entityType: 'KolBrief',
-        entityId: brief.id,
-        changes: { after: { docNo: brief.docNo, tahap, fee } },
-        metadata: { kol: kol.name, campaignId: input.campaignId || null, jumlahBarang: barang.length },
-      });
+  await catatJejak(tx, {
+    userId: input.olehUserId,
+    action: JEJAK.BRIEF_DIBUAT,
+    entityType: 'KolBrief',
+    entityId: brief.id,
+    changes: { after: { docNo: brief.docNo, tahap, fee } },
+    metadata: {
+      kol: kol.name,
+      campaignId: input.campaignId || null,
+      jumlahBarang: barang.length,
+      ...(input.sumber ? { sumber: input.sumber } : {}),
+    },
+  });
 
-      // Kolaborasi berbayar langsung punya termin bawaan (Pelunasan sesudah tayang, PPh dihitung).
-      if (fee > 0) {
-        const termin = await selaraskanTermin(tx, { kolaborasiId: brief.id, olehUserId: input.olehUserId, sebab: 'Kolaborasi dibuat' });
-        if (!termin.ok) throw new Error(`TERMIN_${termin.kode}`);
-      }
+  // Kolaborasi berbayar langsung punya termin bawaan (Pelunasan sesudah tayang, PPh dihitung).
+  if (fee > 0) {
+    const termin = await selaraskanTermin(tx, { kolaborasiId: brief.id, olehUserId: input.olehUserId, sebab: 'Kolaborasi dibuat' });
+    if (!termin.ok) throw new Error(`TERMIN_${termin.kode}`);
+  }
 
-      return { ok: true as const, id: brief.id, docNo: brief.docNo };
-    }),
-  );
+  return { ok: true as const, id: brief.id, docNo: brief.docNo };
 }
 
 /**

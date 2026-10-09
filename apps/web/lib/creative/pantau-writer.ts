@@ -4,7 +4,7 @@ import { cariTeks } from "@/lib/db/cari-teks";
 import { formatDateOnlyJakarta, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { geserHari, hariIniWib } from "@/lib/tanggal-isian";
 import { catatAngkaDiTx, type KodeGagalKontenKol } from "./konten-kol-writer";
-import { susunAntreanPantau, BATAS_TELAT_KONTEN_HARI, TITIK_KONTEN, kunciKonten, kunciProfil } from "./pantau-antrean";
+import { susunAntreanPantau, BATAS_TELAT_KONTEN_HARI, TITIK_KONTEN, kunciBerkala, kunciKonten, kunciProfil } from "./pantau-antrean";
 import {
   dalamJamKerja,
   ENTITAS_PERANGKAT,
@@ -294,7 +294,10 @@ function potong<T>(xs: readonly T[], n = POTONG): T[][] {
  * Susun antrean hari ini (cron 06.00 WIB dan tombol "Susun antrean sekarang").
  * Aturannya murni di `susunAntreanPantau`; di sini hanya membaca bahannya dan
  * menulis hasilnya. Aman dijalankan berkali-kali: kunci tugas unik
- * (`skipDuplicates`). Titik konten lama yang belum dikerjakan → DILEWATI.
+ * (`skipDuplicates`). Titik konten lama yang belum dikerjakan, atau yang sudah
+ * tertutup bacaan sesudahnya → DILEWATI. Cek berkala sesudah H+30 butuh cek
+ * terakhir per konten (angka terbaru / tugas selesai-gagal) dan tugasnya yang
+ * masih terbuka.
  * `cakupan` membatasi bacaan ke id tertentu (tes berbagi basis data).
  */
 export async function susunAntrean(
@@ -303,7 +306,10 @@ export async function susunAntrean(
   const sekarang = input.sekarang ?? new Date();
   const hariIni = hariIniWib(sekarang);
   const pengaturan = input.pengaturan ?? (await bacaPengaturanPantau());
-  const tertua = parseDateOnly(geserHari(hariIni, -(Math.max(...TITIK_KONTEN) + BATAS_TELAT_KONTEN_HARI + 1)))!;
+  // Konten sejauh titik terakhir + 14 hari telat, atau sejauh batas cek berkala — mana yang lebih jauh.
+  const tertua = parseDateOnly(
+    geserHari(hariIni, -(Math.max(Math.max(...TITIK_KONTEN) + BATAS_TELAT_KONTEN_HARI, pengaturan.batasHariKonten) + 1)),
+  )!;
 
   const [kontenMentah, akunMentah] = await Promise.all([
     prisma.kolContent.findMany({
@@ -326,9 +332,42 @@ export async function susunAntrean(
   ]);
 
   // `relationMode = "prisma"`: konten/akun bisa sesaat menunjuk kolaborasi/KOL yang sudah terhapus — dilewati.
-  const konten = kontenMentah
-    .filter((k) => k.collab?.kol != null)
-    .map((k) => ({ id: k.id, link: k.link, liveAtHari: k.liveAt ? formatDateOnlyJakarta(k.liveAt) : null, kolDiblokir: k.collab.kol.blockedAt !== null }));
+  const kontenHidup = kontenMentah.filter((k) => k.collab?.kol != null);
+
+  // Cek terakhir per konten (angka terbaru, atau tugas konten yang selesai/gagal) dan tugasnya yang masih terbuka.
+  const terakhirDicek = new Map<string, Date>();
+  const tugasTerbuka = new Map<string, string[]>();
+  const catatTerakhir = (id: string | null, d: Date | null | undefined) => {
+    if (!id || !d) return;
+    const lama = terakhirDicek.get(id);
+    if (!lama || d.getTime() > lama.getTime()) terakhirDicek.set(id, d);
+  };
+  for (const bagian of potong(kontenHidup.map((k) => k.id))) {
+    const [angka, selesai, terbuka] = await Promise.all([
+      prisma.kolContentMetric.groupBy({ by: ["contentId"], where: { contentId: { in: bagian } }, _max: { recordedAt: true } }),
+      prisma.kolTugasPantau.groupBy({
+        by: ["contentId"],
+        where: { contentId: { in: bagian }, jenis: "KONTEN", status: { in: ["SELESAI", "GAGAL"] } },
+        _max: { selesaiAt: true },
+      }),
+      prisma.kolTugasPantau.findMany({
+        where: { contentId: { in: bagian }, jenis: "KONTEN", status: { in: ["ANTRE", "DIPINJAM"] } },
+        select: { contentId: true, kunci: true },
+      }),
+    ]);
+    for (const r of angka) catatTerakhir(r.contentId, r._max.recordedAt);
+    for (const r of selesai) catatTerakhir(r.contentId, r._max.selesaiAt);
+    for (const r of terbuka) if (r.contentId) tugasTerbuka.set(r.contentId, [...(tugasTerbuka.get(r.contentId) ?? []), r.kunci]);
+  }
+
+  const konten = kontenHidup.map((k) => ({
+    id: k.id,
+    link: k.link,
+    liveAtHari: k.liveAt ? formatDateOnlyJakarta(k.liveAt) : null,
+    kolDiblokir: k.collab.kol.blockedAt !== null,
+    terakhirDicekHari: terakhirDicek.has(k.id) ? formatDateOnlyJakarta(terakhirDicek.get(k.id)!) : null,
+    tugasTerbuka: tugasTerbuka.get(k.id) ?? [],
+  }));
   const akun = akunMentah
     .filter((a) => a.kol != null)
     .map((a) => ({
@@ -340,7 +379,7 @@ export async function susunAntrean(
     }));
 
   const calonKunci = [
-    ...konten.flatMap((k) => TITIK_KONTEN.map((n) => kunciKonten(k.id, n))),
+    ...konten.flatMap((k) => [...TITIK_KONTEN.map((n) => kunciKonten(k.id, n)), kunciBerkala(k.id, hariIni)]),
     ...akun.map((a) => kunciProfil(a.id, hariIni)),
   ];
   const kunciAda = new Set<string>();
@@ -379,7 +418,8 @@ export async function susunAntrean(
     dibuat += r.count;
   }
   let dilewati = 0;
-  for (const bagian of potong(lewati)) {
+  // Hanya kunci yang memang ada di tabel yang bisa dilewati (titik yang tertutup bacaan disebut setiap hari).
+  for (const bagian of potong(lewati.filter((k) => kunciAda.has(k)))) {
     const r = await prisma.kolTugasPantau.updateMany({
       where: { kunci: { in: bagian }, status: "ANTRE" },
       data: { status: "DILEWATI", selesaiAt: sekarang, galatTerakhir: "TITIK_BARU" },

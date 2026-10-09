@@ -322,6 +322,31 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/backoffice/kreatif/performa",
+    bagian: "navGroupCreative",
+    judul: { kunci: "kreatifRuang.halaman.performa" },
+    isi: [
+      "Performa per video TikTok dari KOL dan afiliasi: views, like, komentar, share, simpan, dan ER, dibaca ekstensi pemantau di Kreatif → Pemantauan. Satu baris = satu video; angkanya bacaan TERBARU video itu, angka lama tidak pernah ditimpa (riwayatnya ada di rincian kolaborasi). Klik baris untuk membuka kolaborasinya; Buka di TikTok membuka videonya.",
+      "Tempel link: tempel link video TikTok — satu per baris, atau langsung dari obrolan WhatsApp (teks lain diabaikan) — lalu pilih KOL atau Afiliasi. Link lengkap (dengan atau tanpa https://, www., parameter di belakangnya) dan link pendek vt.tiktok.com, vm.tiktok.com, tiktok.com/t/ diterima; link pendek dibuka dulu oleh server. Instagram, posting foto, link profil, dan situs lain tidak ditambahkan dan disebut alasannya. Paling banyak 500 link sekali tempel.",
+      "Untuk setiap video: orangnya dicari lewat akun TikTok-nya (handle tanpa memandang huruf besar dan @); bila belum ada, dibuat KOL baru bernama @handle dengan akun TikTok itu. Video dicatat pada kolaborasi yang masih berjalan dengan jenis yang cocok — Afiliasi = kerja sama komisi, KOL = selain komisi; bila tidak ada, dibuat kolaborasi baru tanpa fee dan tanpa campaign. Tanggal tayang dibaca dari id videonya, dan tahap kolaborasinya maju ke Tayang seperti link yang ditempel di Konten KOL. Video yang sudah ada di Elorae dilewati (disebut \"sudah dipantau\"). KOL yang diblokir tidak ditambahkan.",
+      "Video baru langsung masuk antrean cek di urutan paling depan, jadi angka pertamanya masuk begitu ekstensi berjalan. Sesudah itu video dicek pada H+1, H+3, H+7, H+30, lalu setiap 7 hari sampai 90 hari sesudah tayang (selang dan batasnya diatur di Kreatif → Pemantauan).",
+      "Saring KOL/Afiliasi, cari nama atau @handle, pilih rentang tanggal tayang, dan urutkan (views terbanyak, naik terbanyak, ER tertinggi, tayang terbaru, dicek terbaru). Saringan, urutan, dan halaman tersimpan di alamat halaman. Menempel link butuh izin kelola Kreatif; melihat cukup izin lihat Kreatif.",
+    ],
+    kartu: [
+      {
+        judul: { kunci: "kreatifRuang.performa.kpi.label" },
+        isi: "Empat angka menurut saringan yang sedang dipakai: banyaknya video, jumlah views terbaru semua video, rata-rata ER per video (video tanpa views tidak dihitung), dan video yang bacaan terbarunya hari ini (WIB).",
+      },
+      {
+        judul: "Kolom",
+        isi: [
+          "ER = (like + komentar + share + simpan) ÷ views × 100 dari bacaan terbaru — rumus yang sama dengan Konten KOL dan Laporan. Naik = views terbaru dikurangi views bacaan sebelumnya; kosong bila baru ada satu bacaan.",
+          "Dicek menyebut waktu bacaan terbaru dan sumbernya: Ekstensi (pemantau) atau Diisi manual. Status: Menunggu cek (masih di antrean), Terbaca, Gagal (cek terakhir gagal dan belum disusul bacaan; alasannya di bawahnya, mis. video tidak ditemukan), atau Belum dicek.",
+        ],
+      },
+    ],
+  },
+  {
     rute: "/backoffice/kreatif/pembayaran",
     bagian: "navGroupCreative",
     judul: { kunci: "kreatifRuang.halaman.pembayaran" },
@@ -439,7 +464,8 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Pemantauan angka TikTok KOL lewat ekstensi Chrome (uji coba): ekstensi di satu komputer membuka profil dan video TikTok di tab latar, membaca angkanya, lalu mengirimkannya ke Elorae. Instagram belum.",
       "Risikonya sudah disepakati: syarat layanan TikTok melarang pengambilan otomatis, jadi akun TikTok yang dipakai di Chrome itu bisa dibatasi — pakai profil Chrome dan akun TikTok khusus. Ekstensi perlu diperbarui bila halaman TikTok berubah, dan komputernya harus menyala.",
-      "Yang dicek: setiap konten kolaborasi yang sudah tayang dengan link TikTok pada H+1, H+3, H+7, dan H+30 (hari WIB); akun TikTok KOL yang punya kolaborasi berjalan seminggu sekali; akun lain sebulan sekali. KOL yang diblokir tidak pernah dicek. Konten yang tertinggal hanya dicek di titik terbarunya, sekali; titik yang terlambat lebih dari 14 hari tidak diantrekan lagi.",
+      "Yang dicek: setiap konten kolaborasi yang sudah tayang dengan link TikTok pada H+1, H+3, H+7, dan H+30 (hari WIB), lalu setiap 7 hari sampai 90 hari sesudah tayang (keduanya diatur di kartu pengaturan); akun TikTok KOL yang punya kolaborasi berjalan seminggu sekali; akun lain sebulan sekali. KOL yang diblokir tidak pernah dicek. Konten yang tertinggal hanya dicek di titik terbarunya, sekali; titik yang terlambat lebih dari 14 hari tidak diantrekan lagi — cek berkala yang mengambil alih. Bacaan pada atau sesudah hari sebuah titik menutup titik itu. Satu video punya paling banyak satu tugas terbuka.",
+      "Video yang ditempel di Performa video langsung mendapat tugas cek di urutan paling depan, termasuk video yang tayangnya sudah lama.",
       "Antrean disusun otomatis setiap hari pukul 06.00 WIB. Susun antrean sekarang menyusunnya saat itu juga — aman ditekan berkali-kali, tugas yang sudah ada tidak dibuat dua kali.",
       "Melihat cukup izin lihat Kreatif; menyambungkan, menjeda, mencabut, menyusun antrean, dan mengubah pengaturan butuh izin kelola Kreatif. Setiap tindakan itu tercatat di jejak audit.",
     ],

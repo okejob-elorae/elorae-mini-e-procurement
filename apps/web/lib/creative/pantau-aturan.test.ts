@@ -36,6 +36,14 @@ describe("pengaturan kreatif.pantau", () => {
     });
   });
 
+  it("video dicek setiap 7 hari sesudah titik H+30 sampai 90 hari sesudah tayang; batasnya ditolak bila di luar rentang", () => {
+    expect(PANTAU_BAWAAN).toMatchObject({ hariKontenBerkala: 7, batasHariKonten: 90 });
+    expect(bacaPantau({ hariKontenBerkala: 14, batasHariKonten: 180 })).toMatchObject({ hariKontenBerkala: 14, batasHariKonten: 180 });
+    const r = validasiPantau({ ...PANTAU_BAWAAN, hariKontenBerkala: 0, batasHariKonten: 29 });
+    expect(!r.ok && r.galat.map((g) => g.kunci).sort()).toEqual(["batasHariKonten", "hariKontenBerkala"]);
+    expect(validasiPantau({ ...PANTAU_BAWAAN, batasHariKonten: 30 }).ok).toBe(true);
+  });
+
   it("pembaca pemaaf: baris rusak atau kunci salah jatuh ke bawaan per kunci", () => {
     expect(bacaPantau(null)).toEqual(PANTAU_BAWAAN);
     expect(bacaPantau("{rusak")).toEqual(PANTAU_BAWAAN);

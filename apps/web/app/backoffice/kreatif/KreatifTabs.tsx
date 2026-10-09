@@ -17,6 +17,7 @@ import {
   PlaySquare,
   Radar,
   Settings2,
+  TrendingUp,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -43,6 +44,7 @@ export const TAB_KREATIF = [
   { href: '/backoffice/kreatif/campaign', key: 'campaign', ikon: Flag },
   { href: '/backoffice/kreatif/sampel', key: 'sampel', ikon: PackageCheck },
   { href: '/backoffice/kreatif/konten-kol', key: 'kontenKol', ikon: PlaySquare },
+  { href: '/backoffice/kreatif/performa', key: 'performa', ikon: TrendingUp },
   { href: '/backoffice/kreatif/pembayaran', key: 'pembayaran', ikon: Wallet },
   { href: '/backoffice/kreatif/kalender', key: 'kalender', ikon: CalendarDays },
   { href: '/backoffice/kreatif/laporan', key: 'laporan', ikon: BarChart3 },

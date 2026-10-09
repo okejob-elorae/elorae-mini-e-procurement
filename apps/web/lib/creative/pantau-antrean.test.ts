@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { geserHari } from "@/lib/tanggal-isian";
-import { kunciKonten, kunciProfil, PRIORITAS_PANTAU, susunAntreanPantau, type MasukanAntrean } from "./pantau-antrean";
+import {
+  kunciBerkala,
+  kunciKonten,
+  kunciProfil,
+  kunciSegera,
+  PRIORITAS_PANTAU,
+  susunAntreanPantau,
+  tugasSegera,
+  type KontenAntrean,
+  type MasukanAntrean,
+} from "./pantau-antrean";
 import { PANTAU_BAWAAN } from "./pantau-aturan";
 
 /*
@@ -30,6 +40,11 @@ describe("kunci tugas", () => {
   it("berbentuk KONTEN:<id>:H<n> dan PROFIL:<id>:<hari WIB>", () => {
     expect(kunciKonten("k1", 3)).toBe("KONTEN:k1:H3");
     expect(kunciProfil("a1", "2003-03-10")).toBe("PROFIL:a1:2003-03-10");
+  });
+
+  it("cek segera sesudah ditempel = KONTEN:<id>:SEGERA; cek berkala = KONTEN:<id>:B<hari WIB>", () => {
+    expect(kunciSegera("k1")).toBe("KONTEN:k1:SEGERA");
+    expect(kunciBerkala("k1", "2003-04-20")).toBe("KONTEN:k1:B2003-04-20");
   });
 });
 
@@ -73,10 +88,10 @@ describe("susunAntreanPantau — konten", () => {
     expect(r.baru[0].jatuhHari).toBe(geserHari(TAYANG, 7));
   });
 
-  it("titik H+30 masih dibuat sampai 14 hari terlambat, sesudahnya tidak", () => {
+  it("titik H+30 masih dibuat sampai 14 hari terlambat, sesudahnya cek berkala yang mengambil alih", () => {
     expect(pada(30).baru.map((t) => t.kunci)).toEqual(["KONTEN:k1:H30"]);
     expect(pada(44).baru.map((t) => t.kunci)).toEqual(["KONTEN:k1:H30"]);
-    expect(pada(45).baru).toEqual([]);
+    expect(pada(45).baru.map((t) => t.kunci)).toEqual([`KONTEN:k1:B${geserHari(TAYANG, 45)}`]);
   });
 
   it("link yang bukan TikTok dan KOL diblokir dilewati", () => {
@@ -95,6 +110,78 @@ describe("susunAntreanPantau — konten", () => {
   it("link TikTok pendek (vt.tiktok.com) tetap diterima", () => {
     const pendek = { ...konten, id: "k4", link: "https://vt.tiktok.com/ZSabc123/" };
     expect(susunAntreanPantau(masukan({ hariIni: geserHari(TAYANG, 1), konten: [pendek] })).baru).toHaveLength(1);
+  });
+});
+
+describe("tugasSegera — video yang baru ditempel", () => {
+  it("dicek hari ini juga, di atas semua tugas lain", () => {
+    expect(tugasSegera({ contentId: "k1", url: konten.link, hariIni: "2003-04-01" })).toEqual({
+      kunci: "KONTEN:k1:SEGERA",
+      jenis: "KONTEN",
+      platform: "TIKTOK",
+      accountId: null,
+      contentId: "k1",
+      url: konten.link,
+      titikH: null,
+      prioritas: PRIORITAS_PANTAU.KONTEN_SEGERA,
+      jatuhHari: "2003-04-01",
+    });
+    expect(PRIORITAS_PANTAU.KONTEN_SEGERA).toBeGreaterThan(PRIORITAS_PANTAU.KONTEN[1]);
+  });
+});
+
+describe("susunAntreanPantau — sesudah titik H+30 dan video lama", () => {
+  const H = (n: number) => geserHari(TAYANG, n);
+  const pada = (n: number, k: Partial<KontenAntrean> = {}, isi: Partial<MasukanAntrean> = {}) =>
+    susunAntreanPantau(masukan({ hariIni: H(n), konten: [{ ...konten, ...k }], ...isi }));
+  const kunci = (r: { baru: { kunci: string }[] }) => r.baru.map((t) => t.kunci);
+
+  it("sesudah H+30 dicek setiap 7 hari sejak cek terakhir, sampai 90 hari sesudah tayang", () => {
+    const sudah = [kunciKonten("k1", 30)];
+    expect(kunci(pada(31, { terakhirDicekHari: H(30) }, { kunciAda: new Set(sudah) }))).toEqual([]);
+    expect(kunci(pada(36, { terakhirDicekHari: H(30) }, { kunciAda: new Set(sudah) }))).toEqual([]);
+    const r = pada(37, { terakhirDicekHari: H(30) }, { kunciAda: new Set(sudah) });
+    expect(kunci(r)).toEqual([`KONTEN:k1:B${H(37)}`]);
+    expect(r.baru[0]).toMatchObject({ titikH: null, prioritas: PRIORITAS_PANTAU.KONTEN_BERKALA, jatuhHari: H(37), url: konten.link });
+    expect(kunci(pada(90, { terakhirDicekHari: H(83) }))).toEqual([`KONTEN:k1:B${H(90)}`]);
+    expect(kunci(pada(91, { terakhirDicekHari: H(83) }))).toEqual([]);
+  });
+
+  it("selang dan batasnya mengikuti pengaturan", () => {
+    const p = { ...PANTAU_BAWAAN, hariKontenBerkala: 3, batasHariKonten: 45 };
+    expect(kunci(pada(40, { terakhirDicekHari: H(37) }, { pengaturan: p }))).toEqual([`KONTEN:k1:B${H(40)}`]);
+    expect(kunci(pada(39, { terakhirDicekHari: H(37) }, { pengaturan: p }))).toEqual([]);
+    expect(kunci(pada(46, { terakhirDicekHari: H(37) }, { pengaturan: p }))).toEqual([]);
+  });
+
+  it("video yang ditempel lama sesudah tayang tidak tertinggal: cek segeranya dulu, lalu berkala", () => {
+    // Ditempel H+60: tugas SEGERA masih terbuka → belum ada yang ditambah.
+    expect(kunci(pada(60, { tugasTerbuka: [kunciSegera("k1")] }))).toEqual([]);
+    // SEGERA terbaca H+60 → H+67 dicek lagi.
+    expect(kunci(pada(66, { terakhirDicekHari: H(60) }))).toEqual([]);
+    expect(kunci(pada(67, { terakhirDicekHari: H(60) }))).toEqual([`KONTEN:k1:B${H(67)}`]);
+  });
+
+  it("bacaan sesudah sebuah titik menutup titik itu (dan yang sebelumnya); titik berikutnya tetap dibuat", () => {
+    // Ditempel H+20 dan langsung terbaca: H7 (telat 13 hari) tidak perlu lagi.
+    const r = pada(20, { terakhirDicekHari: H(20) });
+    expect(r.baru).toEqual([]);
+    expect(r.lewati).toEqual([kunciKonten("k1", 1), kunciKonten("k1", 3), kunciKonten("k1", 7)]);
+    expect(kunci(pada(30, { terakhirDicekHari: H(20) }))).toEqual([kunciKonten("k1", 30)]);
+  });
+
+  it("tugas segera/berkala yang masih terbuka menahan titik baru; titik yang terbuka menahan cek berkala", () => {
+    expect(kunci(pada(1, { tugasTerbuka: [kunciSegera("k1")] }))).toEqual([]);
+    expect(kunci(pada(3, { tugasTerbuka: [`KONTEN:k1:B${H(1)}`] }))).toEqual([]);
+    expect(kunci(pada(40, { tugasTerbuka: [kunciKonten("k1", 30)] }, { kunciAda: new Set([kunciKonten("k1", 30)]) }))).toEqual([]);
+  });
+
+  it("video lebih tua dari batasnya tanpa bacaan apa pun tidak diantrekan", () => {
+    expect(kunci(pada(120))).toEqual([]);
+  });
+
+  it("cek berkala hari ini yang sudah ada tidak dibuat ulang", () => {
+    expect(kunci(pada(50, {}, { kunciAda: new Set([`KONTEN:k1:B${H(50)}`]) }))).toEqual([]);
   });
 });
 
@@ -157,7 +244,8 @@ describe("prioritas", () => {
     expect(k[1]).toBeGreaterThan(k[3]);
     expect(k[3]).toBeGreaterThan(k[7]);
     expect(k[7]).toBeGreaterThan(k[30]);
-    expect(k[30]).toBeGreaterThan(PRIORITAS_PANTAU.PROFIL_AKTIF);
+    expect(k[30]).toBeGreaterThan(PRIORITAS_PANTAU.KONTEN_BERKALA);
+    expect(PRIORITAS_PANTAU.KONTEN_BERKALA).toBeGreaterThan(PRIORITAS_PANTAU.PROFIL_AKTIF);
     expect(PRIORITAS_PANTAU.PROFIL_AKTIF).toBeGreaterThan(PRIORITAS_PANTAU.PROFIL_LAIN);
   });
 });

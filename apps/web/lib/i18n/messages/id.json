@@ -262,7 +262,8 @@
     "navFinanceKas": "Kas & bank",
     "navFinanceRekonsiliasiBank": "Rekonsiliasi bank",
     "navUmurHutang": "Umur utang",
-    "navKolPemantauan": "Pemantauan"
+    "navKolPemantauan": "Pemantauan",
+    "navKolPerforma": "Performa video"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -19670,7 +19671,8 @@
       "lencana": "{n} hal perlu ditindaklanjuti",
       "gulirKiri": "Gulir tab ke kiri",
       "gulirKanan": "Gulir tab ke kanan",
-      "pemantauan": "Pemantauan"
+      "pemantauan": "Pemantauan",
+      "performa": "Performa video"
     },
     "halaman": {
       "hariIni": "Hari ini",
@@ -19685,7 +19687,8 @@
       "kalender": "Kalender",
       "laporan": "Laporan",
       "pengaturan": "Pengaturan Kreatif",
-      "pemantauan": "Pemantauan KOL"
+      "pemantauan": "Pemantauan KOL",
+      "performa": "Performa video"
     },
     "disiapkan": {
       "judul": "Sedang disiapkan",
@@ -21776,7 +21779,9 @@
           "hariAkunLain": "Cek akun lain setiap",
           "naikPengikutPersen": "Anomali: pengikut naik lebih dari",
           "naikPengikutHari": "Anomali: dalam rentang paling lama",
-          "turunErPersen": "Anomali: ER turun lebih dari"
+          "turunErPersen": "Anomali: ER turun lebih dari",
+          "hariKontenBerkala": "Sesudah H+30, cek video lagi setiap",
+          "batasHariKonten": "Berhenti cek video sesudah tayang"
         }
       },
       "satuan": {
@@ -21825,6 +21830,108 @@
         "NAMA_WAJIB": "Nama perangkat wajib diisi.",
         "NAMA_TERLALU_PANJANG": "Nama perangkat paling banyak 80 huruf.",
         "TIDAK_VALID": "Ada isian yang tidak sah.",
+        "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini.",
+        "GAGAL": "Gagal. Coba lagi."
+      }
+    },
+    "performa": {
+      "meta": "{n} video dipantau",
+      "tempel": "Tempel link",
+      "buka": "Buka di TikTok",
+      "bukaKolaborasi": "Buka kolaborasi {nama}",
+      "cari": "Cari nama atau @handle",
+      "periode": "Tanggal tayang",
+      "kpi": {
+        "label": "Ringkasan performa video",
+        "video": "Video dipantau",
+        "views": "Total views",
+        "er": "Rata-rata ER",
+        "dicek": "Dicek hari ini"
+      },
+      "jenis": {
+        "label": "KOL atau afiliasi",
+        "semua": "Semua",
+        "kol": "KOL",
+        "afiliasi": "Afiliasi"
+      },
+      "urut": {
+        "label": "Urutkan",
+        "views": "Views terbanyak",
+        "naik": "Naik terbanyak",
+        "er": "ER tertinggi",
+        "tayang": "Tayang terbaru",
+        "dicek": "Dicek terbaru"
+      },
+      "kolom": {
+        "orang": "KOL / afiliasi",
+        "tayang": "Tayang",
+        "views": "Views",
+        "like": "Like",
+        "komentar": "Komentar",
+        "share": "Share",
+        "simpan": "Simpan",
+        "er": "ER",
+        "naik": "Naik",
+        "dicek": "Dicek",
+        "status": "Status"
+      },
+      "badge": {
+        "kol": "KOL",
+        "afiliasi": "Afiliasi"
+      },
+      "sumber": {
+        "ekstensi": "Ekstensi",
+        "manual": "Diisi manual"
+      },
+      "status": {
+        "MENUNGGU": "Menunggu cek",
+        "TERBACA": "Terbaca",
+        "GAGAL": "Gagal",
+        "BELUM": "Belum dicek"
+      },
+      "kosong": {
+        "judul": "Belum ada video yang dipantau",
+        "isi": "Tempel link video TikTok untuk mulai memantau.",
+        "saring": "Tidak ada video yang cocok dengan saringan ini."
+      },
+      "dialog": {
+        "judul": "Tempel link video",
+        "jenis": "Ini video dari",
+        "jenisKOL": "KOL",
+        "jenisAFILIASI": "Afiliasi",
+        "link": "Link video TikTok",
+        "placeholder": "https://www.tiktok.com/@nama/video/…\nhttps://vt.tiktok.com/…",
+        "hitung": "{n} link video",
+        "hitungDitolak": "{n} tidak didukung",
+        "hitungKembar": "{n} kembar",
+        "kirim": "Tambahkan",
+        "menambahkan": "Menambahkan…",
+        "batal": "Batal",
+        "lagi": "Tempel lagi",
+        "tutup": "Selesai"
+      },
+      "hasil": {
+        "ditambahkan": "{n} video ditambahkan",
+        "kolBaru": "{n} orang baru dibuat",
+        "sudahAda": "{n} video sudah dipantau sebelumnya",
+        "kembar": "{n} link kembar dilewati",
+        "gagal": "{n} link tidak bisa ditambahkan"
+      },
+      "alasan": {
+        "INSTAGRAM": "Instagram belum didukung — hanya TikTok",
+        "LINK_FOTO": "Posting foto — hanya video yang didukung",
+        "BUKAN_VIDEO": "Bukan link video (profil atau halaman lain)",
+        "BUKAN_TIKTOK": "Bukan link TikTok",
+        "LINK_TIDAK_DIKENAL": "Link tidak dikenali",
+        "LINK_PENDEK_GAGAL": "Link pendek tidak bisa dibuka — salin link lengkap dari TikTok",
+        "KOL_DIBLOKIR": "KOL ini diblokir",
+        "GAGAL": "Gagal disimpan. Coba lagi."
+      },
+      "err": {
+        "KOSONG": "Tidak ada link di teks ini.",
+        "TERLALU_BANYAK": "Paling banyak {n} link sekali tempel.",
+        "TERLALU_PANJANG": "Teksnya terlalu panjang. Tempel sebagian dulu.",
+        "JENIS_TIDAK_SAH": "Pilih KOL atau Afiliasi.",
         "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini.",
         "GAGAL": "Gagal. Coba lagi."
       }
