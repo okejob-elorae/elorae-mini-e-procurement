@@ -48,6 +48,18 @@ dari Elorae → Kreatif → Pemantauan.
 
 ## Cara kerjanya
 
+**Cek cepat (v0.9.0) — biarkan satu tab tiktok.com terbuka di Chrome ini.** Bila ada tab
+www.tiktok.com yang Anda buka sendiri (boleh disematkan/pin, boleh tidak sedang dilihat), ekstensi
+mengambil halaman setiap tugas DARI tab itu tanpa membuka tab baru: sekitar 2 detik per video, dan
+satu putaran mengerjakan tugas terus-menerus (paling lama 10 menit, lalu dilanjutkan). 200 video
+selesai dalam beberapa menit. Tab yang Anda buka sudah lolos pemeriksaan keamanan TikTok, sedangkan
+tab latar baru tidak pernah lolos. Sesudah ekstensi diperbarui, muat ulang tab TikTok itu sekali.
+Bila tab itu sendiri kena pemeriksaan, pemantauan berhenti sebentar dengan alasan "Diblokir TikTok":
+muat ulang tab TikTok (selesaikan puzzle bila muncul), lalu tekan Cek sekarang di Elorae. Popup
+menyebut apakah cek cepat sedang aktif.
+
+Tanpa tab TikTok yang terbuka, ekstensi memakai cara lama di bawah.
+
 Setiap menit ekstensi bertanya ke Elorae apakah ada tugas. Bila ada, ekstensi membuka halaman
 TikTok itu di tab latar baru (tidak merebut layar Anda, suaranya dibisukan), menunggu angkanya
 terbaca, mengirim hasilnya, lalu menutup tab. Di antara tugas ada jeda acak (bawaan 15–40 detik)

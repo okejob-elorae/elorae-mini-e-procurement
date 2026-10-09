@@ -369,3 +369,43 @@ describe("putuskanTunggu — halaman tanpa skrip data ditunggu lebih lama", () =
     assert.equal(a.putuskanTunggu({ jenis: "KONTEN", sejakMs: 1_000, status: "CAPTCHA", tanpaSkrip: true }), "KIRIM");
   });
 });
+
+describe("cek cepat lewat tab TikTok yang terbuka", () => {
+  const tab = (id, url, lain = {}) => ({ id, url, status: "complete", discarded: false, lastAccessed: id * 10, ...lain });
+  test("hanya tab www.tiktok.com milik orang (bukan tab otomatis), yang termuat, terbaru dulu", () => {
+    const daftar = [
+      tab(1, "https://www.tiktok.com/@a"),
+      tab(2, "https://www.tiktok.com/foryou"),
+      tab(3, "https://www.tiktok.com/@b/video/7600000000000000001"),
+      tab(4, "https://elorae.cloud/backoffice/kreatif/performa"),
+      tab(5, "https://www.tiktok.com/@c", { discarded: true }),
+      tab(6, "https://www.tiktok.com/@d", { status: "loading" }),
+      tab(7, "https://www.tiktok.com.evil.test/@e"),
+      tab(8, "https://www.tiktok.com/@f"),
+    ];
+    assert.deepEqual(a.pilihTabTikTok(daftar, [3, 8]), [2, 1]);
+    assert.deepEqual(a.pilihTabTikTok([], []), []);
+    assert.deepEqual(a.pilihTabTikTok(null, null), []);
+  });
+  test("jeda antar video 1–2,5 detik, tanpa istirahat panjang; jadwal istirahat lama dibiarkan", () => {
+    const lama = { istirahatBerikutAt: SIANG + 60 * MENIT, istirahatSampai: SIANG - 1, alasanMundur: "ANTREAN_KOSONG" };
+    const kecil = a.jadwalSetelahTugasCepat(lama, SIANG, () => 0);
+    assert.deepEqual(kecil, {
+      istirahatBerikutAt: SIANG + 60 * MENIT,
+      istirahatSampai: null,
+      berikutnyaAt: SIANG + a.JEDA_CEPAT_MIN_MS,
+      terakhirKerjaAt: SIANG,
+      alasanMundur: null,
+    });
+    assert.equal(a.jadwalSetelahTugasCepat({}, SIANG, () => 0.999999).berikutnyaAt, SIANG + a.JEDA_CEPAT_MAKS_MS - 1);
+    assert.ok(a.JEDA_CEPAT_MIN_MS >= 1000 && a.JEDA_CEPAT_MAKS_MS <= 3000);
+    for (const r of [0, 0.3, 0.7, 0.99]) assert.equal(a.jedaCepatMs(() => r) >= a.JEDA_CEPAT_MIN_MS, true);
+  });
+  test("teks keadaan: sedang cek cepat menyebut jumlah yang sudah selesai", () => {
+    assert.equal(a.teksKeadaan({ keadaan: "CEPAT", selesai: 12 }), "Berjalan cepat lewat tab TikTok — 12 halaman sudah dicek");
+    assert.equal(a.teksKeadaan({ keadaan: "CEPAT" }), "Berjalan cepat lewat tab TikTok");
+  });
+  test("diblokir TikTok: teks meminta tab TikTok dimuat ulang", () => {
+    assert.match(a.teksAlasan("DIBLOKIR_TIKTOK"), /muat ulang tab TikTok/i);
+  });
+});

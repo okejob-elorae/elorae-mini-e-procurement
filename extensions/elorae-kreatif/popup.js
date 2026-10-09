@@ -54,6 +54,11 @@ function gambar(r) {
       ? "dalam ±1 menit"
       : "—";
 
+  // Cek cepat butuh satu tab www.tiktok.com yang dibuka orang (sudah lolos pemeriksaan TikTok).
+  $("cekCepat").textContent = r.tabTikTok
+    ? "Aktif — memakai tab TikTok yang terbuka (±2 detik per halaman)"
+    : "Buka satu tab tiktok.com di Chrome ini (lalu muat ulang tab itu sekali) supaya pengecekan berjalan cepat";
+
   const galat = r.galatTerakhir;
   $("barisGalat").hidden = !galat;
   if (galat) $("galatTerakhir").textContent = `${galat.pesan} (${waktuWib(galat.at)})`;

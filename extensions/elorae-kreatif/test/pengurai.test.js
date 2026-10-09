@@ -537,3 +537,18 @@ describe("jalan pengganti lewat profil", () => {
     assert.equal(p.halamanPemeriksaan({ tanpaSkrip: false, diagnosa: "tanda: waf" }), false);
   });
 });
+
+describe("urlUntukTabTikTok (cek cepat dari tab www.tiktok.com)", () => {
+  test("profil dan video dinormalkan ke https://www.tiktok.com", () => {
+    assert.equal(p.urlUntukTabTikTok("https://www.tiktok.com/@novherr/video/7690552579637447943?is_from_webapp=1"), "https://www.tiktok.com/@novherr/video/7690552579637447943");
+    assert.equal(p.urlUntukTabTikTok("tiktok.com/@Rossafarahdiba"), "https://www.tiktok.com/@Rossafarahdiba");
+    assert.equal(p.urlUntukTabTikTok("http://m.tiktok.com/@a/photo/123"), "https://www.tiktok.com/@a/photo/123");
+  });
+  test("tautan pendek, domain lain, dan halaman lain → null (dikerjakan dengan cara lama)", () => {
+    assert.equal(p.urlUntukTabTikTok("https://vt.tiktok.com/ZSabc123/"), null);
+    assert.equal(p.urlUntukTabTikTok("https://www.tiktok.com/t/ZT8abc/"), null);
+    assert.equal(p.urlUntukTabTikTok("https://www.tiktok.com.evil.test/@a"), null);
+    assert.equal(p.urlUntukTabTikTok("https://www.tiktok.com/foryou"), null);
+    assert.equal(p.urlUntukTabTikTok(null), null);
+  });
+});

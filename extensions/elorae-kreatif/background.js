@@ -1,20 +1,25 @@
 // Service worker Elorae Kreatif (modul ES).
 // - Sambung ke Elorae (kode → token), simpan { eloraeUrl, token, perangkat } di storage.local.
-// - Putaran otomatis lewat chrome.alarms: minta tugas → buka tab latar → baca angka lewat
-//   konten.js → kirim hasil/masalah → tutup tab → jeda acak / istirahat.
+// - Putaran otomatis lewat chrome.alarms: minta tugas → baca angka → kirim hasil/masalah.
+//   Cek cepat (v0.9.0): bila ada tab www.tiktok.com yang dibuka orang, halaman tugas diambil DARI
+//   tab itu (fetch, ±1–2,5 detik per halaman, banyak tugas per putaran). Tanpa tab itu: buka tab
+//   latar → baca lewat konten.js → tutup tab → jeda acak / istirahat (cara lama).
 // - Perantara mode manual (panel "Simpan ke Elorae") dan popup.
 // Semua keputusan ada di lib/aturan.js (dites); berkas ini hanya menjalankannya.
 // Token TIDAK PERNAH ditulis ke log.
 
-import { halamanPemeriksaan, jenisHalaman, urlTugasSah } from "./lib/pengurai.js";
+import { halamanPemeriksaan, jenisHalaman, urlTugasSah, urlUntukTabTikTok } from "./lib/pengurai.js";
 import {
   BATAS_TUNGGU_ITEMLIST_MS,
+  MAKS_PUTARAN_CEPAT_MS,
   bersihkanPengaturan,
   jadwalSetelahAlasan,
   jadwalSetelahTugas,
+  jadwalSetelahTugasCepat,
   kodeMasalah,
   kunciMasihAktif,
   perbaruiJedaLokal,
+  pilihTabTikTok,
   putuskanLangkah,
   putuskanTunggu,
   setelahTugas,
@@ -414,18 +419,79 @@ function pesanMasalah(hasil) {
   return undefined;
 }
 
+// ============================================================ cek cepat lewat tab TikTok yang terbuka
+
+const BATAS_JAWAB_TAB_MS = 25_000;
+
+/** Tab www.tiktok.com milik orang (bukan tab otomatis), terakhir dibuka dulu. */
+async function tabTikTokTerbuka() {
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: "https://www.tiktok.com/*" });
+  } catch {
+    tabs = [];
+  }
+  return pilihTabTikTok(tabs, await daftarTabOtomatis());
+}
+
+/**
+ * Minta konten.js di tab itu mengambil dan membaca `url`. Null bila skripnya tidak menjawab — mis.
+ * tab yang belum dimuat ulang sesudah ekstensi diperbarui. Skrip TIDAK disuntikkan ulang ke tab
+ * orang: skrip lama yang yatim tetap menggambar panelnya, jadi suntikan baru membuat panel ganda.
+ */
+async function tanyaTab(tabId, url) {
+  try {
+    return await Promise.race([
+      chrome.tabs.sendMessage(tabId, { jenis: "ambilLewatTab", url }, { frameId: 0 }),
+      tidur(BATAS_JAWAB_TAB_MS).then(() => null),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+/** Hasil cek cepat, atau null bila alamatnya tidak bisa / tidak ada tab TikTok yang menjawab. */
+async function bacaLewatTab(tugas) {
+  if (!urlUntukTabTikTok(tugas.url)) return null;
+  for (const tabId of (await tabTikTokTerbuka()).slice(0, 2)) {
+    const h = await tanyaTab(tabId, tugas.url);
+    if (h && typeof h.status === "string") return h;
+  }
+  return null;
+}
+
 // ============================================================ satu tugas
 
+/** `{ cepat, kode }` — `cepat` = dikerjakan lewat tab TikTok yang terbuka (putaran boleh berlanjut). */
 async function kerjakanTugas(tugas) {
-  let hasil;
+  await tulis({ kunci: { sejak: Date.now(), tugasId: tugas.id } });
+  let hasil = null;
+  let cepat = false;
+  try {
+    const h = await bacaLewatTab(tugas);
+    if (h) {
+      cepat = true;
+      // Tab orang itu sendiri kena pemeriksaan (tokennya kedaluwarsa): jangan beralih ke tab latar —
+      // tab latar yang kena pemeriksaan justru membuat sesi TikTok makin dicurigai.
+      hasil =
+        h.status !== "OK" && halamanPemeriksaan(h)
+          ? { ...h, status: "DIBLOKIR_TIKTOK", pesan: `Tab TikTok yang terbuka kena pemeriksaan keamanan — muat ulang tab itu (${h.diagnosa ?? "-"})` }
+          : h;
+    }
+  } catch (e) {
+    hasil = null;
+    cepat = false;
+    await catatGalat(`Cek cepat gagal: ${pesanGalat(e)}`);
+  }
   const url = urlTugasSah(tugas.url);
-  if (!url) {
+  if (hasil) {
+    // sudah terbaca lewat tab TikTok yang terbuka
+  } else if (!url) {
     hasil = { status: "GAGAL_MUAT", pesan: "Alamat tugas bukan link tiktok.com" };
   } else {
     let tabId = null;
     try {
       tabId = await bukaTabLatar(url);
-      await tulis({ kunci: { sejak: Date.now(), tugasId: tugas.id } });
       const muat = await tungguMuat(tabId);
       hasil = muat.ok ? await mintaHasil(tabId, tugas) : { status: "GAGAL_MUAT", pesan: muat.pesan };
       if (tugas.jenis === "KONTEN" && hasil.status !== "OK" && halamanPemeriksaan(hasil)) {
@@ -471,9 +537,12 @@ async function kerjakanTugas(tugas) {
   const s = await baca("gagalBeruntun", "jadwal", "jedaLokal", "statusServer");
   const lanjut = setelahTugas(s.gagalBeruntun ?? 0, kode, sekarang, s.statusServer?.data?.pengaturan?.jedaOtomatisMenit);
   if (lanjut.jedaLokal?.tungguServer) lanjut.jedaLokal.laporTerkirim = laporTerkirim;
-  const jadwal = jadwalSetelahTugas(s.jadwal, s.statusServer?.data?.pengaturan, sekarang);
+  const jadwal = cepat
+    ? jadwalSetelahTugasCepat(s.jadwal, sekarang)
+    : jadwalSetelahTugas(s.jadwal, s.statusServer?.data?.pengaturan, sekarang);
   await tulis({ gagalBeruntun: lanjut.gagalBeruntun, jedaLokal: lanjut.jedaLokal ?? s.jedaLokal ?? null, jadwal });
   jadwalkanAlarmBerikut(jadwal.berikutnyaAt);
+  return { cepat, kode };
 }
 
 // ============================================================ detak
@@ -528,33 +597,48 @@ async function detakInti() {
   if (putusan.langkah !== "AMBIL") return;
 
   await tulis({ kunci: { sejak: Date.now() } });
+  // Cek cepat: selama tugas terbaca lewat tab TikTok yang terbuka, putaran ini terus meminta tugas
+  // berikutnya dengan jeda pendek (paling lama MAKS_PUTARAN_CEPAT_MS; detak berikutnya melanjutkan).
+  const mulaiPutaran = Date.now();
+  let selesaiCepat = 0;
   try {
-    const r = await panggilDenganToken("/tugas", { body: {} });
-    if (r.gagal) {
-      if (r.gagal !== "TOKEN_TIDAK_SAH") await catatGalat(`Tidak bisa meminta tugas (${r.gagal}${r.status ? " " + r.status : ""})`);
-      return;
+    for (;;) {
+      const r = await panggilDenganToken("/tugas", { body: {} });
+      if (r.gagal) {
+        if (r.gagal !== "TOKEN_TIDAK_SAH") await catatGalat(`Tidak bisa meminta tugas (${r.gagal}${r.status ? " " + r.status : ""})`);
+        return;
+      }
+      if (r.json?.ok !== true) {
+        await catatGalat(`Elorae menolak permintaan tugas: ${r.json?.kode ?? "?"}`);
+        return;
+      }
+      const tugas = r.json.tugas;
+      if (!tugas) {
+        const alasan = r.json.alasan ?? "ANTREAN_KOSONG";
+        const { jadwal } = await baca("jadwal");
+        const baru = jadwalSetelahAlasan(jadwal, alasan, Date.now());
+        await tulis({ jadwal: baru });
+        // Untuk DIJEDA, `berikutnyaAt` hanyalah jadwal tanya ulang kita, bukan akhir jeda di server.
+        if (alasan === "DIJEDA") await simpanRingkasan({ langkah: "DIAM", keadaan: "DIJEDA", alasan: status?.alasanJeda ?? null });
+        else await simpanRingkasan({ langkah: "DIAM", keadaan: alasan, sampai: baru.berikutnyaAt });
+        jadwalkanAlarmBerikut(baru.berikutnyaAt);
+        return;
+      }
+      await simpanRingkasan(selesaiCepat > 0 ? { langkah: "DIAM", keadaan: "CEPAT", selesai: selesaiCepat } : { langkah: "DIAM", keadaan: "SIBUK" });
+      const hasil = await kerjakanTugas(tugas);
+      if (hasil.cepat) selesaiCepat++;
+      const { jedaLokal: jedaBaru, jadwal: jadwalBaru, otomatis } = await baca("jedaLokal", "jadwal", "otomatis");
+      if (jedaBaru) {
+        await simpanRingkasan({ langkah: "DIAM", keadaan: "DIJEDA", alasan: jedaBaru.alasan, sampai: jedaBaru.sampai });
+        return;
+      }
+      if (!hasil.cepat || !otomatis || Date.now() - mulaiPutaran > MAKS_PUTARAN_CEPAT_MS) {
+        await simpanRingkasan({ langkah: "DIAM", keadaan: "MENUNGGU", sampai: jadwalBaru?.berikutnyaAt });
+        return;
+      }
+      await simpanRingkasan({ langkah: "DIAM", keadaan: "CEPAT", selesai: selesaiCepat });
+      await tidur(Math.max(0, (jadwalBaru?.berikutnyaAt ?? Date.now()) - Date.now()));
     }
-    if (r.json?.ok !== true) {
-      await catatGalat(`Elorae menolak permintaan tugas: ${r.json?.kode ?? "?"}`);
-      return;
-    }
-    const tugas = r.json.tugas;
-    if (!tugas) {
-      const alasan = r.json.alasan ?? "ANTREAN_KOSONG";
-      const { jadwal } = await baca("jadwal");
-      const baru = jadwalSetelahAlasan(jadwal, alasan, Date.now());
-      await tulis({ jadwal: baru });
-      // Untuk DIJEDA, `berikutnyaAt` hanyalah jadwal tanya ulang kita, bukan akhir jeda di server.
-      if (alasan === "DIJEDA") await simpanRingkasan({ langkah: "DIAM", keadaan: "DIJEDA", alasan: status?.alasanJeda ?? null });
-      else await simpanRingkasan({ langkah: "DIAM", keadaan: alasan, sampai: baru.berikutnyaAt });
-      jadwalkanAlarmBerikut(baru.berikutnyaAt);
-      return;
-    }
-    await simpanRingkasan({ langkah: "DIAM", keadaan: "SIBUK" });
-    await kerjakanTugas(tugas);
-    const { jedaLokal: jedaBaru, jadwal: jadwalBaru } = await baca("jedaLokal", "jadwal");
-    if (jedaBaru) await simpanRingkasan({ langkah: "DIAM", keadaan: "DIJEDA", alasan: jedaBaru.alasan, sampai: jedaBaru.sampai });
-    else await simpanRingkasan({ langkah: "DIAM", keadaan: "MENUNGGU", sampai: jadwalBaru?.berikutnyaAt });
   } finally {
     await tulis({ kunci: null });
   }
@@ -733,6 +817,7 @@ async function susunRingkasanPopup(segarkan) {
     hariIni: s.statusServer?.data?.hariIni ?? null,
     statusAt: s.statusServer?.at ?? null,
     galatTerakhir: s.galatTerakhir ?? null,
+    tabTikTok: (await tabTikTokTerbuka()).length > 0,
     versi: versi(),
   };
 }

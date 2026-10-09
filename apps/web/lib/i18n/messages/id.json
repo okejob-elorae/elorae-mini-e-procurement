@@ -21758,7 +21758,7 @@
         "ANGKA_KOSONG": "Angka kosong",
         "GAGAL_BERUNTUN": "Gagal berturut-turut",
         "MANUAL": "Dari Elorae",
-        "DIBLOKIR_TIKTOK": "Diblokir TikTok — buka videonya di Chrome, lalu tekan Simpan ke Elorae di panel"
+        "DIBLOKIR_TIKTOK": "Diblokir TikTok — muat ulang tab TikTok di Chrome (selesaikan puzzle bila muncul), lalu tekan cek ulang"
       },
       "sambung": {
         "judul": "Sambungkan perangkat",
@@ -21964,12 +21964,12 @@
         "satu": "Cek sekarang",
         "satuJudul": "Minta ekstensi membaca angka terbaru video ini",
         "semua": "Cek ulang halaman ini",
-        "menunggu": "Menunggu ekstensi membaca angka — halaman ini diperbarui sendiri setiap 15 detik.",
+        "menunggu": "Menunggu ekstensi membaca angka — dengan satu tab tiktok.com terbuka di Chrome, sekitar 2 detik per video. Halaman ini diperbarui sendiri setiap 15 detik.",
         "diantrekan": "{n} video masuk antrean cek.",
         "sudahAntre": "{n} video sudah menunggu cek.",
         "dilewati": "{n} dilewati (bukan video TikTok).",
         "keadaan": {
-          "SIAP": "Ekstensi mengeceknya dalam sekitar satu menit.",
+          "SIAP": "Ekstensi mulai mengecek dalam beberapa detik. Biarkan satu tab tiktok.com terbuka di Chrome supaya pengecekannya cepat (sekitar 2 detik per video).",
           "DI_LUAR_JAM": "Sekarang di luar jam pemantauan; ekstensi mengeceknya saat jam kerja mulai.",
           "TANPA_PERANGKAT": "Belum ada ekstensi yang menyala. Buka Chrome profil KOL tracker — cek berjalan begitu ekstensinya aktif.",
           "NONAKTIF": "Pemantauan otomatis sedang dimatikan di Kreatif → Pemantauan.",
@@ -21977,7 +21977,7 @@
           "DIJEDA_CAPTCHA": "Ekstensi berhenti sampai {jam} karena TikTok meminta captcha. Agar jalan lagi sekarang: buka TikTok di Chrome profil KOL tracker, selesaikan captchanya, lalu tekan Lanjutkan di Kreatif → Pemantauan.",
           "DIJEDA_LOGIN": "Ekstensi berhenti sampai {jam} karena TikTok meminta login. Agar jalan lagi sekarang: masuk ke TikTok di Chrome profil KOL tracker, lalu tekan Lanjutkan di Kreatif → Pemantauan.",
           "DIJEDA_MANUAL": "Perangkatnya sedang Anda jeda di Kreatif → Pemantauan. Tekan Lanjutkan di sana untuk menjalankannya.",
-          "DIJEDA_DIBLOKIR_TIKTOK": "Ekstensi berhenti sampai {jam} karena TikTok memasang pemeriksaan keamanan untuk tab otomatis. Tekan ikon cek ulang untuk mencoba lagi sekarang, atau buka videonya di Chrome dan tekan Simpan ke Elorae di panel."
+          "DIJEDA_DIBLOKIR_TIKTOK": "Ekstensi berhenti sampai {jam} karena TikTok memasang pemeriksaan keamanan. Muat ulang tab TikTok di Chrome (selesaikan puzzle bila muncul), lalu tekan ikon cek ulang."
         },
         "err": {
           "TANPA_AKSES": "Anda tidak punya izin mengelola Kreatif.",

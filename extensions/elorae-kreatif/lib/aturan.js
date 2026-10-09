@@ -212,6 +212,53 @@ export function setelahTugas(gagalBeruntun, kode, sekarang, jedaMenit) {
   return { gagalBeruntun: 0, jedaLokal: null };
 }
 
+// ---------------------------------------------------------------- cek cepat lewat tab TikTok
+
+/**
+ * Cek cepat (v0.9.0): halaman diambil dengan fetch DARI tab TikTok yang sudah dibuka orang — tab
+ * itu sudah lolos pemeriksaan keamanan TikTok, sedangkan tab latar baru tidak pernah lolos
+ * (terukur 2026-10-09: 10 halaman berturut-turut dari satu tab, ±0,5 detik per halaman, tidak ada
+ * yang diblokir). Jeda antar video pendek; istirahat panjang dan jeda 15–40 detik tidak dipakai.
+ */
+export const JEDA_CEPAT_MIN_MS = 1000;
+export const JEDA_CEPAT_MAKS_MS = 2500;
+/** Satu putaran cek cepat berhenti sesudah ini; detak berikutnya melanjutkan. */
+export const MAKS_PUTARAN_CEPAT_MS = 10 * MENIT;
+
+export function jedaCepatMs(rand = Math.random) {
+  const r = Math.min(Math.max(Number(rand()) || 0, 0), 0.999999);
+  return JEDA_CEPAT_MIN_MS + Math.floor(r * (JEDA_CEPAT_MAKS_MS - JEDA_CEPAT_MIN_MS));
+}
+
+export function jadwalSetelahTugasCepat(jadwal, sekarang, rand = Math.random) {
+  return {
+    ...(jadwal ?? {}),
+    istirahatSampai: null,
+    berikutnyaAt: sekarang + jedaCepatMs(rand),
+    terakhirKerjaAt: sekarang,
+    alasanMundur: null,
+  };
+}
+
+/**
+ * Tab yang boleh dipakai cek cepat: www.tiktok.com, sudah termuat, tidak dibuang Chrome, dan bukan
+ * tab otomatis ekstensi sendiri (yang itulah yang kena pemeriksaan). Terakhir dibuka dulu.
+ */
+export function pilihTabTikTok(tabs, idOtomatis) {
+  const otomatis = new Set(idOtomatis ?? []);
+  return (tabs ?? [])
+    .filter((t) => {
+      if (!t || otomatis.has(t.id) || t.discarded || t.status !== "complete") return false;
+      try {
+        return new URL(t.url ?? "").hostname === "www.tiktok.com";
+      } catch {
+        return false;
+      }
+    })
+    .sort((x, y) => (y.lastAccessed ?? 0) - (x.lastAccessed ?? 0))
+    .map((t) => t.id);
+}
+
 /** ±15% supaya istirahat tidak jatuh di menit yang sama setiap kali. */
 function goyang(ms, rand) {
   let r = Number(rand());
@@ -294,7 +341,7 @@ const TEKS_ALASAN = {
   LOGIN: "TikTok meminta masuk (login). Masuk dengan akun TikTok khusus di profil Chrome ini, lalu tekan Lanjutkan di Elorae.",
   GAGAL_BERUNTUN: "gagal berturut-turut",
   DIBLOKIR_TIKTOK:
-    "TikTok memasang pemeriksaan keamanan untuk tab otomatis. Pemantauan berhenti sebentar; Cek sekarang di Elorae mencoba lagi, atau buka videonya dan tekan Simpan ke Elorae di panel.",
+    "TikTok memasang pemeriksaan keamanan. Muat ulang tab TikTok di Chrome ini (selesaikan puzzle bila muncul), lalu tekan Cek sekarang di Elorae.",
   MANUAL: "dijeda dari Elorae — lanjutkan di Kreatif → Pemantauan",
 };
 
@@ -314,6 +361,10 @@ export function teksKeadaan(r, p = PENGATURAN_BAWAAN, sekarang = Date.now()) {
       return "Berjalan — mengerjakan permintaan Cek sekarang dari Elorae";
     case "SIBUK":
       return "Berjalan — sedang memeriksa satu halaman";
+    case "CEPAT":
+      return Number.isFinite(r.selesai) && r.selesai > 0
+        ? `Berjalan cepat lewat tab TikTok — ${r.selesai} halaman sudah dicek`
+        : "Berjalan cepat lewat tab TikTok";
     case "BELUM_TERSAMBUNG":
       return "Belum tersambung ke Elorae";
     case "MATI":

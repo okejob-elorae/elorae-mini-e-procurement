@@ -131,6 +131,28 @@
   // ------------------------------------------------ permintaan dari service worker
   chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
     if (pengirim.id !== chrome.runtime.id) return false;
+    // Cek cepat: tab TikTok yang dibuka orang mengambil halaman tugas dengan fetch (kuki tab ini sudah
+    // lolos pemeriksaan keamanan TikTok) dan membacanya — tanpa membuka tab baru. Hanya alamat
+    // tiktok.com yang sah untuk tugas yang diterima; hasilnya bentuk yang sama dengan bacaHalaman.
+    if (pesan?.jenis === "ambilLewatTab" && typeof pesan.url === "string") {
+      muatPengurai
+        .then(async (m) => {
+          const url = m.urlUntukTabTikTok(pesan.url);
+          if (!url) return balas({ status: "GAGAL_MUAT", pesan: "Alamat ini tidak bisa dicek dari tab TikTok" });
+          let res;
+          try {
+            res = await fetch(url, { credentials: "include", cache: "no-store", headers: { accept: "text/html" } });
+          } catch (e) {
+            return balas({ status: "GAGAL_MUAT", pesan: "Tab TikTok tidak bisa mengambil halaman: " + String(e?.message ?? e) });
+          }
+          if (!res.ok && res.status !== 404) return balas({ status: "GAGAL_MUAT", pesan: `TikTok menjawab HTTP ${res.status}` });
+          const html = await res.text();
+          const h = m.bacaHalaman(html, { url, itemList: [] });
+          balas({ ...h, lewatTab: true });
+        })
+        .catch((e) => balas({ status: "TIDAK_TERBACA", pesan: "Pengurai gagal: " + String(e?.message ?? e) }));
+      return true;
+    }
     // Jalan pengganti: halaman video kena pemeriksaan keamanan → angka video diambil dari daftar
     // video profil kreatornya (tab yang sama sudah diarahkan ke profil oleh service worker).
     if (pesan?.jenis === "bacaKontenDariProfil" && typeof pesan.videoId === "string") {

@@ -186,6 +186,20 @@ export function urlTugasSah(url) {
   return u.href;
 }
 
+/**
+ * Alamat untuk cek cepat dari tab www.tiktok.com: hanya halaman profil atau video tiktok.com
+ * (tanpa www, m., atau www.), dinormalkan ke https://www.tiktok.com tanpa query — fetch dari tab itu
+ * harus satu asal. Tautan pendek (vt./vm., /t/) dan halaman lain → null: dikerjakan dengan cara lama.
+ */
+export function urlUntukTabTikTok(url) {
+  const sah = urlTugasSah(url);
+  if (!sah) return null;
+  const u = new URL(sah);
+  if (!["tiktok.com", "www.tiktok.com", "m.tiktok.com"].includes(u.hostname.toLowerCase())) return null;
+  const hasil = `https://www.tiktok.com${u.pathname}`;
+  return jenisHalaman(hasil) ? hasil : null;
+}
+
 export function apakahUrlItemList(url) {
   return typeof url === "string" && url.includes(POLA_URL_ITEM_LIST);
 }
