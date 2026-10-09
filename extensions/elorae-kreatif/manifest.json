@@ -30,7 +30,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["lib/pengurai.js"],
+      "resources": ["lib/pengurai.js", "lib/panel.js"],
       "matches": ["https://www.tiktok.com/*"]
     }
   ]

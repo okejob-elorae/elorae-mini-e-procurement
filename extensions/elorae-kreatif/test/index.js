@@ -2,3 +2,4 @@
 // bukan mencari berkas tes di dalamnya — jadi setiap berkas tes didaftarkan di sini.
 import "./pengurai.test.js";
 import "./aturan.test.js";
+import "./panel.test.js";
