@@ -53,8 +53,8 @@ afterAll(async () => {
 
 describe("mintaCekSekarang", () => {
   it("video yang sudah selesai dicek mendapat tugas baru berprioritas tertinggi, jatuh tempo sekarang, alamat baku", async () => {
-    const r = await mintaCekSekarang({ kontenIds: [k.selesai], sekarang: SEKARANG });
-    expect(r).toEqual({ ok: true, diantrekan: 1, sudahAntre: 0, dilewati: 0 });
+    const r = await mintaCekSekarang({ kontenIds: [k.selesai], sekarang: SEKARANG, perangkatIds: [] });
+    expect(r).toEqual({ ok: true, diantrekan: 1, sudahAntre: 0, dilewati: 0, perangkatDilanjutkan: 0 });
     const t = await tugasKonten(k.selesai);
     expect(t).toHaveLength(2);
     const baru = t.find((x) => x.status === "ANTRE")!;
@@ -64,8 +64,8 @@ describe("mintaCekSekarang", () => {
   });
 
   it("satu video paling banyak satu tugas terbuka: yang masih antre dinaikkan dan dimajukan, yang sedang dicek dibiarkan", async () => {
-    const r = await mintaCekSekarang({ kontenIds: [k.antre, k.dipinjam], sekarang: SEKARANG });
-    expect(r).toEqual({ ok: true, diantrekan: 0, sudahAntre: 2, dilewati: 0 });
+    const r = await mintaCekSekarang({ kontenIds: [k.antre, k.dipinjam], sekarang: SEKARANG, perangkatIds: [] });
+    expect(r).toEqual({ ok: true, diantrekan: 0, sudahAntre: 2, dilewati: 0, perangkatDilanjutkan: 0 });
     const [antre] = await tugasKonten(k.antre);
     expect(antre).toMatchObject({ status: "ANTRE", prioritas: PRIORITAS_PANTAU.KONTEN_SEGERA, jatuhAt: SEKARANG });
     const dipinjam = await tugasKonten(k.dipinjam);
@@ -74,8 +74,8 @@ describe("mintaCekSekarang", () => {
   });
 
   it("bukan video TikTok, tanpa link, atau tidak ada → dilewati; permintaan kembar dihitung sekali", async () => {
-    const r = await mintaCekSekarang({ kontenIds: [k.ig, k.tanpaLink, "tidak-ada", k.ig], sekarang: SEKARANG });
-    expect(r).toEqual({ ok: true, diantrekan: 0, sudahAntre: 0, dilewati: 3 });
+    const r = await mintaCekSekarang({ kontenIds: [k.ig, k.tanpaLink, "tidak-ada", k.ig], sekarang: SEKARANG, perangkatIds: [] });
+    expect(r).toEqual({ ok: true, diantrekan: 0, sudahAntre: 0, dilewati: 3, perangkatDilanjutkan: 0 });
     expect(await tugasKonten(k.ig)).toHaveLength(0);
   });
 
@@ -87,7 +87,7 @@ describe("mintaCekSekarang", () => {
     // Waktu berbeda 1 ms → kunci berbeda: hanya transaksi serializable yang mencegah tugas kembar.
     await prisma.kolTugasPantau.updateMany({ where: { contentId: k.selesai, status: "ANTRE" }, data: { status: "SELESAI" } });
     const hasil = await Promise.all(
-      Array.from({ length: 8 }, (_, i) => mintaCekSekarang({ kontenIds: [k.selesai], sekarang: new Date(lagi.getTime() + i) })),
+      Array.from({ length: 8 }, (_, i) => mintaCekSekarang({ kontenIds: [k.selesai], sekarang: new Date(lagi.getTime() + i), perangkatIds: [] })),
     );
     expect(hasil.every((r) => r.ok)).toBe(true);
     expect(hasil.reduce((s, r) => s + (r.ok ? r.diantrekan : 0), 0)).toBe(1);
@@ -96,15 +96,15 @@ describe("mintaCekSekarang", () => {
   });
 
   it("kosong atau terlalu banyak → ditolak", async () => {
-    expect(await mintaCekSekarang({ kontenIds: [], sekarang: SEKARANG })).toEqual({ ok: false, kode: "KOSONG" });
+    expect(await mintaCekSekarang({ kontenIds: [], sekarang: SEKARANG, perangkatIds: [] })).toEqual({ ok: false, kode: "KOSONG" });
     const banyak = Array.from({ length: MAKS_CEK_SEKARANG + 1 }, (_, i) => `x${i}`);
-    expect(await mintaCekSekarang({ kontenIds: banyak, sekarang: SEKARANG })).toEqual({ ok: false, kode: "TERLALU_BANYAK" });
+    expect(await mintaCekSekarang({ kontenIds: banyak, sekarang: SEKARANG, perangkatIds: [] })).toEqual({ ok: false, kode: "TERLALU_BANYAK" });
   });
 });
 
 describe("keadaanPemantau", () => {
   const menit = (n: number) => new Date(SEKARANG.getTime() + n * 60_000);
-  async function perangkat(isi: { lapor: Date | null; jedaSampai?: Date | null }) {
+  async function perangkat(isi: { lapor: Date | null; jedaSampai?: Date | null; alasan?: string }) {
     const user = await prisma.user.findFirstOrThrow({ select: { id: true } });
     const p = await prisma.kolPerangkat.create({
       data: {
@@ -114,7 +114,7 @@ describe("keadaanPemantau", () => {
         tersambungAt: menit(-60),
         terakhirLaporAt: isi.lapor,
         dijedaSampai: isi.jedaSampai ?? null,
-        alasanJeda: isi.jedaSampai ? "GAGAL_BERUNTUN" : null,
+        alasanJeda: isi.jedaSampai ? (isi.alasan ?? "GAGAL_BERUNTUN") : null,
       },
       select: { id: true },
     });
@@ -129,19 +129,44 @@ describe("keadaanPemantau", () => {
     expect(await keadaan([lama])).toEqual({ keadaan: "TANPA_PERANGKAT" });
   });
 
-  it("perangkat hidup tapi semuanya dijeda → DIJEDA dengan waktu jeda paling cepat berakhir", async () => {
-    const a = await perangkat({ lapor: menit(-1), jedaSampai: menit(40) });
-    const b = await perangkat({ lapor: menit(-2), jedaSampai: menit(25) });
-    expect(await keadaan([a, b])).toEqual({ keadaan: "DIJEDA", sampai: menit(25).toISOString() });
+  it("perangkat hidup tapi semuanya dijeda → DIJEDA dengan alasan dan waktu jeda paling cepat berakhir", async () => {
+    const a = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "CAPTCHA" });
+    const b = await perangkat({ lapor: menit(-2), jedaSampai: menit(25), alasan: "MANUAL" });
+    expect(await keadaan([a, b])).toEqual({ keadaan: "DIJEDA", sampai: menit(25).toISOString(), alasan: "MANUAL" });
   });
 
-  it("ada satu perangkat hidup tanpa jeda → SIAP di jam kerja, DI_LUAR_JAM di luar jam kerja", async () => {
+  it("ada satu perangkat hidup tanpa jeda → SIAP, juga di luar jam kerja (permintaan langsung tidak menunggu jam kerja)", async () => {
     const a = await perangkat({ lapor: menit(-1), jedaSampai: menit(40) });
     const b = await perangkat({ lapor: menit(-3) });
     expect(await keadaan([a, b])).toEqual({ keadaan: "SIAP" });
     // 2003-05-05 20.00 WIB, perangkat melapor semenit sebelumnya.
     const malam = await perangkat({ lapor: new Date("2003-05-05T12:59:00Z") });
-    expect(await keadaan([malam], { sekarang: new Date("2003-05-05T13:00:00Z") })).toEqual({ keadaan: "DI_LUAR_JAM" });
+    expect(await keadaan([malam], { sekarang: new Date("2003-05-05T13:00:00Z") })).toEqual({ keadaan: "SIAP" });
+  });
+
+  it("Cek sekarang melepas jeda karena gagal beruntun atau tidak melapor; captcha, login, dan jeda manual tetap", async () => {
+    const gagal = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "GAGAL_BERUNTUN" });
+    const diam = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "TIDAK_LAPOR" });
+    const captcha = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "CAPTCHA" });
+    const manual = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "MANUAL" });
+    const r = await mintaCekSekarang({ kontenIds: [k.antre], sekarang: SEKARANG, perangkatIds: [gagal, diam, captcha, manual] });
+    expect(r).toMatchObject({ ok: true, perangkatDilanjutkan: 2 });
+    const baris = await prisma.kolPerangkat.findMany({ where: { id: { in: [gagal, diam, captcha, manual] } }, select: { id: true, dijedaSampai: true } });
+    const jeda = Object.fromEntries(baris.map((b) => [b.id, b.dijedaSampai]));
+    expect(jeda[gagal]).toBeNull();
+    expect(jeda[diam]).toBeNull();
+    expect(jeda[captcha]).toEqual(menit(40));
+    expect(jeda[manual]).toEqual(menit(40));
+    const log = await prisma.kolLogPantau.findMany({ where: { perangkatId: { in: [gagal, diam] }, jenis: "LANJUT" }, select: { kode: true } });
+    expect(log.map((l) => l.kode)).toEqual(["CEK_SEKARANG", "CEK_SEKARANG"]);
+    await prisma.kolLogPantau.deleteMany({ where: { perangkatId: { in: seededIds([gagal, diam]) } } });
+  });
+
+  it("tanpa video yang benar-benar diantrekan, jeda tidak dilepas", async () => {
+    const gagal = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "GAGAL_BERUNTUN" });
+    const r = await mintaCekSekarang({ kontenIds: [k.ig], sekarang: SEKARANG, perangkatIds: [gagal] });
+    expect(r).toMatchObject({ ok: true, dilewati: 1, perangkatDilanjutkan: 0 });
+    expect((await prisma.kolPerangkat.findUniqueOrThrow({ where: { id: gagal } })).dijedaSampai).toEqual(menit(40));
   });
 
   it("pemantauan otomatis dimatikan → NONAKTIF", async () => {

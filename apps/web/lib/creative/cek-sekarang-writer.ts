@@ -1,9 +1,10 @@
 import { Prisma, prisma } from "@elorae/db";
 import { isRetryableTxError, runSerializable } from "@/lib/db/tx-retry";
 import { kunciMinta, PRIORITAS_PANTAU } from "./pantau-antrean";
-import { dalamJamKerja, type PengaturanPantau } from "./pantau-aturan";
+import type { PengaturanPantau } from "./pantau-aturan";
 import { urlKontenKanonik, videoIdDariLink } from "./pantau-muatan";
 import { bacaPengaturanPantau } from "./pantau-pengaturan";
+import { tulisLog } from "./pantau-writer";
 
 /*
  * "Cek sekarang" di Kreatif → Performa video — KHUSUS SERVER (klien hanya `import type`).
@@ -19,8 +20,35 @@ import { bacaPengaturanPantau } from "./pantau-pengaturan";
 export const MAKS_CEK_SEKARANG = 100;
 
 export type HasilCekSekarang =
-  | { ok: true; diantrekan: number; sudahAntre: number; dilewati: number }
+  | { ok: true; diantrekan: number; sudahAntre: number; dilewati: number; perangkatDilanjutkan: number }
   | { ok: false; kode: "KOSONG" | "TERLALU_BANYAK" };
+
+/**
+ * Jeda yang dilepas oleh permintaan langsung: yang dipasang otomatis karena kegagalan beruntun atau
+ * karena perangkat lama tidak melapor. Captcha/login (perlu diselesaikan orang di Chrome) dan jeda
+ * yang dipasang orang sendiri dari Pemantauan (MANUAL) tetap.
+ */
+const JEDA_DILEPAS_PERMINTAAN = ["GAGAL_BERUNTUN", "TIDAK_LAPOR"] as const;
+
+async function lepasJedaOtomatis(sekarang: Date, perangkatIds?: readonly string[]): Promise<number> {
+  if (perangkatIds && perangkatIds.length === 0) return 0;
+  return runSerializable(async (tx) => {
+    const dijeda = await tx.kolPerangkat.findMany({
+      where: {
+        dicabutAt: null,
+        alasanJeda: { in: [...JEDA_DILEPAS_PERMINTAAN] },
+        dijedaSampai: { gt: sekarang },
+        ...(perangkatIds ? { id: { in: [...perangkatIds] } } : {}),
+      },
+      select: { id: true, alasanJeda: true },
+    });
+    for (const p of dijeda) {
+      await tx.kolPerangkat.update({ where: { id: p.id }, data: { dijedaSampai: null, alasanJeda: null } });
+      await tulisLog(tx, { perangkatId: p.id, jenis: "LANJUT", kode: "CEK_SEKARANG", pesan: p.alasanJeda, waktu: sekarang });
+    }
+    return dijeda.length;
+  });
+}
 
 type HasilSatu = "DIANTREKAN" | "SUDAH_ANTRE" | "DILEWATI";
 
@@ -85,35 +113,42 @@ async function satuSekali(contentId: string, sekarang: Date): Promise<HasilSatu>
   }
 }
 
-export async function mintaCekSekarang(input: { kontenIds: readonly string[]; sekarang?: Date }): Promise<HasilCekSekarang> {
+/** `perangkatIds` hanya untuk tes (membatasi perangkat yang jedanya boleh dilepas). */
+export async function mintaCekSekarang(input: {
+  kontenIds: readonly string[];
+  sekarang?: Date;
+  perangkatIds?: readonly string[];
+}): Promise<HasilCekSekarang> {
   const ids = [...new Set(input.kontenIds.filter((x) => typeof x === "string" && x))];
   if (!ids.length) return { ok: false, kode: "KOSONG" };
   if (ids.length > MAKS_CEK_SEKARANG) return { ok: false, kode: "TERLALU_BANYAK" };
   const sekarang = input.sekarang ?? new Date();
-  const hasil = { ok: true as const, diantrekan: 0, sudahAntre: 0, dilewati: 0 };
+  const hasil = { ok: true as const, diantrekan: 0, sudahAntre: 0, dilewati: 0, perangkatDilanjutkan: 0 };
   for (const id of ids) {
     const r = await satu(id, sekarang);
     if (r === "DIANTREKAN") hasil.diantrekan += 1;
     else if (r === "SUDAH_ANTRE") hasil.sudahAntre += 1;
     else hasil.dilewati += 1;
   }
+  // Orang menunggu angkanya: jeda otomatis tidak boleh membuatnya menunggu sampai satu jam.
+  if (hasil.diantrekan + hasil.sudahAntre > 0) hasil.perangkatDilanjutkan = await lepasJedaOtomatis(sekarang, input.perangkatIds);
   return hasil;
 }
 
 /**
- * Apakah permintaan cek akan segera dikerjakan? Untuk pesan di layar sesudah "Cek sekarang":
+ * Apakah permintaan cek akan segera dikerjakan? Untuk pesan di layar sesudah "Cek sekarang"
+ * (dipanggil SESUDAH jeda otomatis dilepas):
  * - NONAKTIF: pemantauan otomatis dimatikan di Kreatif → Pemantauan;
  * - TANPA_PERANGKAT: tidak ada perangkat tersambung yang melapor dalam 10 menit terakhir
  *   (Chrome dengan ekstensi tidak terbuka);
- * - DIJEDA: perangkatnya hidup, tetapi semuanya sedang dijeda (mis. 3 kegagalan beruntun) —
- *   `sampai` = jeda yang paling cepat berakhir; bisa dilanjutkan dari Kreatif → Pemantauan;
- * - DI_LUAR_JAM: di luar jam kerja pemantauan (ekstensi menunggu jam mulai);
- * - SIAP: dicek dalam beberapa menit.
+ * - DIJEDA: semua perangkat yang hidup masih dijeda karena captcha/login TikTok atau dijeda orang
+ *   dari Pemantauan — `sampai` dan `alasan` milik jeda yang paling cepat berakhir;
+ * - SIAP: dicek dalam ±1 menit (permintaan langsung tidak menunggu jam kerja).
  * `perangkatIds` hanya untuk tes yang berbagi basis data.
  */
 export type KeadaanPemantau =
-  | { keadaan: "SIAP" | "NONAKTIF" | "TANPA_PERANGKAT" | "DI_LUAR_JAM" }
-  | { keadaan: "DIJEDA"; sampai: string };
+  | { keadaan: "SIAP" | "NONAKTIF" | "TANPA_PERANGKAT" }
+  | { keadaan: "DIJEDA"; sampai: string; alasan: string | null };
 
 const BARU_MELAPOR_MS = 10 * 60_000;
 
@@ -130,12 +165,12 @@ export async function keadaanPemantau(
       terakhirLaporAt: { gte: new Date(sekarang.getTime() - BARU_MELAPOR_MS) },
       ...(opsi.perangkatIds ? { id: { in: [...opsi.perangkatIds] } } : {}),
     },
-    select: { dijedaSampai: true },
+    select: { dijedaSampai: true, alasanJeda: true },
   });
   if (!hidup.length) return { keadaan: "TANPA_PERANGKAT" };
-  const jeda = hidup.map((p) => p.dijedaSampai).filter((d): d is Date => d !== null && d.getTime() > sekarang.getTime());
-  if (jeda.length === hidup.length) {
-    return { keadaan: "DIJEDA", sampai: new Date(Math.min(...jeda.map((d) => d.getTime()))).toISOString() };
-  }
-  return { keadaan: dalamJamKerja(sekarang, pg) ? "SIAP" : "DI_LUAR_JAM" };
+  const jeda = hidup
+    .filter((p): p is { dijedaSampai: Date; alasanJeda: string | null } => p.dijedaSampai !== null && p.dijedaSampai.getTime() > sekarang.getTime())
+    .sort((a, b) => a.dijedaSampai.getTime() - b.dijedaSampai.getTime());
+  if (jeda.length === hidup.length) return { keadaan: "DIJEDA", sampai: jeda[0].dijedaSampai.toISOString(), alasan: jeda[0].alasanJeda };
+  return { keadaan: "SIAP" };
 }

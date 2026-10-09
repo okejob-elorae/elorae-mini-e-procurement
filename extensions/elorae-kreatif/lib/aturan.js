@@ -104,23 +104,30 @@ export function putuskanLangkah(k, sekarang) {
     return diam("DIJEDA", { alasan: status.alasanJeda ?? null, sampai: waktuMs(status.dijedaSampai) });
   }
   if (status.aktif === false) return diam("NONAKTIF");
+  // "Cek sekarang" dari Elorae: orang sedang menunggu angkanya. Jeda berwaktu karena gagal beruntun,
+  // jam kerja, istirahat, dan mundur karena antrean kosong tidak ditunggu. Captcha/login (perlu
+  // orang di Chrome), kuota, dan jeda acak sesudah tugas (≤ jedaMaksDetik) tetap berlaku.
+  const langsung = Number(status.permintaanLangsung) > 0;
   const jeda = k.jedaLokal;
   if (jeda?.tungguServer) return diam("DIJEDA", { alasan: jeda.alasan });
-  if (jeda && Number.isFinite(jeda.sampai) && jeda.sampai > sekarang) {
+  if (!langsung && jeda && Number.isFinite(jeda.sampai) && jeda.sampai > sekarang) {
     return diam("DIJEDA", { alasan: jeda.alasan, sampai: jeda.sampai });
   }
   const p = bersihkanPengaturan(status.pengaturan);
-  if (!dalamJamKerja(sekarang, p.jamMulai, p.jamSelesai)) return diam("DI_LUAR_JAM");
+  if (!langsung && !dalamJamKerja(sekarang, p.jamMulai, p.jamSelesai)) return diam("DI_LUAR_JAM");
   const sisa = status.hariIni?.sisa;
   if (typeof sisa === "number" && sisa <= 0) return diam("KUOTA_HABIS");
   const j = k.jadwal ?? {};
-  if (Number.isFinite(j.istirahatSampai) && j.istirahatSampai > sekarang) {
+  if (!langsung && Number.isFinite(j.istirahatSampai) && j.istirahatSampai > sekarang) {
     return diam("ISTIRAHAT", { sampai: j.istirahatSampai });
   }
-  if (Number.isFinite(j.berikutnyaAt) && j.berikutnyaAt > sekarang) {
-    return diam(j.alasanMundur ?? "MENUNGGU", { sampai: j.berikutnyaAt });
+  const tungguMundur = Boolean(j.alasanMundur);
+  if (Number.isFinite(j.berikutnyaAt) && j.berikutnyaAt > sekarang && !(langsung && tungguMundur)) {
+    if (!langsung || j.berikutnyaAt - sekarang <= p.jedaMaksDetik * DETIK) {
+      return diam(j.alasanMundur ?? "MENUNGGU", { sampai: j.berikutnyaAt });
+    }
   }
-  return { langkah: "AMBIL", keadaan: "SIAP" };
+  return { langkah: "AMBIL", keadaan: langsung ? "PERMINTAAN" : "SIAP" };
 }
 
 /**
@@ -271,6 +278,8 @@ export function teksKeadaan(r, p = PENGATURAN_BAWAAN, sekarang = Date.now()) {
     case "SIAP":
     case "MENUNGGU":
       return "Berjalan";
+    case "PERMINTAAN":
+      return "Berjalan — mengerjakan permintaan Cek sekarang dari Elorae";
     case "SIBUK":
       return "Berjalan — sedang memeriksa satu halaman";
     case "BELUM_TERSAMBUNG":

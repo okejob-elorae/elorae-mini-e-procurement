@@ -294,3 +294,32 @@ describe("teksKeadaan dan jamWib", () => {
     assert.equal(a.waktuWib(Date.parse("2026-12-31T20:00:00Z"), SIANG), "1 Jan 03.00");
   });
 });
+
+describe("putuskanLangkah — permintaan langsung (Cek sekarang)", () => {
+  const langsung = (lain = {}) => statusServer({ permintaanLangsung: 2, ...lain });
+  test("di luar jam kerja tetap AMBIL bila ada permintaan langsung", () => {
+    assert.deepEqual(a.putuskanLangkah(keadaanSiap(), MALAM), { langkah: "DIAM", keadaan: "DI_LUAR_JAM" });
+    assert.deepEqual(a.putuskanLangkah(keadaanSiap({ status: langsung() }), MALAM), { langkah: "AMBIL", keadaan: "PERMINTAAN" });
+  });
+  test("jeda berwaktu karena gagal beruntun, istirahat, dan mundur antrean kosong dilewati", () => {
+    const k = keadaanSiap({
+      status: langsung(),
+      jedaLokal: { alasan: "GAGAL_BERUNTUN", sampai: SIANG + 40 * MENIT },
+      jadwal: { istirahatSampai: SIANG + 5 * MENIT, berikutnyaAt: SIANG + 5 * MENIT, alasanMundur: "ANTREAN_KOSONG" },
+    });
+    assert.deepEqual(a.putuskanLangkah(k, SIANG), { langkah: "AMBIL", keadaan: "PERMINTAAN" });
+  });
+  test("captcha/login, jeda dari server, kuota habis, dan jeda acak pendek sesudah tugas tetap ditunggu", () => {
+    assert.equal(a.putuskanLangkah(keadaanSiap({ status: langsung(), jedaLokal: { alasan: "CAPTCHA", tungguServer: true } }), SIANG).keadaan, "DIJEDA");
+    assert.equal(
+      a.putuskanLangkah(keadaanSiap({ status: langsung({ dijedaSampai: new Date(SIANG + 30 * MENIT).toISOString(), alasanJeda: "CAPTCHA", aktif: false }) }), SIANG).keadaan,
+      "DIJEDA",
+    );
+    assert.equal(a.putuskanLangkah(keadaanSiap({ status: langsung({ hariIni: { selesai: 300, gagal: 0, kuota: 300, sisa: 0 } }) }), SIANG).keadaan, "KUOTA_HABIS");
+    const jitter = keadaanSiap({ status: langsung(), jadwal: { berikutnyaAt: SIANG + 20_000, alasanMundur: null } });
+    assert.equal(a.putuskanLangkah(jitter, SIANG).keadaan, "MENUNGGU");
+  });
+  test("teks popup untuk permintaan langsung", () => {
+    assert.match(a.teksKeadaan({ keadaan: "PERMINTAAN" }), /Cek sekarang/);
+  });
+});

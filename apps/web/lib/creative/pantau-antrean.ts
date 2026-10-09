@@ -58,6 +58,11 @@ export const kunciSegera = (contentId: string) => `KONTEN:${contentId}:SEGERA`;
 export const kunciBerkala = (contentId: string, hari: string) => `KONTEN:${contentId}:B${hari}`;
 /** Cek yang diminta orang dari layar Performa video ("Cek sekarang"); waktu dalam ms membuatnya unik. */
 export const kunciMinta = (contentId: string, waktuMs: number) => `KONTEN:${contentId}:M${waktuMs}`;
+/**
+ * Penanda kunci permintaan langsung. Aman sebagai pencarian "mengandung": kunci lain berbentuk
+ * `:H<n>`, `:B<hari>`, `:SEGERA`, `:<YYYY-MM-DD>`, dan id cuid selalu diawali huruf kecil "c".
+ */
+export const PENANDA_MINTA = ":M";
 export const kunciProfil = (accountId: string, hari: string) => `PROFIL:${accountId}:${hari}`;
 /** Kunci titik H+n (bukan SEGERA/berkala). */
 const kunciTitik = (kunci: string) => /:H\d+$/.test(kunci);

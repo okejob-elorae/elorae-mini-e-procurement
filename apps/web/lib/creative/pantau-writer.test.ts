@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
+import { kunciMinta } from "./pantau-antrean";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { PANTAU_BAWAAN, type PengaturanPantau } from "./pantau-aturan";
@@ -290,6 +291,16 @@ describe("pinjamTugas", () => {
     expect(sesudahLewat.tugas?.id).toBe(pertama.tugas?.id);
   });
 
+  it("di luar jam kerja hanya permintaan langsung (Cek sekarang) yang dipinjamkan", async () => {
+    const a = await perangkat();
+    const biasa = await tugas({ prioritas: 99 });
+    const minta = await tugasBerkunci(kunciMinta(kontenId, SEKARANG.getTime()));
+    // 20.00 WIB.
+    const malam = tambahMenit(SEKARANG, 600);
+    expect((await pinjamTugas({ perangkatId: a.id, sekarang: malam, pengaturan: PG, cakupan: { tugasIds: [biasa, minta] } })).tugas?.id).toBe(minta);
+    expect(await pinjamTugas({ perangkatId: a.id, sekarang: malam, pengaturan: PG, cakupan: { tugasIds: [biasa] } })).toEqual({ tugas: null, alasan: "DI_LUAR_JAM" });
+  });
+
   it("alasan tanpa tugas: NONAKTIF, DIJEDA, DI_LUAR_JAM, KUOTA_HABIS, ANTREAN_KOSONG", async () => {
     const a = await perangkat();
     const id = await tugas();
@@ -523,6 +534,14 @@ describe("statusPerangkat", () => {
       jedaOtomatisMenit: 60,
     });
     expect(s).toMatchObject({ aktif: false, dijedaSampai: tambahMenit(SEKARANG, 30).toISOString(), alasanJeda: "CAPTCHA" });
+  });
+
+  it("menyebut berapa permintaan langsung (Cek sekarang) yang menunggu — ekstensi lalu tidak menunda", async () => {
+    const a = await perangkat();
+    const sebelum = (await statusPerangkat(a, { sekarang: SEKARANG, pengaturan: PG })).permintaanLangsung;
+    await tugas({ prioritas: 99 });
+    await tugasBerkunci(kunciMinta(kontenId, SEKARANG.getTime() - 5_000));
+    expect((await statusPerangkat(a, { sekarang: SEKARANG, pengaturan: PG })).permintaanLangsung).toBe(sebelum + 1);
   });
 });
 

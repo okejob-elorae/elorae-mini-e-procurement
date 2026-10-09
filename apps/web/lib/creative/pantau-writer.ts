@@ -4,7 +4,7 @@ import { cariTeks } from "@/lib/db/cari-teks";
 import { formatDateOnlyJakarta, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { geserHari, hariIniWib } from "@/lib/tanggal-isian";
 import { catatAngkaDiTx, type KodeGagalKontenKol } from "./konten-kol-writer";
-import { susunAntreanPantau, BATAS_TELAT_KONTEN_HARI, TITIK_KONTEN, kunciBerkala, kunciKonten, kunciProfil } from "./pantau-antrean";
+import { susunAntreanPantau, BATAS_TELAT_KONTEN_HARI, PENANDA_MINTA, TITIK_KONTEN, kunciBerkala, kunciKonten, kunciProfil } from "./pantau-antrean";
 import {
   dalamJamKerja,
   ENTITAS_PERANGKAT,
@@ -112,7 +112,7 @@ const dipinjamOleh = (t: { status: string; perangkatId: string | null }, perangk
 const menit = (n: number) => n * 60_000;
 const terbuka = (d: Date | null, sekarang: Date) => d !== null && d.getTime() > sekarang.getTime();
 
-async function tulisLog(
+export async function tulisLog(
   tx: Klien,
   isi: { perangkatId: string | null; tugasId?: string | null; jenis: JenisLogPantau; kode?: string | null; pesan?: string | null; waktu: Date },
 ) {
@@ -544,6 +544,8 @@ export async function hitungHariIni(client: Klien | typeof prisma, sekarang: Dat
 
 export type StatusEkstensi = {
   ok: true;
+  /** Tugas "Cek sekarang" yang menunggu: ekstensi tidak menunggu jam kerja/jeda tunggu untuknya. */
+  permintaanLangsung: number;
   perangkat: { id: string; nama: string };
   aktif: boolean;
   dijedaSampai: string | null;
@@ -570,8 +572,16 @@ export async function statusPerangkat(
   const pg = o.pengaturan ?? (await bacaPengaturanPantau());
   const h = await hitungHariIni(prisma, sekarang, pg.kuotaHarian);
   const dijeda = terbuka(p.dijedaSampai, sekarang);
+  const permintaanLangsung = await prisma.kolTugasPantau.count({
+    where: {
+      status: "ANTRE",
+      kunci: { contains: PENANDA_MINTA },
+      jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) },
+    },
+  });
   return {
     ok: true,
+    permintaanLangsung,
     perangkat: { id: p.id, nama: p.nama },
     aktif: pg.aktif && !dijeda,
     dijedaSampai: dijeda ? iso(p.dijedaSampai) : null,
@@ -641,7 +651,8 @@ export async function pinjamTugas(input: {
     if (!p || p.dicabutAt) return { tugas: null, alasan: "NONAKTIF" };
     if (!pg.aktif) return { tugas: null, alasan: "NONAKTIF" };
     if (terbuka(p.dijedaSampai, sekarang)) return { tugas: null, alasan: "DIJEDA" };
-    if (!dalamJamKerja(sekarang, pg)) return { tugas: null, alasan: "DI_LUAR_JAM" };
+    // Di luar jam kerja hanya permintaan langsung ("Cek sekarang") yang dikerjakan — orangnya sedang menunggu.
+    const diLuarJam = !dalamJamKerja(sekarang, pg);
 
     await tx.kolTugasPantau.updateMany({
       where: { ...lingkup, status: "DIPINJAM", pinjamSampai: { lt: sekarang } },
@@ -662,11 +673,16 @@ export async function pinjamTugas(input: {
     if (h.sisa <= 0) return { tugas: null, alasan: "KUOTA_HABIS" };
 
     const calon = await tx.kolTugasPantau.findFirst({
-      where: { ...lingkup, status: "ANTRE", jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) } },
+      where: {
+        ...lingkup,
+        status: "ANTRE",
+        jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) },
+        ...(diLuarJam ? { kunci: { contains: PENANDA_MINTA } } : {}),
+      },
       orderBy: [{ prioritas: "desc" }, { jatuhAt: "asc" }, { id: "asc" }],
       select: PILIH_TUGAS,
     });
-    if (!calon) return { tugas: null, alasan: "ANTREAN_KOSONG" };
+    if (!calon) return { tugas: null, alasan: diLuarJam ? "DI_LUAR_JAM" : "ANTREAN_KOSONG" };
     const r = await tx.kolTugasPantau.updateMany({
       where: { id: calon.id, status: "ANTRE" },
       data: { status: "DIPINJAM", perangkatId: input.perangkatId, pinjamSampai: sampai },

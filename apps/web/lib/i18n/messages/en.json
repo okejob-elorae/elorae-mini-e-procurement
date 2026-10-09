@@ -21944,18 +21944,22 @@
         "sudahAntre": "{n} video(s) already waiting for a check.",
         "dilewati": "{n} skipped (not a TikTok video).",
         "keadaan": {
-          "SIAP": "The extension checks them within a few minutes.",
+          "SIAP": "The extension checks them within about a minute.",
           "DI_LUAR_JAM": "Outside monitoring hours; the extension checks them when working hours start.",
           "TANPA_PERANGKAT": "No extension is running. Open the KOL tracker Chrome profile — the check runs once the extension is active.",
           "NONAKTIF": "Automatic monitoring is switched off in Creative → Monitoring.",
-          "DIJEDA": "The extension is paused until {jam} (usually after several failures in a row). Press Resume on the device in Creative → Monitoring to run it now."
+          "DIJEDA": "The extension is paused until {jam} (usually after several failures in a row). Press Resume on the device in Creative → Monitoring to run it now.",
+          "DIJEDA_CAPTCHA": "The extension stopped because TikTok asked for a captcha. Solve it in the KOL tracker Chrome profile, then press Resume in Creative → Monitoring.",
+          "DIJEDA_LOGIN": "The extension stopped because TikTok asked to log in. Log in to TikTok in the KOL tracker Chrome profile, then press Resume in Creative → Monitoring.",
+          "DIJEDA_MANUAL": "You paused this device in Creative → Monitoring. Press Resume there to run it."
         },
         "err": {
           "TANPA_AKSES": "You don't have permission to manage Creative.",
           "GAGAL": "Couldn't request the check. Try again.",
           "KOSONG": "No videos to check.",
           "TERLALU_BANYAK": "Too many videos at once."
-        }
+        },
+        "dilanjutkan": "The extension that was paused is running again."
       }
     }
   },

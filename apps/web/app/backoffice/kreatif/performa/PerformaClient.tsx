@@ -223,11 +223,14 @@ function useCekSekarang() {
         r.sudahAntre ? t("performa.cek.sudahAntre", { n: r.sudahAntre }) : null,
         r.dilewati ? t("performa.cek.dilewati", { n: r.dilewati }) : null,
       ].filter(Boolean);
+      if (r.perangkatDilanjutkan) bagian.push(t("performa.cek.dilanjutkan"));
       const p = r.pemantau;
       const keadaan = !p
         ? ""
         : p.keadaan === "DIJEDA"
-          ? t("performa.cek.keadaan.DIJEDA", { jam: jamWib(p.sampai, locale) })
+          ? p.alasan === "CAPTCHA" || p.alasan === "LOGIN" || p.alasan === "MANUAL"
+            ? td(`performa.cek.keadaan.DIJEDA_${p.alasan}`)
+            : t("performa.cek.keadaan.DIJEDA", { jam: jamWib(p.sampai, locale) })
           : td(`performa.cek.keadaan.${p.keadaan}`);
       if (p && p.keadaan !== "SIAP") toast.warning([...bagian, keadaan].join(" "), { duration: 12_000 });
       else toast.success([...bagian, keadaan].join(" "));

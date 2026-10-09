@@ -21944,18 +21944,22 @@
         "sudahAntre": "{n} video sudah menunggu cek.",
         "dilewati": "{n} dilewati (bukan video TikTok).",
         "keadaan": {
-          "SIAP": "Ekstensi mengeceknya dalam beberapa menit.",
+          "SIAP": "Ekstensi mengeceknya dalam sekitar satu menit.",
           "DI_LUAR_JAM": "Sekarang di luar jam pemantauan; ekstensi mengeceknya saat jam kerja mulai.",
           "TANPA_PERANGKAT": "Belum ada ekstensi yang menyala. Buka Chrome profil KOL tracker — cek berjalan begitu ekstensinya aktif.",
           "NONAKTIF": "Pemantauan otomatis sedang dimatikan di Kreatif → Pemantauan.",
-          "DIJEDA": "Ekstensi sedang berhenti sementara sampai {jam} (biasanya karena beberapa kali gagal berturut-turut). Tekan Lanjutkan pada perangkatnya di Kreatif → Pemantauan untuk menjalankannya sekarang."
+          "DIJEDA": "Ekstensi sedang berhenti sementara sampai {jam} (biasanya karena beberapa kali gagal berturut-turut). Tekan Lanjutkan pada perangkatnya di Kreatif → Pemantauan untuk menjalankannya sekarang.",
+          "DIJEDA_CAPTCHA": "Ekstensi berhenti karena TikTok meminta captcha. Selesaikan captcha di Chrome profil KOL tracker, lalu tekan Lanjutkan di Kreatif → Pemantauan.",
+          "DIJEDA_LOGIN": "Ekstensi berhenti karena TikTok meminta login. Masuk ke TikTok di Chrome profil KOL tracker, lalu tekan Lanjutkan di Kreatif → Pemantauan.",
+          "DIJEDA_MANUAL": "Perangkatnya sedang Anda jeda di Kreatif → Pemantauan. Tekan Lanjutkan di sana untuk menjalankannya."
         },
         "err": {
           "TANPA_AKSES": "Anda tidak punya izin mengelola Kreatif.",
           "GAGAL": "Gagal meminta cek. Coba lagi.",
           "KOSONG": "Tidak ada video untuk dicek.",
           "TERLALU_BANYAK": "Terlalu banyak video sekaligus."
-        }
+        },
+        "dilanjutkan": "Ekstensi yang tadi berhenti sementara dijalankan lagi."
       }
     }
   },
