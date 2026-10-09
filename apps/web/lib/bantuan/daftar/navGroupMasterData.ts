@@ -23,7 +23,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "supplierTypes.pageTitle" },
     isi: [
       { kunci: "supplierTypes.pageDescription" },
-      "Warna: setiap jenis bisa diberi warna sendiri lewat tombol ubah (pensil). Warna itu dipakai untuk lencana jenis, pita dan lingkaran inisial di kartu galeri, serta kolom papan di daftar pemasok — sama di layar semua orang. Otomatis = warna bawaan menurut nama jenisnya.",
+      "Warna: setiap jenis bisa diberi warna Pantone TCX sendiri lewat tombol ubah (pensil) — cari nama atau kode, atau saring menurut rona; kode dan namanya tampil di samping lencana di daftar ini. Warna itu dipakai untuk lencana jenis, pita dan lingkaran inisial di kartu galeri, serta kolom papan di daftar pemasok — sama di layar semua orang. Otomatis = warna bawaan menurut nama jenisnya.",
     ],
   },
   {

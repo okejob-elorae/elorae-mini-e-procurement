@@ -26,7 +26,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "warnaPilihan.grafik.judul" },
         isi: [
-          "Warna batang dan garis di Beranda, pilihan Anda sendiri — orang lain tidak terpengaruh. Klik kotak warna di samping tiap bagian: pilih salah satu dari 24 warna, ketik kode hex (mis. #2563eb), atau pilih Otomatis. Contoh batang di kartu ini berubah seketika; tekan Simpan warna untuk memakainya di Beranda.",
+          "Warna batang dan garis di Beranda, pilihan Anda sendiri — orang lain tidak terpengaruh. Klik kotak warna di samping tiap bagian lalu pilih dari katalog Pantone TCX — cari nama atau kode (mis. Classic Blue atau 19-4052), saring menurut rona, atau ambil dari Pantone favorit Anda di Palet Warna. Arahkan ke kotak warna untuk melihat nama dan kodenya. Otomatis mengembalikan bagian itu ke warna bawaan. Contoh batang di kartu ini berubah seketika; tekan Simpan warna untuk memakainya di Beranda.",
           "Ikut tema: umur piutang dan komposisi stok memakai nada dari warna tema Anda, dari redup sampai terang — makin lama lewat jatuh tempo, makin menonjol. Otomatis untuk grafik tren: setiap saluran punya warnanya sendiri supaya garisnya bisa dibedakan.",
           "Kembalikan semua ke otomatis menghapus semua pilihan sekaligus.",
         ],

@@ -19,7 +19,11 @@ export async function listSupplierTypes(opts?: {
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: [{ sortOrder: 'asc' }, { code: 'asc' }],
-        ...(opts?.withUsage ? { include: { _count: { select: { suppliers: true } } } } : {}),
+        // Nama Pantone warna jenisnya untuk layar kelola (kode + nama, bukan hanya kotak warna).
+        include: {
+          colorPantone: { select: { name: true } },
+          ...(opts?.withUsage ? { _count: { select: { suppliers: true } } } : {}),
+        },
       }),
       prisma.supplierType.count({ where }),
     ]);

@@ -32,6 +32,7 @@ import { gayaKeping } from '@/lib/ui/warna-kode';
 import { CategoryBadge } from '@/components/ui/category-badge';
 import { PemilihWarna } from '@/components/ui/pemilih-warna';
 import { warnaOtomatisKategori } from '@/lib/ui/category-color';
+import type { WarnaPantone } from '@/lib/tampilan/warna-pilihan';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,8 +56,6 @@ function makeSchema(t: Translate) {
   return z.object({
     code: z.string().min(1, t('codeRequired')).max(50),
     name: z.string().min(1, t('nameRequired')),
-    // Warna jenis pilihan pemilik ("#rrggbb"); null = otomatis. Dipilih lewat PemilihWarna.
-    color: z.string().nullable(),
     isActive: z.boolean(),
     // Coerce empty string from number input to undefined so validation passes
     sortOrder: z.preprocess(
@@ -73,6 +72,8 @@ interface SupplierTypeRecord {
   code: string;
   name: string;
   color: string | null;
+  colorTcx: string | null;
+  colorPantone?: { name: string } | null;
   isActive: boolean;
   sortOrder: number | null;
   createdAt: string;
@@ -104,11 +105,16 @@ export default function SupplierTypesPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema) as any,
-    defaultValues: { code: '', name: '', color: null, isActive: true, sortOrder: undefined },
+    defaultValues: { code: '', name: '', isActive: true, sortOrder: undefined },
   });
+  // Warna Pantone pilihan pemilik; null = otomatis. Dikirim hanya bila disentuh, supaya menyimpan
+  // nama saja tidak pernah mengubah warnanya.
+  const [warna, setWarna] = useState<WarnaPantone | null>(null);
+  const [warnaDisentuh, setWarnaDisentuh] = useState(false);
+  // Hex yang tersimpan sebelum warna dipilih dari Pantone (tanpa kode TCX) — ditampilkan apa adanya.
+  const [warnaLama, setWarnaLama] = useState<string | null>(null);
 
   const isActive = watch('isActive');
-  const warna = watch('color');
   const namaKetik = watch('name');
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
@@ -143,11 +149,16 @@ export default function SupplierTypesPage() {
       ? tSupplierTypes('errDuplicate', { code: kode ?? '' })
       : h.code === 'IN_USE'
         ? tSupplierTypes('errInUse', { count: h.count ?? 0 })
-        : tSupplierTypes('saveFailed');
+        : h.code === 'UNKNOWN_PANTONE'
+          ? tSupplierTypes('errUnknownPantone')
+          : tSupplierTypes('saveFailed');
 
   const openCreate = () => {
     setEditingId(null);
-    reset({ code: '', name: '', color: null, isActive: true, sortOrder: undefined });
+    reset({ code: '', name: '', isActive: true, sortOrder: undefined });
+    setWarna(null);
+    setWarnaDisentuh(false);
+    setWarnaLama(null);
     setIsDialogOpen(true);
   };
 
@@ -156,10 +167,14 @@ export default function SupplierTypesPage() {
     reset({
       code: row.code,
       name: row.name,
-      color: row.color ?? null,
       isActive: row.isActive,
       sortOrder: row.sortOrder ?? undefined,
     });
+    setWarna(
+      row.colorTcx && row.color ? { tcx: row.colorTcx, nama: row.colorPantone?.name ?? '', hex: row.color } : null,
+    );
+    setWarnaDisentuh(false);
+    setWarnaLama(row.color && !row.colorTcx ? row.color : null);
     setIsDialogOpen(true);
   };
 
@@ -169,9 +184,10 @@ export default function SupplierTypesPage() {
         createSupplierTypeAction,
         updateSupplierTypeAction,
       } = await import('@/app/actions/supplier-types');
+      const isi = warnaDisentuh || !editingId ? { ...data, colorTcx: warna?.tcx ?? null } : data;
       const hasil = editingId
-        ? await updateSupplierTypeAction(editingId, data)
-        : await createSupplierTypeAction(data);
+        ? await updateSupplierTypeAction(editingId, isi)
+        : await createSupplierTypeAction(isi);
       if (!hasil.ok) {
         toast.error(pesanGagal(hasil, data.code.trim().toUpperCase()));
         return;
@@ -277,7 +293,14 @@ export default function SupplierTypesPage() {
                         </TableCell>
                         <TableCell>
                           {/* Tampil persis seperti lencananya di daftar pemasok — dengan warna pilihan bila ada. */}
-                          <CategoryBadge label={row.name} warna={row.color} />
+                          <span className="flex flex-wrap items-center gap-2">
+                            <CategoryBadge label={row.name} warna={row.color} />
+                            {row.colorTcx ? (
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {row.colorTcx} TCX{row.colorPantone?.name ? ` · ${row.colorPantone.name}` : ''}
+                              </span>
+                            ) : null}
+                          </span>
                         </TableCell>
                         <TableCell className="tabular-nums text-muted-foreground">
                           {dipakai > 0 ? tSupplierTypes('usageCount', { count: dipakai }) : tSupplierTypes('usageNone')}
@@ -386,9 +409,16 @@ export default function SupplierTypesPage() {
                   nilai={warna}
                   bawaan={warnaOtomatisKategori(namaKetik)}
                   label={tSupplierTypes('color')}
-                  onPilih={(hex) => setValue('color', hex, { shouldDirty: true })}
+                  lama={warnaDisentuh ? null : warnaLama}
+                  onPilih={(w) => {
+                    setWarna(w);
+                    setWarnaDisentuh(true);
+                  }}
                 />
-                <CategoryBadge label={namaKetik || tSupplierTypes('colorPreview')} warna={warna} />
+                <CategoryBadge
+                  label={namaKetik || tSupplierTypes('colorPreview')}
+                  warna={warna?.hex ?? (warnaDisentuh ? null : warnaLama)}
+                />
               </div>
               <p className="text-xs text-muted-foreground">{tSupplierTypes('colorHelp')}</p>
             </div>

@@ -17,6 +17,7 @@ import {
   type GrupGrafik,
   type SlotGrafik,
   type WarnaGrafik,
+  type WarnaPantone,
 } from "@/lib/tampilan/warna-pilihan";
 import { dinamis } from "@/lib/i18n/dinamis";
 
@@ -67,9 +68,11 @@ export function WarnaGrafikCard() {
   const berubah = tersimpan !== null && tulisWarnaGrafik(draf) !== tulisWarnaGrafik(tersimpan);
   const adaPilihan = Object.keys(draf).length > 0;
 
+  // Yang dikirim hanya kode Pantone per slot; hex dan nama diambil server dari katalog.
   const simpan = (warna: WarnaGrafik) =>
     mulai(async () => {
-      const r = await simpanWarnaGrafikAction(warna);
+      const kode = Object.fromEntries(Object.entries(warna).map(([slot, w]) => [slot, w.tcx]));
+      const r = await simpanWarnaGrafikAction(kode);
       if (!r.ok) {
         toast.error(t("gagal"));
         return;
@@ -79,10 +82,10 @@ export function WarnaGrafikCard() {
       toast.success(t("tersimpan"));
     });
 
-  const ubahSlot = (slot: SlotGrafik, hex: string | null) =>
+  const ubahSlot = (slot: SlotGrafik, warna: WarnaPantone | null) =>
     setDraf((d) => {
       const baru = { ...d };
-      if (hex) baru[slot] = hex;
+      if (warna) baru[slot] = warna;
       else delete baru[slot];
       return baru;
     });
@@ -126,7 +129,7 @@ export function WarnaGrafikCard() {
                       label={td(`grafik.slot.${kunci}`)}
                       labelOtomatis={grup === "tren" ? t("otomatis") : t("ikutTema")}
                       disabled={menyimpan}
-                      onPilih={(hex) => ubahSlot(kunci, hex)}
+                      onPilih={(w) => ubahSlot(kunci, w)}
                     />
                   </div>
                 ))}

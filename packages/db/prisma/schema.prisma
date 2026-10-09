@@ -176,11 +176,15 @@ model SupplierType {
   code      String     @unique
   name      String
   color     String?
+  colorTcx  String?
+  colorPantone PantoneColor? @relation(fields: [colorTcx], references: [tcx], onDelete: SetNull, onUpdate: NoAction)
   isActive  Boolean    @default(true)
   sortOrder Int?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   suppliers Supplier[]
+
+  @@index([colorTcx])
 }
 
 model Supplier {
@@ -2154,6 +2158,7 @@ model PantoneColor {
   bookRow     Int?
   favorites   PantoneColorFavorite[]
   themeUsers  User[]
+  supplierTypes SupplierType[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

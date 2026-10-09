@@ -1,24 +1,28 @@
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
-import { normalHex } from '@/lib/tampilan/warna-pilihan';
+import { normalTcx } from '@/lib/tampilan/warna-pilihan';
+import { ambilPantone } from '@/lib/tampilan/warna-pantone-queries';
 
-/** Warna jenis (pilihan pemilik 2026-10-09): "#rrggbb", atau null/"" = otomatis. Selain itu ditolak. */
-const warnaJenis = z
+/**
+ * Warna jenis (pemilik 2026-10-09): kode Pantone TCX dari katalog, atau null/"" = otomatis. Hex-nya
+ * diambil dari katalog oleh penulis di bawah, tidak pernah dari peramban.
+ */
+const pantoneJenis = z
   .union([z.string(), z.null()])
   .transform((v, ctx) => {
     if (v === null || v.trim() === "") return null;
-    const hex = normalHex(v);
-    if (!hex) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Warna harus kode hex 6 digit" });
+    const tcx = normalTcx(v);
+    if (!tcx) {
+      ctx.addIssue({ code: "custom", message: "Warna harus kode Pantone TCX, mis. 19-4052" });
       return z.NEVER;
     }
-    return hex;
+    return tcx;
   });
 
 export const createSupplierTypeSchema = z.object({
   code: z.string().min(1).max(50),
   name: z.string().min(1),
-  color: warnaJenis.optional(),
+  colorTcx: pantoneJenis.optional(),
   isActive: z.boolean().optional().default(true),
   sortOrder: z.number().int().optional(),
 });
@@ -32,13 +36,25 @@ export const updateSupplierTypeSchema = createSupplierTypeSchema.partial();
  */
 export class SupplierTypeError extends Error {
   constructor(
-    readonly code: "DUPLICATE_CODE" | "IN_USE",
+    readonly code: "DUPLICATE_CODE" | "IN_USE" | "UNKNOWN_PANTONE",
     message: string,
     readonly count = 0,
   ) {
     super(message);
     this.name = "SupplierTypeError";
   }
+}
+
+/**
+ * Kolom warna untuk ditulis: undefined = tidak diubah; null = otomatis; kode = hex dari katalog.
+ * Kode yang tidak ada di katalog ditolak, bukan disimpan tanpa warna.
+ */
+async function kolomWarna(colorTcx: string | null | undefined): Promise<{ color: string | null; colorTcx: string | null } | undefined> {
+  if (colorTcx === undefined) return undefined;
+  if (colorTcx === null) return { color: null, colorTcx: null };
+  const w = (await ambilPantone([colorTcx])).get(colorTcx);
+  if (!w) throw new SupplierTypeError("UNKNOWN_PANTONE", "Unknown Pantone code");
+  return { color: w.hex, colorTcx: w.tcx };
 }
 
 /** Kode selalu huruf besar tanpa spasi tepi — "fabric " dan "FABRIC" adalah jenis yang sama. */
@@ -50,11 +66,13 @@ export async function createSupplierType(input: z.infer<typeof createSupplierTyp
   const validated = createSupplierTypeSchema.parse({ ...input, code: rapikanKode(input.code ?? "") });
   const existing = await prisma.supplierType.findUnique({ where: { code: validated.code } });
   if (existing) throw new SupplierTypeError("DUPLICATE_CODE", "A supplier type with this code already exists");
+  const warna = await kolomWarna(validated.colorTcx);
   return prisma.supplierType.create({
     data: {
       code: validated.code,
       name: validated.name,
-      color: validated.color ?? null,
+      color: warna?.color ?? null,
+      colorTcx: warna?.colorTcx ?? null,
       isActive: validated.isActive,
       sortOrder: validated.sortOrder,
     },
@@ -74,7 +92,9 @@ export async function updateSupplierType(
     });
     if (existing) throw new SupplierTypeError("DUPLICATE_CODE", "A supplier type with this code already exists");
   }
-  return prisma.supplierType.update({ where: { id }, data: validated });
+  const { colorTcx, ...lain } = validated;
+  const warna = await kolomWarna(colorTcx);
+  return prisma.supplierType.update({ where: { id }, data: { ...lain, ...(warna ?? {}) } });
 }
 
 export async function deleteSupplierType(id: string) {

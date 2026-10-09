@@ -21,7 +21,7 @@ import {
  */
 export type HasilJenisPemasok =
   | { ok: true }
-  | { ok: false; code: 'DUPLICATE_CODE' | 'IN_USE'; count?: number }
+  | { ok: false; code: 'DUPLICATE_CODE' | 'IN_USE' | 'UNKNOWN_PANTONE'; count?: number }
   | { ok: false; code: 'FAILED' };
 
 function keHasil(e: unknown): HasilJenisPemasok {

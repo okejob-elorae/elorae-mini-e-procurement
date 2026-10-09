@@ -2636,8 +2636,9 @@
     "sortHelp": "Smaller numbers appear first in the type choices.",
     "activeHelp": "Inactive types are not offered when adding a new supplier, but existing suppliers keep them.",
     "color": "Colour",
-    "colorHelp": "Used for the badge, gallery cards and the supplier board. Automatic = the default colour.",
-    "colorPreview": "Preview"
+    "colorHelp": "A Pantone TCX colour for the badge, gallery cards and the supplier board. Automatic = the default colour.",
+    "colorPreview": "Preview",
+    "errUnknownPantone": "That Pantone code is not in the catalogue. Pick again from the list."
   },
   "notaRegister": {
     "pageSubtitle": "List of material delivery (nota) to CMT",
@@ -24075,9 +24076,6 @@
     "pilihWarna": "Choose a colour for {label}",
     "otomatis": "Automatic",
     "ikutTema": "Follow theme",
-    "kodeHex": "Colour code (hex)",
-    "pakai": "Use",
-    "hexTidakSah": "Type 6 digits, e.g. #2563eb",
     "memuat": "Loading colours…",
     "simpan": "Save colours",
     "kembalikan": "Reset all to automatic",
@@ -24113,6 +24111,26 @@
           "spg": "SPG"
         }
       }
-    }
+    },
+    "cariPantone": "Search a Pantone name or code, e.g. Classic Blue / 19-4052",
+    "favorit": "Favourite Pantones",
+    "semuaPantone": "All Pantones",
+    "tidakDitemukan": "No matching Pantone.",
+    "muatLagi": "Load more",
+    "rona": {
+      "merah": "Red",
+      "pink": "Pink",
+      "oranye": "Orange",
+      "kuning": "Yellow",
+      "hijau": "Green",
+      "toska": "Teal",
+      "biru": "Blue",
+      "ungu": "Purple",
+      "cokelat": "Brown",
+      "abu": "Grey",
+      "hitam": "Black",
+      "putih": "White"
+    },
+    "bukanPantone": "not Pantone"
   }
 }
