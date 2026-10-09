@@ -198,16 +198,21 @@ describe("ringkasPeriode", () => {
 });
 
 describe("harga", () => {
-  test("perkiraan = median views × harga per 1.000 views, dibulatkan 50 rb", () => {
-    assert.deepEqual(p.perkiraanHarga(267_000, 30_000, 60_000), { min: 8_000_000, maks: 16_000_000, tengah: 12_000_000 });
-    assert.equal(p.perkiraanHarga(0, 30_000, 60_000), null);
-    assert.equal(p.perkiraanHarga(1000, 60_000, 30_000), null);
+  const patokan = { n: 6, cukup: true, p25: 30_000, median: 40_000, p75: 50_000 };
+  test("perkiraan = median views × patokan Elorae (kuartil bawah, median, kuartil atas), dibulatkan 50 rb", () => {
+    assert.deepEqual(p.perkiraanHarga(200_000, patokan), { bawah: 6_000_000, tengah: 8_000_000, atas: 10_000_000 });
   });
-  test("harga diminta dinilai terhadap rentang", () => {
-    assert.deepEqual(p.nilaiHargaDiminta(15_000_000, 200_000, 30_000, 60_000), { cpm: 75_000, nilai: "MAHAL" });
-    assert.deepEqual(p.nilaiHargaDiminta(9_000_000, 200_000, 30_000, 60_000), { cpm: 45_000, nilai: "WAJAR" });
-    assert.deepEqual(p.nilaiHargaDiminta(4_000_000, 200_000, 30_000, 60_000), { cpm: 20_000, nilai: "MURAH" });
-    assert.equal(p.nilaiHargaDiminta(1, 0, 30_000, 60_000), null);
+  test("tanpa patokan yang cukup → tidak ada perkiraan (panel tidak menebak)", () => {
+    assert.equal(p.perkiraanHarga(200_000, { n: 2, cukup: false }), null);
+    assert.equal(p.perkiraanHarga(200_000, null), null);
+    assert.equal(p.perkiraanHarga(0, patokan), null);
+  });
+  test("harga diminta: harga per 1.000 views selalu dihitung; posisinya hanya bila patokan cukup", () => {
+    assert.deepEqual(p.nilaiHargaDiminta(15_000_000, 200_000, patokan), { cpm: 75_000, posisi: "DI_ATAS" });
+    assert.deepEqual(p.nilaiHargaDiminta(9_000_000, 200_000, patokan), { cpm: 45_000, posisi: "DALAM" });
+    assert.deepEqual(p.nilaiHargaDiminta(4_000_000, 200_000, patokan), { cpm: 20_000, posisi: "DI_BAWAH" });
+    assert.deepEqual(p.nilaiHargaDiminta(9_000_000, 200_000, null), { cpm: 45_000, posisi: null });
+    assert.equal(p.nilaiHargaDiminta(1, 0, patokan), null);
   });
   test("ketikan harga gaya Indonesia", () => {
     assert.equal(p.bacaRupiah("15jt"), 15_000_000);

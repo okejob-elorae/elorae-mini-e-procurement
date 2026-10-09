@@ -267,6 +267,8 @@
     .lencana { border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 800; white-space: nowrap; }
     .lencana.MURAH, .lencana.WAJAR { background: color-mix(in srgb, var(--naik) 16%, transparent); color: var(--naik); }
     .lencana.MAHAL { background: color-mix(in srgb, var(--turun) 16%, transparent); color: var(--turun); }
+    .lencana.netral { background: var(--kartu-2); color: var(--teks); white-space: normal; }
+    .lencana { white-space: normal; }
 
     .chip-baris { display: flex; flex-wrap: wrap; gap: 6px; }
     .chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 5px 10px;
@@ -410,7 +412,8 @@
     const wadah = el("div", { kelas: "wadah" });
     akar.append(wadah);
     document.documentElement.append(host);
-    panel = { host, wadah, kecil: Boolean(setelan?.kecil), animasi: true, tampilan, mengetik: false, tertunda: false };
+    panel = { host, wadah, kecil: Boolean(setelan?.kecil), animasi: true, tampilan, mengetik: false, tertunda: false, patokan: null };
+    panel.patokan = await kirimKeLatar({ jenis: "bacaPatokan" });
     pantauTemaHalaman();
     await perbaruiPanel();
     setInterval(() => {
@@ -435,6 +438,7 @@
     }
     panel.host.style.display = "";
     membaca = true;
+    if (paksa) panel.patokan = await kirimKeLatar({ jenis: "bacaPatokan", paksa: true });
     try {
       hasilTerakhir = await bacaUntukPanel(paksa);
     } catch (e) {
@@ -555,32 +559,67 @@
   /** Harga yang diketik per akun selama halaman terbuka (tidak disimpan ke mana pun). */
   const hargaDiketik = new Map();
 
+  const POSISI_HARGA = {
+    DI_BAWAH: { kelas: "MURAH", teks: "di bawah yang biasa Elorae bayar" },
+    DALAM: { kelas: "WAJAR", teks: "dalam rentang yang biasa Elorae bayar" },
+    DI_ATAS: { kelas: "MAHAL", teks: "di atas yang biasa Elorae bayar" },
+  };
+
+  /**
+   * Harga per video. Patokan HANYA dari kolaborasi berbayar Elorae (GET /patokan): kuartil bawah,
+   * median, kuartil atas harga per 1.000 views yang pernah dibayar. Tanpa patokan yang cukup, panel
+   * tidak menebak — hanya menghitung harga per 1.000 views dari harga yang diketik.
+   */
   function hargaProfil(handle, r) {
-    const { cpmMin, cpmMaks } = panel.tampilan;
-    const perkiraan = alat.perkiraanHarga(r.medianViews, cpmMin, cpmMaks);
-    const isi = [el("div", { kelas: "judul-blok" }, el("span", { teks: "Perkiraan harga per video" }))];
-    if (!perkiraan) {
-      isi.push(el("div", { kelas: "catatan", teks: "Belum bisa diperkirakan: butuh paling sedikit 3 video berumur 48 jam." }));
+    const pk = panel.patokan;
+    const patokan = pk?.ok ? pk.patokan : null;
+    const isi = [el("div", { kelas: "judul-blok" }, el("span", { teks: "Harga per video" }))];
+    if (r.medianViews == null) {
+      isi.push(el("div", { kelas: "catatan", teks: "Butuh paling sedikit 3 video berumur 48 jam untuk menghitung median views." }));
       return el("div", { kelas: "blok" }, ...isi);
     }
-    isi.push(
-      el("div", { kelas: "harga bulat", teks: `${alat.rupiahPendek(perkiraan.min)} – ${alat.rupiahPendek(perkiraan.maks)}` }),
-      el("div", {
-        kelas: "catatan",
-        teks: `Median ${alat.angkaPendek(r.medianViews)} views × ${alat.rupiahPendek(cpmMin)}–${alat.rupiahPendek(cpmMaks)} per 1.000 views. Angka per 1.000 views adalah asumsi — ubah di popup ekstensi.`,
-      }),
-    );
+    const perkiraan = alat.perkiraanHarga(r.medianViews, patokan);
+    if (perkiraan) {
+      isi.push(
+        el("div", { kelas: "harga bulat", teks: `${alat.rupiahPendek(perkiraan.bawah)} – ${alat.rupiahPendek(perkiraan.atas)}` }),
+        el("div", {
+          kelas: "catatan",
+          teks:
+            `Median ${alat.angkaPendek(r.medianViews)} views × ${alat.rupiahPendek(patokan.p25)}–${alat.rupiahPendek(patokan.p75)} per 1.000 views ` +
+            `(tengah ${alat.rupiahPendek(patokan.median)}): separuh dari ${patokan.n} kolaborasi berbayar Elorae dibayar di rentang itu.`,
+        }),
+      );
+    } else if (patokan) {
+      isi.push(
+        el("div", {
+          kelas: "catatan",
+          teks:
+            `Belum ada patokan: Elorae baru punya ${patokan.n} kolaborasi berbayar yang sudah tayang dengan views berumur ≥ ${patokan.hariMinViews} hari ` +
+            `(butuh ${patokan.minSampel}). Patokan muncul sendiri begitu datanya cukup.`,
+        }),
+      );
+    } else {
+      isi.push(
+        el("div", {
+          kelas: "catatan",
+          teks:
+            pk?.kode === "BELUM_TERSAMBUNG"
+              ? "Sambungkan ekstensi ke Elorae untuk memakai patokan dari kolaborasi Anda."
+              : "Patokan dari Elorae tidak terbaca. Tekan tombol putar untuk mencoba lagi.",
+        }),
+      );
+    }
     const lencana = el("span", { kelas: "lencana", hidden: "" });
     const perbaruiLencana = (teks) => {
-      const nilai = alat.nilaiHargaDiminta(alat.bacaRupiah(teks), r.medianViews, cpmMin, cpmMaks);
+      const nilai = alat.nilaiHargaDiminta(alat.bacaRupiah(teks), r.medianViews, patokan);
       if (!nilai) {
         lencana.hidden = true;
         return;
       }
-      const label = { MURAH: "Murah", WAJAR: "Wajar", MAHAL: "Mahal" }[nilai.nilai];
+      const pos = nilai.posisi ? POSISI_HARGA[nilai.posisi] : null;
       lencana.hidden = false;
-      lencana.className = `lencana ${nilai.nilai}`;
-      lencana.textContent = `${label} · ${alat.rupiahPendek(nilai.cpm)}/1.000 views`;
+      lencana.className = `lencana ${pos ? pos.kelas : "netral"}`;
+      lencana.textContent = `${alat.rupiahPendek(nilai.cpm)} per 1.000 views${pos ? ` · ${pos.teks}` : ""}`;
     };
     const masukan = el("input", {
       type: "text",

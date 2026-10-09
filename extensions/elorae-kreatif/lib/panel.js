@@ -195,22 +195,25 @@ export function perubahanPersen(baru, lama) {
 const pembulatHarga = (n) => Math.round(n / 50_000) * 50_000;
 
 /**
- * Perkiraan harga wajar satu video = views dasar × harga per 1.000 views (rentang asumsi).
- * Views dasar = MEDIAN views posting ER, bukan rata-rata: video viral tidak boleh menaikkan harga.
+ * Perkiraan harga satu video = median views akun × patokan harga per 1.000 views dari kolaborasi
+ * berbayar ELORAE SENDIRI (kuartil bawah, median, kuartil atas — `apps/web/lib/creative/patokan-harga.ts`).
+ * Tanpa patokan yang cukup → null: panel tidak menebak.
  */
-export function perkiraanHarga(viewsDasar, cpmMin, cpmMaks) {
-  if (!(viewsDasar > 0) || !(cpmMin > 0) || !(cpmMaks >= cpmMin)) return null;
-  const min = pembulatHarga((viewsDasar / 1000) * cpmMin);
-  const maks = pembulatHarga((viewsDasar / 1000) * cpmMaks);
-  return { min, maks, tengah: pembulatHarga((min + maks) / 2) };
+export function perkiraanHarga(viewsDasar, patokan) {
+  if (!(viewsDasar > 0) || !patokan?.cukup) return null;
+  const kali = (cpm) => pembulatHarga((viewsDasar / 1000) * cpm);
+  return { bawah: kali(patokan.p25), tengah: kali(patokan.median), atas: kali(patokan.p75) };
 }
 
-/** Harga yang diminta KOL → harga per 1.000 views + penilaian terhadap rentang asumsi. */
-export function nilaiHargaDiminta(harga, viewsDasar, cpmMin, cpmMaks) {
+/**
+ * Harga yang diminta KOL → harga per 1.000 views (hitungan, selalu ada bila views diketahui) dan
+ * posisinya terhadap patokan Elorae bila patokan cukup: DI_BAWAH (< kuartil bawah), DALAM, DI_ATAS (> kuartil atas).
+ */
+export function nilaiHargaDiminta(harga, viewsDasar, patokan) {
   if (!(harga > 0) || !(viewsDasar > 0)) return null;
   const cpm = Math.round((harga / viewsDasar) * 1000);
-  const nilai = cpm < cpmMin ? "MURAH" : cpm <= cpmMaks ? "WAJAR" : "MAHAL";
-  return { cpm, nilai };
+  const posisi = !patokan?.cukup ? null : cpm < patokan.p25 ? "DI_BAWAH" : cpm <= patokan.p75 ? "DALAM" : "DI_ATAS";
+  return { cpm, posisi };
 }
 
 /** "15jt", "12,5 juta", "15.000.000", "800rb", "800k" → rupiah; null bila tak terbaca. */

@@ -18,41 +18,26 @@ export const AKSEN = {
   mono: { nama: "Monokrom", hex: null },
 };
 
-/** Asumsi harga per 1.000 views (rupiah) bila pemilik belum mengubahnya — ASUMSI, bukan data pasar. */
-export const CPM_BAWAAN = Object.freeze({ min: 30_000, maks: 60_000 });
-
 export const TAMPILAN_BAWAAN = Object.freeze({
   tema: "otomatis",
   aksen: "lilac",
   ukuran: "lengkap",
   posisi: "kanan",
   periode: 30,
-  cpmMin: CPM_BAWAAN.min,
-  cpmMaks: CPM_BAWAAN.maks,
 });
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
-function cpm(n, cadangan) {
-  const x = typeof n === "string" ? Number(n.replace(/[^\d]/g, "")) : n;
-  return Number.isFinite(x) && x >= 1_000 && x <= 10_000_000 ? Math.round(x) : cadangan;
-}
-
-/** Setelan apa pun → setelan sah; nilai rusak diganti bawaan, CPM ditukar bila terbalik. */
+/** Setelan apa pun → setelan sah; nilai rusak diganti bawaan. */
 export function bersihkanTampilan(x) {
   const s = x && typeof x === "object" ? x : {};
   const aksen = typeof s.aksen === "string" && (s.aksen in AKSEN || HEX.test(s.aksen)) ? s.aksen.toLowerCase() : TAMPILAN_BAWAAN.aksen;
-  let cpmMin = cpm(s.cpmMin, TAMPILAN_BAWAAN.cpmMin);
-  let cpmMaks = cpm(s.cpmMaks, TAMPILAN_BAWAAN.cpmMaks);
-  if (cpmMin > cpmMaks) [cpmMin, cpmMaks] = [cpmMaks, cpmMin];
   return {
     tema: TEMA.includes(s.tema) ? s.tema : TAMPILAN_BAWAAN.tema,
     aksen,
     ukuran: UKURAN.includes(s.ukuran) ? s.ukuran : TAMPILAN_BAWAAN.ukuran,
     posisi: POSISI.includes(s.posisi) ? s.posisi : TAMPILAN_BAWAAN.posisi,
     periode: PERIODE_HARI.includes(Number(s.periode)) ? Number(s.periode) : TAMPILAN_BAWAAN.periode,
-    cpmMin,
-    cpmMaks,
   };
 }
 

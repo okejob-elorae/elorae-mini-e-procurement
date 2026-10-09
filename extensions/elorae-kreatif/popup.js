@@ -130,7 +130,6 @@ segarkan(true);
 
 // ------------------------------------------------------------ tampilan panel di TikTok
 // Disimpan langsung di storage.local; panel yang sedang terbuka di TikTok ikut berubah seketika.
-const rupiah = new Intl.NumberFormat("id-ID");
 let tampilan = bersihkanTampilan(null);
 
 async function simpanTampilan(sebagian) {
@@ -147,8 +146,6 @@ function gambarTampilan() {
   const sendiri = !(tampilan.aksen in AKSEN);
   $("warnaSendiri").setAttribute("aria-checked", String(sendiri));
   if (sendiri) $("warnaSendiri").querySelector("input").value = tampilan.aksen;
-  if (document.activeElement !== $("cpmMin")) $("cpmMin").value = `Rp ${rupiah.format(tampilan.cpmMin)}`;
-  if (document.activeElement !== $("cpmMaks")) $("cpmMaks").value = `Rp ${rupiah.format(tampilan.cpmMaks)}`;
 }
 
 function siapkanTampilan() {
@@ -182,18 +179,6 @@ function siapkanTampilan() {
   masukan.addEventListener("change", () => simpanTampilan({ aksen: masukan.value }));
   lain.append(masukan);
   wadah.append(lain);
-
-  for (const id of ["cpmMin", "cpmMaks"]) {
-    $(id).addEventListener("change", async () => {
-      const angkaSaja = Number($(id).value.replace(/[^\d]/g, ""));
-      const sebelum = tampilan[id];
-      await simpanTampilan({ [id]: angkaSaja });
-      $("pesanCpm").textContent =
-        tampilan[id] === sebelum && angkaSaja !== sebelum
-          ? "Isi antara Rp 1.000 dan Rp 10.000.000 per 1.000 views."
-          : "Tersimpan. Panel di TikTok langsung memakai angka ini.";
-    });
-  }
 }
 
 siapkanTampilan();

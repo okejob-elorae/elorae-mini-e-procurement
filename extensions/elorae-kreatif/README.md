@@ -86,9 +86,12 @@ Di profil, panel lengkap juga menampilkan:
   views, like, komentar, share, simpan, ER) dibanding periode yang sama sebelumnya, dengan ▲/▼.
   Kedua periode berakhir 48 jam lalu, karena video yang lebih baru masih mengumpulkan views. Bila
   panel menulis "belum mencakup", gulir daftar video di profil ke bawah lalu tekan tombol baca ulang.
-- **Perkiraan harga per video** = median views × harga per 1.000 views. Ketik harga yang diminta KOL
-  (mis. `15jt`) untuk melihat apakah murah, wajar, atau mahal. Harga per 1.000 views adalah ASUMSI
-  (bawaan Rp 30.000–60.000); ubah di popup sesuai harga yang pernah Anda bayar.
+- **Harga per video** — dari data Elorae sendiri, bukan tebakan. Elorae menghitung harga per
+  1.000 views setiap kolaborasi berbayar yang sudah tayang (fee yang disepakati ÷ views video
+  TikTok-nya yang tercatat ≥ 7 hari sesudah tayang × 1.000), lalu panel memakai kuartil bawah–atas
+  angka itu: perkiraan = median views akun × rentang itu. Patokan baru muncul bila ada paling sedikit
+  5 kolaborasi seperti itu; sebelum itu panel hanya menghitung harga per 1.000 views dari harga yang
+  Anda ketik (mis. `15jt`), tanpa menilai murah atau mahal.
 
 **Tampilan** diatur di popup ekstensi → "Tampilan panel di TikTok": tema (otomatis mengikuti
 TikTok, terang, gelap), warna, ukuran lengkap/ringkas, dan posisi kiri/kanan bawah. Tombol ⤡ di

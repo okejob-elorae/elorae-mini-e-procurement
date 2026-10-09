@@ -122,6 +122,21 @@ async function panggil(eloraeUrl, jalur, { metode = "POST", body, token } = {}) 
   }
 }
 
+/**
+ * Patokan harga per 1.000 views dari kolaborasi berbayar Elorae (GET /patokan), disimpan 30 menit
+ * di storage.session. Hanya angka ringkasan; tanpa sambungan → BELUM_TERSAMBUNG.
+ */
+const SIMPAN_PATOKAN_MS = 30 * 60_000;
+async function bacaPatokan(paksa) {
+  const { patokanCache } = await sesi.get("patokanCache");
+  if (!paksa && patokanCache && Date.now() - patokanCache.at < SIMPAN_PATOKAN_MS) return { ok: true, patokan: patokanCache.patokan };
+  const r = await panggilDenganToken("/patokan", { metode: "GET" });
+  if (r.gagal) return { ok: false, kode: r.gagal };
+  if (!r.json?.ok || !r.json.patokan) return { ok: false, kode: "HTTP" };
+  await sesi.set({ patokanCache: { at: Date.now(), patokan: r.json.patokan } });
+  return { ok: true, patokan: r.json.patokan };
+}
+
 async function koneksiAktif() {
   const { koneksi } = await baca("koneksi");
   return koneksi?.token && koneksi?.eloraeUrl ? koneksi : null;
@@ -490,7 +505,7 @@ async function perbaruiLencana() {
 // ============================================================ pesan dari popup & panel
 
 const DARI_HALAMAN_EKSTENSI = new Set(["ringkasan", "sambung", "putuskan", "setelOtomatis"]);
-const DARI_TIKTOK = new Set(["simpanManual", "apakahTabOtomatis", "bacaPanel", "setelPanel"]);
+const DARI_TIKTOK = new Set(["simpanManual", "apakahTabOtomatis", "bacaPanel", "setelPanel", "bacaPatokan"]);
 
 chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
   if (pengirim.id !== chrome.runtime.id || !pesan || typeof pesan.jenis !== "string") return false;
@@ -534,6 +549,8 @@ async function tanganiPesan(pesan, pengirim) {
       return { ok: true };
     case "simpanManual":
       return simpanManual(pesan.url, pesan.data);
+    case "bacaPatokan":
+      return bacaPatokan(Boolean(pesan.paksa));
     default:
       return { ok: false, kode: "TIDAK_DIKENAL" };
   }

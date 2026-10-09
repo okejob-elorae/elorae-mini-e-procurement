@@ -6,14 +6,13 @@ describe("bersihkanTampilan", () => {
   test("kosong → bawaan", () => {
     assert.deepEqual(t.bersihkanTampilan(undefined), { ...t.TAMPILAN_BAWAAN });
   });
-  test("nilai sah dipakai, rusak diganti bawaan, CPM terbalik ditukar", () => {
-    const s = t.bersihkanTampilan({ tema: "gelap", aksen: "#FF00AA", ukuran: "x", posisi: "kiri", periode: "90", cpmMin: "70.000", cpmMaks: 40000 });
-    assert.deepEqual(s, { tema: "gelap", aksen: "#ff00aa", ukuran: "lengkap", posisi: "kiri", periode: 90, cpmMin: 40000, cpmMaks: 70000 });
+  test("nilai sah dipakai, rusak diganti bawaan; kunci lama (asumsi harga) dibuang", () => {
+    const s = t.bersihkanTampilan({ tema: "gelap", aksen: "#FF00AA", ukuran: "x", posisi: "kiri", periode: "90", cpmMin: 30000 });
+    assert.deepEqual(s, { tema: "gelap", aksen: "#ff00aa", ukuran: "lengkap", posisi: "kiri", periode: 90 });
   });
-  test("aksen tak dikenal dan CPM di luar batas → bawaan", () => {
-    const s = t.bersihkanTampilan({ aksen: "ungu", cpmMin: 5, periode: 14 });
+  test("aksen dan periode tak dikenal → bawaan", () => {
+    const s = t.bersihkanTampilan({ aksen: "ungu", periode: 14 });
     assert.equal(s.aksen, "lilac");
-    assert.equal(s.cpmMin, t.CPM_BAWAAN.min);
     assert.equal(s.periode, 30);
   });
 });
