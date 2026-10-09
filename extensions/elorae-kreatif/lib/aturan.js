@@ -147,6 +147,12 @@ export function perbaruiJedaLokal(jeda, status, sekarang) {
     return jeda;
   }
   if (!Number.isFinite(jeda.sampai) || jeda.sampai <= sekarang) return null;
+  // Jeda berwaktu (gagal beruntun) juga dipasang Elorae. Bila Elorae sudah terlihat menjeda lalu
+  // tidak lagi — orang menekan Lanjutkan di Pemantauan, atau "Cek sekarang" melepasnya — lepas juga
+  // di sini; tanpa ini ekstensi tetap diam sampai jam jedanya sendiri habis.
+  if (!status) return jeda;
+  if (serverMenjeda(status, sekarang)) return jeda.terlihatDijeda ? jeda : { ...jeda, terlihatDijeda: true };
+  if (jeda.terlihatDijeda) return null;
   return jeda;
 }
 

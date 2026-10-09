@@ -323,3 +323,20 @@ describe("putuskanLangkah — permintaan langsung (Cek sekarang)", () => {
     assert.match(a.teksKeadaan({ keadaan: "PERMINTAAN" }), /Cek sekarang/);
   });
 });
+
+describe("perbaruiJedaLokal — jeda berwaktu dilepas saat Elorae melepasnya", () => {
+  const jeda = { alasan: "GAGAL_BERUNTUN", sampai: SIANG + 60 * MENIT };
+  const dijeda = statusServer({ dijedaSampai: new Date(SIANG + 60 * MENIT).toISOString(), alasanJeda: "GAGAL_BERUNTUN", aktif: false });
+  test("Elorae terlihat menjeda → ditandai; lalu Elorae melepas (Lanjutkan / Cek sekarang) → jeda lokal lepas", () => {
+    const tanda = a.perbaruiJedaLokal(jeda, dijeda, SIANG);
+    assert.equal(tanda.terlihatDijeda, true);
+    assert.equal(a.perbaruiJedaLokal(tanda, statusServer(), SIANG + MENIT), null);
+  });
+  test("Elorae belum pernah terlihat menjeda (laporan belum sampai) → jeda lokal tetap sampai waktunya", () => {
+    assert.deepEqual(a.perbaruiJedaLokal(jeda, statusServer(), SIANG), jeda);
+    assert.equal(a.perbaruiJedaLokal(jeda, statusServer(), SIANG + 61 * MENIT), null);
+  });
+  test("Elorae tak terjangkau → jeda tetap", () => {
+    assert.deepEqual(a.perbaruiJedaLokal({ ...jeda, terlihatDijeda: true }, null, SIANG), { ...jeda, terlihatDijeda: true });
+  });
+});
