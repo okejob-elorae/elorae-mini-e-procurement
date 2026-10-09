@@ -37,14 +37,15 @@ const tunda = (ms: number) => ({ '--anim-delay': `${ms}ms` }) as CSSProperties;
 
 /**
  * Warna umur piutang: skala kegentingan, bukan kategori. Yang belum jatuh tempo
- * abu netral — hijau di sini akan dibaca sebagai "Lapangan", warna seri itu di
- * grafik tren. Lalu kuning, oranye, dan merah untuk yang sudah lewat 60 hari.
+ * abu netral, lalu SATU rona tema yang makin menonjol makin lama lewatnya
+ * (pemilik 2026-10-09: kuning/oranye/merah "cukup mengganggu"; `--viz-tema-*`
+ * di globals.css menjaga ketiganya tetap jelas berbeda di tema apa pun).
  */
 const WARNA_UMUR: Record<KelompokUmur['kunci'], string> = {
-  belum: 'color-mix(in oklab, var(--muted-foreground) 45%, transparent)',
-  h1_30: 'var(--viz-4)',
-  h31_60: 'var(--viz-2)',
-  lebih60: 'var(--destructive)',
+  belum: "var(--viz-netral)",
+  h1_30: "var(--viz-tema-lemah)",
+  h31_60: "var(--viz-tema-sedang)",
+  lebih60: "var(--viz-tema-kuat)",
 };
 
 /**
@@ -499,15 +500,14 @@ export function DashboardPageClient({
               {
                 label: tDashboard('kpiRawValue'),
                 nilai: cogsRawVsFinished.rawValue,
-                // Dua bagian dari SATU ukuran: dua nada satu rona. Biru dan hijau
-                // sudah berarti marketplace dan lapangan di grafik tren.
-                warna: 'var(--viz-5)',
+                // Dua bagian dari SATU ukuran: dua nada satu rona — rona tema.
+                warna: "var(--viz-tema-kuat)",
                 keterangan: tDashboard('kpiRawValueCtx', { count: formatNumber(cogsRawVsFinished.rawCount) }),
               },
               {
                 label: tDashboard('kpiFinishedValue'),
                 nilai: cogsRawVsFinished.finishedValue,
-                warna: 'color-mix(in oklab, var(--viz-5) 45%, var(--kpi-surface))',
+                warna: "var(--viz-tema-lemah)",
                 keterangan: tDashboard('kpiFinishedValueCtx', {
                   count: formatNumber(cogsRawVsFinished.finishedCount),
                 }),

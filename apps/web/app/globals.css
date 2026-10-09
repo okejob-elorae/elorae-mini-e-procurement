@@ -935,9 +935,10 @@ html.backoffice-shell [data-slot="card-content"].px-0 {
    globals.css selalu terkirim bersama halaman.
    ========================================================================== */
 
-/* Palet grafik — TIDAK mengikuti warna tema, dengan sengaja: palet kategoris
-   butuh beberapa rona yang bisa dibedakan, termasuk oleh mata buta warna.
-   Nilainya sudah divalidasi; mode gelap dilangkahkan ulang dari rona yang sama. */
+/* Palet grafik KATEGORIS (garis tren per saluran, tahapan) — TIDAK mengikuti warna tema, dengan
+   sengaja: seri kategoris butuh beberapa rona yang bisa dibedakan, termasuk oleh mata buta warna.
+   Nilainya sudah divalidasi; mode gelap dilangkahkan ulang dari rona yang sama. Batang skala dan
+   komposisi memakai skala tema di bawahnya (--viz-tema-*). */
 .viz {
   --viz-surface: #fcfcfb;
   --viz-1: #2a78d6;
@@ -956,6 +957,35 @@ html.backoffice-shell [data-slot="card-content"].px-0 {
   --viz-4: #c98500;
   --viz-5: #d55181;
   --viz-6: #008300;
+}
+
+/* Skala tema — UNTUK batang skala dan bagian-dari-satu-jumlah (umur piutang, komposisi nilai stok),
+   bukan untuk seri kategoris di atas. Pemilik (2026-10-09): merah muda, kuning, dan merah di beranda
+   "cukup mengganggu" — warnanya harus ikut tema tetapi tetap jelas berbeda. Jadi satu rona, yaitu rona
+   --primary, dengan TERANG yang ditetapkan per mode supaya kontrasnya terhadap kartu tidak
+   bergantung pada warna tema yang dipilih (tema terang dengan primary pucat tetap terbaca). Chroma
+   diambil dari primary × 2, paling tinggi 0,14: primary abu tetap abu, tidak berubah jadi merah muda
+   karena rona yang tak terdefinisi. Mode gelap: makin terang = makin menonjol; mode terang sebaliknya. Terang tiap nada dipilih supaya
+   yang paling lemah pun ≥ 3:1 terhadap kartu (diukur 2026-10-09 di tema gelap #bce3df dan tema terang).
+   Cadangan tanpa sintaks warna relatif: campuran primary dengan latar kartu. */
+.viz {
+  --viz-netral: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+  --viz-tema-kuat: var(--primary);
+  --viz-tema-sedang: color-mix(in oklab, var(--primary) 66%, var(--kpi-surface, var(--card)));
+  --viz-tema-lemah: color-mix(in oklab, var(--primary) 36%, var(--kpi-surface, var(--card)));
+}
+
+@supports (color: oklch(from red l c h)) {
+  .viz {
+    --viz-tema-kuat: oklch(from var(--primary) 0.4 min(calc(c * 2), 0.14) h);
+    --viz-tema-sedang: oklch(from var(--primary) 0.53 min(calc(c * 2), 0.12) h);
+    --viz-tema-lemah: oklch(from var(--primary) 0.63 min(calc(c * 2), 0.09) h);
+  }
+  .dark .viz {
+    --viz-tema-kuat: oklch(from var(--primary) 0.88 min(calc(c * 2), 0.14) h);
+    --viz-tema-sedang: oklch(from var(--primary) 0.73 min(calc(c * 2), 0.12) h);
+    --viz-tema-lemah: oklch(from var(--primary) 0.58 min(calc(c * 2), 0.09) h);
+  }
 }
 
 /* SATU bentuk kartu untuk beranda backoffice dan aplikasi HP. Kartu shadcn di
