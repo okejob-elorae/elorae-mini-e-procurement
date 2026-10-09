@@ -21947,7 +21947,8 @@
           "SIAP": "The extension checks them within a few minutes.",
           "DI_LUAR_JAM": "Outside monitoring hours; the extension checks them when working hours start.",
           "TANPA_PERANGKAT": "No extension is running. Open the KOL tracker Chrome profile — the check runs once the extension is active.",
-          "NONAKTIF": "Automatic monitoring is switched off in Creative → Monitoring."
+          "NONAKTIF": "Automatic monitoring is switched off in Creative → Monitoring.",
+          "DIJEDA": "The extension is paused until {jam} (usually after several failures in a row). Press Resume on the device in Creative → Monitoring to run it now."
         },
         "err": {
           "TANPA_AKSES": "You don't have permission to manage Creative.",

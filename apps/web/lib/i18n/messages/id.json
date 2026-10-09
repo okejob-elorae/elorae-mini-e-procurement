@@ -21947,7 +21947,8 @@
           "SIAP": "Ekstensi mengeceknya dalam beberapa menit.",
           "DI_LUAR_JAM": "Sekarang di luar jam pemantauan; ekstensi mengeceknya saat jam kerja mulai.",
           "TANPA_PERANGKAT": "Belum ada ekstensi yang menyala. Buka Chrome profil KOL tracker — cek berjalan begitu ekstensinya aktif.",
-          "NONAKTIF": "Pemantauan otomatis sedang dimatikan di Kreatif → Pemantauan."
+          "NONAKTIF": "Pemantauan otomatis sedang dimatikan di Kreatif → Pemantauan.",
+          "DIJEDA": "Ekstensi sedang berhenti sementara sampai {jam} (biasanya karena beberapa kali gagal berturut-turut). Tekan Lanjutkan pada perangkatnya di Kreatif → Pemantauan untuk menjalankannya sekarang."
         },
         "err": {
           "TANPA_AKSES": "Anda tidak punya izin mengelola Kreatif.",

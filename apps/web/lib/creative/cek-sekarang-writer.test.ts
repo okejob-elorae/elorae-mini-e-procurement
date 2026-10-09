@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma, seededIds } from "@elorae/db";
 import { PRIORITAS_PANTAU } from "./pantau-antrean";
-import { MAKS_CEK_SEKARANG, mintaCekSekarang } from "./cek-sekarang-writer";
+import { MAKS_CEK_SEKARANG, keadaanPemantau, mintaCekSekarang } from "./cek-sekarang-writer";
+import { PANTAU_BAWAAN } from "./pantau-aturan";
 
 /*
  * "Cek sekarang" di Performa video terhadap basis data sungguhan. Data di 2003; teardown lewat
@@ -15,6 +16,7 @@ let kolId = "";
 let briefId = "";
 const k: Record<"selesai" | "antre" | "dipinjam" | "ig" | "tanpaLink", string> = { selesai: "", antre: "", dipinjam: "", ig: "", tanpaLink: "" };
 let tugasIds: string[] = [];
+const perangkatIds: string[] = [];
 
 const tugasKonten = (contentId: string) =>
   prisma.kolTugasPantau.findMany({ where: { contentId }, orderBy: { createdAt: "asc" }, select: { id: true, status: true, prioritas: true, jatuhAt: true, kunci: true, url: true } });
@@ -41,6 +43,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await prisma.kolPerangkat.deleteMany({ where: { id: { in: seededIds(perangkatIds) } } });
   await prisma.kolTugasPantau.deleteMany({ where: { contentId: { in: seededIds(Object.values(k).filter(Boolean)) } } });
   await prisma.kolTugasPantau.deleteMany({ where: { id: { in: seededIds(tugasIds) } } });
   await prisma.kolContent.deleteMany({ where: { id: { in: seededIds(Object.values(k).filter(Boolean)) } } });
@@ -96,5 +99,53 @@ describe("mintaCekSekarang", () => {
     expect(await mintaCekSekarang({ kontenIds: [], sekarang: SEKARANG })).toEqual({ ok: false, kode: "KOSONG" });
     const banyak = Array.from({ length: MAKS_CEK_SEKARANG + 1 }, (_, i) => `x${i}`);
     expect(await mintaCekSekarang({ kontenIds: banyak, sekarang: SEKARANG })).toEqual({ ok: false, kode: "TERLALU_BANYAK" });
+  });
+});
+
+describe("keadaanPemantau", () => {
+  const menit = (n: number) => new Date(SEKARANG.getTime() + n * 60_000);
+  async function perangkat(isi: { lapor: Date | null; jedaSampai?: Date | null }) {
+    const user = await prisma.user.findFirstOrThrow({ select: { id: true } });
+    const p = await prisma.kolPerangkat.create({
+      data: {
+        nama: `${tag} perangkat`,
+        dibuatOlehId: user.id,
+        tokenHash: `${tag}${Math.random()}`,
+        tersambungAt: menit(-60),
+        terakhirLaporAt: isi.lapor,
+        dijedaSampai: isi.jedaSampai ?? null,
+        alasanJeda: isi.jedaSampai ? "GAGAL_BERUNTUN" : null,
+      },
+      select: { id: true },
+    });
+    perangkatIds.push(p.id);
+    return p.id;
+  }
+  const keadaan = (ids: string[], lain: { sekarang?: Date; aktif?: boolean } = {}) =>
+    keadaanPemantau({ sekarang: lain.sekarang ?? SEKARANG, pengaturan: { ...PANTAU_BAWAAN, aktif: lain.aktif ?? true }, perangkatIds: ids });
+
+  it("tidak ada perangkat yang melapor 10 menit terakhir → TANPA_PERANGKAT", async () => {
+    const lama = await perangkat({ lapor: menit(-11) });
+    expect(await keadaan([lama])).toEqual({ keadaan: "TANPA_PERANGKAT" });
+  });
+
+  it("perangkat hidup tapi semuanya dijeda → DIJEDA dengan waktu jeda paling cepat berakhir", async () => {
+    const a = await perangkat({ lapor: menit(-1), jedaSampai: menit(40) });
+    const b = await perangkat({ lapor: menit(-2), jedaSampai: menit(25) });
+    expect(await keadaan([a, b])).toEqual({ keadaan: "DIJEDA", sampai: menit(25).toISOString() });
+  });
+
+  it("ada satu perangkat hidup tanpa jeda → SIAP di jam kerja, DI_LUAR_JAM di luar jam kerja", async () => {
+    const a = await perangkat({ lapor: menit(-1), jedaSampai: menit(40) });
+    const b = await perangkat({ lapor: menit(-3) });
+    expect(await keadaan([a, b])).toEqual({ keadaan: "SIAP" });
+    // 2003-05-05 20.00 WIB, perangkat melapor semenit sebelumnya.
+    const malam = await perangkat({ lapor: new Date("2003-05-05T12:59:00Z") });
+    expect(await keadaan([malam], { sekarang: new Date("2003-05-05T13:00:00Z") })).toEqual({ keadaan: "DI_LUAR_JAM" });
+  });
+
+  it("pemantauan otomatis dimatikan → NONAKTIF", async () => {
+    const a = await perangkat({ lapor: menit(-1) });
+    expect(await keadaan([a], { aktif: false })).toEqual({ keadaan: "NONAKTIF" });
   });
 });

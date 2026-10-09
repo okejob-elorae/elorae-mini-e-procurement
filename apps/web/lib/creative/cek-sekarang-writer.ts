@@ -1,7 +1,7 @@
 import { Prisma, prisma } from "@elorae/db";
 import { isRetryableTxError, runSerializable } from "@/lib/db/tx-retry";
 import { kunciMinta, PRIORITAS_PANTAU } from "./pantau-antrean";
-import { dalamJamKerja } from "./pantau-aturan";
+import { dalamJamKerja, type PengaturanPantau } from "./pantau-aturan";
 import { urlKontenKanonik, videoIdDariLink } from "./pantau-muatan";
 import { bacaPengaturanPantau } from "./pantau-pengaturan";
 
@@ -104,25 +104,38 @@ export async function mintaCekSekarang(input: { kontenIds: readonly string[]; se
  * Apakah permintaan cek akan segera dikerjakan? Untuk pesan di layar sesudah "Cek sekarang":
  * - NONAKTIF: pemantauan otomatis dimatikan di Kreatif → Pemantauan;
  * - TANPA_PERANGKAT: tidak ada perangkat tersambung yang melapor dalam 10 menit terakhir
- *   (Chrome dengan ekstensi tidak terbuka) atau semuanya sedang dijeda;
+ *   (Chrome dengan ekstensi tidak terbuka);
+ * - DIJEDA: perangkatnya hidup, tetapi semuanya sedang dijeda (mis. 3 kegagalan beruntun) —
+ *   `sampai` = jeda yang paling cepat berakhir; bisa dilanjutkan dari Kreatif → Pemantauan;
  * - DI_LUAR_JAM: di luar jam kerja pemantauan (ekstensi menunggu jam mulai);
  * - SIAP: dicek dalam beberapa menit.
+ * `perangkatIds` hanya untuk tes yang berbagi basis data.
  */
-export type KeadaanPemantau = "SIAP" | "NONAKTIF" | "TANPA_PERANGKAT" | "DI_LUAR_JAM";
+export type KeadaanPemantau =
+  | { keadaan: "SIAP" | "NONAKTIF" | "TANPA_PERANGKAT" | "DI_LUAR_JAM" }
+  | { keadaan: "DIJEDA"; sampai: string };
 
 const BARU_MELAPOR_MS = 10 * 60_000;
 
-export async function keadaanPemantau(sekarang = new Date()): Promise<KeadaanPemantau> {
-  const pg = await bacaPengaturanPantau();
-  if (!pg.aktif) return "NONAKTIF";
-  const hidup = await prisma.kolPerangkat.count({
+export async function keadaanPemantau(
+  opsi: { sekarang?: Date; pengaturan?: PengaturanPantau; perangkatIds?: readonly string[] } = {},
+): Promise<KeadaanPemantau> {
+  const sekarang = opsi.sekarang ?? new Date();
+  const pg = opsi.pengaturan ?? (await bacaPengaturanPantau());
+  if (!pg.aktif) return { keadaan: "NONAKTIF" };
+  const hidup = await prisma.kolPerangkat.findMany({
     where: {
       dicabutAt: null,
       tokenHash: { not: null },
       terakhirLaporAt: { gte: new Date(sekarang.getTime() - BARU_MELAPOR_MS) },
-      OR: [{ dijedaSampai: null }, { dijedaSampai: { lte: sekarang } }],
+      ...(opsi.perangkatIds ? { id: { in: [...opsi.perangkatIds] } } : {}),
     },
+    select: { dijedaSampai: true },
   });
-  if (!hidup) return "TANPA_PERANGKAT";
-  return dalamJamKerja(sekarang, pg) ? "SIAP" : "DI_LUAR_JAM";
+  if (!hidup.length) return { keadaan: "TANPA_PERANGKAT" };
+  const jeda = hidup.map((p) => p.dijedaSampai).filter((d): d is Date => d !== null && d.getTime() > sekarang.getTime());
+  if (jeda.length === hidup.length) {
+    return { keadaan: "DIJEDA", sampai: new Date(Math.min(...jeda.map((d) => d.getTime()))).toISOString() };
+  }
+  return { keadaan: dalamJamKerja(sekarang, pg) ? "SIAP" : "DI_LUAR_JAM" };
 }

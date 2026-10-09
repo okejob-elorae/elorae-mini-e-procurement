@@ -195,6 +195,16 @@ describe("sambung perangkat", () => {
     expect((await perangkatDariToken(s.token, tambahMenit(SEKARANG, 15)))?.id).toBe(k.perangkatId);
   });
 
+  it("versi ekstensi dari kepala permintaan dicatat; versi yang bentuknya aneh diabaikan", async () => {
+    const p = await perangkat("Versi");
+    const token = `${tag}-versi-${Math.random()}`;
+    await prisma.kolPerangkat.update({ where: { id: p.id }, data: { tokenHash: createHash("sha256").update(token).digest("hex"), versiEkstensi: "0.1.0" } });
+    await perangkatDariToken(token, SEKARANG, { versi: "0.3.1" });
+    expect((await prisma.kolPerangkat.findUniqueOrThrow({ where: { id: p.id } })).versiEkstensi).toBe("0.3.1");
+    await perangkatDariToken(token, SEKARANG, { versi: "<script>" });
+    expect((await prisma.kolPerangkat.findUniqueOrThrow({ where: { id: p.id } })).versiEkstensi).toBe("0.3.1");
+  });
+
   it("kode lewat 15 menit kedaluwarsa; kode asal tidak sah", async () => {
     const k = await buatKodeSambung({ nama: `${tag} Lama`, olehUserId: userId, sekarang: SEKARANG });
     if (!k.ok) throw new Error(k.kode);

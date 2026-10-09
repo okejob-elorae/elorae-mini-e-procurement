@@ -75,7 +75,7 @@ export async function perangkatPermintaan(req: Request): Promise<{ ok: true; per
   const token = tokenDariKepala(req.headers.get("authorization"));
   if (!token) return { ok: false, respons: tolak("TOKEN_TIDAK_SAH") };
   if (!pembatasTokenPantau.coba(hashRahasia(token))) return { ok: false, respons: tolak("TERLALU_SERING") };
-  const perangkat = await perangkatDariToken(token);
+  const perangkat = await perangkatDariToken(token, new Date(), { versi: req.headers.get("x-elorae-versi") });
   if (!perangkat) return { ok: false, respons: tolak("TOKEN_TIDAK_SAH") };
   return { ok: true, perangkat };
 }

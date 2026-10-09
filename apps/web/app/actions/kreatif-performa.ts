@@ -39,14 +39,14 @@ export async function tempelLinkVideoAction(input: {
  */
 export async function cekSekarangAction(
   kontenIds: string[],
-): Promise<(HasilCekSekarang & { keadaan?: KeadaanPemantau }) | { ok: false; kode: "TANPA_AKSES" | "GAGAL" }> {
+): Promise<(HasilCekSekarang & { pemantau?: KeadaanPemantau }) | { ok: false; kode: "TANPA_AKSES" | "GAGAL" }> {
   const s = await auth();
   if (!s?.user?.id || !hasPermission(s.user.permissions ?? [], PERMISSIONS.CREATIVE_MANAGE)) return { ok: false, kode: "TANPA_AKSES" };
   try {
     const r = await mintaCekSekarang({ kontenIds: Array.isArray(kontenIds) ? kontenIds.filter((x) => typeof x === "string") : [] });
     if (!r.ok) return r;
     if (r.diantrekan > 0 || r.sudahAntre > 0) revalidatePath("/backoffice/kreatif/performa");
-    return { ...r, keadaan: await keadaanPemantau() };
+    return { ...r, pemantau: await keadaanPemantau() };
   } catch (err) {
     console.error("cekSekarang gagal:", err);
     return { ok: false, kode: "GAGAL" };

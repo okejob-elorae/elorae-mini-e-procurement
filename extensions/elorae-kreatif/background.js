@@ -91,7 +91,8 @@ async function panggil(eloraeUrl, jalur, { metode = "POST", body, token } = {}) 
   const pengendali = new AbortController();
   const batas = setTimeout(() => pengendali.abort(), BATAS_PANGGIL_MS);
   try {
-    const headers = { Accept: "application/json" };
+    // Versi ekstensi ikut dikirim: Elorae mencatatnya di Pemantauan (apakah ekstensi sudah dimuat ulang?).
+    const headers = { Accept: "application/json", "X-Elorae-Versi": chrome.runtime.getManifest().version };
     if (body !== undefined) headers["Content-Type"] = "application/json";
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(eloraeUrl + JALUR_API + jalur, {

@@ -482,9 +482,20 @@ const SELANG_LAPOR_MS = 60_000;
  * Sekaligus: jeda otomatis yang sudah lewat dilepas (log LANJUT), dan
  * `terakhirLaporAt` diperbarui paling sering sekali per menit.
  */
-export async function perangkatDariToken(token: string, sekarang: Date = new Date()): Promise<PerangkatSah | null> {
-  const p = await prisma.kolPerangkat.findUnique({ where: { tokenHash: hashRahasia(token) }, select: PILIH_PERANGKAT });
+/** Versi ekstensi dari kepala `x-elorae-versi` ("0.3.1"); bentuk lain diabaikan. */
+const POLA_VERSI = /^\d{1,3}(?:\.\d{1,3}){1,3}$/;
+
+export async function perangkatDariToken(
+  token: string,
+  sekarang: Date = new Date(),
+  opsi: { versi?: string | null } = {},
+): Promise<PerangkatSah | null> {
+  const p = await prisma.kolPerangkat.findUnique({ where: { tokenHash: hashRahasia(token) }, select: { ...PILIH_PERANGKAT, versiEkstensi: true } });
   if (!p || p.dicabutAt) return null;
+  // Versi yang sedang berjalan — terlihat di Pemantauan, jadi ketahuan apakah ekstensi sudah dimuat ulang.
+  if (opsi.versi && POLA_VERSI.test(opsi.versi) && opsi.versi !== p.versiEkstensi) {
+    await prisma.kolPerangkat.update({ where: { id: p.id }, data: { versiEkstensi: opsi.versi } });
+  }
   if (p.dijedaSampai && p.dijedaSampai.getTime() <= sekarang.getTime()) {
     await runSerializable(async (tx) => {
       const r = await tx.kolPerangkat.updateMany({
@@ -500,7 +511,15 @@ export async function perangkatDariToken(token: string, sekarang: Date = new Dat
     await prisma.kolPerangkat.update({ where: { id: p.id }, data: { terakhirLaporAt: sekarang } });
     p.terakhirLaporAt = sekarang;
   }
-  return p;
+  return {
+    id: p.id,
+    nama: p.nama,
+    dibuatOlehId: p.dibuatOlehId,
+    dijedaSampai: p.dijedaSampai,
+    alasanJeda: p.alasanJeda,
+    dicabutAt: p.dicabutAt,
+    terakhirLaporAt: p.terakhirLaporAt,
+  };
 }
 
 export type HitunganHariIni = { selesai: number; gagal: number; dipinjam: number; kuota: number; sisa: number };

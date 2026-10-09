@@ -199,8 +199,14 @@ export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPe
 }
 
 /** "Cek sekarang": antrekan video, lalu kabarkan kapan ekstensi kira-kira mengerjakannya. */
+/** "12.27" — jam WIB. */
+function jamWib(iso: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale.startsWith("en") ? "en-GB" : "id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(iso));
+}
+
 function useCekSekarang() {
   const t = useTranslations("kreatifRuang");
+  const locale = useLocale();
   const td = dinamis(t);
   const router = useRouter();
   const [sedangDicek, setSedangDicek] = useState<Set<string>>(new Set());
@@ -217,8 +223,13 @@ function useCekSekarang() {
         r.sudahAntre ? t("performa.cek.sudahAntre", { n: r.sudahAntre }) : null,
         r.dilewati ? t("performa.cek.dilewati", { n: r.dilewati }) : null,
       ].filter(Boolean);
-      const keadaan = r.keadaan ? td(`performa.cek.keadaan.${r.keadaan}`) : "";
-      if (r.keadaan && r.keadaan !== "SIAP") toast.warning([...bagian, keadaan].join(" "));
+      const p = r.pemantau;
+      const keadaan = !p
+        ? ""
+        : p.keadaan === "DIJEDA"
+          ? t("performa.cek.keadaan.DIJEDA", { jam: jamWib(p.sampai, locale) })
+          : td(`performa.cek.keadaan.${p.keadaan}`);
+      if (p && p.keadaan !== "SIAP") toast.warning([...bagian, keadaan].join(" "), { duration: 12_000 });
       else toast.success([...bagian, keadaan].join(" "));
       router.refresh();
     } catch {
