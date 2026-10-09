@@ -238,7 +238,9 @@ export async function perangkatBerhentiTugas(o: { sekarang?: Date; perangkatIds?
   return rows.map((r) => {
     const dijeda = r.dijedaSampai !== null && r.dijedaSampai.getTime() > sekarang.getTime() && r.alasanJeda !== "MANUAL";
     const alasan: PerangkatTugas["alasan"] =
-      dijeda && (r.alasanJeda === "CAPTCHA" || r.alasanJeda === "LOGIN" || r.alasanJeda === "GAGAL_BERUNTUN") ? r.alasanJeda : "TIDAK_LAPOR";
+      dijeda && (r.alasanJeda === "CAPTCHA" || r.alasanJeda === "LOGIN" || r.alasanJeda === "GAGAL_BERUNTUN" || r.alasanJeda === "DIBLOKIR_TIKTOK")
+        ? r.alasanJeda
+        : "TIDAK_LAPOR";
     const sejak = dijeda ? (jedaTerakhir.get(r.id) ?? sekarang) : (r.terakhirLaporAt ?? sekarang);
     return {
       id: r.id,

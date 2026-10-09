@@ -28,7 +28,7 @@ export type HasilCekSekarang =
  * karena perangkat lama tidak melapor. Captcha/login (perlu diselesaikan orang di Chrome) dan jeda
  * yang dipasang orang sendiri dari Pemantauan (MANUAL) tetap.
  */
-const JEDA_DILEPAS_PERMINTAAN = ["GAGAL_BERUNTUN", "TIDAK_LAPOR"] as const;
+const JEDA_DILEPAS_PERMINTAAN = ["GAGAL_BERUNTUN", "TIDAK_LAPOR", "DIBLOKIR_TIKTOK"] as const;
 
 async function lepasJedaOtomatis(sekarang: Date, perangkatIds?: readonly string[]): Promise<number> {
   if (perangkatIds && perangkatIds.length === 0) return 0;

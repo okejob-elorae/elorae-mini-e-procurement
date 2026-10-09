@@ -184,6 +184,19 @@ describe("setelahTugas", () => {
     });
     assert.equal(a.setelahTugas(0, "LOGIN", SIANG).jedaLokal.alasan, "LOGIN");
   });
+  test("diblokir TikTok → jeda berwaktu selama jeda otomatis Elorae (bukan menunggu server)", () => {
+    assert.deepEqual(a.setelahTugas(2, "DIBLOKIR_TIKTOK", SIANG, 45), {
+      gagalBeruntun: 0,
+      jedaLokal: { alasan: "DIBLOKIR_TIKTOK", sejak: SIANG, sampai: SIANG + 45 * MENIT },
+    });
+    assert.equal(a.setelahTugas(0, "DIBLOKIR_TIKTOK", SIANG).jedaLokal.sampai, SIANG + 60 * MENIT);
+    // "Cek sekarang" melewati jeda berwaktu; jeda ini juga lepas begitu Elorae terlihat menjeda lalu melepasnya.
+    const j = a.setelahTugas(0, "DIBLOKIR_TIKTOK", SIANG, 45).jedaLokal;
+    const dijeda = { dijedaSampai: new Date(SIANG + 45 * MENIT).toISOString() };
+    const terlihat = a.perbaruiJedaLokal(j, dijeda, SIANG + MENIT);
+    assert.equal(terlihat.terlihatDijeda, true);
+    assert.equal(a.perbaruiJedaLokal(terlihat, { dijedaSampai: null }, SIANG + 2 * MENIT), null);
+  });
 });
 
 describe("jadwalSetelahTugas", () => {
@@ -242,11 +255,18 @@ describe("putuskanTunggu", () => {
     assert.equal(a.putuskanTunggu({ jenis: "KONTEN", sejakMs: a.BATAS_TUNGGU_DATA_MS, status: "LOGIN" }), "KIRIM");
     assert.equal(a.putuskanTunggu({ jenis: "KONTEN", sejakMs: a.BATAS_TUNGGU_DATA_MS, status: null }), "KIRIM");
   });
+  test("pemeriksaan keamanan TikTok tidak ditunggu 25 detik", () => {
+    const dasar = { jenis: "KONTEN", status: "TIDAK_TERBACA", tanpaSkrip: true };
+    assert.equal(a.putuskanTunggu({ ...dasar, sejakMs: a.BATAS_TUNGGU_PEMERIKSAAN_MS - 1, pemeriksaan: true }), "TUNGGU");
+    assert.equal(a.putuskanTunggu({ ...dasar, sejakMs: a.BATAS_TUNGGU_PEMERIKSAAN_MS, pemeriksaan: true }), "KIRIM");
+    assert.equal(a.putuskanTunggu({ ...dasar, sejakMs: a.BATAS_TUNGGU_PEMERIKSAAN_MS }), "TUNGGU");
+    assert.ok(a.BATAS_TUNGGU_PEMERIKSAAN_MS < a.BATAS_TUNGGU_TANPA_SKRIP_MS);
+  });
 });
 
 describe("kodeMasalah", () => {
   test("status halaman → kode /masalah", () => {
-    for (const k of ["CAPTCHA", "LOGIN", "GAGAL_MUAT", "TIDAK_TERBACA", "TIDAK_DITEMUKAN", "PRIVAT"]) {
+    for (const k of ["CAPTCHA", "LOGIN", "GAGAL_MUAT", "TIDAK_TERBACA", "TIDAK_DITEMUKAN", "PRIVAT", "DIBLOKIR_TIKTOK"]) {
       assert.equal(a.kodeMasalah(k), k);
     }
     assert.equal(a.kodeMasalah("ANEH"), "TIDAK_TERBACA");

@@ -31,6 +31,11 @@ export const BATAS_TUNGGU_ITEMLIST_MS = 10 * DETIK;
  * halaman perantara TikTok yang lalu memuat ulang dirinya) ditunggu lebih lama sebelum dilaporkan.
  */
 export const BATAS_TUNGGU_TANPA_SKRIP_MS = 25 * DETIK;
+/**
+ * Halaman yang jelas pemeriksaan keamanan TikTok (penanda challenge/waf) tidak ditunggu 25 detik:
+ * di tab latar pemeriksaan itu tidak pernah lolos sendiri (terukur 2026-10-09).
+ */
+export const BATAS_TUNGGU_PEMERIKSAAN_MS = 10 * DETIK;
 
 /** Mundur (menit) saat /tugas tidak memberi tugas. */
 export const MUNDUR_MENIT = Object.freeze({
@@ -41,7 +46,7 @@ export const MUNDUR_MENIT = Object.freeze({
   DIJEDA: 2,
 });
 
-export const KODE_MASALAH = ["CAPTCHA", "LOGIN", "GAGAL_MUAT", "TIDAK_TERBACA", "TIDAK_DITEMUKAN", "PRIVAT"];
+export const KODE_MASALAH = ["CAPTCHA", "LOGIN", "GAGAL_MUAT", "TIDAK_TERBACA", "TIDAK_DITEMUKAN", "PRIVAT", "DIBLOKIR_TIKTOK"];
 const KODE_KEGAGALAN = ["GAGAL_MUAT", "TIDAK_TERBACA"];
 const KODE_BERHENTI = ["CAPTCHA", "LOGIN"];
 
@@ -172,6 +177,18 @@ export function kodeMasalah(status) {
  * dari /status; nilai yang bukan angka positif jatuh ke 60 menit.
  */
 export function setelahTugas(gagalBeruntun, kode, sekarang, jedaMenit) {
+  // Diblokir TikTok: berhenti selama jeda otomatis Elorae. "Cek sekarang" melewatinya (jeda berwaktu),
+  // dan Elorae yang sudah terlihat menjeda lalu melepasnya melepas juga jeda ini.
+  if (kode === "DIBLOKIR_TIKTOK") {
+    return {
+      gagalBeruntun: 0,
+      jedaLokal: {
+        alasan: kode,
+        sejak: sekarang,
+        sampai: sekarang + (Number.isFinite(jedaMenit) && jedaMenit > 0 ? jedaMenit * MENIT : JEDA_GAGAL_BERUNTUN_MS),
+      },
+    };
+  }
   if (KODE_BERHENTI.includes(kode)) {
     return {
       gagalBeruntun: 0,
@@ -236,8 +253,9 @@ export function jadwalSetelahAlasan(jadwal, alasan, sekarang) {
  * Masih menunggu halaman atau kirim sekarang? `status` = jawaban skrip halaman (null bila belum
  * menjawab), `sejakMs` = sejak tab selesai dimuat.
  */
-export function putuskanTunggu({ jenis, sejakMs, status, adaItemList, tanpaSkrip = false }) {
+export function putuskanTunggu({ jenis, sejakMs, status, adaItemList, tanpaSkrip = false, pemeriksaan = false }) {
   if (status === "CAPTCHA") return "KIRIM";
+  if (status !== "OK" && pemeriksaan) return sejakMs >= BATAS_TUNGGU_PEMERIKSAAN_MS ? "KIRIM" : "TUNGGU";
   if (status === "OK") {
     if (jenis !== "PROFIL" || adaItemList) return "KIRIM";
     return sejakMs >= BATAS_TUNGGU_ITEMLIST_MS ? "KIRIM" : "TUNGGU";
@@ -275,6 +293,8 @@ const TEKS_ALASAN = {
     "TikTok meminta captcha. Buka TikTok di profil Chrome ini, selesaikan captcha, lalu tekan Lanjutkan di Elorae.",
   LOGIN: "TikTok meminta masuk (login). Masuk dengan akun TikTok khusus di profil Chrome ini, lalu tekan Lanjutkan di Elorae.",
   GAGAL_BERUNTUN: "gagal berturut-turut",
+  DIBLOKIR_TIKTOK:
+    "TikTok memasang pemeriksaan keamanan untuk tab otomatis. Pemantauan berhenti sebentar; Cek sekarang di Elorae mencoba lagi, atau buka videonya dan tekan Simpan ke Elorae di panel.",
   MANUAL: "dijeda dari Elorae — lanjutkan di Kreatif → Pemantauan",
 };
 

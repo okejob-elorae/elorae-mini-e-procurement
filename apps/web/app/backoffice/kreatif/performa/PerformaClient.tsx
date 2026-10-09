@@ -28,6 +28,7 @@ import {
   type StatusVideo,
   type UrutanPerforma,
 } from "@/lib/creative/performa";
+import type { KeadaanPemantau } from "@/lib/creative/cek-sekarang-writer";
 import type { BarisPerforma, HasilPerforma } from "@/lib/creative/performa-queries";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -51,7 +52,17 @@ function persen(n: number | null, locale: string): string {
 
 const angka = (n: number | null | undefined) => (n === null || n === undefined ? "—" : angkaTitik(n));
 
-export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPerforma; data: HasilPerforma; bolehMengelola: boolean }) {
+export function PerformaClient({
+  param,
+  data,
+  bolehMengelola,
+  pemantau,
+}: {
+  param: ParamPerforma;
+  data: HasilPerforma;
+  bolehMengelola: boolean;
+  pemantau: KeadaanPemantau;
+}) {
   const t = useTranslations("kreatifRuang");
   const td = dinamis(t);
   const locale = useLocale();
@@ -177,7 +188,21 @@ export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPe
               />
             ) : (
               <>
-                {adaMenunggu ? <p className="border-b px-4 py-2 text-xs text-muted-foreground">{t("performa.cek.menunggu")}</p> : null}
+                {adaMenunggu ? (
+                  pemantau.keadaan === "SIAP" ? (
+                    <p className="border-b px-4 py-2 text-xs text-muted-foreground">{t("performa.cek.menunggu")}</p>
+                  ) : (
+                    // Video yang "Menunggu cek" tidak akan bergerak selama ekstensinya tidak berjalan — katakan sebabnya.
+                    <p role="status" className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-b bg-amber-500/10 px-4 py-2 text-xs text-amber-900 dark:text-amber-200">
+                      <span>{teksKeadaan(pemantau, td, locale)}</span>
+                      {pemantau.keadaan === "DIJEDA" || pemantau.keadaan === "NONAKTIF" ? (
+                        <Link href="/backoffice/kreatif/pemantauan" className="font-medium underline underline-offset-2">
+                          {t("performa.cek.bukaPemantauan")}
+                        </Link>
+                      ) : null}
+                    </p>
+                  )
+                ) : null}
                 <TabelPerforma baris={data.baris} bolehMengelola={bolehMengelola} cek={cek} sedangDicek={sedangDicek} />
               </>
             )}
@@ -201,6 +226,16 @@ export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPe
 
 /** "Cek sekarang": antrekan video, lalu kabarkan kapan ekstensi kira-kira mengerjakannya. */
 /** "12.27" — jam WIB. */
+/** Satu kalimat keadaan ekstensi pemantau — dipakai toast "Cek sekarang" dan baris "Menunggu cek". */
+function teksKeadaan(p: KeadaanPemantau, td: ReturnType<typeof dinamis>, locale: string): string {
+  if (p.keadaan !== "DIJEDA") return td(`performa.cek.keadaan.${p.keadaan}`);
+  const jam = jamWib(p.sampai, locale);
+  if (p.alasan === "CAPTCHA" || p.alasan === "LOGIN" || p.alasan === "MANUAL" || p.alasan === "DIBLOKIR_TIKTOK") {
+    return td(`performa.cek.keadaan.DIJEDA_${p.alasan}`, { jam });
+  }
+  return td("performa.cek.keadaan.DIJEDA", { jam });
+}
+
 function jamWib(iso: string, locale: string): string {
   return new Intl.DateTimeFormat(locale.startsWith("en") ? "en-GB" : "id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(iso));
 }
@@ -226,13 +261,7 @@ function useCekSekarang() {
       ].filter(Boolean);
       if (r.perangkatDilanjutkan) bagian.push(t("performa.cek.dilanjutkan"));
       const p = r.pemantau;
-      const keadaan = !p
-        ? ""
-        : p.keadaan === "DIJEDA"
-          ? p.alasan === "CAPTCHA" || p.alasan === "LOGIN" || p.alasan === "MANUAL"
-            ? td(`performa.cek.keadaan.DIJEDA_${p.alasan}`)
-            : t("performa.cek.keadaan.DIJEDA", { jam: jamWib(p.sampai, locale) })
-          : td(`performa.cek.keadaan.${p.keadaan}`);
+      const keadaan = p ? teksKeadaan(p, td, locale) : "";
       if (p && p.keadaan !== "SIAP") toast.warning([...bagian, keadaan].join(" "), { duration: 12_000 });
       else toast.success([...bagian, keadaan].join(" "));
       if (r.diantrekan || r.sudahAntre) bangunkanEkstensi();

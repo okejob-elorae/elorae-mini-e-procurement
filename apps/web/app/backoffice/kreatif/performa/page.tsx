@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { bacaParamPerforma } from "@/lib/creative/performa";
+import { keadaanPemantau } from "@/lib/creative/cek-sekarang-writer";
 import { daftarPerformaVideo } from "@/lib/creative/performa-queries";
 import { PerformaClient } from "./PerformaClient";
 
@@ -25,12 +26,14 @@ export default async function PerformaPage({ searchParams }: PageProps) {
   if (!hasPermission(izin, PERMISSIONS.CREATIVE_VIEW)) redirect("/backoffice");
 
   const param = bacaParamPerforma(await searchParams);
-  const data = await daftarPerformaVideo(param);
+  // Keadaan ekstensi ikut dimuat supaya baris "Menunggu cek" bisa menyebut kenapa ekstensinya berhenti.
+  const [data, pemantau] = await Promise.all([daftarPerformaVideo(param), keadaanPemantau()]);
   return (
     <PerformaClient
       param={{ ...param, halaman: data.halaman }}
       data={data}
       bolehMengelola={hasPermission(izin, PERMISSIONS.CREATIVE_MANAGE)}
+      pemantau={pemantau}
     />
   );
 }

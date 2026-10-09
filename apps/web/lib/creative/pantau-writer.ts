@@ -13,6 +13,7 @@ import {
   JEDA_MANUAL_SAMPAI,
   JEJAK_PANTAU,
   KODE_BERLAKU_MENIT,
+  KODE_BLOKIR,
   KODE_JEDA,
   KODE_STATUS_AKUN,
   KODE_ULANG,
@@ -688,7 +689,8 @@ export async function pinjamTugas(input: {
         jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) },
         ...(diLuarJam ? { kunci: { contains: PENANDA_MINTA } } : {}),
       },
-      orderBy: [{ prioritas: "desc" }, { jatuhAt: "asc" }, { id: "asc" }],
+      // Tugas yang belum pernah dicoba lebih dulu: satu video yang terus gagal tidak boleh menahan yang lain.
+      orderBy: [{ prioritas: "desc" }, { percobaan: "asc" }, { jatuhAt: "asc" }, { id: "asc" }],
       select: PILIH_TUGAS,
     });
     if (!calon) return { tugas: null, alasan: diLuarJam ? "DI_LUAR_JAM" : "ANTREAN_KOSONG" };
@@ -980,6 +982,7 @@ export async function laporMasalah(input: {
 
     let dijedaSampai: Date | null = null;
     if (KODE_JEDA.has(kode)) dijedaSampai = (await jedaOtomatis(tx, p, kode as "CAPTCHA" | "LOGIN", pg, sekarang)) ?? null;
+    else if (KODE_BLOKIR.has(kode) && !susulan) dijedaSampai = (await jedaOtomatis(tx, p, "DIBLOKIR_TIKTOK", pg, sekarang)) ?? null;
     else if (KODE_GAGAL_PERANGKAT.has(kode) && !susulan) await periksaGagalBeruntun(tx, p, pg, sekarang);
     if (!dijedaSampai) {
       const kini = await tx.kolPerangkat.findUnique({ where: { id: p.id }, select: { dijedaSampai: true } });

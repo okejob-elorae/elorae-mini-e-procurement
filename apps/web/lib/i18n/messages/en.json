@@ -21728,7 +21728,8 @@
         "CAPTCHA": "TikTok captcha",
         "LOGIN": "TikTok asked to log in",
         "GAGAL_BERUNTUN": "Repeated failures",
-        "TIDAK_LAPOR": "No report for more than 24 hours"
+        "TIDAK_LAPOR": "No report for more than 24 hours",
+        "DIBLOKIR_TIKTOK": "Blocked by TikTok's security check"
       },
       "cabut": {
         "judul": "Revoke {nama}?",
@@ -21756,7 +21757,8 @@
         "KONTEN_BERBEDA": "Different video",
         "ANGKA_KOSONG": "Empty numbers",
         "GAGAL_BERUNTUN": "Repeated failures",
-        "MANUAL": "From Elorae"
+        "MANUAL": "From Elorae",
+        "DIBLOKIR_TIKTOK": "Blocked by TikTok — open the video in Chrome, then press Save to Elorae in the panel"
       },
       "sambung": {
         "judul": "Connect a device",
@@ -21972,9 +21974,10 @@
           "TANPA_PERANGKAT": "No extension is running. Open the KOL tracker Chrome profile — the check runs once the extension is active.",
           "NONAKTIF": "Automatic monitoring is switched off in Creative → Monitoring.",
           "DIJEDA": "The extension is paused until {jam} (usually after several failures in a row). Press Resume on the device in Creative → Monitoring to run it now.",
-          "DIJEDA_CAPTCHA": "The extension stopped because TikTok asked for a captcha. Solve it in the KOL tracker Chrome profile, then press Resume in Creative → Monitoring.",
-          "DIJEDA_LOGIN": "The extension stopped because TikTok asked to log in. Log in to TikTok in the KOL tracker Chrome profile, then press Resume in Creative → Monitoring.",
-          "DIJEDA_MANUAL": "You paused this device in Creative → Monitoring. Press Resume there to run it."
+          "DIJEDA_CAPTCHA": "The extension is stopped until {jam} because TikTok asked for a captcha. To run it now: open TikTok in the KOL tracker Chrome profile, solve the captcha, then press Resume in Creative → Monitoring.",
+          "DIJEDA_LOGIN": "The extension is stopped until {jam} because TikTok asked to log in. To run it now: log in to TikTok in the KOL tracker Chrome profile, then press Resume in Creative → Monitoring.",
+          "DIJEDA_MANUAL": "You paused this device in Creative → Monitoring. Press Resume there to run it.",
+          "DIJEDA_DIBLOKIR_TIKTOK": "The extension is stopped until {jam} because TikTok put a security check on automated tabs. Press the re-check icon to try again now, or open the video in Chrome and press Save to Elorae in the panel."
         },
         "err": {
           "TANPA_AKSES": "You don't have permission to manage Creative.",
@@ -21982,7 +21985,8 @@
           "KOSONG": "No videos to check.",
           "TERLALU_BANYAK": "Too many videos at once."
         },
-        "dilanjutkan": "The extension that was paused is running again."
+        "dilanjutkan": "The extension that was paused is running again.",
+        "bukaPemantauan": "Open Monitoring"
       }
     },
     "formulirKol": {

@@ -209,7 +209,7 @@ export const JENIS_LOG = ["HASIL", "MASALAH", "SAMBUNG", "JEDA", "LANJUT"] as co
 export type JenisLogPantau = (typeof JENIS_LOG)[number];
 
 /** Kode yang dilaporkan ekstensi lewat `/masalah`. */
-export const KODE_MASALAH = ["CAPTCHA", "LOGIN", "GAGAL_MUAT", "TIDAK_TERBACA", "TIDAK_DITEMUKAN", "PRIVAT"] as const;
+export const KODE_MASALAH = ["CAPTCHA", "LOGIN", "GAGAL_MUAT", "TIDAK_TERBACA", "TIDAK_DITEMUKAN", "PRIVAT", "DIBLOKIR_TIKTOK"] as const;
 export type KodeMasalah = (typeof KODE_MASALAH)[number];
 
 /** Masalah yang membuat tugas diantrekan lagi (selama percobaan < `MAKS_PERCOBAAN`). */
@@ -219,13 +219,21 @@ export const KODE_JEDA: ReadonlySet<KodeMasalah> = new Set(["CAPTCHA", "LOGIN"])
 /** Hasil sah tentang akunnya: dicatat di `KolAccount.checkStatus`, tidak dihitung kegagalan perangkat. */
 export const KODE_STATUS_AKUN: ReadonlySet<KodeMasalah> = new Set(["TIDAK_DITEMUKAN", "PRIVAT"]);
 
+/**
+ * TikTok menjawab tab otomatis dengan pemeriksaan keamanan (WAF) — di halaman video DAN profil (terukur
+ * 2026-10-09 15.04 WIB). Mengulang dalam menit yang sama hanya memperdalam blokirnya: tugasnya langsung
+ * GAGAL (Performa menyebut sebabnya, bukan "Menunggu cek" berkepanjangan) dan perangkat dijeda
+ * `jedaOtomatisMenit`. "Cek sekarang" boleh melepas jeda ini (pemilik mencoba lagi dengan sadar).
+ */
+export const KODE_BLOKIR: ReadonlySet<KodeMasalah> = new Set(["DIBLOKIR_TIKTOK"]);
+
 export const MAKS_PERCOBAAN = 3;
 /** Lama pinjaman satu tugas. */
 export const LEASE_MENIT = 5;
 export const KODE_BERLAKU_MENIT = 15;
 /** Jeda manual dari Elorae = sampai dilanjutkan; disimpan sebagai tanggal sangat jauh. */
 export const JEDA_MANUAL_SAMPAI = new Date("2100-01-01T00:00:00.000Z");
-export const ALASAN_JEDA = ["MANUAL", "CAPTCHA", "LOGIN", "GAGAL_BERUNTUN"] as const;
+export const ALASAN_JEDA = ["MANUAL", "CAPTCHA", "LOGIN", "GAGAL_BERUNTUN", "DIBLOKIR_TIKTOK"] as const;
 export type AlasanJeda = (typeof ALASAN_JEDA)[number];
 
 export const STATUS_CEK_AKUN = ["OK", "TIDAK_DITEMUKAN", "PRIVAT", "TIDAK_TERBACA"] as const;

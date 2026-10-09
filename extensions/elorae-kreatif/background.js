@@ -357,6 +357,7 @@ async function mintaHasil(tabId, tugas) {
       status: terakhir?.status ?? null,
       adaItemList: Boolean(terakhir?.adaItemList),
       tanpaSkrip: Boolean(terakhir?.tanpaSkrip),
+      pemeriksaan: halamanPemeriksaan(terakhir),
     });
     if (keputusan === "KIRIM") {
       return terakhir ?? { status: "GAGAL_MUAT", pesan: "Skrip ekstensi tidak menjawab di halaman TikTok" };
@@ -393,11 +394,13 @@ async function lewatProfil(tabId, tugas, hasilVideo) {
     }
     if (terakhir?.status === "OK") return terakhir;
     if (terakhir?.alasan === "VIDEO_TIDAK_DI_PROFIL" && terakhir.adaItemList && Date.now() - mulai > 6000) break;
+    // Profilnya juga pemeriksaan keamanan: menunggu lebih lama tidak membuatnya lolos.
+    if (halamanPemeriksaan(terakhir) && Date.now() - mulai > 6000) break;
     await tidur(1000);
   }
   const lewat = terakhir?.diagnosa ?? terakhir?.alasan ?? terakhir?.status ?? "tidak menjawab";
   return {
-    status: "TIDAK_TERBACA",
+    status: halamanPemeriksaan(terakhir) ? "DIBLOKIR_TIKTOK" : "TIDAK_TERBACA",
     diagnosa: `halaman video: pemeriksaan keamanan TikTok | profil: ${lewat}`,
     tanpaSkrip: hasilVideo.tanpaSkrip,
   };
@@ -427,6 +430,8 @@ async function kerjakanTugas(tugas) {
       hasil = muat.ok ? await mintaHasil(tabId, tugas) : { status: "GAGAL_MUAT", pesan: muat.pesan };
       if (tugas.jenis === "KONTEN" && hasil.status !== "OK" && halamanPemeriksaan(hasil)) {
         hasil = (await lewatProfil(tabId, tugas, hasil)) ?? hasil;
+      } else if (tugas.jenis === "PROFIL" && hasil.status !== "OK" && halamanPemeriksaan(hasil)) {
+        hasil = { ...hasil, status: "DIBLOKIR_TIKTOK" };
       }
     } catch (e) {
       hasil = { status: "GAGAL_MUAT", pesan: pesanGalat(e) };
@@ -565,7 +570,7 @@ async function perbaruiLencana() {
     const perhatian =
       (!koneksi?.token && terputus) ||
       jedaLokal?.tungguServer ||
-      (ringkasan?.keadaan === "DIJEDA" && ["CAPTCHA", "LOGIN"].includes(ringkasan.alasan));
+      (ringkasan?.keadaan === "DIJEDA" && ["CAPTCHA", "LOGIN", "DIBLOKIR_TIKTOK"].includes(ringkasan.alasan));
     await chrome.action.setBadgeText({ text: perhatian ? "!" : "" });
     if (perhatian) await chrome.action.setBadgeBackgroundColor({ color: "#b91c1c" });
   } catch {

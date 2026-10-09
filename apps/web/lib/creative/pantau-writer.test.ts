@@ -276,6 +276,15 @@ describe("pinjamTugas", () => {
     expect(t.pinjamSampai?.getTime()).toBe(tambahMenit(SEKARANG, 5).getTime());
   });
 
+  it("prioritas sama: tugas yang belum pernah dicoba lebih dulu daripada yang sedang diulang, walau jatuh temponya lebih baru", async () => {
+    const a = await perangkat();
+    const diulang = await tugas({ prioritas: 95, jatuhAt: tambahMenit(SEKARANG, -30) });
+    await prisma.kolTugasPantau.update({ where: { id: diulang }, data: { percobaan: 2, galatTerakhir: "TIDAK_TERBACA" } });
+    const baru = await tugas({ jenis: "KONTEN", prioritas: 95, jatuhAt: tambahMenit(SEKARANG, -1) });
+    const r = await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan: { tugasIds: [diulang, baru] } });
+    expect(r.tugas?.id).toBe(baru);
+  });
+
   it("perangkat yang masih memegang tugas mendapat tugas yang sama lagi; lease lewat → kembali ke antrean", async () => {
     const [a, b] = [await perangkat("A"), await perangkat("B")];
     const ids = [await tugas(), await tugas()];
@@ -424,6 +433,27 @@ describe("laporMasalah", () => {
     await lapor();
     await lapor();
     expect(await prisma.kolTugasPantau.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: "GAGAL", percobaan: 3 });
+  });
+
+  it("DIBLOKIR_TIKTOK: tugasnya langsung GAGAL (tidak diulang), perangkat dijeda dengan alasannya, pinjaman lain kembali ke antrean", async () => {
+    const a = await perangkat();
+    const id = await tugas({ jenis: "KONTEN" });
+    await pinjam(a, id);
+    const r = await laporMasalah({
+      perangkat: a,
+      masalah: { kode: "DIBLOKIR_TIKTOK", tugasId: id, pesan: "halaman video: pemeriksaan keamanan TikTok | profil: tanda: challenge,waf" },
+      sekarang: SEKARANG,
+      pengaturan: PG,
+    });
+    expect(r).toEqual({ ok: true, dijedaSampai: tambahMenit(SEKARANG, PG.jedaOtomatisMenit).toISOString() });
+    expect(await prisma.kolTugasPantau.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: "GAGAL", percobaan: 1, galatTerakhir: "DIBLOKIR_TIKTOK" });
+    expect(await prisma.kolPerangkat.findUniqueOrThrow({ where: { id: a.id } })).toMatchObject({ alasanJeda: "DIBLOKIR_TIKTOK" });
+    expect(await prisma.kolLogPantau.count({ where: { perangkatId: a.id, jenis: "JEDA", kode: "DIBLOKIR_TIKTOK" } })).toBe(1);
+
+    // Laporan susulan (tugasnya sudah tidak dipinjam pelapor) tidak menjeda lagi.
+    await prisma.kolPerangkat.update({ where: { id: a.id }, data: { dijedaSampai: null, alasanJeda: null } });
+    await laporMasalah({ perangkat: a, masalah: { kode: "DIBLOKIR_TIKTOK", tugasId: id, pesan: null }, sekarang: SEKARANG, pengaturan: PG });
+    expect(await prisma.kolPerangkat.findUniqueOrThrow({ where: { id: a.id } })).toMatchObject({ dijedaSampai: null, alasanJeda: null });
   });
 
   it("CAPTCHA menjeda perangkat, tugasnya kembali ke antrean tanpa menambah percobaan; jeda lewat dilepas otomatis", async () => {

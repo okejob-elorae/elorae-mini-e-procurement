@@ -144,22 +144,24 @@ describe("keadaanPemantau", () => {
     expect(await keadaan([malam], { sekarang: new Date("2003-05-05T13:00:00Z") })).toEqual({ keadaan: "SIAP" });
   });
 
-  it("Cek sekarang melepas jeda karena gagal beruntun atau tidak melapor; captcha, login, dan jeda manual tetap", async () => {
+  it("Cek sekarang melepas jeda karena gagal beruntun, tidak melapor, atau diblokir TikTok; captcha, login, dan jeda manual tetap", async () => {
     const gagal = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "GAGAL_BERUNTUN" });
     const diam = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "TIDAK_LAPOR" });
+    const blokir = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "DIBLOKIR_TIKTOK" });
     const captcha = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "CAPTCHA" });
     const manual = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "MANUAL" });
-    const r = await mintaCekSekarang({ kontenIds: [k.antre], sekarang: SEKARANG, perangkatIds: [gagal, diam, captcha, manual] });
-    expect(r).toMatchObject({ ok: true, perangkatDilanjutkan: 2 });
-    const baris = await prisma.kolPerangkat.findMany({ where: { id: { in: [gagal, diam, captcha, manual] } }, select: { id: true, dijedaSampai: true } });
+    const r = await mintaCekSekarang({ kontenIds: [k.antre], sekarang: SEKARANG, perangkatIds: [gagal, diam, blokir, captcha, manual] });
+    expect(r).toMatchObject({ ok: true, perangkatDilanjutkan: 3 });
+    const baris = await prisma.kolPerangkat.findMany({ where: { id: { in: [gagal, diam, blokir, captcha, manual] } }, select: { id: true, dijedaSampai: true } });
     const jeda = Object.fromEntries(baris.map((b) => [b.id, b.dijedaSampai]));
     expect(jeda[gagal]).toBeNull();
     expect(jeda[diam]).toBeNull();
+    expect(jeda[blokir]).toBeNull();
     expect(jeda[captcha]).toEqual(menit(40));
     expect(jeda[manual]).toEqual(menit(40));
-    const log = await prisma.kolLogPantau.findMany({ where: { perangkatId: { in: [gagal, diam] }, jenis: "LANJUT" }, select: { kode: true } });
-    expect(log.map((l) => l.kode)).toEqual(["CEK_SEKARANG", "CEK_SEKARANG"]);
-    await prisma.kolLogPantau.deleteMany({ where: { perangkatId: { in: seededIds([gagal, diam]) } } });
+    const log = await prisma.kolLogPantau.findMany({ where: { perangkatId: { in: [gagal, diam, blokir] }, jenis: "LANJUT" }, select: { kode: true } });
+    expect(log.map((l) => l.kode)).toEqual(["CEK_SEKARANG", "CEK_SEKARANG", "CEK_SEKARANG"]);
+    await prisma.kolLogPantau.deleteMany({ where: { perangkatId: { in: seededIds([gagal, diam, blokir]) } } });
   });
 
   it("tanpa video yang benar-benar diantrekan, jeda tidak dilepas", async () => {

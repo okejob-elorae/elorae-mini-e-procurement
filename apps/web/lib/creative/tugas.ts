@@ -153,7 +153,7 @@ export type PerangkatTugas = {
   nama: string;
   /** Hari WIB sejak berhenti. */
   sejak: string;
-  alasan: "CAPTCHA" | "LOGIN" | "GAGAL_BERUNTUN" | "TIDAK_LAPOR";
+  alasan: "CAPTCHA" | "LOGIN" | "GAGAL_BERUNTUN" | "DIBLOKIR_TIKTOK" | "TIDAK_LAPOR";
   /** Jeda otomatis berakhir (ISO); null untuk yang tidak melapor. */
   sampai: string | null;
 };

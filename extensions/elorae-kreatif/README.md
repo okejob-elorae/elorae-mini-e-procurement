@@ -63,13 +63,18 @@ yang belum terkirim disimpan dan dikirim ulang (paling lama 30 menit).
   melepasnya otomatis setelah waktu jeda otomatis, bawaan 60 menit).
 - **Login** — TikTok meminta masuk. Masuk dengan akun TikTok khusus pemantauan di profil Chrome
   ini, lalu tekan **Lanjutkan** di Elorae.
+- **Diblokir TikTok** — TikTok menjawab tab otomatis dengan halaman pemeriksaan keamanan, di
+  halaman video maupun profil. Tugasnya langsung gagal (tidak diulang tiga kali, karena mengulang
+  hanya memperdalam blokirnya) dan ekstensi berhenti selama jeda otomatis (bawaan 60 menit).
+  **Cek sekarang** di Performa video mencoba lagi saat itu juga. Angka video itu tetap bisa masuk
+  lewat panel: buka videonya di Chrome lalu tekan **Simpan ke Elorae**.
 - **Gagal berturut-turut** — halaman tiga kali berturut-turut tidak bisa dimuat atau dibaca.
   Ekstensi berhenti 60 menit lalu mencoba lagi. Bila terus terjadi, kemungkinan TikTok mengubah
   halamannya; hubungi pengembang.
 - **Elorae tidak terjangkau** — pastikan Elorae menyala; ekstensi mencoba lagi setiap menit.
 - **Sambungan dicabut** — popup kembali menampilkan formulir; buat kode sambung baru di Elorae.
 - Lencana merah **!** pada ikon ekstensi berarti ada yang perlu Anda tangani (captcha, login,
-  atau sambungan dicabut).
+  diblokir TikTok, atau sambungan dicabut).
 
 ## Mode manual
 
