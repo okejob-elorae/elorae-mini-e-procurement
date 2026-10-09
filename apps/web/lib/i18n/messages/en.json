@@ -21934,6 +21934,27 @@
         "JENIS_TIDAK_SAH": "Choose KOL or Affiliate.",
         "TANPA_AKSES": "You do not have permission for this action.",
         "GAGAL": "Something went wrong. Try again."
+      },
+      "cek": {
+        "satu": "Check now",
+        "satuJudul": "Ask the extension to read this video's latest numbers",
+        "semua": "Re-check this page",
+        "menunggu": "Waiting for the extension to read the numbers — this page refreshes itself every 15 seconds.",
+        "diantrekan": "{n} video(s) queued for a check.",
+        "sudahAntre": "{n} video(s) already waiting for a check.",
+        "dilewati": "{n} skipped (not a TikTok video).",
+        "keadaan": {
+          "SIAP": "The extension checks them within a few minutes.",
+          "DI_LUAR_JAM": "Outside monitoring hours; the extension checks them when working hours start.",
+          "TANPA_PERANGKAT": "No extension is running. Open the KOL tracker Chrome profile — the check runs once the extension is active.",
+          "NONAKTIF": "Automatic monitoring is switched off in Creative → Monitoring."
+        },
+        "err": {
+          "TANPA_AKSES": "You don't have permission to manage Creative.",
+          "GAGAL": "Couldn't request the check. Try again.",
+          "KOSONG": "No videos to check.",
+          "TERLALU_BANYAK": "Too many videos at once."
+        }
       }
     }
   },

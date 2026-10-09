@@ -56,6 +56,8 @@ export const PRIORITAS_PANTAU = {
 export const kunciKonten = (contentId: string, titik: number) => `KONTEN:${contentId}:H${titik}`;
 export const kunciSegera = (contentId: string) => `KONTEN:${contentId}:SEGERA`;
 export const kunciBerkala = (contentId: string, hari: string) => `KONTEN:${contentId}:B${hari}`;
+/** Cek yang diminta orang dari layar Performa video ("Cek sekarang"); waktu dalam ms membuatnya unik. */
+export const kunciMinta = (contentId: string, waktuMs: number) => `KONTEN:${contentId}:M${waktuMs}`;
 export const kunciProfil = (accountId: string, hari: string) => `PROFIL:${accountId}:${hari}`;
 /** Kunci titik H+n (bukan SEGERA/berkala). */
 const kunciTitik = (kunci: string) => /:H\d+$/.test(kunci);

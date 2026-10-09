@@ -21934,6 +21934,27 @@
         "JENIS_TIDAK_SAH": "Pilih KOL atau Afiliasi.",
         "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini.",
         "GAGAL": "Gagal. Coba lagi."
+      },
+      "cek": {
+        "satu": "Cek sekarang",
+        "satuJudul": "Minta ekstensi membaca angka terbaru video ini",
+        "semua": "Cek ulang halaman ini",
+        "menunggu": "Menunggu ekstensi membaca angka — halaman ini diperbarui sendiri setiap 15 detik.",
+        "diantrekan": "{n} video masuk antrean cek.",
+        "sudahAntre": "{n} video sudah menunggu cek.",
+        "dilewati": "{n} dilewati (bukan video TikTok).",
+        "keadaan": {
+          "SIAP": "Ekstensi mengeceknya dalam beberapa menit.",
+          "DI_LUAR_JAM": "Sekarang di luar jam pemantauan; ekstensi mengeceknya saat jam kerja mulai.",
+          "TANPA_PERANGKAT": "Belum ada ekstensi yang menyala. Buka Chrome profil KOL tracker — cek berjalan begitu ekstensinya aktif.",
+          "NONAKTIF": "Pemantauan otomatis sedang dimatikan di Kreatif → Pemantauan."
+        },
+        "err": {
+          "TANPA_AKSES": "Anda tidak punya izin mengelola Kreatif.",
+          "GAGAL": "Gagal meminta cek. Coba lagi.",
+          "KOSONG": "Tidak ada video untuk dicek.",
+          "TERLALU_BANYAK": "Terlalu banyak video sekaligus."
+        }
       }
     }
   },

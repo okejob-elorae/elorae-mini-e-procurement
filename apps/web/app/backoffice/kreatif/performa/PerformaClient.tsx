@@ -4,7 +4,10 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ExternalLink, Search, TrendingUp } from "lucide-react";
+import { toast } from "sonner";
+import { ExternalLink, Loader2, RefreshCw, Search, TrendingUp } from "lucide-react";
+import { cekSekarangAction } from "@/app/actions/kreatif-performa";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -80,13 +83,40 @@ export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPe
 
   const disaring = Boolean(param.cari || param.jenis !== "semua" || param.dari || param.sampai);
   const r = data.ringkasan;
+  const { cek, sedangDicek } = useCekSekarang();
+  const idHalaman = data.baris.map((b) => b.kontenId);
+
+  // Selama ada video yang menunggu ekstensi, segarkan angkanya sendiri (maks. ±10 menit, tidak saat tab disembunyikan).
+  const adaMenunggu = data.baris.some((b) => b.status === "MENUNGGU");
+  useEffect(() => {
+    if (!adaMenunggu) return;
+    let putaran = 0;
+    const id = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (++putaran > 40) return clearInterval(id);
+      router.refresh();
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [adaMenunggu, router]);
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={t("halaman.performa")}
         meta={t("performa.meta", { n: angkaTitik(r.video) })}
-        actions={bolehMengelola ? <DialogTempelLink /> : null}
+        actions={
+          bolehMengelola ? (
+            <div className="flex flex-wrap gap-2">
+              {idHalaman.length ? (
+                <Button variant="outline" onClick={() => cek(idHalaman)} disabled={sedangDicek.size > 0}>
+                  {sedangDicek.size > 0 ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <RefreshCw className="h-4 w-4" aria-hidden />}
+                  {t("performa.cek.semua")}
+                </Button>
+              ) : null}
+              <DialogTempelLink />
+            </div>
+          ) : null
+        }
       />
 
       <section aria-label={t("performa.kpi.label")} className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -145,7 +175,10 @@ export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPe
                 description={disaring ? undefined : t("performa.kosong.isi")}
               />
             ) : (
-              <TabelPerforma baris={data.baris} />
+              <>
+                {adaMenunggu ? <p className="border-b px-4 py-2 text-xs text-muted-foreground">{t("performa.cek.menunggu")}</p> : null}
+                <TabelPerforma baris={data.baris} bolehMengelola={bolehMengelola} cek={cek} sedangDicek={sedangDicek} />
+              </>
             )}
             {data.total > data.perHalaman ? (
               <div className="border-t px-4 pb-4">
@@ -165,7 +198,49 @@ export function PerformaClient({ param, data, bolehMengelola }: { param: ParamPe
   );
 }
 
-function TabelPerforma({ baris }: { baris: BarisPerforma[] }) {
+/** "Cek sekarang": antrekan video, lalu kabarkan kapan ekstensi kira-kira mengerjakannya. */
+function useCekSekarang() {
+  const t = useTranslations("kreatifRuang");
+  const td = dinamis(t);
+  const router = useRouter();
+  const [sedangDicek, setSedangDicek] = useState<Set<string>>(new Set());
+  const cek = async (ids: string[]) => {
+    setSedangDicek(new Set(ids));
+    try {
+      const r = await cekSekarangAction(ids);
+      if (!r.ok) {
+        toast.error(td(`performa.cek.err.${r.kode}`));
+        return;
+      }
+      const bagian = [
+        r.diantrekan ? t("performa.cek.diantrekan", { n: r.diantrekan }) : null,
+        r.sudahAntre ? t("performa.cek.sudahAntre", { n: r.sudahAntre }) : null,
+        r.dilewati ? t("performa.cek.dilewati", { n: r.dilewati }) : null,
+      ].filter(Boolean);
+      const keadaan = r.keadaan ? td(`performa.cek.keadaan.${r.keadaan}`) : "";
+      if (r.keadaan && r.keadaan !== "SIAP") toast.warning([...bagian, keadaan].join(" "));
+      else toast.success([...bagian, keadaan].join(" "));
+      router.refresh();
+    } catch {
+      toast.error(t("performa.cek.err.GAGAL"));
+    } finally {
+      setSedangDicek(new Set());
+    }
+  };
+  return { cek, sedangDicek };
+}
+
+function TabelPerforma({
+  baris,
+  bolehMengelola,
+  cek,
+  sedangDicek,
+}: {
+  baris: BarisPerforma[];
+  bolehMengelola: boolean;
+  cek: (ids: string[]) => void;
+  sedangDicek: Set<string>;
+}) {
   const t = useTranslations("kreatifRuang");
   const td = dinamis(t);
   const ada = (k: string) => t.has(k as never);
@@ -260,12 +335,31 @@ function TabelPerforma({ baris }: { baris: BarisPerforma[] }) {
                 )}
               </TableCell>
               <TableCell>
-                <StatusPill
-                  tone={NADA_STATUS[b.status]}
-                  detail={b.status === "GAGAL" && b.alasanGagal ? labelAlasan(td, ada, b.alasanGagal) : undefined}
-                >
-                  {td(`performa.status.${b.status}`)}
-                </StatusPill>
+                <div className="flex items-center gap-1">
+                  <StatusPill
+                    tone={NADA_STATUS[b.status]}
+                    detail={b.status === "GAGAL" && b.alasanGagal ? labelAlasan(td, ada, b.alasanGagal) : undefined}
+                  >
+                    {td(`performa.status.${b.status}`)}
+                  </StatusPill>
+                  {bolehMengelola && b.status !== "MENUNGGU" ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      title={t("performa.cek.satuJudul")}
+                      aria-label={`${t("performa.cek.satu")}: ${b.nama}`}
+                      disabled={sedangDicek.has(b.kontenId)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cek([b.kontenId]);
+                      }}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
+                      {sedangDicek.has(b.kontenId) ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <RefreshCw className="h-4 w-4" aria-hidden />}
+                    </Button>
+                  ) : null}
+                </div>
               </TableCell>
             </TableRow>
           ))}
