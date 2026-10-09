@@ -89,6 +89,36 @@
     return m.bacaHalaman(dokumenBaca, { url: location.href, itemList: tangkapan });
   }
 
+  // HTML segar halaman ini, untuk panel saja (putaran otomatis membuka tab baru, datanya selalu ada).
+  // Dipakai bila TikTok berpindah halaman tanpa memuat ulang. Satu alamat diambil paling sering
+  // sekali per 2 menit; "Baca ulang" memaksa ambil lagi.
+  const BATAS_ULANG_SEGAR_MS = 120_000;
+  let segar = null;
+
+  async function ambilHalamanSegar(url, paksa) {
+    if (!paksa && segar?.url === url && Date.now() - segar.at < BATAS_ULANG_SEGAR_MS) return segar.html;
+    try {
+      const res = await fetch(url, { credentials: "include", cache: "no-store", headers: { accept: "text/html" } });
+      const html = res.ok ? await res.text() : null;
+      segar = { url, at: Date.now(), html };
+      return html;
+    } catch {
+      segar = { url, at: Date.now(), html: null };
+      return null;
+    }
+  }
+
+  async function bacaUntukPanel(paksa = false) {
+    const m = await muatPengurai;
+    const opsi = { url: location.href, itemList: tangkapan };
+    const h = m.bacaHalaman(dokumenBaca, opsi);
+    if (!m.perluHalamanSegar(h)) return h;
+    const html = await ambilHalamanSegar(location.href, paksa);
+    if (!html) return h;
+    const h2 = m.bacaHalaman(html, opsi);
+    return m.perluHalamanSegar(h2) ? h : h2;
+  }
+
   // ------------------------------------------------ permintaan dari service worker
   chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
     if (pengirim.id !== chrome.runtime.id || pesan?.jenis !== "bacaHalaman") return false;
@@ -110,7 +140,7 @@
     LOGIN: "TikTok meminta masuk (login).",
     TIDAK_DITEMUKAN: "Akun atau video ini tidak ditemukan.",
     PRIVAT: "Akun atau video ini privat — angkanya tidak bisa dibaca.",
-    TIDAK_TERBACA: "Angka belum terbaca. Muat ulang halaman (F5), lalu tekan Baca ulang.",
+    TIDAK_TERBACA: "Angka belum terbaca. Tekan tombol putar di bawah; kalau masih gagal, muat ulang halaman (⌘R).",
   };
   const TEKS_SIMPAN = {
     TIDAK_ADA_DI_ELORAE: "Belum ada di Elorae. Tambahkan KOL atau kontennya di Elorae dulu.",
@@ -394,7 +424,7 @@
   }
 
   let membaca = false;
-  async function perbaruiPanel() {
+  async function perbaruiPanel(paksa = false) {
     if (!panel) return;
     const m = await muatPengurai.catch(() => null);
     await muatAlat.catch(() => null);
@@ -406,7 +436,7 @@
     panel.host.style.display = "";
     membaca = true;
     try {
-      hasilTerakhir = await baca();
+      hasilTerakhir = await bacaUntukPanel(paksa);
     } catch (e) {
       hasilTerakhir = { status: "TIDAK_TERBACA", pesan: String(e?.message ?? e) };
     }
@@ -741,7 +771,7 @@
           pesanSimpan = null;
           membaca = true;
           gambar(pengurai?.jenisHalaman(location.href));
-          perbaruiPanel();
+          perbaruiPanel(true);
         },
       },
       ikon("ulang"),

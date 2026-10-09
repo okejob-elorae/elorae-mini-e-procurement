@@ -529,6 +529,15 @@ export function bacaHalaman(masukan, opsi = {}) {
   return { status: "OK", data, adaItemList };
 }
 
+/**
+ * Perlu mengambil HTML halaman yang segar? Ya bila data halaman tidak ada atau milik halaman lain —
+ * terjadi saat TikTok berpindah halaman tanpa memuat ulang (klik dari beranda ke profil): skrip
+ * rehidrasi masih milik halaman pertama. Captcha/login/privat/tidak ditemukan/angka kurang: tidak.
+ */
+export function perluHalamanSegar(hasil) {
+  return hasil?.status === "TIDAK_TERBACA" && (hasil.alasan === undefined || hasil.alasan === "DATA_TIDAK_COCOK");
+}
+
 // ---------------------------------------------------------------- waktu
 
 /** Bulat acak dalam [min, max] (inklusif). `rand` mengembalikan [0, 1); dijepit bila tidak. */

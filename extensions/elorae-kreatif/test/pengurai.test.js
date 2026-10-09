@@ -460,3 +460,21 @@ describe("dalamJamKerja (WIB)", () => {
     assert.equal(p.dalamJamKerja(new Date("x"), "08:00", "17:00"), false);
   });
 });
+
+describe("perluHalamanSegar", () => {
+  test("data halaman tidak ada atau milik halaman lain → ambil HTML segar", () => {
+    assert.equal(p.perluHalamanSegar({ status: "TIDAK_TERBACA" }), true);
+    assert.equal(p.perluHalamanSegar({ status: "TIDAK_TERBACA", alasan: "DATA_TIDAK_COCOK" }), true);
+  });
+  test("angka kurang, captcha, login, privat, tidak ditemukan, OK → tidak", () => {
+    assert.equal(p.perluHalamanSegar({ status: "TIDAK_TERBACA", alasan: "ANGKA_TIDAK_TERBACA" }), false);
+    for (const status of ["OK", "CAPTCHA", "LOGIN", "PRIVAT", "TIDAK_DITEMUKAN"]) assert.equal(p.perluHalamanSegar({ status }), false);
+    assert.equal(p.perluHalamanSegar(null), false);
+  });
+  test("teks HTML hasil fetch terbaca sama dengan dokumen", () => {
+    const html = `<html><body><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(fixture("rehidrasi-profil.json"))}</script></body></html>`;
+    const h = p.bacaHalaman(html, { url: "https://www.tiktok.com/@budi.santoso" });
+    assert.equal(h.status, "OK");
+    assert.equal(h.data.uniqueId.toLowerCase(), "budi.santoso");
+  });
+});
