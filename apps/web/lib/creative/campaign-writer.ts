@@ -1,6 +1,7 @@
 import { Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
+import { SEMUA_STATUS_CAMPAIGN, STATUS_CAMPAIGN_BAWAAN, type StatusCampaignKol } from "./campaign-aturan";
 
 /*
  * Penulis campaign KOL. Campaign TIDAK PERNAH dihapus — yang selesai
@@ -10,7 +11,7 @@ import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
 
 const D = (n: number) => new Prisma.Decimal(n);
 
-export type AlasanGagalCampaign = "NAMA_WAJIB" | "TIDAK_DITEMUKAN" | "PERIODE_TIDAK_VALID" | "ANGKA_TIDAK_VALID";
+export type AlasanGagalCampaign = "NAMA_WAJIB" | "TIDAK_DITEMUKAN" | "PERIODE_TIDAK_VALID" | "ANGKA_TIDAK_VALID" | "STATUS_TIDAK_VALID";
 
 export type HasilCampaign = { ok: true; id: string } | { ok: false; alasan: AlasanGagalCampaign; detail?: string };
 
@@ -24,6 +25,12 @@ export type IsiCampaign = {
   budget?: number | null;
   targetKol?: number | null;
   targetContent?: number | null;
+  targetViews?: number | null;
+  /**
+   * Draft / Berjalan / Selesai / Batal. `undefined` = tidak disentuh saat
+   * mengubah; campaign baru tanpa status = BERJALAN. Terpisah dari arsip.
+   */
+  status?: StatusCampaignKol;
   brief?: string | null;
   note?: string | null;
   /** Centang "Arsipkan campaign ini". */
@@ -41,8 +48,13 @@ function periksa(isi: IsiCampaign): { alasan: AlasanGagalCampaign; detail?: stri
   for (const [k, v] of [
     ["targetKol", isi.targetKol],
     ["targetContent", isi.targetContent],
+    ["targetViews", isi.targetViews],
   ] as const) {
-    if (v != null && !(Number.isInteger(v) && v >= 0)) return { alasan: "ANGKA_TIDAK_VALID", detail: k };
+    // Kolomnya Int: di atas 2,1 miliar ditolak, bukan terpangkas diam-diam.
+    if (v != null && !(Number.isInteger(v) && v >= 0 && v <= 2_147_483_647)) return { alasan: "ANGKA_TIDAK_VALID", detail: k };
+  }
+  if (isi.status !== undefined && !(SEMUA_STATUS_CAMPAIGN as readonly string[]).includes(isi.status)) {
+    return { alasan: "STATUS_TIDAK_VALID" };
   }
   return null;
 }
@@ -57,6 +69,7 @@ type Bentuk = {
   budget: number | null;
   targetKol: number | null;
   targetContent: number | null;
+  targetViews: number | null;
   brief: string | null;
   note: string | null;
 };
@@ -71,6 +84,7 @@ function bentuk(v: {
   budget: Prisma.Decimal | number | null;
   targetKol: number | null;
   targetContent: number | null;
+  targetViews: number | null;
   brief: string | null;
   note: string | null;
 }): Bentuk {
@@ -84,6 +98,7 @@ function bentuk(v: {
     budget: v.budget == null ? null : Number(v.budget),
     targetKol: v.targetKol,
     targetContent: v.targetContent,
+    targetViews: v.targetViews,
     brief: v.brief,
     note: v.note,
   };
@@ -112,6 +127,7 @@ export async function simpanCampaign(input: {
     budget: isi.budget == null ? null : D(isi.budget),
     targetKol: isi.targetKol ?? null,
     targetContent: isi.targetContent ?? null,
+    targetViews: isi.targetViews ?? null,
     brief: teks(isi.brief),
     note: teks(isi.note),
   };
@@ -119,8 +135,9 @@ export async function simpanCampaign(input: {
   return runSerializable(async (tx) => {
     const sekarang = new Date();
     if (!input.id) {
+      const status = isi.status ?? STATUS_CAMPAIGN_BAWAAN;
       const dibuat = await tx.kolCampaign.create({
-        data: { ...data, archivedAt: isi.arsip ? sekarang : null, createdById: input.olehUserId },
+        data: { ...data, status, archivedAt: isi.arsip ? sekarang : null, createdById: input.olehUserId },
         select: { id: true },
       });
       await catatJejak(tx, {
@@ -128,7 +145,7 @@ export async function simpanCampaign(input: {
         action: JEJAK.CAMPAIGN_DIBUAT,
         entityType: "KolCampaign",
         entityId: dibuat.id,
-        changes: { after: bentuk(data) },
+        changes: { after: { ...bentuk(data), status } },
       });
       return { ok: true as const, id: dibuat.id };
     }
@@ -138,7 +155,8 @@ export async function simpanCampaign(input: {
 
     const jadiArsip = isi.arsip === undefined ? lama.archivedAt !== null : isi.arsip;
     const archivedAt = jadiArsip ? (lama.archivedAt ?? sekarang) : null;
-    await tx.kolCampaign.update({ where: { id: lama.id }, data: { ...data, archivedAt } });
+    const status: StatusCampaignKol = isi.status ?? (lama.status as StatusCampaignKol);
+    await tx.kolCampaign.update({ where: { id: lama.id }, data: { ...data, status, archivedAt } });
 
     const a = bentuk(lama);
     const b = bentuk(data);
@@ -163,6 +181,17 @@ export async function simpanCampaign(input: {
         entityType: "KolCampaign",
         entityId: lama.id,
         changes: { before: sebelum, after: sesudah },
+        metadata: { nama: data.name },
+      });
+    }
+    if (status !== lama.status) {
+      // Jejak tersendiri supaya perubahan status bisa dicari tanpa membuka setiap "campaign diubah".
+      await catatJejak(tx, {
+        userId: input.olehUserId,
+        action: JEJAK.CAMPAIGN_STATUS_DIUBAH,
+        entityType: "KolCampaign",
+        entityId: lama.id,
+        changes: { before: { status: lama.status }, after: { status } },
         metadata: { nama: data.name },
       });
     }

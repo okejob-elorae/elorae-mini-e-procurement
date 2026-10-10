@@ -3640,6 +3640,19 @@ enum KolModePajak {
   GROSS_UP
 }
 
+enum KolJenisBrand {
+  BERBAYAR
+  KOLABORASI
+  TAG
+}
+
+enum KolStatusCampaign {
+  DRAFT
+  BERJALAN
+  SELESAI
+  BATAL
+}
+
 enum KolPemicuTermin {
   DEAL
   TAYANG
@@ -3679,6 +3692,7 @@ model Kol {
   email       String?
   rateCard    Decimal? @db.Decimal(15, 2)
   rateNote    String?  @db.Text
+  rateFormat  String?  @db.Text
   note        String?  @db.Text
   isActive    Boolean  @default(true)
   label          String?   @db.Text
@@ -3714,6 +3728,7 @@ model Kol {
   briefs      KolBrief[]
   notes       KolNote[]
   agendas     KolAgenda[]
+  brandCollabs KolBrandCollab[]
 
   @@index([isActive, name])
   @@index([createdById])
@@ -3771,6 +3786,8 @@ model KolCampaign {
   budget        Decimal?  @db.Decimal(15, 2)
   targetKol     Int?
   targetContent Int?
+  targetViews   Int?
+  status        KolStatusCampaign @default(BERJALAN)
   brief         String?   @db.Text
   note          String?   @db.Text
   archivedAt    DateTime?
@@ -3783,6 +3800,7 @@ model KolCampaign {
   agendas       KolAgenda[]
 
   @@index([archivedAt])
+  @@index([status])
   @@index([name])
   @@index([createdById])
 }
@@ -4090,6 +4108,43 @@ model KolFormLink {
   createdAt   DateTime  @default(now())
 
   @@index([kolId])
+}
+
+model KolBrandCollab {
+  id          String        @id @default(cuid())
+  kunci       String        @unique
+  kolId       String
+  accountId   String?
+  platform    KolPlatform
+  brandHandle String
+  brandName   String?
+  jenis       KolJenisBrand
+  postId      String?
+  postUrl     String?       @db.Text
+  postedAt    DateTime?
+  caption     String?       @db.Text
+  views       Int?
+  sumber      String
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  kol         Kol           @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@index([kolId, postedAt])
+  @@index([brandHandle])
+  @@index([accountId])
+}
+
+model KolCalendarFeed {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model KolFormSubmission {

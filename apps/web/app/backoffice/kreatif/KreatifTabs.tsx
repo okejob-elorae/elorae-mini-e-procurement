@@ -17,6 +17,8 @@ import {
   PlaySquare,
   Radar,
   Settings2,
+  ShieldCheck,
+  Tags,
   TrendingUp,
   Users,
   Wallet,
@@ -45,11 +47,13 @@ export const TAB_KREATIF = [
   { href: '/backoffice/kreatif/sampel', key: 'sampel', ikon: PackageCheck },
   { href: '/backoffice/kreatif/konten-kol', key: 'kontenKol', ikon: PlaySquare },
   { href: '/backoffice/kreatif/performa', key: 'performa', ikon: TrendingUp },
+  { href: '/backoffice/kreatif/brand', key: 'brand', ikon: Tags },
   { href: '/backoffice/kreatif/pembayaran', key: 'pembayaran', ikon: Wallet },
   { href: '/backoffice/kreatif/kalender', key: 'kalender', ikon: CalendarDays },
   { href: '/backoffice/kreatif/laporan', key: 'laporan', ikon: BarChart3 },
   { href: '/backoffice/kreatif/konten', key: 'rencanaKonten', ikon: CalendarRange },
   { href: '/backoffice/kreatif/pemantauan', key: 'pemantauan', ikon: Radar },
+  { href: '/backoffice/kreatif/periksa', key: 'periksa', ikon: ShieldCheck },
   { href: '/backoffice/kreatif/pengaturan', key: 'pengaturan', ikon: Settings2 },
 ] as const;
 

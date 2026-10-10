@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseDateOnly } from "@/lib/date-only";
+import type { StatusCampaignKol } from "@/lib/creative/campaign-aturan";
 import { simpanCampaign, type AlasanGagalCampaign } from "@/lib/creative/campaign-writer";
 
 /*
@@ -24,6 +25,9 @@ export type IsianCampaign = {
   budget?: number | null;
   targetKol?: number | null;
   targetContent?: number | null;
+  targetViews?: number | null;
+  /** Draft / Berjalan / Selesai / Batal; tidak dikirim = tidak disentuh. */
+  status?: StatusCampaignKol;
   brief?: string | null;
   note?: string | null;
   arsip?: boolean;
@@ -52,6 +56,9 @@ export async function simpanCampaignAction(id: string | null, isi: IsianCampaign
         budget: angka(isi.budget),
         targetKol: angka(isi.targetKol),
         targetContent: angka(isi.targetContent),
+        targetViews: angka(isi.targetViews),
+        // Nilainya diperiksa penulis (`STATUS_TIDAK_VALID`).
+        status: typeof isi.status === "string" ? (isi.status as StatusCampaignKol) : undefined,
         brief: teks(isi.brief, 20_000),
         note: teks(isi.note),
         arsip: isi.arsip === true,

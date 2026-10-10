@@ -14,8 +14,12 @@ import { perangkatDariToken, type PerangkatSah } from "./pantau-writer";
  * terduga dicatat di log server dan dijawab `GAGAL` tanpa jejak tumpukan.
  */
 
-/** Badan permintaan terbesar — satu hasil profil (≤ 200 posting) jauh di bawah ini. */
-export const MAKS_BADAN_BYTE = 256 * 1024;
+/**
+ * Badan permintaan terbesar. Sejak posting membawa caption (≤ 500 tanda), handle yang ditandai, dan
+ * tagar (2026-10-10), satu hasil profil 200 posting bisa mendekati 256 KB — terutama emoji yang dikirim
+ * sebagai `\uXXXX`. 512 KB masih jauh dari apa pun yang wajar.
+ */
+export const MAKS_BADAN_BYTE = 512 * 1024;
 
 const HTTP: Partial<Record<KodeGalatPantau, number>> = {
   TOKEN_TIDAK_SAH: 401,

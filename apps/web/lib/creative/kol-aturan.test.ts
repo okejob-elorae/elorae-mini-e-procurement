@@ -142,6 +142,11 @@ describe("saringan dari alamat", () => {
     expect(bacaSaringKol({ platform: "x", status: "aneh", ukuran: "7", tampilan: "papan" })).toEqual(SARING_KOL_BAWAAN);
   });
 
+  it("mengenal tier mid (tier ke-5)", () => {
+    expect(bacaSaringKol({ tier: "mid" }).tier).toBe("mid");
+    expect(bacaSaringKol({ tier: "Mid" }).tier).toBe("mid");
+  });
+
   it("alamat hanya membawa yang berbeda dari bawaan, dan bolak-balik sama", () => {
     expect(alamatSaringKol("/k", SARING_KOL_BAWAAN)).toBe("/k");
     const s = { ...SARING_KOL_BAWAAN, cari: "rara", status: "BELUM" as const, halaman: 2 };

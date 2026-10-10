@@ -1,6 +1,6 @@
-// Popup ekstensi: sambungkan ke Elorae, lihat keadaan, nyalakan/matikan pemantauan otomatis.
-// Semua kerja sungguhan di service worker; popup hanya mengirim pesan dan menampilkan ringkasan.
-import { waktuWib } from "./lib/aturan.js";
+// Popup ekstensi: sambungkan ke Elorae, lihat keadaan, nyalakan/matikan pemantauan otomatis dan
+// kiriman otomatis dari panel. Kerja sungguhan di service worker; popup mengirim pesan dan menampilkan ringkasan.
+import { KUNCI_SAKELAR_KIRIM_OTOMATIS, sakelarKirimOtomatis, waktuWib } from "./lib/aturan.js";
 import { AKSEN, KUNCI_TAMPILAN, bersihkanTampilan, warnaAksen } from "./lib/tampilan.js";
 
 const $ = (id) => document.getElementById(id);
@@ -123,9 +123,27 @@ $("tombolPutuskan").addEventListener("click", async () => {
   }
 });
 
+// Sakelar "Kirim otomatis saat membuka TikTok": langsung di storage.local (tidak ada = nyala). Panel
+// di tab TikTok dan service worker membacanya setiap kali akan mengirim, jadi berlaku seketika.
+async function gambarSakelarKirim() {
+  try {
+    const r = await chrome.storage.local.get(KUNCI_SAKELAR_KIRIM_OTOMATIS);
+    $("kirimOtomatis").checked = sakelarKirimOtomatis(r?.[KUNCI_SAKELAR_KIRIM_OTOMATIS]);
+  } catch {
+    $("kirimOtomatis").checked = true;
+  }
+}
+
+$("kirimOtomatis").addEventListener("change", (ev) => {
+  chrome.storage.local.set({ [KUNCI_SAKELAR_KIRIM_OTOMATIS]: ev.target.checked }).catch(() => gambarSakelarKirim());
+});
+
+gambarSakelarKirim();
+
 // Ikuti perubahan dari service worker selama popup terbuka.
 chrome.storage.onChanged.addListener((perubahan, area) => {
   if (area !== "local") return;
+  if (KUNCI_SAKELAR_KIRIM_OTOMATIS in perubahan) gambarSakelarKirim();
   if (["ringkasan", "statusServer", "koneksi", "otomatis", "galatTerakhir", "jadwal"].some((k) => k in perubahan)) {
     segarkan(false);
   }

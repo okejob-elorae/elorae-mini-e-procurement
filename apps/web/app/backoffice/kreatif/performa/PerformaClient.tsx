@@ -335,6 +335,11 @@ function TabelPerforma({
                     <Badge variant={b.afiliasi ? "secondary" : "outline"} className="h-5 px-1.5 text-[11px]">
                       {b.afiliasi ? t("performa.badge.afiliasi") : t("performa.badge.kol")}
                     </Badge>
+                    {b.terdeteksi ? (
+                      <Badge variant="outline" className="h-5 px-1.5 text-[11px]">
+                        {t("performa.badge.deteksi")}
+                      </Badge>
+                    ) : null}
                   </div>
                   {b.handle && `@${b.handle}` !== b.nama ? <p className="truncate text-xs text-muted-foreground">@{b.handle}</p> : null}
                 </div>

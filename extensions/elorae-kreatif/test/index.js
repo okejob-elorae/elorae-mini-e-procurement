@@ -5,3 +5,4 @@ import "./aturan.test.js";
 import "./panel.test.js";
 import "./tampilan.test.js";
 import "./kalender.test.js";
+import "./manifest.test.js";

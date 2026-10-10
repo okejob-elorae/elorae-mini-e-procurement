@@ -8,10 +8,11 @@
  */
 
 import { bacaTampilan, type JenisTampilan } from "@/lib/tampilan/tampilan";
-import { SEMUA_PLATFORM, type Platform, type Tier } from "./aturan";
+import { SEMUA_PLATFORM, SEMUA_TIER, type Platform, type Tier } from "./aturan";
 import { SEMUA_TAHAP, type Tahap } from "./tahap";
 
-export const SEMUA_TIER: readonly Tier[] = ["nano", "mikro", "makro", "mega"];
+/** Kelima tier (didefinisikan di `aturan.ts`, dipakai ulang di sini untuk saringan `?tier=`). */
+export { SEMUA_TIER };
 
 export const URUT_KOL = ["terbaru", "nama", "pengikut", "er", "gmv", "kontak"] as const;
 export type UrutKol = (typeof URUT_KOL)[number];

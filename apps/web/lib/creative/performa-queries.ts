@@ -1,7 +1,9 @@
 import { prisma, Prisma, sqlId } from "@elorae/db";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { hariIniWib } from "@/lib/tanggal-isian";
+import { JEJAK } from "@/lib/receivables/jejak";
 import { engagementRate, type AngkaKonten } from "./angka-konten";
+import { SUMBER_DETEKSI_TAG } from "./brand-collab";
 import { handleDariLink } from "./pantau-muatan";
 import { PER_HALAMAN_PERFORMA, polaCari, statusVideo, type ParamPerforma, type StatusVideo } from "./performa";
 
@@ -44,6 +46,8 @@ export type BarisPerforma = {
   status: StatusVideo;
   /** Kode galat cek terakhir yang gagal. */
   alasanGagal: string | null;
+  /** Masuk sendiri karena menandai Elorae (dibuat pembacaan ekstensi, sumber `DETEKSI_TAG`). */
+  terdeteksi: boolean;
 };
 
 export type RingkasanPerforma = {
@@ -210,6 +214,23 @@ export async function daftarPerformaVideo(
   const tugasPer = new Map<string, typeof tugas>();
   for (const t of tugas) if (t.contentId) tugasPer.set(t.contentId, [...(tugasPer.get(t.contentId) ?? []), t]);
 
+  // "Terdeteksi otomatis": konten tidak punya kolom asal, jadi dibaca dari jejak pembuatannya
+  // (ditulis pada kolaborasi, `metadata.kontenId` + `metadata.sumber`). Satu kueri ber-indeks
+  // (entityType, entityId) untuk paling banyak satu halaman kolaborasi.
+  const kolaborasiIds = [...new Set(mentah.map((x) => x.kolaborasiId))];
+  const jejakDibuat = kolaborasiIds.length
+    ? await prisma.auditLog.findMany({
+        where: { entityType: "KolBrief", entityId: { in: kolaborasiIds }, action: JEJAK.KONTEN_KOL_DICATAT },
+        select: { metadata: true },
+      })
+    : [];
+  const terdeteksi = new Set(
+    jejakDibuat.flatMap((j) => {
+      const m = j.metadata && typeof j.metadata === "object" && !Array.isArray(j.metadata) ? (j.metadata as Record<string, unknown>) : null;
+      return m && m.sumber === SUMBER_DETEKSI_TAG && typeof m.kontenId === "string" ? [m.kontenId] : [];
+    }),
+  );
+
   const baris = mentah.map((x): BarisPerforma => {
     const angka: AngkaKonten | null =
       x.views === null
@@ -232,6 +253,7 @@ export async function daftarPerformaVideo(
       sumber: x.sumber,
       status: st.status,
       alasanGagal: st.alasan,
+      terdeteksi: terdeteksi.has(x.kontenId),
     };
   });
 

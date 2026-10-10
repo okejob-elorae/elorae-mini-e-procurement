@@ -263,7 +263,9 @@
     "navFinanceRekonsiliasiBank": "Bank reconciliation",
     "navUmurHutang": "Payables aging",
     "navKolPemantauan": "Monitoring",
-    "navKolPerforma": "Video performance"
+    "navKolPerforma": "Video performance",
+    "navKolBrand": "Brands",
+    "navKolPeriksa": "Data check"
   },
   "notifications": {
     "title": "Notifications",
@@ -12045,7 +12047,8 @@
     "okDeletedMany": "{count} posts deleted.",
     "gambarHilang": "Image missing — upload again",
     "platformSHOPEE": "Shopee",
-    "rowNumber": "Feed row {n}"
+    "rowNumber": "Feed row {n}",
+    "tier_mid": "Mid"
   },
   "dateRangePicker": {
     "placeholder": "Pick a date range",
@@ -12378,7 +12381,12 @@
       "KOL_MONITOR_SETTINGS_UPDATED": "Monitoring settings updated",
       "KOL_FORM_LINK_CREATED": "KOL data form link created",
       "KOL_FORM_LINK_REVOKED": "KOL data form link revoked",
-      "KOL_FORM_SUBMISSION_REVIEWED": "KOL submission marked reviewed"
+      "KOL_FORM_SUBMISSION_REVIEWED": "KOL submission marked reviewed",
+      "KOL_CAMPAIGN_STATUS_CHANGED": "KOL campaign status changed",
+      "KOL_BRAND_COLLAB_ADDED": "KOL brand added",
+      "KOL_BRAND_COLLAB_DELETED": "KOL brand deleted",
+      "KOL_CALENDAR_FEED_CREATED": "Creative calendar subscription link created",
+      "KOL_CALENDAR_FEED_REVOKED": "Creative calendar subscription link revoked"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -12487,7 +12495,9 @@
       "BankStatementLine": "Bank statement line",
       "SupplierPayment": "Supplier payment",
       "KolPerangkat": "Monitoring device",
-      "KolTugasPantau": "Monitoring queue"
+      "KolTugasPantau": "Monitoring queue",
+      "KolBrandCollab": "KOL brand history",
+      "KolCalendarFeed": "Creative calendar subscription"
     },
     "fields": {
       "value": "Value",
@@ -19679,7 +19689,9 @@
       "gulirKiri": "Scroll tabs left",
       "gulirKanan": "Scroll tabs right",
       "pemantauan": "Monitoring",
-      "performa": "Video performance"
+      "performa": "Video performance",
+      "brand": "Brands",
+      "periksa": "Data check"
     },
     "halaman": {
       "hariIni": "Today",
@@ -19695,7 +19707,9 @@
       "laporan": "Reports",
       "pengaturan": "Creative settings",
       "pemantauan": "KOL monitoring",
-      "performa": "Video performance"
+      "performa": "Video performance",
+      "brand": "Brands",
+      "periksa": "Data check"
     },
     "disiapkan": {
       "judul": "Coming soon",
@@ -20042,6 +20056,35 @@
         "TANPA_AKSES": "You do not have permission to change agenda items.",
         "GAGAL": "Saving failed. Try again.",
         "TIDAK_VALID": "Check the highlighted fields."
+      },
+      "langganan": {
+        "judul": "Subscribe in Google Calendar",
+        "aktif": "Link active since {tanggal}",
+        "terakhirDibaca": "last read {waktu}",
+        "belumDibaca": "not read yet",
+        "tidakAda": "No subscription link yet.",
+        "buat": "Create link",
+        "buatBaru": "Create new link",
+        "cabut": "Revoke",
+        "cabutJudul": "Revoke the subscription link?",
+        "cabutIsi": "Calendars subscribed to it stop receiving Elorae's calendar.",
+        "baruJudul": "Create a new link?",
+        "baruIsi": "The old link stops working immediately. Calendars using it have to be added again with the new link.",
+        "batal": "Cancel",
+        "siap": "This link is shown only once — copy or add it now.",
+        "salin": "Copy",
+        "disalin": "Link copied",
+        "google": "Add to Google Calendar",
+        "apple": "Apple Calendar (webcal)",
+        "dibuat": "Subscription link created",
+        "dicabut": "Subscription link revoked",
+        "err": {
+          "TANPA_AKSES": "You do not have Creative access.",
+          "ALAMAT_TIDAK_SAH": "The page address was not recognised. Reload the page and try again.",
+          "TIDAK_ADA": "There is no active link.",
+          "GAGAL": "Failed. Try again.",
+          "SALIN": "Could not copy. Copy it by hand from the link box."
+        }
       }
     },
     "pengaturan": {
@@ -20102,7 +20145,24 @@
         "VARIABEL_TAK_DIKENAL": "The template contains unknown variables: {daftar}."
       },
       "errAkses": "You do not have permission to change Creative settings.",
-      "errGagal": "Saving failed. Try again."
+      "errGagal": "Saving failed. Try again.",
+      "tier": {
+        "judul": "KOL tier thresholds",
+        "mulai": "{tier} from",
+        "satuan": "followers",
+        "simpan": "Save tier thresholds",
+        "bawaan": "Restore defaults",
+        "ok": "Tier thresholds saved",
+        "galatAngka": "Enter a whole number above 0.",
+        "galatNaik": "Must be greater than the {tier} threshold.",
+        "rentang": "Tier ranges",
+        "rentangBawah": "below {n}",
+        "rentangAntara": "{dari}–{sampai}",
+        "rentangAtas": "{dari} and up",
+        "errAkses": "You do not have permission to change Creative settings.",
+        "errTidakValid": "Tier thresholds must be whole numbers in ascending order.",
+        "errGagal": "Could not save. Try again."
+      }
     },
     "errBayar": {
       "STATUS_TIDAK_VALID": "Unknown payment status.",
@@ -20790,7 +20850,9 @@
         "arsip": "Archive this campaign",
         "simpan": "Save",
         "menyimpan": "Saving…",
-        "batal": "Cancel"
+        "batal": "Cancel",
+        "status": "Status",
+        "targetViews": "Target views"
       },
       "ok": {
         "dibuat": "Campaign {nama} created",
@@ -20802,7 +20864,8 @@
         "PERIODE_TIDAK_VALID": "The end date cannot be before the start date.",
         "ANGKA_TIDAK_VALID": "Budget and targets must be zero or more.",
         "TANPA_AKSES": "You do not have access to change campaigns.",
-        "GAGAL": "Could not save the campaign. Please try again."
+        "GAGAL": "Could not save the campaign. Please try again.",
+        "STATUS_TIDAK_VALID": "Unknown campaign status."
       },
       "detail": {
         "kolaborasi": "Collaborations in this campaign",
@@ -20824,9 +20887,30 @@
           "terpakai": "Spent",
           "gmv": "GMV",
           "roas": "ROAS",
-          "views": "Views"
+          "views": "Views",
+          "cpv": "CPV",
+          "cpe": "CPE",
+          "er": "Actual ER"
         },
-        "lebihDari": "More than 25 collaborations — open the collaboration list to see them all."
+        "lebihDari": "More than 25 collaborations — open the collaboration list to see them all.",
+        "targetViews": "Views"
+      },
+      "saringStatusLabel": "Filter campaign status",
+      "saringStatusSemua": "All statuses",
+      "keadaan": {
+        "DRAFT": "Draft",
+        "BERJALAN": "Running",
+        "SELESAI": "Done",
+        "BATAL": "Cancelled"
+      },
+      "kosongStatus": "No campaigns with status {status}",
+      "ringkasan": {
+        "kol": "Active KOLs",
+        "pengikut": "Total followers",
+        "berjalan": "Running campaigns",
+        "budget": "Total budget",
+        "terpakai": "Spent",
+        "views": "Views"
       }
     },
     "sampel": {
@@ -21123,7 +21207,8 @@
           "terisi": "Filled: {daftar}. Check, then save.",
           "kosong": "Nothing recognised. Make sure each line looks like \"Label: value\", e.g. \"Alamat: Jl. Mawar 5\".",
           "takTerbaca": "{n} lines not recognised."
-        }
+        },
+        "rateFormat": "Rate per format (Rp)"
       },
       "kembar": {
         "judul": "Possibly the same person",
@@ -21242,7 +21327,8 @@
           "konten": "Content",
           "ukuran": "Sizes, address & tax",
           "pengikut": "Followers & ER",
-          "catatan": "Notes & history"
+          "catatan": "Notes & history",
+          "brand": "Brands"
         },
         "kolom": {
           "docNo": "No.",
@@ -21298,7 +21384,8 @@
           "shares": "Shares",
           "saves": "Saves"
         },
-        "feeBruto": "gross incl. income tax {bruto}"
+        "feeBruto": "gross incl. income tax {bruto}",
+        "rateFormat": "Rate per format"
       },
       "catatan": {
         "judul": "Notes & history",
@@ -21357,7 +21444,8 @@
         "field": {
           "engagementRate": "Engagement rate must be 0–100.",
           "avgViews": "Average views is not valid.",
-          "rateCard": "Rate card is not valid."
+          "rateCard": "Rate card is not valid.",
+          "rateFormat": "Per-format rates must be whole rupiah, zero or more."
         }
       }
     },
@@ -21906,7 +21994,8 @@
       },
       "badge": {
         "kol": "KOL",
-        "afiliasi": "Affiliate"
+        "afiliasi": "Affiliate",
+        "deteksi": "Detected automatically"
       },
       "sumber": {
         "ekstensi": "Extension",
@@ -22054,6 +22143,166 @@
         "BERUBAH_LAGI": "This field changed again after the KOL's submission, so it was not reverted.",
         "SALIN": "Copy failed; copy it manually from the link box.",
         "GAGAL": "Failed; try again."
+      }
+    },
+    "brand": {
+      "label": {
+        "ELORAE": "Elorae",
+        "KOMPETITOR": "Competitor"
+      },
+      "jenis": {
+        "BERBAYAR": "Paid",
+        "KOLABORASI": "Collaboration",
+        "TAG": "Plain tag"
+      },
+      "sumber": {
+        "EKSTENSI": "Extension",
+        "MANUAL": "Manual"
+      },
+      "kolom": {
+        "brand": "Brand",
+        "jenis": "Type",
+        "posting": "Post",
+        "views": "Views",
+        "sumber": "Source",
+        "kol": "KOL",
+        "jumlahKol": "KOLs",
+        "jumlahPosting": "Posts",
+        "terakhir": "Latest post",
+        "berbayar": "Paid",
+        "kolaborasi": "Collaboration",
+        "tag": "Plain tag",
+        "aksi": "Actions"
+      },
+      "profil": {
+        "judul": "Brand history",
+        "tambah": "Add brand",
+        "kosong": "No brands recorded yet",
+        "kosongIsi": "Filled in automatically every time the extension reads this KOL's profile or videos. Brands from other sources can be added by hand.",
+        "terpotong": "Showing the latest {n} of {total} rows.",
+        "buka": "Open post",
+        "tanpaTanggal": "No date",
+        "hapus": "Delete @{brand}",
+        "hapusJudul": "Delete this brand row?",
+        "hapusIsi": "@{brand} will be removed from this KOL's history.",
+        "hapusIsiEkstensi": "@{brand} will be removed from this KOL's history. Rows from the extension are written again on the next reading as long as the post still tags that brand.",
+        "hapusYa": "Delete",
+        "batal": "Cancel",
+        "dihapus": "Brand row deleted.",
+        "ditambah": "Brand added.",
+        "lihatBrand": "See every KOL that tagged @{brand}"
+      },
+      "form": {
+        "judul": "Add brand",
+        "handle": "Brand handle",
+        "handlePlaceholder": "e.g. elorae.official",
+        "nama": "Name (optional)",
+        "jenis": "Type",
+        "link": "Post link (optional)",
+        "linkPlaceholder": "https://www.tiktok.com/@kol/video/…",
+        "tanggal": "Post date (optional)",
+        "simpan": "Save",
+        "batal": "Cancel",
+        "handleWajib": "Enter the brand handle."
+      },
+      "err": {
+        "KOL_TIDAK_ADA": "This KOL was not found.",
+        "HANDLE_TIDAK_SAH": "The brand handle is not valid, or it belongs to this KOL.",
+        "JENIS_TIDAK_SAH": "Choose the kind of collaboration.",
+        "LINK_TIDAK_SAH": "The post link is not valid.",
+        "TANGGAL_TIDAK_SAH": "The post date is not valid.",
+        "SUDAH_ADA": "This post is already recorded for that brand.",
+        "TIDAK_DITEMUKAN": "Brand row not found — it may already have been deleted.",
+        "TANPA_AKSES": "You are not allowed to manage Creative.",
+        "GAGAL": "Could not save. Try again."
+      },
+      "direktori": {
+        "meta": "{n} brands",
+        "cari": "Search brand handle or name",
+        "saring": {
+          "label": "Filter brands",
+          "semua": "All brands",
+          "kompetitor": "Competitors only",
+          "elorae": "Elorae"
+        },
+        "kosong": "No brands recorded yet",
+        "kosongIsi": "Brands appear here as soon as the extension reads a KOL profile or video that tags an account.",
+        "kosongSaring": "No brand matches this filter.",
+        "bukaBrand": "See the KOLs that tagged @{brand}",
+        "kembali": "All brands",
+        "metaBrand": "{kol} KOLs · {posting} posts",
+        "kolKosong": "No KOL has tagged this brand yet.",
+        "diblokir": "Blocked",
+        "bukaKol": "Open {nama}'s profile"
+      },
+      "pengaturan": {
+        "judul": "Brands & competitors",
+        "akunElorae": "Elorae accounts",
+        "akunEloraePetunjuk": "TikTok handle, without @. Press Enter to add.",
+        "tagarElorae": "Elorae hashtags",
+        "tagarEloraePetunjuk": "Without #. Press Enter to add.",
+        "kompetitor": "Competitors",
+        "kompetitorKosong": "No competitors yet.",
+        "handleKompetitor": "Competitor handle",
+        "namaKompetitor": "Name",
+        "tambahKompetitor": "Add",
+        "hapusKompetitor": "Remove {handle}",
+        "otomatis": "Videos that tag Elorae enter Video performance automatically",
+        "simpan": "Save",
+        "ok": "Brand settings saved.",
+        "err": {
+          "TIDAK_VALID": "Invalid input.",
+          "HANDLE_TIDAK_SAH": "Invalid handle: {nilai}",
+          "TAGAR_TIDAK_SAH": "Invalid hashtag: {nilai}",
+          "TERLALU_BANYAK": "Too many entries.",
+          "BENTROK": "@{nilai} is already listed as an Elorae account."
+        }
+      }
+    },
+    "periksa": {
+      "meta": "{n} findings · checked {waktu}",
+      "metaBersih": "No findings · checked {waktu}",
+      "ulang": "Check again",
+      "temuan": "{n} findings",
+      "bersih": "All clear",
+      "tidakAda": "None",
+      "lainnya": "{n} more not shown",
+      "bagian": {
+        "kembar": "Duplicate KOLs",
+        "yatim": "Pointing at missing records",
+        "tanggal": "Dates",
+        "angka": "Numbers",
+        "kelengkapan": "Completeness"
+      },
+      "jenis": {
+        "KOL_KEMBAR": "KOLs with the same WhatsApp or handle",
+        "AKUN_TANPA_KOL": "Accounts without a KOL",
+        "KOLABORASI_TANPA_KOL": "Collaborations without a KOL",
+        "KOLABORASI_TANPA_CAMPAIGN": "Collaborations pointing at a missing campaign",
+        "KONTEN_TANPA_KOLABORASI": "Content without a collaboration",
+        "ANGKA_TANPA_KONTEN": "Metric readings without content",
+        "PENGIRIMAN_TANPA_KOLABORASI": "Sample shipments without a collaboration",
+        "TERMIN_TANPA_KOLABORASI": "Payment terms without a collaboration",
+        "BRAND_TANPA_KOL": "Brand history without a KOL",
+        "CAMPAIGN_TANGGAL_TERBALIK": "Campaigns ending before they start",
+        "KOLABORASI_TANGGAL_TERBALIK": "Collaborations due before their start date",
+        "KONTEN_TAYANG_MASA_DEPAN": "Content live in the future",
+        "LIKE_LEBIH_DARI_VIEWS": "More likes than views",
+        "VIEWS_TURUN": "Views lower than an earlier reading",
+        "KOL_TANPA_AKUN": "KOLs without an account",
+        "TAYANG_TANPA_KONTEN": "Live without content"
+      },
+      "rincian": {
+        "waSama": "Same WhatsApp: {wa}",
+        "handleSama": "Same handle: {handle}",
+        "yatim": "Points at id {id}, which does not exist",
+        "tanggalCampaign": "Starts {mulai} · ends {selesai}",
+        "tanggalKolaborasi": "Starts {mulai} · due {selesai}",
+        "tayang": "Live {tanggal}",
+        "likeViews": "{likes} likes on {views} views · {waktu}",
+        "viewsTurun": "{sebelum} views ({waktuSebelum}) → {sesudah} views ({waktu})",
+        "kali": "{n} readings",
+        "tahap": "Stage {tahap}"
       }
     }
   },

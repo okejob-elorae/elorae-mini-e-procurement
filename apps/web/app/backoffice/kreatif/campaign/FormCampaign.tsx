@@ -10,9 +10,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { simpanCampaignAction } from "@/app/actions/kreatif-campaign";
 import { bacaAngka, bacaBilanganBulat } from "@/lib/creative/angka-masuk";
+import { SEMUA_STATUS_CAMPAIGN, STATUS_CAMPAIGN_BAWAAN, type StatusCampaignKol } from "@/lib/creative/campaign-aturan";
 import { dinamis } from "@/lib/i18n/dinamis";
 
 /** Isi formulir campaign (mode ubah). Tanggal "YYYY-MM-DD". */
@@ -27,12 +29,14 @@ export type AwalCampaign = {
   anggaran: number | null;
   targetKol: number | null;
   targetContent: number | null;
+  targetViews: number | null;
+  status: StatusCampaignKol;
   brief: string | null;
   note: string | null;
   arsip: boolean;
 };
 
-const KODE_DIKENAL = ["NAMA_WAJIB", "TIDAK_DITEMUKAN", "PERIODE_TIDAK_VALID", "ANGKA_TIDAK_VALID", "TANPA_AKSES", "GAGAL"];
+const KODE_DIKENAL = ["NAMA_WAJIB", "TIDAK_DITEMUKAN", "PERIODE_TIDAK_VALID", "ANGKA_TIDAK_VALID", "STATUS_TIDAK_VALID", "TANPA_AKSES", "GAGAL"];
 
 /** Formulir campaign baru / ubah. Campaign tidak pernah dihapus — diarsipkan. */
 export function FormCampaign({ buka, onBuka, awal }: { buka: boolean; onBuka: (b: boolean) => void; awal?: AwalCampaign | null }) {
@@ -58,6 +62,8 @@ function IsiForm({ awal, onTutup }: { awal: AwalCampaign | null; onTutup: () => 
   const [budget, setBudget] = useState(awal?.anggaran != null ? String(awal.anggaran) : "");
   const [targetKol, setTargetKol] = useState(awal?.targetKol != null ? String(awal.targetKol) : "");
   const [targetKonten, setTargetKonten] = useState(awal?.targetContent != null ? String(awal.targetContent) : "");
+  const [targetViews, setTargetViews] = useState(awal?.targetViews != null ? String(awal.targetViews) : "");
+  const [status, setStatus] = useState<StatusCampaignKol>(awal?.status ?? STATUS_CAMPAIGN_BAWAAN);
   const [brief, setBrief] = useState(awal?.brief ?? "");
   const [catatan, setCatatan] = useState(awal?.note ?? "");
   const [arsip, setArsip] = useState(awal?.arsip ?? false);
@@ -66,9 +72,11 @@ function IsiForm({ awal, onTutup }: { awal: AwalCampaign | null; onTutup: () => 
   const budgetAngka = budget.trim() ? bacaAngka(budget) : null;
   const kolAngka = targetKol.trim() ? bacaBilanganBulat(targetKol) : null;
   const kontenAngka = targetKonten.trim() ? bacaBilanganBulat(targetKonten) : null;
+  const viewsAngka = targetViews.trim() ? bacaBilanganBulat(targetViews) : null;
   const budgetSalah = budget.trim() !== "" && (budgetAngka === null || budgetAngka < 0);
   const kolSalah = targetKol.trim() !== "" && (kolAngka === null || kolAngka < 0);
   const kontenSalah = targetKonten.trim() !== "" && (kontenAngka === null || kontenAngka < 0);
+  const viewsSalah = targetViews.trim() !== "" && (viewsAngka === null || viewsAngka < 0);
 
   const simpan = () => {
     setCoba(true);
@@ -76,7 +84,7 @@ function IsiForm({ awal, onTutup }: { awal: AwalCampaign | null; onTutup: () => 
       toast.error(te("NAMA_WAJIB"));
       return;
     }
-    if (budgetSalah || kolSalah || kontenSalah) {
+    if (budgetSalah || kolSalah || kontenSalah || viewsSalah) {
       toast.error(te("ANGKA_TIDAK_VALID"));
       return;
     }
@@ -91,6 +99,8 @@ function IsiForm({ awal, onTutup }: { awal: AwalCampaign | null; onTutup: () => 
         budget: budgetAngka,
         targetKol: kolAngka,
         targetContent: kontenAngka,
+        targetViews: viewsAngka,
+        status,
         brief,
         note: catatan,
         arsip: awal ? arsip : false,
@@ -139,18 +149,35 @@ function IsiForm({ awal, onTutup }: { awal: AwalCampaign | null; onTutup: () => 
           <Label htmlFor="cmp-tujuan">{t("form.objective")}</Label>
           <Input id="cmp-tujuan" value={tujuan} onChange={(e) => setTujuan(e.target.value)} placeholder={t("form.objectivePlaceholder")} />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="cmp-periode">{t("form.periode")}</Label>
-          <RentangTanggalInput
-            id="cmp-periode"
-            dari={periode.dari}
-            sampai={periode.sampai}
-            onChange={(r) => setPeriode(r)}
-            pilihanCepat={false}
-            bolehTerbuka
-          />
+        <div className="grid gap-4 sm:grid-cols-[11rem_1fr]">
+          <div className="space-y-1.5">
+            <Label htmlFor="cmp-status">{t("form.status")}</Label>
+            <Select value={status} onValueChange={(v) => setStatus(v as StatusCampaignKol)}>
+              <SelectTrigger id="cmp-status" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SEMUA_STATUS_CAMPAIGN.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`keadaan.${s}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cmp-periode">{t("form.periode")}</Label>
+            <RentangTanggalInput
+              id="cmp-periode"
+              dari={periode.dari}
+              sampai={periode.sampai}
+              onChange={(r) => setPeriode(r)}
+              pilihanCepat={false}
+              bolehTerbuka
+            />
+          </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <div className="space-y-1.5">
             <Label htmlFor="cmp-budget">{t("form.budget")}</Label>
             <Input
@@ -175,6 +202,18 @@ function IsiForm({ awal, onTutup }: { awal: AwalCampaign | null; onTutup: () => 
               value={targetKonten}
               onChange={(e) => setTargetKonten(e.target.value)}
               aria-invalid={kontenSalah}
+              className="tabular-nums"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cmp-views">{t("form.targetViews")}</Label>
+            <Input
+              id="cmp-views"
+              inputMode="decimal"
+              value={targetViews}
+              onChange={(e) => setTargetViews(e.target.value)}
+              placeholder="1jt"
+              aria-invalid={viewsSalah}
               className="tabular-nums"
             />
           </div>

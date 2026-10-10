@@ -13,6 +13,7 @@
  */
 
 import { feeDiakui, type Tahap } from './tahap';
+import { AMBANG_TIER_BAWAAN, type AmbangTier } from "./tier";
 
 export type StatusKonten = 'IDE' | 'DRAFT' | 'REVIEW' | 'DIJADWALKAN' | 'TAYANG' | 'BATAL';
 
@@ -30,7 +31,10 @@ export const LABEL_PLATFORM: Record<Platform, string> = {
   LAINNYA: 'Lainnya',
 };
 
-export type Tier = 'nano' | 'mikro' | 'makro' | 'mega';
+export type Tier = "nano" | "mikro" | "mid" | "makro" | "mega";
+
+/** Kelima tingkat, dari terendah ke tertinggi (urutan saringan dan tampilan). */
+export const SEMUA_TIER: readonly Tier[] = ["nano", "mikro", "mid", "makro", "mega"];
 
 /**
  * Tier seorang KOL, DIHITUNG dari pengikut terbanyak di antara akun-akunnya.
@@ -39,15 +43,17 @@ export type Tier = 'nano' | 'mikro' | 'makro' | 'mega';
  * tidak ada yang memperbaruinya — pola yang sama dengan sisa piutang dan stok
  * titipan di modul sebelah: dihitung ulang dari sumbernya, tidak pernah diketik.
  *
- * Ambangnya mengikuti kebiasaan pasar Indonesia. Kalau nanti berubah, ia berubah
- * di SATU tempat dan seluruh layar ikut.
+ * Ambangnya diatur pemilik di Kreatif → Pengaturan (`kreatif.tier`, lihat
+ * `tier.ts`). Fungsi ini tetap murni: pemanggil server membaca setelan dan
+ * meneruskannya; tanpa ambang dipakai bawaan.
  */
-export function tierKol(pengikut: number[]): Tier {
+export function tierKol(pengikut: number[], ambang: AmbangTier = AMBANG_TIER_BAWAAN): Tier {
   const puncak = pengikut.length ? Math.max(...pengikut) : 0;
-  if (puncak >= 1_000_000) return 'mega';
-  if (puncak >= 100_000) return 'makro';
-  if (puncak >= 10_000) return 'mikro';
-  return 'nano';
+  if (puncak >= ambang.mega) return "mega";
+  if (puncak >= ambang.makro) return "makro";
+  if (puncak >= ambang.mid) return "mid";
+  if (puncak >= ambang.mikro) return "mikro";
+  return "nano";
 }
 
 /**

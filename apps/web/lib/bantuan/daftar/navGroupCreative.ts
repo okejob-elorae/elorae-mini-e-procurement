@@ -129,8 +129,8 @@ export const ENTRI: EntriBantuan[] = [
       "Database semua KOL yang pernah dan bisa diajak kerja sama. Tampilan Tabel atau Galeri; pilihannya diingat per orang di perangkat ini. Kata cari, platform, tier, label, status, urutan, dan halaman ikut di alamat halaman, jadi tautannya bisa dibagikan.",
       "Cari menelusuri nama, nama penerima, username (boleh dengan @ atau tempel link profil), nomor WhatsApp dalam bentuk apa pun (0812…, +62 812…, 62812…), niche, dan kota.",
       "Status menyaring menurut tahap kolaborasi TERAKHIR KOL itu, KOL yang belum pernah diajak, atau yang ditandai jangan diajak lagi.",
-      "Tier dihitung dari pengikut terbanyak di antara akun-akunnya: nano di bawah 10 ribu, mikro di bawah 100 ribu, makro di bawah 1 juta, mega 1 juta ke atas. Views dan GMV per KOL adalah jumlah seluruh kolaborasinya — angka yang sama dengan di Kolaborasi, Campaign, dan Laporan.",
-      "Tambah/Ubah KOL: minimal satu akun (username + platform). Pengikut, views, rate card boleh ditulis 52000, 52k, atau 1,2jt. Nama yang dikosongkan memakai username. Mengubah akun tidak menghapus lalu membuat ulang akunnya — jumlah pengikut yang berubah dicatat sebagai riwayat pengikut di profil. Menutup formulir yang belum disimpan meminta konfirmasi.",
+      "Tier dihitung dari pengikut terbanyak di antara akun-akunnya (orang yang sama di dua platform tidak dijumlahkan), dalam lima tingkat: nano, mikro, mid, makro, mega. Batasnya diatur di Kreatif → Pengaturan → Batas tier KOL; bawaannya nano di bawah 10 ribu, mikro 10 ribu sampai di bawah 100 ribu, mid 100 ribu sampai di bawah 500 ribu, makro 500 ribu sampai di bawah 1 juta, mega 1 juta ke atas. Tier tidak pernah disimpan, jadi mengubah batasnya langsung mengubah tier di daftar, saringan, dan profil. Views dan GMV per KOL adalah jumlah seluruh kolaborasinya — angka yang sama dengan di Kolaborasi, Campaign, dan Laporan.",
+      "Tambah/Ubah KOL: minimal satu akun (username + platform). Pengikut, views, rate card boleh ditulis 52000, 52k, atau 1,2jt. Nama yang dikosongkan memakai username. Rate card adalah tarif umum; Rate per format diisi per format konten (Feed, Reels, Story, Video, Live, Carousel) dalam rupiah bulat — kosongkan format yang tidak ditawarkan, nol berarti gratis. Rate hanya berubah lewat formulir ini; ekstensi, tempel link, tambah massal, dan formulir data KOL tidak pernah menyentuhnya. Mengubah akun tidak menghapus lalu membuat ulang akunnya — jumlah pengikut yang berubah dicatat sebagai riwayat pengikut di profil. Menutup formulir yang belum disimpan meminta konfirmasi.",
       "Saat menyimpan, nomor WhatsApp (dinormalkan ke 62…) dan username (lintas platform) dicocokkan dengan KOL lain. Bila ada yang mirip, Anda bisa membuka yang sudah ada, atau tetap menyimpan dengan alasan — alasannya tercatat di riwayat.",
       "Tambah massal: tempel satu KOL per baris — username, nama, pengikut, WA, kota (hanya username yang wajib), dipisah koma, titik koma, atau tab. Bila pengikut memakai koma desimal (1,2jt), lebih aman memisah kolom dengan titik koma atau tab. Pratinjau menandai baris yang sudah ada di database atau muncul dua kali di tempelan; untuk KOL yang sudah ada pilih Perbarui atau Lewati. Perbarui mengganti jumlah pengikut di platform itu dan hanya mengisi data yang masih kosong — data yang sudah dirapikan tidak ditimpa. Semua baris disimpan sekaligus; bila sementara itu ada yang menambahkan KOL yang sama, barisnya dilewati. Campaign yang dipilih langsung dibuatkan kolaborasi berstatus prospek.",
       "Cek kembar menampilkan semua KOL aktif yang nomor WhatsApp-nya sama atau username-nya sama, per kelompok. Kelompok yang sudah lebih dari sekali dikirimi barang ditandai merah.",
@@ -171,8 +171,21 @@ export const ENTRI: EntriBantuan[] = [
       },
       { judul: "Fee terakhir", isi: "Fee kolaborasi berbayar yang paling baru." },
       {
+        judul: { kunci: "kreatifRuang.kol.profil.rateFormat" },
+        isi: "Tarif yang ditawarkan KOL per format konten (Feed, Reels, Story, Video, Live, Carousel), di samping rate card umum. Hanya format yang diisi yang tampil. Diubah lewat tombol Ubah; setiap perubahan tercatat di riwayat (sebelum dan sesudah).",
+      },
+      {
         judul: "Tepat waktu",
         isi: "Dari kolaborasi yang punya rencana tayang dan sudah tayang: berapa yang konten pertamanya tayang pada atau sebelum hari rencana (WIB). Kolaborasi yang belum tayang belum dinilai.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.kol.profil.tab.brand" },
+        isi: [
+          "Brand yang pernah DITANDAI KOL ini di postingnya: satu baris per posting × brand, dengan jenisnya (Berbayar, Kolaborasi, Tag biasa), tanggal dan link posting, views posting saat terakhir terbaca, dan sumbernya. Lencana Elorae dan Kompetitor mengikuti daftar di Kreatif → Pengaturan → Brand & kompetitor. Klik nama brand untuk melihat semua KOL yang menandainya.",
+          "Terisi sendiri setiap kali ekstensi membaca profil atau video KOL ini (tugas otomatis, Simpan ke Elorae, atau kiriman otomatis panel). Yang dibaca hanya akun yang DITANDAI di posting itu (data tag TikTok, bukan nama yang tertulis di caption) — merek yang hanya disebut namanya atau terlihat di video tidak tercatat. Akun KOL ini sendiri tidak pernah dihitung sebagai brand.",
+          "Jenis ditebak dari posting: Berbayar bila TikTok menandainya iklan, atau tagar/caption memuat penanda iklan (ad, ads, iklan, sponsored, sponsor, endorse, endorsement, paid partnership, paid promotion, kerja sama berbayar, kemitraan berbayar); Kolaborasi bila memuat penanda kolaborasi (collab, collaboration, kolaborasi, kolab, gifted, PR package, partner); selain itu Tag biasa. Pembacaan berikutnya memperbarui jenis, views, dan caption.",
+          "Tambah brand untuk kerja sama yang tidak terbaca ekstensi (Instagram, YouTube, atau posting lama). Link video TikTok membuat baris itu sama dengan yang dibaca ekstensi, jadi tidak tercatat dua kali. Hapus menghapus satu baris dan tercatat di riwayat KOL; baris dari ekstensi ditulis lagi pada pembacaan berikutnya selama postingnya masih menandai brand itu. Menambah dan menghapus butuh izin kelola Kreatif.",
+        ],
       },
       {
         judul: { kunci: "kreatifRuang.kol.profil.tab.ukuran" },
@@ -205,7 +218,8 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "navGroupCreative",
     judul: { kunci: "kreatifRuang.halaman.campaign" },
     isi: [
-      "Daftar campaign dengan periode, jumlah KOL dan konten dibanding target, views, biaya terpakai, budget, GMV, dan ROAS. Campaign yang diarsipkan ada di bawah; chip Semua/Aktif/Arsip menyaringnya.",
+      "Daftar campaign dengan status, periode, jumlah KOL dan konten dibanding target, views, biaya terpakai, budget, GMV, dan ROAS. Campaign yang diarsipkan ada di bawah; chip Semua/Aktif/Arsip menyaringnya. Chip status (Draft, Berjalan, Selesai, Batal) menyaring menurut status campaign; angkanya mengikuti chip arsip yang sedang dipilih. Kedua saringan ikut di alamat halaman (?status= dan ?keadaan=).",
+      "Status campaign dipilih di formulirnya: Draft (masih disiapkan), Berjalan (bawaan campaign baru), Selesai, atau Batal. Status terpisah dari arsip — arsip hanya menyembunyikan campaign dari daftar aktif dan menutupnya dari kolaborasi baru. Setiap perubahan status tercatat di riwayat sebagai \"Status campaign KOL diubah\" (sebelum dan sesudah).",
       "Bar budget hijau di bawah 80%, kuning mulai 80%, merah bila terpakai melebihi budget (tertulis \"lebih Rp …\").",
       "Brief induk diwariskan ke kolaborasi baru yang brief-nya dibiarkan kosong. Campaign yang sudah lewat diarsipkan lewat centang di formulirnya, bukan dihapus; campaign yang diarsipkan tidak menerima kolaborasi baru.",
       "Lihat kolaborasi membuka daftar Kolaborasi yang sudah tersaring ke campaign itu.",
@@ -223,6 +237,13 @@ export const ENTRI: EntriBantuan[] = [
         judul: "ROAS",
         isi: "GMV ÷ terpakai. Hijau bila 1 atau lebih, merah bila kurang, — bila belum ada biaya.",
       },
+      {
+        judul: "Ringkasan di atas daftar",
+        isi: [
+          "Tidak ikut saringan. KOL aktif = KOL yang tidak dinonaktifkan dan tidak diblokir. Total pengikut = jumlah pengikut akun TERBESAR tiap KOL aktif, jadi orang yang sama di dua platform tidak dihitung dua kali.",
+          "Campaign berjalan = campaign berstatus Berjalan yang tidak diarsip. Total budget, terpakai, dan views = jumlah semua campaign yang tidak diarsip (apa pun statusnya); terpakai dan views dihitung sama persis dengan baris tabelnya.",
+        ],
+      },
     ],
   },
   {
@@ -238,6 +259,17 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Terpakai dan bar budget",
         isi: "Sama dengan daftar campaign: hijau di bawah 80% budget, kuning mulai 80%, merah bila lewat.",
+      },
+      {
+        judul: "CPV, CPE, ER aktual",
+        isi: [
+          "CPV (biaya per view) = terpakai ÷ views. CPE (biaya per interaksi) = terpakai ÷ (like + komentar + share + save). ER aktual = (like + komentar + share + save) ÷ views × 100 — rumus ER yang sama dengan ER konten dan ER akun di Elorae, jadi save ikut dihitung.",
+          "Terpakai adalah angka yang sama dengan kartu Terpakai dan ROAS di halaman ini. Views dan interaksi = angka TERBARU tiap konten yang sudah tayang di campaign ini (angka lama tidak dijumlahkan). CPV dan CPE dibulatkan dua desimal. Bila pembaginya nol (belum ada views atau interaksi) tertulis —.",
+        ],
+      },
+      {
+        judul: { kunci: "kreatifRuang.campaign.detail.target" },
+        isi: "KOL, konten tayang, dan views dibanding targetnya, dengan bar kemajuan. Untuk konten dan views, persen di sampingnya = capaian ÷ target × 100 (boleh lebih dari 100%). Target yang dikosongkan tidak dinilai.",
       },
     ],
   },
@@ -329,6 +361,8 @@ export const ENTRI: EntriBantuan[] = [
       "Performa per video TikTok dari KOL dan afiliasi: views, like, komentar, share, simpan, dan ER, dibaca ekstensi pemantau di Kreatif → Pemantauan. Satu baris = satu video; angkanya bacaan TERBARU video itu, angka lama tidak pernah ditimpa (riwayatnya ada di rincian kolaborasi). Klik baris untuk membuka kolaborasinya; Buka di TikTok membuka videonya.",
       "Tempel link: tempel link video TikTok — satu per baris, atau langsung dari obrolan WhatsApp (teks lain diabaikan) — lalu pilih KOL atau Afiliasi. Link lengkap (dengan atau tanpa https://, www., parameter di belakangnya) dan link pendek vt.tiktok.com, vm.tiktok.com, tiktok.com/t/ diterima; link pendek dibuka dulu oleh server. Instagram, posting foto, link profil, dan situs lain tidak ditambahkan dan disebut alasannya. Paling banyak 500 link sekali tempel.",
       "Untuk setiap video: orangnya dicari lewat akun TikTok-nya (handle tanpa memandang huruf besar dan @); bila belum ada, dibuat KOL baru bernama @handle dengan akun TikTok itu. Video dicatat pada kolaborasi yang masih berjalan dengan jenis yang cocok — Afiliasi = kerja sama komisi, KOL = selain komisi; bila tidak ada, dibuat kolaborasi baru tanpa fee dan tanpa campaign. Tanggal tayang dibaca dari id videonya, dan tahap kolaborasinya maju ke Tayang seperti link yang ditempel di Konten KOL. Video yang sudah ada di Elorae dilewati (disebut \"sudah dipantau\"). KOL yang diblokir tidak ditambahkan.",
+      "Video yang MENANDAI Elorae masuk ke sini sendiri, tanpa ditempel: setiap kali ekstensi membaca profil atau video seorang KOL (tugas otomatis, Simpan ke Elorae, atau kiriman otomatis panel), posting milik KOL itu yang menandai akun Elorae atau memakai tagar Elorae (Kreatif → Pengaturan → Brand & kompetitor) dan belum ada di Elorae langsung dicatat — dengan views, like, komentar, share, dan simpan dari pembacaan yang sama, tanpa menunggu antrean. Yang dibaca hanya akun yang DITANDAI di video (data tag TikTok), bukan nama yang ditulis di caption. Video itu dicatat pada kolaborasi berjalan KOL-nya — Afiliasi bila semua kolaborasi berjalannya kerja sama komisi, selain itu KOL — atau kolaborasi baru tanpa fee, sama dengan Tempel link; KOL yang belum ada dibuat bernama @handle. Barisnya berlencana Terdeteksi otomatis. Butuh izin kelola Kreatif milik orang yang memasang ekstensi; bisa dimatikan di Pengaturan.",
+      "Video yang SUDAH ada di sini juga mendapat angka baru dari pembacaan profil KOL-nya, paling sering sekali per 12 jam per video, supaya membuka profil berkali-kali tidak menumpuk baris angka.",
       "Video baru langsung masuk antrean cek di urutan paling depan, jadi angka pertamanya masuk begitu ekstensi berjalan. Sesudah itu video dicek pada H+1, H+3, H+7, H+30, lalu setiap 7 hari sampai 90 hari sesudah tayang (selang dan batasnya diatur di Kreatif → Pemantauan).",
       "Angka TikTok terus bertambah sesudah dibaca, jadi angka di sini bisa sedikit di bawah angka yang tampil di TikTok saat ini. Untuk memperbaruinya kapan saja: tombol putar di kolom Status (satu video) atau Cek ulang halaman ini (semua video di halaman). Videonya ditaruh di depan antrean dan dicek ekstensi dalam sekitar satu menit, juga di luar jam kerja pemantauan; jeda otomatis karena beberapa kali gagal berturut-turut ikut dilepas. Yang tetap harus diselesaikan di Chrome: captcha atau login TikTok (lalu Lanjutkan di Pemantauan), dan Chrome profil KOL tracker dengan ekstensi Elorae harus menyala. Pesan sesudah menekan tombol menyebut bila ada yang menghalangi. Selama ada video yang Menunggu cek, halaman ini memperbarui angkanya sendiri setiap 15 detik. Setiap cek memakai kuota harian. Cara lain yang langsung: buka videonya di Chrome itu lalu tekan Simpan ke Elorae di panel Elorae.",
       "Saring KOL/Afiliasi, cari nama atau @handle, pilih rentang tanggal tayang, dan urutkan (views terbanyak, naik terbanyak, ER tertinggi, tayang terbaru, dicek terbaru). Saringan, urutan, dan halaman tersimpan di alamat halaman. Menempel link butuh izin kelola Kreatif; melihat cukup izin lihat Kreatif.",
@@ -345,6 +379,16 @@ export const ENTRI: EntriBantuan[] = [
           "Dicek menyebut waktu bacaan terbaru dan sumbernya: Ekstensi (pemantau) atau Diisi manual. Status: Menunggu cek (masih di antrean), Terbaca, Gagal (cek terakhir gagal dan belum disusul bacaan; alasannya di bawahnya, mis. video tidak ditemukan), atau Belum dicek.",
         ],
       },
+    ],
+  },
+  {
+    rute: "/backoffice/kreatif/brand",
+    bagian: "navGroupCreative",
+    judul: { kunci: "kreatifRuang.halaman.brand" },
+    isi: [
+      "Semua brand yang pernah DITANDAI KOL di postingnya — termasuk kompetitor dan Elorae sendiri — dari riwayat brand di profil KOL: berapa KOL yang menandainya, berapa posting, dan kapan posting terakhirnya. Posting tanpa tanggal dihitung dengan tanggal dicatatnya. Klik baris untuk melihat KOL-KOL yang menandai brand itu: jumlah posting per jenis (berbayar, kolaborasi, tag biasa), jumlah views posting-posting itu saat terakhir terbaca, dan posting terakhir; klik KOL untuk membuka tab Brand profilnya.",
+      "Isinya terkumpul sendiri dari setiap pembacaan ekstensi (profil dan video KOL) plus isian manual di profil KOL. Yang dibaca hanya akun yang DITANDAI di posting (data tag TikTok), bukan nama yang ditulis di caption, jadi brand yang hanya disebut atau terlihat di video tidak tercatat. Semakin sering profil KOL dibuka di Chrome yang memasang ekstensi, semakin lengkap daftarnya.",
+      "Cari handle, nama yang diisi manual, atau nama kompetitor dari Pengaturan; saring Kompetitor saja atau Elorae (keduanya mengikuti daftar di Kreatif → Pengaturan → Brand & kompetitor). Saringan, pencarian, halaman, dan brand yang dibuka tersimpan di alamat halaman. Halaman ini hanya membaca (izin lihat Kreatif).",
     ],
   },
   {
@@ -409,6 +453,16 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "kreatifRuang.kalender.form.judulBaru" },
         isi: "Judul wajib. Jam boleh kosong. Daftar persiapan diketik satu baris satu butir; awali dengan [x] untuk yang sudah selesai (paling banyak 50 butir). Kaitkan ke campaign, kolaborasi, atau KOL bila perlu — memilih kolaborasi otomatis mengaitkan KOL-nya. 'Ingatkan sejak H-n' (0 sampai 30) membuat agenda muncul di Hari ini sejak n hari sebelumnya.",
       },
+      {
+        judul: { kunci: "kreatifRuang.kalender.langganan.judul" },
+        isi: [
+          "Tautan rahasia untuk melihat isi kalender ini — tenggat, kejadian, dan agenda Anda — di Google Calendar, Apple Calendar, atau aplikasi kalender lain yang bisa berlangganan iCal. Isinya 30 hari ke belakang sampai 90 hari ke depan dan sama dengan halaman ini; agenda orang lain tidak ikut. Setiap tenggat, kejadian, dan agenda menjadi satu acara yang membawa tautan \"Buka di Elorae\" ke kolaborasi, campaign, atau agendanya.",
+          "Buat tautan, lalu pilih Tambahkan ke Google Calendar (Google Calendar terbuka dan menanyakan apakah kalender ini ditambahkan), Apple Calendar (webcal) di Mac atau iPhone, atau Salin untuk ditempel di \"Dari URL\" aplikasi kalender lain. Tautannya hanya ditampilkan sekali; sesudah halaman dimuat ulang yang tersisa hanya \"Tautan aktif sejak …\". Lupa menyimpannya? Buat tautan baru.",
+          "Tidak seketika: Google Calendar menyegarkan kalender langganan sendiri, biasanya beberapa jam sekali (bisa sampai sehari), dan Elorae tidak bisa memaksanya. Agenda yang baru dibuat atau tenggat yang baru selesai baru terlihat di Google sesudah penyegaran berikutnya. Di Apple Calendar selang penyegarannya bisa diatur di info langganan. Yang selalu terbaru adalah halaman Kalender ini.",
+          "Siapa pun yang memegang tautan itu bisa membaca kalender ini sampai tautannya dicabut — jangan dibagikan. Cabut menghentikannya seketika, dan Buat tautan baru juga mencabut yang lama. Tautan juga berhenti bekerja sendiri bila akun Anda tidak lagi punya akses Kreatif. Satu orang paling banyak satu tautan aktif; setiap pembuatan dan pencabutan tercatat di jejak audit.",
+          "Kalender langganan hanya untuk dibaca: agenda dibuat, diubah, dan diselesaikan di halaman ini, lalu ikut tampil di Google pada penyegaran berikutnya.",
+        ],
+      },
     ],
   },
   {
@@ -467,6 +521,7 @@ export const ENTRI: EntriBantuan[] = [
       "Risikonya sudah disepakati: syarat layanan TikTok melarang pengambilan otomatis, jadi akun TikTok yang dipakai di Chrome itu bisa dibatasi — pakai profil Chrome dan akun TikTok khusus. Ekstensi perlu diperbarui bila halaman TikTok berubah, dan komputernya harus menyala.",
       "Yang dicek: setiap konten kolaborasi yang sudah tayang dengan link TikTok pada H+1, H+3, H+7, dan H+30 (hari WIB), lalu setiap 7 hari sampai 90 hari sesudah tayang (keduanya diatur di kartu pengaturan); akun TikTok KOL yang punya kolaborasi berjalan seminggu sekali; akun lain sebulan sekali. KOL yang diblokir tidak pernah dicek. Konten yang tertinggal hanya dicek di titik terbarunya, sekali; titik yang terlambat lebih dari 14 hari tidak diantrekan lagi — cek berkala yang mengambil alih. Bacaan pada atau sesudah hari sebuah titik menutup titik itu. Satu video punya paling banyak satu tugas terbuka.",
       "Video yang ditempel di Performa video langsung mendapat tugas cek di urutan paling depan, termasuk video yang tayangnya sudah lama.",
+      "Kiriman otomatis panel: begitu panel Elorae di halaman TikTok selesai membaca sebuah profil atau video, panel mengirim bacaannya sendiri (bisa dimatikan di popup ekstensi). Elorae hanya menyimpan yang relevan — profil akun yang sudah ada di Elorae (pengikut, ER, riwayat brand, dan video yang menandai Elorae), profil baru yang salah satu postingnya menandai Elorae (KOL @handle dibuat), video yang sudah dipantau (angkanya, paling sering sekali per 12 jam), atau video baru yang menandai Elorae — selebihnya diabaikan tanpa menulis apa pun. Tidak memakan kuota harian; ekstensi mengirim satu URL paling sering sekali per 6 jam, dan Elorae menerima paling banyak 120 kiriman per jam per perangkat.",
       "Antrean disusun otomatis setiap hari pukul 06.00 WIB. Susun antrean sekarang menyusunnya saat itu juga — aman ditekan berkali-kali, tugas yang sudah ada tidak dibuat dua kali.",
       "Melihat cukup izin lihat Kreatif; menyambungkan, menjeda, mencabut, menyusun antrean, dan mengubah pengaturan butuh izin kelola Kreatif. Setiap tindakan itu tercatat di jejak audit.",
     ],
@@ -500,11 +555,45 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/backoffice/kreatif/periksa",
+    bagian: "navGroupCreative",
+    judul: { kunci: "kreatifRuang.halaman.periksa" },
+    isi: [
+      "Pemeriksaan data Ruang KOL. Halaman ini hanya membaca dan tidak membetulkan apa pun: klik baris untuk membuka halamannya, lalu betulkan di sana. Setiap pemeriksaan menyebut jumlah sebenarnya dan paling banyak 50 baris; sisanya ditulis \"N lainnya tidak ditampilkan\". Periksa ulang membaca semuanya lagi.",
+      "Pemeriksaan yang hasilnya nol tetap ditampilkan (\"Tidak ada\"), supaya terlihat apa saja yang sudah diperiksa. Melihat halaman ini cukup izin lihat Kreatif.",
+    ],
+    kartu: [
+      {
+        judul: { kunci: "kreatifRuang.periksa.bagian.kembar" },
+        isi: "KOL aktif dengan nomor WhatsApp yang sama (sesudah dinormalkan) atau handle yang sama di platform mana pun — aturan yang sama dengan Cek kembar di daftar KOL. Rantai ikut digabung: A sama WA dengan B dan B sama handle dengan C menjadi satu kelompok. Klik nama untuk membuka profilnya.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.periksa.bagian.yatim" },
+        isi: [
+          "Basis data Elorae tidak memasang pengunci antartabel, jadi sebuah baris bisa menunjuk data induk yang sudah tidak ada: akun, kolaborasi, dan riwayat brand yang KOL-nya tidak ada; konten, pengiriman sampel, dan termin bayar yang kolaborasinya tidak ada; bacaan angka yang kontennya tidak ada; dan kolaborasi yang campaign-nya tidak ada. Baris seperti ini tidak tampil di daftar biasa dan tidak ikut dihitung di angka mana pun.",
+          "Yang tidak punya halaman ditulis tanpa tautan, dengan id data induk yang hilang — sampaikan id itu ke pengembang untuk dibereskan. Kolaborasi yang hanya kehilangan campaign masih bisa dibuka: pilih campaign lain atau kosongkan di kepala kolaborasinya.",
+        ],
+      },
+      {
+        judul: { kunci: "kreatifRuang.periksa.bagian.tanggal" },
+        isi: "Campaign yang tanggal selesainya sebelum tanggal mulai, kolaborasi yang tenggatnya sebelum tanggal mulai, dan konten yang tanggal tayangnya jatuh pada hari SESUDAH hari ini (WIB). Biasanya salah ketik tahun atau bulan.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.periksa.bagian.angka" },
+        isi: "Like lebih banyak dari views pada satu bacaan (bacaan dengan views 0 tidak dihitung — bisa berarti angkanya belum terbaca), dan views yang lebih rendah dari bacaan SEBELUMNYA mana pun untuk konten yang sama — views hanya bisa naik, jadi biasanya salah ketik, atau videonya dihapus lalu diunggah ulang. Yang ditampilkan adalah bacaan janggal terakhir; \"N bacaan\" bila terjadi lebih dari sekali. Bacaan angka tidak pernah ditimpa, jadi temuan ini tetap ada sampai bacaannya dibereskan.",
+      },
+      {
+        judul: { kunci: "kreatifRuang.periksa.bagian.kelengkapan" },
+        isi: "KOL aktif yang belum punya satu akun pun (tidak bisa dipantau dan tidak ikut Cek kembar lewat handle), dan kolaborasi di tahap Tayang atau sesudahnya yang belum punya satu konten pun — views, ER, dan ROAS-nya kosong. Tambahkan link kontennya di tab Konten kolaborasi itu.",
+      },
+    ],
+  },
+  {
     rute: "/backoffice/kreatif/pengaturan",
     bagian: "navGroupCreative",
     judul: { kunci: "kreatifRuang.halaman.pengaturan" },
     isi: [
-      "Pengaturan seluruh Ruang KOL, dalam empat bagian yang disimpan terpisah. Yang bisa mengubah hanya pemegang izin kelola Kreatif (tarif pajak juga keuangan); yang lain melihat angka yang sedang berlaku. Setiap simpanan tercatat di riwayat (sebelum dan sesudah).",
+      "Pengaturan seluruh Ruang KOL, dalam beberapa bagian yang disimpan terpisah. Yang bisa mengubah hanya pemegang izin kelola Kreatif (tarif pajak juga keuangan); yang lain melihat angka yang sedang berlaku. Setiap simpanan tercatat di riwayat (sebelum dan sesudah).",
     ],
     kartu: [
       {
@@ -524,6 +613,22 @@ export const ENTRI: EntriBantuan[] = [
           "Template yang muncul saat tombol WhatsApp ditekan di semua layar Kreatif. Pratinjau di daftar dan di formulir memakai data contoh supaya terlihat hasil akhirnya.",
           "Variabel yang bisa dipakai: {nama}, {username}, {platform}, {campaign}, {produk}, {resi}, {ekspedisi}, {brand}, {pengirim}, {fee}. Klik variabel di formulir untuk menyisipkannya. Variabel yang salah ketik ditolak, karena akan terkirim mentah ke KOL. Variabel yang datanya belum ada (mis. resi sebelum dikirim) dibiarkan tertulis supaya terlihat sebelum pesan dikirim.",
           "Paling banyak 30 template. Bila semua template dihapus, tombol WhatsApp hanya membuka obrolan tanpa pesan; 'Pakai template bawaan' mengembalikan tujuh template awal.",
+        ],
+      },
+      {
+        judul: { kunci: "kreatifRuang.pengaturan.tier.judul" },
+        isi: [
+          "Batas bawah jumlah pengikut tiap tier KOL. Di bawah batas Mikro = Nano. Bawaan (konsep KOL Manager): Mikro mulai 10.000, Mid mulai 100.000, Makro mulai 500.000, Mega mulai 1.000.000. Bawaan ini mengubah arti \"makro\" dibanding sebelum 10 Okt 2026 (dulu mulai 100.000).",
+          "Keempat batas harus bilangan bulat lebih dari 0 dan naik berurutan; isian yang salah ditandai, tidak diganti diam-diam. Rentang yang dihasilkan tampil di bawah isian. 'Kembalikan bawaan' hanya mengisi formulir — tekan Simpan untuk memakainya.",
+          "Tier dihitung dari pengikut terbanyak setiap kali daftar atau profil dibuka, jadi batas baru langsung berlaku di daftar KOL, saringan tier, dan profil, untuk semua orang. Setiap simpanan tercatat di riwayat.",
+        ],
+      },
+      {
+        judul: { kunci: "kreatifRuang.brand.pengaturan.judul" },
+        isi: [
+          "Akun Elorae (bawaan elorae.official) dan tagar Elorae menentukan video mana yang \"menandai Elorae\": posting yang menandai salah satu akun ini, atau memakai salah satu tagar ini, masuk Performa video sendiri begitu ekstensi membaca profil atau videonya — lengkap dengan angkanya dari pembacaan yang sama. Yang dibaca hanya akun yang DITANDAI di video (data tag TikTok), bukan nama yang ditulis di caption. Profil akun Elorae sendiri tidak pernah dijadikan KOL.",
+          "Kompetitor diberi lencana Kompetitor di riwayat brand dan halaman Brand, dan bisa disaring di sana; namanya ikut dicari. Akun yang sama tidak boleh tercatat sebagai akun Elorae sekaligus kompetitor.",
+          "Sakelar \"masuk Performa video otomatis\" dimatikan: video yang menandai Elorae tidak dibuat (begitu juga KOL baru untuknya), tetapi riwayat brand tetap dicatat dan video yang sudah dipantau tetap mendapat angka barunya. Pembuatan otomatis juga butuh izin kelola Kreatif milik orang yang memasang ekstensi. Setiap simpanan tercatat di riwayat.",
         ],
       },
       {

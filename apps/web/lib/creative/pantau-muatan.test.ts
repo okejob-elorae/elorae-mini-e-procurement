@@ -71,6 +71,49 @@ describe("bacaHasil", () => {
   });
 });
 
+describe("bacaHasil — kolom brand opsional (teks, sebutan, tagar, iklan, penulis)", () => {
+  const tambahan = { teks: "Outfit dari @Eloraé #OOTD", sebutan: ["Elorae.Official", "@toko.lain"], tagar: ["#OOTD", "EloraeStyle"], iklan: true, penulis: "Kol.Satu" };
+
+  it("muatan lama tanpa kolom itu tetap diterima, tanpa kolom tambahan", () => {
+    const p = bacaHasil(profil);
+    expect(p.ok && p.hasil.jenis === "PROFIL" && Object.keys(p.hasil.posting[0]).sort()).toEqual(
+      ["dibuatPada", "disematkan", "id", "komentar", "like", "save", "share", "views"].sort(),
+    );
+    expect(bacaHasil(konten)).toEqual({ ok: true, hasil: konten });
+  });
+
+  it("dibaca dan dirapikan di posting profil dan hasil konten", () => {
+    const p = bacaHasil({ ...profil, posting: [{ ...profil.posting[0], ...tambahan }] });
+    const harap = { teks: "Outfit dari @Eloraé #OOTD", sebutan: ["elorae.official", "toko.lain"], tagar: ["ootd", "eloraestyle"], iklan: true, penulis: "kol.satu" };
+    expect(p.ok && p.hasil.jenis === "PROFIL" && p.hasil.posting[0]).toMatchObject(harap);
+    const k = bacaHasil({ ...konten, ...tambahan });
+    expect(k.ok && k.hasil).toMatchObject(harap);
+  });
+
+  it("teks dipotong 500 tanda; daftar dipotong ke batasnya; isian yang terlalu panjang atau kosong dibuang", () => {
+    const k = bacaHasil({
+      ...konten,
+      teks: "x".repeat(900),
+      sebutan: [...Array.from({ length: 40 }, (_, i) => `brand${i}`), "y".repeat(101), ""],
+      tagar: Array.from({ length: 60 }, (_, i) => `t${i}`),
+    });
+    if (!k.ok || k.hasil.jenis !== "KONTEN") throw new Error("ditolak");
+    expect(k.hasil.teks).toHaveLength(500);
+    expect(k.hasil.sebutan).toHaveLength(30);
+    expect(k.hasil.tagar).toHaveLength(50);
+  });
+
+  it("menolak TIPE yang salah, bukan kolom yang tidak ada", () => {
+    for (const salah of [{ teks: 5 }, { sebutan: "elorae" }, { sebutan: [1] }, { tagar: {} }, { tagar: [null] }, { iklan: "ya" }, { penulis: 7 }, { penulis: "x".repeat(101) }]) {
+      expect(bacaHasil({ ...konten, ...salah }), JSON.stringify(salah)).toEqual({ ok: false, kode: "MUATAN_TIDAK_SAH" });
+      expect(bacaHasil({ ...profil, posting: [{ ...profil.posting[0], ...salah }] }).ok, JSON.stringify(salah)).toBe(false);
+    }
+    // null = tidak dikirim.
+    const k = bacaHasil({ ...konten, teks: null, sebutan: null, tagar: null, iklan: null, penulis: null });
+    expect(k).toEqual({ ok: true, hasil: konten });
+  });
+});
+
 describe("bacaMasalah", () => {
   it("menerima kode yang dikenal, pesan dipangkas", () => {
     expect(bacaMasalah({ kode: "CAPTCHA" })).toEqual({ ok: true, masalah: { kode: "CAPTCHA", tugasId: null, pesan: null } });

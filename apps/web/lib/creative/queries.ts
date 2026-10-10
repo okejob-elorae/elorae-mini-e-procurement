@@ -1,6 +1,8 @@
 import { prisma } from '@elorae/db';
 import { cariTeks } from "@/lib/db/cari-teks";
 import { nilaiBebanDiakui, tierKol, type StatusKonten, type Tier } from './aturan';
+import type { AmbangTier } from "./tier";
+import { bacaAmbangTierKreatif } from "./tier-pengaturan";
 import { kontenTelat } from './rencana-konten';
 import { hariIniWib } from '@/lib/tanggal-isian';
 import { isJalurKeluar, tahapAktif, type Tahap } from './tahap';
@@ -31,7 +33,8 @@ export type BarisKol = {
   alasanBlokir: string | null;
 };
 
-export async function daftarKol(opts?: { hanyaAktif?: boolean; cari?: string }): Promise<BarisKol[]> {
+export async function daftarKol(opts?: { hanyaAktif?: boolean; cari?: string; ambangTier?: AmbangTier }): Promise<BarisKol[]> {
+  const ambangTier = opts?.ambangTier ?? (await bacaAmbangTierKreatif());
   const rows = await prisma.kol.findMany({
     where: {
       ...(opts?.hanyaAktif ? { isActive: true } : {}),
@@ -69,7 +72,7 @@ export async function daftarKol(opts?: { hanyaAktif?: boolean; cari?: string }):
     phone: k.phone,
     isActive: k.isActive,
     rateCard: k.rateCard ? angka(k.rateCard) : null,
-    tier: tierKol(k.accounts.map((a) => a.followers)),
+    tier: tierKol(k.accounts.map((a) => a.followers), ambangTier),
     akun: k.accounts.map((a) => ({ ...a, platform: String(a.platform) })),
     jumlahBrief: k._count.briefs,
     diblokir: k.blockedAt !== null,

@@ -27,7 +27,9 @@ export async function proxy(request: NextRequest) {
     // Formulir data KOL (link dari WhatsApp): tanpa masuk; token linknya diperiksa ulang di halaman dan aksinya.
     pathname.startsWith('/data-kol/') ||
     // API ekstensi Chrome pantau KOL: tanpa sesi; setiap handler memeriksa token perangkatnya sendiri.
-    pathname.startsWith('/api/kreatif/ekstensi/')
+    pathname.startsWith('/api/kreatif/ekstensi/') ||
+    // Langganan Kalender Kreatif (Google/Apple Calendar): dibaca server kalender tanpa sesi; rutenya memeriksa token dan izin pemiliknya.
+    pathname.startsWith('/api/kreatif/kalender/')
   ) {
     return NextResponse.next();
   }

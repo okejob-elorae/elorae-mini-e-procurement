@@ -147,6 +147,57 @@ describe("simpanProfilKol — akun diubah di tempat", () => {
   });
 });
 
+describe("simpanProfilKol — rate card per format", () => {
+  it("tersimpan sebagai JSON berurutan, tidak terhapus oleh penulis yang tidak membawanya, dan berjejak", async () => {
+    const r = await buat({ name: "Rara", rateFormat: { REELS: 750_000, FEED: 500_000 }, akun: [{ platform: "TIKTOK", handle: h("rr"), followers: 1_000 }] });
+    if (!r.ok) throw new Error(r.alasan);
+    const kolom = async () => (await prisma.kol.findUniqueOrThrow({ where: { id: r.id }, select: { rateFormat: true } })).rateFormat;
+    expect(await kolom()).toBe('{"FEED":500000,"REELS":750000}');
+
+    // Ubah tanpa `rateFormat` (bentuk isian ekstensi / tempel link) → tidak disentuh.
+    const u = await simpanProfilKol({
+      id: r.id,
+      isi: { name: "Rara", city: "Solo", akun: [{ platform: "TIKTOK", handle: h("rr"), followers: 2_000 }] },
+      olehUserId: userId,
+      periksaKembar: false,
+    });
+    expect(u.ok).toBe(true);
+    expect(await kolom()).toBe('{"FEED":500000,"REELS":750000}');
+
+    // Tambah massal PERBARUI juga tidak menyentuhnya.
+    const m = await simpanKolMassal({ baris: [{ handle: h("rr"), pengikut: 3_000, aksi: "PERBARUI", targetId: r.id }], platform: "TIKTOK", olehUserId: userId });
+    expect(m.ok).toBe(true);
+    expect(await kolom()).toBe('{"FEED":500000,"REELS":750000}');
+
+    // Angka tidak sah ditolak per kolom, tanpa menulis.
+    const salah = await simpanProfilKol({
+      id: r.id,
+      isi: { name: "Rara", rateFormat: { FEED: 1.5 }, akun: [{ platform: "TIKTOK", handle: h("rr"), followers: 3_000 }] },
+      olehUserId: userId,
+      periksaKembar: false,
+    });
+    expect(salah).toMatchObject({ ok: false, alasan: "TIDAK_VALID", detail: "rateFormat" });
+
+    // Ganti isinya: jejak mencatat objek sebelum/sesudah, bukan teks JSON.
+    await simpanProfilKol({
+      id: r.id,
+      isi: { name: "Rara", rateFormat: { FEED: 600_000 }, akun: [{ platform: "TIKTOK", handle: h("rr"), followers: 3_000 }] },
+      olehUserId: userId,
+      periksaKembar: false,
+    });
+    expect(await kolom()).toBe('{"FEED":600000}');
+    const jejak = await prisma.auditLog.findMany({ where: { entityId: seededId(r.id), action: "KOL_UPDATED" }, orderBy: { createdAt: "desc" } });
+    expect(jejak[0].changes).toMatchObject({
+      before: { rateFormat: { FEED: 500_000, REELS: 750_000 } },
+      after: { rateFormat: { FEED: 600_000 } },
+    });
+
+    // Objek kosong atau null mengosongkan kolomnya.
+    await simpanProfilKol({ id: r.id, isi: { name: "Rara", rateFormat: {}, akun: [{ platform: "TIKTOK", handle: h("rr"), followers: 3_000 }] }, olehUserId: userId, periksaKembar: false });
+    expect(await kolom()).toBeNull();
+  });
+});
+
 describe("simpanProfilKol — kembar", () => {
   it("nomor WA sama ditolak sampai ada alasan; alasannya masuk jejak", async () => {
     const a = await buat({ name: "Asli", phone: "0812-9000-1234", akun: [{ platform: "INSTAGRAM", handle: h("asli"), followers: 0 }] });

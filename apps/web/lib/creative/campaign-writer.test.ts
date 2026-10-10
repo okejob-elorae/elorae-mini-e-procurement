@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { parseDateOnly } from "@/lib/date-only";
 import { simpanCampaign } from "./campaign-writer";
-import { daftarCampaign, detailCampaign } from "./campaign-queries";
+import { daftarCampaign, detailCampaign, ringkasanDaftarCampaign } from "./campaign-queries";
 
 /*
  * Campaign: penulis (arsip, jejak sebelum/sesudah) dan kueri (terpakai dan
@@ -25,6 +25,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await prisma.kolContentMetric.deleteMany({ where: { content: { collabId: { in: seededIds(kolabIds) } } } });
+  await prisma.kolContent.deleteMany({ where: { collabId: { in: seededIds(kolabIds) } } });
   await prisma.kolSale.deleteMany({ where: { collabId: { in: seededIds(kolabIds) } } });
   await prisma.kolBrief.deleteMany({ where: { id: { in: seededIds(kolabIds) } } });
   await prisma.auditLog.deleteMany({ where: { entityId: seededId(campaignId) } });
@@ -107,6 +109,46 @@ describe("simpanCampaign", () => {
   });
 });
 
+describe("simpanCampaign — status dan target views", () => {
+  it("campaign baru berstatus BERJALAN kecuali diberi lain; status ikut jejak pembuatan", async () => {
+    const id = await campaignBaru();
+    expect((await prisma.kolCampaign.findUniqueOrThrow({ where: { id } })).status).toBe("BERJALAN");
+    const j = await prisma.auditLog.findFirstOrThrow({ where: { entityId: id, action: "KOL_CAMPAIGN_CREATED" } });
+    expect(j.changes).toMatchObject({ after: { status: "BERJALAN" } });
+  });
+
+  it("perubahan status berjejak tersendiri (sebelum/sesudah); tanpa status = tidak disentuh", async () => {
+    const id = await campaignBaru({ status: "DRAFT" });
+    expect((await prisma.kolCampaign.findUniqueOrThrow({ where: { id } })).status).toBe("DRAFT");
+
+    await simpanCampaign({ id, isi: { name: `${tag} Lebaran`, status: "SELESAI" }, olehUserId: userId });
+    expect((await prisma.kolCampaign.findUniqueOrThrow({ where: { id } })).status).toBe("SELESAI");
+    const j = await prisma.auditLog.findFirstOrThrow({ where: { entityId: id, action: "KOL_CAMPAIGN_STATUS_CHANGED" } });
+    expect(j.changes).toEqual({ before: { status: "DRAFT" }, after: { status: "SELESAI" } });
+    // Status tidak ikut "campaign diubah" — satu kejadian, satu baris jejak.
+    expect(await prisma.auditLog.count({ where: { entityId: id, action: "KOL_CAMPAIGN_UPDATED" } })).toBe(0);
+
+    await simpanCampaign({ id, isi: { name: `${tag} Lebaran`, note: "x" }, olehUserId: userId });
+    expect((await prisma.kolCampaign.findUniqueOrThrow({ where: { id } })).status).toBe("SELESAI");
+    expect(await prisma.auditLog.count({ where: { entityId: id, action: "KOL_CAMPAIGN_STATUS_CHANGED" } })).toBe(1);
+  });
+
+  it("menolak status yang tidak dikenal tanpa menulis apa pun", async () => {
+    const r = await simpanCampaign({ isi: { name: `${tag} Lebaran`, status: "AKTIF" as never }, olehUserId: userId });
+    expect(r).toEqual({ ok: false, alasan: "STATUS_TIDAK_VALID" });
+  });
+
+  it("target views tersimpan dan berjejak; pecahan dan negatif ditolak", async () => {
+    const id = await campaignBaru({ targetViews: 1_000_000 });
+    expect((await prisma.kolCampaign.findUniqueOrThrow({ where: { id } })).targetViews).toBe(1_000_000);
+    await simpanCampaign({ id, isi: { name: `${tag} Lebaran`, targetViews: 2_000_000 }, olehUserId: userId });
+    const j = await prisma.auditLog.findFirstOrThrow({ where: { entityId: id, action: "KOL_CAMPAIGN_UPDATED" } });
+    expect(j.changes).toEqual({ before: { targetViews: 1_000_000 }, after: { targetViews: 2_000_000 } });
+    expect(await simpanCampaign({ isi: { name: "x", targetViews: -1 }, olehUserId: userId })).toMatchObject({ ok: false, alasan: "ANGKA_TIDAK_VALID", detail: "targetViews" });
+    expect(await simpanCampaign({ isi: { name: "x", targetViews: 1.5 }, olehUserId: userId })).toMatchObject({ ok: false, alasan: "ANGKA_TIDAK_VALID" });
+  });
+});
+
 describe("daftarCampaign / detailCampaign — budget", () => {
   it("terpakai = biaya kolaborasi; kolaborasi yang keluar tanpa konten tidak lagi memakai fee", async () => {
     await campaignBaru({ budget: 5_000_000, targetKol: 4 });
@@ -144,5 +186,69 @@ describe("daftarCampaign / detailCampaign — budget", () => {
     const posisi = semua.baris.findIndex((b) => b.id === id);
     expect(semua.baris.slice(posisi).every((b) => b.arsip)).toBe(true);
     expect(semua.jumlah.semua).toBe(semua.jumlah.aktif + semua.jumlah.arsip);
+  });
+});
+
+describe("detailCampaign / daftarCampaign — status, target views, CPV/CPE/ER", () => {
+  it("angka efisiensi dari angkaKolaborasi: CPV = terpakai ÷ views, CPE = terpakai ÷ interaksi (save ikut), ER, persen target", async () => {
+    await campaignBaru({ targetViews: 1_000_000, targetContent: 4, status: "BERJALAN" });
+    const k = await kolab("TAYANG", 1_000_000);
+    const konten = await prisma.kolContent.create({
+      data: { collabId: k, platform: "TIKTOK", format: "VIDEO", link: `https://t/${tag}`, liveAt: new Date() },
+      select: { id: true },
+    });
+    await prisma.kolContentMetric.create({ data: { contentId: konten.id, views: 400_000, likes: 15_000, comments: 2_000, shares: 1_000, saves: 2_000 } });
+    const d = await detailCampaign(campaignId);
+    expect(d).toMatchObject({ status: "BERJALAN", targetViews: 1_000_000, views: 400_000, interaksi: 20_000, terpakai: 1_000_000, jumlahKonten: 1 });
+    expect(d!.metrik).toEqual({ cpv: 2.5, cpe: 50, er: 5, persenViews: 40, persenKonten: 25 });
+  });
+
+  it("tanpa views dan tanpa target: semua angka efisiensi null (layar menulis —)", async () => {
+    await campaignBaru();
+    await kolab("DEAL", 500_000);
+    const d = await detailCampaign(campaignId);
+    expect(d!.metrik).toEqual({ cpv: null, cpe: null, er: null, persenViews: null, persenKonten: null });
+  });
+
+  it("saringan ?keadaan= memilih menurut status; jumlah per status ikut saringan arsip", async () => {
+    const id = await campaignBaru({ status: "DRAFT" });
+    const draf = await daftarCampaign({ keadaan: "DRAFT" });
+    expect(draf.baris.some((b) => b.id === id && b.status === "DRAFT")).toBe(true);
+    expect(draf.baris.every((b) => b.status === "DRAFT")).toBe(true);
+    expect((await daftarCampaign({ keadaan: "SELESAI" })).baris.some((b) => b.id === id)).toBe(false);
+    const sebelum = (await daftarCampaign({ status: "arsip" })).jumlahStatus.DRAFT;
+    await simpanCampaign({ id, isi: { name: `${tag} Lebaran`, arsip: true }, olehUserId: userId });
+    expect((await daftarCampaign({ status: "arsip" })).jumlahStatus.DRAFT).toBe(sebelum + 1);
+  });
+});
+
+describe("ringkasanDaftarCampaign", () => {
+  it("KOL aktif + pengikut akun terbesar; campaign berjalan, budget, terpakai, views tanpa yang diarsip", async () => {
+    const kolB = (await prisma.kol.create({ data: { name: `${tag} Budi` }, select: { id: true } })).id;
+    const kolBlokir = (await prisma.kol.create({ data: { name: `${tag} Blok`, blockedAt: new Date() }, select: { id: true } })).id;
+    try {
+      await prisma.kolAccount.createMany({
+        data: [
+          { kolId, platform: "INSTAGRAM", handle: `${tag}-ig`.toLowerCase(), followers: 50_000 },
+          { kolId, platform: "TIKTOK", handle: `${tag}-tt`.toLowerCase(), followers: 5_000 },
+          { kolId: kolB, platform: "TIKTOK", handle: `${tag}-b`.toLowerCase(), followers: 200_000 },
+          { kolId: kolBlokir, platform: "TIKTOK", handle: `${tag}-x`.toLowerCase(), followers: 9_000_000 },
+        ],
+      });
+      const aktif = await campaignBaru({ budget: 4_000_000 });
+      await kolab("DEAL", 1_500_000);
+      const aktifId = aktif;
+      const arsipId = (await simpanCampaign({ isi: { name: `${tag} Lama`, budget: 9_000_000, arsip: true }, olehUserId: userId })) as { ok: true; id: string };
+      try {
+        const r = await ringkasanDaftarCampaign({ campaignIds: [aktifId, arsipId.id], kolIds: [kolId, kolB, kolBlokir] });
+        expect(r).toEqual({ jumlahKol: 2, totalPengikut: 250_000, berjalan: 1, budget: 4_000_000, terpakai: 1_500_000, views: 0 });
+      } finally {
+        await prisma.auditLog.deleteMany({ where: { entityId: seededId(arsipId.id) } });
+        await prisma.kolCampaign.deleteMany({ where: { id: seededId(arsipId.id) } });
+      }
+    } finally {
+      await prisma.kolAccount.deleteMany({ where: { kolId: { in: seededIds([kolId, kolB, kolBlokir]) } } });
+      await prisma.kol.deleteMany({ where: { id: { in: seededIds([kolB, kolBlokir]) } } });
+    }
   });
 });

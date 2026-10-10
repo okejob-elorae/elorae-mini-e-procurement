@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma, seededId } from '@elorae/db';
 import { buatBrief, pindahTahapKolaborasi, simpanKol, simpanKonten } from './writer';
 import { daftarBrief, daftarKol, daftarKonten, ringkasKreatif } from './queries';
+import { AMBANG_TIER_BAWAAN } from "./tier";
 
 /**
  * Kueri creative marketing, terhadap basis data sungguhan.
@@ -118,8 +119,11 @@ const briefSaya = async () => (await daftarBrief()).find((b) => b.id === briefId
 describe('daftarKol', () => {
   it('MENGHITUNG tier dari pengikut terbanyak, bukan menjumlahkan platform', async () => {
     // 128rb + 41rb = 169rb akan salah membaca orang yang sama sebagai dua orang.
-    const k = (await daftarKol()).find((x) => x.id === kolId)!;
-    expect(k.tier).toBe('makro');
+    const k = (await daftarKol({ ambangTier: AMBANG_TIER_BAWAAN })).find((x) => x.id === kolId)!;
+    expect(k.tier).toBe("mid");
+    // Ambang dari setelan diteruskan: dengan makro mulai 120 rb, 128 rb menjadi makro.
+    const lain = (await daftarKol({ ambangTier: { mikro: 10_000, mid: 50_000, makro: 120_000, mega: 1_000_000 } })).find((x) => x.id === kolId)!;
+    expect(lain.tier).toBe("makro");
     expect(k.akun).toHaveLength(2);
   });
 

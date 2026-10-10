@@ -19,8 +19,34 @@ export const MAKS_INT = 2_147_483_647;
 /** Posting per hasil profil — `/api/post/item_list/` memberi puluhan; lebih dari ini pasti salah. */
 export const MAKS_POSTING = 200;
 export const MAKS_PESAN = 1000;
+/** Caption yang dikirim ekstensi — dipotong, tidak ditolak. */
+export const MAKS_TEKS_POSTING = 500;
+/** Handle yang ditandai per posting (`textExtra[].userUniqueId`, type 0). */
+export const MAKS_SEBUTAN = 30;
+/** Tagar per posting. */
+export const MAKS_TAGAR = 50;
+/** Panjang satu handle/tagar; yang lebih panjang pasti bukan handle/tagar dan dibuang. */
+export const MAKS_ISIAN_DAFTAR = 100;
 
-export type PostingProfil = {
+/**
+ * Kolom brand (2026-10-10, D1/D2 rancangan KOL Manager lengkap) — SEMUANYA
+ * opsional: ekstensi lama yang tidak mengirimnya tetap diterima. Yang dikirim
+ * dengan tipe salah menolak seluruh muatan.
+ */
+export type TambahanBrand = {
+  /** Caption, dipotong `MAKS_TEKS_POSTING` tanda. */
+  teks?: string;
+  /** Handle yang ditandai, huruf kecil tanpa "@". */
+  sebutan?: string[];
+  /** Tagar, huruf kecil tanpa "#". */
+  tagar?: string[];
+  /** `item.isAd === true`. */
+  iklan?: boolean;
+  /** Handle pembuat posting, huruf kecil tanpa "@". */
+  penulis?: string;
+};
+
+export type PostingProfil = TambahanBrand & {
   id: string;
   /** Detik unix. */
   dibuatPada: number;
@@ -42,7 +68,7 @@ export type HasilProfil = {
   posting: PostingProfil[];
 };
 
-export type HasilKonten = {
+export type HasilKonten = TambahanBrand & {
   jenis: "KONTEN";
   videoId: string;
   uniqueId: string;
@@ -73,12 +99,61 @@ export function pangkasInt(n: number): number {
 const teks = (x: unknown, maks: number): x is string => typeof x === "string" && x.trim().length > 0 && x.length <= maks;
 const POLA_ID = /^[0-9A-Za-z_-]{1,64}$/;
 
+const ada = (v: unknown) => v !== undefined && v !== null;
+
+/** Daftar teks rapi: bukan daftar / berisi bukan-teks → null (tolak); isian kosong atau terlalu panjang dibuang; dipotong ke `maks`. */
+function daftarTeks(x: unknown, rapikan: (t: string) => string, maks: number): string[] | null {
+  if (!Array.isArray(x)) return null;
+  const hasil: string[] = [];
+  for (const v of x) {
+    if (typeof v !== "string") return null;
+    const r = rapikan(v);
+    if (r && r.length <= MAKS_ISIAN_DAFTAR && !hasil.includes(r)) hasil.push(r);
+  }
+  return hasil.slice(0, maks);
+}
+
+const rapiTagar = (t: string) => t.trim().replace(/^#+/, "").trim().toLowerCase();
+
+/** Kolom brand opsional dari satu posting/hasil konten; `null` = tipenya salah (tolak muatan). */
+function bacaTambahan(x: Record<string, unknown>): TambahanBrand | null {
+  const hasil: TambahanBrand = {};
+  if (ada(x.teks)) {
+    if (typeof x.teks !== "string") return null;
+    const t = x.teks.trim().slice(0, MAKS_TEKS_POSTING);
+    if (t) hasil.teks = t;
+  }
+  if (ada(x.sebutan)) {
+    const d = daftarTeks(x.sebutan, (t) => normalHandle(t), MAKS_SEBUTAN);
+    if (!d) return null;
+    hasil.sebutan = d;
+  }
+  if (ada(x.tagar)) {
+    const d = daftarTeks(x.tagar, rapiTagar, MAKS_TAGAR);
+    if (!d) return null;
+    hasil.tagar = d;
+  }
+  if (ada(x.iklan)) {
+    if (typeof x.iklan !== "boolean") return null;
+    hasil.iklan = x.iklan;
+  }
+  if (ada(x.penulis)) {
+    if (typeof x.penulis !== "string" || x.penulis.length > MAKS_ISIAN_DAFTAR) return null;
+    const p = normalHandle(x.penulis);
+    if (p) hasil.penulis = p;
+  }
+  return hasil;
+}
+
 function bacaPosting(x: unknown): PostingProfil | null {
   if (!objek(x)) return null;
   if (typeof x.id !== "string" || !POLA_ID.test(x.id)) return null;
   if (!detik(x.dibuatPada) || typeof x.disematkan !== "boolean") return null;
   for (const k of ["views", "like", "komentar", "share", "save"] as const) if (!bulat(x[k])) return null;
+  const tambahan = bacaTambahan(x);
+  if (!tambahan) return null;
   return {
+    ...tambahan,
     id: x.id,
     dibuatPada: x.dibuatPada,
     disematkan: x.disematkan,
@@ -118,7 +193,10 @@ export function bacaHasil(data: unknown): { ok: true; hasil: HasilPantau } | Gag
     if (typeof data.videoId !== "string" || !POLA_ID.test(data.videoId)) return GAGAL;
     for (const k of ["views", "like", "komentar", "share", "save"] as const) if (!bulat(data[k])) return GAGAL;
     if (data.dibuatPada !== undefined && data.dibuatPada !== null && !detik(data.dibuatPada)) return GAGAL;
+    const tambahan = bacaTambahan(data);
+    if (!tambahan) return GAGAL;
     const hasil: HasilKonten = {
+      ...tambahan,
       jenis: "KONTEN",
       videoId: data.videoId,
       uniqueId,

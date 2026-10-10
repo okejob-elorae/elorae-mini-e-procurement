@@ -28,6 +28,17 @@ import {
   type PengaturanPantau,
 } from "./pantau-aturan";
 import { akunUtama, ikutiTerukur, TOLERANSI_ER } from "./angka-terukur";
+import { menandaiElorae, postingMilik, SUMBER_DETEKSI_TAG, type PengaturanBrand, type PostingBrand } from "./brand-collab";
+import { bacaPengaturanBrand } from "./brand-pengaturan";
+import {
+  catatBrandDariPembacaanDiTx,
+  kosongkanRingkasan,
+  masukkanKePerformaDiTx,
+  ringkasanBaru,
+  type AngkaPosting,
+  type KonteksPembacaan,
+  type RingkasanPembacaan,
+} from "./brand-writer";
 import { sinkronJurnalKolAman } from "./jurnal-kol";
 import { simpanProfilKolDiTx } from "./kol-writer";
 import { waktuTayangDariId } from "./link-video";
@@ -719,8 +730,15 @@ export type KodeTolakHasil =
 
 export type HasilSimpan = { ok: true; ulang?: true } | { ok: false; kode: KodeTolakHasil };
 
-/** Simpan hasil profil ke akun: catatan pengikut baru (selalu baris baru) + angka akun terbaru. */
-async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, perangkatId: string, sekarang: Date) {
+/**
+ * Simpan hasil profil ke akun: catatan pengikut baru (selalu baris baru) + angka akun terbaru, lalu
+ * riwayat brand postingnya (D1) dan video yang menandai Elorae ke Performa video (D2, `brand-writer.ts`).
+ * Dipanggil sekali per akun yang cocok; D2 memeriksa "sudah ada" di transaksi yang sama, jadi akun
+ * kembar di dua KOL tidak membuat video yang sama dua kali.
+ */
+async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, k: KonteksPembacaan) {
+  const sekarang = k.sekarang;
+  const perangkatId = k.perangkat.id;
   const er = hitungErAkun(data.posting, sekarang);
   // Angka terukur SEBELUM pembaruan: dasar untuk tahu apakah angka KOL masih mengikuti pemantauan.
   const lama = await tx.kolAccount.findUnique({ where: { id: akunId }, select: { kolId: true, platform: true, er: true, avgViews: true } });
@@ -750,6 +768,71 @@ async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, pe
   if (er.er !== null && lama && lama.platform === "TIKTOK") {
     await ikutiAngkaKolDiTx(tx, akunId, lama, { er: er.er, avgViews: er.avgViews });
   }
+  if (lama) {
+    k.ringkasan.brand += await catatBrandDariPembacaanDiTx(tx, {
+      kolId: lama.kolId,
+      accountId: akunId,
+      handle: data.uniqueId,
+      posting: data.posting,
+      createdById: k.perangkat.dibuatOlehId,
+    });
+    await masukkanKePerformaDiTx(tx, { handle: data.uniqueId, posting: data.posting }, k);
+  }
+}
+
+/** Satu hasil konten dalam bentuk posting (aturan brand dan D2 membaca bentuk yang sama). */
+function postingDariKonten(d: HasilKonten): PostingBrand & AngkaPosting {
+  return {
+    id: d.videoId,
+    ...(d.dibuatPada !== undefined ? { dibuatPada: d.dibuatPada } : {}),
+    views: d.views,
+    like: d.like,
+    komentar: d.komentar,
+    share: d.share,
+    save: d.save,
+    ...(d.teks !== undefined ? { teks: d.teks } : {}),
+    ...(d.sebutan !== undefined ? { sebutan: d.sebutan } : {}),
+    ...(d.tagar !== undefined ? { tagar: d.tagar } : {}),
+    ...(d.iklan !== undefined ? { iklan: d.iklan } : {}),
+    penulis: d.penulis ?? normalHandle(d.uniqueId),
+  };
+}
+
+/** Riwayat brand (D1) sebuah hasil konten, dicatat pada KOL pemilik kontennya. */
+async function catatBrandKontenDiTx(tx: Klien, kontenId: string, d: HasilKonten, k: KonteksPembacaan) {
+  const c = await tx.kolContent.findUnique({
+    where: { id: kontenId },
+    select: { collab: { select: { kol: { select: { id: true, accounts: { where: { platform: "TIKTOK" }, select: { id: true, handle: true } } } } } } },
+  });
+  const kol = c?.collab?.kol;
+  if (!kol) return;
+  const akun = kol.accounts.find((a) => handleCocok(d.uniqueId, [a.handle]));
+  k.ringkasan.brand += await catatBrandDariPembacaanDiTx(tx, {
+    kolId: kol.id,
+    accountId: akun?.id ?? null,
+    handle: d.uniqueId,
+    posting: [postingDariKonten(d)],
+    createdById: k.perangkat.dibuatOlehId,
+  });
+}
+
+/** Konteks satu percobaan transaksi pembacaan: izin pemasang dibaca sekali, lewat `tx` percobaan itu. */
+function konteksPembacaan(
+  tx: Klien,
+  p: Pick<PerangkatSah, "id" | "dibuatOlehId">,
+  sekarang: Date,
+  pengaturan: PengaturanBrand,
+  ringkasan: RingkasanPembacaan,
+): KonteksPembacaan {
+  let izin: boolean | null = null;
+  kosongkanRingkasan(ringkasan);
+  return {
+    perangkat: { id: p.id, dibuatOlehId: p.dibuatOlehId },
+    sekarang,
+    pengaturan,
+    ringkasan,
+    bolehBuat: async () => (izin ??= await pemasangBolehKelola(tx, p.dibuatOlehId)),
+  };
 }
 
 /**
@@ -875,11 +958,17 @@ export async function simpanHasil(input: {
   data: HasilPantau;
   sekarang?: Date;
   pengaturan?: PengaturanPantau;
+  /** Pengaturan brand (D1/D2); tes memberi miliknya sendiri. */
+  pengaturanBrand?: PengaturanBrand;
 }): Promise<HasilSimpan> {
   const sekarang = input.sekarang ?? new Date();
   const pg = input.pengaturan ?? (await bacaPengaturanPantau());
+  const pb = input.pengaturanBrand ?? (await bacaPengaturanBrand());
   const p = input.perangkat;
-  return runSerializable(async (tx): Promise<HasilSimpan> => {
+  const ringkasan = ringkasanBaru();
+  // Video yang menandai Elorae bisa membuat kolaborasi bernomor (D2): bentrok nomor diulang.
+  const hasil = await denganNomorUnik(() => runSerializable(async (tx): Promise<HasilSimpan> => {
+    const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
     const t = await tx.kolTugasPantau.findUnique({
       where: { id: input.tugasId },
       select: {
@@ -902,7 +991,7 @@ export async function simpanHasil(input: {
     if (input.data.jenis === "PROFIL") {
       if (!t.account) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
       if (!handleCocok(input.data.uniqueId, [t.account.handle])) return tolakHasil(tx, t, "AKUN_BERBEDA", p, pg, sekarang);
-      await simpanProfilDiTx(tx, t.account.id, input.data, p.id, sekarang);
+      await simpanProfilDiTx(tx, t.account.id, input.data, k);
     } else {
       if (!t.content) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
       const boleh = handleKonten(t.content.link, t.content.collab?.kol?.accounts ?? []);
@@ -911,6 +1000,7 @@ export async function simpanHasil(input: {
       if (vid && vid !== input.data.videoId) return tolakHasil(tx, t, "KONTEN_BERBEDA", p, pg, sekarang);
       const r = await simpanKontenDiTx(tx, t.content.id, input.data, p, sekarang);
       if (!r.ok) return tolakHasil(tx, t, r.kode as KodeTolakHasil, p, pg, sekarang);
+      await catatBrandKontenDiTx(tx, t.content.id, input.data, k);
     }
 
     await tx.kolTugasPantau.update({
@@ -919,7 +1009,10 @@ export async function simpanHasil(input: {
     });
     await tulisLog(tx, { perangkatId: p.id, tugasId: t.id, jenis: "HASIL", kode: t.jenis, waktu: sekarang });
     return { ok: true };
-  });
+  }));
+  // Sesudah commit: kolaborasi yang dibuat untuk video yang menandai Elorae — selaraskan jurnalnya (best-effort).
+  if (hasil.ok && ringkasan.kolaborasiDisentuh.size) await sinkronJurnalKolAman([...ringkasan.kolaborasiDisentuh], p.dibuatOlehId);
+  return hasil;
 }
 
 /* ─────────────────────────── Masalah ─────────────────────────── */
@@ -1068,24 +1161,31 @@ async function pemasangBolehKelola(tx: Prisma.TransactionClient, userId: string)
  * profil → KOL baru "@handle" + akun TikTok-nya; video → KOL itu (dibuat bila perlu) + kolaborasi
  * berjalan jenis KOL (dibuat tanpa fee bila belum ada; keputusan sementara, ingatkan pemilik) + konten.
  * Membuat butuh `creative:manage` milik orang yang memasang perangkat, dibaca ulang di sini.
+ *
+ * Seperti setiap pembacaan, profil juga mencatat riwayat brand postingnya (D1) dan memasukkan video
+ * yang menandai Elorae ke Performa video (D2); video mencatat riwayat brand-nya (`brand-writer.ts`).
  */
-export async function simpanManual(input: { perangkat: PerangkatSah; url: string; data: HasilPantau; sekarang?: Date }): Promise<HasilManual> {
+export async function simpanManual(input: {
+  perangkat: PerangkatSah;
+  url: string;
+  data: HasilPantau;
+  sekarang?: Date;
+  /** Pengaturan brand (D1/D2); tes memberi miliknya sendiri. */
+  pengaturanBrand?: PengaturanBrand;
+}): Promise<HasilManual> {
   const sekarang = input.sekarang ?? new Date();
   const p = input.perangkat;
   const d = input.data;
+  const pb = input.pengaturanBrand ?? (await bacaPengaturanBrand());
   const kolaborasiDisentuh: string[] = [];
+  const ringkasan = ringkasanBaru();
   const hasil = await denganNomorUnik(() =>
     runSerializable(async (tx): Promise<HasilManual> => {
       kolaborasiDisentuh.length = 0; // percobaan ulang serializable mulai bersih
+      const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
       if (d.jenis === "PROFIL") {
         const u = normalHandle(d.uniqueId);
-        const calon = await tx.kolAccount.findMany({
-          where: { platform: "TIKTOK", handle: cariTeks(u) },
-          orderBy: [{ id: "asc" }],
-          select: { id: true, handle: true, kol: { select: { id: true, name: true } } },
-          take: 50,
-        });
-        let cocok = calon.filter((a) => a.kol != null && handleCocok(u, [a.handle]));
+        let cocok = await akunProfilTiktok(tx, u);
         let kolBaru = false;
         if (!cocok.length) {
           if (!(await pemasangBolehKelola(tx, p.dibuatOlehId))) return { ok: false, kode: "TANPA_IZIN" };
@@ -1104,32 +1204,22 @@ export async function simpanManual(input: { perangkat: PerangkatSah; url: string
           cocok = akun.filter((a) => a.kol != null);
           kolBaru = true;
         }
-        for (const a of cocok) await simpanProfilDiTx(tx, a.id, d, p.id, sekarang);
+        for (const a of cocok) await simpanProfilDiTx(tx, a.id, d, k);
         await tulisLog(tx, { perangkatId: p.id, jenis: "HASIL", kode: "MANUAL_PROFIL", pesan: input.url.slice(0, 500), waktu: sekarang });
         return { ok: true, cocok: { kolId: cocok[0].kol.id, nama: cocok[0].kol.name }, dibuat: { kol: kolBaru, konten: false } };
       }
 
-      const konten = await tx.kolContent.findMany({
-        where: { link: cariTeks(d.videoId) },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        select: {
-          id: true,
-          link: true,
-          collab: { select: { kol: { select: { id: true, name: true, accounts: { where: { platform: "TIKTOK" }, select: { handle: true } } } } } },
-        },
-        take: 20,
-      });
-      const k = konten.find((x) => x.collab?.kol != null && videoIdDariLink(x.link) === d.videoId);
+      const ada = await kontenVideoTiktok(tx, d.videoId);
       let kontenId: string;
       let kolId: string;
       let nama: string;
       const dibuat = { kol: false, konten: false };
-      if (k) {
-        const boleh = handleKonten(k.link, k.collab.kol.accounts);
+      if (ada) {
+        const boleh = handleKonten(ada.link, ada.collab.kol.accounts);
         if (boleh.length && !handleCocok(d.uniqueId, boleh)) return { ok: false, kode: "AKUN_BERBEDA" };
-        kontenId = k.id;
-        kolId = k.collab.kol.id;
-        nama = k.collab.kol.name;
+        kontenId = ada.id;
+        kolId = ada.collab.kol.id;
+        nama = ada.collab.kol.name;
       } else {
         if (!(await pemasangBolehKelola(tx, p.dibuatOlehId))) return { ok: false, kode: "TANPA_IZIN" };
         const handle = normalHandle(d.uniqueId);
@@ -1160,11 +1250,135 @@ export async function simpanManual(input: { perangkat: PerangkatSah; url: string
       }
       const r = await simpanKontenDiTx(tx, kontenId, d, p, sekarang);
       if (!r.ok) return { ok: false, kode: r.kode as KodeTolakAngka };
+      await catatBrandKontenDiTx(tx, kontenId, d, k);
       await tulisLog(tx, { perangkatId: p.id, jenis: "HASIL", kode: "MANUAL_KONTEN", pesan: input.url.slice(0, 500), waktu: sekarang });
       return { ok: true, cocok: { kolId, nama }, dibuat };
     }),
   );
   // Sesudah commit: kolaborasi berbayar yang baru tayang mengakui fee-nya (best-effort, seperti Tempel link).
-  if (hasil.ok && kolaborasiDisentuh.length) await sinkronJurnalKolAman([...kolaborasiDisentuh], p.dibuatOlehId);
+  const disentuh = [...kolaborasiDisentuh, ...ringkasan.kolaborasiDisentuh];
+  if (hasil.ok && disentuh.length) await sinkronJurnalKolAman(disentuh, p.dibuatOlehId);
+  return hasil;
+}
+
+/** Akun TikTok yang handle-nya `u` (abai huruf besar dan "@"), dengan KOL-nya. */
+async function akunProfilTiktok(tx: Klien, u: string) {
+  const calon = await tx.kolAccount.findMany({
+    where: { platform: "TIKTOK", handle: cariTeks(u) },
+    orderBy: [{ id: "asc" }],
+    select: { id: true, handle: true, kol: { select: { id: true, name: true } } },
+    take: 50,
+  });
+  return calon.filter((a) => a.kol != null && handleCocok(u, [a.handle]));
+}
+
+/** Konten yang sudah dipantau untuk id video ini (yang terbaru bila ada kembarnya). */
+async function kontenVideoTiktok(tx: Klien, videoId: string) {
+  const konten = await tx.kolContent.findMany({
+    where: { link: cariTeks(videoId) },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      link: true,
+      collab: { select: { kol: { select: { id: true, name: true, accounts: { where: { platform: "TIKTOK" }, select: { handle: true } } } } } },
+    },
+    take: 20,
+  });
+  return konten.find((x) => x.collab?.kol != null && videoIdDariLink(x.link) === videoId) ?? null;
+}
+
+/* ─────────────────────────── Otomatis (panel) ─────────────────────────── */
+
+export type HasilOtomatis =
+  | { ok: true; hasil: "DISIMPAN" | "DIABAIKAN"; kol?: { id: string; nama: string }; videoMasuk: number; brand: number }
+  | { ok: false; kode: "TANPA_IZIN" | "KOL_DIBLOKIR" };
+
+/**
+ * Kiriman otomatis panel ekstensi (`POST /api/kreatif/ekstensi/otomatis`, D3): panel mengirim
+ * setiap profil/video TikTok yang selesai dibacanya, TANPA tombol. Server yang memutuskan, dan
+ * yang tidak relevan tidak pernah menulis apa pun:
+ *
+ *   - profil yang akun TikTok-nya ada di Elorae → simpan profil (pengikut, ER) + riwayat brand
+ *     (D1) + video yang menandai Elorae (D2) — seperti "Simpan ke Elorae";
+ *   - profil yang belum ada, tetapi salah satu postingnya menandai Elorae → KOL "@handle" dibuat
+ *     (`otomatisKePerforma` nyala dan pemasang perangkat punya `creative:manage`), lalu sama;
+ *   - video yang sudah dipantau → angkanya dicatat bila angka terakhir lebih tua dari 12 jam,
+ *     plus riwayat brandnya; video yang belum ada tetapi menandai Elorae → D2;
+ *   - selain itu `DIABAIKAN`.
+ *
+ * Tanpa tugas, tidak memakan kuota harian. Baris log `OTOMATIS_PROFIL`/`OTOMATIS_KONTEN` hanya
+ * ditulis bila ada yang tersimpan.
+ */
+export async function simpanOtomatis(input: {
+  perangkat: PerangkatSah;
+  url: string;
+  data: HasilPantau;
+  sekarang?: Date;
+  pengaturanBrand?: PengaturanBrand;
+}): Promise<HasilOtomatis> {
+  const sekarang = input.sekarang ?? new Date();
+  const p = input.perangkat;
+  const d = input.data;
+  const pb = input.pengaturanBrand ?? (await bacaPengaturanBrand());
+  const ringkasan = ringkasanBaru();
+  const diabaikan = (kol?: { id: string; nama: string }): HasilOtomatis => ({ ok: true, hasil: "DIABAIKAN", ...(kol ? { kol } : {}), videoMasuk: 0, brand: 0 });
+  const log = (tx: Klien, kode: string) => tulisLog(tx, { perangkatId: p.id, jenis: "HASIL", kode, pesan: input.url.slice(0, 500), waktu: sekarang });
+
+  const hasil = await denganNomorUnik(() =>
+    runSerializable(async (tx): Promise<HasilOtomatis> => {
+      const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
+      if (d.jenis === "PROFIL") {
+        const u = normalHandle(d.uniqueId);
+        let cocok = await akunProfilTiktok(tx, u);
+        if (!cocok.length) {
+          // Akun Elorae sendiri tidak pernah menjadi KOL; profil yang tidak menandai Elorae tidak disimpan.
+          if (pb.akunElorae.includes(u)) return diabaikan();
+          if (!d.posting.some((x) => postingMilik(x, u) && menandaiElorae(x, pb, [u]))) return diabaikan();
+          if (!pb.otomatisKePerforma) return diabaikan();
+          if (!(await k.bolehBuat())) return { ok: false, kode: "TANPA_IZIN" };
+          const r = await simpanProfilKolDiTx(tx, {
+            // followers 0 di sini: angka (dan satu-satunya riwayat pengikut) ditulis simpanProfilDiTx di bawah.
+            isi: { name: `@${u}`, akun: [{ platform: "TIKTOK", handle: u, followers: 0, url: urlProfilTiktok(u) }] },
+            olehUserId: p.dibuatOlehId,
+            periksaKembar: false,
+            sumber: SUMBER_DETEKSI_TAG,
+          });
+          if (!r.ok) throw new Error(`OTOMATIS_KOL_${r.alasan}`);
+          cocok = await akunProfilTiktok(tx, u);
+          if (!cocok.length) throw new Error("OTOMATIS_KOL_TANPA_AKUN");
+        }
+        for (const a of cocok) await simpanProfilDiTx(tx, a.id, d, k);
+        await log(tx, "OTOMATIS_PROFIL");
+        return { ok: true, hasil: "DISIMPAN", kol: { id: cocok[0].kol.id, nama: cocok[0].kol.name }, videoMasuk: ringkasan.videoMasuk, brand: ringkasan.brand };
+      }
+
+      const u = normalHandle(d.uniqueId);
+      const posting = postingDariKonten(d);
+      const ada = await kontenVideoTiktok(tx, d.videoId);
+      if (ada) {
+        const kol = { id: ada.collab.kol.id, nama: ada.collab.kol.name };
+        const boleh = handleKonten(ada.link, ada.collab.kol.accounts);
+        if (boleh.length && !handleCocok(d.uniqueId, boleh)) return diabaikan(kol);
+        await masukkanKePerformaDiTx(tx, { handle: u, posting: [posting] }, k);
+        await catatBrandKontenDiTx(tx, ada.id, d, k);
+        if (ringkasan.angka === 0 && ringkasan.brand === 0) return diabaikan(kol);
+        await log(tx, "OTOMATIS_KONTEN");
+        return { ok: true, hasil: "DISIMPAN", kol, videoMasuk: 0, brand: ringkasan.brand };
+      }
+
+      if (pb.akunElorae.includes(u) || !postingMilik(posting, u) || !menandaiElorae(posting, pb, [u])) return diabaikan();
+      if (!pb.otomatisKePerforma) return diabaikan();
+      if (!(await k.bolehBuat())) return { ok: false, kode: "TANPA_IZIN" };
+      const nasib = (await masukkanKePerformaDiTx(tx, { handle: u, posting: [posting] }, k)).get(d.videoId);
+      if (nasib === "DIBLOKIR") return { ok: false, kode: "KOL_DIBLOKIR" };
+      const baru = await kontenVideoTiktok(tx, d.videoId);
+      if (!baru) return diabaikan();
+      await catatBrandKontenDiTx(tx, baru.id, d, k);
+      await log(tx, "OTOMATIS_KONTEN");
+      return { ok: true, hasil: "DISIMPAN", kol: { id: baru.collab.kol.id, nama: baru.collab.kol.name }, videoMasuk: ringkasan.videoMasuk, brand: ringkasan.brand };
+    }),
+  );
+  // Sesudah commit: kolaborasi yang dibuat untuk video yang menandai Elorae — selaraskan jurnalnya (best-effort).
+  if (hasil.ok && ringkasan.kolaborasiDisentuh.size) await sinkronJurnalKolAman([...ringkasan.kolaborasiDisentuh], p.dibuatOlehId);
   return hasil;
 }

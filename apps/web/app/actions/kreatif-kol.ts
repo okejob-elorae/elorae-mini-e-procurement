@@ -90,6 +90,8 @@ function rapikanIsi(isi: unknown): IsiKol | null {
     phone: teksAtau(o.phone),
     email: teksAtau(o.email),
     rateCard: angkaAtau(o.rateCard),
+    // Bentuknya diperiksa penulis (`validasiRateFormat`); yang bukan objek ditolak di sana.
+    rateFormat: o.rateFormat === undefined ? undefined : o.rateFormat === null ? null : (o.rateFormat as IsiKol["rateFormat"]),
     rateNote: teksAtau(o.rateNote),
     note: teksAtau(o.note),
     label: teksAtau(o.label),

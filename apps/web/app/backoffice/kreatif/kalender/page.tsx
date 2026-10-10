@@ -2,9 +2,11 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { kalenderKreatif, opsiAgenda, type OpsiAgenda } from "@/lib/creative/agenda-queries";
+import { ringkasLanggananKalender } from "@/lib/creative/kalender-langganan-queries";
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { bacaParamKalender, rentangKisi } from "./kalender";
 import { KalenderKreatifClient } from "./KalenderKreatifClient";
+import { KartuLanggananKalender } from "./KartuLanggananKalender";
 
 export const dynamic = "force-dynamic";
 
@@ -29,20 +31,31 @@ export default async function KalenderPage({ searchParams }: PageProps) {
   const hariIni = hariIniWib();
   const param = bacaParamKalender(await searchParams, hariIni);
   const rentang = rentangKisi(param.bulan) ?? { dari: `${param.bulan}-01`, sampai: `${param.bulan}-28` };
-  const [data, opsi] = await Promise.all([
+  const [data, opsi, langganan] = await Promise.all([
     kalenderKreatif({ dari: rentang.dari, sampai: rentang.sampai, userId: session.user.id, hariIni }),
     bolehMengelola ? opsiAgenda() : Promise.resolve(OPSI_KOSONG),
+    ringkasLanggananKalender(session.user.id),
   ]);
 
+  // Tanpa pembungkus: tata letak Kreatif sudah memberi jarak antaranak (`space-y-6`).
   return (
-    <KalenderKreatifClient
-      key={param.bulan}
-      param={param}
-      data={data}
-      hariIni={hariIni}
-      opsi={opsi}
-      userId={session.user.id}
-      bolehMengelola={bolehMengelola}
-    />
+    <>
+      <KalenderKreatifClient
+        key={param.bulan}
+        param={param}
+        data={data}
+        hariIni={hariIni}
+        opsi={opsi}
+        userId={session.user.id}
+        bolehMengelola={bolehMengelola}
+      />
+      <KartuLanggananKalender
+        aktif={
+          langganan.aktif
+            ? { sejak: langganan.aktif.sejak.toISOString(), terakhirDibaca: langganan.aktif.terakhirDibaca?.toISOString() ?? null }
+            : null
+        }
+      />
+    </>
   );
 }

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { KartuFormulirKol } from "@/components/kreatif/KartuFormulirKol";
 import { KartuPajakKol } from "@/components/kreatif/KartuPajakKol";
+import { PanelBrandKol } from "@/components/kreatif/PanelBrandKol";
 import { PanelCatatan } from "@/components/kreatif/PanelCatatan";
 import { pilihanSaringKol, profilKol } from "@/lib/creative/kol-queries";
 import { ProfilKolClient } from "./ProfilKolClient";
@@ -10,7 +11,7 @@ import { bacaTabProfilKol } from "./tab-profil";
 
 export const dynamic = "force-dynamic";
 
-/** Profil satu KOL: ringkasan angka, kolaborasi, konten, ukuran & alamat, riwayat pengikut, catatan & riwayat. */
+/** Profil satu KOL: ringkasan angka, kolaborasi, konten, brand, ukuran & alamat, riwayat pengikut, catatan & riwayat. */
 export default async function ProfilKolPage({
   params,
   searchParams,
@@ -37,6 +38,7 @@ export default async function ProfilKolPage({
       niche={pilihan?.niche ?? []}
       labelSaran={pilihan?.label ?? []}
       panelCatatan={<PanelCatatan kolId={id} bolehMengelola={bolehMengelola} />}
+      panelBrand={<PanelBrandKol kolId={id} bolehMengelola={bolehMengelola} />}
       kartuPajak={<KartuPajakKol kolId={id} />}
       kartuFormulir={<KartuFormulirKol kolId={id} />}
     />

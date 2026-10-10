@@ -175,6 +175,10 @@ describe("uraiKonten", () => {
       share: 87,
       save: 312,
       dibuatPada: 1727740800,
+      // Kolom opsional kontrak: caption dan penulis ada; data ini tidak membawa textExtra maupun
+      // challenges, jadi sebutan/tagar TIDAK dikirim (bukan [] — "#ootd" di caption tidak ditebak).
+      teks: "Review baju Elorae #ootd",
+      penulis: "budi.santoso",
     });
     assert.deepEqual(p.kurangWajib(hasil), []);
   });
@@ -220,6 +224,7 @@ describe("uraiItemList", () => {
         komentar: 20,
         share: 5,
         save: 15,
+        penulis: "budi.santoso",
       },
       {
         id: "7420000000000000003",
@@ -230,6 +235,7 @@ describe("uraiItemList", () => {
         komentar: 0,
         share: 0,
         save: 0,
+        penulis: "budi.santoso",
       },
       {
         id: "7420000000000000001",
@@ -240,6 +246,7 @@ describe("uraiItemList", () => {
         komentar: 100,
         share: 40,
         save: 60,
+        penulis: "budi.santoso",
       },
     ]);
   });
@@ -408,8 +415,10 @@ describe("bacaHalaman", () => {
   test("hasil OK hanya berisi kolom kontrak", () => {
     const r = p.bacaHalaman(halaman(profil), { url: URL_PROFIL, itemList: [tangkapan(fixture("item-list.json"))] });
     assert.deepEqual(Object.keys(r.data).sort(), ["jenis", "jumlahVideo", "pengikut", "posting", "secUid", "totalLike", "uniqueId"]);
+    const wajib = ["dibuatPada", "disematkan", "id", "komentar", "like", "save", "share", "views"];
     for (const x of r.data.posting) {
-      assert.deepEqual(Object.keys(x).sort(), ["dibuatPada", "disematkan", "id", "komentar", "like", "save", "share", "views"]);
+      for (const k of wajib) assert.ok(k in x, `kolom wajib hilang: ${k}`);
+      for (const k of Object.keys(x)) assert.ok(wajib.includes(k) || p.KOLOM_TANDA.includes(k), `kolom di luar kontrak: ${k}`);
     }
   });
 });
@@ -550,5 +559,185 @@ describe("urlUntukTabTikTok (cek cepat dari tab www.tiktok.com)", () => {
     assert.equal(p.urlUntukTabTikTok("https://www.tiktok.com.evil.test/@a"), null);
     assert.equal(p.urlUntukTabTikTok("https://www.tiktok.com/foryou"), null);
     assert.equal(p.urlUntukTabTikTok(null), null);
+  });
+});
+
+describe("kolom opsional kontrak: teks, sebutan, tagar, iklan, penulis", () => {
+  const URL_TANDA = "https://www.tiktok.com/@lystianovilda/video/7689069333120634120";
+  const itemTanda = () => fixture("rehidrasi-video-tanda.json").__DEFAULT_SCOPE__["webapp.video-detail"].itemInfo.itemStruct;
+
+  test("bentuk terukur 2026-10-10: handle asli dari textExtra type 0, bukan nama tampilan di caption", () => {
+    const r = p.bacaHalaman(halaman(fixture("rehidrasi-video-tanda.json")), { url: URL_TANDA });
+    assert.equal(r.status, "OK");
+    assert.equal(r.data.teks, "Outfit kerja minggu ini bareng @Eloraé 🤍 #ootd #OOTDIndonesia #fyp");
+    assert.deepEqual(r.data.sebutan, ["elorae.official"]);
+    assert.deepEqual(r.data.tagar, ["ootd", "ootdindonesia", "fyp"]);
+    assert.equal(r.data.penulis, "lystianovilda");
+    assert.equal(r.data.uniqueId, "LystianoVilda");
+    assert.equal("iklan" in r.data, false, "isAd false → kolom iklan tidak dikirim");
+  });
+
+  test("isAd === true → iklan: true; selain true tidak dikirim", () => {
+    assert.equal(p.tandaPosting({ ...itemTanda(), isAd: true }).iklan, true);
+    for (const v of [false, "true", 1, null, undefined]) assert.equal("iklan" in p.tandaPosting({ ...itemTanda(), isAd: v }), false, String(v));
+  });
+
+  test("tanpa textExtra dan challenges → sebutan/tagar tidak dikirim; ada tapi kosong → []", () => {
+    const tanpa = p.tandaPosting({ desc: "halo", author: { uniqueId: "a" } });
+    assert.equal("sebutan" in tanpa, false);
+    assert.equal("tagar" in tanpa, false);
+    assert.deepEqual(p.tandaPosting({ textExtra: [] }), { sebutan: [], tagar: [] });
+    assert.deepEqual(p.tandaPosting({ challenges: [] }), { tagar: [] });
+  });
+
+  test("hanya challenges (tanpa textExtra): tagar terbaca, sebutan tidak dikirim", () => {
+    const h = p.tandaPosting({ challenges: [{ title: "#Elorae" }, { title: "elorae" }, { title: "" }, {}] });
+    assert.deepEqual(h, { tagar: ["elorae"] });
+  });
+
+  test("textExtra di contents[] (posting foto) ikut dibaca", () => {
+    const h = p.tandaPosting({
+      contents: [{ desc: "x", textExtra: [{ type: 0, userUniqueId: "Brand.A" }] }, { textExtra: [{ type: 1, hashtagName: "Kolab" }] }],
+    });
+    assert.deepEqual(h, { sebutan: ["brand.a"], tagar: ["kolab"] });
+  });
+
+  test("handle dan tagar dirapikan: huruf kecil, tanpa @/#, unik, yang tidak sah dibuang", () => {
+    const h = p.tandaPosting({
+      textExtra: [
+        { type: 0, userUniqueId: "@Elorae.Official" },
+        { type: 0, userUniqueId: "elorae.official" },
+        { type: 0, userUniqueId: "dua kata" },
+        { type: 0, userUniqueId: "a@b" },
+        { type: 0, userUniqueId: "" },
+        { type: 0 },
+        { type: 1, hashtagName: "#OOTD" },
+        { type: 1, hashtagName: "ootd" },
+        { type: 1, hashtagName: "dua kata" },
+        { type: 1, hashtagName: "x".repeat(101) },
+        { type: 2, userUniqueId: "bukan.sebutan", hashtagName: "bukantagar" },
+        { userUniqueId: "tanpa.jenis" },
+        { hashtagName: "TanpaJenis" },
+        null,
+        "rusak",
+      ],
+    });
+    assert.deepEqual(h.sebutan, ["elorae.official", "tanpa.jenis"]);
+    assert.deepEqual(h.tagar, ["ootd", "tanpajenis"]);
+  });
+
+  test("batas jumlah: sebutan ≤ 30, tagar ≤ 50; label > 100 karakter dibuang", () => {
+    const textExtra = [];
+    for (let i = 0; i < 40; i++) textExtra.push({ type: 0, userUniqueId: `akun${i}` });
+    for (let i = 0; i < 60; i++) textExtra.push({ type: 1, hashtagName: `tagar${i}` });
+    textExtra.unshift({ type: 0, userUniqueId: "a".repeat(101) });
+    const h = p.tandaPosting({ textExtra });
+    assert.equal(h.sebutan.length, p.MAKS_SEBUTAN);
+    assert.equal(h.sebutan[0], "akun0");
+    assert.equal(h.tagar.length, p.MAKS_TAGAR);
+    assert.ok(h.sebutan.every((x) => x.length <= 100) && h.tagar.every((x) => x.length <= 100));
+  });
+
+  test("caption dipotong 500 unit tanpa membelah emoji; caption kosong tidak dikirim", () => {
+    const panjang = "a".repeat(499) + "🤍" + "b".repeat(20);
+    const t = p.tandaPosting({ desc: panjang }).teks;
+    assert.equal(t.length, 499);
+    assert.ok(t.length <= p.MAKS_TEKS);
+    assert.equal(p.tandaPosting({ desc: "c".repeat(800) }).teks.length, 500);
+    assert.equal("teks" in p.tandaPosting({ desc: "   " }), false);
+    assert.equal("teks" in p.tandaPosting({ desc: 42 }), false);
+  });
+
+  test("posting profil (item_list) membawa kolom yang sama", () => {
+    const item = { ...itemTanda(), id: "7689069333120634120", createTime: 1790000000, isAd: true };
+    const posting = p.postingDariItem(item);
+    assert.equal(posting.views, 31900);
+    assert.deepEqual(posting.sebutan, ["elorae.official"]);
+    assert.deepEqual(posting.tagar, ["ootd", "ootdindonesia", "fyp"]);
+    assert.equal(posting.iklan, true);
+    assert.equal(posting.penulis, "lystianovilda");
+    const ringkas = p.ringkasItemList("https://www.tiktok.com/api/post/item_list/?secUid=x", { itemList: [item] });
+    assert.deepEqual(ringkas.butir[0], { penulis: "LystianoVilda", posting });
+  });
+
+  test("angka yang tidak terbaca tetap menggagalkan posting meski caption ada", () => {
+    const item = { ...itemTanda(), createTime: 1790000000 };
+    delete item.stats.playCount;
+    delete item.statsV2.playCount;
+    assert.equal(p.postingDariItem(item), null);
+  });
+
+  test("jalan pengganti lewat profil menyalin kolom opsional ke HasilKonten", () => {
+    const profil = {
+      jenis: "PROFIL",
+      uniqueId: "lystianovilda",
+      pengikut: 1,
+      posting: [{ id: "7689", dibuatPada: 1, disematkan: false, views: 9, like: 1, komentar: 0, share: 0, save: 0, sebutan: ["elorae.official"], tagar: [], iklan: true, penulis: "lystianovilda", teks: "hai" }],
+    };
+    const k = p.kontenDariProfil(profil, "7689");
+    assert.deepEqual(k.sebutan, ["elorae.official"]);
+    assert.deepEqual(k.tagar, []);
+    assert.equal(k.iklan, true);
+    assert.equal(k.teks, "hai");
+    assert.equal(k.penulis, "lystianovilda");
+  });
+});
+
+describe("rampingkanData (badan Elorae ≤ 256 KB)", () => {
+  const posting = (i, teks) => ({
+    id: String(7400000000000000000n + BigInt(i)),
+    dibuatPada: 1_790_000_000 - i * 3600,
+    disematkan: false,
+    views: 1000 + i,
+    like: 10,
+    komentar: 1,
+    share: 0,
+    save: 0,
+    teks,
+    sebutan: ["elorae.official"],
+    tagar: ["ootd", "fyp"],
+    penulis: "budi",
+  });
+  const profil = (n, teks) => ({ jenis: "PROFIL", uniqueId: "budi", pengikut: 5, posting: Array.from({ length: n }, (_, i) => posting(i, teks)) });
+
+  test("data yang muat dikembalikan apa adanya (objek yang sama)", () => {
+    const d = profil(30, "pendek");
+    assert.equal(p.rampingkanData(d), d);
+    const k = { jenis: "KONTEN", videoId: "1", uniqueId: "a", views: 1, like: 1, komentar: 1, share: 1, save: 1, teks: "x".repeat(500) };
+    assert.equal(p.rampingkanData(k, 10), k);
+  });
+
+  test("terlalu besar → caption posting terlama dibuang dulu sampai muat; angka dan jumlah posting utuh", () => {
+    const d = profil(200, "x".repeat(500));
+    const maks = 80_000;
+    assert.ok(JSON.stringify(d).length > maks);
+    const r = p.rampingkanData(d, maks);
+    assert.ok(JSON.stringify(r).length <= maks);
+    assert.equal(r.posting.length, 200);
+    assert.ok("teks" in r.posting[0], "posting terbaru tetap membawa caption");
+    assert.equal("teks" in r.posting[199], false, "posting terlama kehilangan caption dulu");
+    assert.deepEqual(r.posting[199].sebutan, ["elorae.official"], "sebutan baru dibuang setelah semua caption");
+    for (let i = 0; i < 200; i++) assert.equal(r.posting[i].views, d.posting[i].views);
+    assert.equal(d.posting[199].teks.length, 500, "data asli tidak diubah");
+  });
+
+  test("bila caption saja tidak cukup, tagar lalu sebutan ikut dibuang", () => {
+    const d = profil(200, "x".repeat(500));
+    const r = p.rampingkanData(d, 30_000);
+    assert.ok(JSON.stringify(r).length <= 30_000);
+    assert.equal(r.posting.some((x) => "teks" in x), false);
+    assert.equal(r.posting.length, 200);
+  });
+
+  test("bawaan memakai BATAS_MUATAN_KARAKTER (200 posting di batas kontrak)", () => {
+    const d = profil(200, "🤍".repeat(250));
+    for (const x of d.posting) {
+      x.sebutan = Array.from({ length: 30 }, (_, i) => `a${i}`.padEnd(100, "x"));
+      x.tagar = Array.from({ length: 50 }, (_, i) => `t${i}`.padEnd(100, "y"));
+    }
+    assert.ok(JSON.stringify(d).length > p.BATAS_MUATAN_KARAKTER);
+    const r = p.rampingkanData(d);
+    assert.ok(JSON.stringify(r).length <= p.BATAS_MUATAN_KARAKTER);
+    assert.equal(r.posting.length, 200);
   });
 });

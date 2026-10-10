@@ -4,6 +4,7 @@ import { angkaKolaborasi, jumlahAngkaKolaborasi } from "./angka-queries";
 import { SARING_KOL_BAWAAN, type SaringKol } from "./kol-saring";
 import { catatanDanRiwayat, daftarKolHalaman, kelompokKembarKol, pratinjauTempelan, profilKol } from "./kol-queries";
 import { uraiTempelan } from "./kol-aturan";
+import { AMBANG_TIER_BAWAAN } from "./tier";
 import { blokirKol, buatCatatanKol, simpanProfilKol, type IsiKol } from "./kol-writer";
 
 /*
@@ -96,7 +97,7 @@ afterEach(async () => {
 });
 
 const saring = (s: Partial<SaringKol>): SaringKol => ({ ...SARING_KOL_BAWAAN, cari: tag, ...s });
-const ids = async (s: Partial<SaringKol>) => (await daftarKolHalaman(saring(s))).baris.map((b) => b.id);
+const ids = async (s: Partial<SaringKol>) => (await daftarKolHalaman(saring(s), { ambangTier: AMBANG_TIER_BAWAAN })).baris.map((b) => b.id);
 
 describe("daftarKolHalaman — cari & saring", () => {
   it("mencari nama, handle, kota, dan nomor WA dalam bentuk apa pun", async () => {
@@ -108,8 +109,14 @@ describe("daftarKolHalaman — cari & saring", () => {
 
   it("menyaring platform, tier, label, belum ada kolaborasi, diblokir, dan tahap TERAKHIR", async () => {
     expect((await ids({ platform: "TIKTOK" })).sort()).toEqual([A, B].sort());
-    expect(await ids({ tier: "makro" })).toEqual([B]);
+    // B 200 rb = "mid" menurut bawaan (100 rb–500 rb); makro baru mulai 500 rb.
+    expect(await ids({ tier: "mid" })).toEqual([B]);
+    expect(await ids({ tier: "makro" })).toEqual([]);
     expect(await ids({ tier: "mikro" })).toEqual([A]);
+    // Ambang dari setelan menggeser tingkatnya: dengan makro mulai 150 rb, B menjadi makro.
+    const ambang = { mikro: 10_000, mid: 60_000, makro: 150_000, mega: 1_000_000 };
+    expect((await daftarKolHalaman(saring({ tier: "makro" }), { ambangTier: ambang })).baris.map((b) => b.id)).toEqual([B]);
+    expect((await daftarKolHalaman(saring({ tier: "mikro" }), { ambangTier: ambang })).baris.map((b) => b.id)).toEqual([A]);
     expect(await ids({ label: "FAVORIT" })).toEqual([A]);
     expect(await ids({ label: "fav" })).toEqual([]);
     expect(await ids({ status: "BELUM" })).toEqual([C]);
@@ -150,13 +157,17 @@ describe("daftarKolHalaman — urut & halaman", () => {
 
 describe("profilKol", () => {
   it("ringkasan kolaborasi, GMV, fee terakhir, dan persen tepat waktu", async () => {
-    const p = await profilKol(A);
+    const p = await profilKol(A, { ambangTier: AMBANG_TIER_BAWAAN });
     expect(p).not.toBeNull();
+    expect(p!.tier).toBe("mikro");
+    // Ambang dari setelan diteruskan ke tier profil: 50 rb jadi "mid" bila mid mulai 40 rb.
+    expect((await profilKol(A, { ambangTier: { mikro: 10_000, mid: 40_000, makro: 500_000, mega: 1_000_000 } }))!.tier).toBe("mid");
     expect(p!.ringkas).toMatchObject({ total: 2, selesai: 1, berjalan: 1, ghosting: 0, gmv: 250_000, feeTerakhir: 750_000 });
     expect(p!.ringkas.tepatWaktu).toEqual({ tepat: 1, dinilai: 1, persen: 100 });
     expect(p!.kolaborasi.map((k) => k.id)).toEqual([briefAdeal, briefAselesai]);
     expect(p!.akun[0].riwayat.map((r) => r.followers)).toEqual([50_000]);
     expect(p!.form).toMatchObject({ name: `${tag} Ani`, label: "favorit", city: "Bandung" });
+    expect(p!.form.rateFormat).toEqual({});
     expect(p!.konten).toHaveLength(1);
     expect(await profilKol("tidak-ada")).toBeNull();
   });

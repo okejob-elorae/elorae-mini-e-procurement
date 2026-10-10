@@ -14,6 +14,20 @@ export const POLA_URL_ITEM_LIST = "/api/post/item_list/";
 export const MAKS_POSTING = 200;
 
 /**
+ * Kolom teks OPSIONAL kontrak (rancangan 2026-10-10 "Kontrak data ekstensi"): caption, akun yang
+ * ditandai, tagar, penanda iklan, dan penulis posting. Batasnya sama dengan yang diperiksa Elorae.
+ */
+export const MAKS_TEKS = 500;
+export const MAKS_SEBUTAN = 30;
+export const MAKS_TAGAR = 50;
+export const MAKS_PANJANG_LABEL = 100;
+/**
+ * Panjang JSON `data` terbesar yang dikirim. Elorae menolak badan > 256 KB (MAKS_BADAN_BYTE di
+ * pantau-api.ts); sisanya untuk `url`/`tugasId`. Lihat `rampingkanData`.
+ */
+export const BATAS_MUATAN_KARAKTER = 240_000;
+
+/**
  * SATU-SATUNYA daftar tanda halaman. Perbarui di sini saja bila TikTok mengubah halamannya.
  * - `selektor`: hanya bentuk `#id`, `.kelas`, atau `[atribut="nilai"]` (tes menjaga bentuknya),
  *   karena untuk masukan teks HTML selektor dicocokkan dengan pola sederhana.
@@ -375,6 +389,126 @@ export function deteksiHalaman(masukan, opsi = {}) {
   return "TIDAK_TERBACA";
 }
 
+// ---------------------------------------------------------------- caption, sebutan, tagar
+
+/** Potong ke ≤ `maks` unit UTF-16 tanpa membelah emoji (pasangan surrogate). */
+export function potongTeks(t, maks) {
+  if (typeof t !== "string" || t.length <= maks) return t;
+  let n = maks;
+  const kode = t.charCodeAt(n - 1);
+  if (kode >= 0xd800 && kode <= 0xdbff) n -= 1;
+  return t.slice(0, n);
+}
+
+/** Handle yang ditandai: huruf kecil, tanpa "@", tanpa spasi/garis miring/"#"/"@" di tengah, ≤ 100. */
+function handleLabel(nilai) {
+  const h = normalHandle(typeof nilai === "string" ? nilai : "");
+  return h && h.length <= MAKS_PANJANG_LABEL && !/[@#]/.test(h) ? h : "";
+}
+
+/** Tagar: huruf kecil, tanpa "#", tanpa spasi, ≤ 100. Selain itu "" (dibuang, bukan dipotong). */
+function tagarLabel(nilai) {
+  if (typeof nilai !== "string") return "";
+  const t = nilai.trim().replace(/^#+/, "").trim().toLowerCase();
+  return t && t.length <= MAKS_PANJANG_LABEL && !/[\s#]/.test(t) ? t : "";
+}
+
+function tambahUnik(daftar, nilai, maks) {
+  if (nilai && daftar.length < maks && !daftar.includes(nilai)) daftar.push(nilai);
+}
+
+/**
+ * Semua butir `textExtra` sebuah posting — dari `item.textExtra` dan `item.contents[].textExtra`
+ * (posting foto/carousel) — atau null bila tidak satu pun ADA. Daftar kosong yang ada berarti
+ * "diketahui: tidak ada sebutan/tagar", berbeda dari data yang tidak memuat kolom itu.
+ */
+function butirTextExtra(item) {
+  let ada = false;
+  const semua = [];
+  if (Array.isArray(item.textExtra)) {
+    ada = true;
+    semua.push(...item.textExtra);
+  }
+  if (Array.isArray(item.contents)) {
+    for (const c of item.contents) {
+      if (Array.isArray(c?.textExtra)) {
+        ada = true;
+        semua.push(...c.textExtra);
+      }
+    }
+  }
+  return ada ? semua : null;
+}
+
+/** type 0 = akun yang ditandai (@), type 1 = tagar (#) — diukur 2026-10-10 di halaman video. */
+function jenisTextExtra(x) {
+  if (!x || typeof x !== "object") return null;
+  if (x.type === 0) return "SEBUTAN";
+  if (x.type === 1) return "TAGAR";
+  if (x.type === undefined || x.type === null) {
+    if (teksSah(x.hashtagName)) return "TAGAR";
+    if (teksSah(x.userUniqueId)) return "SEBUTAN";
+  }
+  return null;
+}
+
+/**
+ * Kolom opsional kontrak dari satu butir video (item_list, itemList halaman, atau itemStruct
+ * halaman video): `teks`, `sebutan`, `tagar`, `iklan`, `penulis`. Yang tidak ada di data TIDAK
+ * dikirim; `sebutan: []` hanya bila `textExtra` ada tetapi tanpa sebutan (sama untuk `tagar`,
+ * yang juga dibaca dari `challenges[].title`). `iklan` hanya muncul bila `isAd === true`.
+ */
+export function tandaPosting(item) {
+  const hasil = {};
+  if (!item || typeof item !== "object") return hasil;
+  if (typeof item.desc === "string" && item.desc.trim()) hasil.teks = potongTeks(item.desc.trim(), MAKS_TEKS);
+  const extra = butirTextExtra(item);
+  if (extra) {
+    const sebutan = [];
+    for (const x of extra) if (jenisTextExtra(x) === "SEBUTAN") tambahUnik(sebutan, handleLabel(x.userUniqueId), MAKS_SEBUTAN);
+    hasil.sebutan = sebutan;
+  }
+  const tantangan = Array.isArray(item.challenges) ? item.challenges : null;
+  if (extra || tantangan) {
+    const tagar = [];
+    for (const x of extra ?? []) if (jenisTextExtra(x) === "TAGAR") tambahUnik(tagar, tagarLabel(x.hashtagName), MAKS_TAGAR);
+    for (const c of tantangan ?? []) tambahUnik(tagar, tagarLabel(c?.title), MAKS_TAGAR);
+    hasil.tagar = tagar;
+  }
+  if (item.isAd === true) hasil.iklan = true;
+  const penulis = handleLabel(penulisItem(item));
+  if (penulis) hasil.penulis = penulis;
+  return hasil;
+}
+
+/** Nama kolom opsional di atas — disalin apa adanya bila sebuah posting dijadikan HasilKonten. */
+export const KOLOM_TANDA = ["teks", "sebutan", "tagar", "iklan", "penulis"];
+
+/**
+ * `data` yang JSON-nya melebihi `maks` dirampingkan supaya Elorae tidak menolak seluruh pembacaan:
+ * kolom opsional dibuang dari posting TERLAMA dulu — caption, lalu tagar, sebutan, penulis — sampai
+ * muat. Angka dan jumlah posting tidak pernah disentuh. Data yang sudah muat dikembalikan apa adanya.
+ */
+export function rampingkanData(data, maks = BATAS_MUATAN_KARAKTER) {
+  if (!data || data.jenis !== "PROFIL" || !Array.isArray(data.posting) || data.posting.length === 0) return data;
+  if (JSON.stringify(data).length <= maks) return data;
+  const posting = data.posting.map((x) => ({ ...x }));
+  const panjang = posting.map((x) => JSON.stringify(x).length);
+  // JSON sebuah larik = "[" + butir.join(",") + "]": dasar (dengan "[]") + Σ butir + koma.
+  let total = JSON.stringify({ ...data, posting: [] }).length + panjang.reduce((a, b) => a + b, 0) + posting.length - 1;
+  for (const kolom of ["teks", "tagar", "sebutan", "penulis"]) {
+    for (let i = posting.length - 1; i >= 0 && total > maks; i--) {
+      if (!(kolom in posting[i])) continue;
+      delete posting[i][kolom];
+      const baru = JSON.stringify(posting[i]).length;
+      total -= panjang[i] - baru;
+      panjang[i] = baru;
+    }
+    if (total <= maks) break;
+  }
+  return { ...data, posting };
+}
+
 // ---------------------------------------------------------------- HasilProfil / HasilKonten
 
 /** Satu butir video (item_list atau itemList halaman) → posting, atau null bila ada yang tak terbaca. */
@@ -397,7 +531,7 @@ export function postingDariItem(item) {
   for (const k of ["views", "like", "komentar", "share", "save"]) {
     if (posting[k] === undefined) return null;
   }
-  return posting;
+  return Object.assign(posting, tandaPosting(item));
 }
 
 /** Gabungkan daftar posting: id ganda diambil yang pertama; urut terbaru dulu; dibatasi MAKS_POSTING. */
@@ -469,7 +603,7 @@ export function uraiKonten(lingkup) {
   pasang(hasil, "save", pilihAngka(v2.collectCount, s.collectCount));
   const dibuatPada = angkaBulat(item.createTime);
   if (dibuatPada) hasil.dibuatPada = dibuatPada;
-  return hasil;
+  return Object.assign(hasil, tandaPosting(item));
 }
 
 const WAJIB = {
@@ -614,6 +748,7 @@ export function kontenDariProfil(hasilProfil, videoId) {
     save: p.save,
   };
   if (Number.isFinite(p.dibuatPada) && p.dibuatPada > 0) hasil.dibuatPada = p.dibuatPada;
+  for (const k of KOLOM_TANDA) if (p[k] !== undefined) hasil[k] = p[k];
   return kurangWajib(hasil).length ? null : hasil;
 }
 

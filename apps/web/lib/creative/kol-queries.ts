@@ -4,6 +4,8 @@ import { feeBruto } from "./angka-konten";
 import { akunUtama } from "./angka-terukur";
 import { angkaKolaborasi, jumlahAngkaKolaborasi, type AngkaKolaborasi } from "./angka-queries";
 import { SEMUA_PLATFORM, tierKol, type Platform, type Tier } from "./aturan";
+import type { AmbangTier } from "./tier";
+import { bacaAmbangTierKreatif } from "./tier-pengaturan";
 import { cariKembar, kelompokKembar, normalisasiHandle, type SebabKembar } from "./kembar";
 import {
   BATAS_KELOMPOK_KEMBAR,
@@ -19,6 +21,7 @@ import {
   type ProfilUkuran,
 } from "./kol-aturan";
 import type { SaringKol } from "./kol-saring";
+import { bacaRateFormat, type RateFormat } from "./rate-format";
 import type { JenisKerjaSama, StatusDraf, Tahap } from "./tahap";
 
 /*
@@ -95,7 +98,13 @@ function syaratCari(q: string): Prisma.KolWhereInput {
   return { OR: atau };
 }
 
-export async function daftarKolHalaman(s: SaringKol): Promise<HasilDaftarKol> {
+/**
+ * `ambangTier`: batas tier dari Kreatif → Pengaturan. Halaman yang sudah
+ * membacanya meneruskannya; tanpa itu dibaca di sini — tier tidak pernah
+ * diam-diam memakai bawaan selagi setelannya berbeda.
+ */
+export async function daftarKolHalaman(s: SaringKol, opsi: { ambangTier?: AmbangTier } = {}): Promise<HasilDaftarKol> {
+  const ambangTier = opsi.ambangTier ?? (await bacaAmbangTierKreatif());
   const dan: Prisma.KolWhereInput[] = [];
   const q = s.cari.trim();
   if (q) dan.push(syaratCari(q));
@@ -135,7 +144,7 @@ export async function daftarKolHalaman(s: SaringKol): Promise<HasilDaftarKol> {
       nama: k.name,
       akunUtama: utama,
       akun,
-      tier: tierKol(akun.map((a) => a.followers)),
+      tier: tierKol(akun.map((a) => a.followers), ambangTier),
       pengikut: utama?.followers ?? 0,
       er: angkaAtauNull(k.engagementRate),
       niche: k.niche,
@@ -245,6 +254,8 @@ export type DataFormKol = {
   phone: string | null;
   email: string | null;
   rateCard: number | null;
+  /** Tarif per format konten (rupiah bulat); format yang belum diisi tidak ada kuncinya. */
+  rateFormat: RateFormat;
   rateNote: string | null;
   note: string | null;
   label: string;
@@ -279,6 +290,7 @@ const PILIH_FORM = {
   phone: true,
   email: true,
   rateCard: true,
+  rateFormat: true,
   rateNote: true,
   note: true,
   label: true,
@@ -302,6 +314,7 @@ function keDataForm(k: BarisForm, akun: AkunRingkas[], terukur: AngkaTerukurKol 
     phone: k.phone,
     email: k.email,
     rateCard: angkaAtauNull(k.rateCard),
+    rateFormat: bacaRateFormat(k.rateFormat),
     rateNote: k.rateNote,
     note: k.note,
     label: bacaLabel(k.label).join(", "),
@@ -404,7 +417,8 @@ export type ProfilKol = {
   };
 };
 
-export async function profilKol(id: string): Promise<ProfilKol | null> {
+export async function profilKol(id: string, opsi: { ambangTier?: AmbangTier } = {}): Promise<ProfilKol | null> {
+  const ambangTier = opsi.ambangTier ?? (await bacaAmbangTierKreatif());
   const k = await prisma.kol.findUnique({
     where: { id },
     select: {
@@ -507,7 +521,7 @@ export async function profilKol(id: string): Promise<ProfilKol | null> {
   return {
     form: keDataForm(k, akunTanpaRiwayat, terukurKol(k.accounts)),
     nama: k.name,
-    tier: tierKol(akunUrut.map((a) => a.followers)),
+    tier: tierKol(akunUrut.map((a) => a.followers), ambangTier),
     pengikut: akunTerbesar(akunUrut)?.followers ?? 0,
     diblokir: k.blockedAt !== null,
     blockedAt: k.blockedAt?.toISOString() ?? null,

@@ -4,15 +4,23 @@
 //   Cek cepat (v0.9.0): bila ada tab www.tiktok.com yang dibuka orang, halaman tugas diambil DARI
 //   tab itu (fetch, ±1–2,5 detik per halaman, banyak tugas per putaran). Tanpa tab itu: buka tab
 //   latar → baca lewat konten.js → tutup tab → jeda acak / istirahat (cara lama).
-// - Perantara mode manual (panel "Simpan ke Elorae") dan popup.
+// - Perantara mode manual (panel "Simpan ke Elorae"), kiriman otomatis panel (v0.10.0, POST
+//   /otomatis tanpa tombol, satu kali per akun/video per 6 jam), dan popup.
 // Semua keputusan ada di lib/aturan.js (dites); berkas ini hanya menjalankannya.
 // Token TIDAK PERNAH ditulis ke log.
 
-import { halamanPemeriksaan, jenisHalaman, urlTugasSah, urlUntukTabTikTok } from "./lib/pengurai.js";
+import { halamanPemeriksaan, jenisHalaman, rampingkanData, urlTugasSah, urlUntukTabTikTok } from "./lib/pengurai.js";
 import {
   BATAS_TUNGGU_ITEMLIST_MS,
+  KUNCI_MUNDUR_KIRIM_OTOMATIS,
+  KUNCI_RIWAYAT_KIRIM_OTOMATIS,
+  KUNCI_SAKELAR_KIRIM_OTOMATIS,
   MAKS_PUTARAN_CEPAT_MS,
   bersihkanPengaturan,
+  catatKirimOtomatis,
+  catatanFinal,
+  kabarDariRiwayat,
+  kunciKirimOtomatis,
   jadwalSetelahAlasan,
   jadwalSetelahTugas,
   jadwalSetelahTugasCepat,
@@ -20,8 +28,10 @@ import {
   kunciMasihAktif,
   perbaruiJedaLokal,
   pilihTabTikTok,
+  putuskanKirimOtomatis,
   putuskanLangkah,
   putuskanTunggu,
+  setelahKirimOtomatis,
   setelahTugas,
   teksKeadaan,
 } from "./lib/aturan.js";
@@ -516,7 +526,7 @@ async function kerjakanTugas(tugas) {
   let kode = "OK";
   let laporTerkirim = false;
   if (hasil.status === "OK") {
-    const r = await kirimAtauAntre("/hasil", { tugasId: tugas.id, data: hasil.data });
+    const r = await kirimAtauAntre("/hasil", { tugasId: tugas.id, data: rampingkanData(hasil.data) });
     if (r.terkirim && r.json?.ok === false) {
       await catatGalat(`Elorae menolak hasil: ${r.json.kode ?? "?"}`);
       if (r.json.kode === "MUATAN_TIDAK_SAH") {
@@ -665,7 +675,7 @@ async function perbaruiLencana() {
 // ============================================================ pesan dari popup & panel
 
 const DARI_HALAMAN_EKSTENSI = new Set(["ringkasan", "sambung", "putuskan", "setelOtomatis"]);
-const DARI_TIKTOK = new Set(["simpanManual", "apakahTabOtomatis", "bacaPanel", "setelPanel", "bacaPatokan"]);
+const DARI_TIKTOK = new Set(["simpanManual", "kirimOtomatis", "apakahTabOtomatis", "bacaPanel", "setelPanel", "bacaPatokan"]);
 /** Dari halaman Elorae (jembatan-elorae.js): "Cek sekarang"/"Tempel link" baru saja mengantrekan video. */
 const DARI_ELORAE = new Set(["bangunkan"]);
 
@@ -712,6 +722,8 @@ async function tanganiPesan(pesan, pengirim) {
       return { ok: true };
     case "simpanManual":
       return simpanManual(pesan.url, pesan.data);
+    case "kirimOtomatis":
+      return kirimOtomatis(pesan, pengirim);
     case "bacaPatokan":
       return bacaPatokan(Boolean(pesan.paksa));
     case "bangunkan":
@@ -740,6 +752,9 @@ async function sambung(alamat, kode) {
       gagalBeruntun: 0,
       antreanKirim: [],
       galatTerakhir: null,
+      // Sambungan baru (bisa ke Elorae lain): riwayat kiriman otomatis sambungan lama tidak berlaku.
+      [KUNCI_RIWAYAT_KIRIM_OTOMATIS]: {},
+      [KUNCI_MUNDUR_KIRIM_OTOMATIS]: null,
     });
     await perbaruiLencana();
     detak();
@@ -782,11 +797,99 @@ async function putuskan() {
 async function simpanManual(url, data) {
   if (typeof url !== "string" || !url.startsWith(ASAL_TIKTOK)) return { ok: false, kode: "URL_TIDAK_SAH" };
   if (!data || (data.jenis !== "PROFIL" && data.jenis !== "KONTEN")) return { ok: false, kode: "DATA_TIDAK_SAH" };
-  const r = await panggilDenganToken("/manual", { body: { url, data } });
+  const r = await panggilDenganToken("/manual", { body: { url, data: rampingkanData(data) } });
   if (["BELUM_TERSAMBUNG", "TOKEN_TIDAK_SAH", "JARINGAN", "TERLALU_SERING"].includes(r.gagal)) return { ok: false, kode: r.gagal };
   if (r.gagal) return { ok: false, kode: `HTTP_${r.status ?? "?"}` };
-  if (r.json?.ok === true) return { ok: true, cocok: r.json.cocok ?? null, dibuat: r.json.dibuat ?? null };
+  if (r.json?.ok === true) {
+    // Simpan manual menjalankan pemeriksaan yang sama di Elorae: kiriman otomatis untuk akun/video
+    // ini tidak perlu lagi selama 6 jam.
+    const kunci = kunciKirimOtomatis(data);
+    if (kunci) {
+      const nama = r.json.cocok?.nama;
+      await berurutan(async () => {
+        const s = await baca(KUNCI_RIWAYAT_KIRIM_OTOMATIS);
+        const catatan = { hasil: "MANUAL", ...(typeof nama === "string" ? { kol: { id: r.json.cocok?.id ?? null, nama } } : {}) };
+        await tulis({ [KUNCI_RIWAYAT_KIRIM_OTOMATIS]: catatKirimOtomatis(s[KUNCI_RIWAYAT_KIRIM_OTOMATIS], kunci, catatan, Date.now()) });
+      });
+    }
+    return { ok: true, cocok: r.json.cocok ?? null, dibuat: r.json.dibuat ?? null };
+  }
   return { ok: false, kode: r.json?.kode ?? "DITOLAK" };
+}
+
+// ============================================================ kiriman otomatis panel (tanpa tombol)
+
+/**
+ * Baca-putuskan-tulis riwayat kiriman otomatis tidak boleh tumpang-tindih (dua tab TikTok bisa
+ * selesai membaca bersamaan): satu per satu. Pemanggilan ke Elorae sendiri di luar rantai ini.
+ */
+let rantaiKirimOtomatis = Promise.resolve();
+function berurutan(kerja) {
+  const hasil = rantaiKirimOtomatis.then(kerja);
+  rantaiKirimOtomatis = hasil.catch(() => {});
+  return hasil;
+}
+
+/**
+ * Panel selesai membaca profil/video di tab TikTok yang dibuka orang → POST /otomatis
+ * `{ url, data }`. Semua syarat (tersambung, sakelar popup, bukan tab putaran otomatis, bacaan
+ * lengkap, 6 jam per akun/video, mundur bersama) diputuskan `putuskanKirimOtomatis`. Kunci itu
+ * ditandai MENGIRIM SEBELUM memanggil Elorae, supaya bacaan kedua yang datang bersamaan tidak ikut
+ * mengirim. Jawaban `{ ok, dikirim, alasan?, kabar, selesai, performaUrl? }` — `selesai` = tidak
+ * perlu ditanyakan lagi selama halaman ini terbuka.
+ */
+async function kirimOtomatis(pesan, pengirim) {
+  const url = typeof pesan.url === "string" ? pesan.url : "";
+  const data = pesan.data;
+  if (!url.startsWith(ASAL_TIKTOK) || !data || (data.jenis !== "PROFIL" && data.jenis !== "KONTEN")) {
+    return { ok: false, kode: "DATA_TIDAK_SAH", selesai: true };
+  }
+  const tabOtomatis = (await daftarTabOtomatis()).includes(pengirim.tab?.id);
+  const putusan = await berurutan(async () => {
+    const s = await baca("koneksi", KUNCI_SAKELAR_KIRIM_OTOMATIS, KUNCI_RIWAYAT_KIRIM_OTOMATIS, KUNCI_MUNDUR_KIRIM_OTOMATIS);
+    const sekarang = Date.now();
+    const p = putuskanKirimOtomatis(
+      {
+        tersambung: Boolean(s.koneksi?.token && s.koneksi?.eloraeUrl),
+        sakelar: s[KUNCI_SAKELAR_KIRIM_OTOMATIS],
+        tabOtomatis,
+        hasil: { status: "OK", data, adaItemList: pesan.adaItemList === true },
+        url,
+        riwayat: s[KUNCI_RIWAYAT_KIRIM_OTOMATIS],
+        mundurSampai: s[KUNCI_MUNDUR_KIRIM_OTOMATIS],
+      },
+      sekarang,
+    );
+    if (p.kirim) {
+      await tulis({ [KUNCI_RIWAYAT_KIRIM_OTOMATIS]: catatKirimOtomatis(s[KUNCI_RIWAYAT_KIRIM_OTOMATIS], p.kunci, { hasil: "MENGIRIM" }, sekarang) });
+    }
+    return p;
+  });
+  if (!putusan.kirim) {
+    const selesai = putusan.alasan === "TAB_OTOMATIS" || (putusan.alasan === "SUDAH_DIKIRIM" && catatanFinal(putusan.sebelumnya));
+    return { ok: true, dikirim: false, alasan: putusan.alasan, kabar: kabarDariRiwayat(putusan.sebelumnya), selesai };
+  }
+
+  const r = await panggilDenganToken("/otomatis", { body: { url: urlUntukTabTikTok(url) ?? url, data: rampingkanData(data) } });
+  const lanjut = setelahKirimOtomatis(r, Date.now());
+  await berurutan(async () => {
+    const s = await baca(KUNCI_RIWAYAT_KIRIM_OTOMATIS, KUNCI_MUNDUR_KIRIM_OTOMATIS);
+    const baru = { [KUNCI_RIWAYAT_KIRIM_OTOMATIS]: catatKirimOtomatis(s[KUNCI_RIWAYAT_KIRIM_OTOMATIS], putusan.kunci, lanjut.catatan, Date.now()) };
+    if (lanjut.mundurSampai) baru[KUNCI_MUNDUR_KIRIM_OTOMATIS] = Math.max(Number(s[KUNCI_MUNDUR_KIRIM_OTOMATIS]) || 0, lanjut.mundurSampai);
+    await tulis(baru);
+  });
+  // Penolakan teknis masuk "Masalah terakhir" di popup; penolakan biasa (izin, KOL diblokir) tidak.
+  const kode = lanjut.catatan.kode;
+  if (kode === "HTTP_404") await catatGalat("Elorae ini belum mengenal kiriman otomatis dari panel — perbarui Elorae");
+  else if (kode === "MUATAN_TIDAK_SAH" || (typeof kode === "string" && kode.startsWith("HTTP_"))) {
+    await catatGalat(`Elorae menolak kiriman otomatis: ${kode}`);
+  }
+  let performaUrl = null;
+  if (lanjut.kabar.ok && lanjut.kabar.videoMasuk > 0) {
+    const koneksi = await koneksiAktif();
+    if (koneksi) performaUrl = `${new URL(koneksi.eloraeUrl).origin}/backoffice/kreatif/performa`;
+  }
+  return { ok: true, dikirim: true, kabar: lanjut.kabar, selesai: catatanFinal(lanjut.catatan), performaUrl };
 }
 
 async function susunRingkasanPopup(segarkan) {

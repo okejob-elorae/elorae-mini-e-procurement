@@ -3,7 +3,7 @@
  * klien. Tautan "Lengkapi data" (Hari ini, rincian kolaborasi) membuka
  * `?tab=ukuran` langsung, tempat alamat, nomor HP, dan ukuran diisi.
  */
-export const TAB_PROFIL_KOL = ["kolaborasi", "konten", "ukuran", "pengikut", "catatan"] as const;
+export const TAB_PROFIL_KOL = ["kolaborasi", "konten", "brand", "ukuran", "pengikut", "catatan"] as const;
 export type TabProfilKol = (typeof TAB_PROFIL_KOL)[number];
 
 export function bacaTabProfilKol(v: string | string[] | null | undefined): TabProfilKol {

@@ -409,3 +409,163 @@ describe("cek cepat lewat tab TikTok yang terbuka", () => {
     assert.match(a.teksAlasan("DIBLOKIR_TIKTOK"), /muat ulang tab TikTok/i);
   });
 });
+
+describe("kiriman otomatis panel (D3)", () => {
+  const JAM = 60 * MENIT;
+  const URL_P = "https://www.tiktok.com/@Budi.Santoso?lang=id";
+  const URL_V = "https://www.tiktok.com/@budi.santoso/video/7421234567890123456";
+  const posting = { id: "7420000000000000002", dibuatPada: 1727600000, disematkan: false, views: 8000, like: 400, komentar: 20, share: 5, save: 15 };
+  const profil = (lain = {}) => ({ status: "OK", adaItemList: true, data: { jenis: "PROFIL", uniqueId: "Budi.Santoso", pengikut: 15230, posting: [posting] }, ...lain });
+  const video = () => ({ status: "OK", data: { jenis: "KONTEN", videoId: "7421234567890123456", uniqueId: "budi.santoso", views: 1, like: 1, komentar: 1, share: 1, save: 1 } });
+  const siap = (lain = {}) => ({ tersambung: true, sakelar: undefined, tabOtomatis: false, hasil: profil(), url: URL_P, riwayat: {}, mundurSampai: null, ...lain });
+
+  test("sakelar bawaan NYALA; hanya false yang mematikan", () => {
+    assert.equal(a.sakelarKirimOtomatis(undefined), true);
+    assert.equal(a.sakelarKirimOtomatis(true), true);
+    assert.equal(a.sakelarKirimOtomatis(null), true);
+    assert.equal(a.sakelarKirimOtomatis(false), false);
+  });
+
+  test("kunci pembatas: handle profil (huruf kecil) atau id video", () => {
+    assert.equal(a.kunciKirimOtomatis(profil().data), "PROFIL:budi.santoso");
+    assert.equal(a.kunciKirimOtomatis(video().data), "KONTEN:7421234567890123456");
+    assert.equal(a.kunciKirimOtomatis({ jenis: "PROFIL", uniqueId: "" }), null);
+    assert.equal(a.kunciKirimOtomatis({ jenis: "KONTEN", videoId: "abc" }), null);
+    assert.equal(a.kunciKirimOtomatis(null), null);
+  });
+
+  test("bacaan lengkap: profil butuh daftar video; data harus milik halaman yang terbuka", () => {
+    assert.equal(a.bacaanLengkap(profil(), URL_P), true);
+    assert.equal(a.bacaanLengkap(video(), URL_V), true);
+    // Daftar video belum tertangkap dan tidak ada yang tertanam → belum.
+    assert.equal(a.bacaanLengkap(profil({ adaItemList: false, data: { ...profil().data, posting: [] } }), URL_P), false);
+    // Tertanam di halaman tanpa item_list → cukup; akun tanpa video dengan item_list kosong → cukup.
+    assert.equal(a.bacaanLengkap(profil({ adaItemList: false }), URL_P), true);
+    assert.equal(a.bacaanLengkap(profil({ data: { ...profil().data, posting: [] } }), URL_P), true);
+    // Akun yang memang tanpa video tidak menunggu daftar video yang tidak pernah dimuat.
+    assert.equal(a.bacaanLengkap(profil({ adaItemList: false, data: { ...profil().data, posting: [], jumlahVideo: 0 } }), URL_P), true);
+    assert.equal(a.bacaanLengkap(profil({ adaItemList: false, data: { ...profil().data, posting: [], jumlahVideo: 5 } }), URL_P), false);
+    assert.equal(a.bacaanLengkap(profil(), "https://www.tiktok.com/@orang.lain"), false);
+    assert.equal(a.bacaanLengkap(video(), URL_P), false);
+    assert.equal(a.bacaanLengkap({ status: "CAPTCHA" }, URL_P), false);
+    assert.equal(a.bacaanLengkap({ ...video(), data: { ...video().data, views: undefined } }, URL_V), false);
+    assert.equal(a.bacaanLengkap(profil(), "https://www.tiktok.com/foryou"), false);
+  });
+
+  test("semua syarat terpenuhi → kirim dengan kuncinya", () => {
+    assert.deepEqual(a.putuskanKirimOtomatis(siap(), SIANG), { kirim: true, kunci: "PROFIL:budi.santoso" });
+    assert.deepEqual(a.putuskanKirimOtomatis(siap({ hasil: video(), url: URL_V }), SIANG), { kirim: true, kunci: "KONTEN:7421234567890123456" });
+  });
+
+  test("tidak pernah mengirim tanpa sambungan, dengan sakelar mati, atau dari tab putaran otomatis", () => {
+    assert.equal(a.putuskanKirimOtomatis(siap({ tersambung: false }), SIANG).alasan, "BELUM_TERSAMBUNG");
+    assert.equal(a.putuskanKirimOtomatis(siap({ sakelar: false }), SIANG).alasan, "MATI");
+    assert.equal(a.putuskanKirimOtomatis(siap({ tabOtomatis: true }), SIANG).alasan, "TAB_OTOMATIS");
+    assert.equal(a.putuskanKirimOtomatis(siap({ hasil: { status: "TIDAK_TERBACA" } }), SIANG).alasan, "BELUM_LENGKAP");
+    assert.equal(a.putuskanKirimOtomatis(null, SIANG).alasan, "BELUM_TERSAMBUNG");
+  });
+
+  test("satu kiriman per kunci per 6 jam; gagal/sedang mengirim boleh diulang setelah 10 menit", () => {
+    const kunci = "PROFIL:budi.santoso";
+    const tersimpan = { [kunci]: { hasil: "DISIMPAN", at: SIANG - 5 * JAM } };
+    const r = a.putuskanKirimOtomatis(siap({ riwayat: tersimpan }), SIANG);
+    assert.equal(r.alasan, "SUDAH_DIKIRIM");
+    assert.equal(r.sebelumnya.hasil, "DISIMPAN");
+    assert.equal(a.putuskanKirimOtomatis(siap({ riwayat: { [kunci]: { hasil: "DISIMPAN", at: SIANG - 6 * JAM } } }), SIANG).kirim, true);
+    for (const hasil of ["DIABAIKAN", "DITOLAK", "MANUAL"]) {
+      assert.equal(a.putuskanKirimOtomatis(siap({ riwayat: { [kunci]: { hasil, at: SIANG - 2 * JAM } } }), SIANG).kirim, false, hasil);
+    }
+    for (const hasil of ["GAGAL", "MENGIRIM"]) {
+      assert.equal(a.putuskanKirimOtomatis(siap({ riwayat: { [kunci]: { hasil, at: SIANG - 5 * MENIT } } }), SIANG).kirim, false, hasil);
+      assert.equal(a.putuskanKirimOtomatis(siap({ riwayat: { [kunci]: { hasil, at: SIANG - 10 * MENIT } } }), SIANG).kirim, true, hasil);
+    }
+    // Kunci lain tidak terhalang.
+    assert.equal(a.putuskanKirimOtomatis(siap({ riwayat: { "PROFIL:orang.lain": { hasil: "DISIMPAN", at: SIANG } } }), SIANG).kirim, true);
+  });
+
+  test("mundur bersama (429 / Elorae lama) menahan semua kunci sampai waktunya", () => {
+    const r = a.putuskanKirimOtomatis(siap({ mundurSampai: SIANG + MENIT }), SIANG);
+    assert.equal(r.alasan, "MUNDUR");
+    assert.equal(r.sampai, SIANG + MENIT);
+    assert.equal(a.putuskanKirimOtomatis(siap({ mundurSampai: SIANG }), SIANG).kirim, true);
+  });
+
+  test("riwayat dipangkas: yang kedaluwarsa, rusak, atau dari masa depan dibuang; paling banyak 500 terbaru", () => {
+    const riwayat = {
+      lama: { hasil: "DISIMPAN", at: SIANG - 7 * JAM },
+      segar: { hasil: "DISIMPAN", at: SIANG - JAM },
+      gagalLama: { hasil: "GAGAL", at: SIANG - 11 * MENIT },
+      gagalBaru: { hasil: "GAGAL", at: SIANG - MENIT },
+      depan: { hasil: "DISIMPAN", at: SIANG + 2 * JAM },
+      rusak: { hasil: "DISIMPAN" },
+      kosong: null,
+    };
+    assert.deepEqual(Object.keys(a.pangkasRiwayatKirim(riwayat, SIANG)).sort(), ["gagalBaru", "segar"]);
+    assert.deepEqual(a.pangkasRiwayatKirim(undefined, SIANG), {});
+    assert.deepEqual(a.pangkasRiwayatKirim([1, 2], SIANG), {});
+    const banyak = {};
+    for (let i = 0; i < 520; i++) banyak[`k${i}`] = { hasil: "DISIMPAN", at: SIANG - i * 1000 };
+    const p = a.pangkasRiwayatKirim(banyak, SIANG);
+    assert.equal(Object.keys(p).length, a.MAKS_RIWAYAT_KIRIM);
+    assert.ok("k0" in p && !("k519" in p));
+  });
+
+  test("catatKirimOtomatis menimpa catatan kunci itu dengan waktu sekarang dan memangkas sisanya", () => {
+    const r = a.catatKirimOtomatis({ x: { hasil: "MENGIRIM", at: SIANG - MENIT }, basi: { hasil: "DISIMPAN", at: SIANG - 8 * JAM } }, "x", { hasil: "DISIMPAN", videoMasuk: 2 }, SIANG);
+    assert.deepEqual(r, { x: { hasil: "DISIMPAN", videoMasuk: 2, at: SIANG } });
+  });
+
+  test("jawaban Elorae → catatan, mundur, kabar", () => {
+    const ok = a.setelahKirimOtomatis({ json: { ok: true, hasil: "DISIMPAN", kol: { id: "k1", nama: "@budi" }, videoMasuk: 3, brand: 2 }, status: 200 }, SIANG);
+    assert.deepEqual(ok.catatan, { hasil: "DISIMPAN", videoMasuk: 3, brand: 2, kol: { id: "k1", nama: "@budi" } });
+    assert.equal(ok.mundurSampai, null);
+    assert.equal(ok.kabar.ok, true);
+    assert.equal(a.catatanFinal(ok.catatan), true);
+
+    const abai = a.setelahKirimOtomatis({ json: { ok: true, hasil: "DIABAIKAN", videoMasuk: 0, brand: 0 }, status: 200 }, SIANG);
+    assert.equal(abai.catatan.hasil, "DIABAIKAN");
+    assert.equal(a.catatanFinal(abai.catatan), true);
+    // Angka rusak dari server tidak dipakai mentah.
+    assert.equal(a.setelahKirimOtomatis({ json: { ok: true, hasil: "DISIMPAN", videoMasuk: -1, brand: "2" } }, SIANG).catatan.videoMasuk, 0);
+
+    const sering = a.setelahKirimOtomatis({ gagal: "TERLALU_SERING", status: 429 }, SIANG);
+    assert.equal(sering.catatan.hasil, "GAGAL");
+    assert.equal(sering.mundurSampai, SIANG + a.MUNDUR_TERLALU_SERING_MS);
+
+    for (const gagal of ["JARINGAN", "TOKEN_TIDAK_SAH", "BELUM_TERSAMBUNG"]) {
+      const g = a.setelahKirimOtomatis({ gagal }, SIANG);
+      assert.equal(g.catatan.hasil, "GAGAL", gagal);
+      assert.equal(a.catatanFinal(g.catatan), false);
+      assert.equal(g.mundurSampai, null);
+      assert.deepEqual(g.kabar, { ok: false, kode: gagal });
+    }
+
+    const lama = a.setelahKirimOtomatis({ gagal: "HTTP", status: 404 }, SIANG);
+    assert.equal(lama.catatan.hasil, "DITOLAK");
+    assert.equal(lama.mundurSampai, SIANG + a.MUNDUR_TITIK_TIDAK_ADA_MS);
+    assert.equal(a.setelahKirimOtomatis({ gagal: "HTTP", status: 413 }, SIANG).mundurSampai, null);
+
+    const tolak = a.setelahKirimOtomatis({ json: { ok: false, kode: "TANPA_IZIN" }, status: 403 }, SIANG);
+    assert.deepEqual(tolak.catatan, { hasil: "DITOLAK", kode: "TANPA_IZIN" });
+    assert.deepEqual(tolak.kabar, { ok: false, kode: "TANPA_IZIN" });
+  });
+
+  test("teks di panel: tersimpan, video baru masuk Performa, diam untuk DIABAIKAN dan gangguan jaringan", () => {
+    assert.deepEqual(a.teksKabarOtomatis({ ok: true, hasil: "DISIMPAN", videoMasuk: 0 }), { teks: "Tersimpan otomatis ke Elorae", jenis: "baik" });
+    assert.deepEqual(a.teksKabarOtomatis({ ok: true, hasil: "DISIMPAN", videoMasuk: 0, kol: { nama: "@budi" } }), { teks: "Tersimpan otomatis untuk @budi", jenis: "baik" });
+    assert.deepEqual(a.teksKabarOtomatis({ ok: true, hasil: "DISIMPAN", videoMasuk: 2 }), { teks: "2 video baru masuk Performa video", jenis: "sorot" });
+    assert.equal(a.teksKabarOtomatis({ ok: true, hasil: "DIABAIKAN", videoMasuk: 0 }), null);
+    for (const kode of ["JARINGAN", "TERLALU_SERING", "MUATAN_TIDAK_SAH", "HTTP_404", "KOL_DIBLOKIR"]) assert.equal(a.teksKabarOtomatis({ ok: false, kode }), null, kode);
+    assert.equal(a.teksKabarOtomatis({ ok: false, kode: "TOKEN_TIDAK_SAH" }).jenis, "galat");
+    assert.equal(a.teksKabarOtomatis({ ok: false, kode: "TANPA_IZIN" }).jenis, "galat");
+    assert.equal(a.teksKabarOtomatis(null), null);
+  });
+
+  test("dibuka lagi dalam 6 jam: yang tersimpan menyebut jamnya, yang diabaikan tetap diam", () => {
+    const k = a.kabarDariRiwayat({ hasil: "DISIMPAN", at: SIANG - JAM, kol: { id: "k", nama: "@budi" } });
+    assert.deepEqual(a.teksKabarOtomatis(k, SIANG), { teks: "Sudah tersimpan di Elorae · 09.00", jenis: "baik" });
+    assert.equal(a.teksKabarOtomatis(a.kabarDariRiwayat({ hasil: "MANUAL", at: SIANG }), SIANG).teks, "Sudah tersimpan di Elorae · 10.00");
+    for (const hasil of ["DIABAIKAN", "GAGAL", "MENGIRIM", "DITOLAK"]) assert.equal(a.kabarDariRiwayat({ hasil, at: SIANG }), null, hasil);
+    assert.equal(a.kabarDariRiwayat(undefined), null);
+  });
+});

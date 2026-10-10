@@ -1,7 +1,7 @@
 // Aturan putaran otomatis — modul MURNI (tanpa chrome.*, tanpa jaringan, waktu dari pemanggil).
 // background.js hanya menjalankan keputusan dari sini, jadi semua cabang bisa dites.
 
-import { dalamJamKerja, jedaAcak } from "./pengurai.js";
+import { cocokDenganUrl, dalamJamKerja, jedaAcak, jenisHalaman, kurangWajib, normalHandle } from "./pengurai.js";
 
 const DETIK = 1000;
 const MENIT = 60 * DETIK;
@@ -309,6 +309,171 @@ export function putuskanTunggu({ jenis, sejakMs, status, adaItemList, tanpaSkrip
   }
   const batas = (status === "TIDAK_TERBACA" || status === null) && tanpaSkrip ? BATAS_TUNGGU_TANPA_SKRIP_MS : BATAS_TUNGGU_DATA_MS;
   return sejakMs >= batas ? "KIRIM" : "TUNGGU";
+}
+
+// ---------------------------------------------------------------- kiriman otomatis panel (D3)
+//
+// Panel di tab TikTok yang dibuka ORANG mengirim pembacaan profil/video ke POST /otomatis tanpa
+// tombol. Elorae yang memutuskan menyimpan atau mengabaikan (DISIMPAN / DIABAIKAN). Ekstensi
+// membatasi satu kiriman per akun/video per 6 jam, dan sakelar di popup bisa mematikannya.
+
+const JAM = 60 * MENIT;
+/** chrome.storage.local: sakelar popup (tidak ada = NYALA), riwayat per kunci, mundur bersama. */
+export const KUNCI_SAKELAR_KIRIM_OTOMATIS = "kirimOtomatisTikTok";
+export const KUNCI_RIWAYAT_KIRIM_OTOMATIS = "riwayatKirimOtomatis";
+export const KUNCI_MUNDUR_KIRIM_OTOMATIS = "mundurKirimOtomatis";
+/** Satu kiriman per akun/video selama ini (rancangan D3). */
+export const JEDA_KIRIM_OTOMATIS_MS = 6 * JAM;
+/** Kiriman yang gagal sampai (jaringan, Elorae galat 5xx, sedang mengirim) boleh dicoba lagi setelah ini. */
+export const JEDA_ULANG_KIRIM_GAGAL_MS = 10 * MENIT;
+/** Elorae menjawab 429 (batas 120 kiriman/jam per perangkat): semua kiriman otomatis berhenti dulu. */
+export const MUNDUR_TERLALU_SERING_MS = 15 * MENIT;
+/** Elorae belum mengenal /otomatis (404, Elorae versi lama): jangan bertanya setiap profil. */
+export const MUNDUR_TITIK_TIDAK_ADA_MS = 60 * MENIT;
+/** Riwayat disimpan paling banyak sekian kunci (yang terbaru); sisanya dibuang. */
+export const MAKS_RIWAYAT_KIRIM = 500;
+/** Hasil yang berlaku 6 jam. MENGIRIM (belum dijawab) dan GAGAL berlaku 10 menit. */
+const HASIL_FINAL = ["DISIMPAN", "DIABAIKAN", "DITOLAK", "MANUAL"];
+
+/** Sakelar "Kirim otomatis saat membuka TikTok": bawaan NYALA; hanya `false` yang mematikan. */
+export function sakelarKirimOtomatis(nilai) {
+  return nilai !== false;
+}
+
+/** Kunci pembatas: `PROFIL:<handle>` atau `KONTEN:<id video>`; null bila tidak bisa ditentukan. */
+export function kunciKirimOtomatis(data) {
+  if (data?.jenis === "PROFIL") {
+    const h = normalHandle(data.uniqueId);
+    return h ? `PROFIL:${h}` : null;
+  }
+  if (data?.jenis === "KONTEN") return typeof data.videoId === "string" && /^\d{1,30}$/.test(data.videoId) ? `KONTEN:${data.videoId}` : null;
+  return null;
+}
+
+/**
+ * Pembacaan panel sudah lengkap untuk dikirim sendiri? OK, milik halaman `url`, angka wajib ada,
+ * dan untuk profil daftar videonya sudah tertangkap (item_list), tertanam di halaman, atau akunnya
+ * memang tanpa video — tanpa daftar video Elorae tidak bisa menghitung ER maupun mengenali video
+ * yang menandai Elorae.
+ */
+export function bacaanLengkap(hasil, url) {
+  if (hasil?.status !== "OK" || !hasil.data || kurangWajib(hasil.data).length > 0) return false;
+  const target = typeof url === "string" ? jenisHalaman(url) : null;
+  if (!target || !cocokDenganUrl(hasil.data, target)) return false;
+  if (hasil.data.jenis === "PROFIL") {
+    // Akun tanpa video: TikTok tidak selalu memuat daftar video kosong, jadi angka profilnya cukup.
+    return hasil.adaItemList === true || hasil.data.posting.length > 0 || hasil.data.jumlahVideo === 0;
+  }
+  return true;
+}
+
+export function catatanFinal(catatan) {
+  return HASIL_FINAL.includes(catatan?.hasil);
+}
+
+function masaBerlaku(catatan) {
+  return catatanFinal(catatan) ? JEDA_KIRIM_OTOMATIS_MS : JEDA_ULANG_KIRIM_GAGAL_MS;
+}
+
+/**
+ * Riwayat kiriman tanpa catatan yang masa berlakunya sudah lewat (atau rusak, atau dari masa depan
+ * — jam komputer pernah mundur), paling banyak MAKS_RIWAYAT_KIRIM yang terbaru. Selalu objek baru.
+ */
+export function pangkasRiwayatKirim(riwayat, sekarang) {
+  const isi = riwayat && typeof riwayat === "object" && !Array.isArray(riwayat) ? Object.entries(riwayat) : [];
+  const hidup = isi
+    .filter(([, c]) => c && typeof c === "object" && Number.isFinite(c.at) && c.at <= sekarang + MENIT && sekarang - c.at < masaBerlaku(c))
+    .sort((x, y) => y[1].at - x[1].at)
+    .slice(0, MAKS_RIWAYAT_KIRIM);
+  return Object.fromEntries(hidup);
+}
+
+/** Riwayat dengan catatan baru `{ ...catatan, at: sekarang }` untuk `kunci` (sekaligus dipangkas). */
+export function catatKirimOtomatis(riwayat, kunci, catatan, sekarang) {
+  const baru = pangkasRiwayatKirim(riwayat, sekarang);
+  if (kunci) {
+    delete baru[kunci];
+    baru[kunci] = { ...catatan, at: sekarang };
+  }
+  return pangkasRiwayatKirim(baru, sekarang);
+}
+
+/**
+ * Kirim pembacaan panel ini ke /otomatis sekarang? `k` = `{ tersambung, sakelar, tabOtomatis,
+ * hasil (jawaban bacaHalaman), url, riwayat, mundurSampai }`. Hasil `{ kirim: true, kunci }` atau
+ * `{ kirim: false, alasan, kunci?, sebelumnya?, sampai? }` dengan alasan BELUM_TERSAMBUNG | MATI |
+ * TAB_OTOMATIS (tab putaran otomatis melapor lewat /hasil) | BELUM_LENGKAP | SUDAH_DIKIRIM | MUNDUR.
+ */
+export function putuskanKirimOtomatis(k, sekarang) {
+  const tidak = (alasan, lain = {}) => ({ kirim: false, alasan, ...lain });
+  if (!k?.tersambung) return tidak("BELUM_TERSAMBUNG");
+  if (!sakelarKirimOtomatis(k.sakelar)) return tidak("MATI");
+  if (k.tabOtomatis) return tidak("TAB_OTOMATIS");
+  if (!bacaanLengkap(k.hasil, k.url)) return tidak("BELUM_LENGKAP");
+  const kunci = kunciKirimOtomatis(k.hasil.data);
+  if (!kunci) return tidak("BELUM_LENGKAP");
+  const sebelumnya = pangkasRiwayatKirim(k.riwayat, sekarang)[kunci];
+  if (sebelumnya) return tidak("SUDAH_DIKIRIM", { kunci, sebelumnya });
+  if (Number.isFinite(k.mundurSampai) && k.mundurSampai > sekarang) return tidak("MUNDUR", { kunci, sampai: k.mundurSampai });
+  return { kirim: true, kunci };
+}
+
+function bulatNonNegatif(v) {
+  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 ? v : 0;
+}
+
+/**
+ * Jawaban POST /otomatis (bentuk `panggil()` di background.js: `{ json, status }` atau
+ * `{ gagal, status? }`) → `{ catatan, mundurSampai, kabar }`: catatan riwayat untuk kunci itu,
+ * mundur bersama (null = tidak), dan kabar untuk panel (`teksKabarOtomatis`).
+ */
+export function setelahKirimOtomatis(r, sekarang) {
+  const json = r?.json;
+  if (json?.ok === true) {
+    const hasil = json.hasil === "DISIMPAN" ? "DISIMPAN" : "DIABAIKAN";
+    const kol = json.kol && typeof json.kol.nama === "string" ? { id: json.kol.id ?? null, nama: json.kol.nama } : null;
+    const catatan = { hasil, videoMasuk: bulatNonNegatif(json.videoMasuk), brand: bulatNonNegatif(json.brand), ...(kol ? { kol } : {}) };
+    return { catatan, mundurSampai: null, kabar: { ok: true, ...catatan } };
+  }
+  if (r?.gagal === "TERLALU_SERING") {
+    return { catatan: { hasil: "GAGAL", kode: r.gagal }, mundurSampai: sekarang + MUNDUR_TERLALU_SERING_MS, kabar: { ok: false, kode: r.gagal } };
+  }
+  if (r?.gagal === "HTTP") {
+    // Bukan JSON dari Elorae. 404 = Elorae belum punya /otomatis: jangan tanya lagi untuk sementara.
+    const kode = `HTTP_${r.status ?? "?"}`;
+    return { catatan: { hasil: "DITOLAK", kode }, mundurSampai: r.status === 404 ? sekarang + MUNDUR_TITIK_TIDAK_ADA_MS : null, kabar: { ok: false, kode } };
+  }
+  if (r?.gagal) return { catatan: { hasil: "GAGAL", kode: r.gagal }, mundurSampai: null, kabar: { ok: false, kode: r.gagal } };
+  // Elorae menolak dengan alasan (muatan, izin, KOL diblokir, ...): mengulang tidak mengubahnya.
+  const kode = typeof json?.kode === "string" ? json.kode : "DITOLAK";
+  return { catatan: { hasil: "DITOLAK", kode }, mundurSampai: null, kabar: { ok: false, kode } };
+}
+
+/** Kabar dari catatan riwayat yang sudah ada (panel dibuka lagi dalam 6 jam), atau null. */
+export function kabarDariRiwayat(catatan) {
+  if (catatan?.hasil !== "DISIMPAN" && catatan?.hasil !== "MANUAL") return null;
+  return { ok: true, hasil: catatan.hasil, sebelumnyaAt: catatan.at, ...(catatan.kol ? { kol: catatan.kol } : {}) };
+}
+
+/**
+ * Satu baris kecil di panel sesudah kiriman otomatis, atau null (diam): `{ teks, jenis }` dengan
+ * jenis "baik" | "sorot" | "galat". DIABAIKAN, kegagalan jaringan, dan penolakan lain tidak
+ * ditampilkan; yang ditampilkan hanya yang tersimpan dan yang hanya bisa dibereskan orang
+ * (sambungan dicabut, tidak punya izin).
+ */
+export function teksKabarOtomatis(kabar, sekarang = Date.now()) {
+  if (!kabar) return null;
+  if (kabar.ok) {
+    if (Number.isFinite(kabar.sebelumnyaAt)) {
+      return { teks: `Sudah tersimpan di Elorae · ${waktuWib(kabar.sebelumnyaAt, sekarang)}`, jenis: "baik" };
+    }
+    if (kabar.hasil !== "DISIMPAN") return null;
+    if (kabar.videoMasuk > 0) return { teks: `${kabar.videoMasuk} video baru masuk Performa video`, jenis: "sorot" };
+    return { teks: kabar.kol?.nama ? `Tersimpan otomatis untuk ${kabar.kol.nama}` : "Tersimpan otomatis ke Elorae", jenis: "baik" };
+  }
+  if (kabar.kode === "TOKEN_TIDAK_SAH") return { teks: "Kiriman otomatis berhenti: sambungan ke Elorae dicabut. Sambungkan ulang lewat ikon ekstensi.", jenis: "galat" };
+  if (kabar.kode === "TANPA_IZIN") return { teks: "Kiriman otomatis ditolak: orang yang menyambungkan ekstensi ini tidak punya izin mengelola Kreatif.", jenis: "galat" };
+  return null;
 }
 
 // ---------------------------------------------------------------- teks untuk popup

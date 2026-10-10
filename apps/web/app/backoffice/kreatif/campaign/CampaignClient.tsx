@@ -9,20 +9,41 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatusPill } from "@/components/ui/status-pill";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { angkaTitik, rupiahTeks } from "@/lib/creative/angka-konten";
+import { SEMUA_STATUS_CAMPAIGN, type RingkasanDaftarCampaign, type StatusCampaignKol } from "@/lib/creative/campaign-aturan";
 import type { BarisCampaign, StatusCampaign } from "@/lib/creative/campaign-queries";
 import { alamatKolaborasi, PARAM_KOLABORASI_AWAL } from "@/lib/creative/kolaborasi-param";
 import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
+import { KartuAngka } from "../kolaborasi/bagian";
+import { ringkasAngka } from "../kol/format-kol";
 import { BarBudget, TeksRoas } from "./BarBudget";
 import { FormCampaign, type AwalCampaign } from "./FormCampaign";
 
 const STATUS: readonly StatusCampaign[] = ["semua", "aktif", "arsip"];
 
-export function alamatCampaign(status: StatusCampaign): string {
-  return status === "semua" ? "/backoffice/kreatif/campaign" : `/backoffice/kreatif/campaign?status=${status}`;
+/** `?status=` = saringan arsip (aktif/arsip); `?keadaan=` = status campaign (DRAFT/BERJALAN/SELESAI/BATAL). */
+export function alamatCampaign(status: StatusCampaign, keadaan: StatusCampaignKol | "" = ""): string {
+  const p = new URLSearchParams();
+  if (status !== "semua") p.set("status", status);
+  if (keadaan) p.set("keadaan", keadaan);
+  const q = p.toString();
+  return q ? `/backoffice/kreatif/campaign?${q}` : "/backoffice/kreatif/campaign";
+}
+
+/** Nada pil status campaign: berjalan menonjol, selesai tenang, batal dan draft redup. */
+export const NADA_STATUS_CAMPAIGN: Record<StatusCampaignKol, StatusTone> = {
+  DRAFT: "waiting",
+  BERJALAN: "progress",
+  SELESAI: "settled",
+  BATAL: "inactive",
+};
+
+export function PilStatusCampaign({ status }: { status: StatusCampaignKol }) {
+  const t = useTranslations("kreatifRuang.campaign");
+  return <StatusPill tone={NADA_STATUS_CAMPAIGN[status]}>{t(`keadaan.${status}`)}</StatusPill>;
 }
 
 export function keAwalCampaign(c: BarisCampaign & { brief?: string | null; note?: string | null }): AwalCampaign {
@@ -37,6 +58,8 @@ export function keAwalCampaign(c: BarisCampaign & { brief?: string | null; note?
     anggaran: c.anggaran,
     targetKol: c.targetKol,
     targetContent: c.targetContent,
+    targetViews: c.targetViews,
+    status: c.status,
     brief: c.brief ?? null,
     note: c.note ?? null,
     arsip: c.arsip,
@@ -73,12 +96,19 @@ export function AngkaTarget({ n, target }: { n: number; target: number | null })
 export function CampaignClient({
   baris,
   jumlah,
+  jumlahStatus,
   status,
+  keadaan,
+  ringkasan,
   bolehMengelola,
 }: {
   baris: BarisCampaign[];
   jumlah: Record<StatusCampaign, number>;
+  jumlahStatus: Record<StatusCampaignKol, number>;
   status: StatusCampaign;
+  keadaan: StatusCampaignKol | "";
+  /** Ringkasan atas — tidak ikut saringan (`ringkasanDaftarCampaign`). */
+  ringkasan: RingkasanDaftarCampaign;
   bolehMengelola: boolean;
 }) {
   const t = useTranslations("kreatifRuang.campaign");
@@ -104,26 +134,64 @@ export function CampaignClient({
         }
       />
 
-      <div className="flex flex-wrap gap-2" role="group" aria-label={t("saringLabel")}>
-        {STATUS.map((s) => {
-          const aktif = s === status;
-          return (
-            <button
-              key={s}
-              type="button"
-              aria-pressed={aktif}
-              onClick={() => mulai(() => router.replace(alamatCampaign(s), { scroll: false }))}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                aktif ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted",
-              )}
-            >
-              {t(`saring.${s}`)}
-              <span className={cn("text-xs tabular-nums", aktif ? "opacity-90" : "text-muted-foreground")}>{jumlah[s]}</span>
-            </button>
-          );
-        })}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6">
+        <KartuAngka label={t("ringkasan.kol")}>{angkaTitik(ringkasan.jumlahKol)}</KartuAngka>
+        <KartuAngka label={t("ringkasan.pengikut")}>
+          <span title={angkaTitik(ringkasan.totalPengikut)}>{ringkasAngka(ringkasan.totalPengikut)}</span>
+        </KartuAngka>
+        <KartuAngka label={t("ringkasan.berjalan")}>{angkaTitik(ringkasan.berjalan)}</KartuAngka>
+        <KartuAngka label={t("ringkasan.budget")}>{rupiahTeks(ringkasan.budget)}</KartuAngka>
+        <KartuAngka label={t("ringkasan.terpakai")}>{rupiahTeks(ringkasan.terpakai)}</KartuAngka>
+        <KartuAngka label={t("ringkasan.views")}>
+          <span title={angkaTitik(ringkasan.views)}>{ringkasAngka(ringkasan.views)}</span>
+        </KartuAngka>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex flex-wrap gap-2" role="group" aria-label={t("saringLabel")}>
+          {STATUS.map((s) => {
+            const aktif = s === status;
+            return (
+              <button
+                key={s}
+                type="button"
+                aria-pressed={aktif}
+                onClick={() => mulai(() => router.replace(alamatCampaign(s, keadaan), { scroll: false }))}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  aktif ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted",
+                )}
+              >
+                {t(`saring.${s}`)}
+                <span className={cn("text-xs tabular-nums", aktif ? "opacity-90" : "text-muted-foreground")}>{jumlah[s]}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-2" role="group" aria-label={t("saringStatusLabel")}>
+          {(["", ...SEMUA_STATUS_CAMPAIGN] as const).map((k) => {
+            const aktif = k === keadaan;
+            return (
+              <button
+                key={k || "semua"}
+                type="button"
+                aria-pressed={aktif}
+                onClick={() => mulai(() => router.replace(alamatCampaign(status, k), { scroll: false }))}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  aktif ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:bg-muted",
+                )}
+              >
+                {k ? t(`keadaan.${k}`) : t("saringStatusSemua")}
+                {k ? (
+                  <span className={cn("text-xs tabular-nums", aktif ? "opacity-90" : "text-muted-foreground")}>{jumlahStatus[k]}</span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <Card>
@@ -137,7 +205,15 @@ export function CampaignClient({
           {baris.length === 0 ? (
             <EmptyState
               icon={Flag}
-              title={status === "arsip" ? t("kosongArsip") : status === "aktif" && jumlah.semua > 0 ? t("kosongAktif") : t("kosongJudul")}
+              title={
+                keadaan && jumlah.semua > 0
+                  ? t("kosongStatus", { status: t(`keadaan.${keadaan}`) })
+                  : status === "arsip"
+                    ? t("kosongArsip")
+                    : status === "aktif" && jumlah.semua > 0
+                      ? t("kosongAktif")
+                      : t("kosongJudul")
+              }
               description={jumlah.semua === 0 ? t("kosongIsi") : undefined}
               action={
                 bolehMengelola && status !== "arsip" ? (
@@ -175,6 +251,7 @@ export function CampaignClient({
                           <Link href={`/backoffice/kreatif/campaign/${c.id}`} className="font-medium text-foreground hover:underline">
                             {c.name}
                           </Link>
+                          <PilStatusCampaign status={c.status} />
                           {c.arsip ? <StatusPill tone="inactive">{t("arsip")}</StatusPill> : null}
                         </div>
                         {c.brand || c.product ? (

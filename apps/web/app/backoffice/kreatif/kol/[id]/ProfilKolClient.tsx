@@ -17,6 +17,7 @@ import { TombolWa } from "@/components/kreatif/TombolWa";
 import { inisial, urlProfil } from "@/lib/creative/kol-aturan";
 import { alamatLengkap, nadaTahap, teksAlamatKirim } from "@/lib/creative/kolaborasi-tampil";
 import type { ProfilKol, RiwayatPengikut } from "@/lib/creative/kol-queries";
+import { isiRateFormat } from "@/lib/creative/rate-format";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { DialogKol } from "../DialogKol";
@@ -70,6 +71,7 @@ export function ProfilKolClient({
   niche,
   labelSaran,
   panelCatatan,
+  panelBrand,
   kartuPajak,
   kartuFormulir,
   tabAwal = "kolaborasi",
@@ -81,6 +83,8 @@ export function ProfilKolClient({
   niche: readonly string[];
   labelSaran: readonly string[];
   panelCatatan: ReactNode;
+  /** Tab "Brand": riwayat brand yang ditandai KOL ini (komponen server `PanelBrandKol`). */
+  panelBrand?: ReactNode;
   /** Kartu "Pajak & rekening" (komponen server `KartuPajakKol`). */
   kartuPajak?: ReactNode;
   /** Kartu "Link formulir data" (komponen server `KartuFormulirKol`). */
@@ -224,6 +228,12 @@ export function ProfilKolClient({
               {baris(t("kol.kolom.er"), f.engagementRate !== null ? persenTeks(f.engagementRate) : null)}
               {baris(t("kol.form.avgViews"), f.avgViews !== null ? angkaPenuh(f.avgViews) : null)}
               {baris(t("kol.profil.rateCard"), f.rateCard !== null ? rupiahLayar(f.rateCard) : null)}
+              {baris(
+                t("kol.profil.rateFormat"),
+                isiRateFormat(f.rateFormat ?? {})
+                  .map((x) => `${tc(`format${x.format}`)} ${rupiahLayar(x.rupiah)}`)
+                  .join(" · ") || null,
+              )}
               {baris(t("kol.profil.rateNote"), f.rateNote)}
             </dl>
             {f.note && <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm whitespace-pre-wrap">{f.note}</p>}
@@ -259,6 +269,7 @@ export function ProfilKolClient({
           <TabsTrigger value="konten">
             {t("kol.profil.tab.konten")} <span className="ml-1 tabular-nums text-muted-foreground">{profil.konten.length}</span>
           </TabsTrigger>
+          <TabsTrigger value="brand">{t("kol.profil.tab.brand")}</TabsTrigger>
           <TabsTrigger value="ukuran">{t("kol.profil.tab.ukuran")}</TabsTrigger>
           <TabsTrigger value="pengikut">{t("kol.profil.tab.pengikut")}</TabsTrigger>
           <TabsTrigger value="catatan">{t("kol.profil.tab.catatan")}</TabsTrigger>
@@ -382,6 +393,8 @@ export function ProfilKolClient({
             </div>
           )}
         </TabsContent>
+
+        <TabsContent value="brand">{panelBrand}</TabsContent>
 
         <TabsContent value="ukuran" className="space-y-4">
           {kartuFormulir}

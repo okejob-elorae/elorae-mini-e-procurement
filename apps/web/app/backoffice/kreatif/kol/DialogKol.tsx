@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition, type ReactNode } from "react";
+import { Fragment, useMemo, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertTriangle, ClipboardPaste, Loader2, Plus, X } from "lucide-react";
@@ -30,6 +30,7 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { formatDisplayDate } from "@/lib/date-only";
 import { SEMUA_PLATFORM, type Platform } from "@/lib/creative/aturan";
 import { bacaLabel } from "@/lib/creative/kol-aturan";
+import { FORMAT_RATE, type FormatRate } from "@/lib/creative/rate-format";
 import type { DataFormKol } from "@/lib/creative/kol-queries";
 import type { IsiKol, KembarDitemukan } from "@/lib/creative/kol-writer";
 import { pesanGagalKol } from "./format-kol";
@@ -54,6 +55,8 @@ type Form = {
   hijab: "" | "ya" | "tidak";
   catatanFit: string;
   rateCard: string;
+  /** Tarif per format konten, teks isian (kosong = tidak diisi). */
+  rateFormat: Record<FormatRate, string>;
   rateNote: string;
   label: string;
   note: string;
@@ -83,6 +86,7 @@ function dariAwal(awal: DataFormKol | null): Form {
     hijab: awal?.ukuran.hijab === true ? "ya" : awal?.ukuran.hijab === false ? "tidak" : "",
     catatanFit: awal?.ukuran.catatan ?? "",
     rateCard: angkaKeTeks(awal?.rateCard),
+    rateFormat: Object.fromEntries(FORMAT_RATE.map((f) => [f, angkaKeTeks(awal?.rateFormat?.[f])])) as Record<FormatRate, string>,
     rateNote: awal?.rateNote ?? "",
     label: awal?.label ?? "",
     note: awal?.note ?? "",
@@ -191,10 +195,11 @@ function IsiDialogKol({
     );
   };
   const rateCard = bacaOpsional(form.rateCard);
+  const rateFormat = FORMAT_RATE.map((f) => bacaOpsional(form.rateFormat[f], true));
   const tinggi = bacaOpsional(form.tinggi, true);
   const pengikut = form.akun.map((a) => bacaOpsional(a.pengikut, true));
   const adaHandle = form.akun.some((a) => a.handle.trim());
-  const angkaRusak = [er, avgViews, rateCard, tinggi, ...pengikut].some((n) => Number.isNaN(n));
+  const angkaRusak = [er, avgViews, rateCard, tinggi, ...pengikut, ...rateFormat].some((n) => Number.isNaN(n));
   const labelSekarang = bacaLabel(form.label).map((l) => l.toLowerCase());
 
   const tutup = () => {
@@ -224,6 +229,8 @@ function IsiDialogKol({
         catatan: form.catatanFit || null,
       },
       rateCard,
+      // Selalu dikirim utuh dari formulir ini: format yang dikosongkan ikut terhapus.
+      rateFormat: Object.fromEntries(FORMAT_RATE.flatMap((f, i) => (rateFormat[i] === null ? [] : [[f, rateFormat[i]]]))),
       rateNote: form.rateNote || null,
       label: form.label || null,
       note: form.note || null,
@@ -472,6 +479,26 @@ function IsiDialogKol({
               <Input id="kol-ratenote" value={form.rateNote} onChange={(e) => setForm({ rateNote: e.target.value })} />
             ))}
           </div>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">{t("kol.form.rateFormat")}</legend>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {FORMAT_RATE.map((f, i) => (
+                <Fragment key={f}>
+                  {bidang(`kol-rate-${f}`, tc(`format${f}`), (
+                    <Input
+                      id={`kol-rate-${f}`}
+                      inputMode="decimal"
+                      className="tabular-nums"
+                      placeholder={t("kol.form.rateCardPh")}
+                      aria-invalid={Number.isNaN(rateFormat[i])}
+                      value={form.rateFormat[f]}
+                      onChange={(e) => setForm({ rateFormat: { ...form.rateFormat, [f]: e.target.value } })}
+                    />
+                  ), galatAngka(rateFormat[i]))}
+                </Fragment>
+              ))}
+            </div>
+          </fieldset>
           {bidang("kol-label", t("kol.form.label"), (
             <>
               <Input id="kol-label" placeholder={t("kol.form.labelPh")} value={form.label} onChange={(e) => setForm({ label: e.target.value })} />

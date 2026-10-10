@@ -11,6 +11,8 @@ import {
   type KodeTolakTemplate,
 } from "@/lib/creative/pengaturan";
 import { variabelTakDikenal, type IdentitasKreatif, type TemplateWa } from "@/lib/creative/wa";
+import type { AmbangTier, GalatTier } from "@/lib/creative/tier";
+import { simpanAmbangTierKreatif } from "@/lib/creative/tier-pengaturan";
 
 /*
  * Pengaturan Ruang KOL (ambang, identitas pesan, template WhatsApp).
@@ -89,6 +91,25 @@ export async function simpanTemplateWaKreatifAction(
     return r;
   } catch (err) {
     console.error("simpanTemplateWaKreatif gagal:", err);
+    return { ok: false, kode: "GAGAL" };
+  }
+}
+
+/**
+ * Batas tier KOL (`kreatif.tier`). Tier dihitung saat dibaca, jadi menyimpan
+ * langsung mengubah tier di daftar KOL, saringan, dan profil.
+ */
+export async function simpanAmbangTierAction(
+  input: Record<string, unknown>,
+): Promise<{ ok: true; ambang: AmbangTier } | { ok: false; kode: "TIDAK_VALID"; galat: GalatTier[] } | Gagal> {
+  const oleh = await penulis();
+  if (!oleh) return { ok: false, kode: "TANPA_AKSES" };
+  try {
+    const r = await simpanAmbangTierKreatif(input, oleh);
+    if (r.ok) segarkan();
+    return r;
+  } catch (err) {
+    console.error("simpanAmbangTierKreatif gagal:", err);
     return { ok: false, kode: "GAGAL" };
   }
 }

@@ -2,7 +2,10 @@
 // - menampung daftar video yang ditangkap halaman-utama.js (postMessage, sumber divalidasi);
 // - menjawab permintaan "bacaHalaman" dari service worker (putaran otomatis);
 // - mode manual: panel kecil di kanan bawah halaman profil/video dengan tombol "Simpan ke Elorae",
-//   TIDAK ditampilkan di tab latar yang dibuka putaran otomatis.
+//   TIDAK ditampilkan di tab latar yang dibuka putaran otomatis;
+// - kiriman otomatis (v0.10.0): begitu panel selesai membaca profil (dengan daftar videonya) atau
+//   video, pembacaan itu dikirim sendiri ke Elorae lewat service worker (POST /otomatis). Syarat
+//   dan batas 6 jam per akun/video diputuskan lib/aturan.js; sakelarnya di popup.
 // Skrip klasik: lib/pengurai.js dimuat dengan import() dinamis (terdaftar di
 // web_accessible_resources khusus www.tiktok.com).
 (() => {
@@ -188,6 +191,9 @@
   const muatKalender = import(chrome.runtime.getURL("lib/kalender.js")).then((m) => (kal = m));
   let gaya = null;
   const muatGaya = import(chrome.runtime.getURL("lib/tampilan.js")).then((m) => (gaya = m));
+  // Keputusan kiriman otomatis (bacaan lengkap? kunci 6 jam? teks kabar) — modul murni.
+  let aturan = null;
+  const muatAturan = import(chrome.runtime.getURL("lib/aturan.js")).then((m) => (aturan = m));
   const TEKS_STATUS = {
     CAPTCHA: "TikTok meminta captcha. Selesaikan dulu, lalu tekan Baca ulang.",
     LOGIN: "TikTok meminta masuk (login).",
@@ -210,6 +216,12 @@
   let panel = null;
   let hasilTerakhir = null;
   let pesanSimpan = null;
+  /** Kabar kiriman otomatis untuk halaman ini: `{ url, teks, jenis, tautan? }` atau null. */
+  let kabarOtomatis = null;
+  /** Kunci kiriman otomatis → waktu boleh bertanya lagi ke service worker (Infinity = selesai untuk halaman ini). */
+  const tanyaOtomatisLagi = new Map();
+  const sedangKirimOtomatis = new Set();
+  const JEDA_TANYA_ULANG_MS = 60_000;
   let menyimpan = false;
   let urlTerakhir = location.href;
   let tundaPerbarui = null;
@@ -425,6 +437,12 @@
       stroke-linecap: round; stroke-linejoin: round; }
 
     .catatan { color: var(--redup); font-size: 12px; }
+    .kabar-otomatis { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--redup); font-size: 12px; }
+    .kabar-otomatis svg { width: 13px; height: 13px; color: var(--naik); }
+    .kabar-otomatis span { min-width: 0; }
+    .kabar-otomatis.sorot { color: var(--teks); font-weight: 700; }
+    .kabar-otomatis.galat svg { color: var(--turun); }
+    .kabar-otomatis a { margin-left: auto; color: var(--aksen); font-weight: 700; white-space: nowrap; text-decoration: underline; }
     .status { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; border-radius: 12px; padding: 8px 10px; }
     .status svg { margin-top: 1px; }
     .status.galat { background: color-mix(in srgb, var(--turun) 14%, transparent); color: var(--turun); }
@@ -569,11 +587,13 @@
     panel = { host, akar, wadah, kecil: Boolean(setelan?.kecil), animasi: true, tampilan, mengetik: false, tertunda: false, patokan: null };
     panel.patokan = await kirimKeLatar({ jenis: "bacaPatokan" });
     pantauTemaHalaman();
+    pantauSakelarKirim();
     await perbaruiPanel();
     setInterval(() => {
       if (location.href !== urlTerakhir) {
         urlTerakhir = location.href;
         pesanSimpan = null;
+        kabarOtomatis = null;
         panel.animasi = true;
         perbaruiPanel();
       }
@@ -600,6 +620,8 @@
       hasilTerakhir = { status: "TIDAK_TERBACA", pesan: String(e?.message ?? e) };
     }
     membaca = false;
+    // Tidak ditunggu: menggambar panel tidak boleh menunggu Elorae.
+    kirimOtomatisBilaPerlu(hasilTerakhir).catch(() => {});
     // Jangan gambar ulang di tengah orang mengetik harga — isiannya akan kehilangan fokus.
     if (panel.mengetik) {
       panel.tertunda = true;
@@ -1542,6 +1564,20 @@
       kartu.append(el("div", { kelas: "status galat", role: "status" }, ikon("awas"), el("span", { teks })));
     }
 
+    // Kabar kiriman otomatis — diam bila "Simpan ke Elorae" baru saja memberi pesannya sendiri.
+    if (kabarOtomatis?.url === location.href && !pesanSimpan) {
+      const k = kabarOtomatis;
+      kartu.append(
+        el(
+          "div",
+          { kelas: `kabar-otomatis ${k.jenis}`, role: "status" },
+          ikon(k.jenis === "galat" ? "awas" : k.jenis === "sorot" ? "video" : "centang"),
+          el("span", { teks: k.teks }),
+          k.tautan ? el("a", { href: k.tautan, target: "_blank", rel: "noopener noreferrer", teks: "Buka" }) : null,
+        ),
+      );
+    }
+
     if (pesanSimpan) {
       kartu.append(
         el("div", { kelas: `status ${pesanSimpan.baik ? "baik" : "galat"}`, role: "status" }, ikon(pesanSimpan.baik ? "centang" : "awas"), el("span", { teks: pesanSimpan.teks })),
@@ -1598,6 +1634,56 @@
       pesanSimpan = { baik: false, teks: TEKS_SIMPAN[kode] ?? `Gagal menyimpan (${kode}).` };
     }
     gambar(pengurai?.jenisHalaman(location.href));
+  }
+
+  // ------------------------------------------------ kiriman otomatis (tanpa tombol)
+  async function sakelarKirimNyala(at) {
+    try {
+      const r = await chrome.storage.local.get(at.KUNCI_SAKELAR_KIRIM_OTOMATIS);
+      return at.sakelarKirimOtomatis(r?.[at.KUNCI_SAKELAR_KIRIM_OTOMATIS]);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Bacaan lengkap → minta service worker mengirimnya (service worker memutuskan ulang semuanya:
+   * sambungan, sakelar, tab otomatis, 6 jam per akun/video). Di sini hanya penyaring murah supaya
+   * setiap bacaan ulang (gulir, tangkapan daftar video) tidak mengirim pesan berisi 200 posting.
+   */
+  async function kirimOtomatisBilaPerlu(h) {
+    const at = await muatAturan.catch(() => null);
+    if (!at || !panel) return;
+    const url = location.href;
+    if (!at.bacaanLengkap(h, url)) return;
+    const kunci = at.kunciKirimOtomatis(h.data);
+    if (!kunci || sedangKirimOtomatis.has(kunci) || (tanyaOtomatisLagi.get(kunci) ?? 0) > Date.now()) return;
+    if (!(await sakelarKirimNyala(at))) return;
+    sedangKirimOtomatis.add(kunci);
+    let jawaban = null;
+    try {
+      jawaban = await kirimKeLatar({ jenis: "kirimOtomatis", url, data: h.data, adaItemList: h.adaItemList === true });
+    } finally {
+      sedangKirimOtomatis.delete(kunci);
+    }
+    tanyaOtomatisLagi.set(kunci, jawaban?.selesai ? Infinity : Date.now() + JEDA_TANYA_ULANG_MS);
+    if (!panel || location.href !== url) return;
+    const tampil = at.teksKabarOtomatis(jawaban?.kabar);
+    if (!tampil) return;
+    kabarOtomatis = { url, ...tampil, tautan: tampil.jenis === "sorot" ? (jawaban?.performaUrl ?? null) : null };
+    if (panel.mengetik) panel.tertunda = true;
+    else gambar(pengurai?.jenisHalaman(location.href));
+  }
+
+  /** Sakelar di popup dinyalakan lagi → halaman yang sedang terbuka langsung ikut dikirim. */
+  function pantauSakelarKirim() {
+    chrome.storage.onChanged.addListener((perubahan, area) => {
+      if (area !== "local" || !aturan || !(aturan.KUNCI_SAKELAR_KIRIM_OTOMATIS in perubahan)) return;
+      tanyaOtomatisLagi.clear();
+      if (aturan.sakelarKirimOtomatis(perubahan[aturan.KUNCI_SAKELAR_KIRIM_OTOMATIS].newValue)) {
+        kirimOtomatisBilaPerlu(hasilTerakhir).catch(() => {});
+      }
+    });
   }
 
   function mulaiPanel() {

@@ -19,12 +19,21 @@ import { DialogKolaborasi } from "../../kolaborasi/DialogKolaborasi";
 import { KartuAngka } from "../../kolaborasi/bagian";
 import { TabelKolaborasi } from "../../kolaborasi/TabelKolaborasi";
 import { usePindahTahap } from "../../kolaborasi/usePindahTahap";
+import { persenTeks } from "../../kol/format-kol";
 import { BarBudget, TeksRoas } from "../BarBudget";
-import { keAwalCampaign, usePeriodeTeks } from "../CampaignClient";
+import { keAwalCampaign, PilStatusCampaign, usePeriodeTeks } from "../CampaignClient";
 import { FormCampaign } from "../FormCampaign";
 
-/** Target sebagai bar kemajuan "n dari target"; tanpa target hanya angkanya. */
-function BarisTarget({ label, n, target }: { label: string; n: number; target: number | null }) {
+/** Rupiah per view/interaksi: dua desimal (CPV sering di bawah Rp 10); "—" bila tidak terhitung. */
+function rupiahPecahan(n: number | null): string {
+  return n === null ? "—" : `Rp ${n.toLocaleString("id-ID", { maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Target sebagai bar kemajuan "n dari target"; tanpa target hanya angkanya.
+ * `persenTarget` (dari `metrikCampaign`) ditulis di sampingnya bila ada.
+ */
+function BarisTarget({ label, n, target, persenTarget }: { label: string; n: number; target: number | null; persenTarget?: number | null }) {
   const t = useTranslations("kreatifRuang.campaign.detail");
   const persen = target ? Math.min(100, (n / target) * 100) : 0;
   return (
@@ -33,6 +42,7 @@ function BarisTarget({ label, n, target }: { label: string; n: number; target: n
         <span>{label}</span>
         <span className="tabular-nums text-muted-foreground">
           {target ? t("dariTarget", { n, target }) : t("tanpaTarget", { n })}
+          {persenTarget !== undefined && persenTarget !== null ? ` · ${persenTeks(persenTarget)}` : null}
         </span>
       </div>
       {target ? <Progress value={persen} aria-label={label} /> : null}
@@ -77,6 +87,7 @@ export function DetailCampaignClient({
         title={
           <span className="inline-flex flex-wrap items-center gap-2">
             {c.name}
+            <PilStatusCampaign status={c.status} />
             {c.arsip ? <StatusPill tone="inactive">{t("arsip")}</StatusPill> : null}
           </span>
         }
@@ -117,6 +128,9 @@ export function DetailCampaignClient({
           <TeksRoas roas={c.roas} gmv={c.gmv} locale={locale} />
         </KartuAngka>
         <KartuAngka label={t("detail.stat.views")}>{angkaTitik(c.views)}</KartuAngka>
+        <KartuAngka label={t("detail.stat.cpv")}>{rupiahPecahan(c.metrik.cpv)}</KartuAngka>
+        <KartuAngka label={t("detail.stat.cpe")}>{rupiahPecahan(c.metrik.cpe)}</KartuAngka>
+        <KartuAngka label={t("detail.stat.er")}>{persenTeks(c.metrik.er)}</KartuAngka>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -124,7 +138,8 @@ export function DetailCampaignClient({
           <CardContent className="space-y-4 p-4">
             <p className="text-sm font-semibold">{t("detail.target")}</p>
             <BarisTarget label={t("detail.targetKol")} n={c.jumlahKol} target={c.targetKol} />
-            <BarisTarget label={t("detail.targetKonten")} n={c.jumlahKonten} target={c.targetContent} />
+            <BarisTarget label={t("detail.targetKonten")} n={c.jumlahKonten} target={c.targetContent} persenTarget={c.metrik.persenKonten} />
+            <BarisTarget label={t("detail.targetViews")} n={c.views} target={c.targetViews} persenTarget={c.metrik.persenViews} />
             {c.objective ? (
               <div className="space-y-0.5 text-sm">
                 <p className="text-xs text-muted-foreground">{t("detail.tujuan")}</p>

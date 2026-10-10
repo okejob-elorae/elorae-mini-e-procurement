@@ -263,7 +263,9 @@
     "navFinanceRekonsiliasiBank": "Rekonsiliasi bank",
     "navUmurHutang": "Umur utang",
     "navKolPemantauan": "Pemantauan",
-    "navKolPerforma": "Performa video"
+    "navKolPerforma": "Performa video",
+    "navKolBrand": "Brand",
+    "navKolPeriksa": "Periksa data"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -12045,7 +12047,8 @@
     "okDeletedMany": "{count} konten dihapus.",
     "gambarHilang": "Gambar hilang — unggah ulang",
     "platformSHOPEE": "Shopee",
-    "rowNumber": "Baris feed ke-{n}"
+    "rowNumber": "Baris feed ke-{n}",
+    "tier_mid": "Mid"
   },
   "dateRangePicker": {
     "placeholder": "Pilih rentang tanggal",
@@ -12378,7 +12381,12 @@
       "KOL_MONITOR_SETTINGS_UPDATED": "Pengaturan pemantauan diubah",
       "KOL_FORM_LINK_CREATED": "Link formulir data KOL dibuat",
       "KOL_FORM_LINK_REVOKED": "Link formulir data KOL dicabut",
-      "KOL_FORM_SUBMISSION_REVIEWED": "Data kiriman KOL ditandai dicek"
+      "KOL_FORM_SUBMISSION_REVIEWED": "Data kiriman KOL ditandai dicek",
+      "KOL_CAMPAIGN_STATUS_CHANGED": "Status campaign KOL diubah",
+      "KOL_BRAND_COLLAB_ADDED": "Brand KOL ditambahkan",
+      "KOL_BRAND_COLLAB_DELETED": "Brand KOL dihapus",
+      "KOL_CALENDAR_FEED_CREATED": "Tautan langganan Kalender Kreatif dibuat",
+      "KOL_CALENDAR_FEED_REVOKED": "Tautan langganan Kalender Kreatif dicabut"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -12487,7 +12495,9 @@
       "BankStatementLine": "Baris mutasi bank",
       "SupplierPayment": "Pembayaran pemasok",
       "KolPerangkat": "Perangkat pemantau",
-      "KolTugasPantau": "Antrean pemantauan"
+      "KolTugasPantau": "Antrean pemantauan",
+      "KolBrandCollab": "Riwayat brand KOL",
+      "KolCalendarFeed": "Langganan Kalender Kreatif"
     },
     "fields": {
       "value": "Nilai",
@@ -19679,7 +19689,9 @@
       "gulirKiri": "Gulir tab ke kiri",
       "gulirKanan": "Gulir tab ke kanan",
       "pemantauan": "Pemantauan",
-      "performa": "Performa video"
+      "performa": "Performa video",
+      "brand": "Brand",
+      "periksa": "Periksa data"
     },
     "halaman": {
       "hariIni": "Hari ini",
@@ -19695,7 +19707,9 @@
       "laporan": "Laporan",
       "pengaturan": "Pengaturan Kreatif",
       "pemantauan": "Pemantauan KOL",
-      "performa": "Performa video"
+      "performa": "Performa video",
+      "brand": "Brand",
+      "periksa": "Periksa data"
     },
     "disiapkan": {
       "judul": "Sedang disiapkan",
@@ -20042,6 +20056,35 @@
         "TANPA_AKSES": "Anda tidak punya izin mengubah agenda.",
         "GAGAL": "Gagal menyimpan. Coba lagi.",
         "TIDAK_VALID": "Periksa isian yang ditandai."
+      },
+      "langganan": {
+        "judul": "Langganan di Google Calendar",
+        "aktif": "Tautan aktif sejak {tanggal}",
+        "terakhirDibaca": "terakhir dibaca {waktu}",
+        "belumDibaca": "belum pernah dibaca",
+        "tidakAda": "Belum ada tautan langganan.",
+        "buat": "Buat tautan",
+        "buatBaru": "Buat tautan baru",
+        "cabut": "Cabut",
+        "cabutJudul": "Cabut tautan langganan?",
+        "cabutIsi": "Kalender yang berlangganan berhenti mendapat isi dari Elorae.",
+        "baruJudul": "Buat tautan baru?",
+        "baruIsi": "Tautan lama langsung berhenti bekerja. Kalender yang memakainya harus ditambahkan lagi dengan tautan baru.",
+        "batal": "Batal",
+        "siap": "Tautan ini hanya ditampilkan sekali — salin atau tambahkan sekarang.",
+        "salin": "Salin",
+        "disalin": "Tautan disalin",
+        "google": "Tambahkan ke Google Calendar",
+        "apple": "Apple Calendar (webcal)",
+        "dibuat": "Tautan langganan dibuat",
+        "dicabut": "Tautan langganan dicabut",
+        "err": {
+          "TANPA_AKSES": "Anda tidak punya akses Kreatif.",
+          "ALAMAT_TIDAK_SAH": "Alamat halaman tidak dikenali. Muat ulang halaman lalu coba lagi.",
+          "TIDAK_ADA": "Tidak ada tautan aktif.",
+          "GAGAL": "Gagal. Coba lagi.",
+          "SALIN": "Gagal menyalin. Salin manual dari kotak tautan."
+        }
       }
     },
     "pengaturan": {
@@ -20102,7 +20145,24 @@
         "VARIABEL_TAK_DIKENAL": "Template berisi variabel yang tidak dikenal: {daftar}."
       },
       "errAkses": "Anda tidak punya izin mengubah pengaturan Kreatif.",
-      "errGagal": "Gagal menyimpan. Coba lagi."
+      "errGagal": "Gagal menyimpan. Coba lagi.",
+      "tier": {
+        "judul": "Batas tier KOL",
+        "mulai": "{tier} mulai",
+        "satuan": "pengikut",
+        "simpan": "Simpan batas tier",
+        "bawaan": "Kembalikan bawaan",
+        "ok": "Batas tier tersimpan",
+        "galatAngka": "Isi bilangan bulat lebih dari 0.",
+        "galatNaik": "Harus lebih besar dari batas {tier}.",
+        "rentang": "Rentang tier",
+        "rentangBawah": "di bawah {n}",
+        "rentangAntara": "{dari}–{sampai}",
+        "rentangAtas": "{dari} ke atas",
+        "errAkses": "Anda tidak punya izin mengubah pengaturan Kreatif.",
+        "errTidakValid": "Batas tier harus bilangan bulat yang naik berurutan.",
+        "errGagal": "Gagal menyimpan. Coba lagi."
+      }
     },
     "errBayar": {
       "STATUS_TIDAK_VALID": "Status bayar tidak dikenal.",
@@ -20790,7 +20850,9 @@
         "arsip": "Arsipkan campaign ini",
         "simpan": "Simpan",
         "menyimpan": "Menyimpan…",
-        "batal": "Batal"
+        "batal": "Batal",
+        "status": "Status",
+        "targetViews": "Target views"
       },
       "ok": {
         "dibuat": "Campaign {nama} dibuat",
@@ -20802,7 +20864,8 @@
         "PERIODE_TIDAK_VALID": "Tanggal selesai tidak boleh sebelum tanggal mulai.",
         "ANGKA_TIDAK_VALID": "Budget dan target harus angka nol atau lebih.",
         "TANPA_AKSES": "Anda tidak punya akses untuk mengubah campaign.",
-        "GAGAL": "Gagal menyimpan campaign. Coba lagi."
+        "GAGAL": "Gagal menyimpan campaign. Coba lagi.",
+        "STATUS_TIDAK_VALID": "Status campaign tidak dikenal."
       },
       "detail": {
         "kolaborasi": "Kolaborasi di campaign ini",
@@ -20824,9 +20887,30 @@
           "terpakai": "Terpakai",
           "gmv": "GMV",
           "roas": "ROAS",
-          "views": "Views"
+          "views": "Views",
+          "cpv": "CPV",
+          "cpe": "CPE",
+          "er": "ER aktual"
         },
-        "lebihDari": "Lebih dari 25 kolaborasi — buka daftar kolaborasi untuk melihat semuanya."
+        "lebihDari": "Lebih dari 25 kolaborasi — buka daftar kolaborasi untuk melihat semuanya.",
+        "targetViews": "Views"
+      },
+      "saringStatusLabel": "Saring status campaign",
+      "saringStatusSemua": "Semua status",
+      "keadaan": {
+        "DRAFT": "Draft",
+        "BERJALAN": "Berjalan",
+        "SELESAI": "Selesai",
+        "BATAL": "Batal"
+      },
+      "kosongStatus": "Tidak ada campaign berstatus {status}",
+      "ringkasan": {
+        "kol": "KOL aktif",
+        "pengikut": "Total pengikut",
+        "berjalan": "Campaign berjalan",
+        "budget": "Total budget",
+        "terpakai": "Terpakai",
+        "views": "Views"
       }
     },
     "sampel": {
@@ -21123,7 +21207,8 @@
           "terisi": "Terisi: {daftar}. Periksa lalu simpan.",
           "kosong": "Tidak ada data yang terbaca. Pastikan tiap baris berbentuk \"Label: isi\", misalnya \"Alamat: Jl. Mawar 5\".",
           "takTerbaca": "{n} baris tidak terbaca."
-        }
+        },
+        "rateFormat": "Rate per format (Rp)"
       },
       "kembar": {
         "judul": "Mungkin orang yang sama",
@@ -21242,7 +21327,8 @@
           "konten": "Konten",
           "ukuran": "Ukuran, alamat & pajak",
           "pengikut": "Pengikut & ER",
-          "catatan": "Catatan & riwayat"
+          "catatan": "Catatan & riwayat",
+          "brand": "Brand"
         },
         "kolom": {
           "docNo": "No.",
@@ -21298,7 +21384,8 @@
           "shares": "Share",
           "saves": "Save"
         },
-        "feeBruto": "bruto termasuk PPh {bruto}"
+        "feeBruto": "bruto termasuk PPh {bruto}",
+        "rateFormat": "Rate per format"
       },
       "catatan": {
         "judul": "Catatan & riwayat",
@@ -21357,7 +21444,8 @@
         "field": {
           "engagementRate": "Engagement rate harus 0–100.",
           "avgViews": "Rata-rata views tidak sah.",
-          "rateCard": "Rate card tidak sah."
+          "rateCard": "Rate card tidak sah.",
+          "rateFormat": "Rate per format harus rupiah bulat, nol atau lebih."
         }
       }
     },
@@ -21906,7 +21994,8 @@
       },
       "badge": {
         "kol": "KOL",
-        "afiliasi": "Afiliasi"
+        "afiliasi": "Afiliasi",
+        "deteksi": "Terdeteksi otomatis"
       },
       "sumber": {
         "ekstensi": "Ekstensi",
@@ -22054,6 +22143,166 @@
         "BERUBAH_LAGI": "Kolom ini sudah diubah lagi sesudah kiriman KOL, jadi tidak dikembalikan.",
         "SALIN": "Gagal menyalin; salin manual dari kotak link.",
         "GAGAL": "Gagal; coba lagi."
+      }
+    },
+    "brand": {
+      "label": {
+        "ELORAE": "Elorae",
+        "KOMPETITOR": "Kompetitor"
+      },
+      "jenis": {
+        "BERBAYAR": "Berbayar",
+        "KOLABORASI": "Kolaborasi",
+        "TAG": "Tag biasa"
+      },
+      "sumber": {
+        "EKSTENSI": "Ekstensi",
+        "MANUAL": "Manual"
+      },
+      "kolom": {
+        "brand": "Brand",
+        "jenis": "Jenis",
+        "posting": "Posting",
+        "views": "Views",
+        "sumber": "Sumber",
+        "kol": "KOL",
+        "jumlahKol": "KOL",
+        "jumlahPosting": "Posting",
+        "terakhir": "Posting terakhir",
+        "berbayar": "Berbayar",
+        "kolaborasi": "Kolaborasi",
+        "tag": "Tag biasa",
+        "aksi": "Aksi"
+      },
+      "profil": {
+        "judul": "Riwayat brand",
+        "tambah": "Tambah brand",
+        "kosong": "Belum ada brand yang tercatat",
+        "kosongIsi": "Terisi sendiri setiap kali ekstensi membaca profil atau video KOL ini. Brand dari sumber lain bisa ditambahkan manual.",
+        "terpotong": "Menampilkan {n} dari {total} baris terbaru.",
+        "buka": "Buka posting",
+        "tanpaTanggal": "Tanpa tanggal",
+        "hapus": "Hapus @{brand}",
+        "hapusJudul": "Hapus baris brand ini?",
+        "hapusIsi": "@{brand} dihapus dari riwayat KOL ini.",
+        "hapusIsiEkstensi": "@{brand} dihapus dari riwayat KOL ini. Baris dari ekstensi ditulis lagi saat pembacaan berikutnya selama postingnya masih menandai brand itu.",
+        "hapusYa": "Hapus",
+        "batal": "Batal",
+        "dihapus": "Baris brand dihapus.",
+        "ditambah": "Brand ditambahkan.",
+        "lihatBrand": "Lihat semua KOL yang menandai @{brand}"
+      },
+      "form": {
+        "judul": "Tambah brand",
+        "handle": "Handle brand",
+        "handlePlaceholder": "mis. elorae.official",
+        "nama": "Nama (opsional)",
+        "jenis": "Jenis",
+        "link": "Link posting (opsional)",
+        "linkPlaceholder": "https://www.tiktok.com/@kol/video/…",
+        "tanggal": "Tanggal posting (opsional)",
+        "simpan": "Simpan",
+        "batal": "Batal",
+        "handleWajib": "Isi handle brand."
+      },
+      "err": {
+        "KOL_TIDAK_ADA": "KOL ini tidak ditemukan.",
+        "HANDLE_TIDAK_SAH": "Handle brand tidak sah, atau milik KOL ini sendiri.",
+        "JENIS_TIDAK_SAH": "Pilih jenis kerja sama.",
+        "LINK_TIDAK_SAH": "Link posting tidak sah.",
+        "TANGGAL_TIDAK_SAH": "Tanggal posting tidak sah.",
+        "SUDAH_ADA": "Posting ini sudah tercatat untuk brand itu.",
+        "TIDAK_DITEMUKAN": "Baris brand tidak ditemukan — mungkin sudah dihapus.",
+        "TANPA_AKSES": "Anda tidak punya izin mengelola Kreatif.",
+        "GAGAL": "Gagal menyimpan. Coba lagi."
+      },
+      "direktori": {
+        "meta": "{n} brand",
+        "cari": "Cari handle atau nama brand",
+        "saring": {
+          "label": "Saring brand",
+          "semua": "Semua brand",
+          "kompetitor": "Kompetitor saja",
+          "elorae": "Elorae"
+        },
+        "kosong": "Belum ada brand yang tercatat",
+        "kosongIsi": "Brand muncul di sini begitu ekstensi membaca profil atau video KOL yang menandai sebuah akun.",
+        "kosongSaring": "Tidak ada brand yang cocok dengan saringan ini.",
+        "bukaBrand": "Lihat KOL yang menandai @{brand}",
+        "kembali": "Semua brand",
+        "metaBrand": "{kol} KOL · {posting} posting",
+        "kolKosong": "Belum ada KOL yang menandai brand ini.",
+        "diblokir": "Diblokir",
+        "bukaKol": "Buka profil {nama}"
+      },
+      "pengaturan": {
+        "judul": "Brand & kompetitor",
+        "akunElorae": "Akun Elorae",
+        "akunEloraePetunjuk": "Handle TikTok, tanpa @. Enter untuk menambah.",
+        "tagarElorae": "Tagar Elorae",
+        "tagarEloraePetunjuk": "Tanpa #. Enter untuk menambah.",
+        "kompetitor": "Kompetitor",
+        "kompetitorKosong": "Belum ada kompetitor.",
+        "handleKompetitor": "Handle kompetitor",
+        "namaKompetitor": "Nama",
+        "tambahKompetitor": "Tambah",
+        "hapusKompetitor": "Hapus {handle}",
+        "otomatis": "Video yang menandai Elorae masuk Performa video otomatis",
+        "simpan": "Simpan",
+        "ok": "Pengaturan brand disimpan.",
+        "err": {
+          "TIDAK_VALID": "Isian tidak sah.",
+          "HANDLE_TIDAK_SAH": "Handle tidak sah: {nilai}",
+          "TAGAR_TIDAK_SAH": "Tagar tidak sah: {nilai}",
+          "TERLALU_BANYAK": "Isiannya terlalu banyak.",
+          "BENTROK": "@{nilai} sudah tercatat sebagai akun Elorae."
+        }
+      }
+    },
+    "periksa": {
+      "meta": "{n} temuan · diperiksa {waktu}",
+      "metaBersih": "Tidak ada temuan · diperiksa {waktu}",
+      "ulang": "Periksa ulang",
+      "temuan": "{n} temuan",
+      "bersih": "Beres",
+      "tidakAda": "Tidak ada",
+      "lainnya": "{n} lainnya tidak ditampilkan",
+      "bagian": {
+        "kembar": "KOL kembar",
+        "yatim": "Menunjuk data yang tidak ada",
+        "tanggal": "Tanggal",
+        "angka": "Angka",
+        "kelengkapan": "Kelengkapan"
+      },
+      "jenis": {
+        "KOL_KEMBAR": "KOL dengan WA atau handle yang sama",
+        "AKUN_TANPA_KOL": "Akun tanpa KOL",
+        "KOLABORASI_TANPA_KOL": "Kolaborasi tanpa KOL",
+        "KOLABORASI_TANPA_CAMPAIGN": "Kolaborasi dengan campaign yang tidak ada",
+        "KONTEN_TANPA_KOLABORASI": "Konten tanpa kolaborasi",
+        "ANGKA_TANPA_KONTEN": "Bacaan angka tanpa konten",
+        "PENGIRIMAN_TANPA_KOLABORASI": "Pengiriman sampel tanpa kolaborasi",
+        "TERMIN_TANPA_KOLABORASI": "Termin bayar tanpa kolaborasi",
+        "BRAND_TANPA_KOL": "Riwayat brand tanpa KOL",
+        "CAMPAIGN_TANGGAL_TERBALIK": "Campaign selesai sebelum mulai",
+        "KOLABORASI_TANGGAL_TERBALIK": "Kolaborasi bertenggat sebelum tanggal mulai",
+        "KONTEN_TAYANG_MASA_DEPAN": "Konten tayang di masa depan",
+        "LIKE_LEBIH_DARI_VIEWS": "Like lebih banyak dari views",
+        "VIEWS_TURUN": "Views turun dari bacaan sebelumnya",
+        "KOL_TANPA_AKUN": "KOL tanpa akun",
+        "TAYANG_TANPA_KONTEN": "Sudah tayang tanpa konten"
+      },
+      "rincian": {
+        "waSama": "WA sama: {wa}",
+        "handleSama": "Handle sama: {handle}",
+        "yatim": "Menunjuk id {id} yang tidak ada",
+        "tanggalCampaign": "Mulai {mulai} · selesai {selesai}",
+        "tanggalKolaborasi": "Mulai {mulai} · tenggat {selesai}",
+        "tayang": "Tayang {tanggal}",
+        "likeViews": "{likes} like dari {views} views · {waktu}",
+        "viewsTurun": "{sebelum} views ({waktuSebelum}) → {sesudah} views ({waktu})",
+        "kali": "{n} bacaan",
+        "tahap": "Tahap {tahap}"
       }
     }
   },

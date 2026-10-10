@@ -48,4 +48,4 @@ export function pesanGagalKol(t: Penerjemah, kode: string, detail?: string): str
 }
 
 /** Tier makin tinggi makin menonjol, tapi tidak ada yang "buruk" — nano bukan cacat. */
-export const NADA_TIER: Record<Tier, StatusTone> = { nano: "inactive", mikro: "waiting", makro: "progress", mega: "settled" };
+export const NADA_TIER: Record<Tier, StatusTone> = { nano: "inactive", mikro: "waiting", mid: "waiting", makro: "progress", mega: "settled" };

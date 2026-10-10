@@ -9,6 +9,7 @@ import {
   SEMUA_PLATFORM,
   stokKembaliSaatBatal,
   stokPerluKeluar,
+  SEMUA_TIER,
   tierKol,
 } from './aturan';
 import type { Tahap } from './tahap';
@@ -69,22 +70,40 @@ describe('platform', () => {
   });
 });
 
-describe('tierKol', () => {
-  it('dihitung dari akun dengan pengikut TERBANYAK, bukan dijumlahkan', () => {
+describe("tierKol", () => {
+  it("dihitung dari akun dengan pengikut TERBANYAK, bukan dijumlahkan", () => {
     // Menjumlahkan pengikut lintas platform menghitung orang yang sama dua kali.
-    expect(tierKol([9_000, 40_000])).toBe('mikro');
+    expect(tierKol([9_000, 40_000])).toBe("mikro");
   });
 
-  it('memberi tier terendah pada KOL tanpa akun sama sekali', () => {
-    expect(tierKol([])).toBe('nano');
+  it("memberi tier terendah pada KOL tanpa akun sama sekali", () => {
+    expect(tierKol([])).toBe("nano");
   });
 
-  it('memisahkan keempat tingkatnya di ambangnya', () => {
-    expect(tierKol([9_999])).toBe('nano');
-    expect(tierKol([10_000])).toBe('mikro');
-    expect(tierKol([99_999])).toBe('mikro');
-    expect(tierKol([100_000])).toBe('makro');
-    expect(tierKol([1_000_000])).toBe('mega');
+  it("memisahkan kelima tingkatnya di ambang bawaan", () => {
+    expect(tierKol([9_999])).toBe("nano");
+    expect(tierKol([10_000])).toBe("mikro");
+    expect(tierKol([99_999])).toBe("mikro");
+    expect(tierKol([100_000])).toBe("mid");
+    expect(tierKol([499_999])).toBe("mid");
+    expect(tierKol([500_000])).toBe("makro");
+    expect(tierKol([999_999])).toBe("makro");
+    expect(tierKol([1_000_000])).toBe("mega");
+  });
+
+  it("memakai ambang yang diberikan, bukan bawaan", () => {
+    const ambang = { mikro: 5_000, mid: 50_000, makro: 200_000, mega: 2_000_000 };
+    expect(tierKol([4_999], ambang)).toBe("nano");
+    expect(tierKol([5_000], ambang)).toBe("mikro");
+    expect(tierKol([50_000], ambang)).toBe("mid");
+    expect(tierKol([200_000], ambang)).toBe("makro");
+    // 1 juta masih makro karena mega baru mulai 2 juta.
+    expect(tierKol([1_000_000], ambang)).toBe("makro");
+    expect(tierKol([2_000_000], ambang)).toBe("mega");
+  });
+
+  it("SEMUA_TIER memuat kelima tingkat dari terendah ke tertinggi", () => {
+    expect(SEMUA_TIER).toEqual(["nano", "mikro", "mid", "makro", "mega"]);
   });
 });
 

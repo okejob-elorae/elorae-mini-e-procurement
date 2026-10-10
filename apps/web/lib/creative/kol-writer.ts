@@ -5,6 +5,7 @@ import { catatJejak, JEJAK } from "@/lib/receivables/jejak";
 import type { Platform } from "./aturan";
 import { cariKembar, normalisasiHandle, type SebabKembar } from "./kembar";
 import { BATAS_TEMPEL, tulisLabel, tulisProfilUkuran, type ProfilUkuran } from "./kol-aturan";
+import { bacaRateFormat, tulisRateFormat, validasiRateFormat, type RateFormat } from "./rate-format";
 import { normalisasiWa } from "./wa";
 import type { AlasanGagalKreatif, HasilKreatif } from "./writer";
 
@@ -74,6 +75,13 @@ export type IsiKol = {
   phone?: string | null;
   email?: string | null;
   rateCard?: number | null;
+  /**
+   * Tarif per format konten (rupiah bulat). `undefined` = tidak disentuh —
+   * penulis lain (ekstensi, tempel link, formulir data KOL) tidak membawanya,
+   * jadi rate card per format tidak pernah terhapus diam-diam; `null` atau
+   * objek kosong mengosongkan.
+   */
+  rateFormat?: RateFormat | null;
   rateNote?: string | null;
   note?: string | null;
   /** Label dipisah koma ("favorit, hijab") atau daftar. */
@@ -125,6 +133,7 @@ type Kolom = {
   waNormal?: string | null;
   email?: string | null;
   rateCard?: Prisma.Decimal | null;
+  rateFormat?: string | null;
   rateNote?: string | null;
   note?: string | null;
   label?: string | null;
@@ -141,6 +150,14 @@ function kolomDariIsi(isi: IsiKol, nama: string): { kolom: Kolom } | { galat: st
   if (views !== undefined && views !== null && (!Number.isFinite(views) || views < 0)) return { galat: "avgViews" };
   const rate = isi.rateCard;
   if (rate !== undefined && rate !== null && (!Number.isFinite(rate) || rate < 0)) return { galat: "rateCard" };
+  let rateFormat: string | null | undefined;
+  if (isi.rateFormat === undefined) rateFormat = undefined;
+  else if (isi.rateFormat === null) rateFormat = null;
+  else {
+    const v = validasiRateFormat(isi.rateFormat);
+    if (!v.ok) return { galat: "rateFormat" };
+    rateFormat = tulisRateFormat(v.rate);
+  }
   const phone = teks(isi.phone, 40);
   const kolom: Kolom = {
     name: nama,
@@ -154,6 +171,7 @@ function kolomDariIsi(isi: IsiKol, nama: string): { kolom: Kolom } | { galat: st
     waNormal: phone === undefined ? undefined : normalisasiWa(phone),
     email: teks(isi.email),
     rateCard: rate === undefined ? undefined : rate === null ? null : D(rate),
+    rateFormat,
     rateNote: teks(isi.rateNote, BATAS_TEKS.panjang),
     note: teks(isi.note, BATAS_TEKS.catatan),
     label: isi.label === undefined ? undefined : tulisLabel(isi.label),
@@ -267,6 +285,7 @@ export async function simpanProfilKolDiTx(tx: Klien, input: IsiSimpanProfilKol):
           waNormal: true,
           email: true,
           rateCard: true,
+          rateFormat: true,
           rateNote: true,
           note: true,
           label: true,
@@ -328,8 +347,10 @@ export async function simpanProfilKolDiTx(tx: Klien, input: IsiSimpanProfilKol):
   const sesudah: Record<string, unknown> = {};
   for (const [kunci, nilai] of Object.entries(kolom)) {
     if (kunci === "waNormal") continue;
-    const lamaNilai = nilaiJejak((lama as Record<string, unknown>)[kunci] ?? null);
-    const baruNilai = nilaiJejak(nilai ?? null);
+    // Rate per format dicatat sebagai objek (bukan teks JSON) supaya jejaknya terbaca.
+    const ubah = kunci === "rateFormat" ? (v: unknown) => bacaRateFormat(v) : nilaiJejak;
+    const lamaNilai = ubah((lama as Record<string, unknown>)[kunci] ?? null);
+    const baruNilai = ubah(nilai ?? null);
     if (JSON.stringify(lamaNilai) !== JSON.stringify(baruNilai)) {
       sebelum[kunci] = lamaNilai;
       sesudah[kunci] = baruNilai;
