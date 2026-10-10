@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bacaLinkVideo, kenaliLink, linkVideoPanjang, waktuTayangDariId } from "./link-video";
+import { bacaLinkVideo, kenaliLink, linkVideoPanjang, waktuTayangDariId, waktuTayangInstagram } from "./link-video";
 
 /*
  * Pembaca link video TikTok dari teks tempelan (Kreatif → Performa video).
@@ -58,13 +58,50 @@ describe("kenaliLink — link pendek", () => {
   });
 });
 
-describe("kenaliLink — yang tidak didukung", () => {
-  it("Instagram", () => {
-    expect(kenaliLink("https://www.instagram.com/reel/C9abc/")).toEqual({ ditolak: "INSTAGRAM" });
-    expect(kenaliLink("instagram.com/p/xyz")).toEqual({ ditolak: "INSTAGRAM" });
-    expect(kenaliLink("instagr.am/p/xyz")).toEqual({ ditolak: "INSTAGRAM" });
+describe("kenaliLink — Instagram dan YouTube", () => {
+  it("reel dan posting Instagram → link baku; nama akun di link ikut terbaca, shortcode tidak diubah hurufnya", () => {
+    expect(kenaliLink("https://www.instagram.com/reel/C9xYz_AbC-1/?igsh=MTc4")).toEqual({
+      bentuk: "INSTAGRAM",
+      teks: "https://www.instagram.com/reel/C9xYz_AbC-1/?igsh=MTc4",
+      id: "C9xYz_AbC-1",
+      handle: null,
+      url: "https://www.instagram.com/reel/C9xYz_AbC-1/",
+      jenisKonten: "REEL",
+    });
+    expect(kenaliLink("instagram.com/Kol.Satu/p/DAbcdEfGh12")).toMatchObject({ bentuk: "INSTAGRAM", id: "DAbcdEfGh12", handle: "kol.satu", url: "https://www.instagram.com/p/DAbcdEfGh12/", jenisKonten: "POST" });
+    expect(kenaliLink("instagr.am/p/DAbcdEfGh12")).toMatchObject({ bentuk: "INSTAGRAM", id: "DAbcdEfGh12" });
   });
 
+  it("video, Shorts, dan youtu.be → link baku YouTube", () => {
+    expect(kenaliLink("www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s")).toEqual({
+      bentuk: "YOUTUBE",
+      teks: "www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s",
+      id: "dQw4w9WgXcQ",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      jenisKonten: "VIDEO",
+    });
+    expect(kenaliLink("https://youtube.com/shorts/dQw4w9WgXcQ?feature=share")).toMatchObject({ bentuk: "YOUTUBE", url: "https://www.youtube.com/shorts/dQw4w9WgXcQ", jenisKonten: "SHORTS" });
+    expect(kenaliLink("https://youtu.be/dQw4w9WgXcQ?si=abc")).toMatchObject({ bentuk: "YOUTUBE", id: "dQw4w9WgXcQ", jenisKonten: "VIDEO" });
+  });
+
+  it("profil Instagram/YouTube dan id YouTube yang salah → bukan video", () => {
+    expect(kenaliLink("https://www.instagram.com/kol.satu/")).toEqual({ ditolak: "BUKAN_VIDEO" });
+    expect(kenaliLink("https://www.youtube.com/@kolsatu")).toEqual({ ditolak: "BUKAN_VIDEO" });
+    expect(kenaliLink("www.youtube.com/watch?v=abc")).toEqual({ ditolak: "BUKAN_VIDEO" });
+  });
+});
+
+describe("waktuTayangInstagram", () => {
+  it("shortcode → waktu unggah; di luar masa Instagram atau terlalu panjang → null", () => {
+    const sekarang = new Date("2026-10-10T00:00:00Z");
+    expect(waktuTayangInstagram("C9xYz_AbC-1", sekarang)?.toISOString()).toBe("2024-07-23T16:20:07.129Z");
+    expect(waktuTayangInstagram("DPAAAAAAAAA", new Date("2025-01-01T00:00:00Z"))).toBeNull();
+    expect(waktuTayangInstagram("AAAAA", sekarang)).toBeNull();
+    expect(waktuTayangInstagram("C9xYz_AbC-1xyzpanjang", sekarang)).toBeNull();
+  });
+});
+
+describe("kenaliLink — yang tidak didukung", () => {
   it("posting foto TikTok, profil, dan halaman TikTok lain", () => {
     expect(kenaliLink(`https://www.tiktok.com/@lystianovilda/photo/${ID}`)).toEqual({ ditolak: "LINK_FOTO" });
     expect(kenaliLink("https://www.tiktok.com/@lystianovilda")).toEqual({ ditolak: "BUKAN_VIDEO" });
@@ -73,7 +110,8 @@ describe("kenaliLink — yang tidak didukung", () => {
 
   it("situs lain", () => {
     expect(kenaliLink("https://shopee.co.id/product/1/2")).toEqual({ ditolak: "BUKAN_TIKTOK" });
-    expect(kenaliLink("www.youtube.com/watch?v=abc")).toEqual({ ditolak: "BUKAN_TIKTOK" });
+    expect(kenaliLink("https://www.threads.net/@kol/post/C9xYz")).toEqual({ ditolak: "BUKAN_TIKTOK" });
+    expect(kenaliLink("https://www.facebook.com/reel/123")).toEqual({ ditolak: "BUKAN_TIKTOK" });
     expect(kenaliLink("https://faketiktok.com/@a/video/7301234567890123456")).toEqual({ ditolak: "BUKAN_TIKTOK" });
   });
 });
@@ -114,13 +152,27 @@ describe("bacaLinkVideo — teks tempelan", () => {
 
   it("yang tidak didukung dilaporkan dengan alasannya, sekali per link", () => {
     const r = bacaLinkVideo(
-      ["https://www.instagram.com/reel/C9abc/", "https://www.instagram.com/reel/C9abc/", "https://shopee.co.id/x", KANONIK].join(" "),
+      ["https://www.instagram.com/kol.satu/", "https://www.instagram.com/kol.satu/", "https://shopee.co.id/x", KANONIK].join(" "),
     );
     expect(r.link).toHaveLength(1);
     expect(r.ditolak).toEqual([
-      { teks: "https://www.instagram.com/reel/C9abc/", alasan: "INSTAGRAM" },
+      { teks: "https://www.instagram.com/kol.satu/", alasan: "BUKAN_VIDEO" },
       { teks: "https://shopee.co.id/x", alasan: "BUKAN_TIKTOK" },
     ]);
+  });
+
+  it("Instagram dan YouTube tercampur TikTok di teks WhatsApp; video yang sama dalam dua bentuk link dihitung sekali", () => {
+    const r = bacaLinkVideo(
+      [
+        "reel: instagram.com/reel/C9xYz_AbC-1/?igsh=x,",
+        "*yt* https://youtu.be/dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.instagram.com/kol.satu/reel/C9xYz_AbC-1/",
+        KANONIK,
+      ].join("\n"),
+    );
+    expect(r.link.map((l) => l.bentuk)).toEqual(["INSTAGRAM", "YOUTUBE", "PANJANG"]);
+    expect(r.kembar).toBe(2);
   });
 
   it("teks tanpa link sama sekali → kosong", () => {

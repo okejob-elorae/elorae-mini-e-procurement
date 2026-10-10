@@ -22,6 +22,17 @@ describe("manifest", () => {
     }
   });
 
+  test("Instagram dan YouTube: izin host, konten.js di ketiga situs, penangkap Instagram di dunia MAIN; Threads/Facebook tidak", () => {
+    const m = JSON.parse(baca("manifest.json"));
+    for (const h of ["https://www.tiktok.com/*", "https://www.instagram.com/*", "https://www.youtube.com/*"]) assert.ok(m.host_permissions.includes(h), h);
+    const konten = m.content_scripts.find((c) => c.js.includes("konten.js"));
+    assert.deepEqual([...konten.matches].sort(), ["https://www.instagram.com/*", "https://www.tiktok.com/*", "https://www.youtube.com/*"]);
+    const ig = m.content_scripts.find((c) => c.js.includes("halaman-utama-instagram.js"));
+    assert.equal(ig.world, "MAIN");
+    assert.deepEqual(ig.matches, ["https://www.instagram.com/*"]);
+    assert.ok(!JSON.stringify(m).match(/threads\.net|facebook\.com/));
+  });
+
   test("versi berbentuk x.y.z", () => {
     assert.match(JSON.parse(baca("manifest.json")).version, /^\d+\.\d+\.\d+$/);
   });

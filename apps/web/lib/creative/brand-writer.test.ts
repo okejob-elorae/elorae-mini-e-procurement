@@ -272,6 +272,47 @@ describe("simpanOtomatis (POST /otomatis)", () => {
     expect(JSON.stringify(jejak)).toContain("DETEKSI_TAG");
   });
 
+  it("Instagram: profil yang belum ada tetapi menandai Elorae → KOL + akun Instagram; reelnya masuk Performa dengan link baku, format REELS, kunci brand INSTAGRAM", async () => {
+    const a = await perangkat();
+    const baru = `${handle}.ig`;
+    const kode = `C${Math.random().toString(36).slice(2, 12)}`;
+    const reel = { id: kode, dibuatPada: detik(tambahJam(SEKARANG, -60)), disematkan: false, views: 5000, like: 400, komentar: 20, bentuk: "REEL" as const, sebutan: [AKUN_ELORAE], penulis: baru };
+    const r = await simpanOtomatis({
+      perangkat: a,
+      url: `https://www.instagram.com/${baru}/`,
+      data: { jenis: "PROFIL", platform: "INSTAGRAM", uniqueId: baru, pengikut: 12_000, posting: [reel] },
+      sekarang: SEKARANG,
+      pengaturanBrand: PB,
+    });
+    if (!r.ok || !r.kol) throw new Error(JSON.stringify(r));
+    kolIds.push(r.kol.id);
+    expect(r).toEqual({ ok: true, hasil: "DISIMPAN", kol: { id: r.kol.id, nama: `@${baru}` }, videoMasuk: 1, brand: 1 });
+    expect(await prisma.kolAccount.findMany({ where: { kolId: r.kol.id }, select: { platform: true, followers: true } })).toEqual([{ platform: "INSTAGRAM", followers: 12_000 }]);
+    const k = await prisma.kolContent.findFirstOrThrow({
+      where: { link: { contains: kode } },
+      select: { platform: true, format: true, link: true, metrics: { select: { views: true, likes: true, shares: true, note: true } } },
+    });
+    expect(k).toEqual({
+      platform: "INSTAGRAM",
+      format: "REELS",
+      link: `https://www.instagram.com/reel/${kode}/`,
+      metrics: [{ views: 5000, likes: 400, shares: 0, note: "Tidak terbaca dari Instagram: share, simpan (tersimpan 0)." }],
+    });
+    expect(await prisma.kolBrandCollab.findMany({ where: { kolId: r.kol.id }, select: { kunci: true, platform: true, postUrl: true } })).toEqual([
+      { kunci: `INSTAGRAM:${kode}:${AKUN_ELORAE}`, platform: "INSTAGRAM", postUrl: `https://www.instagram.com/reel/${kode}/` },
+    ]);
+
+    // Video yang sama dibaca lagi dari halamannya (< 12 jam): tidak ada baris angka baru.
+    const v = await simpanOtomatis({
+      perangkat: a,
+      url: `https://www.instagram.com/reel/${kode}/`,
+      data: { jenis: "KONTEN", platform: "INSTAGRAM", videoId: kode, uniqueId: baru, like: 410, komentar: 21, bentuk: "REEL", sebutan: [AKUN_ELORAE] },
+      sekarang: tambahJam(SEKARANG, 1),
+      pengaturanBrand: PB,
+    });
+    expect(v).toMatchObject({ ok: true, hasil: "DIABAIKAN" });
+  });
+
   it("profil akun Elorae sendiri tidak pernah dijadikan KOL", async () => {
     const a = await perangkat();
     const r = await simpanOtomatis({

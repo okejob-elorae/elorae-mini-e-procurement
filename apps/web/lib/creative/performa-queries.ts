@@ -4,7 +4,7 @@ import { hariIniWib } from "@/lib/tanggal-isian";
 import { JEJAK } from "@/lib/receivables/jejak";
 import { engagementRate, type AngkaKonten } from "./angka-konten";
 import { SUMBER_DETEKSI_TAG } from "./brand-collab";
-import { handleDariLink } from "./pantau-muatan";
+import { handleDariLink, PLATFORM_PANTAU, type PlatformPantau } from "./pantau-muatan";
 import { PER_HALAMAN_PERFORMA, polaCari, statusVideo, type ParamPerforma, type StatusVideo } from "./performa";
 
 /*
@@ -30,6 +30,7 @@ export type BarisPerforma = {
   kolaborasiId: string;
   kolId: string;
   nama: string;
+  platform: PlatformPantau;
   handle: string | null;
   afiliasi: boolean;
   link: string;
@@ -82,11 +83,21 @@ const DARI = Prisma.sql`
 /** Kolaborasi KOMISI = afiliasi. Nilai enum ditulis sebagai literal: parameter teks tidak bisa dibandingkan dengan enum PostgreSQL. */
 const AFILIASI = Prisma.sql`b.${I("jenis")} = 'KOMISI'`;
 
+/**
+ * Konten per platform yang tampil: platform kontennya DAN link-nya memang ke situs itu (konten
+ * Instagram tanpa link, atau ber-link situs lain, tidak dipantau). Nilai enum ditulis sebagai literal.
+ */
+const SYARAT_PLATFORM: Record<PlatformPantau, Prisma.Sql> = {
+  TIKTOK: Prisma.sql`(c.${I("platform")} = 'TIKTOK' AND LOWER(c.${I("link")}) LIKE ${"%tiktok.com%"})`,
+  INSTAGRAM: Prisma.sql`(c.${I("platform")} = 'INSTAGRAM' AND (LOWER(c.${I("link")}) LIKE ${"%instagram.com%"} OR LOWER(c.${I("link")}) LIKE ${"%instagr.am%"}))`,
+  YOUTUBE: Prisma.sql`(c.${I("platform")} = 'YOUTUBE' AND (LOWER(c.${I("link")}) LIKE ${"%youtube.com%"} OR LOWER(c.${I("link")}) LIKE ${"%youtu.be%"}))`,
+};
+
 function syarat(p: ParamPerforma, cakupan?: readonly string[]): Prisma.Sql {
+  const platform = p.platform === "semua" ? [...PLATFORM_PANTAU] : [p.platform.toUpperCase() as PlatformPantau];
   const bagian: Prisma.Sql[] = [
-    Prisma.sql`c.${I("platform")} = 'TIKTOK'`,
     Prisma.sql`c.${I("link")} IS NOT NULL`,
-    Prisma.sql`LOWER(c.${I("link")}) LIKE ${"%tiktok.com%"}`,
+    Prisma.sql`(${Prisma.join(platform.map((x) => SYARAT_PLATFORM[x]), " OR ")})`,
   ];
   const pola = polaCari(p.cari);
   if (pola) bagian.push(Prisma.sql`(LOWER(k.${I("name")}) LIKE ${pola} OR LOWER(c.${I("link")}) LIKE ${pola})`);
@@ -124,6 +135,7 @@ type BarisMentah = {
   kolaborasiId: string;
   kolId: string;
   nama: string;
+  platform: string;
   link: string;
   tayangAt: Date | string | null;
   afiliasi: number | bigint;
@@ -180,6 +192,7 @@ export async function daftarPerformaVideo(
             c.${I("collabId")} AS ${I("kolaborasiId")},
             k.${I("id")} AS ${I("kolId")},
             k.${I("name")} AS ${I("nama")},
+            c.${I("platform")} AS ${I("platform")},
             c.${I("link")} AS ${I("link")},
             c.${I("liveAt")} AS ${I("tayangAt")},
             CASE WHEN ${AFILIASI} THEN 1 ELSE 0 END AS ${I("afiliasi")},
@@ -242,6 +255,7 @@ export async function daftarPerformaVideo(
       kolaborasiId: x.kolaborasiId,
       kolId: x.kolId,
       nama: x.nama,
+      platform: (PLATFORM_PANTAU as readonly string[]).includes(x.platform) ? (x.platform as PlatformPantau) : "TIKTOK",
       handle: handleDariLink(x.link),
       afiliasi: Number(x.afiliasi) === 1,
       link: x.link,

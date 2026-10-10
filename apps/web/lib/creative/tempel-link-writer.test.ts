@@ -195,7 +195,7 @@ describe("tempelLinkVideo — yang sudah ada", () => {
 });
 
 describe("tempelLinkVideo — laporan per baris", () => {
-  it("link pendek dibuka lewat fetch; yang gagal, Instagram, dan foto disebut alasannya", async () => {
+  it("link pendek dibuka lewat fetch; yang gagal, Instagram tanpa akun yang tak terbaca, dan foto disebut alasannya", async () => {
     const h = handle("pendek");
     const id = idVideo(hariSebelum(2));
     const ambil = vi.fn(async (url: string | URL | Request) =>
@@ -215,13 +215,15 @@ describe("tempelLinkVideo — laporan per baris", () => {
       olehUserId: userId,
       sekarang: SEKARANG,
       bukaPendek: { fetch: ambil },
+      // Halaman Instagram tanpa masuk: tidak menyebut akun pemiliknya.
+      bukaPemilik: { fetch: (async () => new Response("<title>Login • Instagram</title>", { status: 200 })) as unknown as typeof fetch },
     });
     expect(r).toMatchObject({ ok: true, ditambahkan: 1, sudahAda: 0, kolBaru: 1 });
     if (!r.ok) return;
     expect(r.gagal).toEqual([
-      { baris: "https://www.instagram.com/reel/C9abc/", alasan: "INSTAGRAM" },
       { baris: `https://www.tiktok.com/@${h}/photo/${id}`, alasan: "LINK_FOTO" },
       { baris: "https://vt.tiktok.com/ZSgagal/", alasan: "LINK_PENDEK_GAGAL" },
+      { baris: "https://www.instagram.com/reel/C9abc/", alasan: "PEMILIK_TIDAK_TERBACA" },
     ]);
     const k = await prisma.kolContent.findFirstOrThrow({ where: { collab: { kol: { accounts: { some: { handle: h } } } } }, select: { link: true } });
     expect(k.link).toBe(link(h, id));
@@ -233,6 +235,57 @@ describe("tempelLinkVideo — laporan per baris", () => {
     expect(await tempelLinkVideo({ teks: "a".repeat(200_001), jenis: "KOL", olehUserId: userId })).toEqual({ ok: false, kode: "TERLALU_PANJANG" });
     const banyak = Array.from({ length: 501 }, (_, i) => link(`${tag}.n${i}`, idVideo(hariSebelum(1), i))).join("\n");
     expect(await tempelLinkVideo({ teks: banyak, jenis: "KOL", olehUserId: userId })).toEqual({ ok: false, kode: "TERLALU_BANYAK" });
+  });
+});
+
+describe("tempelLinkVideo — Instagram dan YouTube", () => {
+  it("reel Instagram ber-akun dan video YouTube: KOL dengan akun platformnya, konten REELS/VIDEO, tugas segera ber-platform", async () => {
+    const hIg = handle("ig");
+    const hYt = handle("yt");
+    const kode = `C${Math.random().toString(36).slice(2, 12)}`;
+    const ytId = `Yt${Math.random().toString(36).slice(2, 11)}`.slice(0, 11).padEnd(11, "x");
+    const terbit = hariSebelum(3);
+    const ambil = vi.fn(async (url: string | URL | Request) =>
+      String(url) === `https://www.youtube.com/watch?v=${ytId}`
+        ? new Response(
+            `<script>var ytInitialPlayerResponse = {"videoDetails":{"videoId":"${ytId}"},"microformat":{"playerMicroformatRenderer":` +
+              `{"ownerProfileUrl":"http://www.youtube.com/@${hYt}","publishDate":"${terbit.toISOString()}"}}};</script>`,
+            { status: 200 },
+          )
+        : new Response("tidak ada", { status: 404 }),
+    ) as unknown as typeof fetch;
+    const r = await tempelLinkVideo({
+      teks: [`https://www.instagram.com/${hIg}/reel/${kode}/?igsh=x`, `https://youtu.be/${ytId}`].join("\n"),
+      jenis: "KOL",
+      olehUserId: userId,
+      sekarang: SEKARANG,
+      bukaPemilik: { fetch: ambil },
+    });
+    expect(r).toMatchObject({ ok: true, ditambahkan: 2, kolBaru: 2, gagal: [] });
+    if (!r.ok) return;
+    // Link Instagram yang memuat nama akun tidak perlu dibuka; YouTube dibuka sekali.
+    expect(ambil).toHaveBeenCalledTimes(1);
+
+    const ig = await prisma.kolContent.findFirstOrThrow({
+      where: { collab: { kol: { accounts: { some: { handle: hIg } } } } },
+      select: { id: true, platform: true, format: true, link: true, collab: { select: { kol: { select: { accounts: { select: { platform: true, url: true } } } } } } },
+    });
+    expect(ig).toMatchObject({ platform: "INSTAGRAM", format: "REELS", link: `https://www.instagram.com/reel/${kode}/` });
+    expect(ig.collab.kol.accounts).toEqual([{ platform: "INSTAGRAM", url: `https://www.instagram.com/${hIg}/` }]);
+    expect(await prisma.kolTugasPantau.findFirstOrThrow({ where: { contentId: ig.id }, select: { platform: true, url: true } })).toEqual({
+      platform: "INSTAGRAM",
+      url: `https://www.instagram.com/reel/${kode}/`,
+    });
+
+    const yt = await prisma.kolContent.findFirstOrThrow({
+      where: { collab: { kol: { accounts: { some: { handle: hYt } } } } },
+      select: { id: true, platform: true, format: true, link: true, liveAt: true },
+    });
+    expect(yt).toMatchObject({ platform: "YOUTUBE", format: "VIDEO", link: `https://www.youtube.com/watch?v=${ytId}`, liveAt: terbit });
+
+    // Tempel ulang dengan bentuk link lain → sudah dipantau, tidak dibuka lagi bila memuat akun.
+    const ulang = await tempelLinkVideo({ teks: `https://www.instagram.com/${hIg}/p/${kode}`, jenis: "KOL", olehUserId: userId, sekarang: SEKARANG, bukaPemilik: { fetch: ambil } });
+    expect(ulang).toMatchObject({ ok: true, ditambahkan: 0, sudahAda: 1 });
   });
 });
 

@@ -13,6 +13,7 @@ import {
   perangkatDariToken,
   pinjamTugas,
   UMUR_MAKS_TUGAS_HARI,
+  bacaPlatformEkstensi,
   putuskanSendiri,
   sambungPerangkat,
   simpanHasil,
@@ -790,6 +791,60 @@ describe("simpanManual", () => {
     expect(brief[0].jenis).not.toBe("KOMISI");
   });
 
+  it("Instagram: profil yang belum ada → KOL \"@akun\" + akun Instagram; ER dari posting ber-views saja", async () => {
+    const a = await perangkatAdmin();
+    const ig = `${handle}.ig`;
+    const detikUnggah = (jam: number) => Math.floor(SEKARANG.getTime() / 1000) - jam * 3600;
+    const posting = [1, 2, 3].map((i) => ({ id: `C${tag}${i}`.slice(0, 20), dibuatPada: detikUnggah(72 + i), disematkan: false, views: 1000, like: 90, komentar: 10, bentuk: "REEL" as const }));
+    const foto = { id: `F${tag}9`.slice(0, 20), dibuatPada: detikUnggah(80), disematkan: false, like: 500, komentar: 50, bentuk: "POST" as const };
+    const r = await simpanManual({
+      perangkat: a,
+      url: `https://www.instagram.com/${ig}/`,
+      data: { jenis: "PROFIL", platform: "INSTAGRAM", uniqueId: ig, idPlatform: "12345", pengikut: 686_570, posting: [...posting, foto] },
+      sekarang: SEKARANG,
+    });
+    if (!r.ok) throw new Error(r.kode);
+    kolBaruIds.push(r.cocok.kolId);
+    expect(r).toMatchObject({ ok: true, cocok: { nama: `@${ig}` }, dibuat: { kol: true, konten: false } });
+    const akun = await prisma.kolAccount.findFirstOrThrow({ where: { kolId: r.cocok.kolId }, select: { platform: true, handle: true, url: true, followers: true, er: true, avgViews: true, platformUserId: true } });
+    expect(akun).toMatchObject({ platform: "INSTAGRAM", handle: ig, url: `https://www.instagram.com/${ig}/`, followers: 686_570, avgViews: 1000, platformUserId: "12345" });
+    expect(Number(akun.er)).toBe(10);
+  });
+
+  it("YouTube: pengikut dari teks ringkas tersimpan ber-sumber perkiraan, tanpa ER; video baru → konten VIDEO dengan catatan angka yang tak terbaca", async () => {
+    const a = await perangkatAdmin();
+    const yt = `${handle}yt`;
+    const r = await simpanManual({
+      perangkat: a,
+      url: `https://www.youtube.com/@${yt}/videos`,
+      data: { jenis: "PROFIL", platform: "YOUTUBE", uniqueId: yt, pengikut: 46_500_000, pengikutPerkiraan: true, posting: [] },
+      sekarang: SEKARANG,
+    });
+    if (!r.ok) throw new Error(r.kode);
+    kolBaruIds.push(r.cocok.kolId);
+    const akun = await prisma.kolAccount.findFirstOrThrow({ where: { kolId: r.cocok.kolId }, select: { id: true, platform: true, er: true, followers: true } });
+    expect(akun).toMatchObject({ platform: "YOUTUBE", er: null, followers: 46_500_000 });
+    expect(await prisma.kolFollowerSnapshot.findMany({ where: { accountId: akun.id }, select: { source: true } })).toEqual([{ source: "ekstensi-perkiraan" }]);
+
+    const videoId = `${tag}`.slice(0, 11).padEnd(11, "x");
+    const v = await simpanManual({
+      perangkat: a,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      data: { jenis: "KONTEN", platform: "YOUTUBE", videoId, uniqueId: yt, views: 12_345, like: 753, dibuatPada: Math.floor(SEKARANG.getTime() / 1000) - 86_400 },
+      sekarang: SEKARANG,
+    });
+    expect(v).toEqual({ ok: true, cocok: { kolId: r.cocok.kolId, nama: `@${yt}` }, dibuat: { kol: false, konten: true } });
+    const k = await prisma.kolContent.findFirstOrThrow({
+      where: { collab: { kolId: r.cocok.kolId } },
+      select: { platform: true, format: true, link: true, metrics: { select: { views: true, likes: true, comments: true, shares: true, note: true } } },
+    });
+    expect(k).toMatchObject({ platform: "YOUTUBE", format: "VIDEO", link: `https://www.youtube.com/watch?v=${videoId}` });
+    expect(k.metrics).toEqual([{ views: 12_345, likes: 753, comments: 0, shares: 0, note: "Tidak terbaca dari YouTube: komentar, share, simpan (tersimpan 0)." }]);
+
+    // Akun TikTok dengan handle yang sama tidak tertukar: profil YouTube tidak menyentuh akun TikTok fixture.
+    expect((await prisma.kolAccount.findUniqueOrThrow({ where: { id: akunId } })).followers).toBe(10_000);
+  });
+
   it("pemasang perangkat tanpa creative:manage tidak bisa membuat KOL baru (TANPA_IZIN), dan tidak ada yang dibuat", async () => {
     penggunaUjiId = (await prisma.user.create({ data: { email: `${handle}@uji.invalid`, name: tag }, select: { id: true } })).id;
     const p = await perangkat("Laptop tanpa izin");
@@ -805,5 +860,115 @@ describe("simpanManual", () => {
     const r = await simpanManual({ perangkat: a, url: `https://www.tiktok.com/@${handle}`, data: hasilProfil(2, handle), sekarang: SEKARANG });
     expect(r.ok).toBe(true);
     await prisma.kolPerangkat.update({ where: { id: p.id }, data: { dibuatOlehId: userId } });
+  });
+});
+
+describe("Instagram dan YouTube — tugas dan hasil", () => {
+  let kontenLain: string[] = [];
+  let akunLain: string[] = [];
+  beforeEach(() => {
+    kontenLain = [];
+    akunLain = [];
+  });
+  afterEach(async () => {
+    await prisma.kolTugasPantau.deleteMany({ where: { contentId: { in: seededIds(kontenLain) } } });
+    await prisma.kolContentMetric.deleteMany({ where: { contentId: { in: seededIds(kontenLain) } } });
+    await prisma.kolContent.deleteMany({ where: { id: { in: seededIds(kontenLain) } } });
+    await prisma.kolFollowerSnapshot.deleteMany({ where: { accountId: { in: seededIds(akunLain) } } });
+  });
+
+  async function kontenPlatform(platform: "INSTAGRAM" | "YOUTUBE", link: string, format: "REELS" | "VIDEO") {
+    const k = await prisma.kolContent.create({ data: { collabId: briefId, platform, format, link, liveAt: tambahHari(SEKARANG, -8) }, select: { id: true } });
+    kontenLain.push(k.id);
+    return k.id;
+  }
+
+  async function tugasPlatform(platform: "INSTAGRAM" | "YOUTUBE", contentId: string, url: string) {
+    const t = await prisma.kolTugasPantau.create({
+      data: { jenis: "KONTEN", platform, contentId, url, prioritas: 95, jatuhAt: tambahHari(SEKARANG, -1), kunci: `${tag}:${Math.random()}` },
+      select: { id: true },
+    });
+    tugasIds.push(t.id);
+    return t.id;
+  }
+
+  it("bacaPlatformEkstensi: tanpa daftar = TikTok saja; isian yang tidak dikenal dibuang", () => {
+    expect(bacaPlatformEkstensi(undefined)).toEqual(["TIKTOK"]);
+    expect(bacaPlatformEkstensi(["YOUTUBE", "THREADS", "TIKTOK", "YOUTUBE"])).toEqual(["YOUTUBE", "TIKTOK"]);
+    expect(bacaPlatformEkstensi("TIKTOK, INSTAGRAM")).toEqual(["TIKTOK", "INSTAGRAM"]);
+    expect(bacaPlatformEkstensi(["FACEBOOK"])).toEqual(["TIKTOK"]);
+  });
+
+  it("ekstensi hanya meminjam platform yang disebutnya; pinjaman platform yang tidak disebut lagi kembali ke antrean tanpa percobaan", async () => {
+    const a = await perangkat();
+    const kIg = await kontenPlatform("INSTAGRAM", `https://www.instagram.com/reel/C${tag}/`, "REELS");
+    const kYt = await kontenPlatform("YOUTUBE", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", "VIDEO");
+    await prisma.kolAccount.create({ data: { kolId, platform: "INSTAGRAM", handle: `${handle}.ig`, followers: 5 } });
+    const tIg = await tugasPlatform("INSTAGRAM", kIg, `https://www.instagram.com/reel/C${tag}/`);
+    const tYt = await tugasPlatform("YOUTUBE", kYt, "https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    const cakupan = { tugasIds: [tIg, tYt] };
+
+    // Ekstensi lama (tanpa daftar): tidak satu pun.
+    expect(await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan })).toEqual({ tugas: null, alasan: "ANTREAN_KOSONG" });
+    const yt = await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan, platforms: ["TIKTOK", "YOUTUBE"] });
+    expect(yt.tugas).toMatchObject({ id: tYt, platform: "YOUTUBE", url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ" });
+    await prisma.kolTugasPantau.update({ where: { id: tYt }, data: { status: "SELESAI" } });
+
+    const ig = await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan, platforms: ["INSTAGRAM"] });
+    expect(ig.tugas).toMatchObject({ id: tIg, platform: "INSTAGRAM", handle: `${handle}.ig` });
+    // Tab Instagram ditutup: permintaan berikutnya tanpa INSTAGRAM melepas pinjamannya.
+    expect(await pinjamTugas({ perangkatId: a.id, sekarang: tambahMenit(SEKARANG, 1), pengaturan: PG, cakupan, platforms: ["TIKTOK"] })).toEqual({
+      tugas: null,
+      alasan: "ANTREAN_KOSONG",
+    });
+    expect(await prisma.kolTugasPantau.findUniqueOrThrow({ where: { id: tIg }, select: { status: true, perangkatId: true, percobaan: true } })).toEqual({
+      status: "ANTRE",
+      perangkatId: null,
+      percobaan: 0,
+    });
+  });
+
+  it("kegagalan tugas Instagram tidak dihitung ke deret gagal perangkat (TikTok tidak ikut berhenti)", async () => {
+    const a = await perangkat();
+    const kIg = await kontenPlatform("INSTAGRAM", `https://www.instagram.com/reel/C${tag}z/`, "REELS");
+    for (let i = 0; i < PG.maksGagalBeruntun + 1; i++) {
+      const t = await tugasPlatform("INSTAGRAM", kIg, `https://www.instagram.com/reel/C${tag}z/`);
+      const w = tambahMenit(SEKARANG, i);
+      await pinjamTugas({ perangkatId: a.id, sekarang: w, pengaturan: PG, cakupan: { tugasIds: [t] }, platforms: ["INSTAGRAM"] });
+      await laporMasalah({ perangkat: a, masalah: { kode: "TIDAK_TERBACA", tugasId: t, pesan: "blob json: 0" }, sekarang: w, pengaturan: PG });
+    }
+    expect((await prisma.kolPerangkat.findUniqueOrThrow({ where: { id: a.id }, select: { dijedaSampai: true } })).dijedaSampai).toBeNull();
+    expect(await prisma.kolLogPantau.count({ where: { perangkatId: a.id, jenis: "MASALAH" } })).toBe(PG.maksGagalBeruntun + 1);
+  });
+
+  it("hasil konten Instagram: angka tersimpan dengan catatan share/simpan; hasil platform lain ditolak KONTEN_BERBEDA", async () => {
+    const a = await perangkat();
+    const kode = `C${tag}x1`;
+    const kIg = await kontenPlatform("INSTAGRAM", `https://www.instagram.com/reel/${kode}/`, "REELS");
+    await prisma.kolAccount.create({ data: { kolId, platform: "INSTAGRAM", handle: `${handle}.ig`, followers: 5 } });
+    const t1 = await tugasPlatform("INSTAGRAM", kIg, `https://www.instagram.com/reel/${kode}/`);
+    await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan: { tugasIds: [t1] }, platforms: ["INSTAGRAM"] });
+    const salah = await simpanHasil({
+      perangkat: a,
+      tugasId: t1,
+      data: { jenis: "KONTEN", videoId: kode, uniqueId: `${handle}.ig`, views: 1, like: 1, komentar: 1, share: 1, save: 1 },
+      sekarang: SEKARANG,
+      pengaturan: PG,
+    });
+    expect(salah).toEqual({ ok: false, kode: "KONTEN_BERBEDA" });
+
+    const t2 = await tugasPlatform("INSTAGRAM", kIg, `https://www.instagram.com/reel/${kode}/`);
+    await pinjamTugas({ perangkatId: a.id, sekarang: SEKARANG, pengaturan: PG, cakupan: { tugasIds: [t2] }, platforms: ["INSTAGRAM"] });
+    const r = await simpanHasil({
+      perangkat: a,
+      tugasId: t2,
+      data: { jenis: "KONTEN", platform: "INSTAGRAM", videoId: kode, uniqueId: `${handle}.IG`, views: 9000, like: 400, komentar: 12, bentuk: "REEL" },
+      sekarang: SEKARANG,
+      pengaturan: PG,
+    });
+    expect(r).toEqual({ ok: true });
+    expect(await prisma.kolContentMetric.findMany({ where: { contentId: kIg }, select: { views: true, likes: true, comments: true, shares: true, saves: true, note: true, source: true } })).toEqual([
+      { views: 9000, likes: 400, comments: 12, shares: 0, saves: 0, note: "Tidak terbaca dari Instagram: share, simpan (tersimpan 0).", source: "ekstensi" },
+    ]);
   });
 });

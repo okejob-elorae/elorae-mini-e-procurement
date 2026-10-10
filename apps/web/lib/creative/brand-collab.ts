@@ -19,7 +19,7 @@
  * di `brand-pengaturan.ts`, penulis barisnya di `brand-writer.ts`.
  */
 
-import { MAKS_INT, normalHandle } from "./pantau-muatan";
+import { MAKS_INT, normalHandle, urlKontenPlatform, type BentukKonten, type PlatformPantau } from "./pantau-muatan";
 
 export const JENIS_BRAND = ["BERBAYAR", "KOLABORASI", "TAG"] as const;
 export type JenisBrand = (typeof JENIS_BRAND)[number];
@@ -104,6 +104,8 @@ export type PostingBrand = {
   tagar?: string[];
   iklan?: boolean;
   penulis?: string;
+  /** Reel/posting Instagram, video/Shorts YouTube — menentukan link bakunya. */
+  bentuk?: BentukKonten;
 };
 
 type BagianTeks = Pick<PostingBrand, "teks" | "sebutan" | "tagar" | "iklan">;
@@ -180,6 +182,11 @@ export function urlPostingTiktok(handle: string, id: string): string {
   return `https://www.tiktok.com/@${normalHandle(handle)}/video/${id}`;
 }
 
+/** Link posting per platform (TikTok butuh handle pemiliknya; Instagram/YouTube dari id + bentuk). */
+export function urlPosting(platform: PlatformPantau, handle: string, id: string, bentuk?: BentukKonten): string {
+  return platform === "TIKTOK" ? urlPostingTiktok(handle, id) : urlKontenPlatform(platform, id, { bentuk });
+}
+
 export type BarisBrandBaru = {
   kunci: string;
   brandHandle: string;
@@ -194,7 +201,7 @@ export type BarisBrandBaru = {
 /** Baris riwayat brand untuk satu posting — satu per brand yang ditandai. */
 export function barisBrandPosting(
   p: PostingBrand,
-  o: { platform: "TIKTOK"; handle: string; handleSendiri: readonly string[] },
+  o: { platform: PlatformPantau; handle: string; handleSendiri: readonly string[] },
 ): BarisBrandBaru[] {
   const brand = brandDariPosting(p, o.handleSendiri);
   if (!brand.length) return [];
@@ -205,7 +212,7 @@ export function barisBrandPosting(
     brandHandle: b,
     jenis,
     postId: p.id,
-    postUrl: urlPostingTiktok(o.handle, p.id),
+    postUrl: urlPosting(o.platform, o.handle, p.id, p.bentuk),
     postedAt: typeof p.dibuatPada === "number" ? new Date(p.dibuatPada * 1000) : null,
     caption,
     views: typeof p.views === "number" ? Math.min(Math.max(0, Math.trunc(p.views)), MAKS_INT) : null,

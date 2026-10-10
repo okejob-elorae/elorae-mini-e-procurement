@@ -1,7 +1,8 @@
 // Aturan putaran otomatis — modul MURNI (tanpa chrome.*, tanpa jaringan, waktu dari pemanggil).
 // background.js hanya menjalankan keputusan dari sini, jadi semua cabang bisa dites.
 
-import { cocokDenganUrl, dalamJamKerja, jedaAcak, jenisHalaman, kurangWajib, normalHandle } from "./pengurai.js";
+import { dalamJamKerja, jedaAcak, normalHandle } from "./pengurai.js";
+import { cocokDenganUrl, jenisHalaman, kurangWajib, platformData } from "./platform.js";
 
 const DETIK = 1000;
 const MENIT = 60 * DETIK;
@@ -230,11 +231,25 @@ export function jedaCepatMs(rand = Math.random) {
   return JEDA_CEPAT_MIN_MS + Math.floor(r * (JEDA_CEPAT_MAKS_MS - JEDA_CEPAT_MIN_MS));
 }
 
-export function jadwalSetelahTugasCepat(jadwal, sekarang, rand = Math.random) {
+/**
+ * Instagram lebih keras terhadap pembacaan otomatis daripada TikTok, dan pembacaannya memakai sesi
+ * Instagram pemilik sendiri: jeda antar posting Instagram lebih panjang (keputusan sementara).
+ */
+export const JEDA_CEPAT_INSTAGRAM_MIN_MS = 5000;
+export const JEDA_CEPAT_INSTAGRAM_MAKS_MS = 10000;
+/** Instagram/YouTube meminta masuk / pemeriksaan: tugas platform itu tidak diminta selama ini (TikTok jalan terus). */
+export const JEDA_PLATFORM_MS = 60 * MENIT;
+
+export function jedaCepatInstagramMs(rand = Math.random) {
+  const r = Math.min(Math.max(Number(rand()) || 0, 0), 0.999999);
+  return JEDA_CEPAT_INSTAGRAM_MIN_MS + Math.floor(r * (JEDA_CEPAT_INSTAGRAM_MAKS_MS - JEDA_CEPAT_INSTAGRAM_MIN_MS));
+}
+
+export function jadwalSetelahTugasCepat(jadwal, sekarang, rand = Math.random, platform = "TIKTOK") {
   return {
     ...(jadwal ?? {}),
     istirahatSampai: null,
-    berikutnyaAt: sekarang + jedaCepatMs(rand),
+    berikutnyaAt: sekarang + (platform === "INSTAGRAM" ? jedaCepatInstagramMs(rand) : jedaCepatMs(rand)),
     terakhirKerjaAt: sekarang,
     alasanMundur: null,
   };
@@ -245,18 +260,44 @@ export function jadwalSetelahTugasCepat(jadwal, sekarang, rand = Math.random) {
  * tab otomatis ekstensi sendiri (yang itulah yang kena pemeriksaan). Terakhir dibuka dulu.
  */
 export function pilihTabTikTok(tabs, idOtomatis) {
+  return pilihTabHost(tabs, idOtomatis, "www.tiktok.com");
+}
+
+/** Sama, untuk host lain (www.instagram.com: tab Instagram yang dibuka pemilik dan sudah masuk). */
+export function pilihTabHost(tabs, idOtomatis, host) {
   const otomatis = new Set(idOtomatis ?? []);
   return (tabs ?? [])
     .filter((t) => {
       if (!t || otomatis.has(t.id) || t.discarded || t.status !== "complete") return false;
       try {
-        return new URL(t.url ?? "").hostname === "www.tiktok.com";
+        return new URL(t.url ?? "").hostname === host;
       } catch {
         return false;
       }
     })
     .sort((x, y) => (y.lastAccessed ?? 0) - (x.lastAccessed ?? 0))
     .map((t) => t.id);
+}
+
+/**
+ * Platform yang sanggup dikerjakan ekstensi SAAT INI (dikirim ke /tugas dan /status): TikTok selalu;
+ * YouTube selama tidak dijeda di sini (YouTube meminta pemeriksaan robot); Instagram hanya bila ada
+ * tab instagram.com terbuka dan Instagram tidak sedang dijeda di sini (tab itu meminta masuk /
+ * pemeriksaan). Jeda per platform (`jedaPlatform[PLATFORM] = sampai`) tidak menghentikan TikTok.
+ */
+export function platformSanggup({ adaTabInstagram, jedaPlatform }, sekarang) {
+  const dijeda = (p) => Number.isFinite(jedaPlatform?.[p]) && jedaPlatform[p] > sekarang;
+  const hasil = ["TIKTOK"];
+  if (!dijeda("YOUTUBE")) hasil.push("YOUTUBE");
+  if (adaTabInstagram && !dijeda("INSTAGRAM")) hasil.push("INSTAGRAM");
+  return hasil;
+}
+
+/** Jeda per platform yang sudah lewat dibuang. */
+export function rapikanJedaPlatform(jedaPlatform, sekarang) {
+  const hasil = {};
+  for (const [p, sampai] of Object.entries(jedaPlatform ?? {})) if (Number.isFinite(sampai) && sampai > sekarang) hasil[p] = sampai;
+  return hasil;
 }
 
 /** ±15% supaya istirahat tidak jatuh di menit yang sama setiap kali. */
@@ -340,13 +381,22 @@ export function sakelarKirimOtomatis(nilai) {
   return nilai !== false;
 }
 
-/** Kunci pembatas: `PROFIL:<handle>` atau `KONTEN:<id video>`; null bila tidak bisa ditentukan. */
+/**
+ * Kunci pembatas: TikTok `PROFIL:<handle>` / `KONTEN:<id video>` (bentuk lama, riwayatnya tetap
+ * berlaku); Instagram/YouTube berawalan platform (`INSTAGRAM:PROFIL:<akun>`, `YOUTUBE:KONTEN:<id>`).
+ * Null bila tidak bisa ditentukan.
+ */
 export function kunciKirimOtomatis(data) {
+  const platform = platformData(data);
+  const awalan = platform === "TIKTOK" ? "" : `${platform}:`;
   if (data?.jenis === "PROFIL") {
     const h = normalHandle(data.uniqueId);
-    return h ? `PROFIL:${h}` : null;
+    return h ? `${awalan}PROFIL:${h}` : null;
   }
-  if (data?.jenis === "KONTEN") return typeof data.videoId === "string" && /^\d{1,30}$/.test(data.videoId) ? `KONTEN:${data.videoId}` : null;
+  if (data?.jenis === "KONTEN") {
+    const sah = platform === "TIKTOK" ? /^\d{1,30}$/ : /^[A-Za-z0-9_-]{5,40}$/;
+    return typeof data.videoId === "string" && sah.test(data.videoId) ? `${awalan}KONTEN:${data.videoId}` : null;
+  }
   return null;
 }
 
@@ -361,7 +411,10 @@ export function bacaanLengkap(hasil, url) {
   const target = typeof url === "string" ? jenisHalaman(url) : null;
   if (!target || !cocokDenganUrl(hasil.data, target)) return false;
   if (hasil.data.jenis === "PROFIL") {
+    // YouTube: kanal tidak pernah membawa posting (angkanya ringkas) — pengikut saja sudah lengkap.
+    if (platformData(hasil.data) === "YOUTUBE") return true;
     // Akun tanpa video: TikTok tidak selalu memuat daftar video kosong, jadi angka profilnya cukup.
+    // Instagram: posting hanya tertangkap bila pemilik sudah masuk; tanpa itu tidak dikirim sendiri.
     return hasil.adaItemList === true || hasil.data.posting.length > 0 || hasil.data.jumlahVideo === 0;
   }
   return true;

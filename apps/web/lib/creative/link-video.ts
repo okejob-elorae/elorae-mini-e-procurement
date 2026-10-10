@@ -15,15 +15,22 @@
  *     (dan `m.tiktok.com/v/<id>.html`, yang tidak memuat handle) ditandai
  *     PENDEK: server membukanya dulu (`link-video-pendek.ts`) untuk membaca
  *     alamat tujuannya.
- *   - Instagram, posting foto TikTok, halaman TikTok lain, dan situs lain
+ *   - Instagram (2026-10-10): reel/posting `instagram.com[/<akun>]/reel|p|tv/<kode>`
+ *     → `https://www.instagram.com/reel|p/<kode>/`. Link yang tidak memuat nama
+ *     akun (bentuk "Salin link" Instagram) dibuka server dulu untuk mencari
+ *     pemiliknya (`link-video-pemilik.ts`, belum terbukti — bisa gagal).
+ *   - YouTube: `watch?v=`, `/shorts/`, `/live/`, `youtu.be/<id>` → link baku;
+ *     pemilik dan tanggal tayang dibaca server dari halaman videonya.
+ *   - Posting foto TikTok, halaman lain, Threads/Facebook, dan situs lain
  *     dilaporkan dengan alasannya. Teks biasa tanpa link diabaikan — itu
  *     obrolan WhatsApp, bukan kesalahan.
  *
  * Waktu unggah dibaca dari id videonya sendiri: 32 bit teratas id video
- * TikTok adalah detik unix saat video diunggah (`waktuTayangDariId`).
+ * TikTok adalah detik unix saat video diunggah (`waktuTayangDariId`);
+ * shortcode Instagram memuat waktu unggah dalam milidetik (`waktuTayangInstagram`).
  */
 
-import { normalHandle, urlKontenKanonik } from "./pantau-muatan";
+import { idKontenDariLink, normalHandle, urlKontenKanonik, urlKontenPlatform } from "./pantau-muatan";
 
 export const JENIS_ORANG_VIDEO = ["KOL", "AFILIASI"] as const;
 export type JenisOrangVideo = (typeof JENIS_ORANG_VIDEO)[number];
@@ -35,28 +42,34 @@ export const MAKS_TEKS_TEMPEL = 200_000;
 /** Panjang teks link yang disebut kembali di laporan. */
 const MAKS_TEKS_LINK = 300;
 
-export type AlasanLinkDitolak = "INSTAGRAM" | "LINK_FOTO" | "BUKAN_VIDEO" | "BUKAN_TIKTOK" | "LINK_TIDAK_DIKENAL";
+/** `BUKAN_TIKTOK` = bukan TikTok, Instagram, atau YouTube (nama kodenya dipertahankan). */
+export type AlasanLinkDitolak = "LINK_FOTO" | "BUKAN_VIDEO" | "BUKAN_TIKTOK" | "LINK_TIDAK_DIKENAL";
 
 /**
  * Alasan satu link gagal ditambahkan, untuk laporan tempel. Setiap kode punya
  * teks di `kreatifRuang.performa.alasan.<KODE>` (kedua bahasa).
+ * `PEMILIK_TIDAK_TERBACA`: link Instagram/YouTube yang akun pemiliknya tidak bisa dibaca server.
  */
-export type AlasanGagalTempel = AlasanLinkDitolak | "LINK_PENDEK_GAGAL" | "KOL_DIBLOKIR" | "GAGAL";
+export type AlasanGagalTempel = AlasanLinkDitolak | "LINK_PENDEK_GAGAL" | "PEMILIK_TIDAK_TERBACA" | "KOL_DIBLOKIR" | "GAGAL";
 
 export const ALASAN_GAGAL_TEMPEL: readonly AlasanGagalTempel[] = [
-  "INSTAGRAM",
   "LINK_FOTO",
   "BUKAN_VIDEO",
   "BUKAN_TIKTOK",
   "LINK_TIDAK_DIKENAL",
   "LINK_PENDEK_GAGAL",
+  "PEMILIK_TIDAK_TERBACA",
   "KOL_DIBLOKIR",
   "GAGAL",
 ];
 
 export type LinkVideoPanjang = { bentuk: "PANJANG"; teks: string; videoId: string; handle: string; url: string };
 export type LinkVideoPendek = { bentuk: "PENDEK"; teks: string; url: string };
-export type LinkVideo = LinkVideoPanjang | LinkVideoPendek;
+/** Reel/posting Instagram; `handle` hanya bila link-nya memuat nama akun. */
+export type LinkInstagram = { bentuk: "INSTAGRAM"; teks: string; id: string; handle: string | null; url: string; jenisKonten: "REEL" | "POST" };
+/** Video/Shorts YouTube; pemiliknya selalu dibaca server dari halaman videonya. */
+export type LinkYoutube = { bentuk: "YOUTUBE"; teks: string; id: string; url: string; jenisKonten: "VIDEO" | "SHORTS" };
+export type LinkVideo = LinkVideoPanjang | LinkVideoPendek | LinkInstagram | LinkYoutube;
 
 export type HasilBacaLink = {
   /** Link yang bisa diproses, urut seperti di teks; kembar sudah dibuang. */
@@ -80,6 +93,30 @@ export function waktuTayangDariId(videoId: string): Date | null {
   return detik > 0 ? new Date(detik * 1000) : null;
 }
 
+/** Alfabet shortcode Instagram (base64 URL-safe): shortcode = id media dalam basis 64. */
+const ALFABET_KODE_IG = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+/** Epoch id Instagram (ms) — id = (ms − epoch) << 23 | shard << 10 | urutan. */
+const EPOCH_ID_INSTAGRAM = BigInt("1314220021721");
+const GESER_23 = BigInt(23);
+const BASIS_64 = BigInt(64);
+/** Skema id ini dipakai sejak 2012; waktu sebelum itu pasti salah baca. */
+const AWAL_INSTAGRAM_MS = Date.UTC(2012, 0, 1);
+
+/**
+ * Waktu unggah dari shortcode Instagram (10–11 tanda; yang lebih pendek berasal dari sebelum skema
+ * id ini, yang lebih panjang = posting privat — keduanya tidak dibaca). Rumus id dari tulisan teknik Instagram 2012 ("Sharding & IDs at Instagram") — BELUM
+ * diukur pada posting sungguhan, jadi hasil di luar [peluncuran Instagram, `sekarang` + 1 hari]
+ * dibuang (`null`). Hanya dipakai bila tidak ada tanggal yang lebih pasti.
+ */
+export function waktuTayangInstagram(kode: string, sekarang: Date = new Date()): Date | null {
+  if (!/^[A-Za-z0-9_-]{10,11}$/.test(kode)) return null;
+  let id = BigInt(0);
+  for (const c of kode) id = id * BASIS_64 + BigInt(ALFABET_KODE_IG.indexOf(c));
+  const ms = Number((id >> GESER_23) + EPOCH_ID_INSTAGRAM);
+  if (!Number.isFinite(ms) || ms < AWAL_INSTAGRAM_MS || ms > sekarang.getTime() + 86_400_000) return null;
+  return new Date(ms);
+}
+
 /** Handle TikTok: huruf, angka, titik, garis bawah. */
 const POLA_HANDLE = /^[a-z0-9._]{1,64}$/;
 
@@ -94,6 +131,7 @@ function denganSkema(teks: string): URL | null {
 const hostTiktok = (host: string) => host === "tiktok.com" || host.endsWith(".tiktok.com");
 const hostInstagram = (host: string) =>
   host === "instagram.com" || host.endsWith(".instagram.com") || host === "instagr.am" || host.endsWith(".instagr.am");
+const hostYoutube = (host: string) => host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be";
 
 function bacaJalurPanjang(u: URL): { videoId: string; handle: string; url: string } | "TIDAK_SAH" | null {
   const m = /^\/@([^/]+)\/video\/([^/]+)\/?$/i.exec(u.pathname);
@@ -121,7 +159,13 @@ export function kenaliLink(calon: string): LinkVideo | { ditolak: AlasanLinkDito
   const u = denganSkema(calon.trim());
   if (!u) return { ditolak: "LINK_TIDAK_DIKENAL" };
   const host = u.hostname.toLowerCase();
-  if (hostInstagram(host)) return { ditolak: "INSTAGRAM" };
+  if (hostInstagram(host) || hostYoutube(host)) {
+    const r = idKontenDariLink(u.href);
+    if (!r) return { ditolak: "BUKAN_VIDEO" };
+    const url = urlKontenPlatform(r.platform, r.id, { bentuk: r.bentuk });
+    if (r.platform === "INSTAGRAM") return { bentuk: "INSTAGRAM", teks, id: r.id, handle: r.handle, url, jenisKonten: r.bentuk === "REEL" ? "REEL" : "POST" };
+    return { bentuk: "YOUTUBE", teks, id: r.id, url, jenisKonten: r.bentuk === "SHORTS" ? "SHORTS" : "VIDEO" };
+  }
   if (!hostTiktok(host)) return { ditolak: "BUKAN_TIKTOK" };
 
   const panjang = bacaJalurPanjang(u);
@@ -144,7 +188,7 @@ export function kenaliLink(calon: string): LinkVideo | { ditolak: AlasanLinkDito
 const PEMBUKA = /^[([{<"'*_~`]+/;
 const PENUTUP = /[)\]}>"'*_~`.,;:!?…]+$/;
 /** Host yang dikenali walau ditulis tanpa https:// — kiri-nya harus batas kata, supaya "faketiktok.com" tidak terbaca. */
-const HOST_TANPA_SKEMA = /(?:^|[^a-z0-9.-])((?:[a-z0-9-]+\.)*(?:tiktok\.com|instagram\.com|instagr\.am))(?=[/?#]|$)/i;
+const HOST_TANPA_SKEMA = /(?:^|[^a-z0-9.-])((?:[a-z0-9-]+\.)*(?:tiktok\.com|instagram\.com|instagr\.am|youtube\.com|youtu\.be))(?=[/?#]|$)/i;
 
 /** Link dari satu potongan teks (tanpa spasi), atau `null` bila potongan itu bukan link. */
 function pungutLink(potongan: string): string | null {
@@ -181,7 +225,8 @@ export function bacaLinkVideo(teks: string): HasilBacaLink {
       ditolak.push({ teks: k, alasan: r.ditolak });
       continue;
     }
-    const kunci = r.bentuk === "PANJANG" ? `v:${r.videoId}` : `p:${r.url}`;
+    const kunci =
+      r.bentuk === "PANJANG" ? `v:${r.videoId}` : r.bentuk === "INSTAGRAM" ? `ig:${r.id}` : r.bentuk === "YOUTUBE" ? `yt:${r.id}` : `p:${r.url}`;
     if (sudah.has(kunci)) {
       kembar += 1;
       continue;

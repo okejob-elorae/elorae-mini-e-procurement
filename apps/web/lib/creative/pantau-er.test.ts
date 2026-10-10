@@ -109,4 +109,17 @@ describe("hitungErAkun", () => {
     );
     expect(r.er).toBe(9999.99);
   });
+
+  it("Instagram: posting tanpa views (foto) dilewati; share dan simpan yang tidak dikirim dihitung 0, bukan NaN", () => {
+    const ig = (isi: Partial<PostingPantau>) => {
+      const p = posting(isi);
+      delete p.share;
+      delete p.save;
+      return p;
+    };
+    const foto = ig({ like: 300, komentar: 20 });
+    delete foto.views;
+    const r = hitungErAkun([foto, ig({ views: 1000, like: 90, komentar: 10 }), ig({ views: 2000, like: 180, komentar: 20 }), ig({ views: 500, like: 45, komentar: 5 })], SEKARANG);
+    expect(r).toEqual({ er: 10, avgViews: Math.round(3500 / 3), postsCounted: 3 });
+  });
 });

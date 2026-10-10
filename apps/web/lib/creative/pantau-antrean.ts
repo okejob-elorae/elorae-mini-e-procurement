@@ -32,12 +32,18 @@
  *     ANTRE dilewati;
  *   - satu video satu tugas terbuka: tugas SEGERA/berkala yang belum selesai
  *     menahan titik baru, dan titik yang belum selesai menahan cek berkala.
+ *
+ * Instagram dan YouTube (2026-10-10, D9): konten dengan link reel/posting
+ * Instagram atau video/Shorts YouTube diantrekan dengan aturan yang sama;
+ * `platform` tugasnya mengikuti link-nya, dan ekstensi hanya meminjam
+ * platform yang sanggup dikerjakannya saat itu (Instagram hanya lewat tab
+ * instagram.com yang dibuka pemilik). Tugas PROFIL tetap hanya TikTok.
  */
 
 import { geserHari } from "@/lib/tanggal-isian";
 import { selisihHari } from "./tenggat";
 import type { PengaturanPantau } from "./pantau-aturan";
-import { linkTiktok, normalHandle, urlKontenKanonik, urlProfilTiktok } from "./pantau-muatan";
+import { idKontenDariLink, linkTiktok, normalHandle, urlKontenKanonik, urlProfilTiktok, type PlatformPantau } from "./pantau-muatan";
 
 export const TITIK_KONTEN = [1, 3, 7, 30] as const;
 export type TitikKonten = (typeof TITIK_KONTEN)[number];
@@ -94,7 +100,7 @@ export type MasukanAntrean = {
 export type TugasBaru = {
   kunci: string;
   jenis: "PROFIL" | "KONTEN";
-  platform: "TIKTOK";
+  platform: PlatformPantau;
   accountId: string | null;
   contentId: string | null;
   url: string;
@@ -106,13 +112,26 @@ export type TugasBaru = {
 
 export type HasilAntrean = { baru: TugasBaru[]; lewati: string[] };
 
+/**
+ * Platform tugas konten dari link-nya: link TikTok apa pun (termasuk link pendek, yang diikuti
+ * ekstensi), atau link reel/posting Instagram dan video YouTube yang id-nya terbaca. Selain itu
+ * `null` (tidak diantrekan).
+ */
+export function platformTugasKonten(link: string | null | undefined): PlatformPantau | null {
+  if (!link) return null;
+  if (linkTiktok(link)) return "TIKTOK";
+  const r = idKontenDariLink(link);
+  return r && r.platform !== "TIKTOK" ? r.platform : null;
+}
+
 export function susunAntreanPantau(m: MasukanAntrean): HasilAntrean {
   const baru: TugasBaru[] = [];
   const lewati: string[] = [];
   const dipakai = new Set<string>();
 
   for (const k of m.konten) {
-    if (k.kolDiblokir || !k.liveAtHari || !k.link || !linkTiktok(k.link)) continue;
+    const platform = platformTugasKonten(k.link);
+    if (k.kolDiblokir || !k.liveAtHari || !k.link || !platform) continue;
     const terbuka = k.tugasTerbuka ?? [];
     // Tugas SEGERA/berkala yang belum selesai akan membaca angka terbaru: titik yang jatuh sementara itu tertutup olehnya.
     if (terbuka.some((x) => !kunciTitik(x))) continue;
@@ -134,7 +153,7 @@ export function susunAntreanPantau(m: MasukanAntrean): HasilAntrean {
         baru.push({
           kunci,
           jenis: "KONTEN",
-          platform: "TIKTOK",
+          platform,
           accountId: null,
           contentId: k.id,
           url: urlKontenKanonik(k.link),
@@ -158,7 +177,7 @@ export function susunAntreanPantau(m: MasukanAntrean): HasilAntrean {
     baru.push({
       kunci,
       jenis: "KONTEN",
-      platform: "TIKTOK",
+      platform,
       accountId: null,
       contentId: k.id,
       url: urlKontenKanonik(k.link),
@@ -197,11 +216,11 @@ export function susunAntreanPantau(m: MasukanAntrean): HasilAntrean {
  * ini, prioritas di atas semua tugas lain. Dibuat penulis tempel di transaksi
  * yang sama dengan kontennya.
  */
-export function tugasSegera(isi: { contentId: string; url: string; hariIni: string }): TugasBaru {
+export function tugasSegera(isi: { contentId: string; url: string; hariIni: string; platform?: PlatformPantau }): TugasBaru {
   return {
     kunci: kunciSegera(isi.contentId),
     jenis: "KONTEN",
-    platform: "TIKTOK",
+    platform: isi.platform ?? "TIKTOK",
     accountId: null,
     contentId: isi.contentId,
     url: urlKontenKanonik(isi.url),

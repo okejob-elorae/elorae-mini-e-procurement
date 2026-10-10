@@ -22,9 +22,11 @@ import { angkaTitik } from "@/lib/creative/angka-konten";
 import {
   alamatPerforma,
   JENIS_SARING_PERFORMA,
+  PLATFORM_SARING_PERFORMA,
   URUTAN_PERFORMA,
   type JenisSaringPerforma,
   type ParamPerforma,
+  type PlatformSaringPerforma,
   type StatusVideo,
   type UrutanPerforma,
 } from "@/lib/creative/performa";
@@ -93,7 +95,7 @@ export function PerformaClient({
     }, 400);
   };
 
-  const disaring = Boolean(param.cari || param.jenis !== "semua" || param.dari || param.sampai);
+  const disaring = Boolean(param.cari || param.jenis !== "semua" || param.platform !== "semua" || param.dari || param.sampai);
   const r = data.ringkasan;
   const { cek, sedangDicek } = useCekSekarang();
   const idHalaman = data.baris.map((b) => b.kontenId);
@@ -151,6 +153,18 @@ export function PerformaClient({
             {JENIS_SARING_PERFORMA.map((j) => (
               <SelectItem key={j} value={j}>
                 {td(`performa.jenis.${j}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={param.platform} onValueChange={(v) => pergi({ platform: v as PlatformSaringPerforma })}>
+          <SelectTrigger className="w-full lg:w-[160px]" aria-label={t("performa.platform.label")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PLATFORM_SARING_PERFORMA.map((p) => (
+              <SelectItem key={p} value={p}>
+                {td(`performa.platform.${p}`)}
               </SelectItem>
             ))}
           </SelectContent>
@@ -353,7 +367,7 @@ function TabelPerforma({
                   className="flex items-center gap-1 text-xs text-tautan hover:underline"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {t("performa.buka")}
+                  {td(`performa.bukaDi.${b.platform}`)}
                   <ExternalLink className="h-3 w-3" aria-hidden />
                 </a>
               </TableCell>

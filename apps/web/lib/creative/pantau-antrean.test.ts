@@ -94,11 +94,22 @@ describe("susunAntreanPantau — konten", () => {
     expect(pada(45).baru.map((t) => t.kunci)).toEqual([`KONTEN:k1:B${geserHari(TAYANG, 45)}`]);
   });
 
-  it("link yang bukan TikTok dan KOL diblokir dilewati", () => {
-    const ig = { ...konten, id: "k2", link: "https://www.instagram.com/reel/abc" };
+  it("link yang bukan konten TikTok/Instagram/YouTube dan KOL diblokir dilewati", () => {
+    const profilIg = { ...konten, id: "k2", link: "https://www.instagram.com/kol.satu/" };
+    const lain = { ...konten, id: "k6", link: "https://shopee.co.id/x" };
     const blokir = { ...konten, id: "k3", kolDiblokir: true };
-    const r = susunAntreanPantau(masukan({ hariIni: geserHari(TAYANG, 1), konten: [ig, blokir] }));
+    const r = susunAntreanPantau(masukan({ hariIni: geserHari(TAYANG, 1), konten: [profilIg, lain, blokir] }));
     expect(r.baru).toEqual([]);
+  });
+
+  it("reel Instagram dan video YouTube diantrekan dengan platform dan link bakunya", () => {
+    const ig = { ...konten, id: "k7", link: "https://www.instagram.com/kol.satu/reel/C9xYz_AbC-1/?igsh=x" };
+    const yt = { ...konten, id: "k8", link: "https://youtu.be/dQw4w9WgXcQ?si=x" };
+    const r = susunAntreanPantau(masukan({ hariIni: geserHari(TAYANG, 1), konten: [ig, yt] }));
+    expect(r.baru.map((t) => [t.platform, t.url, t.kunci])).toEqual([
+      ["INSTAGRAM", "https://www.instagram.com/reel/C9xYz_AbC-1/", kunciKonten("k7", 1)],
+      ["YOUTUBE", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", kunciKonten("k8", 1)],
+    ]);
   });
 
   it("url tugas konten memakai bentuk baku www.tiktok.com/@handle/video/<id>", () => {
@@ -127,6 +138,10 @@ describe("tugasSegera — video yang baru ditempel", () => {
       jatuhHari: "2003-04-01",
     });
     expect(PRIORITAS_PANTAU.KONTEN_SEGERA).toBeGreaterThan(PRIORITAS_PANTAU.KONTEN[1]);
+    expect(tugasSegera({ contentId: "k9", url: "https://youtu.be/dQw4w9WgXcQ", hariIni: "2003-04-01", platform: "YOUTUBE" })).toMatchObject({
+      platform: "YOUTUBE",
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    });
   });
 });
 

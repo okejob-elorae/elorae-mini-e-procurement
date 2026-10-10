@@ -12,12 +12,14 @@ import {
   JENIS_ORANG_VIDEO,
   MAKS_TEKS_TEMPEL,
   waktuTayangDariId,
+  waktuTayangInstagram,
   type AlasanGagalTempel,
   type JenisOrangVideo,
 } from "./link-video";
 import { bukaSemuaLinkPendek, type OpsiBukaPendek } from "./link-video-pendek";
+import { bukaSemuaPemilik, type OpsiBukaPemilik, type PermintaanPemilik } from "./link-video-pemilik";
 import { tugasSegera } from "./pantau-antrean";
-import { normalHandle, urlProfilTiktok, videoIdDariLink } from "./pantau-muatan";
+import { kontenIdDariLink, normalHandle, urlProfilPantau, type PlatformPantau } from "./pantau-muatan";
 import { TAHAP_BERJALAN } from "./tahap";
 import { buatBriefDiTx } from "./writer";
 
@@ -47,6 +49,13 @@ import { buatBriefDiTx } from "./writer";
  * Jejak `AuditLog` ditulis oleh penulis-penulis itu sendiri, di transaksi yang
  * sama, ber-`metadata.sumber = "TEMPEL_LINK"`. Satu link yang gagal tidak
  * menggagalkan yang lain; alasannya dilaporkan per baris.
+ *
+ * Instagram dan YouTube (2026-10-10, D9): langkah yang sama per platform —
+ * akun Instagram/YouTube dicari lewat handle, KOL baru mendapat akun platform
+ * itu, konten Instagram berformat REELS (reel) atau FEED (posting), YouTube
+ * VIDEO. Link yang tidak memuat nama akun dibuka server dulu
+ * (`link-video-pemilik.ts`); tanggal tayang YouTube dari halaman videonya,
+ * Instagram dari shortcode-nya.
  */
 
 type Klien = Prisma.TransactionClient;
@@ -71,7 +80,18 @@ export type HasilTempelLink =
     }
   | { ok: false; kode: "JENIS_TIDAK_SAH" | "KOSONG" | "TERLALU_PANJANG" | "TERLALU_BANYAK" };
 
-export type VideoTempel = { baris: string; videoId: string; handle: string; url: string };
+/**
+ * Satu konten yang akan ditambahkan. `videoId` = id video TikTok / shortcode Instagram / id video
+ * YouTube; `platform` tidak ada = TIKTOK; `format` tidak ada = VIDEO.
+ */
+export type VideoTempel = {
+  baris: string;
+  videoId: string;
+  handle: string;
+  url: string;
+  platform?: PlatformPantau;
+  format?: "VIDEO" | "REELS" | "FEED";
+};
 
 export type HasilSatu =
   | { status: "DITAMBAHKAN"; kontenId: string; kolaborasiId: string; kolBaru: boolean }
@@ -80,10 +100,19 @@ export type HasilSatu =
 
 /** Akun TikTok yang handle-nya sama (tersimpan dengan/tanpa "@", huruf apa pun, atau sebagai URL profil). */
 export async function akunTiktok(tx: Klien, handle: string) {
+  return akunPlatform(tx, "TIKTOK", handle);
+}
+
+/** Akun platform itu yang handle-nya sama (tersimpan dengan/tanpa "@", huruf apa pun, atau sebagai URL profil). */
+export async function akunPlatform(tx: Klien, platform: PlatformPantau, handle: string) {
   const calon = await tx.kolAccount.findMany({
     where: {
-      platform: "TIKTOK",
-      OR: [{ handle: samaTeks(handle) }, { handle: samaTeks(`@${handle}`) }, { handle: cariTeks(`/@${handle}`) }],
+      platform,
+      OR: [
+        { handle: samaTeks(handle) },
+        { handle: samaTeks(`@${handle}`) },
+        { handle: cariTeks(platform === "INSTAGRAM" ? `instagram.com/${handle}` : `/@${handle}`) },
+      ],
     },
     select: { id: true, handle: true, kol: { select: { id: true, blockedAt: true, createdAt: true } } },
     take: 50,
@@ -109,19 +138,21 @@ export async function tempelSatuDiTx(
   v: VideoTempel & { liveAt: Date; jenis: JenisOrangVideo; olehUserId: string; sekarang: Date; sumber?: string; tanpaTugasSegera?: boolean },
 ): Promise<HasilSatu> {
   const sumber = v.sumber ?? SUMBER_TEMPEL;
+  const platform = v.platform ?? "TIKTOK";
+  // Shortcode Instagram dan id YouTube peka huruf besar/kecil; `cariTeks` tidak (MariaDB) — pencocok akhirnya di JS.
   const ada = await tx.kolContent.findMany({ where: { link: cariTeks(v.videoId) }, select: { id: true, link: true }, take: 50 });
-  const sama = ada.find((k) => videoIdDariLink(k.link) === v.videoId);
+  const sama = ada.find((k) => kontenIdDariLink(k.link, platform) === v.videoId);
   if (sama) return { status: "SUDAH_ADA", kontenId: sama.id };
 
   let kolId: string;
   let kolBaru = false;
-  const akun = await akunTiktok(tx, v.handle);
+  const akun = await akunPlatform(tx, platform, v.handle);
   if (akun.length) {
     if (akun[0].kol.blockedAt) return { status: "GAGAL", alasan: "KOL_DIBLOKIR" };
     kolId = akun[0].kol.id;
   } else {
     const r = await simpanProfilKolDiTx(tx, {
-      isi: { name: `@${v.handle}`, akun: [{ platform: "TIKTOK", handle: v.handle, followers: 0, url: urlProfilTiktok(v.handle) }] },
+      isi: { name: `@${v.handle}`, akun: [{ platform, handle: v.handle, followers: 0, url: urlProfilPantau(platform, v.handle) }] },
       olehUserId: v.olehUserId,
       periksaKembar: false,
       sumber,
@@ -155,8 +186,8 @@ export async function tempelSatuDiTx(
 
   const k = await simpanKontenKolDiTx(tx, {
     kolaborasiId,
-    platform: "TIKTOK",
-    format: "VIDEO",
+    platform,
+    format: v.format ?? "VIDEO",
     link: v.url,
     liveAt: v.liveAt,
     olehUserId: v.olehUserId,
@@ -165,7 +196,7 @@ export async function tempelSatuDiTx(
   if (!k.ok) throw new Error(`TEMPEL_KONTEN_${k.kode}`);
   if (v.tanpaTugasSegera) return { status: "DITAMBAHKAN", kontenId: k.id, kolaborasiId, kolBaru };
 
-  const t = tugasSegera({ contentId: k.id, url: v.url, hariIni: hariIniWib(v.sekarang) });
+  const t = tugasSegera({ contentId: k.id, url: v.url, hariIni: hariIniWib(v.sekarang), platform });
   await tx.kolTugasPantau.create({
     data: {
       kunci: t.kunci,
@@ -192,6 +223,8 @@ export async function tempelLinkVideo(input: {
   olehUserId: string;
   sekarang?: Date;
   bukaPendek?: OpsiBukaPendek;
+  /** `fetch` suntikan untuk membaca pemilik link Instagram/YouTube (tes). */
+  bukaPemilik?: OpsiBukaPemilik;
 }): Promise<HasilTempelLink> {
   if (!(JENIS_ORANG_VIDEO as readonly string[]).includes(input.jenis)) return { ok: false, kode: "JENIS_TIDAK_SAH" };
   const teks = typeof input.teks === "string" ? input.teks : "";
@@ -202,29 +235,48 @@ export async function tempelLinkVideo(input: {
 
   const gagal: GagalTempel[] = baca.ditolak.map((d) => ({ baris: d.teks, alasan: d.alasan }));
   const pendek = baca.link.flatMap((l) => (l.bentuk === "PENDEK" ? [l.url] : []));
-  const terbuka = pendek.length ? await bukaSemuaLinkPendek(pendek, input.bukaPendek) : new Map();
+  // Link Instagram tanpa nama akun dan semua link YouTube: pemiliknya dibaca dari halamannya.
+  const cariPemilik: PermintaanPemilik[] = baca.link.flatMap((l): PermintaanPemilik[] =>
+    l.bentuk === "YOUTUBE" ? [{ platform: "YOUTUBE", id: l.id }] : l.bentuk === "INSTAGRAM" && !l.handle ? [{ platform: "INSTAGRAM", id: l.id }] : [],
+  );
+  const [terbuka, pemilik] = await Promise.all([
+    pendek.length ? bukaSemuaLinkPendek(pendek, input.bukaPendek) : Promise.resolve(new Map()),
+    cariPemilik.length ? bukaSemuaPemilik(cariPemilik, input.bukaPemilik) : Promise.resolve(new Map()),
+  ]);
 
   // Link pendek yang terbuka bisa menunjuk video yang sama dengan link lain di tempelan.
-  const video: VideoTempel[] = [];
+  const video: (VideoTempel & { tayangAt: Date | null })[] = [];
   const sudah = new Set<string>();
   let kembar = baca.kembar;
   for (const l of baca.link) {
-    let v: VideoTempel;
+    let v: VideoTempel & { tayangAt: Date | null };
     if (l.bentuk === "PANJANG") {
-      v = { baris: l.teks, videoId: l.videoId, handle: l.handle, url: l.url };
-    } else {
+      v = { baris: l.teks, videoId: l.videoId, handle: l.handle, url: l.url, tayangAt: waktuTayangDariId(l.videoId) };
+    } else if (l.bentuk === "PENDEK") {
       const r = terbuka.get(l.url);
       if (!r?.ok) {
         gagal.push({ baris: l.teks, alasan: "LINK_PENDEK_GAGAL" });
         continue;
       }
-      v = { baris: l.teks, videoId: r.videoId, handle: r.handle, url: r.url };
+      v = { baris: l.teks, videoId: r.videoId, handle: r.handle, url: r.url, tayangAt: waktuTayangDariId(r.videoId) };
+    } else {
+      const platform = l.bentuk;
+      const p = l.bentuk === "INSTAGRAM" && l.handle ? { ok: true as const, handle: l.handle, tayangAt: null } : pemilik.get(`${platform}:${l.id}`);
+      const handle = p?.ok ? normalHandle(p.handle) : "";
+      if (!p?.ok || !handle) {
+        gagal.push({ baris: l.teks, alasan: "PEMILIK_TIDAK_TERBACA" });
+        continue;
+      }
+      const tayangAt = p.tayangAt ?? (platform === "INSTAGRAM" ? waktuTayangInstagram(l.id) : null);
+      const format = l.bentuk === "INSTAGRAM" ? (l.jenisKonten === "REEL" ? "REELS" : "FEED") : "VIDEO";
+      v = { baris: l.teks, videoId: l.id, handle, url: l.url, platform, format, tayangAt };
     }
-    if (sudah.has(v.videoId)) {
+    const kunci = `${v.platform ?? "TIKTOK"}:${v.videoId}`;
+    if (sudah.has(kunci)) {
       kembar += 1;
       continue;
     }
-    sudah.add(v.videoId);
+    sudah.add(kunci);
     video.push(v);
   }
 
@@ -233,9 +285,9 @@ export async function tempelLinkVideo(input: {
   let kolBaru = 0;
   const kontenIds: string[] = [];
   const kolaborasiDisentuh = new Set<string>();
-  for (const v of video) {
+  for (const { tayangAt, ...v } of video) {
     const sekarang = input.sekarang ?? new Date();
-    const unggah = waktuTayangDariId(v.videoId) ?? sekarang;
+    const unggah = tayangAt ?? sekarang;
     // Jam TikTok/ID yang aneh tidak boleh membuat tanggal tayang di masa depan (angka ditolak sebelum hari tayang).
     const liveAt = unggah.getTime() > sekarang.getTime() ? sekarang : unggah;
     try {

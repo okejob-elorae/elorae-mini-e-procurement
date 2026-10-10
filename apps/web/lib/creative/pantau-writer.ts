@@ -5,7 +5,7 @@ import { denganNomorUnik } from "@/lib/receivables/nomor";
 import { cariTeks } from "@/lib/db/cari-teks";
 import { formatDateOnlyJakarta, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { geserHari, hariIniWib } from "@/lib/tanggal-isian";
-import { catatAngkaDiTx, type KodeGagalKontenKol } from "./konten-kol-writer";
+import type { KodeGagalKontenKol } from "./konten-kol-writer";
 import { susunAntreanPantau, BATAS_TELAT_KONTEN_HARI, PENANDA_MINTA, TITIK_KONTEN, kunciBerkala, kunciKonten, kunciProfil } from "./pantau-antrean";
 import {
   dalamJamKerja,
@@ -31,6 +31,7 @@ import { akunUtama, ikutiTerukur, TOLERANSI_ER } from "./angka-terukur";
 import { menandaiElorae, postingMilik, SUMBER_DETEKSI_TAG, type PengaturanBrand, type PostingBrand } from "./brand-collab";
 import { bacaPengaturanBrand } from "./brand-pengaturan";
 import {
+  catatAngkaPantauDiTx,
   catatBrandDariPembacaanDiTx,
   kosongkanRingkasan,
   masukkanKePerformaDiTx,
@@ -41,20 +42,24 @@ import {
 } from "./brand-writer";
 import { sinkronJurnalKolAman } from "./jurnal-kol";
 import { simpanProfilKolDiTx } from "./kol-writer";
-import { waktuTayangDariId } from "./link-video";
+import { waktuTayangDariId, waktuTayangInstagram } from "./link-video";
 import { hitungErAkun } from "./pantau-er";
 import {
+  formatDariBentuk,
   handleCocok,
   handleDariLink,
+  kontenIdDariLink,
   normalHandle,
   pangkasInt,
-  urlKontenKanonik,
-  urlProfilTiktok,
-  videoIdDariLink,
+  PLATFORM_PANTAU,
+  platformHasil,
+  urlKontenPlatform,
+  urlProfilPantau,
   type HasilKonten,
   type HasilPantau,
   type HasilProfil,
   type MasalahPantau,
+  type PlatformPantau,
 } from "./pantau-muatan";
 import { bacaPengaturanPantau } from "./pantau-pengaturan";
 import { buatKode, buatToken, hashRahasia } from "./pantau-token";
@@ -81,6 +86,12 @@ import { tempelSatuDiTx } from "./tempel-link-writer";
  * `sekarang` dan `pengaturan` bisa diberikan pemanggil: tes memakai tahun
  * 2000–2004 dan pengaturannya sendiri, tanpa menyentuh baris pengaturan
  * sungguhan atau kuota hari ini.
+ *
+ * Instagram dan YouTube (2026-10-10, D9): setiap hasil membawa `platform`
+ * (tidak ada = TIKTOK). Akun dan konten dicocokkan di platform itu saja; KOL
+ * baru mendapat akun platform itu. Ekstensi menyebut platform yang sanggup
+ * dikerjakannya (`/tugas` `{ platform: [...] }`, tidak ada = TikTok saja —
+ * ekstensi lama tidak pernah meminjam tugas Instagram/YouTube).
  */
 
 type Klien = Prisma.TransactionClient;
@@ -335,7 +346,7 @@ export async function susunAntrean(
   const [kontenMentah, akunMentah] = await Promise.all([
     prisma.kolContent.findMany({
       where: {
-        link: cariTeks("tiktok.com"),
+        OR: ["tiktok.com", "instagram.com", "instagr.am", "youtube.com", "youtu.be"].map((h) => ({ link: cariTeks(h) })),
         liveAt: { gte: tertua, lte: sekarang },
         ...(input.cakupan?.kontenIds ? { id: { in: [...input.cakupan.kontenIds] } } : {}),
       },
@@ -587,15 +598,17 @@ export type StatusEkstensi = {
 
 export async function statusPerangkat(
   p: PerangkatSah,
-  o: { sekarang?: Date; pengaturan?: PengaturanPantau } = {},
+  o: { sekarang?: Date; pengaturan?: PengaturanPantau; platforms?: readonly PlatformPantau[] } = {},
 ): Promise<StatusEkstensi> {
   const sekarang = o.sekarang ?? new Date();
   const pg = o.pengaturan ?? (await bacaPengaturanPantau());
   const h = await hitungHariIni(prisma, sekarang, pg.kuotaHarian);
   const dijeda = terbuka(p.dijedaSampai, sekarang);
+  // Hanya permintaan untuk platform yang sanggup dikerjakan perangkat ini (tanpa daftar = TikTok).
   const permintaanLangsung = await prisma.kolTugasPantau.count({
     where: {
       status: "ANTRE",
+      platform: { in: [...(o.platforms ?? PLATFORM_BAWAAN_EKSTENSI)] },
       kunci: { contains: PENANDA_MINTA },
       jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) },
     },
@@ -621,23 +634,42 @@ export async function statusPerangkat(
   };
 }
 
-export type TugasEkstensi = { id: string; jenis: "PROFIL" | "KONTEN"; platform: "TIKTOK"; url: string; handle?: string };
+export type TugasEkstensi = { id: string; jenis: "PROFIL" | "KONTEN"; platform: PlatformPantau; url: string; handle?: string };
 export type HasilPinjam = { tugas: TugasEkstensi | null; alasan?: AlasanTanpaTugas };
+
+/** Platform yang dikerjakan ekstensi yang tidak menyebut daftarnya (versi ≤ 0.10): TikTok saja. */
+export const PLATFORM_BAWAAN_EKSTENSI: readonly PlatformPantau[] = ["TIKTOK"];
+
+/** Daftar platform dari permintaan ekstensi; tidak ada / rusak → bawaan; isian yang tidak dikenal dibuang. */
+export function bacaPlatformEkstensi(nilai: unknown): readonly PlatformPantau[] {
+  const daftar = typeof nilai === "string" ? nilai.split(",") : Array.isArray(nilai) ? nilai : null;
+  if (!daftar) return PLATFORM_BAWAAN_EKSTENSI;
+  const sah = [
+    ...new Set(
+      daftar
+        .map((x: unknown) => (typeof x === "string" ? x.trim() : x))
+        .filter((x): x is PlatformPantau => typeof x === "string" && (PLATFORM_PANTAU as readonly string[]).includes(x)),
+    ),
+  ];
+  return sah.length ? sah : PLATFORM_BAWAAN_EKSTENSI;
+}
 
 const PILIH_TUGAS = {
   id: true,
   jenis: true,
+  platform: true,
   url: true,
   account: { select: { handle: true } },
-  content: { select: { link: true, collab: { select: { kol: { select: { accounts: { where: { platform: "TIKTOK" as const }, select: { handle: true } } } } } } } },
+  content: { select: { link: true, collab: { select: { kol: { select: { accounts: { select: { platform: true, handle: true } } } } } } } },
 } satisfies Prisma.KolTugasPantauSelect;
 
 function keTugasEkstensi(t: Prisma.KolTugasPantauGetPayload<{ select: typeof PILIH_TUGAS }>): TugasEkstensi {
+  const platform = (PLATFORM_PANTAU as readonly string[]).includes(t.platform) ? (t.platform as PlatformPantau) : "TIKTOK";
   const handle =
     t.jenis === "PROFIL"
       ? normalHandle(t.account?.handle)
-      : (handleDariLink(t.content?.link ?? t.url) ?? normalHandle(t.content?.collab?.kol?.accounts[0]?.handle));
-  return { id: t.id, jenis: t.jenis === "KONTEN" ? "KONTEN" : "PROFIL", platform: "TIKTOK", url: t.url, ...(handle ? { handle } : {}) };
+      : (handleDariLink(t.content?.link ?? t.url) ?? normalHandle(t.content?.collab?.kol?.accounts.find((a) => a.platform === platform)?.handle));
+  return { id: t.id, jenis: t.jenis === "KONTEN" ? "KONTEN" : "PROFIL", platform, url: t.url, ...(handle ? { handle } : {}) };
 }
 
 /**
@@ -661,10 +693,13 @@ export async function pinjamTugas(input: {
   sekarang?: Date;
   pengaturan?: PengaturanPantau;
   cakupan?: { tugasIds?: readonly string[] };
+  /** Platform yang sanggup dikerjakan perangkat SAAT INI (Instagram hanya bila ada tab instagram.com terbuka). */
+  platforms?: readonly PlatformPantau[];
 }): Promise<HasilPinjam> {
   const sekarang = input.sekarang ?? new Date();
   const pg = input.pengaturan ?? (await bacaPengaturanPantau());
   const lingkup: Prisma.KolTugasPantauWhereInput = input.cakupan?.tugasIds ? { id: { in: [...input.cakupan.tugasIds] } } : {};
+  const platforms = [...(input.platforms ?? PLATFORM_BAWAAN_EKSTENSI)];
   const sampai = new Date(sekarang.getTime() + menit(LEASE_MENIT));
 
   return runSerializable(async (tx): Promise<HasilPinjam> => {
@@ -679,9 +714,15 @@ export async function pinjamTugas(input: {
       where: { ...lingkup, status: "DIPINJAM", pinjamSampai: { lt: sekarang } },
       data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
     });
+    // Pinjaman platform yang kini tidak sanggup dikerjakan perangkat ini (tab Instagram ditutup,
+    // Instagram meminta masuk) kembali ke antrean tanpa menambah percobaan.
+    await tx.kolTugasPantau.updateMany({
+      where: { ...lingkup, status: "DIPINJAM", perangkatId: input.perangkatId, platform: { notIn: platforms } },
+      data: { status: "ANTRE", perangkatId: null, pinjamSampai: null },
+    });
 
     const dipegang = await tx.kolTugasPantau.findFirst({
-      where: { ...lingkup, status: "DIPINJAM", perangkatId: input.perangkatId, pinjamSampai: { gte: sekarang } },
+      where: { ...lingkup, status: "DIPINJAM", perangkatId: input.perangkatId, platform: { in: platforms }, pinjamSampai: { gte: sekarang } },
       orderBy: [{ pinjamSampai: "asc" }, { id: "asc" }],
       select: PILIH_TUGAS,
     });
@@ -697,6 +738,7 @@ export async function pinjamTugas(input: {
       where: {
         ...lingkup,
         status: "ANTRE",
+        platform: { in: platforms },
         jatuhAt: { lte: sekarang, gte: new Date(sekarang.getTime() - UMUR_MAKS_TUGAS_HARI * 86_400_000) },
         ...(diLuarJam ? { kunci: { contains: PENANDA_MINTA } } : {}),
       },
@@ -739,7 +781,10 @@ export type HasilSimpan = { ok: true; ulang?: true } | { ok: false; kode: KodeTo
 async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, k: KonteksPembacaan) {
   const sekarang = k.sekarang;
   const perangkatId = k.perangkat.id;
-  const er = hitungErAkun(data.posting, sekarang);
+  const platform = platformHasil(data);
+  // YouTube: angka kanal hanya teks ringkas dan posting tidak dikirim → ER tidak dihitung (null, ER lama tetap).
+  const er = hitungErAkun(platform === "YOUTUBE" ? [] : data.posting, sekarang);
+  const idPlatform = data.secUid ?? data.idPlatform;
   // Angka terukur SEBELUM pembaruan: dasar untuk tahu apakah angka KOL masih mengikuti pemantauan.
   const lama = await tx.kolAccount.findUnique({ where: { id: akunId }, select: { kolId: true, platform: true, er: true, avgViews: true } });
   await tx.kolFollowerSnapshot.create({
@@ -747,7 +792,8 @@ async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, k:
       accountId: akunId,
       followers: pangkasInt(data.pengikut),
       recordedAt: sekarang,
-      source: "ekstensi",
+      // Pengikut dari teks ringkas ("46,5 jt") ditandai, supaya tidak dibaca sebagai angka persis.
+      source: data.pengikutPerkiraan ? "ekstensi-perkiraan" : "ekstensi",
       er: er.er === null ? null : new Prisma.Decimal(er.er),
       avgViews: er.avgViews,
       postsCounted: er.postsCounted,
@@ -760,7 +806,7 @@ async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, k:
       followers: pangkasInt(data.pengikut),
       // ER yang tidak bisa dihitung (< 3 posting sah) tidak menghapus ER terakhir yang terukur; `erUpdatedAt` menyebut kapan.
       ...(er.er !== null ? { er: new Prisma.Decimal(er.er), avgViews: er.avgViews, erUpdatedAt: sekarang } : {}),
-      ...(data.secUid ? { platformUserId: data.secUid.slice(0, 191) } : {}),
+      ...(idPlatform ? { platformUserId: idPlatform.slice(0, 191) } : {}),
       lastCheckedAt: sekarang,
       checkStatus: "OK",
     },
@@ -772,11 +818,12 @@ async function simpanProfilDiTx(tx: Klien, akunId: string, data: HasilProfil, k:
     k.ringkasan.brand += await catatBrandDariPembacaanDiTx(tx, {
       kolId: lama.kolId,
       accountId: akunId,
+      platform,
       handle: data.uniqueId,
       posting: data.posting,
       createdById: k.perangkat.dibuatOlehId,
     });
-    await masukkanKePerformaDiTx(tx, { handle: data.uniqueId, posting: data.posting }, k);
+    await masukkanKePerformaDiTx(tx, { platform, handle: data.uniqueId, posting: data.posting }, k);
   }
 }
 
@@ -785,6 +832,7 @@ function postingDariKonten(d: HasilKonten): PostingBrand & AngkaPosting {
   return {
     id: d.videoId,
     ...(d.dibuatPada !== undefined ? { dibuatPada: d.dibuatPada } : {}),
+    ...(d.bentuk !== undefined ? { bentuk: d.bentuk } : {}),
     views: d.views,
     like: d.like,
     komentar: d.komentar,
@@ -800,9 +848,10 @@ function postingDariKonten(d: HasilKonten): PostingBrand & AngkaPosting {
 
 /** Riwayat brand (D1) sebuah hasil konten, dicatat pada KOL pemilik kontennya. */
 async function catatBrandKontenDiTx(tx: Klien, kontenId: string, d: HasilKonten, k: KonteksPembacaan) {
+  const platform = platformHasil(d);
   const c = await tx.kolContent.findUnique({
     where: { id: kontenId },
-    select: { collab: { select: { kol: { select: { id: true, accounts: { where: { platform: "TIKTOK" }, select: { id: true, handle: true } } } } } } },
+    select: { collab: { select: { kol: { select: { id: true, accounts: { where: { platform }, select: { id: true, handle: true } } } } } } },
   });
   const kol = c?.collab?.kol;
   if (!kol) return;
@@ -810,6 +859,7 @@ async function catatBrandKontenDiTx(tx: Klien, kontenId: string, d: HasilKonten,
   k.ringkasan.brand += await catatBrandDariPembacaanDiTx(tx, {
     kolId: kol.id,
     accountId: akun?.id ?? null,
+    platform,
     handle: d.uniqueId,
     posting: [postingDariKonten(d)],
     createdById: k.perangkat.dibuatOlehId,
@@ -869,18 +919,8 @@ async function ikutiAngkaKolDiTx(
 
 async function simpanKontenDiTx(tx: Klien, kontenId: string, data: HasilKonten, p: Pick<PerangkatSah, "id" | "dibuatOlehId">, sekarang: Date) {
   // Kolom angka konten adalah Int: video di atas 2,1 miliar views disimpan terpangkas, tidak ditolak.
-  return catatAngkaDiTx(tx, {
-    kontenId,
-    views: pangkasInt(data.views),
-    likes: pangkasInt(data.like),
-    comments: pangkasInt(data.komentar),
-    shares: pangkasInt(data.share),
-    saves: pangkasInt(data.save),
-    recordedAt: sekarang,
-    source: "ekstensi",
-    perangkatId: p.id,
-    olehUserId: p.dibuatOlehId,
-  });
+  // Angka yang tidak dikirim (Instagram: share/simpan) tersimpan 0 dengan catatan yang menyebutnya.
+  return catatAngkaPantauDiTx(tx, { kontenId, platform: platformHasil(data), angka: data, sekarang, perangkat: p });
 }
 
 /** Handle yang boleh untuk sebuah konten: akun TikTok KOL-nya + handle di link-nya sendiri. */
@@ -919,14 +959,26 @@ async function tolakHasil(
  * Jeda perangkat bila `maksGagalBeruntun` laporan terakhirnya semuanya
  * kegagalan perangkat. LANJUT memutus deretnya — perangkat yang baru
  * dilanjutkan tidak langsung dijeda lagi oleh kegagalan lamanya.
+ *
+ * Hanya tugas TikTok (dan laporan tanpa tugas) yang dihitung: kegagalan
+ * Instagram/YouTube adalah masalah platform itu (bentuk halaman Instagram
+ * untuk pengguna yang sudah masuk belum diukur), dan tidak boleh
+ * menghentikan pemantauan TikTok perangkat yang sama.
  */
 async function periksaGagalBeruntun(tx: Klien, p: PerangkatSah, pg: PengaturanPantau, sekarang: Date) {
-  const akhir = await tx.kolLogPantau.findMany({
+  const calon = await tx.kolLogPantau.findMany({
     where: { perangkatId: p.id, jenis: { in: ["HASIL", "MASALAH", "LANJUT"] } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: pg.maksGagalBeruntun,
-    select: { jenis: true, kode: true },
+    take: pg.maksGagalBeruntun * 5,
+    select: { jenis: true, kode: true, tugasId: true },
   });
+  const tugasIds = [...new Set(calon.flatMap((l) => (l.tugasId ? [l.tugasId] : [])))];
+  const bukanTiktok = new Set(
+    tugasIds.length
+      ? (await tx.kolTugasPantau.findMany({ where: { id: { in: tugasIds }, platform: { not: "TIKTOK" } }, select: { id: true } })).map((t) => t.id)
+      : [],
+  );
+  const akhir = calon.filter((l) => !(l.tugasId && bukanTiktok.has(l.tugasId))).slice(0, pg.maksGagalBeruntun);
   if (akhir.length < pg.maksGagalBeruntun) return;
   if (!akhir.every((l) => l.jenis === "MASALAH" && l.kode !== null && KODE_GAGAL_PERANGKAT.has(l.kode))) return;
   await jedaOtomatis(tx, p, "GAGAL_BERUNTUN", pg, sekarang);
@@ -974,29 +1026,34 @@ export async function simpanHasil(input: {
       select: {
         id: true,
         jenis: true,
+        platform: true,
         status: true,
         percobaan: true,
         perangkatId: true,
         accountId: true,
         contentId: true,
-        account: { select: { id: true, handle: true } },
-        content: { select: { id: true, link: true, collab: { select: { kol: { select: { accounts: { where: { platform: "TIKTOK" }, select: { handle: true } } } } } } } },
+        account: { select: { id: true, handle: true, platform: true } },
+        content: { select: { id: true, link: true, collab: { select: { kol: { select: { accounts: { select: { platform: true, handle: true } } } } } } } },
       },
     });
     if (!t) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
     if (t.status === "SELESAI") return { ok: true, ulang: true };
     if (t.status !== "ANTRE" && t.status !== "DIPINJAM") return { ok: false, kode: "TUGAS_TIDAK_AKTIF" };
     if (input.data.jenis !== t.jenis) return tolakHasil(tx, t, "JENIS_BERBEDA", p, pg, sekarang);
+    // Hasil dari platform lain bukan milik tugas ini (mis. tab Instagram membaca halaman lain).
+    const platform = platformHasil(input.data);
+    if (platform !== t.platform) return tolakHasil(tx, t, input.data.jenis === "PROFIL" ? "AKUN_BERBEDA" : "KONTEN_BERBEDA", p, pg, sekarang);
 
     if (input.data.jenis === "PROFIL") {
       if (!t.account) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
-      if (!handleCocok(input.data.uniqueId, [t.account.handle])) return tolakHasil(tx, t, "AKUN_BERBEDA", p, pg, sekarang);
+      if (t.account.platform !== platform || !handleCocok(input.data.uniqueId, [t.account.handle])) return tolakHasil(tx, t, "AKUN_BERBEDA", p, pg, sekarang);
       await simpanProfilDiTx(tx, t.account.id, input.data, k);
     } else {
       if (!t.content) return { ok: false, kode: "TUGAS_TIDAK_ADA" };
-      const boleh = handleKonten(t.content.link, t.content.collab?.kol?.accounts ?? []);
+      const akunKol = (t.content.collab?.kol?.accounts ?? []).filter((a) => a.platform === platform);
+      const boleh = handleKonten(t.content.link, akunKol);
       if (boleh.length && !handleCocok(input.data.uniqueId, boleh)) return tolakHasil(tx, t, "AKUN_BERBEDA", p, pg, sekarang);
-      const vid = videoIdDariLink(t.content.link);
+      const vid = kontenIdDariLink(t.content.link, platform);
       if (vid && vid !== input.data.videoId) return tolakHasil(tx, t, "KONTEN_BERBEDA", p, pg, sekarang);
       const r = await simpanKontenDiTx(tx, t.content.id, input.data, p, sekarang);
       if (!r.ok) return tolakHasil(tx, t, r.kode as KodeTolakHasil, p, pg, sekarang);
@@ -1183,22 +1240,23 @@ export async function simpanManual(input: {
     runSerializable(async (tx): Promise<HasilManual> => {
       kolaborasiDisentuh.length = 0; // percobaan ulang serializable mulai bersih
       const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
+      const platform = platformHasil(d);
       if (d.jenis === "PROFIL") {
         const u = normalHandle(d.uniqueId);
-        let cocok = await akunProfilTiktok(tx, u);
+        let cocok = await akunProfil(tx, platform, u);
         let kolBaru = false;
         if (!cocok.length) {
           if (!(await pemasangBolehKelola(tx, p.dibuatOlehId))) return { ok: false, kode: "TANPA_IZIN" };
           const r = await simpanProfilKolDiTx(tx, {
             // followers 0 di sini: angka (dan satu-satunya riwayat pengikut) ditulis simpanProfilDiTx di bawah.
-            isi: { name: `@${u}`, akun: [{ platform: "TIKTOK", handle: u, followers: 0, url: urlProfilTiktok(u) }] },
+            isi: { name: `@${u}`, akun: [{ platform, handle: u, followers: 0, url: urlProfilPantau(platform, u) }] },
             olehUserId: p.dibuatOlehId,
             periksaKembar: false,
             sumber: SUMBER_EKSTENSI,
           });
           if (!r.ok) throw new Error(`EKSTENSI_KOL_${r.alasan}`);
           const akun = await tx.kolAccount.findMany({
-            where: { kolId: r.id, platform: "TIKTOK" },
+            where: { kolId: r.id, platform },
             select: { id: true, handle: true, kol: { select: { id: true, name: true } } },
           });
           cocok = akun.filter((a) => a.kol != null);
@@ -1209,7 +1267,7 @@ export async function simpanManual(input: {
         return { ok: true, cocok: { kolId: cocok[0].kol.id, nama: cocok[0].kol.name }, dibuat: { kol: kolBaru, konten: false } };
       }
 
-      const ada = await kontenVideoTiktok(tx, d.videoId);
+      const ada = await kontenPlatform(tx, platform, d.videoId);
       let kontenId: string;
       let kolId: string;
       let nama: string;
@@ -1224,12 +1282,14 @@ export async function simpanManual(input: {
         if (!(await pemasangBolehKelola(tx, p.dibuatOlehId))) return { ok: false, kode: "TANPA_IZIN" };
         const handle = normalHandle(d.uniqueId);
         // Tanggal tayang = waktu unggah yang terbaca di halaman, atau yang tersimpan di id videonya.
-        const unggah = d.dibuatPada ? new Date(d.dibuatPada * 1000) : (waktuTayangDariId(d.videoId) ?? sekarang);
+        const unggah = d.dibuatPada ? new Date(d.dibuatPada * 1000) : (waktuTayangDariIdPlatform(platform, d.videoId) ?? sekarang);
         const r = await tempelSatuDiTx(tx, {
           baris: input.url,
           videoId: d.videoId,
           handle,
-          url: urlKontenKanonik(`https://www.tiktok.com/@${handle}/video/${d.videoId}`),
+          url: urlKontenPlatform(platform, d.videoId, { handle, bentuk: d.bentuk }),
+          platform,
+          format: formatDariBentuk(platform, d.bentuk),
           liveAt: unggah.getTime() > sekarang.getTime() ? sekarang : unggah,
           jenis: "KOL",
           olehUserId: p.dibuatOlehId,
@@ -1261,10 +1321,17 @@ export async function simpanManual(input: {
   return hasil;
 }
 
-/** Akun TikTok yang handle-nya `u` (abai huruf besar dan "@"), dengan KOL-nya. */
-async function akunProfilTiktok(tx: Klien, u: string) {
+/** Waktu unggah yang tersimpan di id konten itu sendiri (TikTok: id video; Instagram: shortcode), atau null. */
+function waktuTayangDariIdPlatform(platform: PlatformPantau, id: string): Date | null {
+  if (platform === "TIKTOK") return waktuTayangDariId(id);
+  if (platform === "INSTAGRAM") return waktuTayangInstagram(id);
+  return null;
+}
+
+/** Akun platform itu yang handle-nya `u` (abai huruf besar dan "@"), dengan KOL-nya. */
+async function akunProfil(tx: Klien, platform: PlatformPantau, u: string) {
   const calon = await tx.kolAccount.findMany({
-    where: { platform: "TIKTOK", handle: cariTeks(u) },
+    where: { platform, handle: cariTeks(u) },
     orderBy: [{ id: "asc" }],
     select: { id: true, handle: true, kol: { select: { id: true, name: true } } },
     take: 50,
@@ -1272,19 +1339,20 @@ async function akunProfilTiktok(tx: Klien, u: string) {
   return calon.filter((a) => a.kol != null && handleCocok(u, [a.handle]));
 }
 
-/** Konten yang sudah dipantau untuk id video ini (yang terbaru bila ada kembarnya). */
-async function kontenVideoTiktok(tx: Klien, videoId: string) {
+/** Konten yang sudah dipantau untuk id konten ini di platform itu (yang terbaru bila ada kembarnya). */
+async function kontenPlatform(tx: Klien, platform: PlatformPantau, videoId: string) {
   const konten = await tx.kolContent.findMany({
     where: { link: cariTeks(videoId) },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     select: {
       id: true,
       link: true,
-      collab: { select: { kol: { select: { id: true, name: true, accounts: { where: { platform: "TIKTOK" }, select: { handle: true } } } } } },
+      collab: { select: { kol: { select: { id: true, name: true, accounts: { where: { platform }, select: { handle: true } } } } } },
     },
     take: 20,
   });
-  return konten.find((x) => x.collab?.kol != null && videoIdDariLink(x.link) === videoId) ?? null;
+  // Shortcode Instagram / id YouTube peka huruf besar-kecil: dicocokkan persis di sini.
+  return konten.find((x) => x.collab?.kol != null && kontenIdDariLink(x.link, platform) === videoId) ?? null;
 }
 
 /* ─────────────────────────── Otomatis (panel) ─────────────────────────── */
@@ -1327,9 +1395,10 @@ export async function simpanOtomatis(input: {
   const hasil = await denganNomorUnik(() =>
     runSerializable(async (tx): Promise<HasilOtomatis> => {
       const k = konteksPembacaan(tx, p, sekarang, pb, ringkasan);
+      const platform = platformHasil(d);
       if (d.jenis === "PROFIL") {
         const u = normalHandle(d.uniqueId);
-        let cocok = await akunProfilTiktok(tx, u);
+        let cocok = await akunProfil(tx, platform, u);
         if (!cocok.length) {
           // Akun Elorae sendiri tidak pernah menjadi KOL; profil yang tidak menandai Elorae tidak disimpan.
           if (pb.akunElorae.includes(u)) return diabaikan();
@@ -1338,13 +1407,13 @@ export async function simpanOtomatis(input: {
           if (!(await k.bolehBuat())) return { ok: false, kode: "TANPA_IZIN" };
           const r = await simpanProfilKolDiTx(tx, {
             // followers 0 di sini: angka (dan satu-satunya riwayat pengikut) ditulis simpanProfilDiTx di bawah.
-            isi: { name: `@${u}`, akun: [{ platform: "TIKTOK", handle: u, followers: 0, url: urlProfilTiktok(u) }] },
+            isi: { name: `@${u}`, akun: [{ platform, handle: u, followers: 0, url: urlProfilPantau(platform, u) }] },
             olehUserId: p.dibuatOlehId,
             periksaKembar: false,
             sumber: SUMBER_DETEKSI_TAG,
           });
           if (!r.ok) throw new Error(`OTOMATIS_KOL_${r.alasan}`);
-          cocok = await akunProfilTiktok(tx, u);
+          cocok = await akunProfil(tx, platform, u);
           if (!cocok.length) throw new Error("OTOMATIS_KOL_TANPA_AKUN");
         }
         for (const a of cocok) await simpanProfilDiTx(tx, a.id, d, k);
@@ -1354,12 +1423,12 @@ export async function simpanOtomatis(input: {
 
       const u = normalHandle(d.uniqueId);
       const posting = postingDariKonten(d);
-      const ada = await kontenVideoTiktok(tx, d.videoId);
+      const ada = await kontenPlatform(tx, platform, d.videoId);
       if (ada) {
         const kol = { id: ada.collab.kol.id, nama: ada.collab.kol.name };
         const boleh = handleKonten(ada.link, ada.collab.kol.accounts);
         if (boleh.length && !handleCocok(d.uniqueId, boleh)) return diabaikan(kol);
-        await masukkanKePerformaDiTx(tx, { handle: u, posting: [posting] }, k);
+        await masukkanKePerformaDiTx(tx, { platform, handle: u, posting: [posting] }, k);
         await catatBrandKontenDiTx(tx, ada.id, d, k);
         if (ringkasan.angka === 0 && ringkasan.brand === 0) return diabaikan(kol);
         await log(tx, "OTOMATIS_KONTEN");
@@ -1369,9 +1438,9 @@ export async function simpanOtomatis(input: {
       if (pb.akunElorae.includes(u) || !postingMilik(posting, u) || !menandaiElorae(posting, pb, [u])) return diabaikan();
       if (!pb.otomatisKePerforma) return diabaikan();
       if (!(await k.bolehBuat())) return { ok: false, kode: "TANPA_IZIN" };
-      const nasib = (await masukkanKePerformaDiTx(tx, { handle: u, posting: [posting] }, k)).get(d.videoId);
+      const nasib = (await masukkanKePerformaDiTx(tx, { platform, handle: u, posting: [posting] }, k)).get(d.videoId);
       if (nasib === "DIBLOKIR") return { ok: false, kode: "KOL_DIBLOKIR" };
-      const baru = await kontenVideoTiktok(tx, d.videoId);
+      const baru = await kontenPlatform(tx, platform, d.videoId);
       if (!baru) return diabaikan();
       await catatBrandKontenDiTx(tx, baru.id, d, k);
       await log(tx, "OTOMATIS_KONTEN");

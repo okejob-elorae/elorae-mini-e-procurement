@@ -8,8 +8,10 @@ halaman profil/video TikTok yang Anda buka sendiri, dengan tombol **Simpan ke El
 v0.10.0 panel itu juga mengirim pembacaannya sendiri ke Elorae tanpa tombol (lihat
 "Kiriman otomatis saat Anda membuka TikTok").
 
-Uji coba ini hanya untuk TikTok. Angka yang tidak terbaca tidak pernah dikirim sebagai 0 —
-pemeriksaan itu dicatat gagal (TIDAK TERBACA) dan dicoba lagi.
+Sejak v0.11.0 panel, **Simpan ke Elorae**, dan kiriman otomatis juga bekerja di **Instagram** dan
+**YouTube** (lihat "Instagram dan YouTube" di bawah). Threads dan Facebook tidak didukung. Angka yang
+tidak terbaca tidak pernah dikirim sebagai 0 — pemeriksaan itu dicatat gagal (TIDAK TERBACA) dan
+dicoba lagi.
 
 ## Risiko — baca dulu
 
@@ -130,6 +132,45 @@ Data tambahan ini juga ikut pada pemeriksaan otomatis dan Simpan ke Elorae.
 Berlaku seketika, juga untuk tab TikTok yang sedang terbuka. Menyalakannya lagi langsung mengirim
 halaman yang sedang terbuka (bila belum terkirim dalam 6 jam terakhir).
 
+## Instagram dan YouTube (v0.11.0)
+
+Sesudah memperbarui ekstensi (Muat ulang di `chrome://extensions`), muat ulang juga tab Instagram
+dan YouTube yang sedang terbuka sekali.
+
+**YouTube** — tidak perlu masuk.
+- Panel tampil di halaman video (`youtube.com/watch?v=…`, `/shorts/…`) dan halaman kanal
+  (`youtube.com/@nama`). Video: views persis, like (dari tombol like), jumlah komentar (bila tampil),
+  tanggal tayang, @kanal dan #tagar di deskripsi, dan tanda promosi berbayar. Kanal: jumlah
+  subscriber, yang di YouTube hanya tampil dibulatkan (mis. "46,5 jt") — Elorae menyimpannya sebagai
+  **perkiraan**, dan ER kanal tidak dihitung.
+- Pemeriksaan otomatis video YouTube berjalan tanpa tab: ekstensi mengambil halaman videonya
+  langsung, tanpa kuki Anda. Bila YouTube meminta pemeriksaan robot, YouTube dijeda 60 menit di
+  ekstensi ini saja; TikTok jalan terus.
+- Share dan simpan tidak tampil di YouTube, jadi tidak dikirim (Elorae mencatatnya 0 dengan catatan).
+
+**Instagram** — harus masuk, dan BELUM teruji.
+- Tanpa masuk, Instagram hanya memperlihatkan jumlah pengikut sebuah profil (ini sudah diukur).
+  Posting dan angkanya (views reel, like, komentar) hanya dimuat untuk pengguna yang sudah masuk;
+  ekstensi menangkapnya dari data yang dimuat halaman itu sendiri, tidak membuat permintaan sendiri.
+  **Bentuk data Instagram untuk pengguna yang sudah masuk belum pernah diuji** — Anda yang
+  mengujinya pertama kali: masuk ke Instagram di profil Chrome ini, buka profil seorang KOL, gulir
+  sedikit, lalu lihat panel Elorae. Bila angkanya tidak terbaca, laporan masalahnya di Elorae
+  (Kreatif → Pemantauan) menyebut apa yang ditemukan di halaman.
+- Share dan simpan tidak pernah publik di Instagram; like bisa disembunyikan pemilik akun; posting
+  foto tidak punya views. Yang tidak tampil tidak dikirim. Karena itu ER Instagram lebih rendah
+  daripada ER TikTok dengan rumus yang sama — bandingkan di dalam satu platform saja.
+- Pemeriksaan otomatis reel/posting Instagram HANYA berjalan selama ada tab `instagram.com` yang
+  Anda buka sendiri dan sudah masuk. Ekstensi tidak pernah membuka tab Instagram sendiri (Instagram
+  lebih keras terhadap pembacaan otomatis daripada TikTok), dan memberi jeda 5–10 detik antar posting.
+  Tanpa tab itu, tugas Instagram menunggu di antrean tanpa menghalangi TikTok. Bila Instagram
+  meminta masuk atau pemeriksaan, Instagram dijeda 60 menit di ekstensi ini saja. Popup menyebut
+  keadaannya di baris "Instagram".
+- Syarat layanan Instagram juga melarang pengambilan otomatis: akun Instagram yang dipakai bisa
+  dibatasi. Pakai akun Instagram khusus, sama seperti akun TikTok.
+
+**Threads dan Facebook tidak didukung**: halamannya tidak memuat angka yang stabil untuk dibaca,
+dan Facebook mengacak susunan halamannya, jadi pembaca apa pun akan sering rusak tanpa tanda.
+
 ## Mode manual
 
 Saat Anda membuka profil atau video TikTok sendiri, panel Elorae di kanan bawah menampilkan
@@ -163,7 +204,7 @@ Di profil, panel lengkap juga menampilkan:
   5 kolaborasi seperti itu; sebelum itu panel hanya menghitung harga per 1.000 views dari harga yang
   Anda ketik (mis. `15jt`), tanpa menilai murah atau mahal.
 
-**Tampilan** diatur di popup ekstensi → "Tampilan panel di TikTok": tema (otomatis mengikuti
+**Tampilan** diatur di popup ekstensi → "Tampilan panel": tema (otomatis mengikuti
 TikTok, terang, gelap), warna, ukuran lengkap/ringkas, dan posisi kiri/kanan bawah. Tombol ⤡ di
 panel juga berganti lengkap/ringkas.
 
@@ -184,10 +225,24 @@ panel juga berganti lengkap/ringkas.
   tagar), `challenges[].title`, `isAd`, dan `author`. Kolom yang tidak ada di data TikTok tidak
   dikirim. `rampingkanData` membuang kolom opsional dari posting terlama bila muatan mendekati batas
   badan Elorae (256 KB).
-- `halaman-utama.js` — skrip dunia MAIN yang menangkap respons daftar video profil;
-  `konten.js` — skrip dunia ISOLATED (pembaca halaman + panel manual).
+- `halaman-utama.js` — skrip dunia MAIN yang menangkap respons daftar video profil TikTok;
+  `halaman-utama-instagram.js` — skrip dunia MAIN yang meneruskan TEKS respons GraphQL/api/v1
+  Instagram yang memuat data profil/posting; `konten.js` — skrip dunia ISOLATED (pembaca halaman +
+  panel) di ketiga situs.
+- `lib/pengurai-instagram.js` dan `lib/pengurai-youtube.js` — pengurai murni dengan bentuk ekspor
+  yang sama dengan `lib/pengurai.js`; `lib/platform.js` memilih pengurai per alamat. Instagram
+  dibaca dengan menelusuri SEMUA objek JSON dan mengenali bentuknya dari nama kolom (pengguna =
+  `username` + `follower_count`/`edge_followed_by.count`; media = `code`/`shortcode` +
+  `taken_at`/`taken_at_timestamp` + like/komentar), karena jalurnya belum diukur. YouTube dibaca dari
+  `ytInitialData` dan `ytInitialPlayerResponse`; tanda-tanda halaman di `POLA_HALAMAN` masing-masing.
+- Muatan Instagram/YouTube membawa `platform` ("INSTAGRAM"/"YOUTUBE"); muatan tanpa `platform` =
+  TikTok, jadi Elorae lama dan baru sama-sama menerima muatan TikTok. Kunci kiriman otomatis
+  Instagram/YouTube berawalan platform (`INSTAGRAM:PROFIL:<akun>`, `YOUTUBE:KONTEN:<id>`).
+  `/tugas` dan `/status` menyebut platform yang sanggup dikerjakan saat itu.
 - Tes: `node --test extensions/elorae-kreatif/test/` dari akar repo (atau `npm test` di folder
-  ini). Contoh data di `test/fixtures/` dibuat tangan mengikuti struktur publik TikTok; berkas tes
+  ini). Contoh data di `test/fixtures/` dibuat tangan mengikuti struktur publik TikTok; fixture
+  YouTube dan profil Instagram tanpa masuk mengikuti bentuk yang diukur 2026-10-10 (dirampingkan),
+  fixture Instagram untuk pengguna yang sudah masuk adalah TEBAKAN (bertanda `_catatan`). Berkas tes
   baru harus didaftarkan di `test/index.js`.
 - Kontrak API ada di `docs/superpowers/specs/2026-10-08-pantau-kol-ekstensi-design.md`; tambahan
   kolom opsional dan POST `/otomatis` di `docs/superpowers/specs/2026-10-10-kol-manager-lengkap-design.md`.

@@ -21,9 +21,22 @@ import {
 } from "./brand-collab";
 import { catatAngkaDiTx } from "./konten-kol-writer";
 import { platformDariLink, sahLink } from "./konten-kol";
-import { handleCocok, handleDariLink, normalHandle, pangkasInt, urlKontenKanonik, videoIdDariLink } from "./pantau-muatan";
+import {
+  catatanAngkaTakTerbaca,
+  formatDariBentuk,
+  handleCocok,
+  handleDariLink,
+  idKontenDariLink,
+  kontenIdDariLink,
+  normalHandle,
+  pangkasInt,
+  urlKontenKanonik,
+  urlKontenPlatform,
+  type AngkaPantau,
+  type PlatformPantau,
+} from "./pantau-muatan";
 import { TAHAP_BERJALAN } from "./tahap";
-import { akunTiktok, tempelSatuDiTx } from "./tempel-link-writer";
+import { akunPlatform, tempelSatuDiTx } from "./tempel-link-writer";
 
 /*
  * Penulis riwayat brand KOL (D1) dan "video menandai Elorae masuk Performa
@@ -40,6 +53,11 @@ import { akunTiktok, tempelSatuDiTx } from "./tempel-link-writer";
  * Baris riwayat brand dari ekstensi TIDAK menulis jejak `AuditLog` (seperti
  * angka pengikut yang mengikuti pemantauan); isian dan hapus manual dari
  * profil KOL menulis jejaknya di transaksi yang sama.
+ *
+ * Instagram dan YouTube (2026-10-10, D9): setiap penulis menerima `platform`
+ * (tidak ada = TIKTOK) — akun, konten, kunci riwayat brand, dan link baku
+ * mengikuti platform itu. Angka yang tidak terbaca (Instagram: share/simpan)
+ * tersimpan 0 dengan catatan yang menyebutnya (`catatanAngkaTakTerbaca`).
  */
 
 type Klien = Prisma.TransactionClient;
@@ -79,8 +97,8 @@ export type KonteksPembacaan = {
   ringkasan: RingkasanPembacaan;
 };
 
-/** Angka sebuah posting/hasil konten, bentuk muatan ekstensi. */
-export type AngkaPosting = { views: number; like: number; komentar: number; share: number; save: number };
+/** Angka sebuah posting/hasil konten, bentuk muatan ekstensi (Instagram/YouTube: sebagian boleh tidak ada). */
+export type AngkaPosting = AngkaPantau;
 
 /* ─────────────────────────── D1: riwayat brand ─────────────────────────── */
 
@@ -93,12 +111,21 @@ export type AngkaPosting = { views: number; like: number; komentar: number; shar
  */
 export async function catatBrandDariPembacaanDiTx(
   tx: Klien,
-  input: { kolId: string; accountId: string | null; handle: string; posting: readonly PostingBrand[]; createdById?: string | null },
+  input: {
+    kolId: string;
+    accountId: string | null;
+    /** Tidak ada = TIKTOK. */
+    platform?: PlatformPantau;
+    handle: string;
+    posting: readonly PostingBrand[];
+    createdById?: string | null;
+  },
 ): Promise<number> {
   const handle = normalHandle(input.handle);
   if (!handle) return 0;
+  const platform = input.platform ?? "TIKTOK";
   const milik = input.posting.filter((p) => postingMilik(p, handle));
-  let baris = milik.flatMap((p) => barisBrandPosting(p, { platform: "TIKTOK", handle, handleSendiri: [handle] }));
+  let baris = milik.flatMap((p) => barisBrandPosting(p, { platform, handle, handleSendiri: [handle] }));
   if (!baris.length) return 0;
 
   // Akun lain milik KOL yang sama juga bukan brand (KOL yang menandai akun keduanya sendiri).
@@ -121,7 +148,7 @@ export async function catatBrandDariPembacaanDiTx(
         kunci: b.kunci,
         kolId: input.kolId,
         accountId: input.accountId,
-        platform: "TIKTOK" as const,
+        platform,
         brandHandle: b.brandHandle,
         jenis: b.jenis,
         postId: b.postId,
@@ -176,20 +203,21 @@ export type NasibPosting =
 
 type KontenAda = { id: string; link: string | null; kolHandles: string[] };
 
-/** Konten yang sudah dipantau per id video (link memuat id-nya). */
-async function kontenPerVideo(tx: Klien, ids: readonly string[]): Promise<Map<string, KontenAda>> {
+/** Konten yang sudah dipantau per id konten (link memuat id-nya) di satu platform. */
+async function kontenPerVideo(tx: Klien, platform: PlatformPantau, ids: readonly string[]): Promise<Map<string, KontenAda>> {
   const hasil = new Map<string, KontenAda>();
   if (!ids.length) return hasil;
   const baris = await tx.kolContent.findMany({
     where: { OR: ids.map((id) => ({ link: cariTeks(id) })) },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, link: true, collab: { select: { kol: { select: { accounts: { where: { platform: "TIKTOK" }, select: { handle: true } } } } } } },
+    select: { id: true, link: true, collab: { select: { kol: { select: { accounts: { where: { platform }, select: { handle: true } } } } } } },
   });
   const dicari = new Set(ids);
   for (const k of baris) {
     // `relationMode = "prisma"`: konten bisa sesaat menunjuk kolaborasi/KOL yang sudah terhapus.
     if (k.collab?.kol == null) continue;
-    const v = videoIdDariLink(k.link);
+    // Shortcode/id peka huruf besar-kecil: dicocokkan persis di sini (`cariTeks` tidak, di MariaDB).
+    const v = kontenIdDariLink(k.link, platform);
     if (!v || !dicari.has(v) || hasil.has(v)) continue;
     hasil.set(v, { id: k.id, link: k.link, kolHandles: k.collab.kol.accounts.map((a) => a.handle) });
   }
@@ -203,19 +231,30 @@ async function angkaTerakhir(tx: Klien, kontenIds: readonly string[]): Promise<M
   return new Map(r.flatMap((x) => (x._max.recordedAt ? [[x.contentId, x._max.recordedAt] as const] : [])));
 }
 
-async function catatAngka(tx: Klien, kontenId: string, a: AngkaPosting, k: KonteksPembacaan) {
-  const r = await catatAngkaDiTx(tx, {
-    kontenId,
-    views: pangkasInt(a.views),
-    likes: pangkasInt(a.like),
-    comments: pangkasInt(a.komentar),
-    shares: pangkasInt(a.share),
-    saves: pangkasInt(a.save),
-    recordedAt: k.sekarang,
+/** Angka yang tidak terbaca tidak dikirim ekstensi; kolomnya wajib terisi, jadi 0 + catatan. */
+const angkaKolom = (n: number | undefined) => (n === undefined ? undefined : pangkasInt(n));
+
+export async function catatAngkaPantauDiTx(
+  tx: Klien,
+  isi: { kontenId: string; platform: PlatformPantau; angka: AngkaPosting; sekarang: Date; perangkat: { id: string; dibuatOlehId: string } },
+) {
+  return catatAngkaDiTx(tx, {
+    kontenId: isi.kontenId,
+    views: angkaKolom(isi.angka.views),
+    likes: angkaKolom(isi.angka.like),
+    comments: angkaKolom(isi.angka.komentar),
+    shares: angkaKolom(isi.angka.share),
+    saves: angkaKolom(isi.angka.save),
+    recordedAt: isi.sekarang,
     source: "ekstensi",
-    perangkatId: k.perangkat.id,
-    olehUserId: k.perangkat.dibuatOlehId,
+    note: catatanAngkaTakTerbaca(isi.platform, isi.angka),
+    perangkatId: isi.perangkat.id,
+    olehUserId: isi.perangkat.dibuatOlehId,
   });
+}
+
+async function catatAngka(tx: Klien, platform: PlatformPantau, kontenId: string, a: AngkaPosting, k: KonteksPembacaan) {
+  const r = await catatAngkaPantauDiTx(tx, { kontenId, platform, angka: a, sekarang: k.sekarang, perangkat: k.perangkat });
   if (r.ok) k.ringkasan.angka += 1;
   return r.ok;
 }
@@ -234,17 +273,18 @@ async function catatAngka(tx: Klien, kontenId: string, a: AngkaPosting, k: Konte
  */
 export async function masukkanKePerformaDiTx(
   tx: Klien,
-  input: { handle: string; posting: readonly (PostingBrand & AngkaPosting)[] },
+  input: { platform?: PlatformPantau; handle: string; posting: readonly (PostingBrand & AngkaPosting)[] },
   k: KonteksPembacaan,
 ): Promise<Map<string, NasibPosting>> {
   const nasib = new Map<string, NasibPosting>();
+  const platform = input.platform ?? "TIKTOK";
   const handle = normalHandle(input.handle);
   if (!handle || k.pengaturan.akunElorae.includes(handle)) return nasib;
   const sudah = new Set<string>();
   const milik = input.posting.filter((p) => postingMilik(p, handle) && !sudah.has(p.id) && Boolean(sudah.add(p.id)));
   if (!milik.length) return nasib;
 
-  const ada = await kontenPerVideo(tx, milik.map((p) => p.id));
+  const ada = await kontenPerVideo(tx, platform, milik.map((p) => p.id));
   const terakhir = await angkaTerakhir(tx, [...ada.values()].map((x) => x.id));
   let jenis: "AFILIASI" | "KOL" | null = null;
 
@@ -261,7 +301,7 @@ export async function masukkanKePerformaDiTx(
         nasib.set(p.id, "JEDA");
         continue;
       }
-      nasib.set(p.id, (await catatAngka(tx, konten.id, p, k)) ? "ANGKA" : "ANGKA_DITOLAK");
+      nasib.set(p.id, (await catatAngka(tx, platform, konten.id, p, k)) ? "ANGKA" : "ANGKA_DITOLAK");
       continue;
     }
 
@@ -279,7 +319,7 @@ export async function masukkanKePerformaDiTx(
     }
 
     if (jenis === null) {
-      const akun = await akunTiktok(tx, handle);
+      const akun = await akunPlatform(tx, platform, handle);
       const berjalan = akun.length
         ? await tx.kolBrief.findMany({ where: { kolId: akun[0].kol.id, tahap: { in: [...TAHAP_BERJALAN] } }, select: { jenis: true } })
         : [];
@@ -291,7 +331,9 @@ export async function masukkanKePerformaDiTx(
       baris: `deteksi:${p.id}`,
       videoId: p.id,
       handle,
-      url: urlKontenKanonik(`https://www.tiktok.com/@${handle}/video/${p.id}`),
+      url: urlKontenKanonik(urlKontenPlatform(platform, p.id, { handle, bentuk: p.bentuk })),
+      platform,
+      format: formatDariBentuk(platform, p.bentuk),
       liveAt: unggah.getTime() > k.sekarang.getTime() ? k.sekarang : unggah,
       jenis,
       olehUserId: k.perangkat.dibuatOlehId,
@@ -307,7 +349,7 @@ export async function masukkanKePerformaDiTx(
       k.ringkasan.videoMasuk += 1;
       k.ringkasan.kolaborasiDisentuh.add(r.kolaborasiId);
     }
-    await catatAngka(tx, r.kontenId, p, k);
+    await catatAngka(tx, platform, r.kontenId, p, k);
     nasib.set(p.id, r.status === "DITAMBAHKAN" ? "MASUK" : "ANGKA");
   }
   return nasib;
@@ -344,14 +386,16 @@ export async function tambahBrandManual(input: {
     if (!postUrl) return { ok: false, kode: "LINK_TIDAK_SAH" };
   }
   if (input.postedAt !== undefined && input.postedAt !== null && Number.isNaN(input.postedAt.getTime())) return { ok: false, kode: "TANGGAL_TIDAK_SAH" };
-  const postId = postUrl ? videoIdDariLink(postUrl) : null;
+  // Link posting TikTok/Instagram/YouTube memberi kunci yang sama dengan pembacaan ekstensi.
+  const posting = postUrl ? idKontenDariLink(postUrl) : null;
+  const postId = posting?.id ?? null;
 
   return runSerializable(async (tx): Promise<HasilBrandManual> => {
     const kol = await tx.kol.findUnique({ where: { id: input.kolId }, select: { id: true, accounts: { select: { platform: true, handle: true } } } });
     if (!kol) return { ok: false, kode: "KOL_TIDAK_ADA" };
     if (kol.accounts.some((a) => normalHandle(a.handle) === brand)) return { ok: false, kode: "HANDLE_TIDAK_SAH" };
     const platform = platformDariLink(postUrl) ?? (kol.accounts[0]?.platform as Prisma.KolBrandCollabCreateInput["platform"] | undefined) ?? "LAINNYA";
-    const kunci = postId ? kunciBrand("TIKTOK", postId, brand) : kunciBrandManual(randomUUID());
+    const kunci = posting ? kunciBrand(posting.platform, posting.id, brand) : kunciBrandManual(randomUUID());
     if (postId && (await tx.kolBrandCollab.findUnique({ where: { kunci }, select: { id: true } }))) return { ok: false, kode: "SUDAH_ADA" };
     const b = await tx.kolBrandCollab.create({
       data: {

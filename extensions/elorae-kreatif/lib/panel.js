@@ -46,7 +46,8 @@ function postingEr(posting, sekarangMs) {
 export function hitungErAkun(posting, sekarangMs) {
   const dipakai = postingEr(posting, sekarangMs);
   if (dipakai.length < MIN_POSTING_ER) return { er: null, avgViews: null, postsCounted: dipakai.length };
-  const er = bulat2(dipakai.reduce((s, p) => s + ((p.like + p.komentar + p.share + p.save) / p.views) * 100, 0) / dipakai.length);
+  // Angka yang tidak dikirim (Instagram: share/simpan tidak publik) dihitung 0 — sama dengan server.
+  const er = bulat2(dipakai.reduce((s, p) => s + (((p.like ?? 0) + (p.komentar ?? 0) + (p.share ?? 0) + (p.save ?? 0)) / p.views) * 100, 0) / dipakai.length);
   const avgViews = Math.round(dipakai.reduce((s, p) => s + p.views, 0) / dipakai.length);
   return { er, avgViews, postsCounted: dipakai.length };
 }

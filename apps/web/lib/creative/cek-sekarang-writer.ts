@@ -2,7 +2,7 @@ import { Prisma, prisma } from "@elorae/db";
 import { isRetryableTxError, runSerializable } from "@/lib/db/tx-retry";
 import { kunciMinta, PRIORITAS_PANTAU } from "./pantau-antrean";
 import type { PengaturanPantau } from "./pantau-aturan";
-import { urlKontenKanonik, videoIdDariLink } from "./pantau-muatan";
+import { kontenIdDariLink, PLATFORM_PANTAU, urlKontenKanonik, type PlatformPantau } from "./pantau-muatan";
 import { bacaPengaturanPantau } from "./pantau-pengaturan";
 import { tulisLog } from "./pantau-writer";
 
@@ -15,6 +15,10 @@ import { tulisLog } from "./pantau-writer";
  * masih ANTRE dinaikkan dan dimajukan, yang sedang DIPINJAM perangkat dibiarkan. Diperiksa di
  * `runSerializable` supaya dua klik serentak tidak membuat dua tugas. Setiap cek memakan kuota
  * harian seperti cek otomatis.
+ *
+ * Video TikTok, reel/posting Instagram, dan video YouTube (2026-10-10, D9); tugasnya ber-`platform`
+ * konten itu. Instagram hanya dikerjakan selama ada tab instagram.com yang sudah masuk terbuka di
+ * Chrome ekstensinya.
  */
 
 export const MAKS_CEK_SEKARANG = 100;
@@ -74,7 +78,8 @@ async function satuSekali(contentId: string, sekarang: Date): Promise<HasilSatu>
   try {
     return await runSerializable(async (tx): Promise<HasilSatu> => {
       const c = await tx.kolContent.findUnique({ where: { id: contentId }, select: { platform: true, link: true } });
-      if (!c || c.platform !== "TIKTOK" || !c.link || !videoIdDariLink(c.link)) return "DILEWATI";
+      const platform = c && (PLATFORM_PANTAU as readonly string[]).includes(c.platform) ? (c.platform as PlatformPantau) : null;
+      if (!c || !platform || !c.link || !kontenIdDariLink(c.link, platform)) return "DILEWATI";
       const terbuka = await tx.kolTugasPantau.findFirst({
         where: { contentId, jenis: "KONTEN", status: { in: ["ANTRE", "DIPINJAM"] } },
         select: { id: true, status: true, prioritas: true, jatuhAt: true },
@@ -95,7 +100,7 @@ async function satuSekali(contentId: string, sekarang: Date): Promise<HasilSatu>
         data: {
           kunci: kunciMinta(contentId, sekarang.getTime()),
           jenis: "KONTEN",
-          platform: "TIKTOK",
+          platform,
           contentId,
           url: urlKontenKanonik(c.link),
           titikH: null,

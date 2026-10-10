@@ -59,6 +59,14 @@ function gambar(r) {
     ? "Aktif — memakai tab TikTok yang terbuka (±2 detik per halaman)"
     : "Buka satu tab tiktok.com di Chrome ini (lalu muat ulang tab itu sekali) supaya pengecekan berjalan cepat";
 
+  // Instagram hanya dicek lewat tab instagram.com yang Anda buka dan sudah masuk; YouTube tanpa tab.
+  const jedaIg = r.jedaPlatform?.INSTAGRAM;
+  $("cekInstagram").textContent = Number.isFinite(jedaIg)
+    ? `Dijeda sampai ${waktuWib(jedaIg)} WIB — lihat Masalah terakhir`
+    : r.tabInstagram
+      ? "Aktif — memakai tab Instagram yang terbuka (pastikan Anda sudah masuk)"
+      : "Tidak dicek — buka satu tab instagram.com yang sudah masuk di Chrome ini";
+
   const galat = r.galatTerakhir;
   $("barisGalat").hidden = !galat;
   if (galat) $("galatTerakhir").textContent = `${galat.pesan} (${waktuWib(galat.at)})`;

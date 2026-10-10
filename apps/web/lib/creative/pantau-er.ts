@@ -11,6 +11,12 @@
  *
  * Yang dirata-rata adalah ER per posting, bukan total interaksi ÷ total views:
  * satu video viral tidak boleh menenggelamkan sebelas video biasa.
+ *
+ * Instagram (2026-10-10): aturan yang sama atas posting yang PUNYA views (reel/video; posting
+ * foto tanpa views dilewati). Share dan simpan tidak publik di Instagram, jadi tidak dikirim
+ * ekstensi dan dihitung 0 di sini — ER Instagram karena itu lebih rendah dari ER TikTok dengan
+ * rumus yang sama. YouTube tidak dihitung: angka kanal hanya teks ringkas, posting tidak dikirim.
+ * Salinan di ekstensi: `extensions/elorae-kreatif/lib/panel.js` (`hitungErAkun`) — ubah keduanya.
  */
 
 import { totalInteraksi } from "./angka-konten";
@@ -35,17 +41,19 @@ export function hitungErAkun(posting: readonly PostingPantau[], sekarang: Date):
   for (const p of posting) {
     if (dilihat.has(p.id)) continue;
     dilihat.add(p.id);
-    if (p.disematkan || p.dibuatPada > batasDetik || !(p.views > 0)) continue;
+    if (p.disematkan || p.dibuatPada > batasDetik || !((p.views ?? 0) > 0)) continue;
     sah.push(p);
   }
   const dipakai = sah.sort((a, b) => b.dibuatPada - a.dibuatPada || a.id.localeCompare(b.id)).slice(0, MAKS_POSTING_ER);
   if (dipakai.length < MIN_POSTING_ER) return { er: null, avgViews: null, postsCounted: dipakai.length };
 
+  // Angka yang tidak terbaca (Instagram: share/simpan) dihitung 0 oleh `totalInteraksi`.
+  const views = (p: PostingPantau) => p.views ?? 0;
   const erPerPosting = dipakai.map(
-    (p) => (totalInteraksi({ views: p.views, likes: p.like, comments: p.komentar, shares: p.share, saves: p.save }) / p.views) * 100,
+    (p) => (totalInteraksi({ views: views(p), likes: p.like ?? 0, comments: p.komentar ?? 0, shares: p.share ?? 0, saves: p.save ?? 0 }) / views(p)) * 100,
   );
   const er = bulat2(erPerPosting.reduce((s, x) => s + x, 0) / dipakai.length);
-  const avgViews = Math.round(dipakai.reduce((s, p) => s + p.views, 0) / dipakai.length);
+  const avgViews = Math.round(dipakai.reduce((s, p) => s + views(p), 0) / dipakai.length);
   // Rata-rata views disimpan di kolom Int: video viral di atas 2,1 miliar dipangkas.
   return { er: Math.min(er, MAKS_ER), avgViews: pangkasInt(avgViews), postsCounted: dipakai.length };
 }

@@ -15,12 +15,13 @@ const SEKARANG = new Date("2003-03-09T03:00:00.000Z"); // 10.00 WIB, 9 Mar 2003
 
 let kolIds: string[] = [];
 let briefIds: string[] = [];
-const k: Record<"k1" | "k2" | "k3" | "k4" | "k5", string> = { k1: "", k2: "", k3: "", k4: "", k5: "" };
+const k: Record<"k1" | "k2" | "k3" | "k4" | "k5" | "k6", string> = { k1: "", k2: "", k3: "", k4: "", k5: "", k6: "" };
 let tugasIds: string[] = [];
 
 const semua = () => Object.values(k);
+/** Tes lama memakai saringan TikTok (sejak 2026-10-10 "semua" juga memuat reel Instagram k4). */
 const daftar = (sp: Record<string, string> = {}, opsi: { perHalaman?: number } = {}) =>
-  daftarPerformaVideo(bacaParamPerforma(sp), { sekarang: SEKARANG, cakupan: semua(), ...opsi });
+  daftarPerformaVideo(bacaParamPerforma({ platform: "tiktok", ...sp }), { sekarang: SEKARANG, cakupan: semua(), ...opsi });
 
 async function konten(briefId: string, isi: { link: string; liveAt: Date; platform?: "TIKTOK" | "INSTAGRAM" }) {
   return (
@@ -53,6 +54,7 @@ beforeAll(async () => {
   k.k2 = await konten(barter.id, { link: `https://www.tiktok.com/@${tag}.b/video/7301234567890123402`, liveAt: new Date("2003-03-06T17:00:00Z") });
   k.k3 = await konten(komisi.id, { link: `https://www.tiktok.com/@${tag}.a/video/7301234567890123403`, liveAt: new Date("2003-03-08T03:00:00Z") });
   k.k4 = await konten(barter.id, { link: `https://www.instagram.com/reel/${tag}`, liveAt: new Date("2003-03-05T03:00:00Z"), platform: "INSTAGRAM" });
+  k.k6 = await konten(barter.id, { link: `https://www.instagram.com/${tag}/`, liveAt: new Date("2003-03-05T03:00:00Z"), platform: "INSTAGRAM" });
   k.k5 = await konten(komisi.id, { link: `https://www.tiktok.com/@${tag}.a/video/7301234567890123405`, liveAt: new Date("2003-03-04T03:00:00Z") });
 
   await angka(k.k1, "2003-03-06T03:00:00Z", { views: 1000, likes: 50, comments: 10, shares: 5, saves: 5 });
@@ -79,6 +81,16 @@ afterAll(async () => {
 });
 
 describe("daftarPerformaVideo", () => {
+  it("platform: semua memuat reel Instagram (ber-platform INSTAGRAM, link-nya ke Instagram); saringan instagram hanya itu", async () => {
+    const r = await daftarPerformaVideo(bacaParamPerforma({}), { sekarang: SEKARANG, cakupan: semua() });
+    // k6 = konten Instagram ber-link profil: tetap tampil (link ke instagram.com), sama seperti TikTok ber-link apa pun ke tiktok.com.
+    expect(r.total).toBe(6);
+    expect(r.baris.find((b) => b.kontenId === k.k4)).toMatchObject({ platform: "INSTAGRAM", angka: { views: 99_999, likes: 1 } });
+    const ig = await daftarPerformaVideo(bacaParamPerforma({ platform: "instagram" }), { sekarang: SEKARANG, cakupan: semua() });
+    expect(ig.baris.map((b) => b.kontenId).sort()).toEqual([k.k4, k.k6].sort());
+    expect((await daftarPerformaVideo(bacaParamPerforma({ platform: "youtube" }), { sekarang: SEKARANG, cakupan: semua() })).total).toBe(0);
+  });
+
   it("satu baris per video TikTok, bacaan terbaru, naik sejak bacaan sebelumnya, ER rumus tunggal; views terbanyak dulu, kosong di akhir", async () => {
     const r = await daftar();
     expect(r.total).toBe(4);

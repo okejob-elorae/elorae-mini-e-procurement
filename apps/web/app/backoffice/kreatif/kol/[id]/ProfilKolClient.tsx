@@ -463,7 +463,7 @@ export function ProfilKolClient({
                   </div>
                   <Garis titik={a.riwayat} />
                 </CardHeader>
-                {a.platform === "TIKTOK" ? (
+                {a.platform === "TIKTOK" || a.platform === "INSTAGRAM" || a.platform === "YOUTUBE" ? (
                   <CardContent className="pb-0">
                     <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
                       <AngkaPantau label={t("pantau.profil.er")} nilai={a.pantau.er !== null ? persenTeks(a.pantau.er) : "—"}>

@@ -214,6 +214,10 @@ export function urlUntukTabTikTok(url) {
   return jenisHalaman(hasil) ? hasil : null;
 }
 
+/** Nama seragam untuk lib/platform.js (pengurai Instagram/YouTube punya `urlUntukTab` sendiri). */
+export const urlUntukTab = urlUntukTabTikTok;
+export const PLATFORM = "TIKTOK";
+
 export function apakahUrlItemList(url) {
   return typeof url === "string" && url.includes(POLA_URL_ITEM_LIST);
 }

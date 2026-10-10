@@ -21371,7 +21371,8 @@
         "sumber": {
           "formulir": "Formulir",
           "massal": "Tambah massal",
-          "ekstensi": "Ekstensi"
+          "ekstensi": "Ekstensi",
+          "ekstensi-perkiraan": "Ekstensi (perkiraan dari angka ringkas)"
         },
         "rateCard": "Rate card",
         "rateNote": "Catatan rate",
@@ -22009,7 +22010,7 @@
       },
       "kosong": {
         "judul": "Belum ada video yang dipantau",
-        "isi": "Tempel link video TikTok untuk mulai memantau.",
+        "isi": "Tempel link video TikTok, reel/posting Instagram, atau video YouTube untuk mulai memantau.",
         "saring": "Tidak ada video yang cocok dengan saringan ini."
       },
       "dialog": {
@@ -22017,8 +22018,8 @@
         "jenis": "Ini video dari",
         "jenisKOL": "KOL",
         "jenisAFILIASI": "Afiliasi",
-        "link": "Link video TikTok",
-        "placeholder": "https://www.tiktok.com/@nama/video/…\nhttps://vt.tiktok.com/…",
+        "link": "Link video TikTok, Instagram, atau YouTube",
+        "placeholder": "https://www.tiktok.com/@nama/video/…\nhttps://www.instagram.com/reel/…\nhttps://youtu.be/…",
         "hitung": "{n} link video",
         "hitungDitolak": "{n} tidak didukung",
         "hitungKembar": "{n} kembar",
@@ -22039,11 +22040,12 @@
         "INSTAGRAM": "Instagram belum didukung — hanya TikTok",
         "LINK_FOTO": "Posting foto — hanya video yang didukung",
         "BUKAN_VIDEO": "Bukan link video (profil atau halaman lain)",
-        "BUKAN_TIKTOK": "Bukan link TikTok",
+        "BUKAN_TIKTOK": "Bukan link TikTok, Instagram, atau YouTube",
         "LINK_TIDAK_DIKENAL": "Link tidak dikenali",
         "LINK_PENDEK_GAGAL": "Link pendek tidak bisa dibuka — salin link lengkap dari TikTok",
         "KOL_DIBLOKIR": "KOL ini diblokir",
-        "GAGAL": "Gagal disimpan. Coba lagi."
+        "GAGAL": "Gagal disimpan. Coba lagi.",
+        "PEMILIK_TIDAK_TERBACA": "Akun pemiliknya tidak terbaca — buka postingnya di Chrome dengan ekstensi menyala, atau tempel link dari halaman profil (instagram.com/akun/reel/…)"
       },
       "err": {
         "KOSONG": "Tidak ada link di teks ini.",
@@ -22057,10 +22059,10 @@
         "satu": "Cek sekarang",
         "satuJudul": "Minta ekstensi membaca angka terbaru video ini",
         "semua": "Cek ulang halaman ini",
-        "menunggu": "Menunggu ekstensi membaca angka — dengan satu tab tiktok.com terbuka di Chrome, sekitar 2 detik per video. Halaman ini diperbarui sendiri setiap 15 detik.",
+        "menunggu": "Menunggu ekstensi membaca angka — TikTok: dengan satu tab tiktok.com terbuka di Chrome, sekitar 2 detik per video; Instagram: hanya selama tab instagram.com yang sudah masuk terbuka. Halaman ini diperbarui sendiri setiap 15 detik.",
         "diantrekan": "{n} video masuk antrean cek.",
         "sudahAntre": "{n} video sudah menunggu cek.",
-        "dilewati": "{n} dilewati (bukan video TikTok).",
+        "dilewati": "{n} dilewati (bukan video TikTok, Instagram, atau YouTube).",
         "keadaan": {
           "SIAP": "Ekstensi mulai mengecek dalam beberapa detik. Biarkan satu tab tiktok.com terbuka di Chrome supaya pengecekannya cepat (sekitar 2 detik per video).",
           "DI_LUAR_JAM": "Sekarang di luar jam pemantauan; ekstensi mengeceknya saat jam kerja mulai.",
@@ -22080,6 +22082,18 @@
         },
         "dilanjutkan": "Ekstensi yang tadi berhenti sementara dijalankan lagi.",
         "bukaPemantauan": "Buka Pemantauan"
+      },
+      "platform": {
+        "label": "Platform",
+        "semua": "Semua platform",
+        "tiktok": "TikTok",
+        "instagram": "Instagram",
+        "youtube": "YouTube"
+      },
+      "bukaDi": {
+        "TIKTOK": "Buka di TikTok",
+        "INSTAGRAM": "Buka di Instagram",
+        "YOUTUBE": "Buka di YouTube"
       }
     },
     "formulirKol": {

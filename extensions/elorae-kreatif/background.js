@@ -6,10 +6,19 @@
 //   latar → baca lewat konten.js → tutup tab → jeda acak / istirahat (cara lama).
 // - Perantara mode manual (panel "Simpan ke Elorae"), kiriman otomatis panel (v0.10.0, POST
 //   /otomatis tanpa tombol, satu kali per akun/video per 6 jam), dan popup.
+// - Instagram dan YouTube (v0.11.0): panel + Simpan ke Elorae + kiriman otomatis di kedua situs.
+//   Tugas konten YouTube: HTML halaman videonya diambil langsung dari service worker (tanpa kuki,
+//   tanpa tab). Tugas konten Instagram: HANYA lewat tab www.instagram.com yang dibuka pemilik dan
+//   sudah masuk — ekstensi tidak pernah membuka tab Instagram sendiri. /tugas dan /status menyebut
+//   platform yang sanggup dikerjakan saat itu; Instagram/YouTube yang meminta masuk/pemeriksaan
+//   dijeda di sini saja (`jedaPlatform`), TikTok jalan terus.
 // Semua keputusan ada di lib/aturan.js (dites); berkas ini hanya menjalankannya.
 // Token TIDAK PERNAH ditulis ke log.
 
 import { halamanPemeriksaan, jenisHalaman, rampingkanData, urlTugasSah, urlUntukTabTikTok } from "./lib/pengurai.js";
+import { bacaHalaman as bacaHalamanYoutube, urlUntukTab as urlUntukTabYoutube } from "./lib/pengurai-youtube.js";
+import { urlUntukTab as urlUntukTabInstagram } from "./lib/pengurai-instagram.js";
+import { LABEL_PLATFORM, platformHalaman } from "./lib/platform.js";
 import {
   BATAS_TUNGGU_ITEMLIST_MS,
   KUNCI_MUNDUR_KIRIM_OTOMATIS,
@@ -24,13 +33,17 @@ import {
   jadwalSetelahAlasan,
   jadwalSetelahTugas,
   jadwalSetelahTugasCepat,
+  JEDA_PLATFORM_MS,
   kodeMasalah,
   kunciMasihAktif,
   perbaruiJedaLokal,
+  pilihTabHost,
   pilihTabTikTok,
+  platformSanggup,
   putuskanKirimOtomatis,
   putuskanLangkah,
   putuskanTunggu,
+  rapikanJedaPlatform,
   setelahKirimOtomatis,
   setelahTugas,
   teksKeadaan,
@@ -46,6 +59,7 @@ const BATAS_MASIH_MEMUAT_MS = 20_000;
 const UMUR_ANTREAN_MS = 30 * 60_000;
 const MAKS_ANTREAN = 50;
 const ASAL_TIKTOK = "https://www.tiktok.com/";
+const BATAS_AMBIL_YOUTUBE_MS = 20_000;
 
 const lokal = chrome.storage.local;
 const sesi = chrome.storage.session;
@@ -254,8 +268,26 @@ async function kirimAntrean() {
 
 // ============================================================ status
 
+/**
+ * Platform yang sanggup dikerjakan sekarang (lihat `platformSanggup`): TikTok selalu, YouTube selama
+ * tidak dijeda di sini, Instagram hanya dengan tab instagram.com yang dibuka pemilik.
+ */
+async function platformSekarang() {
+  const { jedaPlatform } = await baca("jedaPlatform");
+  const rapi = rapikanJedaPlatform(jedaPlatform, Date.now());
+  if (Object.keys(rapi).length !== Object.keys(jedaPlatform ?? {}).length) await tulis({ jedaPlatform: rapi });
+  return platformSanggup({ adaTabInstagram: (await tabInstagramTerbuka()).length > 0, jedaPlatform: rapi }, Date.now());
+}
+
+/** Jeda satu platform di sini saja (Instagram/YouTube meminta masuk atau pemeriksaan); TikTok jalan terus. */
+async function jedaPlatform(platform, pesan) {
+  const { jedaPlatform: lama } = await baca("jedaPlatform");
+  await tulis({ jedaPlatform: { ...rapikanJedaPlatform(lama, Date.now()), [platform]: Date.now() + JEDA_PLATFORM_MS } });
+  await catatGalat(`${LABEL_PLATFORM[platform]} dijeda 60 menit di ekstensi ini: ${pesan}`);
+}
+
 async function ambilStatus() {
-  const r = await panggilDenganToken("/status", { metode: "GET" });
+  const r = await panggilDenganToken(`/status?platform=${(await platformSekarang()).join(",")}`, { metode: "GET" });
   if (r.json?.ok === true) {
     await tulis({ statusServer: { data: r.json, at: Date.now() } });
     return r.json;
@@ -444,6 +476,17 @@ async function tabTikTokTerbuka() {
   return pilihTabTikTok(tabs, await daftarTabOtomatis());
 }
 
+/** Tab www.instagram.com milik orang (bukan tab otomatis), terakhir dibuka dulu. */
+async function tabInstagramTerbuka() {
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: "https://www.instagram.com/*" });
+  } catch {
+    tabs = [];
+  }
+  return pilihTabHost(tabs, await daftarTabOtomatis(), "www.instagram.com");
+}
+
 /**
  * Minta konten.js di tab itu mengambil dan membaca `url`. Null bila skripnya tidak menjawab — mis.
  * tab yang belum dimuat ulang sesudah ekstensi diperbarui. Skrip TIDAK disuntikkan ulang ke tab
@@ -470,14 +513,84 @@ async function bacaLewatTab(tugas) {
   return null;
 }
 
+// ============================================================ YouTube & Instagram
+
+/** Halaman video YouTube diambil langsung (tanpa kuki, tanpa tab) lalu dibaca. */
+async function bacaYoutube(tugas) {
+  const url = urlUntukTabYoutube(tugas.url);
+  if (!url) return { status: "GAGAL_MUAT", pesan: "Alamat tugas bukan video YouTube" };
+  const pengendali = new AbortController();
+  const batas = setTimeout(() => pengendali.abort(), BATAS_AMBIL_YOUTUBE_MS);
+  try {
+    const res = await fetch(url, {
+      credentials: "omit",
+      cache: "no-store",
+      headers: { accept: "text/html", "accept-language": "id-ID,id;q=0.9,en;q=0.8" },
+      signal: pengendali.signal,
+    });
+    if (!res.ok && res.status !== 404) return { status: "GAGAL_MUAT", pesan: `YouTube menjawab HTTP ${res.status}` };
+    return bacaHalamanYoutube(await res.text(), { url, bahasa: "id" });
+  } catch (e) {
+    return { status: "GAGAL_MUAT", pesan: `Halaman YouTube tidak bisa diambil: ${pesanGalat(e)}` };
+  } finally {
+    clearTimeout(batas);
+  }
+}
+
+/**
+ * Posting Instagram dibaca HANYA lewat tab instagram.com yang dibuka pemilik (kuki masuknya): konten.js
+ * di tab itu mengambil HTML posting dan membacanya. Null bila tidak ada tab yang menjawab.
+ */
+async function bacaInstagram(tugas) {
+  const url = urlUntukTabInstagram(tugas.url);
+  if (!url) return { status: "GAGAL_MUAT", pesan: "Alamat tugas bukan posting Instagram" };
+  for (const tabId of (await tabInstagramTerbuka()).slice(0, 2)) {
+    const h = await tanyaTab(tabId, url);
+    if (h && typeof h.status === "string") return h;
+  }
+  return null;
+}
+
+/** Tugas yang tidak dikerjakan sekarang (platformnya baru dijeda / tab tutup): tidak dilaporkan, putaran lanjut. */
+async function lewatiTugas(platform) {
+  const sekarang = Date.now();
+  const { jadwal } = await baca("jadwal");
+  const baru = jadwalSetelahTugasCepat(jadwal, sekarang, Math.random, platform);
+  await tulis({ jadwal: baru });
+  jadwalkanAlarmBerikut(baru.berikutnyaAt);
+  // Permintaan /tugas berikutnya tidak menyebut platform ini, jadi Elorae mengembalikan pinjamannya ke antrean.
+  return { cepat: true, kode: "LEWAT" };
+}
+
 // ============================================================ satu tugas
 
-/** `{ cepat, kode }` — `cepat` = dikerjakan lewat tab TikTok yang terbuka (putaran boleh berlanjut). */
+/** `{ cepat, kode }` — `cepat` = dikerjakan tanpa tab latar (putaran boleh berlanjut). */
 async function kerjakanTugas(tugas) {
   await tulis({ kunci: { sejak: Date.now(), tugasId: tugas.id } });
+  const platform = tugas.platform === "INSTAGRAM" || tugas.platform === "YOUTUBE" ? tugas.platform : "TIKTOK";
   let hasil = null;
   let cepat = false;
-  try {
+  if (platform === "YOUTUBE") {
+    cepat = true;
+    hasil = await bacaYoutube(tugas);
+    if (hasil.status === "CAPTCHA" || hasil.status === "LOGIN") {
+      await jedaPlatform("YOUTUBE", "YouTube meminta pemeriksaan robot");
+      return lewatiTugas(platform);
+    }
+  } else if (platform === "INSTAGRAM") {
+    cepat = true;
+    hasil = await bacaInstagram(tugas);
+    if (!hasil) {
+      // Tab ada tetapi skripnya tidak menjawab (ekstensi baru diperbarui, tab belum dimuat ulang).
+      await jedaPlatform("INSTAGRAM", "tab instagram.com tidak menjawab — muat ulang tab Instagram sekali");
+      return lewatiTugas(platform);
+    }
+    if (hasil.status === "CAPTCHA" || hasil.status === "LOGIN") {
+      await jedaPlatform("INSTAGRAM", hasil.status === "LOGIN" ? "Instagram meminta masuk — masuk ke Instagram di Chrome ini" : "Instagram meminta pemeriksaan — selesaikan di tab Instagram");
+      return lewatiTugas(platform);
+    }
+  }
+  if (platform === "TIKTOK") try {
     const h = await bacaLewatTab(tugas);
     if (h) {
       cepat = true;
@@ -545,10 +658,15 @@ async function kerjakanTugas(tugas) {
   }
 
   const s = await baca("gagalBeruntun", "jadwal", "jedaLokal", "statusServer");
-  const lanjut = setelahTugas(s.gagalBeruntun ?? 0, kode, sekarang, s.statusServer?.data?.pengaturan?.jedaOtomatisMenit);
+  // Kegagalan Instagram/YouTube tidak dihitung ke deret gagal perangkat (sama dengan Elorae): halaman
+  // platform itu yang bermasalah, bukan Chrome-nya — TikTok jalan terus.
+  const lanjut =
+    platform === "TIKTOK"
+      ? setelahTugas(s.gagalBeruntun ?? 0, kode, sekarang, s.statusServer?.data?.pengaturan?.jedaOtomatisMenit)
+      : { gagalBeruntun: s.gagalBeruntun ?? 0, jedaLokal: null };
   if (lanjut.jedaLokal?.tungguServer) lanjut.jedaLokal.laporTerkirim = laporTerkirim;
   const jadwal = cepat
-    ? jadwalSetelahTugasCepat(s.jadwal, sekarang)
+    ? jadwalSetelahTugasCepat(s.jadwal, sekarang, Math.random, platform)
     : jadwalSetelahTugas(s.jadwal, s.statusServer?.data?.pengaturan, sekarang);
   await tulis({ gagalBeruntun: lanjut.gagalBeruntun, jedaLokal: lanjut.jedaLokal ?? s.jedaLokal ?? null, jadwal });
   jadwalkanAlarmBerikut(jadwal.berikutnyaAt);
@@ -613,7 +731,7 @@ async function detakInti() {
   let selesaiCepat = 0;
   try {
     for (;;) {
-      const r = await panggilDenganToken("/tugas", { body: {} });
+      const r = await panggilDenganToken("/tugas", { body: { platform: await platformSekarang() } });
       if (r.gagal) {
         if (r.gagal !== "TOKEN_TIDAK_SAH") await catatGalat(`Tidak bisa meminta tugas (${r.gagal}${r.status ? " " + r.status : ""})`);
         return;
@@ -675,6 +793,7 @@ async function perbaruiLencana() {
 // ============================================================ pesan dari popup & panel
 
 const DARI_HALAMAN_EKSTENSI = new Set(["ringkasan", "sambung", "putuskan", "setelOtomatis"]);
+/** Dari panel di halaman TikTok, Instagram, atau YouTube (konten.js). */
 const DARI_TIKTOK = new Set(["simpanManual", "kirimOtomatis", "apakahTabOtomatis", "bacaPanel", "setelPanel", "bacaPatokan"]);
 /** Dari halaman Elorae (jembatan-elorae.js): "Cek sekarang"/"Tempel link" baru saja mengantrekan video. */
 const DARI_ELORAE = new Set(["bangunkan"]);
@@ -682,7 +801,7 @@ const DARI_ELORAE = new Set(["bangunkan"]);
 chrome.runtime.onMessage.addListener((pesan, pengirim, balas) => {
   if (pengirim.id !== chrome.runtime.id || !pesan || typeof pesan.jenis !== "string") return false;
   const dariEkstensi = !pengirim.tab && typeof pengirim.url === "string" && pengirim.url.startsWith(chrome.runtime.getURL(""));
-  const dariTikTok = Boolean(pengirim.tab) && typeof pengirim.url === "string" && pengirim.url.startsWith(ASAL_TIKTOK);
+  const dariTikTok = Boolean(pengirim.tab) && typeof pengirim.url === "string" && platformHalaman(pengirim.url) !== null;
   if (DARI_HALAMAN_EKSTENSI.has(pesan.jenis) && !dariEkstensi) return false;
   if (DARI_TIKTOK.has(pesan.jenis) && !dariTikTok) return false;
   if (DARI_ELORAE.has(pesan.jenis) && !pengirim.tab) return false;
@@ -794,8 +913,17 @@ async function putuskan() {
   return { ok: true, dicabutDiElorae };
 }
 
+/** Alamat yang dikirim ke Elorae untuk sebuah halaman panel: bentuk bakunya bila bisa. */
+function urlKirim(url) {
+  const p = platformHalaman(url);
+  if (p === "TIKTOK") return urlUntukTabTikTok(url) ?? url;
+  if (p === "INSTAGRAM") return urlUntukTabInstagram(url) ?? url;
+  if (p === "YOUTUBE") return urlUntukTabYoutube(url) ?? url;
+  return url;
+}
+
 async function simpanManual(url, data) {
-  if (typeof url !== "string" || !url.startsWith(ASAL_TIKTOK)) return { ok: false, kode: "URL_TIDAK_SAH" };
+  if (typeof url !== "string" || !platformHalaman(url)) return { ok: false, kode: "URL_TIDAK_SAH" };
   if (!data || (data.jenis !== "PROFIL" && data.jenis !== "KONTEN")) return { ok: false, kode: "DATA_TIDAK_SAH" };
   const r = await panggilDenganToken("/manual", { body: { url, data: rampingkanData(data) } });
   if (["BELUM_TERSAMBUNG", "TOKEN_TIDAK_SAH", "JARINGAN", "TERLALU_SERING"].includes(r.gagal)) return { ok: false, kode: r.gagal };
@@ -841,7 +969,7 @@ function berurutan(kerja) {
 async function kirimOtomatis(pesan, pengirim) {
   const url = typeof pesan.url === "string" ? pesan.url : "";
   const data = pesan.data;
-  if (!url.startsWith(ASAL_TIKTOK) || !data || (data.jenis !== "PROFIL" && data.jenis !== "KONTEN")) {
+  if (!platformHalaman(url) || !data || (data.jenis !== "PROFIL" && data.jenis !== "KONTEN")) {
     return { ok: false, kode: "DATA_TIDAK_SAH", selesai: true };
   }
   const tabOtomatis = (await daftarTabOtomatis()).includes(pengirim.tab?.id);
@@ -870,7 +998,7 @@ async function kirimOtomatis(pesan, pengirim) {
     return { ok: true, dikirim: false, alasan: putusan.alasan, kabar: kabarDariRiwayat(putusan.sebelumnya), selesai };
   }
 
-  const r = await panggilDenganToken("/otomatis", { body: { url: urlUntukTabTikTok(url) ?? url, data: rampingkanData(data) } });
+  const r = await panggilDenganToken("/otomatis", { body: { url: urlKirim(url), data: rampingkanData(data) } });
   const lanjut = setelahKirimOtomatis(r, Date.now());
   await berurutan(async () => {
     const s = await baca(KUNCI_RIWAYAT_KIRIM_OTOMATIS, KUNCI_MUNDUR_KIRIM_OTOMATIS);
@@ -921,6 +1049,8 @@ async function susunRingkasanPopup(segarkan) {
     statusAt: s.statusServer?.at ?? null,
     galatTerakhir: s.galatTerakhir ?? null,
     tabTikTok: (await tabTikTokTerbuka()).length > 0,
+    tabInstagram: (await tabInstagramTerbuka()).length > 0,
+    jedaPlatform: rapikanJedaPlatform((await baca("jedaPlatform")).jedaPlatform, Date.now()),
     versi: versi(),
   };
 }

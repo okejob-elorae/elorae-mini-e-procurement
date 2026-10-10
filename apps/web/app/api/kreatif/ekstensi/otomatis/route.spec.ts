@@ -57,7 +57,7 @@ describe("POST /otomatis", () => {
   });
 
   it("muatan atau URL yang tidak sah → 400 MUATAN_TIDAK_SAH, penyimpan tidak dipanggil", async () => {
-    for (const badan of [{ url: "https://instagram.com/x", data: PROFIL }, { url: "https://www.tiktok.com/@a", data: { ...PROFIL, posting: [{ ...PROFIL.posting[0], sebutan: "x" }] } }, []]) {
+    for (const badan of [{ url: "https://www.threads.net/@x", data: PROFIL }, { url: "https://www.tiktok.com/@a", data: { ...PROFIL, posting: [{ ...PROFIL.posting[0], sebutan: "x" }] } }, []]) {
       const r = await kirim(badan);
       expect([r.status, await r.json()]).toEqual([400, { ok: false, kode: "MUATAN_TIDAK_SAH" }]);
     }

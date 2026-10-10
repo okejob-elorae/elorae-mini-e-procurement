@@ -1,5 +1,8 @@
-// Skrip konten dunia ISOLATED di www.tiktok.com (document_start).
-// - menampung daftar video yang ditangkap halaman-utama.js (postMessage, sumber divalidasi);
+// Skrip konten dunia ISOLATED di www.tiktok.com, www.instagram.com, dan www.youtube.com
+// (document_start; Instagram/YouTube sejak v0.11.0 — pengurainya lib/pengurai-instagram.js dan
+// lib/pengurai-youtube.js, bentuk ekspornya sama dengan lib/pengurai.js).
+// - menampung daftar video yang ditangkap halaman-utama.js (TikTok) / halaman-utama-instagram.js
+//   (Instagram, pengguna yang sudah masuk) lewat postMessage, sumber divalidasi;
 // - menjawab permintaan "bacaHalaman" dari service worker (putaran otomatis);
 // - mode manual: panel kecil di kanan bawah halaman profil/video dengan tombol "Simpan ke Elorae",
 //   TIDAK ditampilkan di tab latar yang dibuka putaran otomatis;
@@ -14,19 +17,32 @@
   if (globalThis.__eloraeKreatifKonten) return;
   globalThis.__eloraeKreatifKonten = true;
 
+  const PLATFORM = { "www.tiktok.com": "TIKTOK", "www.instagram.com": "INSTAGRAM", "www.youtube.com": "YOUTUBE" }[location.hostname];
+  if (!PLATFORM) return;
+  const LABEL_PLATFORM = { TIKTOK: "TikTok", INSTAGRAM: "Instagram", YOUTUBE: "YouTube" }[PLATFORM];
+  // Pengurai per platform (bentuk ekspor sama). Ditulis lengkap supaya tes manifest melihat setiap berkas.
+  const MUAT_PENGURAI = {
+    TIKTOK: () => import(chrome.runtime.getURL("lib/pengurai.js")),
+    INSTAGRAM: () => import(chrome.runtime.getURL("lib/pengurai-instagram.js")),
+    YOUTUBE: () => import(chrome.runtime.getURL("lib/pengurai-youtube.js")),
+  };
+
   // Sama dengan TAG di halaman-utama.js.
   const TAG = "elorae-kreatif:item-list:v1";
+  // Sama dengan TAG di halaman-utama-instagram.js.
+  const TAG_IG = "elorae-kreatif:ig-tangkap:v1";
   // Sama dengan ID_SKRIP_REHIDRASI di lib/pengurai.js (dibutuhkan sebelum modul selesai dimuat).
   const ID_REHIDRASI = "__UNIVERSAL_DATA_FOR_REHYDRATION__";
   const MAKS_TANGKAPAN = 30;
 
-  /** Tangkapan daftar video: badan mentah sampai pengurai siap, sesudahnya ringkasannya saja. */
+  /** Tangkapan daftar video/posting: badan mentah sampai pengurai siap, sesudahnya ringkasannya saja. */
   const tangkapan = [];
   let pengurai = null;
-  const muatPengurai = import(chrome.runtime.getURL("lib/pengurai.js")).then((m) => {
+  const ringkasTangkapan = (m, url, body) => (PLATFORM === "INSTAGRAM" ? m.ringkasTangkapan(url, body) : m.ringkasItemList(url, body));
+  const muatPengurai = MUAT_PENGURAI[PLATFORM]().then((m) => {
     pengurai = m;
     for (let i = 0; i < tangkapan.length; i++) {
-      if (tangkapan[i].body) tangkapan[i] = m.ringkasItemList(tangkapan[i].url, tangkapan[i].body);
+      if (tangkapan[i].body) tangkapan[i] = ringkasTangkapan(m, tangkapan[i].url, tangkapan[i].body);
     }
     return m;
   });
@@ -38,7 +54,9 @@
     const el = document.getElementById(ID_REHIDRASI);
     if (el && el.textContent) teksRehidrasi = el.textContent;
   }
-  if (document.readyState === "loading") {
+  if (PLATFORM !== "TIKTOK") {
+    // Instagram/YouTube tidak memakai skrip rehidrasi TikTok.
+  } else if (document.readyState === "loading") {
     const pengamat = new MutationObserver(salinRehidrasi);
     pengamat.observe(document, { childList: true, subtree: true });
     document.addEventListener(
@@ -69,6 +87,13 @@
     querySelector(sel) {
       return document.querySelector(sel);
     },
+    // Instagram: blob <script type="application/json">; YouTube: skrip ytInitialData/ytInitialPlayerResponse.
+    querySelectorAll(sel) {
+      return document.querySelectorAll(sel);
+    },
+    get documentElement() {
+      return document.documentElement;
+    },
     // Untuk diagnosa saat angka tidak terbaca (judul, panjang, kata penanda) — tidak dikirim utuh.
     get title() {
       return document.title;
@@ -82,17 +107,21 @@
   window.addEventListener("message", (ev) => {
     if (ev.source !== window || ev.origin !== location.origin) return;
     const d = ev.data;
-    if (!d || typeof d !== "object" || d.sumber !== TAG || d.jenis !== "item_list") return;
-    if (typeof d.url !== "string" || !d.body || typeof d.body !== "object") return;
-    const butir = pengurai ? pengurai.ringkasItemList(d.url, d.body) : { url: d.url, body: d.body };
+    if (!d || typeof d !== "object" || typeof d.url !== "string") return;
+    let body;
+    if (PLATFORM === "TIKTOK" && d.sumber === TAG && d.jenis === "item_list" && d.body && typeof d.body === "object") body = d.body;
+    else if (PLATFORM === "INSTAGRAM" && d.sumber === TAG_IG && d.jenis === "tangkapan" && typeof d.teks === "string") body = d.teks;
+    else return;
+    const butir = pengurai ? ringkasTangkapan(pengurai, d.url, body) : { url: d.url, body };
     const ada = tangkapan.findIndex((t) => t.url === d.url);
     if (ada >= 0) tangkapan.splice(ada, 1);
     tangkapan.push(butir);
     if (tangkapan.length > MAKS_TANGKAPAN) tangkapan.shift();
     jadwalkanPerbarui();
   });
-  // Minta halaman-utama.js mengirim ulang yang sudah ditangkap sebelum skrip ini siap.
-  window.postMessage({ sumber: TAG, jenis: "minta-ulang" }, location.origin);
+  // Minta halaman-utama*.js mengirim ulang yang sudah ditangkap sebelum skrip ini siap.
+  if (PLATFORM === "TIKTOK") window.postMessage({ sumber: TAG, jenis: "minta-ulang" }, location.origin);
+  if (PLATFORM === "INSTAGRAM") window.postMessage({ sumber: TAG_IG, jenis: "minta-ulang" }, location.origin);
 
   async function baca() {
     const m = await muatPengurai;
@@ -137,18 +166,19 @@
     // Cek cepat: tab TikTok yang dibuka orang mengambil halaman tugas dengan fetch (kuki tab ini sudah
     // lolos pemeriksaan keamanan TikTok) dan membacanya — tanpa membuka tab baru. Hanya alamat
     // tiktok.com yang sah untuk tugas yang diterima; hasilnya bentuk yang sama dengan bacaHalaman.
+    // Instagram (v0.11.0): jalan yang sama dari tab instagram.com yang dibuka dan sudah dimasuki pemilik.
     if (pesan?.jenis === "ambilLewatTab" && typeof pesan.url === "string") {
       muatPengurai
         .then(async (m) => {
-          const url = m.urlUntukTabTikTok(pesan.url);
-          if (!url) return balas({ status: "GAGAL_MUAT", pesan: "Alamat ini tidak bisa dicek dari tab TikTok" });
+          const url = m.urlUntukTab(pesan.url);
+          if (!url) return balas({ status: "GAGAL_MUAT", pesan: `Alamat ini tidak bisa dicek dari tab ${LABEL_PLATFORM}` });
           let res;
           try {
             res = await fetch(url, { credentials: "include", cache: "no-store", headers: { accept: "text/html" } });
           } catch (e) {
-            return balas({ status: "GAGAL_MUAT", pesan: "Tab TikTok tidak bisa mengambil halaman: " + String(e?.message ?? e) });
+            return balas({ status: "GAGAL_MUAT", pesan: `Tab ${LABEL_PLATFORM} tidak bisa mengambil halaman: ` + String(e?.message ?? e) });
           }
-          if (!res.ok && res.status !== 404) return balas({ status: "GAGAL_MUAT", pesan: `TikTok menjawab HTTP ${res.status}` });
+          if (!res.ok && res.status !== 404) return balas({ status: "GAGAL_MUAT", pesan: `${LABEL_PLATFORM} menjawab HTTP ${res.status}` });
           const html = await res.text();
           const h = m.bacaHalaman(html, { url, itemList: [] });
           balas({ ...h, lewatTab: true });
@@ -158,7 +188,7 @@
     }
     // Jalan pengganti: halaman video kena pemeriksaan keamanan → angka video diambil dari daftar
     // video profil kreatornya (tab yang sama sudah diarahkan ke profil oleh service worker).
-    if (pesan?.jenis === "bacaKontenDariProfil" && typeof pesan.videoId === "string") {
+    if (PLATFORM === "TIKTOK" && pesan?.jenis === "bacaKontenDariProfil" && typeof pesan.videoId === "string") {
       bacaLengkap()
         .then((h) => {
           if (h.status !== "OK" || h.data?.jenis !== "PROFIL") return balas({ ...h, data: undefined });
@@ -195,11 +225,17 @@
   let aturan = null;
   const muatAturan = import(chrome.runtime.getURL("lib/aturan.js")).then((m) => (aturan = m));
   const TEKS_STATUS = {
-    CAPTCHA: "TikTok meminta captcha. Selesaikan dulu, lalu tekan Baca ulang.",
-    LOGIN: "TikTok meminta masuk (login).",
+    CAPTCHA: `${LABEL_PLATFORM} meminta captcha atau pemeriksaan. Selesaikan dulu, lalu tekan Baca ulang.`,
+    LOGIN:
+      PLATFORM === "INSTAGRAM"
+        ? "Instagram meminta masuk. Posting dan angkanya hanya terbaca bila Anda sudah masuk ke Instagram di Chrome ini."
+        : `${LABEL_PLATFORM} meminta masuk (login).`,
     TIDAK_DITEMUKAN: "Akun atau video ini tidak ditemukan.",
     PRIVAT: "Akun atau video ini privat — angkanya tidak bisa dibaca.",
-    TIDAK_TERBACA: "Angka belum terbaca. Tekan tombol putar di bawah; kalau masih gagal, muat ulang halaman (⌘R).",
+    TIDAK_TERBACA:
+      PLATFORM === "INSTAGRAM"
+        ? "Angka belum terbaca. Pastikan Anda sudah masuk ke Instagram, gulir sedikit, lalu tekan tombol putar di bawah."
+        : "Angka belum terbaca. Tekan tombol putar di bawah; kalau masih gagal, muat ulang halaman (⌘R).",
   };
   const TEKS_SIMPAN = {
     // Elorae lama (sebelum KOL dibuat otomatis) masih bisa menjawab ini.
@@ -705,11 +741,11 @@
   const muatLama = { aktif: false, dicoba: new Set() };
 
   async function gulirKeBawah() {
-    // Naik sedikit lalu turun lagi: pemicu muat TikTok (pengamat di ujung daftar) baru bereaksi
-    // bila ujung daftar keluar lalu masuk layar lagi.
+    // Naik sedikit lalu turun lagi: pemicu muat TikTok/Instagram (pengamat di ujung daftar) baru
+    // bereaksi bila ujung daftar keluar lalu masuk layar lagi.
     window.scrollBy({ top: -600, behavior: "instant" });
     await tidurPanel(150);
-    const item = document.querySelectorAll('[data-e2e="user-post-item"]');
+    const item = PLATFORM === "TIKTOK" ? document.querySelectorAll('[data-e2e="user-post-item"]') : [];
     if (item.length) item[item.length - 1].scrollIntoView({ block: "end", behavior: "instant" });
     window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" });
   }
@@ -1246,7 +1282,7 @@
       const kunci = `${location.href}|${kunciPeriode}`;
       if (muatLama.aktif) {
         isi.push(el("div", { kelas: "status baik", role: "status" }, ikon("ulang"), el("span", { teks: `Memuat video lama untuk pembanding… (${data.posting.length} video terbaca)` })));
-      } else if (adaItemList && !muatLama.dicoba.has(kunci)) {
+      } else if (adaItemList && pengurai.MAKS_POSTING > 0 && !muatLama.dicoba.has(kunci)) {
         // Jalan sesudah gambar selesai dan sesudah TikTok sempat menampilkan daftar videonya.
         setTimeout(() => muatVideoLama(kunciPeriode, batasMuat).catch(() => {}), 1500);
       } else {
@@ -1256,7 +1292,7 @@
             kelas: "catatan",
             teks: batasPenuh
               ? `Pembanding ini butuh lebih dari ${pengurai.MAKS_POSTING} video untuk akun ini — pakai rentang yang lebih pendek atau lebih baru.`
-              : "Video lama belum termuat semua, jadi naik/turun belum bisa dihitung.",
+              : `${PLATFORM === "INSTAGRAM" ? "Posting" : "Video"} lama belum termuat semua, jadi naik/turun belum bisa dihitung.`,
           }),
         );
         if (!batasPenuh) {
@@ -1412,64 +1448,85 @@
   }
 
   function isiProfil(h, data, lengkap) {
+    if (PLATFORM === "YOUTUBE") {
+      // Halaman kanal hanya memuat angka ringkas ("46,5 jt subscriber"): pengikut perkiraan, tanpa ER.
+      const awalan = data.pengikutPerkiraan ? "± " : "";
+      return {
+        bagian: [
+          el(
+            "div",
+            { kelas: "ubin" },
+            ubin(`${awalan}${alat.angkaPendek(data.pengikut)}`, "subscriber", `${awalan}${alat.angkaLengkap(data.pengikut)} subscriber${data.pengikutPerkiraan ? " (dibulatkan YouTube)" : ""}`),
+            ubin("—", "ER kanal tidak dihitung", "YouTube hanya menampilkan angka kanal yang dibulatkan.", true),
+          ),
+          el("div", { kelas: "catatan", teks: "Buka videonya untuk angka per video (views persis, like, komentar). ER kanal YouTube tidak dihitung." }),
+        ],
+        er: null,
+      };
+    }
+    const ig = PLATFORM === "INSTAGRAM";
     const r = alat.ringkasAkun(data.posting, data.pengikut, Date.now(), { jumlahVideo: data.jumlahVideo });
-    const judulEr =
-      "Rata-rata ER per video atas ≤ 12 video terbaru (bukan pin, berumur ≥ 48 jam): " +
-      "(like + komentar + share + save) ÷ views. Rumusnya sama dengan yang disimpan Elorae.";
+    const judulEr = ig
+      ? "Rata-rata ER per posting ber-views atas ≤ 12 posting terbaru (bukan pin, berumur ≥ 48 jam): (like + komentar) ÷ views — share dan simpan tidak publik di Instagram, jadi ER ini lebih rendah dari ER TikTok."
+      : "Rata-rata ER per video atas ≤ 12 video terbaru (bukan pin, berumur ≥ 48 jam): " +
+        "(like + komentar + share + save) ÷ views. Rumusnya sama dengan yang disimpan Elorae.";
+    const satuan = ig ? "posting" : "video";
     const bagian = [
       el(
         "div",
         { kelas: "ubin" },
         ubin(alat.angkaPendek(data.pengikut), "pengikut", `${alat.angkaLengkap(data.pengikut)} pengikut`),
-        ubin(alat.teksPersen(r.er), r.er == null ? "ER belum terhitung" : `ER · ${r.postsCounted} video`, judulEr, true),
+        ubin(alat.teksPersen(r.er), r.er == null ? "ER belum terhitung" : `ER · ${r.postsCounted} ${satuan}`, judulEr, true),
       ),
     ];
     if (lengkap) {
       bagian.push(statistikAkun(r), periodeProfil(data, h.adaItemList));
       const grafik = grafikViews(data.posting, r);
       if (grafik) bagian.push(grafik);
-      bagian.push(hargaProfil(data.uniqueId, r));
-      bagian.push(
-        el(
-          "div",
-          { kelas: "chip-baris" },
-          chip("like", alat.angkaPendek(data.totalLike), "like", `${alat.angkaLengkap(data.totalLike)} like`),
-          chip("video", alat.angkaPendek(data.jumlahVideo), "video", `${alat.angkaLengkap(data.jumlahVideo)} video`),
-        ),
-      );
+      // Patokan harga Elorae dihitung dari kolaborasi TikTok saja.
+      if (!ig) bagian.push(hargaProfil(data.uniqueId, r));
+      const chipBaris = [];
+      if (data.totalLike !== undefined) chipBaris.push(chip("like", alat.angkaPendek(data.totalLike), "like", `${alat.angkaLengkap(data.totalLike)} like`));
+      if (data.jumlahVideo !== undefined) chipBaris.push(chip("video", alat.angkaPendek(data.jumlahVideo), satuan, `${alat.angkaLengkap(data.jumlahVideo)} ${satuan}`));
+      if (chipBaris.length) bagian.push(el("div", { kelas: "chip-baris" }, ...chipBaris));
     }
     if (!h.adaItemList) {
-      bagian.push(el("div", { kelas: "catatan", teks: "Daftar video belum tertangkap. Gulir sedikit ke daftar video atau muat ulang halaman agar ER dan periode terhitung." }));
+      bagian.push(
+        el("div", {
+          kelas: "catatan",
+          teks: ig
+            ? "Posting belum tertangkap. Instagram hanya memuat posting untuk pengguna yang sudah masuk — masuk ke Instagram di Chrome ini, lalu gulir sedikit ke daftar posting agar ER dan periode terhitung."
+            : "Daftar video belum tertangkap. Gulir sedikit ke daftar video atau muat ulang halaman agar ER dan periode terhitung.",
+        }),
+      );
     } else if (r.er == null) {
-      bagian.push(el("div", { kelas: "catatan", teks: "ER butuh paling sedikit 3 video yang berumur 48 jam dan bukan pin." }));
+      bagian.push(el("div", { kelas: "catatan", teks: `ER butuh paling sedikit 3 ${ig ? "posting ber-views (reel)" : "video"} yang berumur 48 jam dan bukan pin.` }));
     }
     return { bagian, er: r.er };
   }
 
   function isiKonten(data, lengkap) {
     const er = alat.erPosting(data);
+    // Instagram/YouTube tidak menampilkan semua angka: yang tidak terbaca tidak ditampilkan (bukan 0).
+    const judulEr = PLATFORM === "TIKTOK" ? "(like + komentar + share + save) ÷ views" : "(like + komentar) ÷ views — share dan simpan tidak publik di platform ini";
     const bagian = [
       el(
         "div",
         { kelas: "ubin" },
-        ubin(alat.angkaPendek(data.views), "views", `${alat.angkaLengkap(data.views)} views`),
-        ubin(alat.teksPersen(er), "ER video ini", "(like + komentar + share + save) ÷ views", true),
+        ubin(alat.angkaPendek(data.views), "views", data.views === undefined ? "Views tidak tampil untuk konten ini" : `${alat.angkaLengkap(data.views)} views`),
+        ubin(alat.teksPersen(er), PLATFORM === "TIKTOK" ? "ER video ini" : "ER konten ini", judulEr, true),
       ),
     ];
     if (lengkap) {
-      bagian.push(
-        el(
-          "div",
-          { kelas: "chip-baris" },
-          chip("like", alat.angkaPendek(data.like), "like", `${alat.angkaLengkap(data.like)} like`),
-          chip("komentar", alat.angkaPendek(data.komentar), "komentar", `${alat.angkaLengkap(data.komentar)} komentar`),
-          chip("share", alat.angkaPendek(data.share), "share", `${alat.angkaLengkap(data.share)} share`),
-          chip("save", alat.angkaPendek(data.save), "simpan", `${alat.angkaLengkap(data.save)} simpan`),
-        ),
-      );
+      const chipBaris = [];
+      if (data.like !== undefined) chipBaris.push(chip("like", alat.angkaPendek(data.like), "like", `${alat.angkaLengkap(data.like)} like`));
+      if (data.komentar !== undefined) chipBaris.push(chip("komentar", alat.angkaPendek(data.komentar), "komentar", `${alat.angkaLengkap(data.komentar)} komentar`));
+      if (data.share !== undefined) chipBaris.push(chip("share", alat.angkaPendek(data.share), "share", `${alat.angkaLengkap(data.share)} share`));
+      if (data.save !== undefined) chipBaris.push(chip("save", alat.angkaPendek(data.save), "simpan", `${alat.angkaLengkap(data.save)} simpan`));
+      if (chipBaris.length) bagian.push(el("div", { kelas: "chip-baris" }, ...chipBaris));
       if (Number.isFinite(data.dibuatPada) && data.dibuatPada > 0) {
         const umurHari = Math.max(0, (Date.now() - data.dibuatPada * 1000) / 86_400_000);
-        const perHari = umurHari >= 1 ? Math.round(data.views / umurHari) : null;
+        const perHari = umurHari >= 1 && Number.isFinite(data.views) ? Math.round(data.views / umurHari) : null;
         bagian.push(
           el("div", {
             kelas: "catatan",
@@ -1481,6 +1538,15 @@
       }
     }
     return { bagian, er };
+  }
+
+  /** "Profil TikTok", "Reel Instagram", "Posting Instagram", "Kanal YouTube", "Shorts YouTube", … */
+  function labelJenis(target, data) {
+    if (target.jenis === "PROFIL") return PLATFORM === "YOUTUBE" ? "Kanal YouTube" : `Profil ${LABEL_PLATFORM}`;
+    const bentuk = data?.bentuk ?? target.bentuk;
+    if (PLATFORM === "INSTAGRAM") return bentuk === "REEL" ? "Reel Instagram" : "Posting Instagram";
+    if (PLATFORM === "YOUTUBE") return bentuk === "SHORTS" ? "Shorts YouTube" : "Video YouTube";
+    return "Video TikTok";
   }
 
   function gambar(target) {
@@ -1544,12 +1610,12 @@
         el("button", { kelas: "kecil", title: "Kecilkan", "aria-label": "Kecilkan panel", onclick: () => setelKecil(true) }, ikon("kecil")),
       ),
     );
-    const handle = data?.uniqueId ?? target.handle;
+    const handle = data?.uniqueId ?? target.handle ?? "";
     const siapa = el(
       "div",
       { kelas: "siapa" },
       el("div", { kelas: "avatar bulat", teks: alat.inisial(handle) }),
-      el("div", { style: "min-width:0" }, el("div", { kelas: "nama", teks: "@" + handle }), el("div", { kelas: "jenis", teks: target.jenis === "PROFIL" ? "Profil TikTok" : "Video TikTok" })),
+      el("div", { style: "min-width:0" }, el("div", { kelas: "nama", teks: handle ? "@" + handle : LABEL_PLATFORM }), el("div", { kelas: "jenis", teks: labelJenis(target, data) })),
     );
 
     const kartu = el("div", { kelas: `kotak${posisi}${panel.animasi ? " masuk" : ""}`, role: "region", "aria-label": "Panel Elorae" }, kepala, panel.atur ? blokAtur() : null, siapa);

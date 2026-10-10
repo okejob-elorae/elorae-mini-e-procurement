@@ -1,5 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { bacaHasil, bacaMasalah, handleCocok, handleDariLink, linkTiktok, normalHandle, pangkasInt, urlKontenKanonik, videoIdDariLink } from "./pantau-muatan";
+import {
+  bacaHasil,
+  bacaMasalah,
+  formatDariBentuk,
+  handleCocok,
+  handleDariLink,
+  idKontenDariLink,
+  kontenIdDariLink,
+  linkPantau,
+  linkTiktok,
+  normalHandle,
+  pangkasInt,
+  platformHasil,
+  platformLinkPantau,
+  urlKontenKanonik,
+  urlKontenPlatform,
+  urlProfilPantau,
+  videoIdDariLink,
+} from "./pantau-muatan";
 
 /*
  * Muatan dari ekstensi adalah masukan dari luar: angka harus bilangan bulat
@@ -161,5 +179,126 @@ describe("handle dan link TikTok", () => {
     expect(linkTiktok("https://tiktok.com.penipu.id/@a")).toBe(false);
     expect(linkTiktok("https://www.instagram.com/reel/x")).toBe(false);
     expect(linkTiktok(null)).toBe(false);
+  });
+});
+
+describe("bacaHasil — Instagram dan YouTube (platform)", () => {
+  const igKonten = { platform: "INSTAGRAM", jenis: "KONTEN", videoId: "C9xYz_AbC-1", uniqueId: "Kol.Satu", like: 120, komentar: 8, bentuk: "REEL" };
+  const ytKonten = { platform: "YOUTUBE", jenis: "KONTEN", videoId: "dQw4w9WgXcQ", uniqueId: "kolsatu", views: 1_500_000, bentuk: "SHORTS" };
+
+  it("tanpa platform = TikTok, dan hasilnya tidak membawa kolom platform (bentuk lama tidak berubah)", () => {
+    const k = bacaHasil(konten);
+    expect(k.ok && platformHasil(k.hasil)).toBe("TIKTOK");
+    expect(k.ok && "platform" in k.hasil).toBe(false);
+    expect(bacaHasil({ ...konten, platform: "TIKTOK" })).toEqual({ ok: true, hasil: konten });
+  });
+
+  it("Instagram: angka yang tidak terbaca boleh tidak ada (bukan 0); shortcode huruf besar/kecil dipertahankan", () => {
+    const r = bacaHasil(igKonten);
+    expect(r).toEqual({ ok: true, hasil: { platform: "INSTAGRAM", jenis: "KONTEN", videoId: "C9xYz_AbC-1", uniqueId: "Kol.Satu", like: 120, komentar: 8, bentuk: "REEL" } });
+    expect(r.ok && r.hasil.jenis === "KONTEN" && "share" in r.hasil).toBe(false);
+  });
+
+  it("Instagram tanpa satu pun dari views/like/komentar, atau YouTube tanpa views → ditolak", () => {
+    expect(bacaHasil({ ...igKonten, like: undefined, komentar: undefined }).ok).toBe(false);
+    expect(bacaHasil({ ...ytKonten, views: undefined }).ok).toBe(false);
+    expect(bacaHasil({ ...ytKonten, views: null, like: 5 }).ok).toBe(false);
+  });
+
+  it("TikTok tetap mewajibkan kelima angka", () => {
+    expect(bacaHasil({ ...konten, share: undefined }).ok).toBe(false);
+  });
+
+  it("id konten diperiksa per platform; bentuk harus milik platformnya; platform lain ditolak", () => {
+    expect(bacaHasil({ ...ytKonten, videoId: "pendek" }).ok).toBe(false);
+    expect(bacaHasil({ ...igKonten, videoId: "abc" }).ok).toBe(false);
+    expect(bacaHasil({ ...igKonten, bentuk: "SHORTS" }).ok).toBe(false);
+    expect(bacaHasil({ ...ytKonten, bentuk: "REEL" }).ok).toBe(false);
+    expect(bacaHasil({ ...igKonten, platform: "THREADS" }).ok).toBe(false);
+    expect(bacaHasil({ ...igKonten, platform: 3 }).ok).toBe(false);
+    expect(bacaHasil({ ...igKonten, like: -1 }).ok).toBe(false);
+  });
+
+  it("profil YouTube: pengikut perkiraan dan id kanal; posting kosong boleh", () => {
+    const r = bacaHasil({ platform: "YOUTUBE", jenis: "PROFIL", uniqueId: "kolsatu", pengikut: 46_500_000, pengikutPerkiraan: true, idPlatform: "UCabc", posting: [] });
+    expect(r).toEqual({ ok: true, hasil: { platform: "YOUTUBE", jenis: "PROFIL", uniqueId: "kolsatu", pengikut: 46_500_000, pengikutPerkiraan: true, idPlatform: "UCabc", posting: [] } });
+    expect(bacaHasil({ platform: "YOUTUBE", jenis: "PROFIL", uniqueId: "x", pengikut: 1, pengikutPerkiraan: "ya", posting: [] }).ok).toBe(false);
+  });
+
+  it("profil Instagram: posting dengan shortcode, tanpa share/simpan", () => {
+    const r = bacaHasil({
+      platform: "INSTAGRAM",
+      jenis: "PROFIL",
+      uniqueId: "kol.satu",
+      pengikut: 686_570_511,
+      posting: [{ id: "C9xYz_AbC-1", dibuatPada: 1_050_000_000, disematkan: false, views: 9000, like: 100, komentar: 4, bentuk: "REEL", sebutan: ["elorae.official"] }],
+    });
+    expect(r.ok && r.hasil.jenis === "PROFIL" && r.hasil.posting[0]).toEqual({
+      id: "C9xYz_AbC-1",
+      dibuatPada: 1_050_000_000,
+      disematkan: false,
+      views: 9000,
+      like: 100,
+      komentar: 4,
+      bentuk: "REEL",
+      sebutan: ["elorae.official"],
+    });
+  });
+});
+
+describe("link Instagram dan YouTube", () => {
+  it("platformLinkPantau / linkPantau mengenali TikTok, Instagram, YouTube (termasuk youtu.be), bukan situs lain", () => {
+    expect(platformLinkPantau("instagram.com/reel/C9x12")).toBe("INSTAGRAM");
+    expect(platformLinkPantau("https://youtu.be/dQw4w9WgXcQ")).toBe("YOUTUBE");
+    expect(platformLinkPantau("https://m.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("YOUTUBE");
+    expect(platformLinkPantau("https://www.threads.net/@a/post/x")).toBeNull();
+    expect(linkPantau("https://fakeyoutube.com/watch?v=dQw4w9WgXcQ")).toBe(false);
+  });
+
+  it("idKontenDariLink: reel, posting, posting ber-akun, shorts, watch, youtu.be; selain itu null", () => {
+    expect(idKontenDariLink("https://www.instagram.com/reel/C9xYz_AbC-1/?igsh=abc")).toEqual({ platform: "INSTAGRAM", id: "C9xYz_AbC-1", bentuk: "REEL", handle: null });
+    expect(idKontenDariLink("instagram.com/p/DAbcdEfGh12")).toEqual({ platform: "INSTAGRAM", id: "DAbcdEfGh12", bentuk: "POST", handle: null });
+    expect(idKontenDariLink("https://www.instagram.com/Kol.Satu/reel/C9xYz_AbC-1/")).toEqual({ platform: "INSTAGRAM", id: "C9xYz_AbC-1", bentuk: "REEL", handle: "kol.satu" });
+    expect(idKontenDariLink("https://www.instagram.com/kol.satu/")).toBeNull();
+    expect(idKontenDariLink("https://www.instagram.com/stories/kol.satu/123/")).toBeNull();
+    expect(idKontenDariLink("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=10")).toEqual({ platform: "YOUTUBE", id: "dQw4w9WgXcQ", bentuk: "VIDEO", handle: null });
+    expect(idKontenDariLink("youtube.com/shorts/dQw4w9WgXcQ")).toEqual({ platform: "YOUTUBE", id: "dQw4w9WgXcQ", bentuk: "SHORTS", handle: null });
+    expect(idKontenDariLink("https://youtu.be/dQw4w9WgXcQ?si=x")).toEqual({ platform: "YOUTUBE", id: "dQw4w9WgXcQ", bentuk: "VIDEO", handle: null });
+    expect(idKontenDariLink("https://www.youtube.com/@kolsatu/videos")).toBeNull();
+    expect(idKontenDariLink("https://www.youtube.com/watch?v=pendek")).toBeNull();
+    expect(idKontenDariLink("https://www.tiktok.com/@kol.satu/video/7301234567890123456")).toEqual({
+      platform: "TIKTOK",
+      id: "7301234567890123456",
+      bentuk: "VIDEO",
+      handle: "kol.satu",
+    });
+    expect(kontenIdDariLink("https://youtu.be/dQw4w9WgXcQ", "INSTAGRAM")).toBeNull();
+  });
+
+  it("urlKontenKanonik dan urlKontenPlatform: link baku per platform", () => {
+    expect(urlKontenKanonik("https://www.instagram.com/kol.satu/reel/C9xYz_AbC-1/?igsh=abc")).toBe("https://www.instagram.com/reel/C9xYz_AbC-1/");
+    expect(urlKontenKanonik("instagram.com/tv/C9xYz_AbC-1")).toBe("https://www.instagram.com/p/C9xYz_AbC-1/");
+    expect(urlKontenKanonik("https://youtu.be/dQw4w9WgXcQ?si=x")).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+    expect(urlKontenKanonik("https://m.youtube.com/shorts/dQw4w9WgXcQ?feature=share")).toBe("https://www.youtube.com/shorts/dQw4w9WgXcQ");
+    expect(urlKontenPlatform("TIKTOK", "7301", { handle: "@Kol.Satu" })).toBe("https://www.tiktok.com/@kol.satu/video/7301");
+    expect(urlKontenPlatform("INSTAGRAM", "C9xYz_AbC-1", { bentuk: "REEL" })).toBe("https://www.instagram.com/reel/C9xYz_AbC-1/");
+  });
+
+  it("handle dari link dan URL profil per platform", () => {
+    expect(handleDariLink("https://www.instagram.com/Kol.Satu/p/C9xYz_AbC-1/")).toBe("kol.satu");
+    expect(handleDariLink("https://www.instagram.com/p/C9xYz_AbC-1/")).toBeNull();
+    expect(handleDariLink("https://www.youtube.com/@KolSatu")).toBe("kolsatu");
+    expect(normalHandle("https://www.instagram.com/Kol.Satu/?hl=id")).toBe("kol.satu");
+    expect(normalHandle("https://www.instagram.com/p/C9xYz")).toBe("https://www.instagram.com/p/c9xyz");
+    expect(normalHandle("https://www.youtube.com/@KolSatu/videos")).toBe("kolsatu");
+    expect(urlProfilPantau("INSTAGRAM", "@Kol.Satu")).toBe("https://www.instagram.com/kol.satu/");
+    expect(urlProfilPantau("YOUTUBE", "KolSatu")).toBe("https://www.youtube.com/@kolsatu");
+  });
+
+  it("formatDariBentuk: reel → REELS, posting Instagram → FEED, YouTube → VIDEO", () => {
+    expect(formatDariBentuk("INSTAGRAM", "REEL")).toBe("REELS");
+    expect(formatDariBentuk("INSTAGRAM", "POST")).toBe("FEED");
+    expect(formatDariBentuk("INSTAGRAM", undefined)).toBe("FEED");
+    expect(formatDariBentuk("YOUTUBE", "SHORTS")).toBe("VIDEO");
   });
 });

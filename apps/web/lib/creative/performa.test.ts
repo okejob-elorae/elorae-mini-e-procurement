@@ -7,7 +7,7 @@ import { alamatPerforma, bacaParamPerforma, polaCari, RUTE_PERFORMA, statusVideo
  * per video dari tugas pantaunya.
  */
 
-const BAWAAN: ParamPerforma = { cari: "", jenis: "semua", dari: null, sampai: null, urut: "views", halaman: 1 };
+const BAWAAN: ParamPerforma = { cari: "", jenis: "semua", platform: "semua", dari: null, sampai: null, urut: "views", halaman: 1 };
 
 describe("bacaParamPerforma / alamatPerforma", () => {
   it("alamat kosong = bawaan: semua orang, views terbanyak, halaman 1", () => {
@@ -16,14 +16,14 @@ describe("bacaParamPerforma / alamatPerforma", () => {
   });
 
   it("membaca dan menulis setiap saringan; nilai bawaan tidak ditulis", () => {
-    const p = bacaParamPerforma({ cari: "  lystia ", jenis: "afiliasi", dari: "2026-09-01", sampai: "2026-09-30", urut: "er", halaman: "3" });
-    expect(p).toEqual({ cari: "lystia", jenis: "afiliasi", dari: "2026-09-01", sampai: "2026-09-30", urut: "er", halaman: 3 });
-    expect(alamatPerforma(p)).toBe(`${RUTE_PERFORMA}?cari=lystia&jenis=afiliasi&dari=2026-09-01&sampai=2026-09-30&urut=er&halaman=3`);
+    const p = bacaParamPerforma({ cari: "  lystia ", jenis: "afiliasi", platform: "instagram", dari: "2026-09-01", sampai: "2026-09-30", urut: "er", halaman: "3" });
+    expect(p).toEqual({ cari: "lystia", jenis: "afiliasi", platform: "instagram", dari: "2026-09-01", sampai: "2026-09-30", urut: "er", halaman: 3 });
+    expect(alamatPerforma(p)).toBe(`${RUTE_PERFORMA}?cari=lystia&jenis=afiliasi&platform=instagram&dari=2026-09-01&sampai=2026-09-30&urut=er&halaman=3`);
     expect(bacaParamPerforma(Object.fromEntries(new URL(`http://x${alamatPerforma(p)}`).searchParams))).toEqual(p);
   });
 
   it("nilai yang salah jatuh ke bawaan; rentang terbalik dirapikan", () => {
-    expect(bacaParamPerforma({ jenis: "x", urut: "acak", halaman: "-2", dari: "2026-13-01", cari: "a".repeat(300) })).toEqual({
+    expect(bacaParamPerforma({ jenis: "x", platform: "threads", urut: "acak", halaman: "-2", dari: "2026-13-01", cari: "a".repeat(300) })).toEqual({
       ...BAWAAN,
       cari: "a".repeat(100),
     });

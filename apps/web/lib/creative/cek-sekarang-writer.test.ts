@@ -14,7 +14,15 @@ const SEKARANG = new Date("2003-05-05T03:00:00Z");
 
 let kolId = "";
 let briefId = "";
-const k: Record<"selesai" | "antre" | "dipinjam" | "ig" | "tanpaLink", string> = { selesai: "", antre: "", dipinjam: "", ig: "", tanpaLink: "" };
+const k: Record<"selesai" | "antre" | "dipinjam" | "ig" | "yt" | "lain" | "tanpaLink", string> = {
+  selesai: "",
+  antre: "",
+  dipinjam: "",
+  ig: "",
+  yt: "",
+  lain: "",
+  tanpaLink: "",
+};
 let tugasIds: string[] = [];
 const perangkatIds: string[] = [];
 
@@ -25,12 +33,15 @@ beforeAll(async () => {
   tugasIds = [];
   kolId = (await prisma.kol.create({ data: { name: `${tag}` }, select: { id: true } })).id;
   briefId = (await prisma.kolBrief.create({ data: { docNo: `${tag}/1`, kolId, tahap: "TAYANG" }, select: { id: true } })).id;
-  const konten = async (link: string | null, platform: "TIKTOK" | "INSTAGRAM" = "TIKTOK") =>
+  for (const kunci of Object.keys(k) as (keyof typeof k)[]) k[kunci] = "";
+  const konten = async (link: string | null, platform: "TIKTOK" | "INSTAGRAM" | "YOUTUBE" | "LAINNYA" = "TIKTOK") =>
     (await prisma.kolContent.create({ data: { collabId: briefId, platform, format: "VIDEO", link, liveAt: SEKARANG }, select: { id: true } })).id;
   k.selesai = await konten(`https://www.tiktok.com/@${tag}/video/7301234567890123411?is_from_webapp=1`);
   k.antre = await konten(`https://www.tiktok.com/@${tag}/video/7301234567890123412`);
   k.dipinjam = await konten(`https://www.tiktok.com/@${tag}/video/7301234567890123413`);
   k.ig = await konten(`https://www.instagram.com/reel/${tag}`, "INSTAGRAM");
+  k.yt = await konten(`https://youtu.be/${tag.slice(0, 11)}`, "YOUTUBE");
+  k.lain = await konten(`https://shopee.co.id/${tag}`, "LAINNYA");
   k.tanpaLink = await konten(null);
   const tugas = (contentId: string, status: string, prioritas: number, jatuhAt: Date) =>
     prisma.kolTugasPantau.create({
@@ -73,10 +84,19 @@ describe("mintaCekSekarang", () => {
     expect(dipinjam[0]).toMatchObject({ status: "DIPINJAM", prioritas: 80 });
   });
 
-  it("bukan video TikTok, tanpa link, atau tidak ada → dilewati; permintaan kembar dihitung sekali", async () => {
-    const r = await mintaCekSekarang({ kontenIds: [k.ig, k.tanpaLink, "tidak-ada", k.ig], sekarang: SEKARANG, perangkatIds: [] });
+  it("bukan konten TikTok/Instagram/YouTube, tanpa link, atau tidak ada → dilewati; permintaan kembar dihitung sekali", async () => {
+    const r = await mintaCekSekarang({ kontenIds: [k.lain, k.tanpaLink, "tidak-ada", k.lain], sekarang: SEKARANG, perangkatIds: [] });
     expect(r).toEqual({ ok: true, diantrekan: 0, sudahAntre: 0, dilewati: 3, perangkatDilanjutkan: 0 });
-    expect(await tugasKonten(k.ig)).toHaveLength(0);
+    expect(await tugasKonten(k.lain)).toHaveLength(0);
+  });
+
+  it("reel Instagram dan video YouTube diantrekan dengan platformnya dan link bakunya", async () => {
+    const r = await mintaCekSekarang({ kontenIds: [k.ig, k.yt], sekarang: SEKARANG, perangkatIds: [] });
+    expect(r).toEqual({ ok: true, diantrekan: 2, sudahAntre: 0, dilewati: 0, perangkatDilanjutkan: 0 });
+    const ig = await prisma.kolTugasPantau.findFirstOrThrow({ where: { contentId: k.ig }, select: { platform: true, url: true } });
+    expect(ig).toEqual({ platform: "INSTAGRAM", url: `https://www.instagram.com/reel/${tag}/` });
+    const yt = await prisma.kolTugasPantau.findFirstOrThrow({ where: { contentId: k.yt }, select: { platform: true, url: true } });
+    expect(yt).toEqual({ platform: "YOUTUBE", url: `https://www.youtube.com/watch?v=${tag.slice(0, 11)}` });
   });
 
   // Di PostgreSQL READ COMMITTED balapan ini jarang benar-benar menghasilkan tugas kembar, jadi tes
@@ -166,7 +186,7 @@ describe("keadaanPemantau", () => {
 
   it("tanpa video yang benar-benar diantrekan, jeda tidak dilepas", async () => {
     const gagal = await perangkat({ lapor: menit(-1), jedaSampai: menit(40), alasan: "GAGAL_BERUNTUN" });
-    const r = await mintaCekSekarang({ kontenIds: [k.ig], sekarang: SEKARANG, perangkatIds: [gagal] });
+    const r = await mintaCekSekarang({ kontenIds: [k.lain], sekarang: SEKARANG, perangkatIds: [gagal] });
     expect(r).toMatchObject({ ok: true, dilewati: 1, perangkatDilanjutkan: 0 });
     expect((await prisma.kolPerangkat.findUniqueOrThrow({ where: { id: gagal } })).dijedaSampai).toEqual(menit(40));
   });
