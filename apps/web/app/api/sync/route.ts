@@ -88,6 +88,17 @@ async function handleSupplierUpdate(payload: any) {
     const { id, ...rest } = { ...payload };
     delete rest.categoryId;
 
+    if ("paymentTermsDays" in rest) {
+      const terms = parsePaymentTermsDays(rest.paymentTermsDays);
+      if (!terms.ok) {
+        return NextResponse.json(
+          { error: "Payment terms must be a whole number of days from 0 to 365" },
+          { status: 400 }
+        );
+      }
+      rest.paymentTermsDays = terms.value;
+    }
+
     let bankAccountEnc = undefined;
     if (rest.bankAccount) {
       bankAccountEnc = encryptBankAccount(rest.bankAccount, 'DEFAULT_PIN');
