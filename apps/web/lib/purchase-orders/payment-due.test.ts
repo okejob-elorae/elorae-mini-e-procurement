@@ -131,7 +131,7 @@ d("recomputePaymentDueDate (test bed only)", () => {
     const po = await makePo({ paymentTermsDays: 30 });
     await makeGrn(po, { grnDate: new Date("2026-10-12T03:00:00.000Z") });
     await recomputePaymentDueDate(prisma, po);
-    expect((await dueOf(po))?.toISOString()).toBe("2026-11-11T00:00:00.000Z");
+    expect((await dueOf(po))?.toISOString()).toBe("2026-11-10T17:00:00.000Z");
   });
 
   it("a later GRN does not move the date", async () => {
@@ -139,7 +139,7 @@ d("recomputePaymentDueDate (test bed only)", () => {
     await makeGrn(po, { grnDate: new Date("2026-10-12T03:00:00.000Z") });
     await makeGrn(po, { grnDate: new Date("2026-10-20T03:00:00.000Z") });
     await recomputePaymentDueDate(prisma, po);
-    expect((await dueOf(po))?.toISOString()).toBe("2026-11-11T00:00:00.000Z");
+    expect((await dueOf(po))?.toISOString()).toBe("2026-11-10T17:00:00.000Z");
   });
 
   it("skips a declined GRN and falls back to the next surviving one", async () => {
@@ -147,7 +147,7 @@ d("recomputePaymentDueDate (test bed only)", () => {
     await makeGrn(po, { grnDate: new Date("2026-10-01T03:00:00.000Z"), ownerDeclinedAt: new Date() });
     await makeGrn(po, { grnDate: new Date("2026-10-05T03:00:00.000Z") });
     await recomputePaymentDueDate(prisma, po);
-    expect((await dueOf(po))?.toISOString()).toBe("2026-10-15T00:00:00.000Z");
+    expect((await dueOf(po))?.toISOString()).toBe("2026-10-14T17:00:00.000Z");
   });
 
   it("only declined GRNs → due date null", async () => {
@@ -161,7 +161,7 @@ d("recomputePaymentDueDate (test bed only)", () => {
     const po = await makePo({ paymentTermsDays: 7 });
     await makeGrn(po, { grnDate: new Date("2026-10-01T03:00:00.000Z"), requiresOwnerApproval: true });
     await recomputePaymentDueDate(prisma, po);
-    expect((await dueOf(po))?.toISOString()).toBe("2026-10-08T00:00:00.000Z");
+    expect((await dueOf(po))?.toISOString()).toBe("2026-10-07T17:00:00.000Z");
   });
 
   it("two GRNs at the same instant resolve deterministically by id", async () => {
@@ -170,7 +170,7 @@ d("recomputePaymentDueDate (test bed only)", () => {
     await makeGrn(po, { grnDate: same });
     await makeGrn(po, { grnDate: same });
     await recomputePaymentDueDate(prisma, po);
-    expect((await dueOf(po))?.toISOString()).toBe("2026-10-02T00:00:00.000Z");
+    expect((await dueOf(po))?.toISOString()).toBe("2026-10-01T17:00:00.000Z");
   });
 
   it("terms null → a manual date is left untouched", async () => {

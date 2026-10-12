@@ -41,24 +41,24 @@ describe("computePaymentDueDate", () => {
   it("adds the terms to the WIB calendar day of the receipt", () => {
     /* 2026-10-12 10:00 WIB */
     const at = new Date("2026-10-12T03:00:00.000Z");
-    expect(computePaymentDueDate(at, 30)?.toISOString()).toBe("2026-11-11T00:00:00.000Z");
+    expect(computePaymentDueDate(at, 30)?.toISOString()).toBe("2026-11-10T17:00:00.000Z");
   });
 
   it("uses the WIB day for a late-evening receipt", () => {
     /* 2026-10-12 23:30 WIB = 16:30Z the same UTC day */
     const at = new Date("2026-10-12T16:30:00.000Z");
-    expect(computePaymentDueDate(at, 0)?.toISOString()).toBe("2026-10-12T00:00:00.000Z");
+    expect(computePaymentDueDate(at, 0)?.toISOString()).toBe("2026-10-11T17:00:00.000Z");
   });
 
   it("uses the WIB day, not the UTC day, just after WIB midnight", () => {
     /* 2026-10-13 00:30 WIB = 2026-10-12 17:30Z */
     const at = new Date("2026-10-12T17:30:00.000Z");
-    expect(computePaymentDueDate(at, 0)?.toISOString()).toBe("2026-10-13T00:00:00.000Z");
+    expect(computePaymentDueDate(at, 0)?.toISOString()).toBe("2026-10-12T17:00:00.000Z");
   });
 
   it("rolls over month and year", () => {
     const at = new Date("2026-12-20T03:00:00.000Z");
-    expect(computePaymentDueDate(at, 30)?.toISOString()).toBe("2027-01-19T00:00:00.000Z");
+    expect(computePaymentDueDate(at, 30)?.toISOString()).toBe("2027-01-18T17:00:00.000Z");
   });
 
   it("returns null without terms or without a receipt", () => {

@@ -23,8 +23,9 @@ export function parsePaymentTermsDays(
 }
 
 /**
- * Due date = WIB calendar day of the first receipt + terms, returned as UTC
- * midnight of that date, the shape a hand-picked due date is stored in.
+ * Due date = WIB calendar day of the first receipt + terms, returned as WIB
+ * midnight of that date: the repo's date-only shape (`parseDateOnly`), the
+ * same instant a hand-picked due date is stored as.
  */
 export function computePaymentDueDate(
   firstReceiptAt: Date | null,
@@ -33,7 +34,7 @@ export function computePaymentDueDate(
   if (firstReceiptAt == null || termsDays == null) return null;
   const wib = new Date(firstReceiptAt.getTime() + WIB_OFFSET_MS);
   return new Date(
-    Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate() + termsDays)
+    Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate() + termsDays) - WIB_OFFSET_MS
   );
 }
 

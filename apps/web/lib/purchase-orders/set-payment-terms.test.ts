@@ -131,7 +131,7 @@ d("setPurchaseOrderPaymentTerms (test bed only)", () => {
     expect(await setPurchaseOrderPaymentTerms(po, 45, userId)).toEqual({ ok: true });
     const row = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po } });
     expect(row.paymentTermsDays).toBe(45);
-    expect(row.paymentDueDate?.toISOString()).toBe("2026-11-26T00:00:00.000Z");
+    expect(row.paymentDueDate?.toISOString()).toBe("2026-11-25T17:00:00.000Z");
     const history = await prisma.pOStatusHistory.findMany({ where: { poId: po } });
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({ status: "CLOSED", notes: "Payment terms: 30 → 45 days" });
@@ -144,7 +144,7 @@ d("setPurchaseOrderPaymentTerms (test bed only)", () => {
     await setPurchaseOrderPaymentTerms(po, null, userId);
     const row = await prisma.purchaseOrder.findUniqueOrThrow({ where: { id: po } });
     expect(row.paymentTermsDays).toBeNull();
-    expect(row.paymentDueDate?.toISOString()).toBe("2026-11-11T00:00:00.000Z");
+    expect(row.paymentDueDate?.toISOString()).toBe("2026-11-10T17:00:00.000Z");
     const history = await prisma.pOStatusHistory.findMany({ where: { poId: po } });
     expect(history.map((h) => h.notes)).toContain("Payment terms: 30 → none");
   });
