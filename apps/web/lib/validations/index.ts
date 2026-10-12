@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { paymentTermsDaysField } from '@/lib/purchase-orders/payment-terms';
+import { paymentTermsDaysField } from "@/lib/purchase-orders/payment-terms";
 
 export type ValidationTranslate = (key: string) => string;
 

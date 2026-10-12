@@ -3,7 +3,7 @@ import { prisma } from '@elorae/db';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 import { logBankAccountView } from '@/lib/audit';
-import { paymentTermsDaysField } from '@/lib/purchase-orders/payment-terms';
+import { paymentTermsDaysField } from "@/lib/purchase-orders/payment-terms";
 
 export const supplierSchema = z.object({
   code: z.preprocess(

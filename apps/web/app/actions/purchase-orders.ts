@@ -17,9 +17,9 @@ import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/muta
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
-import { parsePaymentTermsDays } from '@/lib/purchase-orders/payment-terms';
-import { recomputePaymentDueDate } from '@/lib/purchase-orders/payment-due';
-import { setPurchaseOrderPaymentTerms, type SetPaymentTermsCode } from '@/lib/purchase-orders/set-payment-terms';
+import { parsePaymentTermsDays } from "@/lib/purchase-orders/payment-terms";
+import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
+import { setPurchaseOrderPaymentTerms, type SetPaymentTermsCode } from "@/lib/purchase-orders/set-payment-terms";
 import {
   hasCurrentPaymentJournal,
   hasStandingPaymentJournalWhileUnpaid,
@@ -97,7 +97,7 @@ export async function updatePO(
   if (data.paymentTermsDays !== undefined) {
     const parsedTerms = parsePaymentTermsDays(data.paymentTermsDays);
     if (!parsedTerms.ok) {
-      throw new Error('Payment terms must be a whole number of days from 0 to 365');
+      throw new Error("Payment terms must be a whole number of days from 0 to 365");
     }
     termsPatch = { paymentTermsDays: parsedTerms.value };
   }
@@ -247,28 +247,28 @@ export async function setPOPaymentTerms(
   poId: string,
   paymentTermsDays: number | null,
   pin?: string
-): Promise<{ ok: true } | { ok: false; code: SetPaymentTermsCode | 'PIN'; message?: string }> {
+): Promise<{ ok: true } | { ok: false; code: SetPaymentTermsCode | "PIN"; message?: string }> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session) throw new Error("Unauthorized");
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
 
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id: poId },
     select: { status: true },
   });
-  if (!existing) return { ok: false, code: 'NOT_FOUND' };
+  if (!existing) return { ok: false, code: "NOT_FOUND" };
 
-  if (existing.status !== 'DRAFT') {
-    if (!pin) return { ok: false, code: 'PIN', message: 'PIN required' };
-    const pinResult = await verifyPin(session.user.id, pin, 'EDIT_POSTED_PO');
+  if (existing.status !== "DRAFT") {
+    if (!pin) return { ok: false, code: "PIN", message: "PIN required" };
+    const pinResult = await verifyPin(session.user.id, pin, "EDIT_POSTED_PO");
     if (!pinResult.success) {
-      return { ok: false, code: 'PIN', message: pinResult.messageKey ?? pinResult.message };
+      return { ok: false, code: "PIN", message: pinResult.messageKey ?? pinResult.message };
     }
   }
 
   const result = await setPurchaseOrderPaymentTerms(poId, paymentTermsDays, session.user.id);
   if (result.ok) {
-    revalidatePath('/backoffice/purchase-orders');
+    revalidatePath("/backoffice/purchase-orders");
     revalidatePath(`/backoffice/purchase-orders/${poId}`);
   }
   return result;

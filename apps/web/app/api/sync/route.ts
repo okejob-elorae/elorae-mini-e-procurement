@@ -5,7 +5,7 @@ import { prisma } from '@elorae/db';
 import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 import { createPurchaseOrderFromOfflinePayload } from '@/lib/purchase-orders/mutations';
-import { parsePaymentTermsDays } from '@/lib/purchase-orders/payment-terms';
+import { parsePaymentTermsDays } from "@/lib/purchase-orders/payment-terms";
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +46,7 @@ async function handleSupplierCreate(payload: any) {
     const terms = parsePaymentTermsDays(payload.paymentTermsDays ?? null);
     if (!terms.ok) {
       return NextResponse.json(
-        { error: 'Payment terms must be a whole number of days from 0 to 365' },
+        { error: "Payment terms must be a whole number of days from 0 to 365" },
         { status: 400 }
       );
     }

@@ -101,7 +101,7 @@ const supplierSchema = z.object({
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
   bankAccountName: z.string().optional(),
-  paymentTermsDays: z.number().int().min(0, 'Must be 0 or more').max(365, 'Must be 365 or less').nullable().optional(),
+  paymentTermsDays: z.number().int().min(0, "Must be 0 or more").max(365, "Must be 365 or less").nullable().optional(),
 });
 
 type SupplierForm = z.infer<typeof supplierSchema>;
@@ -283,7 +283,7 @@ export default function SuppliersPage() {
         const details = error?.details as Array<{ path: (string | number)[]; message: string }> | undefined;
         const formKeys: (keyof SupplierForm)[] = [
           'code', 'name', 'typeId', 'address', 'phone', 'email',
-          'bankName', 'bankAccount', 'bankAccountName', 'paymentTermsDays',
+          "bankName", "bankAccount", "bankAccountName", "paymentTermsDays",
         ];
         if (Array.isArray(details) && details.length > 0) {
           details.forEach((issue) => {
@@ -512,11 +512,11 @@ export default function SuppliersPage() {
                   max={365}
                   step={1}
                   placeholder="e.g. 30 — leave blank if none"
-                  {...register('paymentTermsDays', {
-                    setValueAs: (v) => (v === '' || v == null ? null : Number(v)),
+                  {...register("paymentTermsDays", {
+                    setValueAs: (v) => (v === "" || v == null ? null : Number(v)),
                   })}
                   aria-invalid={!!errors.paymentTermsDays}
-                  className={errors.paymentTermsDays ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  className={errors.paymentTermsDays ? "border-destructive focus-visible:ring-destructive/20" : ""}
                 />
                 {errors.paymentTermsDays && (
                   <p className="text-sm text-destructive" role="alert">
@@ -784,8 +784,8 @@ export default function SuppliersPage() {
                   </div>
                 )}
                 <div className="text-sm text-muted-foreground whitespace-nowrap">
-                  Terms:{' '}
-                  {supplier.paymentTermsDays != null ? `${supplier.paymentTermsDays} days` : '-'}
+                  Terms:{" "}
+                  {supplier.paymentTermsDays != null ? `${supplier.paymentTermsDays} days` : "-"}
                 </div>
                 {supplier.bankAccountEnc && (
                   <div className="flex items-center gap-2 text-sm">
@@ -836,7 +836,7 @@ export default function SuppliersPage() {
               <p className="font-medium">
                 {selectedSupplier?.paymentTermsDays != null
                   ? `${selectedSupplier.paymentTermsDays} days`
-                  : '-'}
+                  : "-"}
               </p>
             </div>
 

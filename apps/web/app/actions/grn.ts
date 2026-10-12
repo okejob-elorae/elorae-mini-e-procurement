@@ -18,7 +18,7 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { docNumberPeriod } from "@/lib/doc-numbers/period";
-import { recomputePaymentDueDate } from '@/lib/purchase-orders/payment-due';
+import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),

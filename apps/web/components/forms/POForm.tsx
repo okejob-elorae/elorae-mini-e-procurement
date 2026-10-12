@@ -371,7 +371,7 @@ export function POForm({
   const etaDate = watch('etaDate');
   const isETAPast = etaDate && new Date(etaDate) < new Date();
   const supplierId = watch('supplierId');
-  const termsDays = watch('paymentTermsDays');
+  const termsDays = watch("paymentTermsDays");
   const termsChanged = termsDays !== (initialData?.paymentTermsDays ?? null);
   const termsHelper = termsChanged
     ? `Set on first goods receipt + ${termsDays} days.`
@@ -537,7 +537,7 @@ export function POForm({
                 value={
                   termsDays != null
                     ? (termsChanged ? null : (initialData?.paymentDueDate ?? null))
-                    : (watch('paymentDueDate') ?? null)
+                    : (watch("paymentDueDate") ?? null)
                 }
                 aria-invalid={!!errors.paymentDueDate}
                 className={errors.paymentDueDate ? 'border-destructive focus-visible:ring-destructive/20' : ''}

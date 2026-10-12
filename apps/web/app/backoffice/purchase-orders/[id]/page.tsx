@@ -36,7 +36,7 @@ import Link from 'next/link';
 import { POStatus } from '@/lib/constants/enums';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
+import { Input } from "@/components/ui/input";
 import { Label } from '@/components/ui/label';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
@@ -82,7 +82,7 @@ export default function PODetailPage() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [pinModalOpen, setPinModalOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'cancel' | 'update' | 'terms' | null>(null);
+  const [pendingAction, setPendingAction] = useState<"cancel" | "update" | "terms" | null>(null);
   const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
   const [termsDialogOpen, setTermsDialogOpen] = useState(false);
   const [termsInput, setTermsInput] = useState("");
@@ -280,7 +280,7 @@ export default function PODetailPage() {
         toast.success('PO updated successfully');
         setIsEditMode(false);
         setPendingUpdateData(null);
-      } else if (pendingAction === 'terms') {
+      } else if (pendingAction === "terms") {
         const result = await setPOPaymentTerms(po.id, pendingTermsValue, pin);
         if (!result.ok) {
           throw new Error(
@@ -946,11 +946,11 @@ export default function PODetailPage() {
         }}
         onConfirm={handlePinConfirm}
         action={
-          pendingAction === 'cancel'
-            ? 'membatalkan PO'
-            : pendingAction === 'terms'
-              ? 'mengubah termin pembayaran PO'
-              : 'menyunting PO yang sudah diposting'
+          pendingAction === "cancel"
+            ? "membatalkan PO"
+            : pendingAction === "terms"
+              ? "mengubah termin pembayaran PO"
+              : "menyunting PO yang sudah diposting"
         }
       />
 
