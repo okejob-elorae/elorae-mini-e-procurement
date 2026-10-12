@@ -133,6 +133,22 @@ describe("updatePO payment terms", () => {
     ).rejects.toThrow("Payment terms must be a whole number of days from 0 to 365");
     expect(mockTransaction).not.toHaveBeenCalled();
   });
+
+  it("refuses changed terms on a paid PO before opening a transaction", async () => {
+    mockPoFindUnique.mockResolvedValue({ status: "DRAFT", paidAt: new Date(), paymentTermsDays: 30 });
+    await expect(
+      updatePO("po1", { supplierId: "s1", items: [], paymentTermsDays: 60 } as never, "u1")
+    ).rejects.toThrow("This PO is already paid — its payment terms can no longer change");
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it("saves a paid PO whose terms are unchanged", async () => {
+    mockPoFindUnique.mockResolvedValue({ status: "DRAFT", paidAt: new Date(), paymentTermsDays: 30 });
+    await expect(
+      updatePO("po1", { supplierId: "s1", items: [], paymentTermsDays: 30 } as never, "u1")
+    ).resolves.toEqual({ id: "po1" });
+    expect(mockTransaction).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("setPOPaymentTerms", () => {

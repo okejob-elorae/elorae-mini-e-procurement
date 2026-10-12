@@ -76,7 +76,7 @@ export async function updatePO(
 
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id },
-    select: { status: true }
+    select: { status: true, paidAt: true, paymentTermsDays: true }
   });
 
   if (existing?.status === 'CLOSED' || existing?.status === 'CANCELLED') {
@@ -100,6 +100,13 @@ export async function updatePO(
       throw new Error('Payment terms must be a whole number of days from 0 to 365');
     }
     termsPatch = { paymentTermsDays: parsedTerms.value };
+  }
+  if (
+    existing?.paidAt != null &&
+    termsPatch.paymentTermsDays !== undefined &&
+    termsPatch.paymentTermsDays !== existing.paymentTermsDays
+  ) {
+    throw new Error("This PO is already paid — its payment terms can no longer change");
   }
 
   const receivedPreservingStatuses = ['SUBMITTED', 'PARTIAL', 'OVER'] as const;
