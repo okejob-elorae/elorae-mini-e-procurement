@@ -443,11 +443,15 @@ export function POForm({
                 options={suppliers.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))}
                 value={watch('supplierId')}
                 onValueChange={(value) => {
+                  /* Re-picking the current supplier must not overwrite terms negotiated on this PO. */
+                  const supplierChanged = value !== watch("supplierId");
                   setValue("supplierId", value, { shouldValidate: true });
-                  const picked = suppliers.find((s) => s.id === value);
-                  setValue("paymentTermsDays", picked?.paymentTermsDays ?? null, {
-                    shouldValidate: true,
-                  });
+                  if (supplierChanged) {
+                    const picked = suppliers.find((s) => s.id === value);
+                    setValue("paymentTermsDays", picked?.paymentTermsDays ?? null, {
+                      shouldValidate: true,
+                    });
+                  }
                 }}
                 placeholder={tPlaceholders('selectSupplier')}
                 aria-invalid={!!errors.supplierId}
