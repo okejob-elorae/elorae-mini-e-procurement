@@ -184,6 +184,7 @@ model Supplier {
   bankName         String?
   bankAccountEnc   String?
   bankAccountName  String?
+  paymentTermsDays Int?
   isActive         Boolean          @default(true)
   status           SupplierStatus  @default(PENDING_APPROVAL)
   approvedById     String?
@@ -1355,6 +1356,7 @@ model PurchaseOrder {
   etaDate          DateTime?
   paymentDueDate   DateTime?
   paidAt           DateTime?
+  paymentTermsDays Int?
   currency         String          @default("IDR")
   totalAmount      Decimal         @default(0) @db.Decimal(15,2)
   taxAmount        Decimal         @default(0) @db.Decimal(15,2)

@@ -1,0 +1,46 @@
+import { z } from "zod";
+
+export const PAYMENT_TERMS_DAYS_MAX = 365;
+
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+/**
+ * Payment terms in days: a whole number from 0 to PAYMENT_TERMS_DAYS_MAX, or
+ * null for "not set". A cleared number input arrives as "" or NaN and means
+ * "not set", never 0.
+ */
+export const paymentTermsDaysField = z.preprocess(
+  (v) => (v === "" || v === null || (typeof v === "number" && Number.isNaN(v)) ? null : v),
+  z.number().int().min(0).max(PAYMENT_TERMS_DAYS_MAX).nullable()
+);
+
+export function parsePaymentTermsDays(
+  value: unknown
+): { ok: true; value: number | null } | { ok: false } {
+  if (value === undefined) return { ok: false };
+  const parsed = paymentTermsDaysField.safeParse(value);
+  return parsed.success ? { ok: true, value: parsed.data } : { ok: false };
+}
+
+/**
+ * Due date = WIB calendar day of the first receipt + terms, returned as UTC
+ * midnight of that date, the shape a hand-picked due date is stored in.
+ */
+export function computePaymentDueDate(
+  firstReceiptAt: Date | null,
+  termsDays: number | null
+): Date | null {
+  if (firstReceiptAt == null || termsDays == null) return null;
+  const wib = new Date(firstReceiptAt.getTime() + WIB_OFFSET_MS);
+  return new Date(
+    Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate() + termsDays)
+  );
+}
+
+/** A PO created without terms in its payload inherits the supplier's. */
+export function resolveCreatePaymentTerms(
+  payloadTerms: number | null | undefined,
+  supplierTerms: number | null
+): number | null {
+  return payloadTerms === undefined ? supplierTerms : payloadTerms;
+}
