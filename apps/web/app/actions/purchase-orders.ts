@@ -19,6 +19,7 @@ import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
 import { parsePaymentTermsDays } from '@/lib/purchase-orders/payment-terms';
 import { recomputePaymentDueDate } from '@/lib/purchase-orders/payment-due';
+import { setPurchaseOrderPaymentTerms, type SetPaymentTermsCode } from '@/lib/purchase-orders/set-payment-terms';
 import {
   hasCurrentPaymentJournal,
   hasStandingPaymentJournalWhileUnpaid,
@@ -233,6 +234,37 @@ export async function updatePO(
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath(`/backoffice/purchase-orders/${id}`);
   return { id };
+}
+
+export async function setPOPaymentTerms(
+  poId: string,
+  paymentTermsDays: number | null,
+  pin?: string
+): Promise<{ ok: true } | { ok: false; code: SetPaymentTermsCode | 'PIN'; message?: string }> {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+
+  const existing = await prisma.purchaseOrder.findUnique({
+    where: { id: poId },
+    select: { status: true },
+  });
+  if (!existing) return { ok: false, code: 'NOT_FOUND' };
+
+  if (existing.status !== 'DRAFT') {
+    if (!pin) return { ok: false, code: 'PIN', message: 'PIN required' };
+    const pinResult = await verifyPin(session.user.id, pin, 'EDIT_POSTED_PO');
+    if (!pinResult.success) {
+      return { ok: false, code: 'PIN', message: pinResult.messageKey ?? pinResult.message };
+    }
+  }
+
+  const result = await setPurchaseOrderPaymentTerms(poId, paymentTermsDays, session.user.id);
+  if (result.ok) {
+    revalidatePath('/backoffice/purchase-orders');
+    revalidatePath(`/backoffice/purchase-orders/${poId}`);
+  }
+  return result;
 }
 
 export async function changePOStatus(

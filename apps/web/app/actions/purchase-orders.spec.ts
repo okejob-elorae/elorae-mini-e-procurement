@@ -9,6 +9,7 @@ const {
   mockHistoryCreate,
   mockTransaction,
   mockRecompute,
+  mockSetTerms,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockVerifyPin: vi.fn(),
@@ -18,6 +19,7 @@ const {
   mockHistoryCreate: vi.fn(),
   mockTransaction: vi.fn(),
   mockRecompute: vi.fn(),
+  mockSetTerms: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -60,9 +62,12 @@ vi.mock("@/lib/purchasing/post-supplier-payment-journal-safely", () => ({
 vi.mock("@/lib/purchase-orders/payment-due", () => ({
   recomputePaymentDueDate: mockRecompute,
 }));
+vi.mock("@/lib/purchase-orders/set-payment-terms", () => ({
+  setPurchaseOrderPaymentTerms: mockSetTerms,
+}));
 vi.mock("@/lib/db/tx-retry", () => ({ runSerializable: vi.fn() }));
 
-import { cancelPO, changePOStatus, createPO, submitPO, updatePO } from "./purchase-orders";
+import { cancelPO, changePOStatus, createPO, setPOPaymentTerms, submitPO, updatePO } from "./purchase-orders";
 
 describe("purchase-order actor trust", () => {
   const FORBIDDEN = "Forbidden: actor does not match the session";
@@ -127,5 +132,46 @@ describe("updatePO payment terms", () => {
       updatePO("po1", { supplierId: "s1", items: [], paymentTermsDays: 400 } as never, "u1")
     ).rejects.toThrow("Payment terms must be a whole number of days from 0 to 365");
     expect(mockTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("setPOPaymentTerms", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    mockSetTerms.mockResolvedValue({ ok: true });
+  });
+
+  it("needs no PIN on a draft", async () => {
+    mockPoFindUnique.mockResolvedValue({ status: "DRAFT" });
+    await expect(setPOPaymentTerms("po1", 30)).resolves.toEqual({ ok: true });
+    expect(mockVerifyPin).not.toHaveBeenCalled();
+    expect(mockSetTerms).toHaveBeenCalledWith("po1", 30, "u1");
+  });
+
+  it("requires the session user's PIN on a posted PO", async () => {
+    mockPoFindUnique.mockResolvedValue({ status: "CLOSED" });
+    await expect(setPOPaymentTerms("po1", 30)).resolves.toEqual({ ok: false, code: "PIN", message: "PIN required" });
+    expect(mockSetTerms).not.toHaveBeenCalled();
+  });
+
+  it("returns PIN with the verifier's message on a wrong PIN", async () => {
+    mockPoFindUnique.mockResolvedValue({ status: "CLOSED" });
+    mockVerifyPin.mockResolvedValue({ success: false, message: "bad pin" });
+    await expect(setPOPaymentTerms("po1", 30, "0000")).resolves.toEqual({ ok: false, code: "PIN", message: "bad pin" });
+    expect(mockVerifyPin).toHaveBeenCalledWith("u1", "0000", "EDIT_POSTED_PO");
+    expect(mockSetTerms).not.toHaveBeenCalled();
+  });
+
+  it("passes the writer's refusal through", async () => {
+    mockPoFindUnique.mockResolvedValue({ status: "DRAFT" });
+    mockSetTerms.mockResolvedValue({ ok: false, code: "PAID" });
+    await expect(setPOPaymentTerms("po1", 30)).resolves.toEqual({ ok: false, code: "PAID" });
+  });
+
+  it("refuses a caller without purchase_orders:edit", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["purchase_orders:view"] } });
+    await expect(setPOPaymentTerms("po1", 30)).rejects.toThrow();
+    expect(mockSetTerms).not.toHaveBeenCalled();
   });
 });
