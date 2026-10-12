@@ -59,6 +59,7 @@
     "seed:process-templates": "tsx prisma/seed-process-templates.ts",
     "seed:lead-time-demo": "tsx prisma/seed-lead-time-demo.ts",
     "seed:production-login": "tsx prisma/seed-production-login.ts",
+    "seed:packer-login": "tsx prisma/seed-packer-login.ts",
     "test:connection": "tsx prisma/test-connection.ts",
     "postinstall": "prisma generate"
   },
