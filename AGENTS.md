@@ -288,6 +288,10 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Removing Print BKM from `/backoffice/finance/pelunasan/[id]`? Don't — it's finance's only BKM path (ADMIN can't open `/pwa/bkm`), and it shows on REJECTED too. → `docs/landmines/finance-ar.md`
 - Bottom-anchored bar on a backoffice route? `QuickActionFAB` (`fixed bottom-6 right-6`) is on every route — clear it with `pr-28`. → `docs/landmines/finance-ar.md`
 
+**Purchasing**
+
+- Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
+
 **Data ownership + auth**
 
 - Writing `Item` or `StockAdjustment` from apps/api? Dual-owner — go through the `@elorae/db` writer helpers, never a direct Prisma write. See also `docs/BOUNDARY.md §3`. → `docs/landmines/data-ownership-auth.md`
