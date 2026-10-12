@@ -86,6 +86,7 @@ interface Supplier {
   bankName: string | null;
   bankAccountEnc: string | null;
   bankAccountName: string | null;
+  paymentTermsDays?: number | null;
   isActive: boolean;
   status?: SupplierStatus;
 }
@@ -100,6 +101,7 @@ const supplierSchema = z.object({
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
   bankAccountName: z.string().optional(),
+  paymentTermsDays: z.number().int().min(0, 'Must be 0 or more').max(365, 'Must be 365 or less').nullable().optional(),
 });
 
 type SupplierForm = z.infer<typeof supplierSchema>;
@@ -221,6 +223,7 @@ export default function SuppliersPage() {
         bankName: '',
         bankAccount: '',
         bankAccountName: '',
+        paymentTermsDays: null,
       });
       clearErrors();
     } else if (supplierDialogMode === 'edit' && editSupplier) {
@@ -234,6 +237,7 @@ export default function SuppliersPage() {
         bankName: editSupplier.bankName ?? '',
         bankAccount: '', // Encrypted; leave blank or user re-enters to change
         bankAccountName: editSupplier.bankAccountName ?? '',
+        paymentTermsDays: editSupplier.paymentTermsDays ?? null,
       });
       clearErrors();
     }
@@ -279,7 +283,7 @@ export default function SuppliersPage() {
         const details = error?.details as Array<{ path: (string | number)[]; message: string }> | undefined;
         const formKeys: (keyof SupplierForm)[] = [
           'code', 'name', 'typeId', 'address', 'phone', 'email',
-          'bankName', 'bankAccount', 'bankAccountName',
+          'bankName', 'bankAccount', 'bankAccountName', 'paymentTermsDays',
         ];
         if (Array.isArray(details) && details.length > 0) {
           details.forEach((issue) => {
@@ -496,6 +500,29 @@ export default function SuppliersPage() {
                     </p>
                   )}
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="paymentTermsDays">Payment terms (days)</Label>
+                <Input
+                  id="paymentTermsDays"
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={365}
+                  step={1}
+                  placeholder="e.g. 30 — leave blank if none"
+                  {...register('paymentTermsDays', {
+                    setValueAs: (v) => (v === '' || v == null ? null : Number(v)),
+                  })}
+                  aria-invalid={!!errors.paymentTermsDays}
+                  className={errors.paymentTermsDays ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                />
+                {errors.paymentTermsDays && (
+                  <p className="text-sm text-destructive" role="alert">
+                    {errors.paymentTermsDays.message}
+                  </p>
+                )}
               </div>
 
               <div className="border-t pt-4">
@@ -756,6 +783,10 @@ export default function SuppliersPage() {
                     {supplier.address}
                   </div>
                 )}
+                <div className="text-sm text-muted-foreground whitespace-nowrap">
+                  Terms:{' '}
+                  {supplier.paymentTermsDays != null ? `${supplier.paymentTermsDays} days` : '-'}
+                </div>
                 {supplier.bankAccountEnc && (
                   <div className="flex items-center gap-2 text-sm">
                     <CreditCard className="h-4 w-4 text-muted-foreground" />
@@ -798,6 +829,15 @@ export default function SuppliersPage() {
                   {selectedSupplier?.isActive ? 'Active' : 'Inactive'}
                 </p>
               </div>
+            </div>
+
+            <div>
+              <Label className="text-muted-foreground">Payment terms</Label>
+              <p className="font-medium">
+                {selectedSupplier?.paymentTermsDays != null
+                  ? `${selectedSupplier.paymentTermsDays} days`
+                  : '-'}
+              </p>
             </div>
 
             {selectedSupplier?.phone && (

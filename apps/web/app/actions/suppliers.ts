@@ -48,6 +48,7 @@ export type SupplierSelectRow = {
   email?: string | null;
   bankName?: string | null;
   bankAccountName?: string | null;
+  paymentTermsDays?: number | null;
   isActive?: boolean;
 };
 
