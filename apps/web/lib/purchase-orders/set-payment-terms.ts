@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import type { POStatus } from "@elorae/db";
 import { parsePaymentTermsDays } from "./payment-terms";
 import { recomputePaymentDueDate } from "./payment-due";
 
@@ -23,10 +24,16 @@ export async function setPurchaseOrderPaymentTerms(
   if (!parsed.ok) return { ok: false, code: "INVALID" };
 
   return prisma.$transaction(async (tx) => {
-    const po = await tx.purchaseOrder.findUnique({
-      where: { id: poId },
-      select: { status: true, paidAt: true, paymentTermsDays: true },
-    });
+    /**
+     * A locking read, not findUnique: it waits out a GRN writer holding this PO row and opens no
+     * REPEATABLE READ snapshot, so the recompute below sees every receipt committed before it.
+     */
+    const rows = await tx.$queryRaw<
+      Array<{ status: POStatus; paidAt: Date | null; paymentTermsDays: number | null }>
+    >`
+      SELECT \`status\`, \`paidAt\`, \`paymentTermsDays\` FROM \`PurchaseOrder\` WHERE \`id\` = ${poId} FOR UPDATE
+    `;
+    const po = rows[0];
     if (!po) return { ok: false, code: "NOT_FOUND" } as const;
     if (po.status === "CANCELLED") return { ok: false, code: "CANCELLED" } as const;
     if (po.paidAt != null) return { ok: false, code: "PAID" } as const;
