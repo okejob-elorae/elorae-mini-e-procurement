@@ -328,7 +328,6 @@ export default function PODetailPage() {
     if (po.status !== "DRAFT") {
       setPendingTermsValue(value);
       setPendingAction("terms");
-      setTermsDialogOpen(false);
       setPinModalOpen(true);
       return;
     }
@@ -339,7 +338,10 @@ export default function PODetailPage() {
       if (result.ok) {
         toast.success("Payment terms updated");
         setTermsDialogOpen(false);
-        getPOById(po.id).then(setPO);
+        router.refresh();
+        getPOById(po.id)
+          .then(setPO)
+          .catch(() => toast.error("Failed to reload PO"));
       } else {
         toast.error(
           result.code === "PIN"
@@ -681,16 +683,13 @@ export default function PODetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Payment due date</p>
-                  <div className="flex items-center gap-2">
-                    <p className="min-w-0 truncate font-medium" title={dueDateText}>
-                      {dueDateText}
-                    </p>
+                  <div className="flex flex-col items-start gap-2">
+                    <p className="font-medium">{dueDateText}</p>
                     {canEditTerms && (
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
-                        className="shrink-0"
                         onClick={openTermsDialog}
                       >
                         Edit terms
@@ -955,7 +954,13 @@ export default function PODetailPage() {
         }
       />
 
-      <Dialog open={termsDialogOpen} onOpenChange={setTermsDialogOpen}>
+      <Dialog
+        open={termsDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isSavingTerms) return;
+          setTermsDialogOpen(open);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit payment terms</DialogTitle>
@@ -963,44 +968,52 @@ export default function PODetailPage() {
               Due date is recalculated from the first goods receipt. Leave blank to enter the date by hand.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="po-terms-days">Payment terms (days)</Label>
-            <Input
-              id="po-terms-days"
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={PAYMENT_TERMS_DAYS_MAX}
-              step={1}
-              value={termsInput}
-              disabled={isSavingTerms}
-              aria-invalid={!!termsError}
-              className={termsError ? "border-destructive focus-visible:ring-destructive/20" : ""}
-              onChange={(e) => {
-                setTermsInput(e.target.value);
-                setTermsError(null);
-              }}
-            />
-            {termsError && (
-              <p className="text-sm text-destructive" role="alert">
-                {termsError}
-              </p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isSavingTerms}
-              onClick={() => setTermsDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="button" disabled={isSavingTerms} onClick={handleSaveTerms}>
-              {isSavingTerms && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Save
-            </Button>
-          </DialogFooter>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveTerms();
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="po-terms-days">Payment terms (days)</Label>
+              <Input
+                id="po-terms-days"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={PAYMENT_TERMS_DAYS_MAX}
+                step={1}
+                value={termsInput}
+                disabled={isSavingTerms}
+                aria-invalid={!!termsError}
+                className={termsError ? "border-destructive focus-visible:ring-destructive/20" : ""}
+                onChange={(e) => {
+                  setTermsInput(e.target.value);
+                  setTermsError(null);
+                }}
+              />
+              {termsError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {termsError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSavingTerms}
+                onClick={() => setTermsDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSavingTerms}>
+                {isSavingTerms && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

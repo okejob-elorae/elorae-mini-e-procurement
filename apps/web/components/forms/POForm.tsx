@@ -372,6 +372,10 @@ export function POForm({
   const isETAPast = etaDate && new Date(etaDate) < new Date();
   const supplierId = watch('supplierId');
   const termsDays = watch('paymentTermsDays');
+  const termsChanged = termsDays !== (initialData?.paymentTermsDays ?? null);
+  const termsHelper = termsChanged
+    ? `Set on first goods receipt + ${termsDays} days.`
+    : `Calculated from the first goods receipt + ${termsDays} days.`;
 
   useEffect(() => {
     if (!supplierId || !isOnline()) {
@@ -528,7 +532,7 @@ export function POForm({
                 disabled={termsDays != null}
                 value={
                   termsDays != null
-                    ? (initialData?.paymentDueDate ?? null)
+                    ? (termsChanged ? null : (initialData?.paymentDueDate ?? null))
                     : (watch('paymentDueDate') ?? null)
                 }
                 aria-invalid={!!errors.paymentDueDate}
@@ -544,7 +548,7 @@ export function POForm({
               )}
               {termsDays != null && (
                 <p className="text-sm text-muted-foreground">
-                  {`Calculated from the first goods receipt + ${termsDays} days.`}
+                  {termsHelper}
                 </p>
               )}
             </div>

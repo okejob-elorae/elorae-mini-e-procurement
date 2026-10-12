@@ -20,6 +20,7 @@ export interface CachedSupplier {
   email?: string;
   bankName?: string;
   bankAccountName?: string;
+  paymentTermsDays?: number | null;
   isActive: boolean;
   syncAt: Date;
 }
