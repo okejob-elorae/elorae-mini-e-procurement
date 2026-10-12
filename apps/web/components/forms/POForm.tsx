@@ -767,11 +767,11 @@ export function POForm({
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="terms">Payment Terms</Label>
+            <Label htmlFor="terms">Terms & conditions</Label>
             <Textarea
               id="terms"
               {...register('terms')}
-              placeholder={tPlaceholders('paymentTerms')}
+              placeholder={tPlaceholders("termsAndConditions")}
               rows={3}
               aria-invalid={!!errors.terms}
               className={errors.terms ? 'border-destructive focus-visible:ring-destructive/20' : ''}

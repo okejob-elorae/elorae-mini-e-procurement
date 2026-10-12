@@ -964,7 +964,7 @@
     "evidenceURL": "https://...",
     "rollRef": "Roll 1",
     "additionalNotes": "Additional notes...",
-    "paymentTerms": "Payment terms...",
+    "termsAndConditions": "Delivery, packing, other terms...",
     "searchItemsBySkuOrName": "Search items by SKU or name...",
     "leaveBlankToAutoGenerate": "Leave blank to auto-generate",
     "searchPONumberOrSupplier": "Search PO number or supplier...",

@@ -964,7 +964,7 @@
     "evidenceURL": "https://...",
     "rollRef": "Roll 1",
     "additionalNotes": "Catatan tambahan...",
-    "paymentTerms": "Syarat pembayaran...",
+    "termsAndConditions": "Pengiriman, pengemasan, syarat lain...",
     "searchItemsBySkuOrName": "Cari item berdasarkan SKU atau nama...",
     "leaveBlankToAutoGenerate": "Kosongkan untuk auto-generate",
     "searchPONumberOrSupplier": "Cari nomor PO atau pemasok...",

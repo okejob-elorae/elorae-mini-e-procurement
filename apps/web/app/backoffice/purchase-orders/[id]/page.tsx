@@ -724,7 +724,7 @@ export default function PODetailPage() {
               )}
               {po.terms && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Payment Terms</p>
+                  <p className="text-sm text-muted-foreground">Terms & conditions</p>
                   <p className="font-medium">{po.terms}</p>
                 </div>
               )}
