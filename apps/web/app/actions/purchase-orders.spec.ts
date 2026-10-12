@@ -8,6 +8,7 @@ const {
   mockPoUpdate,
   mockHistoryCreate,
   mockTransaction,
+  mockRecompute,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockVerifyPin: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockPoUpdate: vi.fn(),
   mockHistoryCreate: vi.fn(),
   mockTransaction: vi.fn(),
+  mockRecompute: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -54,6 +56,9 @@ vi.mock("@/lib/purchasing/post-supplier-payment-journal-safely", () => ({
   attemptSupplierPaymentJournal: vi.fn(),
   latestPaymentJournalFailure: vi.fn(),
   notifySupplierPaymentJournalFailure: vi.fn(),
+}));
+vi.mock("@/lib/purchase-orders/payment-due", () => ({
+  recomputePaymentDueDate: mockRecompute,
 }));
 vi.mock("@/lib/db/tx-retry", () => ({ runSerializable: vi.fn() }));
 
@@ -107,5 +112,20 @@ describe("purchase-order actor trust", () => {
     await expect(changePOStatus("po1", "CANCELLED", "u1", undefined, "1234")).rejects.toThrow("bad pin");
     expect(mockVerifyPin).toHaveBeenCalledWith("u1", "1234", "VOID_DOCUMENT");
     expect(mockPoUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("updatePO payment terms", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    mockPoFindUnique.mockResolvedValue({ status: "DRAFT" });
+  });
+
+  it("refuses invalid terms before opening a transaction", async () => {
+    await expect(
+      updatePO("po1", { supplierId: "s1", items: [], paymentTermsDays: 400 } as never, "u1")
+    ).rejects.toThrow("Payment terms must be a whole number of days from 0 to 365");
+    expect(mockTransaction).not.toHaveBeenCalled();
   });
 });

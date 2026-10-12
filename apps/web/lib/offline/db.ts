@@ -51,6 +51,7 @@ export interface PendingPO {
   supplierName?: string;
   etaDate?: Date;
   paymentDueDate?: Date;
+  paymentTermsDays?: number | null;
   items: Array<{
     itemId: string;
     itemName?: string;

@@ -116,6 +116,7 @@ export async function syncPendingPOs(): Promise<{
             supplierId: po.supplierId,
             etaDate: po.etaDate,
             paymentDueDate: po.paymentDueDate,
+            paymentTermsDays: po.paymentTermsDays,
             notes: po.notes,
             items: po.items,
           },

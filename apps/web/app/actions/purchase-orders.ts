@@ -17,6 +17,8 @@ import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/muta
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
+import { parsePaymentTermsDays } from '@/lib/purchase-orders/payment-terms';
+import { recomputePaymentDueDate } from '@/lib/purchase-orders/payment-due';
 import {
   hasCurrentPaymentJournal,
   hasStandingPaymentJournalWhileUnpaid,
@@ -88,6 +90,15 @@ export async function updatePO(
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
     }
+  }
+
+  let termsPatch: { paymentTermsDays?: number | null } = {};
+  if (data.paymentTermsDays !== undefined) {
+    const parsedTerms = parsePaymentTermsDays(data.paymentTermsDays);
+    if (!parsedTerms.ok) {
+      throw new Error('Payment terms must be a whole number of days from 0 to 365');
+    }
+    termsPatch = { paymentTermsDays: parsedTerms.value };
   }
 
   const receivedPreservingStatuses = ['SUBMITTED', 'PARTIAL', 'OVER'] as const;
@@ -169,12 +180,22 @@ export async function updatePO(
       };
     }
 
+    const currentTerms = await tx.purchaseOrder.findUnique({
+      where: { id },
+      select: { paymentTermsDays: true },
+    });
+    const effectiveTerms =
+      termsPatch.paymentTermsDays !== undefined
+        ? termsPatch.paymentTermsDays
+        : currentTerms?.paymentTermsDays ?? null;
+
     const po = await tx.purchaseOrder.update({
       where: { id },
       data: {
         supplierId: data.supplierId,
         etaDate: leadTimePatch.etaDate !== undefined ? leadTimePatch.etaDate : data.etaDate,
-        paymentDueDate: data.paymentDueDate ?? undefined,
+        ...termsPatch,
+        paymentDueDate: effectiveTerms == null ? data.paymentDueDate ?? undefined : undefined,
         notes: data.notes,
         terms: data.terms,
         totalAmount: totalAmount.toNumber(),
@@ -203,6 +224,8 @@ export async function updatePO(
         },
       });
     }
+
+    await recomputePaymentDueDate(tx, id);
 
     return po;
   });
