@@ -22,6 +22,10 @@ export function isAwaitingResi(order: ResiPendingOrder): boolean {
   if (order.isCanceled) return false;
   if (!MARKETPLACE_CHANNELS.has(order.channel)) return false;
   if (!AWAITING_STATUSES.has(order.status)) return false;
-  const tn = order.trackingNumber;
-  return tn === null || tn === undefined || tn.trim() === "";
+  return !hasStoredResi(order.trackingNumber);
+}
+
+/** True when the order carries a non-blank trackingNumber, i.e. the Jubelio webhook has stored its resi. */
+export function hasStoredResi(trackingNumber: string | null | undefined): boolean {
+  return trackingNumber !== null && trackingNumber !== undefined && trackingNumber.trim() !== "";
 }

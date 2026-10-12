@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAwaitingResi, type ResiPendingOrder } from "./resi-pending";
+import { hasStoredResi, isAwaitingResi, type ResiPendingOrder } from "./resi-pending";
 
 function order(overrides: Partial<ResiPendingOrder> = {}): ResiPendingOrder {
   return {
@@ -58,5 +58,18 @@ describe("isAwaitingResi", () => {
 
   it("is true when trackingNumber is an empty string", () => {
     expect(isAwaitingResi(order({ trackingNumber: "" }))).toBe(true);
+  });
+});
+
+describe("hasStoredResi", () => {
+  it("is false for null, undefined, empty and blank tracking numbers", () => {
+    expect(hasStoredResi(null)).toBe(false);
+    expect(hasStoredResi(undefined)).toBe(false);
+    expect(hasStoredResi("")).toBe(false);
+    expect(hasStoredResi("   ")).toBe(false);
+  });
+
+  it("is true for a non-blank tracking number", () => {
+    expect(hasStoredResi("SPXID0123456789")).toBe(true);
   });
 });

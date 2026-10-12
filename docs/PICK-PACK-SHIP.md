@@ -179,7 +179,8 @@ be `SHIPPED` with a null pick/pack timeline.
 - **The 1–2 minute resi wait is Jubelio/marketplace AWB generation, not an Elorae delay.** After
   a courier is assigned, Jubelio still has to request the AWB from the marketplace before the
   webhook carrying `tracking_number` arrives — the pending state and "Cek resi" button exist to
-  make that wait visible, not to fix it.
+  make that wait visible, not to fix it. A click re-reads the stored order and toasts the outcome
+  (resi received, or not found yet); no other refresh toasts.
 
 ## File map
 
