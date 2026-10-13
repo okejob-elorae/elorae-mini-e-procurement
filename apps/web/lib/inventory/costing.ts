@@ -25,6 +25,7 @@ export type StockRef = {
   refId: string;
   refDocNumber?: string;
   createdById?: string | null;
+  occurredAt?: Date;
 };
 
 /*

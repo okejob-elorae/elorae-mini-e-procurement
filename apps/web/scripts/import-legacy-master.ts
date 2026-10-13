@@ -69,10 +69,10 @@ type Args = {
 const LEGACY_STUB_PREFIX = "LEGACY_MASTER_STUB";
 const LEGACY_MATERIAL_PREFIX = "LEGACY_MASTER";
 
-/** Map Excel SATUAN → ERP UOM.code. YRD shares MTR if YRD not seeded. */
+/** Map Excel SATUAN → ERP UOM.code. The yard UOM is seeded as `YD`; never fall back to MTR (#438). */
 const SATUAN_TO_UOM: Record<string, string[]> = {
   PCS: ["PCS"],
-  YRD: ["YRD", "MTR"],
+  YRD: ["YD", "YRD"],
   MTR: ["MTR"],
   KG: ["KG"],
 };

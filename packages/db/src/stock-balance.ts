@@ -32,6 +32,8 @@ type MoveCommon = {
   refId: string;
   refDocNumber?: string;
   createdById?: string | null;
+  /** Historical movement time for the ledger entry (legacy import, #438). Omit for now(). */
+  occurredAt?: Date;
 };
 
 export type MoveMainStockInput = MoveCommon & {
@@ -218,6 +220,7 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
       refId: input.refId,
       refDocNumber: input.refDocNumber,
       createdById: input.createdById,
+      occurredAt: input.occurredAt,
     });
 
     return { balanceQty };
@@ -308,6 +311,7 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
       refId: input.refId,
       refDocNumber: input.refDocNumber,
       createdById: input.createdById,
+      occurredAt: input.occurredAt,
     });
 
     return { balanceQty: input.qtyDelta };
@@ -363,6 +367,7 @@ export async function moveMainStock(tx: Tx, input: MoveMainStockInput): Promise<
     refId: input.refId,
     refDocNumber: input.refDocNumber,
     createdById: input.createdById,
+    occurredAt: input.occurredAt,
   });
 
   return { balanceQty };
@@ -410,6 +415,7 @@ export async function moveStoreStock(tx: Tx, input: MoveStoreStockInput): Promis
     refId: input.refId,
     refDocNumber: input.refDocNumber,
     createdById: input.createdById,
+    occurredAt: input.occurredAt,
   });
 
   return { balanceQty };
@@ -457,6 +463,7 @@ export async function moveVanStock(tx: Tx, input: MoveVanStockInput): Promise<{ 
     refId: input.refId,
     refDocNumber: input.refDocNumber,
     createdById: input.createdById,
+    occurredAt: input.occurredAt,
   });
 
   return { balanceQty };
