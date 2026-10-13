@@ -234,6 +234,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Posting/voiding a payment receipt journal? Decide and post in ONE tx under `FOR UPDATE` on `Payment`; the void mirrors the receipt. `RECEIVABLE_OUTSIDE_LEDGER` is by design. → `docs/landmines/finance-ar.md`
 - Touching the van journal sweep or `vanJournalSweepFloor`? A missing journal triggers only at/above the derived floor — never lower it, or key the manual retry on absence. → `docs/landmines/finance-ar.md`
 - Retrying a supplier payment journal, or its PO banner? Need a real `supplier_payment` `JOURNAL_PENDING` row + paid + no journal — never "paid, no journal" alone. → `docs/landmines/finance-ar.md`
+- Adding a code to `RECEIPT_BLOCKED_MARK_CODES`, or touching `setPOPaidAt`'s abort? Receipt-state codes only; THROW inside the tx after the CAS (a `return` commits `paidAt`); `poBookedPayable` checks receipts BEFORE resolving AP. → `docs/landmines/finance-ar.md`
 - Correcting delivery dates (`updateDeliveryDatesAction`)? Refused once `paidAmount > 0`; `runSerializable` commits on return — throw, never `return`, after a write. → `docs/landmines/finance-ar.md`
 - Checking a receivable is `PAID`? Needs `outstandingAmount === 0` exactly — sen totals can leave a sub-rupiah residue at `PARTIAL` forever. → `docs/landmines/finance-ar.md`
 - Touching `lib/finance/ar/aging.ts`? `daysOverdue` floors WIB days via a hardcoded `+7h`; `getDate()`/`getFullYear()` use the HOST timezone and break on prod. → `docs/landmines/finance-ar.md`
@@ -292,7 +293,6 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
 - Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` (max `thresholdDays` announced) — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
-- Adding a code to `RECEIPT_BLOCKED_MARK_CODES`, or touching `setPOPaidAt`'s abort? Receipt-state codes only; THROW inside the tx after the CAS (a `return` commits `paidAt`); `poBookedPayable` checks receipts BEFORE resolving AP. → `docs/landmines/finance-ar.md`
 
 **Forecast**
 
