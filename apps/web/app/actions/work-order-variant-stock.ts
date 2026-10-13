@@ -8,7 +8,7 @@ import { toVariantStockRecord, type VariantStock } from "@/lib/items/variant-sto
 
 /**
  * Main-warehouse stock per variant of a finished good, for the work order ratio rows. Keyed by
- * the catalog spelling of each variant SKU; `InventoryValue` is main warehouse only.
+ * `matchKey` of each variant SKU (trimmed, lowercase); `InventoryValue` is main warehouse only.
  */
 export async function getFinishedGoodVariantStock(itemId: string): Promise<Record<string, VariantStock>> {
   const session = await auth();

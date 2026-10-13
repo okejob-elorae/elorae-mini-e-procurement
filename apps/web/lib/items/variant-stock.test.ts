@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { matchKey } from "./match-key";
 import { toVariantStockRecord } from "./variant-stock";
 
 const row = (variantSku: string, qtyOnHand: unknown, reservedQty: unknown) => ({
@@ -8,17 +9,23 @@ const row = (variantSku: string, qtyOnHand: unknown, reservedQty: unknown) => ({
 });
 
 describe("toVariantStockRecord", () => {
-  it("keys each row by its variantSku spelling", () => {
+  it("keys each row by its folded variantSku", () => {
     const out = toVariantStockRecord([row("S-RED", 20, 8), row("M-RED", 5, 0)]);
     expect(out).toEqual({
-      "S-RED": { onHand: 20, available: 12 },
-      "M-RED": { onHand: 5, available: 5 },
+      "s-red": { onHand: 20, available: 12 },
+      "m-red": { onHand: 5, available: 5 },
     });
+  });
+
+  it("lands differently spelled keys on the same entry", () => {
+    const out = toVariantStockRecord([row(" S-RED ", 20, 8)]);
+    expect(out[matchKey("s-red")]).toEqual({ onHand: 20, available: 12 });
+    expect(out[matchKey("S-RED")]).toBe(out[matchKey(" s-red")]);
   });
 
   it("keeps a negative available when more is reserved than on hand", () => {
     const out = toVariantStockRecord([row("S-RED", 3, 7)]);
-    expect(out["S-RED"]).toEqual({ onHand: 3, available: -4 });
+    expect(out["s-red"]).toEqual({ onHand: 3, available: -4 });
   });
 
   it("sums the null and empty-string spellings of a variantless item into the empty key", () => {
@@ -29,8 +36,8 @@ describe("toVariantStockRecord", () => {
   it("converts Decimal-like and string inputs to plain numbers", () => {
     const decimal = (n: number) => ({ toNumber: () => n });
     const out = toVariantStockRecord([row("S-RED", decimal(12.5), decimal(2.5)), row("M-RED", "7", null)]);
-    expect(out["S-RED"]).toEqual({ onHand: 12.5, available: 10 });
-    expect(out["M-RED"]).toEqual({ onHand: 7, available: 7 });
+    expect(out["s-red"]).toEqual({ onHand: 12.5, available: 10 });
+    expect(out["m-red"]).toEqual({ onHand: 7, available: 7 });
   });
 
   it("returns an empty record for no rows", () => {

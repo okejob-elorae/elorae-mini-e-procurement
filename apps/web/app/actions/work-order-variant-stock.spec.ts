@@ -51,12 +51,12 @@ describe("getFinishedGoodVariantStock", () => {
     expect(mockItemFindUnique).not.toHaveBeenCalled();
   });
 
-  it("returns the record keyed by catalog spelling for a work_orders:create holder", async () => {
+  it("returns the record keyed by the folded variant key for a work_orders:create holder", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["work_orders:create"] } });
     const out = await getFinishedGoodVariantStock("item-1");
     expect(out).toEqual({
-      "S-RED": { onHand: 20, available: 12 },
-      "M-RED": { onHand: 0, available: 0 },
+      "s-red": { onHand: 20, available: 12 },
+      "m-red": { onHand: 0, available: 0 },
     });
   });
 

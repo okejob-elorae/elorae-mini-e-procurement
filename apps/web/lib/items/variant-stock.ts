@@ -1,3 +1,5 @@
+import { matchKey } from "@/lib/items/match-key";
+
 export type VariantStock = { onHand: number; available: number };
 
 export type VariantStockRowInput = {
@@ -16,7 +18,7 @@ const toNumber = (v: unknown): number => {
 };
 
 /**
- * Reshapes variant rows into a `variantSku` keyed record of plain numbers. `available` is derived
+ * Reshapes variant rows into a record keyed by `matchKey(variantSku)`, so a lookup must fold its key the same way. Plain numbers of plain numbers. `available` is derived
  * as `onHand - reserved` and kept negative when over-reserved, so a caller can flag it. A key that
  * repeats is summed, never overwritten.
  */
@@ -25,8 +27,9 @@ export function toVariantStockRecord(rows: VariantStockRowInput[]): Record<strin
   for (const r of rows) {
     const onHand = toNumber(r.qtyOnHand);
     const available = onHand - toNumber(r.reservedQty);
-    const prev = out[r.variantSku];
-    out[r.variantSku] = prev
+    const key = matchKey(r.variantSku);
+    const prev = out[key];
+    out[key] = prev
       ? { onHand: prev.onHand + onHand, available: prev.available + available }
       : { onHand, available };
   }
