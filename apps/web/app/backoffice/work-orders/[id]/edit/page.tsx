@@ -48,6 +48,8 @@ import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs, getPOById } from '@/app/actions/purchase-orders';
+import { getFinishedGoodVariantStock } from "@/app/actions/work-order-variant-stock";
+import { VariantRatioRows } from "@/components/work-orders/VariantRatioRows";
 import { ItemType } from '@/lib/constants/enums';
 
 interface TailorSupplier {
@@ -154,6 +156,8 @@ export default function EditWorkOrderPage() {
   const [variantRatios, setVariantRatios] = useState<Array<{ variantSku: string; ratioPercent: number }>>([]);
   const [finishedGoodVariants, setFinishedGoodVariants] = useState<Array<{ sku?: string; attributes: Record<string, string> }>>([]);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
+  const [variantStock, setVariantStock] = useState<Record<string, { onHand: number; available: number }> | null>(null);
+  const [variantStockState, setVariantStockState] = useState<"loading" | "ready" | "error">("loading");
   const [steps, setSteps] = useState<WorkOrderStepForm[]>([]);
 
   const plannedNum = consumptionResult?.plannedQty ?? 0;
@@ -341,6 +345,29 @@ export default function EditWorkOrderPage() {
       .catch(() => setFinishedGoodVariants([]))
       .finally(() => setIsLoadingVariants(false));
   }, [finishedGoodId, outputMode, wo]);
+
+  useEffect(() => {
+    if (!finishedGoodId || outputMode !== "SKU") {
+      setVariantStock(null);
+      setVariantStockState("loading");
+      return;
+    }
+    let cancelled = false;
+    setVariantStock(null);
+    setVariantStockState("loading");
+    getFinishedGoodVariantStock(finishedGoodId)
+      .then((stock) => {
+        if (cancelled) return;
+        setVariantStock(stock);
+        setVariantStockState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setVariantStockState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [finishedGoodId, outputMode]);
 
   useEffect(() => {
     if (consumptionDebounceRef.current) clearTimeout(consumptionDebounceRef.current);
@@ -638,28 +665,14 @@ export default function EditWorkOrderPage() {
                 </Select>
               </div>
               {outputMode === 'SKU' && finishedGoodVariants.length > 1 && (
-                <div className="space-y-2">
-                  <Label>Variant ratio % (sum = 100%)</Label>
-                  {variantRatios.map((row, i) => (
-                    <div key={row.variantSku} className="flex items-center gap-2">
-                      <span className="w-48 truncate text-sm">{row.variantSku}</span>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={1}
-                        value={row.ratioPercent === 0 ? '' : row.ratioPercent}
-                        onChange={(e) => {
-                          const v = Number(e.target.value) || 0;
-                          setVariantRatios((prev) => prev.map((p, j) => (j === i ? { ...p, ratioPercent: v } : p)));
-                        }}
-                        className="w-20"
-                      />
-                      %
-                    </div>
-                  ))}
-                  <p className="text-xs text-muted-foreground">Sum: {variantRatioSum}%</p>
-                </div>
+                <VariantRatioRows
+                  rows={variantRatios}
+                  onChange={(variantSku, ratioPercent) => {
+                    setVariantRatios((prev) => prev.map((p) => (p.variantSku === variantSku ? { ...p, ratioPercent } : p)));
+                  }}
+                  stock={variantStock}
+                  stockState={variantStockState}
+                />
               )}
               {outputMode === 'SKU' && finishedGoodVariants.length <= 1 && (
                 <div className="space-y-2">

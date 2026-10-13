@@ -1255,6 +1255,12 @@
       "errBAD_STATE": "Receipt tidak bisa diposting.",
       "errFORBIDDEN": "Anda tidak punya akses posting jurnal.",
       "errUnexpected": "Terjadi kesalahan saat memposting jurnal."
+    },
+    "ratio": {
+      "label": "Rasio varian % (total = 100%)",
+      "sum": "Total:",
+      "stock": "<a>{available} tersedia</a> · {onHand} di gudang",
+      "stockUnavailable": "Stok tidak tersedia"
     }
   },
   "supplierTypes": {
