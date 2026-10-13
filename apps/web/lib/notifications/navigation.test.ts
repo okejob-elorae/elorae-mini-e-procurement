@@ -130,3 +130,11 @@ describe("getNotificationHref — JOURNAL_PENDING", () => {
     expect(href({ grnId: "", kind: "receipt" })).toBe(fallback);
   });
 });
+
+describe("getNotificationHref — PO payment reminder", () => {
+  it("opens the PO, and falls back to the PO list when the id is missing", () => {
+    expect(getNotificationHref("PO_PAYMENT_DUE", { poId: "po1" })).toBe("/backoffice/purchase-orders/po1");
+    expect(getNotificationHref("PO_PAYMENT_DUE", {})).toBe("/backoffice/purchase-orders");
+    expect(getNotificationHref("PO_PAYMENT_DUE", { poId: "" })).toBe("/backoffice/purchase-orders");
+  });
+});

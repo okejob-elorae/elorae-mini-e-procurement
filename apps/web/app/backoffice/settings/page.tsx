@@ -15,6 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import {
   AlarmClock,
+  BellRing,
   FileDigit,
   Layers,
   Loader2,
@@ -62,6 +63,7 @@ export default function SettingsPage() {
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
     { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
     { titleKey: 'overdueThresholds.title' as const, descriptionKey: 'overdueThresholds.description' as const, href: '/backoffice/settings/piutang', icon: AlarmClock },
+    { titleKey: "paymentReminders.title" as const, descriptionKey: "paymentReminders.description" as const, href: "/backoffice/settings/purchasing", icon: BellRing },
   ];
 
   const userId = session?.user?.id ?? null;

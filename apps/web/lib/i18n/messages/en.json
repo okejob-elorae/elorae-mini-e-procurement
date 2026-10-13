@@ -262,6 +262,19 @@
       "errEmpty": "Enter at least one day",
       "errInvalid": "Use comma-separated non-negative whole numbers"
     },
+    "paymentReminders": {
+      "title": "Purchasing",
+      "description": "Payment due-date reminders for purchase orders",
+      "heading": "PO Payment Reminders",
+      "subtitle": "Comma-separated days, relative to a PO's payment due date, that trigger a bell notification",
+      "fieldLabel": "Days (e.g. -7,-1,0,7)",
+      "fieldHint": "Negative = days before the due date, 0 = the due date, positive = days overdue. Only the highest newly crossed day fires per PO.",
+      "save": "Save",
+      "loadError": "Failed to load the payment reminder days",
+      "errEmpty": "Enter at least one day",
+      "errInvalid": "Use comma-separated whole numbers, e.g. -7,0,7",
+      "errOutOfRange": "Each day must be between -365 and 365"
+    },
     "varianceTolerance": {
       "heading": "Settlement Variance Tolerance",
       "subtitle": "How far a salesman's cash may differ from the expected amount before finance must give a reason",

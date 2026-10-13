@@ -4,6 +4,7 @@ import { runReconciliationCron } from "@/app/actions/stock-reconciliation";
 import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/sales/sweep";
 import { postPendingVanJournals } from "@/lib/canvassing/van-journal-sweep";
 import { runOverdueSweep } from "@/lib/finance/ar/overdue-sweep";
+import { runPaymentReminderSweep } from "@/lib/purchase-orders/payment-reminder-sweep";
 import { runKonsiCountSweep } from "@/lib/konsi-count-schedule/sweep";
 import { runSettlementRematchSweep } from "@/lib/finance/settlement/rematch-sweep";
 import { runFulfillmentPushDivergenceSweep } from "@/lib/fulfillment/push-divergence-sweep";
@@ -49,6 +50,31 @@ export function registerCronJobs(): void {
         );
       } catch (err) {
         console.error("[cron] piutang-overdue failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta" },
+  );
+
+  /**
+   * Daily 08:30 Asia/Jakarta — PO payment due-date reminders. Its own job, log line and catch,
+   * like the AR sweep beside it; 08:30 keeps it off the 08:00 AR sweep and the 09:00
+   * `check-overdue` job, which is a different feature (PO delivery ETA, not payment).
+   */
+  cron.schedule(
+    "30 8 * * *",
+    async () => {
+      console.log("[cron] po-payment-reminder tick");
+      try {
+        const r = await runPaymentReminderSweep();
+        console.log(
+          "[cron] po-payment-reminder done — scanned=%d announced=%d deferred=%d failed=%d",
+          r.scanned,
+          r.announced,
+          r.deferred,
+          r.failed,
+        );
+      } catch (err) {
+        console.error("[cron] po-payment-reminder failed:", err);
       }
     },
     { timezone: "Asia/Jakarta" },

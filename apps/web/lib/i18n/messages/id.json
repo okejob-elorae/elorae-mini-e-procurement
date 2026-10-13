@@ -262,6 +262,19 @@
       "errEmpty": "Isi minimal satu hari",
       "errInvalid": "Gunakan angka bulat non-negatif dipisah koma"
     },
+    "paymentReminders": {
+      "title": "Pembelian",
+      "description": "Pengingat jatuh tempo pembayaran PO",
+      "heading": "Pengingat Pembayaran PO",
+      "subtitle": "Daftar hari (dipisah koma) relatif terhadap tanggal jatuh tempo pembayaran PO untuk memicu notifikasi",
+      "fieldLabel": "Hari (contoh: -7,-1,0,7)",
+      "fieldHint": "Negatif = hari sebelum jatuh tempo, 0 = hari jatuh tempo, positif = hari terlambat. Hanya hari tertinggi yang baru dilewati yang memicu notifikasi per PO.",
+      "save": "Simpan",
+      "loadError": "Gagal memuat hari pengingat pembayaran",
+      "errEmpty": "Isi minimal satu hari",
+      "errInvalid": "Gunakan angka bulat dipisah koma, contoh: -7,0,7",
+      "errOutOfRange": "Setiap hari harus antara -365 dan 365"
+    },
     "varianceTolerance": {
       "heading": "Toleransi Selisih Pelunasan",
       "subtitle": "Seberapa jauh uang tunai salesman boleh berbeda dari jumlah yang diharapkan sebelum finance wajib mengisi alasan",

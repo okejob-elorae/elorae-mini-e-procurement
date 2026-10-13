@@ -120,6 +120,13 @@ export function getNotificationHref(
       }
       return base;
     }
+    case "PO_PAYMENT_DUE": {
+      const poId = data.poId;
+      if (typeof poId === "string" && poId !== "") {
+        return `/backoffice/purchase-orders/${poId}`;
+      }
+      return "/backoffice/purchase-orders";
+    }
     case 'FULFILLMENT_PUSH_STUCK': {
       const salesOrderId = data.salesOrderId;
       if (typeof salesOrderId === 'string') {
