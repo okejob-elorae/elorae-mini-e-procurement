@@ -1,0 +1,272 @@
+﻿
+ RUN  v3.2.4 E:/Project/OKEJOB/Kimi_Agent_Elorae ERP Access/elorae-erp/apps/web
+
+node.exe : stderr | lib/field-sales/order-processing-e2e.test.ts
+At C:\nvm4w\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.mjs"  ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (stderr | lib/fi...ing-e2e.test.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Firebase Admin init failed: FirebaseAppError: Failed to parse private key: Error: error:1E08010C:DECODER 
+routines::unsupported
+    at new ServiceAccount (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\node_modules\.pnpm\firebase-admin@
+13.10.0\node_modules\firebase-admin\lib\app\credential-internal.js:182:19)
+    at new ServiceAccountCredential (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\node_modules\.pnpm\fireb
+ase-admin@13.10.0\node_modules\firebase-admin\lib\app\credential-internal.js:119:15)
+    at Object.cert (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\node_modules\.pnpm\firebase-admin@13.10.0
+\node_modules\firebase-admin\lib\app\credential-factory.js:105:54)
+    at initFirebaseAdmin (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP 
+Access\elorae-erp\apps\web\lib\firebase\admin.ts:25:36)
+    at E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\apps\web\lib\firebase\admin.ts:37:1
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at VitestExecutor.runModule (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_modules/.pn
+pm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:397:4)
+    at VitestExecutor.directRequest (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_modules
+/.pnpm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:375:3)
+    at VitestExecutor.cachedRequest (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_modules
+/.pnpm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:189:11)
+    at VitestExecutor.dependencyRequest (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_mod
+ules/.pnpm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:239:10) 
+{
+  errorInfo: {
+    code: 'app/invalid-credential',
+    message: 'Failed to parse private key: Error: error:1E08010C:DECODER routines::unsupported'
+  },
+  codePrefix: 'app'
+}
+
+stdout | lib/field-sales/order-processing-e2e.test.ts > order processing ΓÇö end to end (opt-in)
+OPE_REPORT {
+  "run": "muntd1n8",
+  "ids": {
+    "admin": "cmtqxdm4l00007g7kjc6alkud",
+    "salesman": "cmtqxdp8c006b7g7k9233cih0",
+    "item_A": "cmuntd25m0001y47k17qcqxzc",
+    "item_B": "cmuntd29y0003y47key220ccv",
+    "item_SHORT": "cmuntd2b00005y47krxyapc08",
+    "item_K1": "cmuntd2c60007y47k0h8glwpm",
+    "item_K2": "cmuntd2eb0009y47kr88tzkp6",
+    "item_KNEW": "cmuntd2fr000by47kmwyyqq6f",
+    "item_KNOINV": "cmuntd2gk000dy47ke6ucfz8x",
+    "item_KSENT": "cmuntd2gw000ey47kv6037rol",
+    "store_P": "cmuntd2ho000gy47kaxfa9zlr",
+    "store_CR": "cmuntd2ii000iy47kh7ss8aex",
+    "store_K": "cmuntd2j8000ky47kcdmnvvfs",
+    "order_A01": "cmuntd2nu000my47ky01tciz2",
+    "order_A04": "cmuntd3h80010y47k4wmxwwri",
+    "order_A05": "cmuntd3qt0018y47kubuqxpt2",
+    "order_B": "cmuntd443001ky47kex1gs61a",
+    "orderNo_B": "PUTUS/2026/0091",
+    "delivery1": "cmuntd4is001uy47k5lkszmu6",
+    "order_B09": "cmuntd4yz0028y47kzho0cgaw",
+    "order_B12": "cmuntd5fo002xy47k22przrya",
+    "order_D": "cmuntd5rl003ay47krebyyx5q",
+    "order_D04": "cmuntd60q003gy47k3rhrzikg"
+  },
+  "report": [
+    {
+      "id": "A-01",
+      "result": "PASS",
+      "note": "appealed 100000ΓåÆ95000, stray ignored (50000), total 290000"
+    },
+    {
+      "id": "A-02",
+      "result": "PASS",
+      "note": "second approve ok; approve after reject INVALID_TRANSITION"
+    },
+    {
+      "id": "A-03",
+      "result": "PASS",
+      "note": "reserved 2ΓåÆ6ΓåÆ2, on-hand 100, reject approved INVALID_TRANSITION"
+    },
+    {
+      "id": "A-04",
+      "result": "PASS",
+      "note": "blank reason ΓåÆ REASON_REQUIRED"
+    },
+    {
+      "id": "A-09",
+      "result": "PASS",
+      "note": "INVALID_ADDED_LINE/NOT_KONSI"
+    },
+    {
+      "id": "A-10",
+      "result": "PASS",
+      "note": "negative / NaN ΓåÆ INVALID_FINAL_PRICE"
+    },
+    {
+      "id": "A-05",
+      "result": "PASS",
+      "note": "CREDIT_LIMIT_EXCEEDED exposure {\"exposure\":{\"receivableOutstanding\":0,\"undeliveredOrderResidual\":0,\"total\":0},\"creditLimit\":300000,\"orderTotal\":380000}; status PENDING_APPROVAL, line price 100000"
+    },
+    {
+      "id": "A-06",
+      "result": "PASS",
+      "note": "FORBIDDEN"
+    },
+    {
+      "id": "A-07",
+      "result": "PASS",
+      "note": "approved with override, snapshot limit 300000, exposure 0, audit rows 1"
+    },
+    {
+      "id": "A-08",
+      "result": "PASS",
+      "note": "result {\"ok\":true}, status APPROVED, order keeps 250 chars, audit reason 191 chars"
+    },
+    {
+      "id": "B-08 putus",
+      "result": "PASS",
+      "note": "pending INVALID_STATE, rejected INVALID_STATE"
+    },
+    {
+      "id": "B-03",
+      "result": "PASS",
+      "note": "6 of 5 / 3+3 of 5 ΓåÆ OVER_DELIVER"
+    },
+    {
+      "id": "B-04",
+      "result": "PASS",
+      "note": "0 / ΓêÆ1 / 1.5 ΓåÆ OVER_DELIVER / OVER_DELIVER / OVER_DELIVER"
+    },
+    {
+      "id": "B-05",
+      "result": "PASS",
+      "note": "inverted INVALID_DATES, 2026-02-30 INVALID_REQUEST, number INVALID_REQUEST"
+    },
+    {
+      "id": "B-06",
+      "result": "PASS",
+      "note": "blank / 65-char key ΓåÆ INVALID_REQUEST"
+    },
+    {
+      "id": "B-01",
+      "result": "PASS",
+      "note": "DLV/2026/09/0433: PARTIAL, 1 faktur, 1 receivable 200000, on-hand 100ΓåÆ98, due 2026-10-29T17:00:00.000Z"
+    },
+    {
+      "id": "B-07",
+      "result": "PASS",
+      "note": "same payload ΓåÆ same doc; changed qty ΓåÆ REPLAY_MISMATCH carrying DLV/2026/09/0433; deliveries 1"
+    },
+    {
+      "id": "B-16",
+      "result": "PASS",
+      "note": "delivery + receivable moved together, docNo kept DLV/2026/09/0433, audit rows 1"
+    },
+    {
+      "id": "B-15",
+      "result": "PASS",
+      "note": "result {\"ok\":false,\"reason\":\"INVALID_REQUEST\"}"
+    },
+    {
+      "id": "B-14",
+      "result": "PASS",
+      "note": "blank INVALID_REQUEST, inverted INVALID_DATES, paid RECEIVABLE_HAS_PAYMENTS"
+    },
+    {
+      "id": "B-09",
+      "result": "PASS",
+      "note": "INSUFFICIENT_STOCK [{\"orderLineId\":\"cmuntd4z20029y47k3w859anw\",\"requested\":3,\"onHand\":1}]; deliveries 0"
+    },
+    {
+      "id": "B-11 blank/not approved",
+      "result": "PASS",
+      "note": "blank ΓåÆ INVALID_STATE, rejected order ΓåÆ INVALID_STATE"
+    },
+    {
+      "id": "B-02 second partial",
+      "result": "PASS",
+      "note": "docs DLV/2026/09/0433, DLV/2026/09/0434"
+    },
+    {
+      "id": "B-10",
+      "result": "PASS",
+      "note": "cancelled 3 on line B, reserved 5ΓåÆ2, deliveryStatus CLOSED"
+    },
+    {
+      "id": "B-02 totals",
+      "result": "PASS",
+      "note": "delivery totals 550000 = delivered value"
+    },
+    {
+      "id": "B-13",
+      "result": "PASS",
+      "note": "OVER_DELIVER"
+    },
+    {
+      "id": "B-11 nothing outstanding",
+      "result": "PASS",
+      "note": "INVALID_STATE"
+    },
+    {
+      "id": "B-12",
+      "result": "PASS",
+      "note": "SHIPMENT_IN_FLIGHT, cancelled 0"
+    },
+    {
+      "id": "C-04",
+      "result": "PASS",
+      "note": "no view permission ΓåÆ nothing stamped"
+    },
+    {
+      "id": "C-03",
+      "result": "PASS",
+      "note": "unprinted fakturs 9 ΓåÆ 9"
+    },
+    {
+      "id": "C-01",
+      "result": "PASS",
+      "note": "stamped 2026-09-30T07:58:44.873Z, notification \"Nota DLV/2026/09/0433 untuk toko OPE P muntd1n8 sudah di-print. Pastikan buat faktur pajak.\""
+    },
+    {
+      "id": "C-02",
+      "result": "PASS",
+      "note": "reprint: notifications 1, stamp unchanged, print audit rows 2"
+    },
+    {
+      "id": "D-02",
+      "result": "PASS",
+      "note": "duplicate ΓåÆ DUPLICATE; qty 0 ΓåÆ INVALID_ADDED_LINE; unknown item ΓåÆ UNKNOWN_ITEM; no inventory row ΓåÆ NO_INVENTORY; already sent ΓåÆ ALREADY_SENT"
+    },
+    {
+      "id": "D-03",
+      "result": "PASS",
+      "note": "added line by admin, KNEW reserved 2"
+    },
+    {
+      "id": "D-01",
+      "result": "PASS",
+      "note": "on-hand 50ΓåÆ50, reserved 0ΓåÆ5, receivables +0, deliveries 0, StoreStock 0"
+    },
+    {
+      "id": "D-05",
+      "result": "PASS",
+      "note": "INVALID_TRANSITION"
+    },
+    {
+      "id": "B-08 konsi",
+      "result": "PASS",
+      "note": "INVALID_STATE"
+    },
+    {
+      "id": "D-04",
+      "result": "PASS",
+      "note": "INSUFFICIENT_STOCK [{\"itemId\":\"cmuntd2eb0009y47kr88tzkp6\",\"variantSku\":\"\",\"available\":50}]; reserved unchanged; PENDING_APPROVAL"
+    }
+  ]
+}
+
+ Γ£ô lib/field-sales/order-processing-e2e.test.ts (7 tests) 5752ms
+   Γ£ô order processing ΓÇö end to end (opt-in) > setup  1183ms
+   Γ£ô order processing ΓÇö end to end (opt-in) > A ΓÇö putus approve / reject  1498ms
+   Γ£ô order processing ΓÇö end to end (opt-in) > A ΓÇö credit limit gate  471ms
+   Γ£ô order processing ΓÇö end to end (opt-in) > B ΓÇö delivery, partial delivery, remainder  1915ms
+   Γ£ô order processing ΓÇö end to end (opt-in) > D ΓÇö konsi approve  573ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  15:58:37
+   Duration  8.33s (transform 788ms, setup 0ms, collect 1.46s, tests 5.75s, environment 1ms, prepare 318ms)
+

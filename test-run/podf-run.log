@@ -1,0 +1,285 @@
+﻿
+ RUN  v3.2.4 E:/Project/OKEJOB/Kimi_Agent_Elorae ERP Access/elorae-erp/apps/web
+
+node.exe : stderr | lib/delivery/pod-followups-e2e.test.ts
+At C:\nvm4w\nodejs\pnpm.ps1:16 char:5
++     & "$basedir/node$exe"  "$basedir/node_modules/pnpm/bin/pnpm.mjs"  ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (stderr | lib/de...ups-e2e.test.ts:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Firebase Admin init failed: FirebaseAppError: Failed to parse private key: Error: error:1E08010C:DECODER 
+routines::unsupported
+    at new ServiceAccount (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\node_modules\.pnpm\firebase-admin@
+13.10.0\node_modules\firebase-admin\lib\app\credential-internal.js:182:19)
+    at new ServiceAccountCredential (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\node_modules\.pnpm\fireb
+ase-admin@13.10.0\node_modules\firebase-admin\lib\app\credential-internal.js:119:15)
+    at Object.cert (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\node_modules\.pnpm\firebase-admin@13.10.0
+\node_modules\firebase-admin\lib\app\credential-factory.js:105:54)
+    at initFirebaseAdmin (E:\Project\OKEJOB\Kimi_Agent_Elorae ERP 
+Access\elorae-erp\apps\web\lib\firebase\admin.ts:25:36)
+    at E:\Project\OKEJOB\Kimi_Agent_Elorae ERP Access\elorae-erp\apps\web\lib\firebase\admin.ts:37:1
+    at processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at VitestExecutor.runModule (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_modules/.pn
+pm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:397:4)
+    at VitestExecutor.directRequest (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_modules
+/.pnpm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:375:3)
+    at VitestExecutor.cachedRequest (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_modules
+/.pnpm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:189:11)
+    at VitestExecutor.dependencyRequest (file:///E:/Project/OKEJOB/Kimi_Agent_Elorae%20ERP%20Access/elorae-erp/node_mod
+ules/.pnpm/vite-node@3.2.4_@types+node_737dcc8f66747f609ca7ee57d0387120/node_modules/vite-node/dist/client.mjs:239:10) 
+{
+  errorInfo: {
+    code: 'app/invalid-credential',
+    message: 'Failed to parse private key: Error: error:1E08010C:DECODER routines::unsupported'
+  },
+  codePrefix: 'app'
+}
+
+stdout | lib/delivery/pod-followups-e2e.test.ts > delivery / POD follow-ups ΓÇö end to end (opt-in)
+PODF_REPORT {
+  "run": "munvr2cn",
+  "ids": {
+    "item_A": "cmunvr2o50001bs7kkptvn21i",
+    "item_B": "cmunvr2oz0003bs7k5214yo26",
+    "store_P": "cmunvr2pq0005bs7km4gbi4bo",
+    "store_NG": "cmunvr2qh0007bs7kzgokkq3n",
+    "store_DEF": "cmunvr2r60009bs7kwaaw7y46",
+    "store_CUSTNOCOORD": "cmunvr2rw000bbs7koaoer81y",
+    "order_O1": "cmunvr2vf000dbs7kwububk4k",
+    "ship_S1": "cmunvr31k000jbs7kwd2d5ye4",
+    "ship_S0": "cmunvr35c000mbs7kj0vpnm54",
+    "ship_SX": "cmunvr36w000obs7krkk3pvuj",
+    "ship_SO": "cmunvr38k000qbs7krrro1qvx",
+    "order_O2": "cmunvr3e0000sbs7kv573jtk2",
+    "ship_S2": "cmunvr3i1000wbs7ks12w8jpj",
+    "delivery_S1": "cmunvr3ns000ybs7k83hyp58z",
+    "order_O3": "cmunvr40h001fbs7ka9rljick",
+    "ship_S3": "cmunvr45e001jbs7ko84whxn6",
+    "delivery_S3": "cmunvr47v001lbs7k4l7f2jm9",
+    "ship_S4": "cmunvr4jl001zbs7k3476w7nd",
+    "order_O6": "cmunvr4x9002rbs7kpakccl42",
+    "ship_S5": "cmunvr53p002zbs7kn6gj1x0t",
+    "ship_S7": "cmunvr56l0033bs7kyqyt3yww",
+    "order_OF": "cmunvr5960035bs7kulq25vkf"
+  },
+  "report": [
+    {
+      "id": "A-01",
+      "result": "PASS",
+      "note": "no session ΓåÆ 401"
+    },
+    {
+      "id": "A-02",
+      "result": "PASS",
+      "note": "no deliveries:pod ΓåÆ 403"
+    },
+    {
+      "id": "A-03",
+      "result": "PASS",
+      "note": "unsafe ids ΓåÆ 400,400,400,400; uploads 0"
+    },
+    {
+      "id": "A-04",
+      "result": "PASS",
+      "note": "bad clientId ΓåÆ 400,400"
+    },
+    {
+      "id": "A-05",
+      "result": "PASS",
+      "note": "text/plain 400, 10MB+1 400"
+    },
+    {
+      "id": "A-06",
+      "result": "PASS",
+      "note": "unknown ΓåÆ 404"
+    },
+    {
+      "id": "A-07",
+      "result": "PASS",
+      "note": "EXPEDITION naming salesman ΓåÆ 404 {\"error\":\"NOT_FOUND\"}"
+    },
+    {
+      "id": "A-08",
+      "result": "PASS",
+      "note": "other carrier ΓåÆ 404 {\"error\":\"NOT_FOUND\"}"
+    },
+    {
+      "id": "A-09",
+      "result": "PASS",
+      "note": "own PACKED ΓåÆ 409"
+    },
+    {
+      "id": "A-10",
+      "result": "PASS",
+      "note": "IN_TRANSIT ΓåÆ 200 delivery-pod-proofs/cmunvr31k000jbs7kwd2d5ye4/goods.jpg, nota delivery-pod-proofs/cmunvr31k000jbs7kwd2d5ye4/nota.png"
+    },
+    {
+      "id": "B-01",
+      "result": "PASS",
+      "note": "other POD holder ΓåÆ NOT_CARRIER"
+    },
+    {
+      "id": "B-02",
+      "result": "PASS",
+      "note": "null/NaN/91 ΓåÆ MISSING_GPS,MISSING_GPS,MISSING_GPS"
+    },
+    {
+      "id": "B-03",
+      "result": "PASS",
+      "note": "~1.1 km ΓåÆ GPS_OUT_OF_RADIUS"
+    },
+    {
+      "id": "B-04",
+      "result": "PASS",
+      "note": "ungeocoded store ΓåÆ STORE_NOT_GEOCODED"
+    },
+    {
+      "id": "B-05",
+      "result": "PASS",
+      "note": "foreign MISSING_PROOF, traversal MISSING_PROOF"
+    },
+    {
+      "id": "B-06",
+      "result": "PASS",
+      "note": "same key MISSING_NOTA_PHOTO, other folder MISSING_NOTA_PHOTO"
+    },
+    {
+      "id": "B-07",
+      "result": "PASS",
+      "note": "blank MISSING_SIGNED_BY, 121 MISSING_SIGNED_BY"
+    },
+    {
+      "id": "B-08",
+      "result": "PASS",
+      "note": "duplicate LINE_MISMATCH, omitted LINE_MISMATCH, status IN_TRANSIT"
+    },
+    {
+      "id": "B-09",
+      "result": "PASS",
+      "note": "ok; status PARTIALLY_DELIVERED; deliveries 1, receivable 1, faktur 1; journals 2 (pending flags 0)"
+    },
+    {
+      "id": "B-12",
+      "result": "PASS",
+      "note": "deliveredAt 5d old ΓåÆ 2026-09-30T09:05:34.746Z; completedOfflineAt set"
+    },
+    {
+      "id": "B-10",
+      "result": "PASS",
+      "note": "same-carrier empty replay ΓåÆ ok; deliveries 1"
+    },
+    {
+      "id": "B-11",
+      "result": "PASS",
+      "note": "other actor on delivered ΓåÆ INVALID_STATE"
+    },
+    {
+      "id": "A-11",
+      "result": "PASS",
+      "note": "replay upload ΓåÆ 200 delivery-pod-proofs/cmunvr31k000jbs7kwd2d5ye4/goods.jpg; R2 writes 0"
+    },
+    {
+      "id": "E-01",
+      "result": "PASS",
+      "note": "goods https://pub-61896821069f4110868c04866194db84.r2.dev/delivery-pod-proofs/cmunvr31k000jbs7kwd2d5ye4/goods.jpg, nota https://pub-61896821069f4110868c04866194db84.r2.dev/delivery-pod-proofs/cmunvr31k000jbs7kwd2d5ye4/nota.jpg, doc DLV/2026/09/0455"
+    },
+    {
+      "id": "C-01",
+      "result": "PASS",
+      "note": "REPLAY_MISMATCH recorded [{\"orderLineId\":\"cmunvr40k001gbs7k5r97qc2x\",\"qty\":2}]; status IN_TRANSIT; journals 0ΓåÆ2 (pending 0ΓåÆ0)"
+    },
+    {
+      "id": "C-03",
+      "result": "PASS",
+      "note": "all-zero ΓåÆ REPLAY_MISMATCH; status IN_TRANSIT"
+    },
+    {
+      "id": "C-02",
+      "result": "PASS",
+      "note": "date fix ok; retry ok; status PARTIALLY_DELIVERED; deliveryId matches true"
+    },
+    {
+      "id": "C-04",
+      "result": "PASS",
+      "note": "EXPEDITION re-typed date ΓåÆ REPLAY_MISMATCH, recorded 2026-09-30"
+    },
+    {
+      "id": "C-05",
+      "result": "PASS",
+      "note": "first ok; changed-date retry REPLAY_MISMATCH"
+    },
+    {
+      "id": "C-06",
+      "result": "PASS",
+      "note": "released reservation ΓåÆ RESERVATION_MISMATCH"
+    },
+    {
+      "id": "D-01",
+      "result": "PASS",
+      "note": "EXPEDITION-naming-salesman false, PACKED false, other carrier false, delivered false (all should be false)"
+    },
+    {
+      "id": "D-02",
+      "result": "PASS",
+      "note": "non-terminal permanent codes: none"
+    },
+    {
+      "id": "D-03",
+      "result": "PASS",
+      "note": "non-carrier report on another's shipment: 0ΓåÆ0 (resolved); unknown id: 0 notification(s) (resolved)"
+    },
+    {
+      "id": "D-04",
+      "result": "PASS",
+      "note": "5000-char reason ΓåÆ 1 notification(s), message length 191"
+    },
+    {
+      "id": "D-04b",
+      "result": "PASS",
+      "note": "carrier's own report with a real code ΓåÆ 2 notification(s)"
+    },
+    {
+      "id": "E-02",
+      "result": "PASS",
+      "note": "foreign key ΓåÆ {\"url\":null,\"unavailable\":true}; url without key ΓåÆ {\"url\":null,\"unavailable\":true}"
+    },
+    {
+      "id": "F-01",
+      "result": "PASS",
+      "note": "awaiting 26ΓåÆ27, +200000 (order total 200000)"
+    },
+    {
+      "id": "F-02",
+      "result": "PASS",
+      "note": "residual +100000 (expect 100000); realised +1/+100000"
+    },
+    {
+      "id": "F-03",
+      "result": "PASS",
+      "note": "close ok; awaiting back to 26 (+0)"
+    },
+    {
+      "id": "G-03",
+      "result": "PASS",
+      "note": "missing [CUSTNOCOORD,NG], defaultRadius [DEF], customRadius [P], all 4"
+    },
+    {
+      "id": "G-04",
+      "result": "PASS",
+      "note": "custom radius without coordinates ΓåÆ missing true, custom false"
+    }
+  ]
+}
+
+ Γ£ô lib/delivery/pod-followups-e2e.test.ts (8 tests) 4195ms
+   Γ£ô delivery / POD follow-ups ΓÇö end to end (opt-in) > setup  989ms
+   Γ£ô delivery / POD follow-ups ΓÇö end to end (opt-in) > B ΓÇö salesman-carry completion  844ms
+   Γ£ô delivery / POD follow-ups ΓÇö end to end (opt-in) > C ΓÇö replay after a lost response  1396ms
+   Γ£ô delivery / POD follow-ups ΓÇö end to end (opt-in) > F ΓÇö dashboard awaiting-delivery bucket  450ms
+
+ Test Files  1 passed (1)
+      Tests  8 passed (8)
+   Start at  17:05:30
+   Duration  6.84s (transform 702ms, setup 0ms, collect 1.82s, tests 4.19s, environment 0ms, prepare 186ms)
+

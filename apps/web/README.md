@@ -110,6 +110,7 @@ Open [http://localhost:3000](http://localhost:3000). Unauthenticated users are s
 | `studio` | Prisma Studio |
 | `seed` | Run `prisma/seed.ts` |
 | `seed:production-login` | Seed a production-style login user (see `docs/local-db-testbed.md`) |
+| `seed:packer-login` | Additive packer RBAC + `packer@elorae.com` login (prod-safe; no truncate) |
 | `test:connection` | DB connection test helper |
 
 Testing: run the specs you changed with `pnpm -F @elorae/web exec vitest run <pattern> [<pattern>...]`. The specs run against the shared `:3308` test bed, so locally stay scoped; the full suite runs in CI (the `db-specs` job in `.github/workflows/ci.yml`). Do not use `pnpm -F @elorae/web test -- <pattern>`: vitest drops what follows the `--` and runs the whole suite.
@@ -122,8 +123,9 @@ Testing: run the specs you changed with `pnpm -F @elorae/web exec vitest run <pa
 | purchaser@elorae.com | purchaser123 | PIN set in seed output |
 | warehouse@elorae.com | warehouse123 | |
 | production@elorae.com | production123 | |
+| packer@elorae.com | packer123 | PIN 123456; lands on `/packer` |
 
-Use only in development; change or remove these users in production.
+Use only in development; change or remove these users in production. For prod packer RBAC + account, prefer `pnpm -F @elorae/db seed:packer-login` (or hand-run `packages/db/prisma/seed-packer-role-permissions.sql` for RBAC only).
 
 ## Environment variables
 
