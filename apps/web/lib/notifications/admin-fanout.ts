@@ -8,6 +8,7 @@ import {
   KONSI_REPORT_READY,
 } from "@/lib/konsi-count-schedule/categories";
 import { PO_PAYMENT_DUE } from "@/lib/purchase-orders/payment-reminder-copy";
+import { SALES_RETURN_RECEIVED } from "@/lib/sales-returns/bell-copy";
 
 /**
  * Which permission decides who is told about each category.
@@ -29,6 +30,7 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   COLLECTION_PENDING_VERIFICATION: PERMISSIONS.PAYMENTS_MANAGE,
   AR_OVERDUE: PERMISSIONS.COLLECTIONS_MANAGE,
   [PO_PAYMENT_DUE]: PERMISSIONS.PURCHASE_ORDERS_EDIT,
+  [SALES_RETURN_RECEIVED]: PERMISSIONS.SALES_RETURNS_DECIDE,
   DELIVERY_COMPLETION_STUCK: PERMISSIONS.DELIVERIES_SHIP,
   FULFILLMENT_PUSH_STUCK: PERMISSIONS.SALES_ORDERS_FULFILL,
   [KONSI_COUNT_DUE]: PERMISSIONS.STORES_MANAGE,

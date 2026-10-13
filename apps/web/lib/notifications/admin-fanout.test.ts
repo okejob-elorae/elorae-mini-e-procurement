@@ -93,6 +93,10 @@ describe("fanOutAdminNotification", () => {
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "PO_PAYMENT_DUE" });
     expect(mockGetUsers).toHaveBeenCalledWith("purchase_orders:edit");
+
+    mockGetUsers.mockClear();
+    await fanOutAdminNotification({ ...BASE, category: "SALES_RETURN_RECEIVED" });
+    expect(mockGetUsers).toHaveBeenCalledWith("sales_returns:decide");
   });
 
   it("routes every konsi count and report category to stores:manage", async () => {
