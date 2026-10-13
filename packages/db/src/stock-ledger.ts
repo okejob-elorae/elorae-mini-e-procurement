@@ -21,6 +21,8 @@ export type AppendStockLedgerInput = {
   refId: string;
   refDocNumber?: string;
   createdById?: string | null;
+  /** Historical movement time (legacy import, #438). Omit for now(). */
+  occurredAt?: Date;
 };
 
 /**
@@ -76,6 +78,7 @@ export async function appendStockLedger(
       refId: input.refId,
       refDocNumber: input.refDocNumber ?? "",
       createdById: input.createdById ?? null,
+      ...(input.occurredAt ? { createdAt: input.occurredAt } : {}),
     },
   });
 }
