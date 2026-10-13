@@ -220,6 +220,15 @@ d("runPaymentReminderSweep (test bed only)", () => {
     expect(await notificationsFor(later)).toHaveLength(0);
   });
 
+  it("announces an upcoming reminder before an overdue one when the cap bites", async () => {
+    const overdue = await makePo({ paymentDueDate: wibDay(2026, 10, 3) });
+    const upcoming = await makePo({ paymentDueDate: wibDay(2026, 10, 20) });
+    const result = await runPaymentReminderSweep({ poIds: [overdue, upcoming], asOf: AS_OF, maxAnnouncementsPerRun: 1 });
+    expect(result).toEqual({ scanned: 2, announced: 1, deferred: 1, failed: 0 });
+    expect(await notificationsFor(upcoming)).toHaveLength(1);
+    expect(await notificationsFor(overdue)).toHaveLength(0);
+  });
+
   it("keeps going when one PO's write fails, and retries it next run", async () => {
     const earlier = await makePo({ paymentDueDate: wibDay(2026, 10, 14) });
     const later = await makePo({ paymentDueDate: wibDay(2026, 10, 15) });

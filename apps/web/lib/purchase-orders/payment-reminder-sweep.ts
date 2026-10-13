@@ -4,7 +4,10 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { PO_PAYMENT_DUE, buildPaymentReminderCopy } from "./payment-reminder-copy";
 import { PAYMENT_REMINDER_SETTING_KEY, parsePaymentReminderDays } from "./payment-reminder-thresholds";
 
-/** Earliest-due-first, so a backlog on first deploy drains in the order that matters most. */
+/**
+ * Applied AFTER the priority sort: upcoming and due-today reminders go first, so an overdue
+ * backlog (first deploy, or a long outage) drains behind the live ones instead of starving them.
+ */
 const MAX_ANNOUNCEMENTS_PER_RUN = 200;
 
 export type PaymentReminderSweepResult = {
@@ -79,10 +82,17 @@ export async function runPaymentReminderSweep(options?: {
     if (current === undefined || meta.thresholdDays > current) highestAnnounced.set(key, meta.thresholdDays);
   }
 
-  let announced = 0;
-  let deferred = 0;
-  let failed = 0;
-
+  /*
+   * Every crossing is computed before any is announced, so the cap never decides which POs are
+   * even looked at — only which crossings wait for the next run.
+   */
+  const candidates: Array<{
+    po: (typeof pos)[number];
+    dueDate: Date;
+    daysRelative: number;
+    tStar: number;
+    dueDateIso: string;
+  }> = [];
   for (const po of pos) {
     const dueDate = po.paymentDueDate;
     if (!dueDate) continue;
@@ -96,6 +106,21 @@ export async function runPaymentReminderSweep(options?: {
     const tLast = highestAnnounced.get(dedupKey(po.id, dueDateIso));
     if (tLast !== undefined && tStar <= tLast) continue;
 
+    candidates.push({ po, dueDate, daysRelative, tStar, dueDateIso });
+  }
+
+  /*
+   * Upcoming and due-today crossings (`tStar <= 0`) before overdue ones. `Array.prototype.sort`
+   * is stable, so each group keeps the query's earliest-due-first, then id, order.
+   */
+  const groupOf = (tStar: number): number => (tStar <= 0 ? 0 : 1);
+  candidates.sort((a, b) => groupOf(a.tStar) - groupOf(b.tStar));
+
+  let announced = 0;
+  let deferred = 0;
+  let failed = 0;
+
+  for (const { po, dueDate, daysRelative, tStar, dueDateIso } of candidates) {
     if (announced >= cap) {
       deferred++;
       continue;
