@@ -79,9 +79,10 @@ export function toFcmData(metadata: unknown): Record<string, string> {
  * each, and firebase-admin retries a connection failure for roughly a minute per recipient, so
  * awaiting it stalls the operation that already committed — a canvasser's thermal nota, a PWA
  * order submit. `void` is safe here specifically because web runs as a long-lived Node process on
- * the VPS, not a serverless runtime that freezes on response. The cron sweeps — `runOverdueSweep`,
- * `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep` and `runPaymentReminderSweep` — await
- * it deliberately: no user is waiting, and an unawaited batch would stampede FCM.
+ * the VPS, not a serverless runtime that freezes on response. The five cron sweeps —
+ * `runOverdueSweep`, `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep`,
+ * `runPaymentReminderSweep` and `runSalesReturnBellSweep` — await it deliberately: no user is
+ * waiting, and an unawaited batch would stampede FCM.
  * `reportStuckDeliveryCompletionAction` awaits it too: the PWA's offline completion queue calls it
  * mostly from background sync, but also from the pending screen's Retry, where a salesman is
  * waiting, so it is no precedent for an interactive path.
