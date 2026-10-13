@@ -9,8 +9,40 @@
 export type SupplierPaymentDirection = "payment" | "reversal";
 
 /**
+ * The payment-writer codes on which `setPOPaidAt` ABORTS a mark instead of
+ * committing it: the compare-and-swap on `paidAt` rolls back, nothing is flagged,
+ * and the action returns the code as its `refusal`. Each one says a receipt of
+ * the PO is not settled yet, so the PO is not payable yet, and committing
+ * `paidAt` would manufacture exactly the paid-without-a-journal state the payment
+ * journal exists to prevent. The infrastructure codes (`UNMAPPED_ROLE`,
+ * `UNBALANCED`, the synthetic `ERROR`, any other) are deliberately absent: those
+ * still commit the mark and raise `JOURNAL_PENDING`, because a Finance
+ * misconfiguration must not block ops.
+ *
+ * Declared here, in the client-safe module, so the action's guard, its result
+ * type and the `markRefused.<code>` locale keys all read one list.
+ */
+export const RECEIPT_BLOCKED_MARK_CODES = [
+  "GRN_APPROVAL_PENDING",
+  "GRN_JOURNALS_INCOMPLETE",
+  "GRN_REVERSAL_MISSING",
+] as const;
+
+export type ReceiptBlockedMarkCode = (typeof RECEIPT_BLOCKED_MARK_CODES)[number];
+
+export function isReceiptBlockedMarkCode(code: string): code is ReceiptBlockedMarkCode {
+  return (RECEIPT_BLOCKED_MARK_CODES as readonly string[]).includes(code);
+}
+
+/**
  * Maps a failure code `setPOPaidAt` hands back to the `supplierPayments`
  * namespace key that tells the operator what happened and what to do next.
+ *
+ * The three `RECEIPT_BLOCKED_MARK_CODES` no longer come back from the toggle as
+ * a journal failure — it refuses them instead — but they stay listed here: the
+ * banner and its retry still render them for a PO that reads paid, whether it was
+ * marked before the toggle aborted on them or its retry, once an infrastructure
+ * failure is fixed, meets one of them.
  *
  * The UI reaches it only through `useSupplierPaymentJournalFailureMessage`,
  * which every surface of a failed post goes through: both toggle call sites (the

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import idMessages from "../i18n/messages/id.json";
 import enMessages from "../i18n/messages/en.json";
 import {
+  RECEIPT_BLOCKED_MARK_CODES,
   SUPPLIER_PAYMENT_JOURNAL_ERROR_CODES,
+  isReceiptBlockedMarkCode,
   supplierPaymentJournalErrorKey,
   type SupplierPaymentDirection,
 } from "./supplier-payment-journal-message";
@@ -136,6 +138,56 @@ describe("supplier payment journal messages", () => {
         expect(entry.payment, `${locale}.${code}.payment`).toContain(postRetry[locale]);
         expect(entry.payment, `${locale}.${code}.payment`).not.toContain(markAgain[locale]);
         expect(entry.reversal, `${locale}.${code}.reversal`).toContain(standing[locale]);
+      }
+    }
+  });
+});
+
+/*
+ * The three receipt-state codes the paid toggle aborts on. Literal here for the
+ * same reason as `DIRECTION_SPECIFIC`: an infrastructure code slipping into the
+ * module's list would start blocking ops on a Finance misconfiguration, and that
+ * has to fail a test rather than be followed.
+ */
+const RECEIPT_BLOCKED = ["GRN_APPROVAL_PENDING", "GRN_JOURNALS_INCOMPLETE", "GRN_REVERSAL_MISSING"];
+
+describe("isReceiptBlockedMarkCode", () => {
+  it("is true for exactly the three receipt-state codes", () => {
+    expect([...RECEIPT_BLOCKED_MARK_CODES].sort()).toEqual([...RECEIPT_BLOCKED].sort());
+    for (const code of RECEIPT_BLOCKED) expect(isReceiptBlockedMarkCode(code)).toBe(true);
+  });
+
+  it("is false for every infrastructure code, so those still commit the mark", () => {
+    for (const code of ["UNMAPPED_ROLE", "UNBALANCED", "ERROR", "AP_ACCOUNT_MISMATCH", "NOTHING_TO_POST", "SOME_NEW_CODE"]) {
+      expect(isReceiptBlockedMarkCode(code), code).toBe(false);
+    }
+  });
+});
+
+describe("supplier payment mark refusal messages", () => {
+  const refusalLocales = { id: idMessages, en: enMessages } as unknown as Record<
+    string,
+    { supplierPayments: { markRefused: Record<string, string> } }
+  >;
+  const notMarked: Record<string, string> = { id: "TIDAK ditandai lunas", en: "NOT marked paid" };
+
+  it("defines one message per aborted code, and nothing else, in both locales", () => {
+    for (const [locale, messages] of Object.entries(refusalLocales)) {
+      const refused = messages.supplierPayments.markRefused;
+      for (const code of RECEIPT_BLOCKED) {
+        expect(refused[code], `${locale}.supplierPayments.markRefused.${code}`).toBeTruthy();
+      }
+      expect(Object.keys(refused).sort()).toEqual([...RECEIPT_BLOCKED].sort());
+    }
+  });
+
+  /* The journal-failure sentences for these same codes open with "the payment
+     status was saved"; the refusal must say the opposite, or the operator reads a
+     PO still showing Unpaid as a display glitch. */
+  it("says the PO was not marked paid", () => {
+    for (const [locale, messages] of Object.entries(refusalLocales)) {
+      for (const code of RECEIPT_BLOCKED) {
+        expect(messages.supplierPayments.markRefused[code], `${locale}.${code}`).toContain(notMarked[locale]);
       }
     }
   });

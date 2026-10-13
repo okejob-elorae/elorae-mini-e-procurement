@@ -66,6 +66,11 @@ const TOGGLE_RETRY = "unmark payment on the PO and mark it paid again";
  * so swallowing it would commit nothing while reporting a toggle that happened.
  * Letting it out lets `runSerializable` retry the toggle and the post together.
  *
+ * Classifying is all it does; the caller decides what a failure costs the
+ * toggle. `setPOPaidAt` commits the mark through every infrastructure failure
+ * but ABORTS it on the three receipt-state codes (`isReceiptBlockedMarkCode`),
+ * so no notification is ever written for those from the toggle.
+ *
  * An `ok` result is silent even when nothing was created, because the writer only
  * reports an idempotent hit as `ok` once it has confirmed the journal already
  * standing posted the same payable this attempt computed — a stale one comes back

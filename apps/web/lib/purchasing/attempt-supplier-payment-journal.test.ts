@@ -5,8 +5,9 @@ import { attemptSupplierPaymentJournal } from "./post-supplier-payment-journal-s
 /*
  * No DB: every case feeds a canned post result or throw. Pins the contract the
  * paid toggle's transaction depends on — a journal problem comes back as a value
- * so the toggle still commits, while a transaction abort escapes so the retry
- * wrapper can re-run the toggle and the post together.
+ * so the toggle decides what it costs (commit on an infrastructure code, abort on
+ * a receipt-state one), while a transaction abort escapes so the retry wrapper
+ * can re-run the toggle and the post together.
  */
 describe("attemptSupplierPaymentJournal", () => {
   it("reports no failure for a posted journal", async () => {

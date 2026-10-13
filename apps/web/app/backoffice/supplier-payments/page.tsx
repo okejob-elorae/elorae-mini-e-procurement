@@ -168,10 +168,10 @@ export default function SupplierPaymentsPage() {
   const unpaidCount = pos.filter((p) => !p.paidAt).length;
 
   /**
-   * The toggle always commits, so the outcome — not the absence of a throw —
-   * decides what the operator is told. A journal failure means the ledger does
-   * not reflect this toggle: for most payment codes because payables and bank
-   * were left untouched, for `PAYMENT_SUPERSEDED` because they still hold an
+   * The outcome — not the absence of a throw — decides what the operator is told.
+   * A journal failure means the toggle committed but the ledger does not
+   * reflect it: for most payment codes because payables and bank were left
+   * untouched, for `PAYMENT_SUPERSEDED` because they still hold an
    * earlier payment for a different amount, and on the reversal half because they
    * still hold the payment this unmark failed to undo. Reporting "Marked as paid"
    * for any of those is positive confirmation of something that did not happen,
@@ -184,9 +184,14 @@ export default function SupplierPaymentsPage() {
    * `refusal` is checked FIRST because it also carries `changed: false`, and the
    * no-op message would be wrong for it twice over: nothing was written, but the
    * PO was NOT already in the requested state, and unmark-then-re-mark cannot
-   * reach the reversal that is actually missing. The button is withheld for this
-   * state, so reaching it means the list was stale — and the remedy is on the PO
-   * detail page, which is what this surface's own message says.
+   * reach what is actually blocking the mark. `STANDING_PAYMENT_JOURNAL` has its
+   * button withheld, so reaching it means the list was stale — and the remedy is
+   * on the PO detail page, which is what this surface's own message says. The
+   * three receipt-state refusals are NOT withheld up front: the mark was
+   * attempted and rolled back because one of the PO's receipts is not settled
+   * yet, so the toast is an error saying the PO was not marked paid and naming
+   * what to do with that receipt on the Inventory page — the same sentence the
+   * PO detail page shows, since neither surface carries that control.
    *
    * `changed: false` is checked next and never reported as success: the PO was
    * already in the requested state, so nothing was written and no journal was
@@ -200,8 +205,10 @@ export default function SupplierPaymentsPage() {
     setTogglingPoId(poId);
     try {
       const result = await setPOPaidAt(poId, paid ? new Date() : null);
-      if (result.refusal) {
+      if (result.refusal === "STANDING_PAYMENT_JOURNAL") {
         toast.warning(tSupplierPayments('standingPayment.markRefusedRegister'), { duration: 12000 });
+      } else if (result.refusal) {
+        toast.error(tSupplierPayments(`markRefused.${result.refusal}`), { duration: 12000 });
       } else if (!result.changed) {
         toast.info(
           tSupplierPayments(paid ? 'noop.alreadyPaid' : 'noop.alreadyUnpaid'),

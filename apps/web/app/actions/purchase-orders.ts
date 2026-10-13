@@ -33,7 +33,11 @@ import {
   notifySupplierPaymentJournalFailure,
   type SupplierPaymentPostFailure,
 } from '@/lib/purchasing/post-supplier-payment-journal-safely';
-import type { SupplierPaymentDirection } from '@/lib/purchasing/supplier-payment-journal-message';
+import {
+  isReceiptBlockedMarkCode,
+  type ReceiptBlockedMarkCode,
+  type SupplierPaymentDirection,
+} from "@/lib/purchasing/supplier-payment-journal-message";
 import { runSerializable } from '@/lib/db/tx-retry';
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
@@ -452,18 +456,29 @@ export async function getPOStats() {
  * would be reported as a clean payment while the ledger gap persists.
  *
  * `refusal` is a THIRD outcome, deliberately not folded into either of the other
- * two. The mark direction is refused outright while the PO reads unpaid with a
- * payment journal still standing at its current generation, and nothing at all is
- * written for it — no `paidAt`, no journal, no status history, no notification.
- * Reporting that as `changed: false` would be wrong in both directions: the
+ * two, and only ever on a MARK. Nothing at all is written for it — no `paidAt`, no
+ * journal, no status history, no notification. It comes in two kinds:
+ *
+ * - `STANDING_PAYMENT_JOURNAL`: refused BEFORE the compare-and-swap while the PO
+ *   reads unpaid with a payment journal still standing at its current
+ *   generation, so no post is reached at all.
+ * - a `ReceiptBlockedMarkCode` (`GRN_APPROVAL_PENDING`, `GRN_JOURNALS_INCOMPLETE`,
+ *   `GRN_REVERSAL_MISSING`): the post WAS reached and refused because one of the
+ *   PO's receipts is not settled yet, and the whole transaction is rolled back,
+ *   the compare-and-swap with it. The PO is not payable until that receipt is
+ *   sorted out, so the mark is aborted rather than committed with a
+ *   `JOURNAL_PENDING` the operator would then have to clear.
+ *
+ * Reporting either as `changed: false` would be wrong in both directions: the
  * no-op message says the PO was already in the requested state (it was not) and
- * offers unmark-then-re-mark as the remedy (which cannot reach the missing
- * reversal). It needs its own message naming the standing journal and the
- * reversal control that clears it.
+ * offers unmark-then-re-mark as the remedy (which reaches neither the missing
+ * reversal nor the unsettled receipt). Each needs its own message naming the
+ * document that blocks the mark and the control that clears it.
  *
  * `journalFailure` is null on the happy path, on a no-op (nothing was attempted),
- * on a refusal (no post was reached) AND on a reversal with no payment journal to
- * undo, which is a genuine no-op on the ledger.
+ * on a refusal (either nothing was posted or what was attempted was rolled back)
+ * AND on a reversal with no payment journal to undo, which is a genuine no-op on
+ * the ledger.
  *
  * Only the code, the posting role and the direction cross to the client. The
  * `detail` string a thrown journal carries is a raw server error message — it
@@ -477,13 +492,28 @@ export async function getPOStats() {
  * from here rather than inferred by the caller from the button it pressed, so the
  * sentence describes the post that actually ran.
  */
-export type SetPOPaidAtRefusal = 'STANDING_PAYMENT_JOURNAL';
+export type SetPOPaidAtRefusal = "STANDING_PAYMENT_JOURNAL" | ReceiptBlockedMarkCode;
 
 export type SetPOPaidAtResult = {
   changed: boolean;
   refusal: SetPOPaidAtRefusal | null;
   journalFailure: { code: string; role: string | null; direction: SupplierPaymentDirection } | null;
 };
+
+/**
+ * Thrown inside `setPOPaidAt`'s transaction to roll the mark back when the
+ * payment post refuses on a receipt-state code, and caught just outside it.
+ * `runSerializable` rethrows a non-retryable error unchanged, so the code arrives
+ * intact.
+ */
+class ReceiptBlockedMarkError extends Error {
+  readonly code: ReceiptBlockedMarkCode;
+
+  constructor(code: ReceiptBlockedMarkCode) {
+    super(`Supplier payment mark aborted: ${code}`);
+    this.code = code;
+  }
+}
 
 /** Mark a PO as paid (or unmark by passing paidAt: null). */
 export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<SetPOPaidAtResult> {
@@ -528,25 +558,38 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    * Zero rows changed means the PO is already in the requested state, so the
    * status history, the notification and the journal are all skipped.
    *
-   * The journal stays best-effort: `attemptSupplierPaymentJournal` catches a
-   * journal problem INSIDE the callback and hands it back as a value, so the CAS
-   * still commits and the failure becomes a JOURNAL_PENDING notification written
-   * after the transaction. Verified on MariaDB: a caught statement error does
-   * not poison the surrounding transaction. The exception is a deadlock or
-   * serialization abort, which MariaDB has already rolled back — that one
-   * rethrows so `runSerializable` retries the toggle and the post together.
-   * A failed PAYMENT can be re-run by the toggle (unmark, then mark again), and
-   * the PO detail page also renders it as a banner with its own retry
-   * (`retrySupplierPaymentJournalAction`); a failed REVERSAL is the one case the
-   * toggle cannot re-reach, and it has its own control
+   * The journal is best-effort for every INFRASTRUCTURE failure:
+   * `attemptSupplierPaymentJournal` catches a journal problem INSIDE the callback
+   * and hands it back as a value, so the CAS still commits and the failure
+   * becomes a JOURNAL_PENDING notification written after the transaction — a
+   * Finance misconfiguration (`UNMAPPED_ROLE`, `UNBALANCED`, a thrown post) must
+   * not block ops. Verified on MariaDB: a caught statement error does not poison
+   * the surrounding transaction. A deadlock or serialization abort, which MariaDB
+   * has already rolled back, rethrows instead so `runSerializable` retries the
+   * toggle and the post together.
+   *
+   * The exception is a MARK refused on one of the three receipt-state codes
+   * (`isReceiptBlockedMarkCode`): a receipt awaiting the owner's decision, one
+   * still owed with no GRN journal, or a declined one never reversed. Those say
+   * the PO is not payable yet, so the callback throws `ReceiptBlockedMarkError`,
+   * the transaction rolls the CAS back, and the action returns the code as its
+   * `refusal` — no `paidAt`, no status history, no notification. The unmark
+   * direction never aborts.
+   *
+   * A committed failed PAYMENT is rendered by the PO detail page as a banner with
+   * its own retry (`retrySupplierPaymentJournalAction`), and unmark-then-mark
+   * still re-runs it; a failed REVERSAL is the one case the toggle cannot
+   * re-reach, and it has its own control
    * (`postSupplierPaymentReversalJournalAction`).
    */
-  const outcome = await runSerializable<{
+  type PaidToggleOutcome = {
     changed: boolean;
     refusal: SetPOPaidAtRefusal | null;
     failure: SupplierPaymentPostFailure | null;
-  }>(
-    async (tx) => {
+  };
+  let outcome: PaidToggleOutcome;
+  try {
+    outcome = await runSerializable<PaidToggleOutcome>(async (tx) => {
       /**
        * A MARK is refused outright while this PO reads unpaid with its payment
        * journal still standing — the state a failed reversal leaves behind. The
@@ -594,9 +637,15 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
           ? postSupplierPaymentJournal(poId, actorId, paidAt, tx)
           : postSupplierPaymentReversalJournal(poId, actorId, tx)
       );
+      if (direction === "payment" && failure && isReceiptBlockedMarkCode(failure.reason)) {
+        throw new ReceiptBlockedMarkError(failure.reason);
+      }
       return { changed: true, refusal: null, failure };
-    }
-  );
+    });
+  } catch (e) {
+    if (!(e instanceof ReceiptBlockedMarkError)) throw e;
+    outcome = { changed: false, refusal: e.code, failure: null };
+  }
 
   if (outcome.changed) {
     /**
@@ -670,11 +719,12 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
   revalidatePath('/backoffice/supplier-payments');
 
   /**
-   * Returned, not thrown: a journal problem must still not fail the toggle, which
-   * has already committed and is the operator's own retry handle. The
-   * `AdminNotification` written above stays either way — the toast is immediate
-   * feedback for whoever clicked, the notification is the durable record for
-   * whoever audits later.
+   * Returned, not thrown: an infrastructure journal problem must still not fail
+   * the toggle, which has already committed and is the operator's own retry
+   * handle. The `AdminNotification` written above stays either way — the toast is
+   * immediate feedback for whoever clicked, the notification is the durable record
+   * for whoever audits later. A refusal is returned the same way, with nothing
+   * committed and nothing recorded behind it.
    */
   return {
     changed: outcome.changed,
