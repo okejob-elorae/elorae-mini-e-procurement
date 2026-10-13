@@ -5,14 +5,14 @@ const {
   mockAggregate,
   mockFindUnique,
   mockWoFindUnique,
-  mockRulesFindMany,
+  mockItemFindMany,
   mockTransaction,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockAggregate: vi.fn(),
   mockFindUnique: vi.fn(),
   mockWoFindUnique: vi.fn(),
-  mockRulesFindMany: vi.fn(),
+  mockItemFindMany: vi.fn(),
   mockTransaction: vi.fn(),
 }));
 
@@ -22,7 +22,7 @@ vi.mock("@elorae/db", () => ({
   recalcItemSellingPrice: vi.fn(),
   prisma: {
     workOrder: { findUnique: mockWoFindUnique },
-    consumptionRule: { findMany: mockRulesFindMany },
+    item: { findMany: mockItemFindMany },
     inventoryValue: { aggregate: mockAggregate, findUnique: mockFindUnique },
     $transaction: mockTransaction,
   },
@@ -66,18 +66,16 @@ describe("additional materials on an accessory whose stock is split across varia
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    // Accessories per piece come from the WO's own plan (#437), not the current BOM.
     mockWoFindUnique.mockResolvedValue({
       status: "IN_PRODUCTION",
-      finishedGoodId: "fg1",
       docNumber: "WO-1",
+      consumptionPlan: JSON.stringify([
+        { itemId: "m1", qtyRequired: 2, plannedQty: 200 },
+        { itemId: "fab1", qtyRequired: 1.5, plannedQty: 150 },
+      ]),
     });
-    mockRulesFindMany.mockResolvedValue([
-      {
-        materialId: "m1",
-        qtyRequired: "2",
-        material: { id: "m1", type: "ACCESSORIES", uomId: "u1", nameId: "Button" },
-      },
-    ]);
+    mockItemFindMany.mockResolvedValue([{ id: "m1", uomId: "u1", nameId: "Button" }]);
     mockFindUnique.mockResolvedValue(null);
     mockAggregate.mockImplementation(async ({ where }: { where: { itemId: string } }) => ({
       _sum: { qtyOnHand: where.itemId === "m1" ? "50" : null },
@@ -95,6 +93,20 @@ describe("additional materials on an accessory whose stock is split across varia
     expect(lines).toEqual([
       expect.objectContaining({ itemId: "m1", qtyNeeded: 20, qtyOnHand: 50, sufficient: true }),
     ]);
+  });
+
+  it("uses the plan's per-piece average for a size-scoped accessory", async () => {
+    mockWoFindUnique.mockResolvedValue({
+      status: "IN_PRODUCTION",
+      docNumber: "WO-1",
+      consumptionPlan: [{ itemId: "m1", qtyRequired: 0.4, plannedQty: 40 }],
+    });
+    mockAggregate.mockResolvedValue({ _sum: { qtyOnHand: "50" } });
+    const { lines } = await getAdditionalMaterialsPreview("wo1", 10);
+    expect(mockItemFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: { in: ["m1"] }, type: "ACCESSORIES" } })
+    );
+    expect(lines).toEqual([expect.objectContaining({ itemId: "m1", qtyNeeded: 4 })]);
   });
 
   it("issue passes the pre-check on a null row (0) plus a blank row (50) and reaches the transaction", async () => {

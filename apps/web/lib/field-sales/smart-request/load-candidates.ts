@@ -1,6 +1,10 @@
 import { prisma } from "@elorae/db";
+import { resolveVariantAxes } from "@elorae/db/variant-axes";
 import { parseItemVariants } from "@/lib/items/variants";
 import type { PlanCandidate } from "./plan";
+
+// Only the size axis is read here (`Ukuran`, or `size`/`Size` before #437 normalised them).
+const NO_COLORS = new Map<string, string>();
 
 /**
  * Active finished goods in the given categories, shaped for the planner:
@@ -29,7 +33,7 @@ export async function loadSmartRequestCandidates(categoryIds: string[]): Promise
       availByVariant[key] = Number(iv.qtyOnHand) - Number(iv.reservedQty ?? 0);
     }
     const variants = parseItemVariants(it.variants)
-      .map((v) => ({ variantSku: (v.sku ?? "").trim(), size: (v.size ?? "").trim() }))
+      .map((v) => ({ variantSku: (v.sku ?? "").trim(), size: resolveVariantAxes(v, NO_COLORS).size ?? "" }))
       .filter((v) => v.variantSku !== "");
     const candidate: PlanCandidate = { itemId: it.id, sku: it.sku, variants, available: availByVariant };
     const cat = it.categoryId ?? "";

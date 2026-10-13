@@ -158,6 +158,20 @@ export default function EditWorkOrderPage() {
 
   const plannedNum = consumptionResult?.plannedQty ?? 0;
 
+  // The material plan follows the variant ratio: colour/size-scoped BOM rules only count the
+  // pieces of the variants they cover (#437). Passed as a JSON key so effects re-run on change.
+  const planSkuKey = JSON.stringify(
+    outputMode !== 'SKU'
+      ? null
+      : variantRatios.length > 1
+        ? Math.abs(variantRatios.reduce((s, x) => s + x.ratioPercent, 0) - 100) < 0.01
+          ? variantRatios
+          : null
+        : selectedVariantSku
+          ? { variantSku: selectedVariantSku }
+          : null
+  );
+
   useEffect(() => {
     if (!id) return;
     getWorkOrderById(id)
@@ -263,11 +277,14 @@ export default function EditWorkOrderPage() {
     getConsumptionRules(finishedGoodId)
       .then((rules) => {
         setConsumptionRules(
-          rules.map((r: { materialId: string; material: { nameId: string; uom: { code: string } } }) => ({
-            materialId: r.materialId,
-            materialName: r.material.nameId,
-            uomCode: r.material.uom.code,
-          }))
+          rules
+            // One option per material: a colour/size-scoped BOM may hold several rules for one (#437).
+            .filter((r: { materialId: string }, i: number, all: Array<{ materialId: string }>) => all.findIndex((x) => x.materialId === r.materialId) === i)
+            .map((r: { materialId: string; material: { nameId: string; uom: { code: string } } }) => ({
+              materialId: r.materialId,
+              materialName: r.material.nameId,
+              uomCode: r.material.uom.code,
+            }))
         );
         setConsumptionMaterialId('');
         setConsumptionInput('');
@@ -295,7 +312,7 @@ export default function EditWorkOrderPage() {
     setConsumptionInput(val);
     setConsumptionInputDebounced(val);
     setIsComputingConsumption(true);
-    computePlannedQtyFromConsumption(w.finishedGoodId, cMid, Number(expConsumption))
+    computePlannedQtyFromConsumption(w.finishedGoodId, cMid, Number(expConsumption), w.skuBreakdown ?? undefined)
       .then(setConsumptionResult)
       .catch(() => setConsumptionResult(null))
       .finally(() => setIsComputingConsumption(false));
@@ -366,7 +383,7 @@ export default function EditWorkOrderPage() {
     }
     let cancelled = false;
     setIsComputingConsumption(true);
-    computePlannedQtyFromConsumption(finishedGoodId, consumptionMaterialId, amount)
+    computePlannedQtyFromConsumption(finishedGoodId, consumptionMaterialId, amount, JSON.parse(planSkuKey) ?? undefined)
       .then((res) => {
         if (!cancelled) setConsumptionResult(res);
       })
@@ -377,7 +394,7 @@ export default function EditWorkOrderPage() {
         if (!cancelled) setIsComputingConsumption(false);
       });
     return () => { cancelled = true; };
-  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, t]);
+  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, planSkuKey, t]);
 
   useEffect(() => {
     if (!finishedGoodId || plannedNum <= 0) {
@@ -386,9 +403,11 @@ export default function EditWorkOrderPage() {
     }
     let cancelled = false;
     setIsLoadingPlan(true);
-    getMaterialPlan(finishedGoodId, plannedNum)
-      .then((plan) => {
-        if (!cancelled) setMaterialPlan(plan);
+    getMaterialPlan(finishedGoodId, plannedNum, JSON.parse(planSkuKey) ?? undefined)
+      .then(({ lines, blocked }) => {
+        if (cancelled) return;
+        setMaterialPlan(lines);
+        if (blocked) toast.error(blocked);
       })
       .catch(() => {
         if (!cancelled) setMaterialPlan([]);
@@ -397,7 +416,7 @@ export default function EditWorkOrderPage() {
         if (!cancelled) setIsLoadingPlan(false);
       });
     return () => { cancelled = true; };
-  }, [finishedGoodId, plannedNum, t]);
+  }, [finishedGoodId, plannedNum, planSkuKey, t]);
 
   useEffect(() => {
     if (!vendorId) {

@@ -9,6 +9,8 @@ import {
   COLOR_PAGE_SIZE,
 } from "@/lib/production-colors/queries";
 import { resolveBookViewState } from "@/lib/production-colors/book-queries";
+import { listVariantColors } from "@/lib/items/variant-colors";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseBookSearchParams } from "@/lib/production-colors/book-url-params";
 import { parseColorSearchParams } from "@/lib/production-colors/url-params";
 import {
@@ -19,7 +21,7 @@ import {
 export const dynamic = "force-dynamic";
 
 function parseTab(raw?: string): ProductionColorsTab {
-  if (raw === "book" || raw === "favorites" || raw === "photo-analyzer") {
+  if (raw === "book" || raw === "favorites" || raw === "photo-analyzer" || raw === "product") {
     return raw;
   }
   return "all";
@@ -49,6 +51,22 @@ async function ProductionColorsPageContent({ searchParams }: PageProps) {
 
   const sp = await searchParams;
   const tab = parseTab(sp.tab);
+
+  if (tab === "product") {
+    const { colors, unresolved } = await listVariantColors();
+    return (
+      <ProductionColorsPageClient
+        tab={tab}
+        browseProps={null}
+        bookProps={null}
+        productProps={{
+          colors,
+          unresolved,
+          canEdit: hasPermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT),
+        }}
+      />
+    );
+  }
 
   if (tab === "photo-analyzer") {
     return (

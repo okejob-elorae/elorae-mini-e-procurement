@@ -81,6 +81,8 @@ export type ItemsListRow = {
   fgConsumptions?: Array<{
     qtyRequired: number;
     wastePercent: number;
+    /** Colour/size the rule is limited to (#437); null = every variant. */
+    scope?: string | null;
     material?: {
       sku?: string;
       nameId?: string;
@@ -574,6 +576,9 @@ export function ItemsPageClient({
                                           <span className="px-2 py-1 rounded bg-muted text-muted-foreground text-xs">
                                             {rule.material?.sku || '-'} {rule.material?.nameId || ''}
                                           </span>
+                                          {rule.scope && (
+                                            <span className="text-muted-foreground">({rule.scope})</span>
+                                          )}
                                           <span className="text-muted-foreground">
                                             Qty: {rule.qtyRequired}
                                           </span>

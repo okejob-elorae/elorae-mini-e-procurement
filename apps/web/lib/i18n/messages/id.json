@@ -1731,7 +1731,8 @@
       "all": "Semua Warna",
       "book": "Fan Deck",
       "favorites": "Favorit",
-      "photoAnalyzer": "Photo Analyzer"
+      "photoAnalyzer": "Photo Analyzer",
+      "product": "Warna Produk"
     },
     "filtersTitle": "Filter",
     "searchLabel": "Cari",
@@ -1850,7 +1851,37 @@
     "bookPositionRow": "Baris",
     "bookPositionSaved": "Posisi buku disimpan",
     "bookPositionSaveError": "Gagal menyimpan posisi",
-    "bookGoToPage": "Buka di tampilan fan deck"
+    "bookGoToPage": "Buka di tampilan fan deck",
+    "titleProduct": "Warna Produk",
+    "product": {
+      "intro": "Warna varian barang jadi. Teks warna varian (Warna) dicocokkan ke warna lewat namanya atau ejaan lainnya. Aturan BOM bisa dibatasi ke satu warna.",
+      "unresolvedTitle": "Warna varian yang belum ada di master",
+      "variantText": "Teks di varian",
+      "usage": "Dipakai",
+      "usageValue": "{items} barang · {variants} varian",
+      "resolve": "Selesaikan",
+      "addAsColor": "Tambah sebagai warna",
+      "aliasOf": "Ejaan dari…",
+      "mapAlias": "Tambah ejaan",
+      "listTitle": "Warna ({count})",
+      "add": "Tambah warna",
+      "empty": "Belum ada warna.",
+      "name": "Nama",
+      "aliases": "Ejaan lain",
+      "bomRules": "Aturan BOM",
+      "inactive": "Nonaktif",
+      "edit": "Ubah",
+      "editTitle": "Ubah warna",
+      "addTitle": "Tambah warna",
+      "pantoneTcx": "Kode Pantone TCX",
+      "pantoneHint": "Opsional, mis. 19-0303. Cari kodenya di tab Semua Warna.",
+      "aliasPlaceholder": "Ketik ejaan lalu Enter",
+      "aliasHint": "Ejaan yang dipakai Jubelio untuk warna ini, mis. salah ketik. Huruf besar/kecil dan spasi diabaikan.",
+      "active": "Aktif (muncul di editor BOM)",
+      "cancel": "Batal",
+      "save": "Simpan",
+      "saved": "Warna tersimpan"
+    }
   },
   "planning": {
     "title": "Plan Kerja",
