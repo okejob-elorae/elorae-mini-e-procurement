@@ -2282,7 +2282,9 @@
         "success": "Action completed.",
         "invalidTransition": "Status already changed. Refresh the page.",
         "forbidden": "Insufficient permissions.",
-        "networkError": "Couldn't reach the server. Try again."
+        "networkError": "Couldn't reach the server. Try again.",
+        "resiReceived": "Resi received.",
+        "resiNotFound": "Resi not found yet. It usually appears 1–2 minutes after the order is processed in the marketplace."
       }
     },
     "journal": {

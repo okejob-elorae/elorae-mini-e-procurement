@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { SalesChannel, SalesOrderFulfillmentStatus, SalesOrderStatus } from "@/lib/constants/enums";
 import { formatDateTime } from "@/lib/sales-orders/format";
-import { isAwaitingResi } from "@/lib/sales-orders/resi-pending";
+import { hasStoredResi, isAwaitingResi } from "@/lib/sales-orders/resi-pending";
 import {
   finishPickAction,
   finishPackAction,
@@ -70,6 +70,8 @@ export function FulfillmentCard(props: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [isCheckingResi, startCheckResiTransition] = useTransition();
+  // Armed only by a Check resi click, so a page load or any other refresh never toasts.
+  const resiCheckArmed = useRef(false);
 
   const [couriers, setCouriers] = useState<CourierOption[]>([]);
   const [couriersLoaded, setCouriersLoaded] = useState(false);
@@ -98,10 +100,23 @@ export function FulfillmentCard(props: Props) {
   }
 
   function handleCheckResi(): void {
+    resiCheckArmed.current = true;
     startCheckResiTransition(() => {
       router.refresh();
     });
   }
+
+  // router.refresh() returns nothing to await; the transition stays pending until the refreshed
+  // props render, so the outcome is read from the new trackingNumber once it settles.
+  useEffect(() => {
+    if (isCheckingResi || !resiCheckArmed.current) return;
+    resiCheckArmed.current = false;
+    if (hasStoredResi(props.trackingNumber)) {
+      toast.success(t("toast.resiReceived"));
+    } else {
+      toast.info(t("toast.resiNotFound"));
+    }
+  }, [isCheckingResi, props.trackingNumber, t]);
 
   async function ensureCouriersLoaded(): Promise<void> {
     if (couriersLoaded) return;

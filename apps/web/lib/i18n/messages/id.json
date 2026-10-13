@@ -2282,7 +2282,9 @@
         "success": "Berhasil.",
         "invalidTransition": "Status sudah berubah. Muat ulang halaman.",
         "forbidden": "Akses tidak diizinkan.",
-        "networkError": "Gagal terhubung ke server. Coba lagi."
+        "networkError": "Gagal terhubung ke server. Coba lagi.",
+        "resiReceived": "Resi sudah diterima.",
+        "resiNotFound": "Resi belum ditemukan. Biasanya muncul 1–2 menit setelah pesanan diproses di marketplace."
       }
     },
     "journal": {
