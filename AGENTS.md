@@ -248,7 +248,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Writing `submitCollection`? Net BOTH pending claim kinds via `sumPendingClaimsOnReceivable` inside the tx, never raw `outstandingAmount`. → `docs/landmines/finance-ar.md`
 - Editing `verifyCollection`? Payment posts BEFORE the flip, keyed `collection-<submissionId>` — reorder or randomise and a `VERIFIED` submission strands unpaid. → `docs/landmines/finance-ar.md`
 - `Receivable.collectorId` still stamped after settling elsewhere? A workflow column; the queue filters on `status` — nothing clears it, and nothing should. → `docs/landmines/finance-ar.md`
-- Touching `runOverdueSweep`, `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep` or `runPaymentReminderSweep`? Their awaited fan-out is cron-only — never copy the `await` into an interactive path. → `docs/landmines/finance-ar.md`
+- Touching `runOverdueSweep`, `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep`, `runPaymentReminderSweep` or `runSalesReturnBellSweep`? Their awaited fan-out is cron-only — never copy the `await` into an interactive path. → `docs/landmines/finance-ar.md`
 - Touching the overdue dedup query? It reads EVERY `AR_OVERDUE` row, no `take`, no `createdAt` floor — adding either re-announces old crossings forever. → `docs/landmines/finance-ar.md`
 - Overdue receivable got one alert, not three? Only the highest crossed threshold fires per sweep pass, by design. → `docs/landmines/finance-ar.md`
 - Touching `ar.overdueThresholdDays` parsing? `parseOverdueThresholds` fails OPEN to the defaults, unlike `readGlCutover` — on purpose. → `docs/landmines/finance-ar.md`
@@ -345,6 +345,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Pushing stock to Jubelio, or touching the cutover switch? Only via a `stock_push` outbox row gated by `JUBELIO_STOCK_PUSH_ENABLED` (fail-closed); enabling it needs an immediate bulk push. → `docs/landmines/jubelio.md`
 - Adding a path that pushes a PRODUCT to Jubelio? Only deliberate acts create one; edit paths push only items with a `JubelioProductMapping` — never widen them to unmapped items. → `docs/landmines/jubelio.md`
 - Removing a Jubelio variant, or probing if a Jubelio item exists? The variant DELETE answers 200 for missing ids (retry-safe, no tx around it); a missing item GETs 500 `E000001`, never 404. → `docs/landmines/jubelio.md`
+- Notifying staff about a marketplace return? Only the web `runSalesReturnBellSweep` (PENDING, `createdAt >= salesReturns.bellFloor`, dedup on every `SALES_RETURN_RECEIVED` row) — never from apps/api ingest, which can't tell create from update. → `docs/landmines/jubelio.md`
 
 **Print documents**
 

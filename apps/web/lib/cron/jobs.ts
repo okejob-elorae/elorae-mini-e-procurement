@@ -5,6 +5,7 @@ import { postPendingSalesJournals, GL_CUTOVER_SETTING_KEY } from "@/lib/finance/
 import { postPendingVanJournals } from "@/lib/canvassing/van-journal-sweep";
 import { runOverdueSweep } from "@/lib/finance/ar/overdue-sweep";
 import { runPaymentReminderSweep } from "@/lib/purchase-orders/payment-reminder-sweep";
+import { runSalesReturnBellSweep } from "@/lib/sales-returns/bell-sweep";
 import { runKonsiCountSweep } from "@/lib/konsi-count-schedule/sweep";
 import { runSettlementRematchSweep } from "@/lib/finance/settlement/rematch-sweep";
 import { runFulfillmentPushDivergenceSweep } from "@/lib/fulfillment/push-divergence-sweep";
@@ -78,6 +79,34 @@ export function registerCronJobs(): void {
       }
     },
     { timezone: "Asia/Jakarta" },
+  );
+
+  /**
+   * Every 5 minutes — bell notification for each new PENDING marketplace return. Its own job, log
+   * line and catch. It shares the every-5-minutes cadence with the sales-journal sweep but nothing
+   * else. `noOverlap` skips a tick while the previous one is still fanning out: each run reads the
+   * dedup set once, so two overlapping runs would announce the same return twice.
+   */
+  cron.schedule(
+    "*/5 * * * *",
+    async () => {
+      try {
+        const r = await runSalesReturnBellSweep();
+        if (r.flooredNow || r.announced > 0 || r.deferred > 0 || r.failed > 0) {
+          console.log(
+            "[cron] sales-return-bell done — scanned=%d announced=%d deferred=%d failed=%d floored=%s",
+            r.scanned,
+            r.announced,
+            r.deferred,
+            r.failed,
+            r.flooredNow,
+          );
+        }
+      } catch (err) {
+        console.error("[cron] sales-return-bell failed:", err);
+      }
+    },
+    { timezone: "Asia/Jakarta", noOverlap: true },
   );
 
   /**

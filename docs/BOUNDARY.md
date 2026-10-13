@@ -136,7 +136,7 @@ contract for the migrations that will introduce them.
 | `JubelioOutbox`                | web insert, api consume/update | — | ✅; `entityType` MUST come from `@elorae/db/jubelio-outbox` registry — see §4.2.1 |
 | `JubelioWebhookEvent`          | api                         | —                           | ✅ |
 | `JubelioApiCall`               | api                         | web (read for admin UI)     | ✅ |
-| `AdminNotification`            | **both** — see §3.5; api on integration alerts, web on ERP-detected alerts | — | ✅ schema + api writer + web writers — journals, order approvals, store changes, fakturs, retur mismatches, credit holds, collections, AR overdue, stuck deliveries, the konsi count schedule, the fulfilment push divergence sweep and PO payment reminders; the live category list is `CATEGORY_PERMISSION` in `apps/web/lib/notifications/admin-fanout.ts` |
+| `AdminNotification`            | **both** — see §3.5; api on integration alerts, web on ERP-detected alerts | — | ✅ schema + api writer + web writers — journals, order approvals, store changes, fakturs, retur mismatches, credit holds, collections, AR overdue, stuck deliveries, the konsi count schedule, the fulfilment push divergence sweep, PO payment reminders and new marketplace returns (`runSalesReturnBellSweep`); the live category list is `CATEGORY_PERMISSION` in `apps/web/lib/notifications/admin-fanout.ts` |
 | `SystemSetting` (Jubelio keys) | api                         | web (read for settings UI)  | ✅ (`JUBELIO_SESSION_TOKEN`) |
 | `SystemSetting` (other keys)   | web                         | —                           | ✅ |
 | `AuditLog`                     | both — shared writer        | —                           | ✅ schema; 🟡 shared writer ⏳ |
@@ -310,7 +310,12 @@ To add a new source, see [INTEGRATION-GUIDE §2](./INTEGRATION-GUIDE.md).
   a full count is announced as `KONSI_REPORT_HELD` when lines await a
   resolution, beside `KONSI_REPORT_READY` and `KONSI_REPORT_BLOCKED`, while a
   report created by hand that holds lines announces nothing; and the monthly
-  count raises `KONSI_COUNT_DUE` and `KONSI_COUNT_OVERDUE` (✅ shipped).
+  count raises `KONSI_COUNT_DUE` and `KONSI_COUNT_OVERDUE` (✅ shipped). A new
+  `PENDING` marketplace return raises `SALES_RETURN_RECEIVED`, written by the
+  web cron `runSalesReturnBellSweep` (✅ shipped). apps/api's return ingest
+  writes no notification for it, and must not: its upsert cannot tell a first
+  ingest from a re-ingest, and an api-written row never reaches the bell, which
+  only the web fan-out feeds (see `docs/landmines/jubelio.md`).
 
 No shared writer helper exists or is mandated — the table is simple. The web
 call sites have accumulated: each creates its row directly and fans it out
