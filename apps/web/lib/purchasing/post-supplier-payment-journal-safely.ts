@@ -59,8 +59,8 @@ const TOGGLE_RETRY = "unmark payment on the PO and mark it paid again";
  * must never be rolled back by transaction contention, nor add its own write to
  * it.
  *
- * Never throws for a journal problem, so a finance misconfiguration cannot fail
- * the toggle — it becomes a `JOURNAL_PENDING` notification instead of an error
+ * Never throws for a journal problem, so a misconfiguration on the payment post
+ * cannot fail the toggle — it becomes a `JOURNAL_PENDING` notification instead of an error
  * the operator cannot act on. A RETRYABLE transaction error is the one thing it
  * does rethrow: MariaDB has already rolled the whole transaction back by then,
  * so swallowing it would commit nothing while reporting a toggle that happened.

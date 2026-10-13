@@ -146,8 +146,8 @@ describe("supplier payment journal messages", () => {
 /*
  * The three receipt-state codes the paid toggle aborts on. Literal here for the
  * same reason as `DIRECTION_SPECIFIC`: an infrastructure code slipping into the
- * module's list would start blocking ops on a Finance misconfiguration, and that
- * has to fail a test rather than be followed.
+ * module's list would start blocking ops on a misconfiguration of the payment
+ * post itself, and that has to fail a test rather than be followed.
  */
 const RECEIPT_BLOCKED = ["GRN_APPROVAL_PENDING", "GRN_JOURNALS_INCOMPLETE", "GRN_REVERSAL_MISSING"];
 

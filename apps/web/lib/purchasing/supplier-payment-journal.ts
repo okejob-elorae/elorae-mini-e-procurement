@@ -104,25 +104,28 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
   });
 
   /*
-   * Answered BEFORE the AP role is resolved, deliberately. A PO with no receipts
-   * at all has no payable to read on ANY account, so the mapping cannot change
-   * this verdict — and reporting `UNMAPPED_ROLE` for it would hand the operator a
-   * remedy that does not work: map the account, unmark, re-mark, and the same PO
-   * comes back `NOTHING_TO_POST` anyway. Same standard the notification dedup
-   * holds itself to — a report that sends someone to do work which cannot resolve
-   * their case is worse than a vaguer one. A PO that DOES have receipts still
-   * reports the unmapped role, from the resolve below, because there the mapping
-   * genuinely is what stands between it and a posted payment.
+   * Answered BEFORE the AP role is resolved, deliberately — and so is every
+   * verdict below up to that resolve, which sits just ahead of the AP-line read
+   * that is its only use. A PO with no receipts at all has no payable to read on
+   * ANY account, so the mapping cannot change this verdict — and reporting
+   * `UNMAPPED_ROLE` for it would hand the operator a remedy that does not work:
+   * map the account, re-mark, and the same PO comes back `NOTHING_TO_POST`
+   * anyway. Same standard the notification dedup holds itself to — a report that
+   * sends someone to do work which cannot resolve their case is worse than a
+   * vaguer one.
+   *
+   * The three receipt-state refusals below are the same kind of verdict, and the
+   * order matters for money, not just for copy: `setPOPaidAt` ABORTS the mark on
+   * them but COMMITS it on `UNMAPPED_ROLE`, so resolving AP first would let an
+   * unmapped AP role mask an over-receive still awaiting the owner's decision and
+   * mark the PO paid straight past that gate. The zero-journals
+   * `NOTHING_TO_POST` further down is answered before it too, since no mapping
+   * can change that verdict either. A PO whose receipts are all settled and
+   * that has receipt journals to read still reports the unmapped role, from the
+   * resolve below, because there the mapping genuinely is what stands between it
+   * and a posted payment.
    */
   if (grns.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
-
-  let apAccountId: string;
-  try {
-    apAccountId = await resolveAccount("AP", client);
-  } catch (e) {
-    if (e instanceof UnmappedRoleError) return { ok: false, code: "UNMAPPED_ROLE", role: "AP" };
-    throw e;
-  }
 
   /*
    * Refuse while ANY receipt of this PO can still be declined by the owner. An
@@ -273,6 +276,18 @@ async function poBookedPayable(poId: string, client: AnyClient): Promise<Payable
    * does not exist.
    */
   if (journals.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
+
+  /*
+   * Resolved only now, after every verdict the mapping cannot change — see the
+   * note on the no-receipts check at the top of this function.
+   */
+  let apAccountId: string;
+  try {
+    apAccountId = await resolveAccount("AP", client);
+  } catch (e) {
+    if (e instanceof UnmappedRoleError) return { ok: false, code: "UNMAPPED_ROLE", role: "AP" };
+    throw e;
+  }
 
   /*
    * Every GRN and GRN_REVERSAL journal books its counter-line against the AP

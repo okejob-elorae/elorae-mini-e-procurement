@@ -292,6 +292,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
 - Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` (max `thresholdDays` announced) — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
+- Adding a code to `RECEIPT_BLOCKED_MARK_CODES`, or touching `setPOPaidAt`'s abort? Receipt-state codes only; THROW inside the tx after the CAS (a `return` commits `paidAt`); `poBookedPayable` checks receipts BEFORE resolving AP. → `docs/landmines/finance-ar.md`
 
 **Forecast**
 

@@ -68,9 +68,11 @@ import { setPOPaidAt } from "@/app/actions/purchase-orders";
  * The mark is also ABORTED when the payment writer refuses because a receipt is
  * not settled yet (`GRN_APPROVAL_PENDING`, `GRN_JOURNALS_INCOMPLETE`,
  * `GRN_REVERSAL_MISSING`): the compare-and-swap rolls back, so the PO stays
- * unpaid and nothing is flagged. Every other post failure still commits the mark
- * and raises `JOURNAL_PENDING`, so a Finance misconfiguration never blocks ops.
- * Those cases stub the writer's result through `postOverride`.
+ * unpaid and nothing is flagged — including when the receipt is un-journaled
+ * because of a misconfiguration at receive time. Every other post failure still
+ * commits the mark and raises `JOURNAL_PENDING`, so a misconfiguration on the
+ * payment post itself never blocks ops. Those cases stub the writer's result
+ * through `postOverride`.
  */
 d("setPOPaidAt refusals (test bed only)", () => {
   const token = Math.floor(Math.random() * 10_000_000).toString();
@@ -325,10 +327,10 @@ d("setPOPaidAt refusals (test bed only)", () => {
     const r = await setPOPaidAt(poId, new Date("2026-06-25T00:00:00.000Z"));
     expect(r).toEqual({ changed: false, refusal: code, journalFailure: null });
 
-    /* The compare-and-swap ran inside the transaction before the post refused, so
-       `paidAt` reading null here is the rollback, not a skipped write. No audit row
-       and no JOURNAL_PENDING flag either: nothing was marked, so there is no
-       journal gap for the banner to report. */
+    /* The stub only runs after the compare-and-swap has already set `paidAt`
+       inside the transaction, so `paidAt` reading null here is that write rolled
+       back. No audit row and no JOURNAL_PENDING flag either: nothing was marked,
+       so there is no journal gap for the banner to report. */
     expect(await paidAtOf(poId)).toBeNull();
     expect(await paymentHistoryFor(poId)).toEqual([]);
     expect(await journalPendingIdsFor([poId])).toEqual([]);

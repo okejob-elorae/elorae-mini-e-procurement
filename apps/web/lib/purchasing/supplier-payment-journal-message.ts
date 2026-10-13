@@ -15,9 +15,15 @@ export type SupplierPaymentDirection = "payment" | "reversal";
  * the PO is not settled yet, so the PO is not payable yet, and committing
  * `paidAt` would manufacture exactly the paid-without-a-journal state the payment
  * journal exists to prevent. The infrastructure codes (`UNMAPPED_ROLE`,
- * `UNBALANCED`, the synthetic `ERROR`, any other) are deliberately absent: those
- * still commit the mark and raise `JOURNAL_PENDING`, because a Finance
- * misconfiguration must not block ops.
+ * `UNBALANCED`, the synthetic `ERROR`, any other) are deliberately absent: a
+ * misconfiguration on the PAYMENT post itself still commits the mark and raises
+ * `JOURNAL_PENDING`, so it does not block ops. A receipt left un-journaled —
+ * by misconfiguration (an unmapped role at receive time) or otherwise — is a
+ * receipt-state verdict and aborts the mark.
+ *
+ * The writer answers these three BEFORE it resolves the AP role
+ * (`poBookedPayable`), and that order is load-bearing: an unmapped AP role
+ * reported first would commit the mark straight past an unsettled receipt.
  *
  * Declared here, in the client-safe module, so the action's guard, its result
  * type and the `markRefused.<code>` locale keys all read one list.
@@ -40,9 +46,10 @@ export function isReceiptBlockedMarkCode(code: string): code is ReceiptBlockedMa
  *
  * The three `RECEIPT_BLOCKED_MARK_CODES` no longer come back from the toggle as
  * a journal failure — it refuses them instead — but they stay listed here: the
- * banner and its retry still render them for a PO that reads paid, whether it was
- * marked before the toggle aborted on them or its retry, once an infrastructure
- * failure is fixed, meets one of them.
+ * banner and its retry still render them for a PO that already reads paid,
+ * either one marked before the toggle aborted on them, or one whose receipts
+ * changed after the mark (a later over-receive still awaiting the owner, say)
+ * so that its retry meets one of them.
  *
  * The UI reaches it only through `useSupplierPaymentJournalFailureMessage`,
  * which every surface of a failed post goes through: both toggle call sites (the

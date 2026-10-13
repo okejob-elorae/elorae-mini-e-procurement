@@ -562,8 +562,8 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
    * `attemptSupplierPaymentJournal` catches a journal problem INSIDE the callback
    * and hands it back as a value, so the CAS still commits and the failure
    * becomes a JOURNAL_PENDING notification written after the transaction — a
-   * Finance misconfiguration (`UNMAPPED_ROLE`, `UNBALANCED`, a thrown post) must
-   * not block ops. Verified on MariaDB: a caught statement error does not poison
+   * misconfiguration on the payment post itself (`UNMAPPED_ROLE`, `UNBALANCED`,
+   * a thrown post) must not block ops. Verified on MariaDB: a caught statement error does not poison
    * the surrounding transaction. A deadlock or serialization abort, which MariaDB
    * has already rolled back, rethrows instead so `runSerializable` retries the
    * toggle and the post together.
