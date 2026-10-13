@@ -18,9 +18,10 @@ const toNumber = (v: unknown): number => {
 };
 
 /**
- * Reshapes variant rows into a record keyed by `matchKey(variantSku)`, so a lookup must fold its key the same way. Plain numbers of plain numbers. `available` is derived
- * as `onHand - reserved` and kept negative when over-reserved, so a caller can flag it. A key that
- * repeats is summed, never overwritten.
+ * Reshapes variant rows into a record of plain numbers keyed by `matchKey(variantSku)`;
+ * a lookup must fold its key the same way. `available` is `onHand - reserved` and stays
+ * negative when over-reserved, so a caller can flag it. A key that repeats is summed,
+ * never overwritten.
  */
 export function toVariantStockRecord(rows: VariantStockRowInput[]): Record<string, VariantStock> {
   const out: Record<string, VariantStock> = {};
