@@ -1,3 +1,4 @@
+import { canonicalAxisKey, normalizeVariantAxisKeys } from "@elorae/db/variant-axes";
 import { skuMatchKey } from "@/lib/items/sku-match-key";
 
 export type VariantGenerationBase = "category" | "parent";
@@ -49,9 +50,23 @@ function variantSuffixFromRecord(v: Record<string, string>): string {
 export function validateAndNormalizeVariants(
   parentSku: string,
   variants: Array<Record<string, string>> | undefined,
-  opts?: { categoryCode?: string | null; generateFrom?: VariantGenerationBase },
+  opts?: {
+    categoryCode?: string | null;
+    generateFrom?: VariantGenerationBase;
+    /** Finished goods (#437): only colour and size, stored as Warna/Ukuran; anything else is refused. */
+    fixedAxes?: boolean;
+  },
 ): Array<Record<string, string>> {
   if (!variants?.length) return [];
+  if (opts?.fixedAxes) {
+    variants = variants.map((v) => normalizeVariantAxisKeys(v));
+    for (const v of variants) {
+      const other = Object.keys(v).find((k) => k !== "sku" && k !== "barcode" && canonicalAxisKey(k) == null);
+      if (other !== undefined) {
+        throw new Error(`Finished-good variants may only have Warna (colour) and Ukuran (size); found "${other}"`);
+      }
+    }
+  }
   const prefix = parentSku.trim();
   const cat = opts?.categoryCode?.trim() || "";
   const autoBase = opts?.generateFrom === "category" ? cat || prefix : prefix || cat;

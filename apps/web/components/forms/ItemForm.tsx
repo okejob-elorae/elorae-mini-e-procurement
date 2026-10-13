@@ -513,6 +513,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         toast.error(tToasts("duplicateAttributeName", { names: collidingNames.join(", ") }));
         return;
       }
+      // Finished goods have exactly two variant axes (#437); the server refuses any other.
+      const otherAxis =
+        itemType === ItemType.FINISHED_GOOD
+          ? contributingAttributes(attributes).find((attr) => canonicalAxisKey(attr.key) == null)
+          : undefined;
+      if (otherAxis) {
+        toast.error(tToasts('finishedGoodAxesOnly', { name: otherAxis.key.trim() }));
+        return;
+      }
     }
 
     if (gridRows.combos.length > 0 && includedCount === 0) {
@@ -869,7 +878,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         <CardContent className="space-y-4">
           <div className="flex items-start justify-between gap-4">
             <p className="text-sm text-muted-foreground">
-              Define attributes (e.g., Color, Size) and their values to generate variant combinations.
+              {itemType === ItemType.FINISHED_GOOD
+                ? 'Finished goods have two attributes only: Warna (colour) and Ukuran (size).'
+                : 'Define attributes (e.g., Color, Size) and their values to generate variant combinations.'}
             </p>
             <Button type="button" variant="outline" onClick={addAttribute}>
               <Plus className="h-4 w-4 mr-2" />

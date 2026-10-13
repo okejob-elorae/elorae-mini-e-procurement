@@ -898,6 +898,7 @@
     "pleaseSelectItemTypeFirst": "Pilih tipe item terlebih dahulu",
     "failedToGenerateSKU": "Gagal membuat SKU",
     "provideNameAndAttributeValues": "Berikan nama dan minimal satu nilai untuk setiap atribut",
+    "finishedGoodAxesOnly": "Varian barang jadi hanya warna (Warna) dan ukuran (Ukuran). Ganti nama atau hapus \"{name}\".",
     "includeAtLeastOneVariant": "Pilih minimal satu kombinasi varian, atau hapus atributnya.",
     "duplicateAttributeValue": "Nilai itu sudah ada (beda huruf besar/kecil saja).",
     "duplicateAttributeName": "Nama atribut harus unik (huruf besar/kecil diabaikan): {names}.",

@@ -195,6 +195,7 @@ export async function createItem(data: ItemFormData) {
   const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, {
     categoryCode,
     generateFrom: "parent",
+    fixedAxes: rest.type === 'FINISHED_GOOD',
   });
 
   const item = await prisma.$transaction(async (tx) => {
@@ -267,6 +268,7 @@ export async function updateItem(
   const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants, {
     categoryCode,
     generateFrom: "parent",
+    fixedAxes: rest.type === 'FINISHED_GOOD',
   });
   const updateCollisions = await findVariantSkuCollisions(client, {
     excludeItemId: id,

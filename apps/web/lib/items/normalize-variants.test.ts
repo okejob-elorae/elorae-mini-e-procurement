@@ -83,3 +83,23 @@ describe("validateAndNormalizeVariants", () => {
     expect(buildVariantSkuCode("", { Warna: "Red" }, ["Warna"])).toBe("RED");
   });
 });
+
+describe("validateAndNormalizeVariants with fixedAxes (#437)", () => {
+  it("stores colour/size spellings as Warna/Ukuran", () => {
+    expect(
+      validateAndNormalizeVariants("FG1", [{ Color: "Red", size: "S", sku: "FG1-RED-S" }], { fixedAxes: true }),
+    ).toEqual([{ Warna: "Red", Ukuran: "S", sku: "FG1-RED-S" }]);
+  });
+
+  it("refuses an attribute other than colour and size", () => {
+    expect(() =>
+      validateAndNormalizeVariants("FG1", [{ Warna: "Red", Motif: "Polka", sku: "FG1-RED" }], { fixedAxes: true }),
+    ).toThrow('Finished-good variants may only have Warna (colour) and Ukuran (size); found "Motif"');
+  });
+
+  it("leaves other attributes alone without the option", () => {
+    expect(validateAndNormalizeVariants("A1", [{ Motif: "Polka", sku: "A1-POLKA" }])).toEqual([
+      { Motif: "Polka", sku: "A1-POLKA" },
+    ]);
+  });
+});

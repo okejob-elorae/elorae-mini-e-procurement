@@ -898,6 +898,7 @@
     "pleaseSelectItemTypeFirst": "Please select item type first",
     "failedToGenerateSKU": "Failed to generate SKU",
     "provideNameAndAttributeValues": "Please provide a name and at least one value for each attribute",
+    "finishedGoodAxesOnly": "Finished goods only have colour (Warna) and size (Ukuran) variants. Rename or remove \"{name}\".",
     "includeAtLeastOneVariant": "Include at least one variant combination, or remove the attributes.",
     "duplicateAttributeValue": "That value already exists (differs only in letter case).",
     "duplicateAttributeName": "Attribute names must be unique (letter case is ignored): {names}.",
