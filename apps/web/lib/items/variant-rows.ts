@@ -1,7 +1,10 @@
 import { prisma } from "@elorae/db";
 import type { ItemType } from "@/lib/constants/enums";
 import { parseItemVariants } from "@/lib/items/variants";
+import { matchKey } from "@/lib/items/match-key";
 import { aggregateInventoryValues, buildItemsWhere, type ListItemsFilters, type ListItemsOpts } from "@/lib/items/queries";
+
+export { matchKey };
 
 export type VariantRowItem = {
   id: string;
@@ -45,15 +48,6 @@ export type ItemVariantListRow = {
 };
 
 type CatalogVariant = { sku: string; attributes: Array<{ key: string; value: string }>; barcode: string | null };
-
-/**
- * The `(itemId, variantSku)` unique index sits on a case-insensitive collation, so the database
- * treats `ABC-01` and `abc-01` as one variant key; matching here does the same, or a catalog
- * variant shows zero while its real stock surfaces as an off-catalog row under another spelling.
- */
-export function matchKey(variantSku: string | null): string {
-  return (variantSku ?? "").trim().toLowerCase();
-}
 
 function catalogVariants(raw: unknown): CatalogVariant[] {
   const seen = new Set<string>();
