@@ -26,7 +26,8 @@
     "legacy:bom:dry-run": "tsx scripts/dry-run-legacy-bom.ts",
     "legacy:stubs:delete": "tsx scripts/delete-legacy-fg-stubs.ts",
     "legacy:fabric:uom": "tsx scripts/relabel-legacy-fabric-uom.ts",
-    "legacy:grn": "tsx scripts/import-legacy-grn.ts"
+    "legacy:grn": "tsx scripts/import-legacy-grn.ts",
+    "legacy:opening": "tsx scripts/legacy-opening-adjustments.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
