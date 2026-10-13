@@ -291,6 +291,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 **Purchasing**
 
 - Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
+- Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` + threshold — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
 
 **Data ownership + auth**
 
