@@ -40,6 +40,8 @@ export interface DemandRow {
   orderDate: Date;
   month: number;
   year: number;
+  /** Catalog item behind the row, when known; used to link forecast results back to items. */
+  itemId?: string | null;
 }
 
 export interface MonthlyDemand {

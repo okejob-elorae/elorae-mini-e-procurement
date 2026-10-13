@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateMonthlyDemand,
+  buildUnifiedDemandRows,
   classifyABC,
   classifyXYZ,
   computeBaseRate,
@@ -187,5 +188,19 @@ describe("aggregateMonthlyDemand", () => {
     expect(agg).toHaveLength(1);
     expect(agg[0].totalQty).toBe(5);
     expect(agg[0].totalRevenue).toBe(500);
+  });
+});
+
+describe("buildUnifiedDemandRows", () => {
+  const row = (parentSku: string): DemandRow => ({
+    parentSku, productName: parentSku, netQuantity: 1, lineTotal: 10, orderDate: new Date(Date.UTC(2026, 5, 1)), month: 6, year: 2026,
+  });
+
+  it("concatenates sales history, marketplace order and konsi rows, in that order", () => {
+    expect(buildUnifiedDemandRows([row("H")], [row("M")], [row("K")]).map((r) => r.parentSku)).toEqual(["H", "M", "K"]);
+  });
+
+  it("returns sales history alone when no other source is passed", () => {
+    expect(buildUnifiedDemandRows([row("H")]).map((r) => r.parentSku)).toEqual(["H"]);
   });
 });

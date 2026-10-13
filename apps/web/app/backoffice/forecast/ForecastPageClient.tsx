@@ -20,9 +20,11 @@ import { ForecastPlanBridgeTab } from '@/components/forecast/plan-bridge-tab';
 import { ForecastConfigModal } from '@/components/forecast/config-modal';
 import {
   getDataCoverage,
+  getDemandSourceCoverage,
   getForecastConfig,
   getForecastResults,
   type DataCoverage,
+  type DemandSourceCoverage,
   type ForecastConfigDetail,
   type ForecastResultDetail,
 } from '@/app/actions/forecast';
@@ -50,20 +52,23 @@ export function ForecastPageClient() {
   const [config, setConfig] = useState<ForecastConfigDetail | null>(null);
   const [coverageMonths, setCoverageMonths] = useState(0);
   const [coverage, setCoverage] = useState<DataCoverage | null>(null);
+  const [sources, setSources] = useState<DemandSourceCoverage | null>(null);
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [forecastResults, forecastConfig, coverage] = await Promise.all([
+      const [forecastResults, forecastConfig, coverage, demandSources] = await Promise.all([
         getForecastResults(year),
         getForecastConfig(year),
         getDataCoverage(),
+        getDemandSourceCoverage(),
       ]);
       setResults(forecastResults);
       setConfig(forecastConfig);
       setCoverageMonths(coverage.totalMonthsCovered);
       setCoverage(coverage);
+      setSources(demandSources);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to load forecast');
     }
@@ -132,6 +137,7 @@ export function ForecastPageClient() {
             configSummary={configSummary}
             coverageMonths={coverageMonths}
             coverage={coverage}
+            sources={sources}
             permissions={session?.user?.permissions ?? []}
             onRefresh={refresh}
             onEditConfig={() => setConfigOpen(true)}
@@ -164,7 +170,9 @@ export function ForecastPageClient() {
         </TabsContent>
       </Tabs>
 
+      {/* Remounts on open so the fields start from the saved values, not the ones current at first render. */}
       <ForecastConfigModal
+        key={configOpen ? 'open' : 'closed'}
         open={configOpen}
         onOpenChange={setConfigOpen}
         year={year}
@@ -178,6 +186,7 @@ export function ForecastPageClient() {
             }
           : null
         }
+        payoutDelayDays={sources?.payoutDelayDays ?? null}
         onSaved={refresh}
       />
     </div>

@@ -43,9 +43,11 @@ import { DataCoverageBar } from '@/components/forecast/data-coverage-bar';
 import {
   deleteSalesHistoryImport,
   getDataCoverage,
+  getDemandSourceCoverage,
   getSalesHistoryImportSkippedRows,
   getSalesHistoryImports,
   type DataCoverage,
+  type DemandSourceCoverage,
   type SalesHistoryImportSummary,
   type SalesHistorySkippedRowDetail,
 } from '@/app/actions/forecast';
@@ -90,6 +92,7 @@ export function ForecastImportPageClient() {
   const [uploading, setUploading] = useState(false);
   const [imports, setImports] = useState<SalesHistoryImportSummary[]>([]);
   const [coverage, setCoverage] = useState<DataCoverage | null>(null);
+  const [sources, setSources] = useState<DemandSourceCoverage | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [lastImportSummary, setLastImportSummary] = useState<ImportApiResponse | null>(null);
   const [skippedModalOpen, setSkippedModalOpen] = useState(false);
@@ -99,10 +102,30 @@ export function ForecastImportPageClient() {
   const [skippedDetailAvailable, setSkippedDetailAvailable] = useState(true);
   const historyPageSize = 10;
 
+  // Months whose synced marketplace orders already count toward the forecast (settled, with orders).
+  const syncedMonths = useMemo(() => {
+    if (!sources) return [];
+    const labels: string[] = [];
+    for (const m of sources.months) {
+      for (const family of ['SHOPEE', 'TIKTOK'] as const) {
+        const d = m.marketplace[family];
+        if (d?.settled && d.countedOrders > 0) {
+          labels.push(`${family === 'SHOPEE' ? 'Shopee' : 'TikTok'} ${MONTHS[m.month - 1].label} ${m.year}`);
+        }
+      }
+    }
+    return labels;
+  }, [sources]);
+
   const refresh = useCallback(async () => {
-    const [history, cov] = await Promise.all([getSalesHistoryImports(), getDataCoverage()]);
+    const [history, cov, src] = await Promise.all([
+      getSalesHistoryImports(),
+      getDataCoverage(),
+      getDemandSourceCoverage(),
+    ]);
     setImports(history);
     setCoverage(cov);
+    setSources(src);
   }, []);
 
   useEffect(() => {
@@ -507,6 +530,12 @@ export function ForecastImportPageClient() {
             </CardTitle>
           </CardHeader>
           <CardContent>
+            {syncedMonths.length > 0 && (
+              <p className="mb-4 flex items-start gap-2 text-sm text-muted-foreground">
+                <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                {t('import.syncedCoverage', { months: syncedMonths.join(', ') })}
+              </p>
+            )}
             <DataCoverageBar coverage={coverage} />
             <p className="mt-4 text-sm text-muted-foreground">
               {coverage.totalArticles} articles · {coverage.totalMonthsCovered} months covered

@@ -25,6 +25,7 @@ interface ForecastConfigModalProps {
     weightDecay: number;
     notes: string | null;
   } | null;
+  payoutDelayDays: { SHOPEE: number; TIKTOK: number } | null;
   onSaved: () => void;
 }
 
@@ -33,6 +34,7 @@ export function ForecastConfigModal({
   onOpenChange,
   year,
   initial,
+  payoutDelayDays,
   onSaved,
 }: ForecastConfigModalProps) {
   const t = useTranslations('forecast.config');
@@ -40,6 +42,8 @@ export function ForecastConfigModal({
   const [lookback, setLookback] = useState(String(initial?.lookbackMonths ?? 12));
   const [decay, setDecay] = useState(String(initial?.weightDecay ?? 0.9));
   const [notes, setNotes] = useState(initial?.notes ?? '');
+  const [shopeeDelay, setShopeeDelay] = useState(String(payoutDelayDays?.SHOPEE ?? 14));
+  const [tiktokDelay, setTiktokDelay] = useState(String(payoutDelayDays?.TIKTOK ?? 14));
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -51,6 +55,7 @@ export function ForecastConfigModal({
         lookbackMonths: Number(lookback),
         weightDecay: Number(decay),
         notes: notes || undefined,
+        payoutDelayDays: { SHOPEE: Number(shopeeDelay), TIKTOK: Number(tiktokDelay) },
       });
       if (!result.success) {
         toast.error(result.error ?? 'Failed to save config');
@@ -87,6 +92,38 @@ export function ForecastConfigModal({
             <Label htmlFor="decay">{t('decay')}</Label>
             <Input id="decay" type="number" step="0.01" value={decay} onChange={(e) => setDecay(e.target.value)} />
             <p className="text-xs text-muted-foreground">{t('decayHint')}</p>
+          </div>
+          <div className="grid gap-2">
+            <Label>{t('payoutDelay')}</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-1">
+                <Label htmlFor="payout-delay-shopee" className="text-xs font-normal text-muted-foreground">
+                  Shopee
+                </Label>
+                <Input
+                  id="payout-delay-shopee"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={shopeeDelay}
+                  onChange={(e) => setShopeeDelay(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1">
+                <Label htmlFor="payout-delay-tiktok" className="text-xs font-normal text-muted-foreground">
+                  TikTok
+                </Label>
+                <Input
+                  id="payout-delay-tiktok"
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={tiktokDelay}
+                  onChange={(e) => setTiktokDelay(e.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">{t('payoutDelayHint')}</p>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="notes">{t('notes')}</Label>

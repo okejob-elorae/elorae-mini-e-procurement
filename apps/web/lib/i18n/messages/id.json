@@ -1992,6 +1992,24 @@
     }
   },
   "forecast": {
+    "sources": {
+      "title": "Permintaan per sumber — 12 bulan terakhir",
+      "description": "Pesanan marketplace baru dihitung setelah settlement-nya diunggah dan membuktikan pesanan sudah dibayar. Satu bulan dianggap settled bila settlement mencakup bulan itu ditambah jeda pencairan (Shopee {shopee} hari, TikTok {tiktok} hari); bulan provisional tidak dimasukkan ke forecast sampai saat itu.",
+      "month": "Bulan",
+      "shopee": "Shopee",
+      "tiktok": "TikTok",
+      "offline": "Offline",
+      "konsi": "Konsi",
+      "synced": "Tersinkron: {qty}",
+      "settled": "Settled",
+      "provisional": "Provisional · {orders} pesanan menunggu",
+      "excel": "Excel: {qty}",
+      "deduped": "{count} sudah diimpor",
+      "unmapped": "{qty} unit belum dipetakan",
+      "missingPayout": "{count} tanpa pencairan",
+      "ambiguous": "{count} kecocokan ganda",
+      "refunded": "{count} di-refund"
+    },
     "title": "Forecast & S&OP",
     "subtitle": "Peramalan permintaan & perencanaan produksi",
     "tabs": {
@@ -2001,6 +2019,7 @@
       "planBridge": "→ Plan Kerja"
     },
     "import": {
+      "syncedCoverage": "Pesanan marketplace tersinkron sudah dihitung untuk {months}. Mengimpor bulan-bulan ini tetap aman: pesanan yang ada di keduanya hanya dihitung sekali.",
       "title": "Import Data Penjualan",
       "channel": "Channel",
       "period": "Periode",
@@ -2034,6 +2053,8 @@
       "unmappedSkusHelpAriaLabel": "Tentang SKU belum terpetakan"
     },
     "config": {
+      "payoutDelay": "Jeda pencairan (hari)",
+      "payoutDelayHint": "Jumlah hari marketplace mencairkan dana setelah bulan berakhir. Berlaku untuk semua tahun forecast. Satu bulan dihitung setelah settlement mencakup bulan itu ditambah jeda ini.",
       "growth": "Growth Factor (%)",
       "growthHint": "Mengalikan setiap forecast bulanan setelah musiman. % lebih tinggi = permintaan naik; negatif = turun.",
       "lookback": "Lookback (bulan)",
@@ -4736,6 +4757,7 @@
     }
   },
   "financeSettlements": {
+    "forecastInput": "Unggah setiap bulan: settlement inilah yang membuat forecast penjualan menghitung pesanan marketplace bulan itu.",
     "pageTitle": "Settlement Marketplace",
     "subtitle": "Unggah laporan settlement marketplace dan cocokkan dengan pesanan penjualan.",
     "back": "Kembali",
