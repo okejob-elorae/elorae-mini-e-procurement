@@ -328,8 +328,10 @@ ingest) must be added to §3 explicitly.
 
 ### 3.7 `SalesHistory` — certified Excel demand (web-owned, 2026-06-24)
 
-`SalesHistory` is **Excel-only certified demand** for S&OP forecast and reconciliation.
+`SalesHistory` holds **Excel-imported marketplace demand plus offline sales** (putus deliveries, SPG POS and van sales write `channel = OFFLINE` rows) for S&OP forecast and reconciliation.
 It is never populated from `SalesOrder` or Jubelio webhooks.
+
+**Forecast demand is wider than `SalesHistory` (#399).** `runForecast` also READS settlement-proven `SalesOrder` lines and approved konsi sell-through lines at run time, deduping synced orders against imported ones by marketplace order number; nothing is copied into `SalesHistory`. Rules: `docs/landmines/forecast.md`.
 
 - **web** writes all rows via `executeSalesHistoryImport` (`apps/web/lib/forecast/import-sales-history.ts`).
 - At import, each row is resolved through `marketplace-sku-resolver` (same heuristics as `umkm-sku-bridge`): `itemId`, `erpVariantSku`, `jubelioItemId`, `resolutionStatus` (`MAPPED` / `UNMAPPED` / `AMBIGUOUS`).
