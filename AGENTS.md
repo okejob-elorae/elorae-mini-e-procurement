@@ -248,7 +248,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Writing `submitCollection`? Net BOTH pending claim kinds via `sumPendingClaimsOnReceivable` inside the tx, never raw `outstandingAmount`. → `docs/landmines/finance-ar.md`
 - Editing `verifyCollection`? Payment posts BEFORE the flip, keyed `collection-<submissionId>` — reorder or randomise and a `VERIFIED` submission strands unpaid. → `docs/landmines/finance-ar.md`
 - `Receivable.collectorId` still stamped after settling elsewhere? A workflow column; the queue filters on `status` — nothing clears it, and nothing should. → `docs/landmines/finance-ar.md`
-- Touching `runOverdueSweep`, `runKonsiCountSweep` or `runFulfillmentPushDivergenceSweep`? Their awaited fan-out is cron-only — never copy the `await` into an interactive path. → `docs/landmines/finance-ar.md`
+- Touching `runOverdueSweep`, `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep` or `runPaymentReminderSweep`? Their awaited fan-out is cron-only — never copy the `await` into an interactive path. → `docs/landmines/finance-ar.md`
 - Touching the overdue dedup query? It reads EVERY `AR_OVERDUE` row, no `take`, no `createdAt` floor — adding either re-announces old crossings forever. → `docs/landmines/finance-ar.md`
 - Overdue receivable got one alert, not three? Only the highest crossed threshold fires per sweep pass, by design. → `docs/landmines/finance-ar.md`
 - Touching `ar.overdueThresholdDays` parsing? `parseOverdueThresholds` fails OPEN to the defaults, unlike `readGlCutover` — on purpose. → `docs/landmines/finance-ar.md`
@@ -291,7 +291,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 **Purchasing**
 
 - Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
-- Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` + threshold — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
+- Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` (max `thresholdDays` announced) — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
 
 **Data ownership + auth**
 

@@ -14,7 +14,7 @@ const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 function wibDay(y: number, m: number, day: number): Date {
   return new Date(Date.UTC(y, m - 1, day) - WIB_OFFSET_MS);
 }
-/** 09:00 WIB on a calendar day — when the cron fires. */
+/** 09:00 WIB on a calendar day — after the 08:30 cron has fired. */
 function wibMorning(y: number, m: number, day: number): Date {
   return new Date(Date.UTC(y, m - 1, day, 2));
 }

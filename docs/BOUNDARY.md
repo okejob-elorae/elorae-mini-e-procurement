@@ -136,7 +136,7 @@ contract for the migrations that will introduce them.
 | `JubelioOutbox`                | web insert, api consume/update | — | ✅; `entityType` MUST come from `@elorae/db/jubelio-outbox` registry — see §4.2.1 |
 | `JubelioWebhookEvent`          | api                         | —                           | ✅ |
 | `JubelioApiCall`               | api                         | web (read for admin UI)     | ✅ |
-| `AdminNotification`            | **both** — see §3.5; api on integration alerts, web on ERP-detected alerts | — | ✅ schema + api writer + web writers — journals, order approvals, store changes, fakturs, retur mismatches, credit holds, collections, AR overdue, stuck deliveries and the konsi count schedule; the live category list is `CATEGORY_PERMISSION` in `apps/web/lib/notifications/admin-fanout.ts` |
+| `AdminNotification`            | **both** — see §3.5; api on integration alerts, web on ERP-detected alerts | — | ✅ schema + api writer + web writers — journals, order approvals, store changes, fakturs, retur mismatches, credit holds, collections, AR overdue, stuck deliveries, the konsi count schedule, the fulfilment push divergence sweep and PO payment reminders; the live category list is `CATEGORY_PERMISSION` in `apps/web/lib/notifications/admin-fanout.ts` |
 | `SystemSetting` (Jubelio keys) | api                         | web (read for settings UI)  | ✅ (`JUBELIO_SESSION_TOKEN`) |
 | `SystemSetting` (other keys)   | web                         | —                           | ✅ |
 | `AuditLog`                     | both — shared writer        | —                           | ✅ schema; 🟡 shared writer ⏳ |

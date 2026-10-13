@@ -1,5 +1,6 @@
 /**
- * Aging maths for the piutang ledger.
+ * Aging maths for the piutang ledger; `daysOverdue` is also the PO payment reminder sweep's
+ * signed day count — keep it negative before due.
  *
  * Deliberately import-free: a `"use client"` component imports this, and a single import from
  * `@elorae/db` would drag Prisma and the mariadb driver into the browser bundle.
