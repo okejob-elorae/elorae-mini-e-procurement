@@ -13,7 +13,7 @@ describe("parseBellFloor", () => {
   });
 
   it("refuses anything that is not a strict UTC ISO timestamp", () => {
-    for (const raw of [null, undefined, "", "   ", "garbage", "2026-10-13", "2026-10-13 05:00:00", "2026-10-13T05:00:00+07:00", "2026-13-45T99:00:00Z"]) {
+    for (const raw of [null, undefined, "", "   ", "garbage", "2026-10-13", "2026-10-13 05:00:00", "2026-10-13T05:00:00+07:00", "2026-13-45T99:00:00Z", "2026-02-31T00:00:00Z", "2026-10-13T24:00:00Z"]) {
       expect(parseBellFloor(raw)).toBeNull();
     }
   });

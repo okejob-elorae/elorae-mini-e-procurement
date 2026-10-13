@@ -84,7 +84,8 @@ export function registerCronJobs(): void {
   /**
    * Every 5 minutes — bell notification for each new PENDING marketplace return. Its own job, log
    * line and catch. It shares the every-5-minutes cadence with the sales-journal sweep but nothing
-   * else.
+   * else. `noOverlap` skips a tick while the previous one is still fanning out: each run reads the
+   * dedup set once, so two overlapping runs would announce the same return twice.
    */
   cron.schedule(
     "*/5 * * * *",
@@ -105,7 +106,7 @@ export function registerCronJobs(): void {
         console.error("[cron] sales-return-bell failed:", err);
       }
     },
-    { timezone: "Asia/Jakarta" },
+    { timezone: "Asia/Jakarta", noOverlap: true },
   );
 
   /**

@@ -112,7 +112,9 @@ d("runSalesReturnBellSweep (test bed only)", () => {
   });
 
   it("announces a new pending return once, and a rerun adds nothing", async () => {
-    const id = await makeReturn({ createdAt: new Date("2026-10-12T00:00:00.000Z"), jubelioReturnNo: "RET-T-1" });
+    /* `jubelioReturnNo` is unique: a fixed value leaked by a killed run would fail every later run. */
+    const returnNo = `RET-T-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const id = await makeReturn({ createdAt: new Date("2026-10-12T00:00:00.000Z"), jubelioReturnNo: returnNo });
 
     const first = await runSalesReturnBellSweep({ returnIds: [id], now: NOW });
     expect(first).toEqual({ scanned: 1, announced: 1, deferred: 0, failed: 0, flooredNow: false });
@@ -120,10 +122,10 @@ d("runSalesReturnBellSweep (test bed only)", () => {
     const rows = await notificationsFor(id);
     expect(rows).toHaveLength(1);
     expect(rows[0].severity).toBe("INFO");
-    expect(rows[0].title).toBe("Retur baru dari Shopee — RET-T-1");
+    expect(rows[0].title).toBe(`Retur baru dari Shopee — ${returnNo}`);
     expect(rows[0].metadata).toEqual({
       salesReturnId: id,
-      jubelioReturnNo: "RET-T-1",
+      jubelioReturnNo: returnNo,
       channel: "SHOPEE",
       totalQty: 2,
       totalValue: 150000,

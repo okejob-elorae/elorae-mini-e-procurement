@@ -13,5 +13,8 @@ export function parseBellFloor(raw: string | null | undefined): Date | null {
   const trimmed = raw.trim();
   if (!ISO_UTC.test(trimmed)) return null;
   const date = new Date(trimmed);
-  return Number.isNaN(date.getTime()) ? null : date;
+  if (Number.isNaN(date.getTime())) return null;
+  /* A well-shaped but impossible instant (31 February, hour 24) rolls over in `Date`; refuse it instead. */
+  if (date.toISOString().slice(0, 19) !== trimmed.slice(0, 19)) return null;
+  return date;
 }

@@ -3,8 +3,12 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { SALES_RETURN_RECEIVED, buildSalesReturnBellCopy } from "./bell-copy";
 import { BELL_FLOOR_SETTING_KEY, parseBellFloor } from "./bell-floor";
 
-/* A burst of ingests (the apps/api sweeper catching up) drains at this pace, oldest first. */
-const MAX_ANNOUNCEMENTS_PER_RUN = 50;
+/**
+ * A burst of ingests (the apps/api sweeper catching up) drains at this pace, oldest first. Kept
+ * well under the bell's 50-row window (`/api/notifications` has no paging), so a single catch-up
+ * run cannot push every other category out of a recipient's bell.
+ */
+const MAX_ANNOUNCEMENTS_PER_RUN = 20;
 
 export type SalesReturnBellSweepResult = {
   scanned: number;
@@ -59,7 +63,12 @@ export async function runSalesReturnBellSweep(options?: {
     return { ...NOTHING, flooredNow: false };
   }
 
-  /* `createdAt`, not `receivedAt`: Jubelio's timestamp can predate the floor for a return ingested late. */
+  /**
+   * `createdAt`, not `receivedAt`: the floor is stamped by this sweep's clock, so it compares
+   * against the row's own insertion time. `receivedAt` is the return's display date (the list
+   * filters on it), and a late ingest would never ring if it ever carried an earlier,
+   * Jubelio-sourced time.
+   */
   const returns = await prisma.salesReturn.findMany({
     where: {
       status: "PENDING",
@@ -77,6 +86,9 @@ export async function runSalesReturnBellSweep(options?: {
       salesOrder: { select: { salesorderNo: true } },
     },
   });
+
+  /* An idle tick stops here, so the unbounded dedup read below runs only when there is a candidate. */
+  if (returns.length === 0) return { ...NOTHING, flooredNow: false };
 
   /*
    * Deliberately NO `take` and NO `createdAt` floor: these rows are the only record that a return
