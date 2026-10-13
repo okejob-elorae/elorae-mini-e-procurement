@@ -259,10 +259,15 @@ export function runForecastPipeline(
   return articles;
 }
 
-/** V2 hook: merge SalesOrder when model exists. V1 returns sales history only. */
+/**
+ * Merges every demand source the forecast reads. The sources must not overlap: marketplace
+ * order rows already skip orders imported from Excel (`buildMarketplaceDemand`), and konsi rows
+ * already leave out SPG POS units that `SalesHistory` holds (`buildKonsiDemand`).
+ */
 export function buildUnifiedDemandRows(
   salesHistoryRows: DemandRow[],
-  _salesOrderRows: DemandRow[] = []
+  salesOrderRows: DemandRow[] = [],
+  konsiRows: DemandRow[] = []
 ): DemandRow[] {
-  return salesHistoryRows;
+  return [...salesHistoryRows, ...salesOrderRows, ...konsiRows];
 }

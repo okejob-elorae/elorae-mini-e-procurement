@@ -293,6 +293,13 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
 - Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` (max `thresholdDays` announced) — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
 
+**Forecast**
+
+- Changing which marketplace orders count as forecast demand? Settlement proof only: a settled WIB month (periods cover month end + payout delay), matched net > 0, unique match key; Jubelio status is never read. → `docs/landmines/forecast.md`
+- Feeding marketplace sales from two places? Synced orders dedupe against Excel imports on the bare marketplace order number — keep `SalesHistory.orderId` bare in any import. → `docs/landmines/forecast.md`
+- Adding a `SalesHistory` writer or a konsi sale path? Konsi demand is `billedQty − posSoldQty` because SPG POS already writes `SalesHistory`. → `docs/landmines/forecast.md`
+- Bucketing forecast demand by month? `wibYearMonth`, and keep the month in the grouping key. → `docs/landmines/forecast.md`
+
 **Data ownership + auth**
 
 - Writing `Item` or `StockAdjustment` from apps/api? Dual-owner — go through the `@elorae/db` writer helpers, never a direct Prisma write. See also `docs/BOUNDARY.md §3`. → `docs/landmines/data-ownership-auth.md`

@@ -171,6 +171,7 @@ export function SettlementsPageClient({ items, totalCount, page, pageSize, canMa
         <div>
           <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
           <p className="text-muted-foreground">{t("subtitle")}</p>
+          <p className="text-sm text-muted-foreground">{t("forecastInput")}</p>
         </div>
       </div>
 

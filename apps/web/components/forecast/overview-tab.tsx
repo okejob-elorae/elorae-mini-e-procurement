@@ -18,7 +18,13 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Pagination } from '@/components/ui/pagination';
-import { runForecast, type DataCoverage, type ForecastResultDetail } from '@/app/actions/forecast';
+import {
+  runForecast,
+  type DataCoverage,
+  type DemandSourceCoverage,
+  type ForecastResultDetail,
+} from '@/app/actions/forecast';
+import { DemandSourcesCard } from './demand-sources-card';
 import { MonthlyForecastRow } from './monthly-forecast-row';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
@@ -136,6 +142,7 @@ interface OverviewTabProps {
   configSummary: string;
   coverageMonths: number;
   coverage: DataCoverage | null;
+  sources: DemandSourceCoverage | null;
   permissions: string[];
   onRefresh: () => void;
   onEditConfig: () => void;
@@ -147,6 +154,7 @@ export function ForecastOverviewTab({
   configSummary,
   coverageMonths,
   coverage,
+  sources,
   permissions,
   onRefresh,
   onEditConfig,
@@ -295,6 +303,8 @@ export function ForecastOverviewTab({
           </CardContent>
         </Card>
       </div>
+
+      {sources && <DemandSourcesCard sources={sources} />}
 
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

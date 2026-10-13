@@ -15,7 +15,22 @@ import {
   buildUnifiedDemandRows,
   runForecastPipeline,
 } from "@/lib/forecast/calculations";
-import type { DemandRow } from "@/lib/forecast/types";
+import { salesHistoryToDemandRows } from "@/lib/forecast/history-demand";
+import {
+  buildMarketplaceDemand,
+  wibMonthStart,
+  wibYearMonth,
+  type MarketplaceFamily,
+  type MarketplaceMonthDiagnostics,
+} from "@/lib/forecast/marketplace-demand";
+import { buildKonsiDemand } from "@/lib/forecast/konsi-demand";
+import {
+  MAX_PAYOUT_DELAY_DAYS,
+  PAYOUT_DELAY_SETTING_KEY,
+  loadKonsiReports,
+  loadMarketplaceDemandInput,
+  loadPayoutDelayDays,
+} from "@/lib/forecast/demand-sources";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
 import { createPlanCategory, updatePlanCategory } from "@/app/actions/planning";
 import { getEffectiveTarget } from "@/lib/planning/calculations";
@@ -69,67 +84,12 @@ async function requirePlanBridgeManage() {
   return session;
 }
 
+/** The `lookbackMonths` WIB calendar months before `targetYear`, as a closed UTC range. */
 function lookbackWindow(targetYear: number, lookbackMonths: number) {
-  const end = new Date(targetYear, 0, 1);
-  end.setMilliseconds(end.getMilliseconds() - 1);
-  const start = new Date(end);
-  start.setMonth(start.getMonth() - lookbackMonths + 1);
-  start.setDate(1);
-  start.setHours(0, 0, 0, 0);
+  const startIndex = targetYear * 12 - lookbackMonths;
+  const start = wibMonthStart(Math.floor(startIndex / 12), (startIndex % 12) + 1);
+  const end = new Date(wibMonthStart(targetYear, 1).getTime() - 1);
   return { start, end };
-}
-
-function salesHistoryToDemandRows(
-  records: Array<{
-    parentSku: string;
-    productName: string;
-    netQuantity: number;
-    lineTotal: unknown;
-    orderDate: Date;
-    itemId: string | null;
-    resolutionStatus: ResolutionStatus;
-  }>
-): DemandRow[] {
-  const grouped = new Map<
-    string,
-    {
-      parentSku: string;
-      productName: string;
-      netQuantity: number;
-      lineTotal: number;
-      orderDate: Date;
-    }
-  >();
-
-  for (const r of records) {
-    const groupKey =
-      r.itemId && r.resolutionStatus === ResolutionStatus.MAPPED ?
-        `item:${r.itemId}`
-      : `sku:${r.parentSku}`;
-    const existing = grouped.get(groupKey);
-    if (existing) {
-      existing.netQuantity += r.netQuantity;
-      existing.lineTotal += toNumber(r.lineTotal);
-    } else {
-      grouped.set(groupKey, {
-        parentSku: r.parentSku,
-        productName: r.productName,
-        netQuantity: r.netQuantity,
-        lineTotal: toNumber(r.lineTotal),
-        orderDate: r.orderDate,
-      });
-    }
-  }
-
-  return [...grouped.values()].map((r) => ({
-    parentSku: r.parentSku,
-    productName: r.productName,
-    netQuantity: r.netQuantity,
-    lineTotal: r.lineTotal,
-    orderDate: r.orderDate,
-    month: r.orderDate.getMonth() + 1,
-    year: r.orderDate.getFullYear(),
-  }));
 }
 
 const resolvedItemSelect = {
@@ -484,6 +444,87 @@ export async function getDataCoverage(): Promise<DataCoverage> {
   };
 }
 
+const SOURCE_COVERAGE_MONTHS = 12;
+
+export interface DemandSourceMonth {
+  year: number;
+  month: number;
+  /** Units from Shopee/TikTok Excel imports (`SalesHistory` with an import batch). */
+  importedQty: Record<MarketplaceFamily, number>;
+  /** Units from offline sales: putus deliveries, SPG POS and van sales (`SalesHistory` OFFLINE). */
+  offlineQty: number;
+  /** Units from approved konsi sell-through reports, net of SPG POS units. */
+  konsiQty: number;
+  /** Synced marketplace orders; null when the month has no order of that marketplace. */
+  marketplace: Record<MarketplaceFamily, MarketplaceMonthDiagnostics | null>;
+}
+
+export interface DemandSourceCoverage {
+  months: DemandSourceMonth[];
+  payoutDelayDays: Record<MarketplaceFamily, number>;
+}
+
+/** Demand per source for the last 12 WIB months (current month included), oldest first. */
+export async function getDemandSourceCoverage(): Promise<DemandSourceCoverage> {
+  await requireForecastView();
+
+  const now = new Date();
+  const current = wibYearMonth(now);
+  const nowIndex = current.year * 12 + current.month - 1;
+  const firstIndex = nowIndex - (SOURCE_COVERAGE_MONTHS - 1);
+  const window = {
+    start: wibMonthStart(Math.floor(firstIndex / 12), (firstIndex % 12) + 1),
+    end: now,
+  };
+
+  const months: DemandSourceMonth[] = [];
+  const byKey = new Map<string, DemandSourceMonth>();
+  for (let i = firstIndex; i <= nowIndex; i++) {
+    const m: DemandSourceMonth = {
+      year: Math.floor(i / 12),
+      month: (i % 12) + 1,
+      importedQty: { SHOPEE: 0, TIKTOK: 0 },
+      offlineQty: 0,
+      konsiQty: 0,
+      marketplace: { SHOPEE: null, TIKTOK: null },
+    };
+    months.push(m);
+    byKey.set(`${m.year}-${m.month}`, m);
+  }
+
+  const [marketplaceInput, konsiReports, history] = await Promise.all([
+    loadMarketplaceDemandInput(window),
+    loadKonsiReports(window),
+    prisma.salesHistory.findMany({
+      where: {
+        orderStatus: SalesHistoryStatus.COMPLETED,
+        orderDate: { gte: window.start, lte: window.end },
+      },
+      select: { channel: true, orderDate: true, netQuantity: true, importBatchId: true },
+    }),
+  ]);
+
+  for (const d of buildMarketplaceDemand(marketplaceInput).diagnostics) {
+    const m = byKey.get(`${d.year}-${d.month}`);
+    if (m) m.marketplace[d.family] = d;
+  }
+  for (const k of buildKonsiDemand(konsiReports).monthly) {
+    const m = byKey.get(`${k.year}-${k.month}`);
+    if (m) m.konsiQty += k.qty;
+  }
+  for (const h of history) {
+    const { year, month } = wibYearMonth(h.orderDate);
+    const m = byKey.get(`${year}-${month}`);
+    if (!m) continue;
+    if (h.channel === "OFFLINE") m.offlineQty += h.netQuantity;
+    else if (h.importBatchId && (h.channel === "SHOPEE" || h.channel === "TIKTOK")) {
+      m.importedQty[h.channel] += h.netQuantity;
+    }
+  }
+
+  return { months, payoutDelayDays: marketplaceInput.payoutDelayDays };
+}
+
 export interface ForecastConfigDetail {
   id: string;
   year: number;
@@ -529,9 +570,38 @@ export async function updateForecastConfig(data: {
   lookbackMonths?: number;
   weightDecay?: number;
   notes?: string;
+  /** Global, not per year: days a marketplace takes to pay an order out after its month ends. */
+  payoutDelayDays?: Partial<Record<MarketplaceFamily, number>>;
 }) {
   try {
     const session = await requireForecastManage();
+
+    const delays = Object.entries(data.payoutDelayDays ?? {}) as [MarketplaceFamily, number][];
+    for (const [family, days] of delays) {
+      if (!(family in PAYOUT_DELAY_SETTING_KEY)) throw new Error(`Unknown marketplace ${family}`);
+      if (!Number.isInteger(days) || days < 0 || days > MAX_PAYOUT_DELAY_DAYS) {
+        throw new Error(`Payout delay must be a whole number of days from 0 to ${MAX_PAYOUT_DELAY_DAYS}`);
+      }
+    }
+    const before = delays.length > 0 ? await loadPayoutDelayDays() : null;
+    const changed = before ? delays.filter(([family, days]) => before[family] !== days) : [];
+    if (before && changed.length > 0) {
+      for (const [family, days] of changed) {
+        const key = PAYOUT_DELAY_SETTING_KEY[family];
+        await prisma.systemSetting.upsert({
+          where: { key },
+          create: { key, value: String(days) },
+          update: { value: String(days) },
+        });
+      }
+      await logAudit({
+        userId: session.user.id,
+        action: "UPDATE",
+        entityType: "SystemSetting",
+        entityId: "forecast.payoutDelayDays",
+        metadata: { before, after: Object.fromEntries(changed) },
+      });
+    }
     const existing = await prisma.forecastConfig.findUnique({
       where: { year: data.year },
     });
@@ -652,15 +722,31 @@ export async function runForecast(data: { targetYear: number }) {
       return r;
     });
 
+    const historyRows = salesHistoryToDemandRows(
+      normalizedHistory.map((r) => ({
+        parentSku: r.parentSku,
+        productName: r.productName,
+        netQuantity: r.netQuantity,
+        lineTotal: toNumber(r.lineTotal),
+        orderDate: r.orderDate,
+        itemId: r.itemId,
+        mapped: r.resolutionStatus === ResolutionStatus.MAPPED,
+      }))
+    );
+    const marketplace = buildMarketplaceDemand(
+      await loadMarketplaceDemandInput({ start, end })
+    );
+    const konsi = buildKonsiDemand(await loadKonsiReports({ start, end }));
     const demandRows = buildUnifiedDemandRows(
-      salesHistoryToDemandRows(normalizedHistory)
+      historyRows,
+      marketplace.rows,
+      konsi.rows
     );
 
     const itemIdByParentSku = new Map<string, string | null>();
-    for (const r of normalizedHistory) {
-      if (r.itemId && r.resolutionStatus === ResolutionStatus.MAPPED) {
-        const sku = skuByItemId.get(r.itemId) ?? r.parentSku;
-        itemIdByParentSku.set(sku, r.itemId);
+    for (const r of demandRows) {
+      if (r.itemId) {
+        itemIdByParentSku.set(r.parentSku, r.itemId);
       } else if (!itemIdByParentSku.has(r.parentSku)) {
         itemIdByParentSku.set(r.parentSku, null);
       }
@@ -724,7 +810,13 @@ export async function runForecast(data: { targetYear: number }) {
       action: "CREATE",
       entityType: "ForecastResult",
       entityId: `year-${data.targetYear}`,
-      metadata: { year: data.targetYear, count: articles.length },
+      metadata: {
+        year: data.targetYear,
+        count: articles.length,
+        historyRows: historyRows.length,
+        marketplaceRows: marketplace.rows.length,
+        konsiRows: konsi.rows.length,
+      },
     });
 
     revalidatePath(FORECAST_PATH);

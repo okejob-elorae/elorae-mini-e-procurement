@@ -1992,6 +1992,24 @@
     }
   },
   "forecast": {
+    "sources": {
+      "title": "Demand by source — last 12 months",
+      "description": "A marketplace order counts only once its settlement is uploaded and proves it was paid. A month is settled when settlements cover it plus the payout delay (Shopee {shopee} days, TikTok {tiktok} days); a provisional month is left out of the forecast until then.",
+      "month": "Month",
+      "shopee": "Shopee",
+      "tiktok": "TikTok",
+      "offline": "Offline",
+      "konsi": "Konsi",
+      "synced": "Synced: {qty}",
+      "settled": "Settled",
+      "provisional": "Provisional · {orders} orders waiting",
+      "excel": "Excel: {qty}",
+      "deduped": "{count} already imported",
+      "unmapped": "{qty} units unmapped",
+      "missingPayout": "{count} with no payout",
+      "ambiguous": "{count} ambiguous match",
+      "refunded": "{count} refunded"
+    },
     "title": "Forecast & S&OP",
     "subtitle": "Demand forecasting & production planning",
     "tabs": {
@@ -2001,6 +2019,7 @@
       "planBridge": "→ Plan Kerja"
     },
     "import": {
+      "syncedCoverage": "Synced marketplace orders already count for {months}. Importing these months is safe: an order in both is counted once.",
       "title": "Import Sales Data",
       "channel": "Channel",
       "period": "Period",
@@ -2034,6 +2053,8 @@
       "unmappedSkusHelpAriaLabel": "About unmapped SKUs"
     },
     "config": {
+      "payoutDelay": "Payout delay (days)",
+      "payoutDelayHint": "Days a marketplace takes to pay out after a month ends. Applies to every forecast year. A month counts once its settlements cover it plus this delay.",
       "growth": "Growth Factor (%)",
       "growthHint": "Scales every monthly forecast after seasonality. Higher % raises demand; negative % lowers it.",
       "lookback": "Lookback (months)",
@@ -4738,6 +4759,7 @@
     }
   },
   "financeSettlements": {
+    "forecastInput": "Upload every month: a settlement is what lets the sales forecast count that month's marketplace orders.",
     "pageTitle": "Marketplace Settlements",
     "subtitle": "Upload marketplace settlement reports and match them against sales orders.",
     "back": "Back",
