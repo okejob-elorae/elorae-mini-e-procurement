@@ -20,6 +20,7 @@ export interface CachedSupplier {
   email?: string;
   bankName?: string;
   bankAccountName?: string;
+  paymentTermsDays?: number | null;
   isActive: boolean;
   syncAt: Date;
 }
@@ -51,6 +52,7 @@ export interface PendingPO {
   supplierName?: string;
   etaDate?: Date;
   paymentDueDate?: Date;
+  paymentTermsDays?: number | null;
   items: Array<{
     itemId: string;
     itemName?: string;

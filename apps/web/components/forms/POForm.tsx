@@ -49,6 +49,7 @@ interface Supplier {
   id: string;
   code: string;
   name: string;
+  paymentTermsDays?: number | null;
 }
 
 interface Item {
@@ -68,6 +69,7 @@ interface POFormProps {
     supplierId?: string;
     etaDate?: Date | null;
     paymentDueDate?: Date | null;
+    paymentTermsDays?: number | null;
     notes?: string;
     terms?: string;
     items?: Array<{
@@ -149,6 +151,7 @@ export function POForm({
       supplierId: initialData?.supplierId || '',
       etaDate: initialData?.etaDate ?? null,
       paymentDueDate: initialData?.paymentDueDate ?? null,
+      paymentTermsDays: initialData?.paymentTermsDays ?? null,
       notes: initialData?.notes || '',
       terms: initialData?.terms || '',
       items: initialData?.items?.map(item => ({
@@ -368,6 +371,11 @@ export function POForm({
   const etaDate = watch('etaDate');
   const isETAPast = etaDate && new Date(etaDate) < new Date();
   const supplierId = watch('supplierId');
+  const termsDays = watch("paymentTermsDays");
+  const termsChanged = termsDays !== (initialData?.paymentTermsDays ?? null);
+  const termsHelper = termsChanged
+    ? `Set on first goods receipt + ${termsDays} days.`
+    : `Calculated from the first goods receipt + ${termsDays} days.`;
 
   useEffect(() => {
     if (!supplierId || !isOnline()) {
@@ -434,7 +442,17 @@ export function POForm({
                 id="supplierId"
                 options={suppliers.map((s) => ({ value: s.id, label: `${s.code} - ${s.name}` }))}
                 value={watch('supplierId')}
-                onValueChange={(value) => setValue('supplierId', value, { shouldValidate: true })}
+                onValueChange={(value) => {
+                  /* Re-picking the current supplier must not overwrite terms negotiated on this PO. */
+                  const supplierChanged = value !== watch("supplierId");
+                  setValue("supplierId", value, { shouldValidate: true });
+                  if (supplierChanged) {
+                    const picked = suppliers.find((s) => s.id === value);
+                    setValue("paymentTermsDays", picked?.paymentTermsDays ?? null, {
+                      shouldValidate: true,
+                    });
+                  }
+                }}
                 placeholder={tPlaceholders('selectSupplier')}
                 aria-invalid={!!errors.supplierId}
                 className={errors.supplierId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
@@ -485,10 +503,42 @@ export function POForm({
               )}
             </div>
             <div className="space-y-2">
+              <Label htmlFor="paymentTermsDays">Payment terms (days)</Label>
+              <Input
+                id="paymentTermsDays"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={365}
+                step={1}
+                placeholder="Blank = enter the due date by hand"
+                value={watch("paymentTermsDays") ?? ""}
+                aria-invalid={!!errors.paymentTermsDays}
+                className={errors.paymentTermsDays ? "border-destructive focus-visible:ring-destructive/20" : ""}
+                onChange={(e) =>
+                  setValue(
+                    "paymentTermsDays",
+                    e.target.value === "" ? null : Number(e.target.value),
+                    { shouldValidate: true }
+                  )
+                }
+              />
+              {errors.paymentTermsDays && (
+                <p className="text-sm text-destructive" role="alert">
+                  {errors.paymentTermsDays.message}
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="paymentDueDate">Payment due date</Label>
               <DatePicker
                 id="paymentDueDate"
-                value={watch('paymentDueDate') ?? null}
+                disabled={termsDays != null}
+                value={
+                  termsDays != null
+                    ? (termsChanged ? null : (initialData?.paymentDueDate ?? null))
+                    : (watch("paymentDueDate") ?? null)
+                }
                 aria-invalid={!!errors.paymentDueDate}
                 className={errors.paymentDueDate ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 onChange={(date) => {
@@ -498,6 +548,11 @@ export function POForm({
               {errors.paymentDueDate && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.paymentDueDate.message}
+                </p>
+              )}
+              {termsDays != null && (
+                <p className="text-sm text-muted-foreground">
+                  {termsHelper}
                 </p>
               )}
             </div>
@@ -712,11 +767,11 @@ export function POForm({
             )}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="terms">Payment Terms</Label>
+            <Label htmlFor="terms">Terms & conditions</Label>
             <Textarea
               id="terms"
               {...register('terms')}
-              placeholder={tPlaceholders('paymentTerms')}
+              placeholder={tPlaceholders("termsAndConditions")}
               rows={3}
               aria-invalid={!!errors.terms}
               className={errors.terms ? 'border-destructive focus-visible:ring-destructive/20' : ''}

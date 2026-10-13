@@ -18,6 +18,7 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { docNumberPeriod } from "@/lib/doc-numbers/period";
+import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
 
 const grnItemSchema = z.object({
   itemId: z.string().min(1),
@@ -336,6 +337,8 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           });
         }
       }
+
+      await recomputePaymentDueDate(tx, validated.poId);
     }
 
     revalidatePath('/backoffice/inventory');
@@ -823,6 +826,10 @@ export async function declineGRNByOwner(id: string, userId: string) {
         ownerDeclinedById: userId,
       },
     });
+
+    if (grn.poId) {
+      await recomputePaymentDueDate(tx, grn.poId);
+    }
   });
 
   try {

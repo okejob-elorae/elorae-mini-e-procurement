@@ -17,6 +17,9 @@ import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/muta
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
+import { parsePaymentTermsDays } from "@/lib/purchase-orders/payment-terms";
+import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
+import { setPurchaseOrderPaymentTerms, type SetPaymentTermsCode } from "@/lib/purchase-orders/set-payment-terms";
 import {
   hasCurrentPaymentJournal,
   hasStandingPaymentJournalWhileUnpaid,
@@ -73,7 +76,7 @@ export async function updatePO(
 
   const existing = await prisma.purchaseOrder.findUnique({
     where: { id },
-    select: { status: true }
+    select: { status: true, paidAt: true, paymentTermsDays: true }
   });
 
   if (existing?.status === 'CLOSED' || existing?.status === 'CANCELLED') {
@@ -88,6 +91,22 @@ export async function updatePO(
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
     }
+  }
+
+  let termsPatch: { paymentTermsDays?: number | null } = {};
+  if (data.paymentTermsDays !== undefined) {
+    const parsedTerms = parsePaymentTermsDays(data.paymentTermsDays);
+    if (!parsedTerms.ok) {
+      throw new Error("Payment terms must be a whole number of days from 0 to 365");
+    }
+    termsPatch = { paymentTermsDays: parsedTerms.value };
+  }
+  if (
+    existing?.paidAt != null &&
+    termsPatch.paymentTermsDays !== undefined &&
+    termsPatch.paymentTermsDays !== existing.paymentTermsDays
+  ) {
+    throw new Error("This PO is already paid — its payment terms can no longer change");
   }
 
   const receivedPreservingStatuses = ['SUBMITTED', 'PARTIAL', 'OVER'] as const;
@@ -169,12 +188,22 @@ export async function updatePO(
       };
     }
 
+    const currentTerms = await tx.purchaseOrder.findUnique({
+      where: { id },
+      select: { paymentTermsDays: true },
+    });
+    const effectiveTerms =
+      termsPatch.paymentTermsDays !== undefined
+        ? termsPatch.paymentTermsDays
+        : currentTerms?.paymentTermsDays ?? null;
+
     const po = await tx.purchaseOrder.update({
       where: { id },
       data: {
         supplierId: data.supplierId,
         etaDate: leadTimePatch.etaDate !== undefined ? leadTimePatch.etaDate : data.etaDate,
-        paymentDueDate: data.paymentDueDate ?? undefined,
+        ...termsPatch,
+        paymentDueDate: effectiveTerms == null ? data.paymentDueDate ?? undefined : undefined,
         notes: data.notes,
         terms: data.terms,
         totalAmount: totalAmount.toNumber(),
@@ -204,12 +233,45 @@ export async function updatePO(
       });
     }
 
+    await recomputePaymentDueDate(tx, id);
+
     return po;
   });
 
   revalidatePath('/backoffice/purchase-orders');
   revalidatePath(`/backoffice/purchase-orders/${id}`);
   return { id };
+}
+
+export async function setPOPaymentTerms(
+  poId: string,
+  paymentTermsDays: number | null,
+  pin?: string
+): Promise<{ ok: true } | { ok: false; code: SetPaymentTermsCode | "PIN"; message?: string }> {
+  const session = await auth();
+  if (!session) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
+
+  const existing = await prisma.purchaseOrder.findUnique({
+    where: { id: poId },
+    select: { status: true },
+  });
+  if (!existing) return { ok: false, code: "NOT_FOUND" };
+
+  if (existing.status !== "DRAFT") {
+    if (!pin) return { ok: false, code: "PIN", message: "PIN required" };
+    const pinResult = await verifyPin(session.user.id, pin, "EDIT_POSTED_PO");
+    if (!pinResult.success) {
+      return { ok: false, code: "PIN", message: pinResult.messageKey ?? pinResult.message };
+    }
+  }
+
+  const result = await setPurchaseOrderPaymentTerms(poId, paymentTermsDays, session.user.id);
+  if (result.ok) {
+    revalidatePath("/backoffice/purchase-orders");
+    revalidatePath(`/backoffice/purchase-orders/${poId}`);
+  }
+  return result;
 }
 
 export async function changePOStatus(

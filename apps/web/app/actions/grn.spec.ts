@@ -1,13 +1,22 @@
+import { Decimal } from "decimal.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuth, mockFindMany, mockFindUnique, mockCount, mockUserFindUnique, mockTransaction } =
-  vi.hoisted(() => ({
+const {
+  mockAuth,
+  mockFindMany,
+  mockFindUnique,
+  mockCount,
+  mockUserFindUnique,
+  mockTransaction,
+  mockRecompute,
+} = vi.hoisted(() => ({
     mockAuth: vi.fn(),
     mockUserFindUnique: vi.fn(),
     mockTransaction: vi.fn(),
     mockFindMany: vi.fn(),
     mockFindUnique: vi.fn(),
     mockCount: vi.fn(),
+    mockRecompute: vi.fn(),
   }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -47,6 +56,7 @@ vi.mock("@/lib/inventory/grn-journal", () => ({
 }));
 vi.mock("@/lib/leadtime/calculations", () => ({ computeActualLeadDays: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+vi.mock("@/lib/purchase-orders/payment-due", () => ({ recomputePaymentDueDate: mockRecompute }));
 
 import {
   approveGRNByOwner,
@@ -59,6 +69,11 @@ import {
   getGrnJournalState,
   getRollsByGrnId,
 } from "./grn";
+import { calculateMovingAverage, findExistingInventoryValueRow } from "@/lib/inventory/costing";
+import { getActorName } from "@/lib/notifications/actor-name";
+import { notifyMaterialArrivedForPo } from "@/app/actions/notifications";
+import { logAudit } from "@/lib/audit";
+import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 
 const inventoryOnlyReads: Array<[string, () => Promise<unknown>]> = [
   ["getGRNById", () => getGRNById("g1")],
@@ -194,4 +209,149 @@ describe("grn actor trust", () => {
       expect(mockTransaction).not.toHaveBeenCalled();
     }
   );
+});
+
+describe("payment due date wiring", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    mockRecompute.mockResolvedValue(undefined);
+    vi.mocked(getActorName).mockResolvedValue("Tester");
+    vi.mocked(notifyMaterialArrivedForPo).mockResolvedValue(undefined as never);
+    vi.mocked(logAudit).mockResolvedValue(undefined as never);
+    vi.mocked(postGrnJournal).mockResolvedValue({ ok: true } as never);
+    vi.mocked(postGrnReversalJournal).mockResolvedValue({ ok: true } as never);
+  });
+
+  it("declineGRNByOwner recomputes after the GRN is stamped as declined", async () => {
+    mockUserFindUnique.mockResolvedValue({ role: "ADMIN" });
+    vi.mocked(findExistingInventoryValueRow).mockResolvedValue({ qtyOnHand: 10 } as never);
+    const tx = {
+      gRN: {
+        findUnique: vi.fn().mockResolvedValue({
+          id: "g1",
+          poId: "po1",
+          docNumber: "GRN/1",
+          requiresOwnerApproval: true,
+          ownerApprovedAt: null,
+          ownerDeclinedAt: null,
+          items: JSON.stringify([{ itemId: "i1", qty: 1, unitCost: 1, variantSku: null }]),
+        }),
+        update: vi.fn().mockResolvedValue({}),
+      },
+      fabricRoll: {
+        findMany: vi.fn().mockResolvedValue([]),
+        deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+      },
+      pOItem: {
+        findFirst: vi.fn().mockResolvedValue({ id: "pi1", receivedQty: 5 }),
+        update: vi.fn().mockResolvedValue({}),
+        findMany: vi.fn().mockResolvedValue([{ qty: 5, receivedQty: 4 }]),
+      },
+      purchaseOrder: { update: vi.fn().mockResolvedValue({}) },
+      pOStatusHistory: { create: vi.fn().mockResolvedValue({}) },
+    };
+    mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
+
+    await declineGRNByOwner("g1", "u1");
+
+    expect(mockRecompute).toHaveBeenCalledTimes(1);
+    expect(mockRecompute).toHaveBeenCalledWith(tx, "po1");
+    expect(tx.gRN.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ ownerDeclinedAt: expect.any(Date) }),
+      })
+    );
+    expect(tx.gRN.update.mock.invocationCallOrder[0]).toBeLessThan(
+      mockRecompute.mock.invocationCallOrder[0]
+    );
+  });
+
+  describe("createGRN", () => {
+    function buildTx() {
+      return {
+        gRN: {
+          findMany: vi.fn().mockResolvedValue([]),
+          create: vi.fn().mockResolvedValue({
+            id: "g1",
+            docNumber: "GRN/1",
+            poId: "po1",
+            supplierId: "s1",
+            receivedBy: "u1",
+            totalAmount: 5,
+            photoUrls: null,
+            notes: null,
+            grnDate: new Date(),
+            createdAt: new Date(),
+          }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+        item: {
+          findUnique: vi
+            .fn()
+            .mockResolvedValue({ type: "RAW", uomId: "u", overReceiveThreshold: null }),
+        },
+        pOItem: {
+          findMany: vi
+            .fn()
+            .mockResolvedValue([{ itemId: "i1", variantSku: null, qty: 5, receivedQty: 0 }]),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        fabricRoll: { createMany: vi.fn().mockResolvedValue({ count: 0 }) },
+        purchaseOrder: {
+          findUnique: vi
+            .fn()
+            .mockResolvedValue({ id: "po1", createdAt: new Date(), actualLeadDays: 3 }),
+          update: vi.fn().mockResolvedValue({}),
+        },
+        pOStatusHistory: { create: vi.fn().mockResolvedValue({}) },
+      };
+    }
+
+    beforeEach(() => {
+      vi.mocked(calculateMovingAverage).mockResolvedValue({
+        previousAvgCost: new Decimal(0),
+        newAvgCost: new Decimal(1),
+        previousQty: new Decimal(0),
+        newQty: new Decimal(5),
+      } as never);
+    });
+
+    it("recomputes the PO due date inside the transaction when the GRN has a poId", async () => {
+      const tx = buildTx();
+      mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
+
+      await createGRN(
+        { poId: "po1", supplierId: "s1", items: [{ itemId: "i1", qty: 5, unitCost: 1 }] } as never,
+        "u1"
+      );
+
+      expect(mockRecompute).toHaveBeenCalledTimes(1);
+      expect(mockRecompute).toHaveBeenCalledWith(tx, "po1");
+    });
+
+    it("does not recompute for a GRN without a poId", async () => {
+      const tx = buildTx();
+      tx.gRN.create.mockResolvedValue({
+        id: "g1",
+        docNumber: "GRN/1",
+        poId: null,
+        supplierId: "s1",
+        receivedBy: "u1",
+        totalAmount: 5,
+        photoUrls: null,
+        notes: null,
+        grnDate: new Date(),
+        createdAt: new Date(),
+      });
+      mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
+
+      await createGRN(
+        { supplierId: "s1", items: [{ itemId: "i1", qty: 5, unitCost: 1 }] } as never,
+        "u1"
+      );
+
+      expect(mockRecompute).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -96,6 +96,7 @@ type PODetailRow = {
   etaDate: Date | null;
   paymentDueDate: Date | null;
   paidAt: Date | null;
+  paymentTermsDays: number | null;
   currency: string;
   totalAmount: unknown;
   taxAmount: unknown;
@@ -155,6 +156,7 @@ type PODetailRow = {
     docNumber: string;
     totalAmount: unknown;
     grnDate: Date;
+    ownerDeclinedAt: Date | null;
   }>;
   statusHistory: Array<{
     id: string;
@@ -176,6 +178,7 @@ export function serializePODetail(po: PODetailRow) {
     etaDate: toIso(po.etaDate),
     paymentDueDate: toIso(po.paymentDueDate),
     paidAt: toIso(po.paidAt),
+    paymentTermsDays: po.paymentTermsDays,
     currency: po.currency,
     totalAmount: toNum(po.totalAmount) ?? 0,
     taxAmount: toNum(po.taxAmount) ?? 0,
@@ -231,6 +234,7 @@ export function serializePODetail(po: PODetailRow) {
       docNumber: g.docNumber,
       totalAmount: toNum(g.totalAmount) ?? 0,
       grnDate: toIso(g.grnDate),
+      ownerDeclinedAt: toIso(g.ownerDeclinedAt),
     })),
     statusHistory: po.statusHistory.map((h) => ({
       id: h.id,

@@ -5,6 +5,7 @@ import { prisma } from '@elorae/db';
 import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 import { createPurchaseOrderFromOfflinePayload } from '@/lib/purchase-orders/mutations';
+import { parsePaymentTermsDays } from "@/lib/purchase-orders/payment-terms";
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +43,14 @@ export async function POST(req: NextRequest) {
 
 async function handleSupplierCreate(payload: any) {
   try {
+    const terms = parsePaymentTermsDays(payload.paymentTermsDays ?? null);
+    if (!terms.ok) {
+      return NextResponse.json(
+        { error: "Payment terms must be a whole number of days from 0 to 365" },
+        { status: 400 }
+      );
+    }
+
     const code = await generateSupplierCode();
 
     let bankAccountEnc = null;
@@ -60,6 +69,7 @@ async function handleSupplierCreate(payload: any) {
         bankName: payload.bankName,
         bankAccountEnc,
         bankAccountName: payload.bankAccountName,
+        paymentTermsDays: terms.value,
       },
     });
 
@@ -77,6 +87,17 @@ async function handleSupplierUpdate(payload: any) {
   try {
     const { id, ...rest } = { ...payload };
     delete rest.categoryId;
+
+    if ("paymentTermsDays" in rest) {
+      const terms = parsePaymentTermsDays(rest.paymentTermsDays);
+      if (!terms.ok) {
+        return NextResponse.json(
+          { error: "Payment terms must be a whole number of days from 0 to 365" },
+          { status: 400 }
+        );
+      }
+      rest.paymentTermsDays = terms.value;
+    }
 
     let bankAccountEnc = undefined;
     if (rest.bankAccount) {

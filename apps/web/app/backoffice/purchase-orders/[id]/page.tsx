@@ -9,6 +9,7 @@ import {
   changePOStatus,
   updatePO,
   setPOPaidAt,
+  setPOPaymentTerms,
   postSupplierPaymentReversalJournalAction,
   retrySupplierPaymentJournalAction,
 } from '@/app/actions/purchase-orders';
@@ -35,6 +36,7 @@ import Link from 'next/link';
 import { POStatus } from '@/lib/constants/enums';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from "@/components/ui/input";
 import { Label } from '@/components/ui/label';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
@@ -48,6 +50,15 @@ const statusLabels: Record<POStatus, string> = {
   CLOSED: 'Closed',
   OVER: 'Over-received',
   CANCELLED: 'Cancelled',
+};
+
+const PAYMENT_TERMS_DAYS_MAX = 365;
+
+const termsFailureMessages: Record<string, string> = {
+  PAID: "This PO is already paid — its due date can no longer change",
+  CANCELLED: "This PO is cancelled",
+  INVALID: "Payment terms must be a whole number of days from 0 to 365",
+  NOT_FOUND: "PO not found",
 };
 
 const statusColors: Record<POStatus, string> = {
@@ -71,8 +82,13 @@ export default function PODetailPage() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [pinModalOpen, setPinModalOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'cancel' | 'update' | null>(null);
+  const [pendingAction, setPendingAction] = useState<"cancel" | "update" | "terms" | null>(null);
   const [pendingUpdateData, setPendingUpdateData] = useState<any>(null);
+  const [termsDialogOpen, setTermsDialogOpen] = useState(false);
+  const [termsInput, setTermsInput] = useState("");
+  const [termsError, setTermsError] = useState<string | null>(null);
+  const [pendingTermsValue, setPendingTermsValue] = useState<number | null>(null);
+  const [isSavingTerms, setIsSavingTerms] = useState(false);
   const [isTogglingPaid, setIsTogglingPaid] = useState(false);
   const [isPostingReversal, setIsPostingReversal] = useState(false);
   const [isRetryingPayment, setIsRetryingPayment] = useState(false);
@@ -212,7 +228,7 @@ export default function PODetailPage() {
             .then(({ getSuppliersForSelect }) => getSuppliersForSelect({ sync: true, approvedOnly: true }))
             .then((data: unknown) => {
               const list = Array.isArray(data) ? data : [];
-              setSuppliers(list.map((s: { id: string; code: string; name: string }) => ({ id: s.id, code: s.code, name: s.name })));
+              setSuppliers(list.map((s: { id: string; code: string; name: string; paymentTermsDays?: number | null }) => ({ id: s.id, code: s.code, name: s.name, paymentTermsDays: s.paymentTermsDays ?? null })));
             })
             .catch(() => {});
         })
@@ -264,6 +280,18 @@ export default function PODetailPage() {
         toast.success('PO updated successfully');
         setIsEditMode(false);
         setPendingUpdateData(null);
+      } else if (pendingAction === "terms") {
+        const result = await setPOPaymentTerms(po.id, pendingTermsValue, pin);
+        if (!result.ok) {
+          throw new Error(
+            result.code === "PIN"
+              ? (result.message ?? "PIN required")
+              : termsFailureMessages[result.code]
+          );
+        }
+        toast.success("Payment terms updated");
+        setTermsDialogOpen(false);
+        setPendingTermsValue(null);
       }
       setPinModalOpen(false);
       setPendingAction(null);
@@ -275,6 +303,56 @@ export default function PODetailPage() {
       throw error;
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const openTermsDialog = () => {
+    setTermsInput(po.paymentTermsDays == null ? "" : String(po.paymentTermsDays));
+    setTermsError(null);
+    setTermsDialogOpen(true);
+  };
+
+  const handleSaveTerms = async () => {
+    if (!po) return;
+    const trimmed = termsInput.trim();
+    const value = trimmed === "" ? null : Number(trimmed);
+    if (
+      value !== null &&
+      (!Number.isInteger(value) || value < 0 || value > PAYMENT_TERMS_DAYS_MAX)
+    ) {
+      setTermsError("Enter a whole number of days from 0 to 365, or leave blank");
+      return;
+    }
+    setTermsError(null);
+
+    if (po.status !== "DRAFT") {
+      setPendingTermsValue(value);
+      setPendingAction("terms");
+      setPinModalOpen(true);
+      return;
+    }
+
+    setIsSavingTerms(true);
+    try {
+      const result = await setPOPaymentTerms(po.id, value);
+      if (result.ok) {
+        toast.success("Payment terms updated");
+        setTermsDialogOpen(false);
+        router.refresh();
+        getPOById(po.id)
+          .then(setPO)
+          .catch(() => toast.error("Failed to reload PO"));
+      } else {
+        toast.error(
+          result.code === "PIN"
+            ? (result.message ?? "PIN required")
+            : termsFailureMessages[result.code]
+        );
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Failed to update payment terms");
+    } finally {
+      setIsSavingTerms(false);
     }
   };
 
@@ -319,6 +397,25 @@ export default function PODetailPage() {
     session?.user?.permissions ?? [],
     PERMISSIONS.JOURNALS_MANAGE
   );
+  const firstReceipt = po.grns
+    ?.filter((g: { ownerDeclinedAt: string | null }) => g.ownerDeclinedAt == null)
+    .sort((a: { grnDate: string; id: string }, b: { grnDate: string; id: string }) =>
+      new Date(a.grnDate).getTime() - new Date(b.grnDate).getTime() || a.id.localeCompare(b.id)
+    )[0];
+  const canEditTerms =
+    hasPermission(session?.user?.permissions ?? [], PERMISSIONS.PURCHASE_ORDERS_EDIT) &&
+    po.status !== "CANCELLED" &&
+    !po.paidAt;
+  const dueDateLabel = po.paymentDueDate
+    ? new Date(po.paymentDueDate).toLocaleDateString("id-ID")
+    : null;
+  let dueDateText = dueDateLabel ?? "-";
+  if (po.paymentTermsDays != null) {
+    dueDateText =
+      dueDateLabel && firstReceipt
+        ? `${dueDateLabel} · ${po.paymentTermsDays} days from ${firstReceipt.docNumber}`
+        : `${po.paymentTermsDays} days · set on first goods receipt`;
+  }
   const canEdit = po.status === 'DRAFT';
   const canEditPosted =
     po.status === 'SUBMITTED' ||
@@ -542,6 +639,7 @@ export default function PODetailPage() {
             supplierId: po.supplierId,
             etaDate: po.etaDate ? new Date(po.etaDate) : null,
             paymentDueDate: po.paymentDueDate ? new Date(po.paymentDueDate) : null,
+            paymentTermsDays: po.paymentTermsDays ?? null,
             notes: po.notes || undefined,
             terms: po.terms || undefined,
             items: po.items.map((item: any) => ({
@@ -585,9 +683,19 @@ export default function PODetailPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Payment due date</p>
-                  <p className="font-medium">
-                    {po.paymentDueDate ? new Date(po.paymentDueDate).toLocaleDateString('id-ID') : '-'}
-                  </p>
+                  <div className="flex flex-col items-start gap-2">
+                    <p className="font-medium">{dueDateText}</p>
+                    {canEditTerms && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={openTermsDialog}
+                      >
+                        Edit terms
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Payment status</p>
@@ -616,7 +724,7 @@ export default function PODetailPage() {
               )}
               {po.terms && (
                 <div>
-                  <p className="text-sm text-muted-foreground">Payment Terms</p>
+                  <p className="text-sm text-muted-foreground">Terms & conditions</p>
                   <p className="font-medium">{po.terms}</p>
                 </div>
               )}
@@ -834,10 +942,80 @@ export default function PODetailPage() {
           setPinModalOpen(false);
           setPendingAction(null);
           setPendingUpdateData(null);
+          setPendingTermsValue(null);
         }}
         onConfirm={handlePinConfirm}
-        action={pendingAction === 'cancel' ? 'membatalkan PO' : 'menyunting PO yang sudah diposting'}
+        action={
+          pendingAction === "cancel"
+            ? "membatalkan PO"
+            : pendingAction === "terms"
+              ? "mengubah termin pembayaran PO"
+              : "menyunting PO yang sudah diposting"
+        }
       />
+
+      <Dialog
+        open={termsDialogOpen}
+        onOpenChange={(open) => {
+          if (!open && isSavingTerms) return;
+          setTermsDialogOpen(open);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit payment terms</DialogTitle>
+            <DialogDescription>
+              Due date is recalculated from the first goods receipt. Leave blank to enter the date by hand.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveTerms();
+            }}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="po-terms-days">Payment terms (days)</Label>
+              <Input
+                id="po-terms-days"
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={PAYMENT_TERMS_DAYS_MAX}
+                step={1}
+                value={termsInput}
+                disabled={isSavingTerms}
+                aria-invalid={!!termsError}
+                className={termsError ? "border-destructive focus-visible:ring-destructive/20" : ""}
+                onChange={(e) => {
+                  setTermsInput(e.target.value);
+                  setTermsError(null);
+                }}
+              />
+              {termsError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {termsError}
+                </p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSavingTerms}
+                onClick={() => setTermsDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSavingTerms}>
+                {isSavingTerms && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

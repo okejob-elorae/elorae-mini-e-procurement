@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paymentTermsDaysField } from "@/lib/purchase-orders/payment-terms";
 
 export type ValidationTranslate = (key: string) => string;
 
@@ -77,6 +78,7 @@ export function createPoSchema(t: ValidationTranslate = defaultT) {
     supplierId: z.string().min(1, t('selectSupplier')),
     etaDate: optionalDateField(),
     paymentDueDate: optionalDateField(),
+    paymentTermsDays: paymentTermsDaysField.optional(),
     notes: z.string().optional(),
     terms: z.string().optional(),
     items: z.array(poItem).min(1, t('minOneItem')),

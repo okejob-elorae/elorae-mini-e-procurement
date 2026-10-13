@@ -52,6 +52,7 @@ export async function listSuppliers(filters?: ListSuppliersFilters, opts?: ListS
       email: s.email,
       bankName: s.bankName,
       bankAccountName: s.bankAccountName,
+      paymentTermsDays: s.paymentTermsDays,
       isActive: s.isActive,
     }));
   }

@@ -4,6 +4,8 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { poSchema } from "@/lib/validations";
 import { assertLinesVariantSkusMatchItemDefinitions } from "@/lib/items/validate-variant-lines";
 import { resolvePoLeadTimeFields } from "@/lib/leadtime/po-snapshot";
+import { resolveCreatePaymentTerms } from "@/lib/purchase-orders/payment-terms";
+import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
 import type { z } from "zod";
 
 export type POFormData = z.infer<typeof poSchema>;
@@ -12,6 +14,7 @@ export type OfflinePOCreatePayload = {
   supplierId: string;
   etaDate?: Date | string | null;
   paymentDueDate?: Date | string | null;
+  paymentTermsDays?: number | null;
   notes?: string;
   terms?: string;
   items: Array<{
@@ -64,12 +67,22 @@ export async function createPurchaseOrder(
       etaDate = lt.etaDate ?? null;
     }
 
+    const supplier = await tx.supplier.findUnique({
+      where: { id: validated.supplierId },
+      select: { paymentTermsDays: true },
+    });
+    const paymentTermsDays = resolveCreatePaymentTerms(
+      validated.paymentTermsDays,
+      supplier?.paymentTermsDays ?? null
+    );
+
     const created = await tx.purchaseOrder.create({
       data: {
         docNumber,
         supplierId: validated.supplierId,
         etaDate,
-        paymentDueDate: validated.paymentDueDate ?? undefined,
+        paymentTermsDays,
+        paymentDueDate: paymentTermsDays == null ? validated.paymentDueDate ?? undefined : null,
         notes: validated.notes,
         terms: validated.terms,
         totalAmount: totalAmount.toNumber(),
@@ -100,6 +113,8 @@ export async function createPurchaseOrder(
         notes: "PO Created",
       },
     });
+
+    await recomputePaymentDueDate(tx, created.id);
 
     return created;
   });
@@ -136,6 +151,7 @@ export async function createPurchaseOrderFromOfflinePayload(
     supplierId: payload.supplierId,
     etaDate: parseDate(payload.etaDate) ?? new Date(),
     paymentDueDate: parseDate(payload.paymentDueDate),
+    ...(payload.paymentTermsDays !== undefined ? { paymentTermsDays: payload.paymentTermsDays } : {}),
     notes: payload.notes,
     terms: payload.terms,
     items: items as POFormData["items"],

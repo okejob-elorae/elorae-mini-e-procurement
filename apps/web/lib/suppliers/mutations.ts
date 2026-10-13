@@ -3,6 +3,7 @@ import { prisma } from '@elorae/db';
 import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 import { logBankAccountView } from '@/lib/audit';
+import { paymentTermsDaysField } from "@/lib/purchase-orders/payment-terms";
 
 export const supplierSchema = z.object({
   code: z.preprocess(
@@ -20,6 +21,7 @@ export const supplierSchema = z.object({
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
   bankAccountName: z.string().optional(),
+  paymentTermsDays: paymentTermsDaysField.optional(),
 });
 
 export const supplierUpdateSchema = z.object({
@@ -35,6 +37,7 @@ export const supplierUpdateSchema = z.object({
   bankName: z.string().optional(),
   bankAccount: z.string().optional(),
   bankAccountName: z.string().optional(),
+  paymentTermsDays: paymentTermsDaysField.optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -66,6 +69,7 @@ export async function createSupplier(input: z.infer<typeof supplierSchema>) {
       bankName: validated.bankName,
       bankAccountEnc,
       bankAccountName: validated.bankAccountName,
+      paymentTermsDays: validated.paymentTermsDays ?? null,
       status: 'PENDING_APPROVAL',
     },
   });
