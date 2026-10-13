@@ -33,6 +33,7 @@
     "scripts/import-legacy-suppliers.ts",
     "scripts/reconcile-legacy-beli.ts",
     "scripts/dry-run-legacy-bom.ts",
-    "scripts/dry-run-legacy-hpp.ts"
+    "scripts/dry-run-legacy-hpp.ts",
+    "scripts/relabel-legacy-fabric-uom.ts"
   ]
 }
