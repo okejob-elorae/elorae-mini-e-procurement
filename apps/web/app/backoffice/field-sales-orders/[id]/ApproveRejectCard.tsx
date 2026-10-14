@@ -60,6 +60,8 @@ type Props = {
   orderId: string;
   status: FieldSalesOrderStatus;
   canApprove: boolean;
+  /* Holds `field_sales_orders:credit_override`, the permission the approve action requires before it accepts an override reason. */
+  canOverrideCredit: boolean;
   orderType: FieldSalesOrderType;
   appealedLines: AppealedLine[];
   orderLines: LineRef[];
@@ -86,6 +88,7 @@ export function ApproveRejectCard({
   orderId,
   status,
   canApprove,
+  canOverrideCredit,
   orderType,
   appealedLines,
   orderLines,
@@ -114,6 +117,9 @@ export function ApproveRejectCard({
   if (!canApprove || status !== "PENDING_APPROVAL") return null;
 
   const hasAppeals = appealedLines.length > 0;
+  const overLimit = !!creditCheck?.overLimit || !!serverCreditRefusal;
+  /* Without the override permission there is no reason to give: an over-limit order waits for someone who has it. */
+  const creditBlocked = overLimit && (!canOverrideCredit || !creditReason.trim());
 
   function openApproveDialog(): void {
     setFinalPriceInputs(
@@ -205,7 +211,8 @@ export function ApproveRejectCard({
       toast.error(t("errInvalidFinalPrice"));
     } else if (r.reason === "CREDIT_LIMIT_EXCEEDED") {
       setServerCreditRefusal({ exposure: r.credit?.exposure.total ?? 0, limit: r.credit?.creditLimit ?? 0 });
-      toast.error(t("creditLimitExceeded", { exposure: formatRupiah(r.credit?.exposure.total ?? 0), limit: formatRupiah(r.credit?.creditLimit ?? 0) }));
+      const figures = { exposure: formatRupiah(r.credit?.exposure.total ?? 0), limit: formatRupiah(r.credit?.creditLimit ?? 0) };
+      toast.error(canOverrideCredit ? t("creditLimitExceeded", figures) : t("creditOverLimitNoOverride", figures));
     } else {
       toast.error(t("errNotFound"));
     }
@@ -222,7 +229,9 @@ export function ApproveRejectCard({
         : undefined;
     startTransition(async () => {
       try {
-        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines, creditReason.trim() || undefined);
+        /* Never sent without the permission: the action would refuse it FORBIDDEN, so the server's credit gate decides alone. */
+        const creditOverrideReason = canOverrideCredit ? creditReason.trim() || undefined : undefined;
+        const r = await approveFieldSalesOrderAction(orderId, finalPrices, addedLines, creditOverrideReason);
         handleResult(r, t("approved"));
       } catch {
         toast.error(t("errGeneric"));
@@ -334,28 +343,30 @@ export function ApproveRejectCard({
             </p>
           )}
 
-          {(creditCheck?.overLimit || serverCreditRefusal) && (
+          {overLimit && (
             <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
               <p className="text-sm font-medium text-destructive">{t("creditOverLimitTitle")}</p>
               <p className="text-xs text-muted-foreground">
-                {t("creditOverLimitDetail", {
+                {t(canOverrideCredit ? "creditOverLimitDetail" : "creditOverLimitNoOverride", {
                   exposure: formatRupiah(serverCreditRefusal?.exposure ?? creditCheck?.exposure ?? 0),
                   limit: formatRupiah(serverCreditRefusal?.limit ?? creditCheck?.limit ?? 0),
                 })}
               </p>
-              <div className="space-y-1">
-                <Label htmlFor="credit-override-reason" className="text-xs">{t("creditOverrideReasonLabel")}</Label>
-                <Textarea
-                  id="credit-override-reason"
-                  value={creditReason}
-                  onChange={(e) => setCreditReason(e.target.value)}
-                  disabled={isPending}
-                  rows={2}
-                />
-              </div>
+              {canOverrideCredit && (
+                <div className="space-y-1">
+                  <Label htmlFor="credit-override-reason" className="text-xs">{t("creditOverrideReasonLabel")}</Label>
+                  <Textarea
+                    id="credit-override-reason"
+                    value={creditReason}
+                    onChange={(e) => setCreditReason(e.target.value)}
+                    disabled={isPending}
+                    rows={2}
+                  />
+                </div>
+              )}
             </div>
           )}
-          {!creditCheck?.overLimit && !serverCreditRefusal && creditHoldAtCreate && (
+          {!overLimit && creditHoldAtCreate && (
             <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700">
               {t("creditWasOverLimitNote")}
             </p>
@@ -381,7 +392,7 @@ export function ApproveRejectCard({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              disabled={isPending || (hasAppeals && !finalPricesValid) || ((!!creditCheck?.overLimit || !!serverCreditRefusal) && !creditReason.trim())}
+              disabled={isPending || (hasAppeals && !finalPricesValid) || creditBlocked}
               onClick={callApprove}
             >
               {t("approve")}
