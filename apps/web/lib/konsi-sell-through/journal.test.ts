@@ -327,6 +327,15 @@ d("konsi sell-through journals (test bed only)", () => {
       return id;
     }
 
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    const voidedAtOf = async (id: string) =>
+      (await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id }, select: { voidedAt: true } })).voidedAt!;
+
+    /* Moves a posted original to another date, standing in for an invoice dated in another period. */
+    const redate = (sourceType: string, id: string, date: Date) =>
+      prisma.journal.update({ where: { sourceType_sourceId: { sourceType, sourceId: id } }, data: { date } });
+
     const linesOf = async (sourceType: string, id: string) => {
       const j = await prisma.journal.findFirstOrThrow({ where: { sourceType, sourceId: seededId(id) }, include: { lines: true } });
       return {
@@ -337,8 +346,13 @@ d("konsi sell-through journals (test bed only)", () => {
       };
     };
 
-    it("each reversal mirrors its original's lines and accounts, dated on the original's date", async () => {
+    it("each reversal mirrors its original's lines and accounts, dated on the void, not on an original from a prior month", async () => {
       const id = await voidedWithOriginals();
+      const voidedAt = await voidedAtOf(id);
+      /* Forty days back always lands in an earlier calendar month — the period finance may already have reported. */
+      const priorMonth = new Date(voidedAt.getTime() - 40 * DAY_MS);
+      await redate("KONSI_SELLTHRU_REVENUE", id, priorMonth);
+      await redate("KONSI_SELLTHRU_COGS", id, priorMonth);
       for (const kind of ["konsi_sell_through_revenue_void", "konsi_sell_through_cogs_void"] as const) {
         await expect(postSellThroughVoidJournal(kind, id, state.userId)).resolves.toMatchObject({ ok: true, created: true });
       }
@@ -352,9 +366,29 @@ d("konsi sell-through journals (test bed only)", () => {
       ]) {
         const o = await linesOf(orig, id);
         const r = await linesOf(rev, id);
-        expect(r.date.getTime()).toBe(o.date.getTime());
+        expect(o.date.getTime()).toBe(priorMonth.getTime());
+        expect(r.date.getTime()).toBe(voidedAt.getTime());
         expect(r.lines).toEqual(o.lines.map((l) => ({ acc: l.acc, dr: l.cr, cr: l.dr })));
       }
+    }, SLOW);
+
+    it("never dates a reversal before its original: an original dated after the void reverses on its own date", async () => {
+      const id = await voidedWithOriginals();
+      const later = new Date((await voidedAtOf(id)).getTime() + DAY_MS);
+      await redate("KONSI_SELLTHRU_REVENUE", id, later);
+      await expect(postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId)).resolves.toMatchObject({
+        ok: true,
+        created: true,
+      });
+      expect((await linesOf("KONSI_SELLTHRU_REVENUE_VOID", id)).date.getTime()).toBe(later.getTime());
+    }, SLOW);
+
+    it("a VOIDED report with no voidedAt reverses on the original's date, never the clock", async () => {
+      const id = await voidedWithOriginals();
+      await prisma.konsiSellThrough.update({ where: { id }, data: { voidedAt: null } });
+      await postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId);
+      const o = await linesOf("KONSI_SELLTHRU_REVENUE", id);
+      expect((await linesOf("KONSI_SELLTHRU_REVENUE_VOID", id)).date.getTime()).toBe(o.date.getTime());
     }, SLOW);
 
     it("mirrors the posted accounts even after the mapping changed", async () => {
@@ -379,14 +413,25 @@ d("konsi sell-through journals (test bed only)", () => {
       }
     }, SLOW);
 
-    it("a replay posts nothing new", async () => {
+    it("a replay posts nothing new, and a retry after a lost first attempt dates the reversal the same", async () => {
       const id = await voidedWithOriginals();
+      const voidedAt = await voidedAtOf(id);
       await postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId);
       await expect(postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId)).resolves.toMatchObject({
         ok: true,
         created: false,
       });
       expect(await prisma.journal.count({ where: { sourceType: "KONSI_SELLTHRU_REVENUE_VOID", sourceId: seededId(id) } })).toBe(1);
+      expect((await linesOf("KONSI_SELLTHRU_REVENUE_VOID", id)).date.getTime()).toBe(voidedAt.getTime());
+
+      /* Removing the reversal stands in for a first attempt that never landed; the retry runs later on the clock. */
+      await prisma.journalLine.deleteMany({ where: { journal: { sourceType: "KONSI_SELLTHRU_REVENUE_VOID", sourceId: seededId(id) } } });
+      await prisma.journal.deleteMany({ where: { sourceType: "KONSI_SELLTHRU_REVENUE_VOID", sourceId: seededId(id) } });
+      await expect(postSellThroughVoidJournal("konsi_sell_through_revenue_void", id, state.userId)).resolves.toMatchObject({
+        ok: true,
+        created: true,
+      });
+      expect((await linesOf("KONSI_SELLTHRU_REVENUE_VOID", id)).date.getTime()).toBe(voidedAt.getTime());
     }, SLOW);
 
     it("gaps: a VOIDED report owes each missing reversal of an existing original and never an original; an original poster refuses it", async () => {
@@ -413,7 +458,7 @@ d("konsi sell-through journals (test bed only)", () => {
       });
       const o = await linesOf("KONSI_SELLTHRU_SURPLUS", id);
       const r = await linesOf("KONSI_SELLTHRU_SURPLUS_VOID", id);
-      expect(r.date.getTime()).toBe(o.date.getTime());
+      expect(r.date.getTime()).toBe((await voidedAtOf(id)).getTime());
       expect(r.lines).toEqual(o.lines.map((l) => ({ acc: l.acc, dr: l.cr, cr: l.dr })));
       expect(await sellThroughJournalGaps(id)).toEqual([]);
     }, SLOW);
