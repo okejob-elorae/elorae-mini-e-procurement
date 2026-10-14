@@ -6,9 +6,29 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
-const { mockAuth } = vi.hoisted(() => ({ mockAuth: vi.fn() }));
+const { mockAuth, postOverride } = vi.hoisted(() => ({
+  mockAuth: vi.fn(),
+  postOverride: {
+    fn: null as null | (() => Promise<import("@/lib/purchasing/supplier-payment-journal").PostSupplierPaymentResult>),
+  },
+}));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+
+/**
+ * Only the payment writer is wrapped, and only while a case sets `postOverride.fn`:
+ * reaching the receipt-state codes for real needs GRNs and a mapped GL, which this
+ * file deliberately never touches. Every other case, and every other export the
+ * action uses (the standing-payment detector included), runs the real code.
+ */
+vi.mock("@/lib/purchasing/supplier-payment-journal", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/purchasing/supplier-payment-journal")>();
+  return {
+    ...actual,
+    postSupplierPaymentJournal: (...args: Parameters<typeof actual.postSupplierPaymentJournal>) =>
+      postOverride.fn ? postOverride.fn() : actual.postSupplierPaymentJournal(...args),
+  };
+});
 
 /* Stubbed so the toggle's post-commit fan-out cannot queue push notifications on
    the shared dev DB. The action's own durable writes — the status history row and
@@ -44,8 +64,17 @@ import { setPOPaidAt } from "@/app/actions/purchase-orders";
  * off. The ordinary-mark case has no receipts at all, which `poBookedPayable`
  * answers with `NOTHING_TO_POST` BEFORE it resolves the AP role — so it does not
  * read the mapping either.
+ *
+ * The mark is also ABORTED when the payment writer refuses because a receipt is
+ * not settled yet (`GRN_APPROVAL_PENDING`, `GRN_JOURNALS_INCOMPLETE`,
+ * `GRN_REVERSAL_MISSING`): the compare-and-swap rolls back, so the PO stays
+ * unpaid and nothing is flagged — including when the receipt is un-journaled
+ * because of a misconfiguration at receive time. Every other post failure still
+ * commits the mark and raises `JOURNAL_PENDING`, so a misconfiguration on the
+ * payment post itself never blocks ops. Those cases stub the writer's result
+ * through `postOverride`.
  */
-d("setPOPaidAt standing-payment refusal (test bed only)", () => {
+d("setPOPaidAt refusals (test bed only)", () => {
   const token = Math.floor(Math.random() * 10_000_000).toString();
   let userId = "";
   let supplierTypeId = "";
@@ -226,6 +255,7 @@ d("setPOPaidAt standing-payment refusal (test bed only)", () => {
   });
 
   beforeEach(() => {
+    postOverride.fn = null;
     mockAuth.mockReset();
     mockAuth.mockResolvedValue({ user: { id: userId, permissions: ["purchase_orders:edit"] } });
   });
@@ -284,5 +314,60 @@ d("setPOPaidAt standing-payment refusal (test bed only)", () => {
         { acc: bankAccountId, d: 30_000, c: 0 },
       ]),
     );
+  });
+
+  it.each([
+    ["GRN_APPROVAL_PENDING", "4"],
+    ["GRN_JOURNALS_INCOMPLETE", "5"],
+    ["GRN_REVERSAL_MISSING", "6"],
+  ] as const)("aborts the mark, and writes nothing, when a receipt blocks the payment (%s)", async (code, label) => {
+    const poId = await seedPo(label, null);
+    postOverride.fn = async () => ({ ok: false, code });
+
+    const r = await setPOPaidAt(poId, new Date("2026-06-25T00:00:00.000Z"));
+    expect(r).toEqual({ changed: false, refusal: code, journalFailure: null });
+
+    /* The stub only runs after the compare-and-swap has already set `paidAt`
+       inside the transaction, so `paidAt` reading null here is that write rolled
+       back. No audit row and no JOURNAL_PENDING flag either: nothing was marked,
+       so there is no journal gap for the banner to report. */
+    expect(await paidAtOf(poId)).toBeNull();
+    expect(await paymentHistoryFor(poId)).toEqual([]);
+    expect(await journalPendingIdsFor([poId])).toEqual([]);
+    expect(await paymentJournalsFor(poId)).toEqual([]);
+  });
+
+  it("still commits the mark, and flags it, when the payment post fails on configuration", async () => {
+    const poId = await seedPo("7", null);
+    postOverride.fn = async () => ({ ok: false, code: "UNMAPPED_ROLE", role: "AP" });
+
+    const r = await setPOPaidAt(poId, new Date("2026-06-25T00:00:00.000Z"));
+    expect(r).toEqual({
+      changed: true,
+      refusal: null,
+      journalFailure: { code: "UNMAPPED_ROLE", role: "AP", direction: "payment" },
+    });
+
+    expect(await paidAtOf(poId)).not.toBeNull();
+    expect(await paymentHistoryFor(poId)).toEqual([{ paymentEvent: "MARKED" }]);
+    expect(await journalPendingIdsFor([poId])).toHaveLength(1);
+  });
+
+  it("still commits the mark, and flags it, when the payment post throws", async () => {
+    const poId = await seedPo("8", null);
+    postOverride.fn = async () => {
+      throw new Error("NON_POSTABLE_ACCOUNT");
+    };
+
+    const r = await setPOPaidAt(poId, new Date("2026-06-25T00:00:00.000Z"));
+    expect(r).toEqual({
+      changed: true,
+      refusal: null,
+      journalFailure: { code: "ERROR", role: null, direction: "payment" },
+    });
+
+    expect(await paidAtOf(poId)).not.toBeNull();
+    expect(await paymentHistoryFor(poId)).toEqual([{ paymentEvent: "MARKED" }]);
+    expect(await journalPendingIdsFor([poId])).toHaveLength(1);
   });
 });

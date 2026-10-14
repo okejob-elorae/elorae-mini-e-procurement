@@ -1613,6 +1613,11 @@
       "alreadyPaid": "PO ini sudah bertanda lunas — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembayaran dari penandaan sebelumnya belum terposting, gunakan \"Posting jurnal pembayaran\" di halaman PO ini kalau tersedia; kalau tidak, batalkan tanda lunas dan tandai lunas lagi.",
       "alreadyUnpaid": "PO ini sudah bertanda belum dibayar — tidak ada yang berubah dan tidak ada jurnal yang diposting. Kalau jurnal pembaliknya belum terposting, PO ini akan menampilkan peringatan pembayaran menggantung beserta tombol untuk memposting pembaliknya."
     },
+    "markRefused": {
+      "GRN_APPROVAL_PENDING": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Salah satu penerimaannya adalah kelebihan terima yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu di halaman Inventori dulu, lalu tandai lunas PO ini.",
+      "GRN_JOURNALS_INCOMPLETE": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Salah satu penerimaannya belum punya jurnal GRN, jadi utangnya belum tercatat. Gunakan \"Posting jurnal\" di baris GRN itu pada halaman Inventori dulu (perlu izin journals:manage), lalu tandai lunas PO ini.",
+      "GRN_REVERSAL_MISSING": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Gunakan \"Posting jurnal pembalik\" di baris GRN yang ditolak itu pada halaman Inventori dulu (perlu izin journals:manage), lalu tandai lunas PO ini."
+    },
     "standingPayment": {
       "title": "Jurnal pembayaran masih berdiri padahal PO ini belum ditandai lunas",
       "body": "Tanda lunas PO ini sudah dibatalkan, tapi jurnal pembaliknya gagal diposting, jadi jurnal pembayarannya masih berdiri di buku besar: utang sudah dihapus dan bank sudah dikredit untuk PO yang sekarang berstatus belum dibayar. Menandai lunas lagi tidak akan memperbaikinya — posting jurnal pembaliknya dari sini.",

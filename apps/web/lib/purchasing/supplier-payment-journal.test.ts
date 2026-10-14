@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import {
   hasStandingPaymentJournalWhileUnpaid,
@@ -16,6 +16,26 @@ import type { AccountType } from "../constants/enums";
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
+
+const { unmappedRoles } = vi.hoisted(() => ({ unmappedRoles: new Set<string>() }));
+
+/**
+ * `resolveAccount` answers as if a role were unmapped while a case holds it in
+ * `unmappedRoles`, without deleting the shared `:3308` mapping row the way the
+ * older unmapped-AP cases below do. Every other call, and every other export,
+ * runs the real code; `UnmappedRoleError` is the real class, so the writer's
+ * `instanceof` still matches.
+ */
+vi.mock("@/lib/finance/journals/mapping", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/finance/journals/mapping")>();
+  return {
+    ...actual,
+    resolveAccount: (...args: Parameters<typeof actual.resolveAccount>) =>
+      unmappedRoles.has(args[0])
+        ? Promise.reject(new actual.UnmappedRoleError(args[0]))
+        : actual.resolveAccount(...args),
+  };
+});
 
 type TrackedPo = { poId: string; grnIds: string[] };
 
@@ -247,6 +267,7 @@ d("supplier payment journal (test bed only)", () => {
 
   beforeEach(() => {
     createdPos = [];
+    unmappedRoles.clear();
   });
 
   /* The net for per-test PO/GRN rows: repeats the same guarded cleanup
@@ -1092,6 +1113,64 @@ d("supplier payment journal (test bed only)", () => {
         ok: false,
         code: "NOTHING_TO_POST",
       });
+    } finally {
+      await cleanupPo(tracked);
+    }
+  });
+
+  /*
+   * Precedence, and it is a money rule rather than a copy one: `setPOPaidAt`
+   * aborts the mark on a receipt-state code but COMMITS it on `UNMAPPED_ROLE`, so
+   * an unmapped AP role answered first would mark the PO paid straight past an
+   * unsettled receipt. Each receipt state must therefore win over the mapping.
+   * The receipt journals are posted while AP is still mapped; only the payment
+   * read sees it unmapped.
+   */
+  it.each([
+    ["GRN_APPROVAL_PENDING", "pending"],
+    ["GRN_JOURNALS_INCOMPLETE", "unjournaled"],
+    ["GRN_REVERSAL_MISSING", "declined"],
+  ] as const)("returns %s, not UNMAPPED_ROLE, while AP is unmapped", async (code, state) => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: {
+        docNumber: nextDocNumber("GRN"),
+        poId: po.id,
+        supplierId,
+        receivedBy: userId,
+        totalAmount: 20_000,
+        items: [],
+        requiresOwnerApproval: state === "pending",
+      },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    try {
+      if (state !== "unjournaled") {
+        expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      }
+      if (state === "declined") {
+        await prisma.gRN.update({ where: { id: grn.id }, data: { ownerDeclinedAt: new Date() } });
+      }
+
+      unmappedRoles.add("AP");
+      try {
+        const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-07-03T00:00:00.000Z"), prisma);
+        expect(r).toEqual({ ok: false, code });
+      } finally {
+        unmappedRoles.delete("AP");
+      }
+
+      const journal = await prisma.journal.findUnique({
+        where: { sourceType_sourceId: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } },
+      });
+      expect(journal).toBeNull();
     } finally {
       await cleanupPo(tracked);
     }
