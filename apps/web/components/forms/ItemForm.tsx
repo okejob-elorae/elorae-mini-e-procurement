@@ -35,7 +35,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TagsInput } from '@/components/ui/tags-input';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Loader2, Wand2 } from 'lucide-react';
+import { Plus, Trash2, Loader2, Wand2, X } from 'lucide-react';
+import { getPantoneOptionsForItems } from '@/app/actions/variant-colors';
+import {
+  PantoneThemePickerDialog,
+  type PantoneThemeSelection,
+} from '@/components/settings/PantoneThemePickerDialog';
 import { toast } from 'sonner';
 import {
   buildVariantSkuCode,
@@ -135,6 +140,7 @@ interface ItemFormProps {
     sellingPrice?: number;
     targetMarginPercent?: number;
     additionalCost?: number;
+    pantone?: PantoneThemeSelection | null;
     consumptionRules?: Array<{
       materialId: string;
       material: {
@@ -162,6 +168,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const [materials, setMaterials] = useState<Item[]>([]);
   const [itemCategories, setItemCategories] = useState<ItemCategoryOption[]>([]);
   const [sku, setSku] = useState(initialData?.sku || '');
+  const [pantone, setPantone] = useState<PantoneThemeSelection | null>(initialData?.pantone ?? null);
+  const [pantonePickerOpen, setPantonePickerOpen] = useState(false);
   const [isGeneratingSKU, setIsGeneratingSKU] = useState(false);
   const [consumptionRules, setConsumptionRules] = useState<ConsumptionRuleRow[]>(
     initialData?.consumptionRules?.map(r => ({
@@ -573,7 +581,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     }
 
     await onSubmit(
-      { ...dataWithSku, variants },
+      // Finished goods carry colour per variant; only a material gets a Pantone (#410).
+      { ...dataWithSku, variants, pantoneTcx: itemType === ItemType.FINISHED_GOOD ? null : pantone?.tcx ?? null },
       itemType === ItemType.FINISHED_GOOD ? stripConsumptionRuleRows(consumptionRules) : undefined
     );
   };
@@ -753,6 +762,38 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               )}
             </div>
           </div>
+
+          {itemType !== ItemType.FINISHED_GOOD && (
+            <div className="space-y-2">
+              <Label>Pantone (optional)</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                {pantone && (
+                  <span className="flex items-center gap-2 text-sm">
+                    <span className="h-5 w-5 rounded border" style={{ backgroundColor: pantone.hex }} aria-hidden />
+                    {pantone.tcx} · {pantone.name}
+                  </span>
+                )}
+                <Button type="button" variant="outline" size="sm" onClick={() => setPantonePickerOpen(true)}>
+                  {pantone ? 'Change' : 'Choose Pantone'}
+                </Button>
+                {pantone && (
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label="Clear Pantone" onClick={() => setPantone(null)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Keep one material item per colour (e.g. PARACHUTE BLACK); the Pantone records which shade it is.
+              </p>
+              <PantoneThemePickerDialog
+                open={pantonePickerOpen}
+                onOpenChange={setPantonePickerOpen}
+                onSelect={setPantone}
+                load={getPantoneOptionsForItems}
+                description="Search by name, TCX code, or hex."
+              />
+            </div>
+          )}
 
           {/* Description */}
           <div className="space-y-2">

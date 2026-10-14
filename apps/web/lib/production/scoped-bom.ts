@@ -133,6 +133,30 @@ export function planMaterialQuantities(
   return out;
 }
 
+/**
+ * The same quantities split by the colour of the pieces that draw them (#410), so a WO's rolls
+ * can be picked per colour: material → colorId (null = a variant with no resolved colour) → qty.
+ * Each colour's quantities add up to that material's line in planMaterialQuantities.
+ */
+export function planMaterialQuantitiesByColor(
+  rules: ScopedRule[],
+  mix: VariantShare[],
+): Map<string, Map<string | null, PlannedMaterial>> {
+  const groups = new Map<string | null, VariantShare[]>();
+  for (const m of mix) groups.set(m.colorId, [...(groups.get(m.colorId) ?? []), m]);
+  const out = new Map<string, Map<string | null, PlannedMaterial>>();
+  for (const [colorId, group] of groups) {
+    const pieces = group.reduce((s, m) => s.plus(m.qty), new Decimal(0));
+    for (const [materialId, q] of planMaterialQuantities(rules, pieces, group)) {
+      if (q.plannedQty.isZero()) continue;
+      const byColor = out.get(materialId) ?? new Map<string | null, PlannedMaterial>();
+      byColor.set(colorId, q);
+      out.set(materialId, byColor);
+    }
+  }
+  return out;
+}
+
 function scopesOverlap(a: ScopedRule, b: ScopedRule): boolean {
   if (a.colorId != null && b.colorId != null && a.colorId !== b.colorId) return false;
   const sa = sizeOf(a);

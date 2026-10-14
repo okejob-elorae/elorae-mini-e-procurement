@@ -10,12 +10,18 @@ import {
   isScopedRule,
   MaterialPlanBlockedError,
   planMaterialQuantities,
+  planMaterialQuantitiesByColor,
   unresolvedMixVariants,
+  type VariantShare,
 } from '@/lib/production/scoped-bom';
+
+/** One colour's share of a plan line (#410); colorId null = variants whose colour did not resolve. */
+export type MaterialPlanColorShare = { colorId: string | null; colorName: string | null; plannedQty: Decimal };
 
 export interface MaterialPlanItem {
   itemId: string;
   itemName: string;
+  itemType: string;
   uomId: string;
   uomCode: string;
   qtyRequired: Decimal;
@@ -23,6 +29,8 @@ export interface MaterialPlanItem {
   plannedQty: Decimal;
   availableStock: Decimal;
   shortage: Decimal;
+  /** Split by finished-good colour when the WO has a variant mix; absent for GENERIC. */
+  byColor?: MaterialPlanColorShare[];
 }
 
 export type MaterialPlanOptions = {
@@ -56,8 +64,9 @@ export async function generateMaterialPlan(
     },
   });
 
-  let mix = null;
-  if (rules.some(isScopedRule)) {
+  // The mix also splits every line by colour (#410), so it is built whenever the WO has a ratio.
+  let mix: VariantShare[] | null = null;
+  if (opts.skuBreakdown || rules.some(isScopedRule)) {
     const [fg, index] = await Promise.all([
       prisma.item.findUnique({ where: { id: finishedGoodId }, select: { variants: true } }),
       loadColorIndex(),
@@ -65,7 +74,7 @@ export async function generateMaterialPlan(
     const variants = parseItemVariants(fg?.variants);
     mix = opts.skuBreakdown
       ? buildVariantMix(plannedOutput, opts.skuBreakdown, variants, index)
-      : opts.fallbackToEqualSplit
+      : opts.fallbackToEqualSplit && rules.some(isScopedRule)
         ? equalVariantMix(plannedOutput, variants, index)
         : null;
     const unresolved = mix && !opts.fallbackToEqualSplit ? unresolvedMixVariants(rules, mix) : [];
@@ -77,6 +86,15 @@ export async function generateMaterialPlan(
   }
 
   const quantities = planMaterialQuantities(rules, plannedOutput, mix);
+  const byColor = opts.skuBreakdown && mix ? planMaterialQuantitiesByColor(rules, mix) : null;
+  const colorIds = new Set<string>();
+  for (const m of byColor?.values() ?? []) for (const id of m.keys()) if (id) colorIds.add(id);
+  const colorNames = new Map(
+    colorIds.size === 0
+      ? []
+      : (await prisma.variantColor.findMany({ where: { id: { in: [...colorIds] } }, select: { id: true, name: true } }))
+          .map((c) => [c.id, c.name] as const)
+  );
   const materials = new Map(rules.map((r) => [r.materialId, r.material]));
   const firstRule = new Map<string, (typeof rules)[number]>();
   for (const r of rules) if (!firstRule.has(r.materialId)) firstRule.set(r.materialId, r);
@@ -98,16 +116,25 @@ export async function generateMaterialPlan(
       ? q.plannedQty.minus(availableStock)
       : new Decimal(0);
 
+    const shares = byColor?.get(materialId);
     return {
       itemId: materialId,
       itemName: material.nameId,
+      itemType: material.type,
       uomId: material.uomId,
       uomCode: material.uom.code,
       qtyRequired,
       wastePercent,
       plannedQty: q.plannedQty,
       availableStock,
-      shortage
+      shortage,
+      byColor: shares
+        ? [...shares].map(([colorId, c]) => ({
+            colorId,
+            colorName: colorId ? colorNames.get(colorId) ?? null : null,
+            plannedQty: c.plannedQty,
+          }))
+        : undefined,
     };
   });
 }

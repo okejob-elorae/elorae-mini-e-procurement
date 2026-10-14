@@ -7,6 +7,7 @@ import {
   equalVariantMix,
   findOverlappingRules,
   planMaterialQuantities,
+  planMaterialQuantitiesByColor,
   unresolvedMixVariants,
   type ScopedRule,
 } from "./scoped-bom";
@@ -79,6 +80,26 @@ describe("planMaterialQuantities", () => {
 
   it("keeps an unscoped material at zero output", () => {
     expect(planMaterialQuantities([rule("thread", 1)], new Decimal(0), null).get("thread")?.plannedQty.toNumber()).toBe(0);
+  });
+});
+
+describe("planMaterialQuantitiesByColor", () => {
+  it("splits each material by the colour of the pieces that draw it", () => {
+    // Only Black and a partial Grey are produced: 60 black, 40 grey.
+    const mix = buildVariantMix(new Decimal(100), [
+      { variantSku: "P-BLK-S", ratioPercent: 40 },
+      { variantSku: "P-BLK-M", ratioPercent: 20 },
+      { variantSku: "P-GRY-S", ratioPercent: 40 },
+    ], variants, index)!;
+    const plan = planMaterialQuantitiesByColor(
+      [rule("fab-black", 1.5, { colorId: "black" }), rule("fab-grey", 1.5, { colorId: "grey" }), rule("thread", 2)],
+      mix,
+    );
+    expect([...plan.get("fab-black")!.keys()]).toEqual(["black"]);
+    expect(plan.get("fab-black")!.get("black")!.plannedQty.toNumber()).toBeCloseTo(90);
+    expect(plan.get("fab-grey")!.get("grey")!.plannedQty.toNumber()).toBeCloseTo(60);
+    expect(plan.get("thread")!.get("black")!.plannedQty.toNumber()).toBeCloseTo(120);
+    expect(plan.get("thread")!.get("grey")!.plannedQty.toNumber()).toBeCloseTo(80);
   });
 });
 

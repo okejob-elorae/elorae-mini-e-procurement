@@ -1261,7 +1261,13 @@
       "label": "Rasio varian % (total = 100%)",
       "sum": "Total:",
       "stock": "<a>{available} tersedia</a> · {onHand} di gudang",
-      "stockUnavailable": "Stok tidak tersedia"
+      "stockUnavailable": "Stok tidak tersedia",
+      "colors": "Warna yang diproduksi",
+      "colorsHint": "Pilih satu atau beberapa warna; ukuran tiap warna muncul di bawah. Mengubah warna membagi rasio rata lagi.",
+      "pickColor": "Pilih minimal satu warna.",
+      "subtotal": "{percent}% dari WO ini",
+      "noColor": "Tanpa warna",
+      "otherVariants": "Varian lain"
     }
   },
   "supplierTypes": {

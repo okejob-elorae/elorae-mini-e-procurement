@@ -148,6 +148,7 @@ type ItemWithRelations = Prisma.ItemGetPayload<{
     inventoryValues: true;
     fgConsumptions: { include: { material: { include: { uom: true } } } };
     materialUsages: { include: { finishedGood: { include: { uom: true } } } };
+    pantone: { select: { tcx: true; name: true; hex: true } };
   };
 }>;
 
@@ -382,6 +383,7 @@ export async function getItemById(id: string) {
           },
         },
       },
+      pantone: { select: { tcx: true, name: true, hex: true } },
     },
   });
   return serializeItemForClient(item);

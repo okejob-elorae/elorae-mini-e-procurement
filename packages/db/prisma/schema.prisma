@@ -1260,6 +1260,9 @@ model Item {
   categoryId       String?
   category         ItemCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   variants         Json?
+  /// Optional Pantone of a colour-specific material (one fabric item per colour, #410)
+  pantoneTcx       String?
+  pantone          PantoneColor?     @relation(fields: [pantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: NoAction)
   isActive         Boolean           @default(true)
   reorderPoint     Decimal?          @db.Decimal(10,2)
   overReceiveThreshold Decimal?      @db.Decimal(10,2)
@@ -1308,6 +1311,7 @@ model Item {
   @@index([sku])
   @@index([uomId])
   @@index([categoryId])
+  @@index([pantoneTcx])
 }
 
 model ItemImage {
@@ -2626,6 +2630,7 @@ model PantoneColor {
   favorites   PantoneColorFavorite[]
   themeUsers  User[]
   variantColors VariantColor[]
+  items       Item[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

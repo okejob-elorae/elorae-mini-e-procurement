@@ -1261,7 +1261,13 @@
       "label": "Variant ratio % (sum = 100%)",
       "sum": "Sum:",
       "stock": "<a>{available} avail</a> · {onHand} on hand",
-      "stockUnavailable": "Stock unavailable"
+      "stockUnavailable": "Stock unavailable",
+      "colors": "Colours to produce",
+      "colorsHint": "Pick one or more colours; each colour's sizes appear below. Changing colours splits the ratio evenly again.",
+      "pickColor": "Pick at least one colour.",
+      "subtotal": "{percent}% of this WO",
+      "noColor": "No colour",
+      "otherVariants": "Other variants"
     }
   },
   "supplierTypes": {

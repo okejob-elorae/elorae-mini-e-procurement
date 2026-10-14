@@ -42,6 +42,7 @@ export function createItemSchema(t: ValidationTranslate = defaultT) {
     sellingPrice: z.number().min(0).optional(),
     targetMarginPercent: z.number().min(0).optional(),
     additionalCost: z.number().min(0).optional(),
+    pantoneTcx: z.string().nullable().optional(),
   });
 }
 
