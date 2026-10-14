@@ -39,8 +39,9 @@ import {
   getAvailableFabricRolls,
   getWorkOrderById,
   issueMaterials,
-  suggestFabricRollAllocation,
 } from '@/app/actions/production';
+import { MaterialRollAllocation, type MaterialRollEntry } from '@/components/work-orders/MaterialRollAllocation';
+import { rollShortfalls, withRollItemIds, type RollEntry } from '@/lib/production/roll-allocation';
 import { getItemsByType } from '@/app/actions/items';
 import { getItemAvgCosts } from '@/app/actions/inventory';
 import { ItemType } from '@/lib/constants/enums';
@@ -64,22 +65,19 @@ interface IssueLine {
   unitPrice?: number;
 }
 
-type RollPick = { rollRef: string; qty: number; notes?: string };
-
+/** The WO's planned rolls that still have length left, each at what remains on it (#437: per material). */
 function plannedRollsStillAvailable(
-  woData: { rollBreakdown?: unknown } | null | undefined,
-  available: Array<{ rollCode: string; rollRef: string; remainingLength: number }>
-): RollPick[] {
-  const planned = Array.isArray(woData?.rollBreakdown)
-    ? (woData.rollBreakdown as Array<{ rollRef?: string; notes?: string }>)
-    : [];
-  const out: RollPick[] = [];
+  planned: MaterialRollEntry[],
+  availableByItem: Map<string, Array<{ rollCode: string; rollRef: string; remainingLength: number }>>
+): MaterialRollEntry[] {
+  const out: MaterialRollEntry[] = [];
   for (const row of planned) {
     const ref = (row.rollRef ?? "").trim();
     if (!ref) continue;
-    const live = available.find((r) => r.rollCode === ref || r.rollRef === ref);
+    const live = (availableByItem.get(row.itemId) ?? []).find((r) => r.rollCode === ref || r.rollRef === ref);
     if (!live || live.remainingLength <= 0) continue;
     out.push({
+      itemId: row.itemId,
       rollRef: ref,
       qty: live.remainingLength,
       notes: typeof row.notes === "string" ? row.notes : "",
@@ -104,12 +102,7 @@ export default function WorkOrderIssuePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [itemAvgCosts, setItemAvgCosts] = useState<Record<string, number>>({});
-  const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
-  const [availableRolls, setAvailableRolls] = useState<Array<{ rollId: string; rollCode: string; rollRef: string; remainingLength: number }>>([]);
-  const [addRollValue, setAddRollValue] = useState("");
-  const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
-
-  const [availableRollsReady, setAvailableRollsReady] = useState(false);
+  const [rollBreakdown, setRollBreakdown] = useState<MaterialRollEntry[]>([]);
   const prefilledWoIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -143,51 +136,32 @@ export default function WorkOrderIssuePage() {
       ? String((wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? "")
       : "";
 
+  // Prefill once with the WO's planned rolls that still have length left, per material (#437).
   useEffect(() => {
-    if (!wo) {
-      setAvailableRolls([]);
-      setAvailableRollsReady(false);
-      return;
-    }
-    if (!consumptionMaterialId || issueType !== "FABRIC") {
-      setAvailableRolls([]);
-      setAvailableRollsReady(true);
-      return;
-    }
-    let cancelled = false;
-    setAvailableRollsReady(false);
-    getAvailableFabricRolls(consumptionMaterialId)
-      .then((rows) => {
-        if (cancelled) return;
-        setAvailableRolls(rows);
-        setAvailableRollsReady(true);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setAvailableRolls([]);
-        setAvailableRollsReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [wo, consumptionMaterialId, issueType]);
-
-  useEffect(() => {
-    if (!wo || !availableRollsReady || issueType !== "FABRIC") return;
-    if (prefilledWoIdRef.current === id) return;
+    if (!wo || prefilledWoIdRef.current === id) return;
     prefilledWoIdRef.current = id;
-    setRollBreakdown((prev) => {
-      if (prev.length > 0) return prev;
-      return plannedRollsStillAvailable(
-        wo as { rollBreakdown?: unknown },
-        availableRolls
-      );
+    const raw = (wo as { rollBreakdown?: unknown }).rollBreakdown;
+    const planned = withRollItemIds(Array.isArray(raw) ? (raw as RollEntry[]) : [], consumptionMaterialId || null);
+    if (planned.length === 0) return;
+    const ids = [...new Set(planned.map((p) => p.itemId))];
+    Promise.all(
+      ids.map((itemId) =>
+        getAvailableFabricRolls(itemId)
+          .then((rows): [string, typeof rows] => [itemId, rows])
+          .catch((): [string, Awaited<ReturnType<typeof getAvailableFabricRolls>>] => [itemId, []])
+      )
+    ).then((pairs) => {
+      const byItem = new Map(pairs);
+      setRollBreakdown((prev) => (prev.length > 0 ? prev : plannedRollsStillAvailable(planned, byItem)));
     });
-  }, [wo, availableRolls, availableRollsReady, issueType, id]);
+  }, [wo, consumptionMaterialId, id]);
 
   const plan = (wo?.consumptionPlan as any[]) || [];
+  // A WO on a colour-scoped BOM has one fabric per colour (#437), so any FABRIC item counts, plus
+  // the consumption material as before (it may be an accessory).
   const isFabricItem = (itemId: string) =>
-    consumptionMaterialId.length > 0 && itemId === consumptionMaterialId;
+    materials.some((m) => m.id === itemId) ||
+    (consumptionMaterialId.length > 0 && itemId === consumptionMaterialId);
   const planWithRemaining: PlanRow[] = plan.map((p: any) => ({
     itemId: p.itemId,
     itemName: p.itemName,
@@ -205,9 +179,6 @@ export default function WorkOrderIssuePage() {
       setLines([]);
     }
     setIssueType(nextType);
-    if (nextType !== "FABRIC") {
-      setRollBreakdown([]);
-    }
   };
 
   const addLine = (itemId?: string) => {
@@ -295,66 +266,13 @@ export default function WorkOrderIssuePage() {
     setScanOpen(false);
   };
 
-  const fabricIssueQty = lines
-    .filter((l) => isFabricItem(l.itemId) && l.qty > 0)
-    .reduce((sum, l) => sum + l.qty, 0);
-  const rollSum = rollBreakdown.reduce((sum, row) => sum + row.qty, 0);
-  const rollValid =
-    issueType !== "FABRIC" ||
-    fabricIssueQty <= 0 ||
-    rollBreakdown.length === 0 ||
-    rollSum + 1e-6 >= fabricIssueQty;
-
-  const addRollBySelection = (roll: {
-    rollId: string;
-    rollCode: string;
-    rollRef: string;
-    remainingLength: number;
-  }) => {
-    setRollBreakdown((prev) => [
-      ...prev,
-      { rollRef: roll.rollCode || roll.rollRef, qty: roll.remainingLength, notes: "" },
-    ]);
-  };
-  const removeRollRow = (i: number) => {
-    setRollBreakdown((prev) => prev.filter((_, idx) => idx !== i));
-  };
-  const updateRollNotes = (i: number, notes: string) => {
-    setRollBreakdown((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], notes };
-      return next;
-    });
-  };
-  const handleSuggestRolls = async () => {
-    if (!consumptionMaterialId || fabricIssueQty <= 0) return;
-    setIsSuggestingRolls(true);
-    try {
-      const suggestion = await suggestFabricRollAllocation(
-        consumptionMaterialId,
-        fabricIssueQty
-      );
-      if (suggestion.selected.length === 0) {
-        toast.error("No available fabric rolls found");
-        return;
-      }
-      setRollBreakdown(
-        suggestion.selected.map((row) => ({
-          rollRef: row.rollCode ?? row.rollRef,
-          qty: row.qty,
-        }))
-      );
-      if (suggestion.unallocated > 0) {
-        toast.error(`Insufficient roll stock, unallocated: ${suggestion.unallocated.toFixed(2)}`);
-      } else {
-        toast.success("Best-fit roll suggestion applied");
-      }
-    } catch {
-      toast.error("Failed to suggest roll allocation");
-    } finally {
-      setIsSuggestingRolls(false);
-    }
-  };
+  // Rolls for the staged lines only, per material (#437); a material without rolls is not checked.
+  const lineRolls = rollBreakdown.filter((r) => lines.some((l) => l.itemId === r.itemId));
+  const rollGaps = rollShortfalls(
+    lines.filter((l) => l.qty > 0).map((l) => ({ itemId: l.itemId, qty: l.qty })),
+    lineRolls
+  );
+  const rollValid = rollGaps.length === 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -364,13 +282,10 @@ export default function WorkOrderIssuePage() {
       toast.error(t('addAtLeastOneLine'));
       return;
     }
-    const fabricQty = valid
-      .filter((l) => isFabricItem(l.itemId))
-      .reduce((sum, l) => sum + l.qty, 0);
-    const rollSum = rollBreakdown.reduce((sum, row) => sum + row.qty, 0);
-    if (issueType === "FABRIC" && fabricQty > 0 && rollBreakdown.length > 0 && rollSum + 1e-6 < fabricQty) {
+    if (rollGaps.length > 0) {
+      const gap = rollGaps[0];
       toast.error(
-        `Total roll (${rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}) is less than issued fabric qty (${fabricQty.toLocaleString(undefined, { maximumFractionDigits: 2 })}).`
+        `Total roll (${gap.allocated.toLocaleString(undefined, { maximumFractionDigits: 2 })}) is less than issued qty (${gap.required.toLocaleString(undefined, { maximumFractionDigits: 2 })}).`
       );
       return;
     }
@@ -387,7 +302,8 @@ export default function WorkOrderIssuePage() {
             uomId: l.uomId,
             ...(l.unitPrice != null && l.unitPrice > 0 ? { unitPrice: l.unitPrice } : {}),
           })),
-          ...(issueType === "FABRIC" ? { rollBreakdown } : {}),
+          // Always explicit: the picker was prefilled from the WO plan, so an empty list means no rolls.
+          rollBreakdown: lineRolls,
         },
         session.user.id
       );
@@ -586,102 +502,12 @@ export default function WorkOrderIssuePage() {
                   </TableBody>
                 </Table>
               )}
-              {issueType === "FABRIC" && consumptionMaterialId && (
-                <div className="space-y-2 border-t pt-4">
-                  <Label>Alokasi per roll (opsional)</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Pilih roll utuh. Total allocated minimal sama dengan qty kain yang di-issue.
-                  </p>
-                  {rollBreakdown.length > 0 && (
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Roll / Ref</TableHead>
-                            <TableHead className="text-right">Qty (whole roll)</TableHead>
-                            <TableHead>Notes</TableHead>
-                            <TableHead className="w-12" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {rollBreakdown.map((row, i) => (
-                            <TableRow key={`${row.rollRef}-${i}`}>
-                              <TableCell className="font-medium">{row.rollRef}</TableCell>
-                              <TableCell className="text-right">
-                                {Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                              </TableCell>
-                              <TableCell>
-                                <Input
-                                  value={row.notes ?? ""}
-                                  onChange={(e) => updateRollNotes(i, e.target.value)}
-                                  placeholder="Optional"
-                                  className="h-8"
-                                />
-                              </TableCell>
-                              <TableCell>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => removeRollRow(i)}
-                                >
-                                  ×
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <SearchableCombobox
-                      options={availableRolls
-                        .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
-                        .map((r) => ({
-                          value: r.rollId,
-                          label: `${r.rollCode} — ${r.remainingLength.toLocaleString()} remaining`,
-                        }))}
-                      value={addRollValue}
-                      onValueChange={(value) => {
-                        const roll = availableRolls.find((r) => r.rollId === value);
-                        if (roll) {
-                          addRollBySelection(roll);
-                          setAddRollValue("");
-                        }
-                      }}
-                      placeholder="Add roll..."
-                      emptyMessage="No more rolls"
-                      triggerClassName="w-[280px]"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void handleSuggestRolls()}
-                      disabled={!consumptionMaterialId || fabricIssueQty <= 0 || isSuggestingRolls}
-                    >
-                      {isSuggestingRolls ? "Suggesting..." : "Suggest best-fit"}
-                    </Button>
-                  </div>
-                  {rollBreakdown.length > 0 && (
-                    <p className="text-sm">
-                      Total allocated: {rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}.
-                      {fabricIssueQty > 0
-                        ? rollSum >= fabricIssueQty - 1e-6
-                          ? ` +${(rollSum - fabricIssueQty).toLocaleString(undefined, { maximumFractionDigits: 2 })} over`
-                          : ` ${(rollSum - fabricIssueQty).toLocaleString(undefined, { maximumFractionDigits: 2 })} short`
-                        : ""}
-                    </p>
-                  )}
-                  {!rollValid && (
-                    <p className="text-sm text-destructive">
-                      Total roll ({rollSum.toLocaleString(undefined, { maximumFractionDigits: 4 })}) kurang dari qty kain yang di-issue ({fabricIssueQty.toLocaleString(undefined, { maximumFractionDigits: 4 })}).
-                    </p>
-                  )}
-                </div>
-              )}
+              <MaterialRollAllocation
+                lines={lines.map((l) => ({ itemId: l.itemId, itemName: l.itemName, qty: l.qty }))}
+                value={lineRolls}
+                onChange={setRollBreakdown}
+                description="Pilih roll utuh per bahan. Total per bahan minimal sama dengan qty yang di-issue."
+              />
               <Button type="submit" disabled={isSubmitting || lines.length === 0 || !rollValid}>
                 {isSubmitting ? 'Issuing...' : 'Issue Materials'}
               </Button>

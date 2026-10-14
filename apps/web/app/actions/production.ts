@@ -10,7 +10,9 @@ import { generateDocNumber } from '@/lib/docNumber';
 import { docNumberPeriod } from "@/lib/doc-numbers/period";
 import { maxIssuedNumber, resyncedCounter } from "@/lib/doc-numbers/recover";
 import { normalizePrefix } from "@/lib/doc-numbers/validate";
-import { generateMaterialPlan } from '@/lib/production/planning';
+import { generateMaterialPlan, type MaterialPlanOptions } from '@/lib/production/planning';
+import { MaterialPlanBlockedError } from '@/lib/production/scoped-bom';
+import { rollShortfalls, rollsForItem, withRollItemIds, type RollEntry } from '@/lib/production/roll-allocation';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
@@ -223,6 +225,8 @@ function serializeWorkOrder(wo: {
 }
 
 const rollBreakdownItemSchema = z.object({
+  /** The roll's material (#437); absent on entries made before rolls were per material = consumptionMaterialId. */
+  itemId: idStr.optional(),
   rollRef: z.string(),
   qty: z.number().nonnegative(),
   notes: z.string().optional(),
@@ -287,10 +291,12 @@ export async function createWorkOrder(
   woSchema.parse(data);
 
   const plannedOutput = new Decimal(data.plannedQty);
-  const materialPlan = await generateMaterialPlan(
-    data.finishedGoodId,
-    plannedOutput
-  );
+  const materialPlan = await generateMaterialPlan(data.finishedGoodId, plannedOutput, {
+    skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
+  });
+  // Rolls are per material (#437): each must belong to a material of this plan.
+  const strayRoll = data.rollBreakdown?.find((r) => r.itemId && !materialPlan.some((m) => m.itemId === r.itemId));
+  if (strayRoll) throw new Error(`Roll ${strayRoll.rollRef} is for a material that is not in this work order's plan`);
 
   if (!options?.skipStockCheck) {
     const shortages = materialPlan.filter((m) => m.shortage.gt(0));
@@ -443,10 +449,12 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
   }
 
   const plannedOutput = new Decimal(data.plannedQty);
-  const materialPlan = await generateMaterialPlan(
-    data.finishedGoodId,
-    plannedOutput
-  );
+  const materialPlan = await generateMaterialPlan(data.finishedGoodId, plannedOutput, {
+    skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
+  });
+  // Rolls are per material (#437): each must belong to a material of this plan.
+  const strayRoll = data.rollBreakdown?.find((r) => r.itemId && !materialPlan.some((m) => m.itemId === r.itemId));
+  if (strayRoll) throw new Error(`Roll ${strayRoll.rollRef} is for a material that is not in this work order's plan`);
 
   const shortages = materialPlan.filter((m) => m.shortage.gt(0));
   if (shortages.length > 0) {
@@ -784,11 +792,12 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
     // Deduct from this issue's rolls, or the WO plan if the picker was left empty.
     // Do not overwrite WorkOrder.rollBreakdown — that field is the planned allocation.
+    // Rolls are per material (#437): each issued item draws only the rolls named for it.
     const consumptionMaterialId = (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null;
-    const parseRolls = (raw: unknown): Array<{ rollRef: string; qty: number }> | null => {
+    const parseRolls = (raw: unknown): RollEntry[] | null => {
       if (raw == null) return null;
       const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
-      return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
+      return Array.isArray(arr) ? arr as RollEntry[] : null;
     };
     const explicitRolls = validated.rollBreakdown;
     const payloadRolls = explicitRolls != null && explicitRolls.length > 0 ? explicitRolls : null;
@@ -796,22 +805,25 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       ? payloadRolls
       : parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
 
-    if (payloadRolls && consumptionMaterialId) {
-      const fabricQty = validated.items
-        .filter((item) => item.itemId === consumptionMaterialId)
-        .reduce((sum, item) => sum + item.qty, 0);
-      const rollSum = payloadRolls.reduce((sum, row) => sum + row.qty, 0);
-      if (fabricQty > 0 && rollSum + 1e-6 < fabricQty) {
+    if (payloadRolls) {
+      const issuedByItem = new Map<string, number>();
+      for (const item of validated.items) issuedByItem.set(item.itemId, (issuedByItem.get(item.itemId) ?? 0) + item.qty);
+      const short = rollShortfalls(
+        [...issuedByItem].map(([itemId, qty]) => ({ itemId, qty })),
+        withRollItemIds(payloadRolls, consumptionMaterialId)
+      )[0];
+      if (short) {
         throw new Error(
-          `Total roll (${rollSum}) is less than issued fabric qty (${fabricQty})`
+          `Total roll (${short.allocated}) is less than issued qty (${short.required})`
         );
       }
     }
 
     for (const item of validated.items) {
-      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollsToDeduct != null && rollsToDeduct.length > 0) {
+      const itemRolls = rollsToDeduct != null ? rollsForItem(rollsToDeduct, item.itemId, consumptionMaterialId) : [];
+      if (itemRolls.length > 0) {
         let remainingToAllocate = item.qty;
-        for (const entry of rollsToDeduct) {
+        for (const entry of itemRolls) {
           if (remainingToAllocate <= 0) break;
           const roll = await tx.fabricRoll.findFirst({
             where: {
@@ -838,7 +850,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         }
         if (payloadRolls != null && remainingToAllocate > 1e-6) {
           throw new Error(
-            `Selected rolls cannot cover issued fabric qty (short ${remainingToAllocate})`
+            `Selected rolls cannot cover issued qty (short ${remainingToAllocate})`
           );
         }
       }
@@ -902,11 +914,33 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
   return issueResult;
 }
 
+/**
+ * The WO's accessories with their quantity per piece, from the WO's own material plan rather
+ * than the current BOM: a colour/size-scoped rule (#437) only covers some of the WO's variants,
+ * and the plan already averaged it over the WO's variant mix.
+ */
+async function accessoryPlanLines(consumptionPlan: unknown) {
+  const plan = parseConsumptionPlan(consumptionPlan) as Array<{ itemId?: string; qtyRequired?: number }>;
+  const ids = plan.map((line) => line.itemId).filter((id): id is string => !!id);
+  const items = await prisma.item.findMany({
+    where: { id: { in: ids }, type: 'ACCESSORIES' },
+    select: { id: true, uomId: true, nameId: true },
+  });
+  const byId = new Map(items.map((item) => [item.id, item]));
+  return plan
+    .filter((line) => line.itemId != null && byId.has(line.itemId))
+    .map((line) => ({
+      materialId: line.itemId!,
+      qtyRequired: Number(line.qtyRequired ?? 0),
+      material: byId.get(line.itemId!)!,
+    }));
+}
+
 /** Preview: accessory items and qty needed for additional pcs + stock availability. Used by Issue Additional Materials UI. */
 export async function getAdditionalMaterialsPreview(woId: string, additionalQty: number) {
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
-    select: { status: true, finishedGoodId: true },
+    select: { status: true, consumptionPlan: true },
   });
   if (!wo) throw new Error('Work Order not found');
   if (wo.status !== 'IN_PRODUCTION') {
@@ -916,15 +950,7 @@ export async function getAdditionalMaterialsPreview(woId: string, additionalQty:
     throw new Error('Additional qty must be a positive integer');
   }
 
-  const rules = await prisma.consumptionRule.findMany({
-    where: { finishedGoodId: wo.finishedGoodId, isActive: true },
-    include: {
-      material: {
-        select: { id: true, type: true, uomId: true, nameId: true },
-      },
-    },
-  });
-  const accessoryRules = rules.filter((r) => r.material.type === 'ACCESSORIES');
+  const accessoryRules = await accessoryPlanLines(wo.consumptionPlan);
   if (accessoryRules.length === 0) {
     return { lines: [], totalAdditionalQty: additionalQty };
   }
@@ -972,7 +998,7 @@ export async function issueAdditionalMaterials(
 
   const wo = await prisma.workOrder.findUnique({
     where: { id: woId },
-    select: { status: true, finishedGoodId: true, docNumber: true },
+    select: { status: true, consumptionPlan: true, docNumber: true },
   });
   if (!wo) throw new Error('Work Order not found');
   if (wo.status !== 'IN_PRODUCTION') {
@@ -982,15 +1008,7 @@ export async function issueAdditionalMaterials(
     throw new Error('Additional qty must be a positive integer');
   }
 
-  const rules = await prisma.consumptionRule.findMany({
-    where: { finishedGoodId: wo.finishedGoodId, isActive: true },
-    include: {
-      material: {
-        select: { id: true, type: true, uomId: true, nameId: true },
-      },
-    },
-  });
-  const accessoryRules = rules.filter((r) => r.material.type === 'ACCESSORIES');
+  const accessoryRules = await accessoryPlanLines(wo.consumptionPlan);
   if (accessoryRules.length === 0) {
     throw new Error('No accessory materials in BOM for this finished good');
   }
@@ -1421,6 +1439,8 @@ export async function getWorkOrderById(id: string) {
 
 /** Roll allocation status for WO detail: per-roll initial/remaining (so user sees what’s already issued). */
 export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Array<{
+  itemId: string;
+  itemName: string | null;
   rollRef: string;
   allocatedQty: number;
   initialLength: number | null;
@@ -1431,43 +1451,55 @@ export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Ar
     where: { id: woId },
     select: { consumptionMaterialId: true, rollBreakdown: true },
   });
-  if (!wo?.consumptionMaterialId || !wo.rollBreakdown) return [];
+  if (!wo?.rollBreakdown) return [];
   const raw = wo.rollBreakdown;
   const arr = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : raw;
-  const breakdown = Array.isArray(arr) ? (arr as Array<{ rollRef?: string; qty?: number }>) : [];
+  // Rolls are per material (#437); a legacy entry belongs to the consumption material.
+  const breakdown = withRollItemIds(Array.isArray(arr) ? (arr as RollEntry[]) : [], wo.consumptionMaterialId);
   if (breakdown.length === 0) return [];
+  const names = new Map(
+    (await prisma.item.findMany({
+      where: { id: { in: [...new Set(breakdown.map((e) => e.itemId))] } },
+      select: { id: true, nameId: true },
+    })).map((i) => [i.id, i.nameId])
+  );
 
-  const itemId = wo.consumptionMaterialId;
-  const out: Array<{ rollRef: string; allocatedQty: number; initialLength: number | null; remainingLength: number | null; used: number | null }> = [];
+  const out: Awaited<ReturnType<typeof getWorkOrderRollAllocationStatus>> = [];
   for (const entry of breakdown) {
     const rollRef = entry.rollRef ?? '';
     const allocatedQty = Number(entry.qty ?? 0);
     const roll = await prisma.fabricRoll.findFirst({
       where: {
-        itemId,
+        itemId: entry.itemId,
         OR: [{ rollCode: rollRef }, { rollRef }],
       },
       select: { initialLength: true, remainingLength: true },
     });
+    const base = { itemId: entry.itemId, itemName: names.get(entry.itemId) ?? null, rollRef, allocatedQty };
     if (roll) {
       const initial = Number(roll.initialLength);
       const remaining = Number(roll.remainingLength);
-      out.push({ rollRef, allocatedQty, initialLength: initial, remainingLength: remaining, used: initial - remaining });
+      out.push({ ...base, initialLength: initial, remainingLength: remaining, used: initial - remaining });
     } else {
-      out.push({ rollRef, allocatedQty, initialLength: null, remainingLength: null, used: null });
+      out.push({ ...base, initialLength: null, remainingLength: null, used: null });
     }
   }
   return out;
 }
 
+type PlanSkuBreakdown = MaterialPlanOptions['skuBreakdown'];
+
 /**
  * Compute planned qty (pieces) from consumption of one material.
  * plannedQty = floor(consumptionAmount / consumptionPerPiece), with remainder.
+ * Per piece = the material's plan for one piece of the given variant ratio, so a colour/size-scoped
+ * rule (#437) counts only for the variants it covers; with no ratio it is split evenly (estimate).
  */
 export async function computePlannedQtyFromConsumption(
   finishedGoodId: string,
   materialId: string,
-  consumptionAmount: number
+  consumptionAmount: number,
+  skuBreakdown?: PlanSkuBreakdown
 ): Promise<{
   plannedQty: number;
   remainder: number;
@@ -1475,19 +1507,15 @@ export async function computePlannedQtyFromConsumption(
   consumptionPerPiece: number;
   uomCode: string;
 }> {
-  const rule = await prisma.consumptionRule.findUnique({
-    where: {
-      finishedGoodId_materialId: { finishedGoodId, materialId },
-      isActive: true,
-    },
-    include: { material: { include: { uom: true } } },
+  const plan = await generateMaterialPlan(finishedGoodId, new Decimal(1), {
+    skuBreakdown,
+    fallbackToEqualSplit: true,
   });
-  if (!rule) {
+  const line = plan.find((m) => m.itemId === materialId);
+  if (!line || line.plannedQty.isZero()) {
     throw new Error('Consumption rule not found for this finished good and material');
   }
-  const qtyRequired = new Decimal(rule.qtyRequired.toString());
-  const wastePercent = new Decimal(rule.wastePercent.toString());
-  const consumptionPerPiece = qtyRequired.mul(new Decimal(1).plus(wastePercent.div(100)));
+  const consumptionPerPiece = line.plannedQty;
   const amount = new Decimal(consumptionAmount);
   const plannedQtyDecimal = amount.div(consumptionPerPiece).floor();
   const plannedQty = plannedQtyDecimal.toNumber();
@@ -1498,20 +1526,28 @@ export async function computePlannedQtyFromConsumption(
     remainder,
     actualConsumption,
     consumptionPerPiece: consumptionPerPiece.toNumber(),
-    uomCode: rule.material.uom.code,
+    uomCode: line.uomCode,
   };
 }
 
-/** Get material plan for a finished good and planned qty (for WO create form). */
+/**
+ * Get material plan for a finished good and planned qty (for WO create form). `blocked` carries
+ * why a colour/size-scoped BOM cannot be planned (#437) — returned, not thrown, because a thrown
+ * server-action message does not reach the browser in production.
+ */
 export async function getMaterialPlan(
   finishedGoodId: string,
-  plannedQty: number
+  plannedQty: number,
+  skuBreakdown?: PlanSkuBreakdown
 ) {
-  const plan = await generateMaterialPlan(
-    finishedGoodId,
-    new Decimal(plannedQty)
-  );
-  return plan.map((m) => ({
+  let plan;
+  try {
+    plan = await generateMaterialPlan(finishedGoodId, new Decimal(plannedQty), { skuBreakdown });
+  } catch (err) {
+    if (err instanceof MaterialPlanBlockedError) return { lines: [], blocked: err.message };
+    throw err;
+  }
+  const lines = plan.map((m) => ({
     itemId: m.itemId,
     itemName: m.itemName,
     uomId: m.uomId,
@@ -1522,6 +1558,7 @@ export async function getMaterialPlan(
     availableStock: m.availableStock.toNumber(),
     shortage: m.shortage.toNumber()
   }));
+  return { lines, blocked: null };
 }
 
 /** List available fabric rolls for an item (for dropdown). */

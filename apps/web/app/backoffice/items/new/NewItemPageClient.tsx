@@ -19,6 +19,8 @@ export function NewItemPageClient() {
       qtyRequired: number;
       wastePercent: number;
       notes?: string;
+      colorId?: string | null;
+      size?: string | null;
     }>
   ) => {
     setIsLoading(true);

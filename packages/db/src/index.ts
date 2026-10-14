@@ -128,6 +128,7 @@ export {
   type PartialConsumeShortLine,
 } from "./reservation-writer";
 export { seededId } from "./spec-teardown";
+export * from "./variant-axes";
 export {
   classifyForBackfill,
   type BackfillDecision,

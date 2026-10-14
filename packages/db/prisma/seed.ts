@@ -979,15 +979,11 @@ async function main() {
     { finishedGoodId: jeansTrousers.id, materialId: pocketFabric.id, qtyRequired: 0.5, wastePercent: 3 },
   ];
   for (const b of bomData) {
-    await prisma.consumptionRule.upsert({
-      where: {
-        finishedGoodId_materialId: {
-          finishedGoodId: b.finishedGoodId,
-          materialId: b.materialId,
-        },
-      },
-      update: {},
-      create: {
+    const existingRule = await prisma.consumptionRule.findFirst({
+      where: { finishedGoodId: b.finishedGoodId, materialId: b.materialId, colorId: null, size: null },
+    });
+    if (!existingRule) await prisma.consumptionRule.create({
+      data: {
         finishedGoodId: b.finishedGoodId,
         materialId: b.materialId,
         qtyRequired: b.qtyRequired,
@@ -1678,12 +1674,11 @@ async function main() {
     { finishedGoodId: fg2700001.id, materialId: itemKantong.id, qtyRequired: 1, wastePercent: 0 },
   ];
   for (const b of hppBomData) {
-    await prisma.consumptionRule.upsert({
-      where: {
-        finishedGoodId_materialId: { finishedGoodId: b.finishedGoodId, materialId: b.materialId },
-      },
-      update: {},
-      create: {
+    const existingRule = await prisma.consumptionRule.findFirst({
+      where: { finishedGoodId: b.finishedGoodId, materialId: b.materialId, colorId: null, size: null },
+    });
+    if (!existingRule) await prisma.consumptionRule.create({
+      data: {
         finishedGoodId: b.finishedGoodId,
         materialId: b.materialId,
         qtyRequired: b.qtyRequired,

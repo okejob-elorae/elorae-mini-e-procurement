@@ -1,4 +1,4 @@
-import { Prisma } from "@elorae/db";
+import { Prisma, normalizeVariantAxisKeys } from "@elorae/db";
 import {
   isVariantlessItemCode,
   parseParentSku,
@@ -36,7 +36,8 @@ function mapVariationValues(row: JubelioVariantRow): VariantJson {
   }
   const barcode = row.barcode?.trim();
   if (barcode) variant.barcode = barcode;
-  return variant;
+  // Variants have exactly two axes (#437): `color`/`Size`/… are stored as Warna/Ukuran.
+  return normalizeVariantAxisKeys(variant) as VariantJson;
 }
 
 function toSellingPriceString(sellPrice: string | number | undefined): string | null {

@@ -47,6 +47,8 @@ export default async function ItemDetailPage({
         qtyRequired: number;
         wastePercent: number;
         notes?: string | null;
+        colorId?: string | null;
+        size?: string | null;
         material?: {
           sku: string;
           nameId: string;
@@ -70,6 +72,8 @@ export default async function ItemDetailPage({
         qtyRequired: Number(rule.qtyRequired),
         wastePercent: Number(rule.wastePercent),
         notes: rule.notes || undefined,
+        colorId: rule.colorId ?? null,
+        size: rule.size ?? null,
       })),
   };
 

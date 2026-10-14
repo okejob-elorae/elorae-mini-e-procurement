@@ -66,6 +66,7 @@ export async function calculateHPP(woId: string): Promise<HPPBreakdown> {
       id: true,
       docNumber: true,
       finishedGoodId: true,
+      consumptionPlan: true,
       plannedQty: true,
       actualQty: true,
       hppMarginPercent: true,
@@ -83,13 +84,13 @@ export async function calculateHPP(woId: string): Promise<HPPBreakdown> {
   const marginPercent = wo.hppMarginPercent != null ? Number(wo.hppMarginPercent) : null;
   const additionalCost = wo.hppAdditionalCost != null ? Number(wo.hppAdditionalCost) : null;
 
-  const rules = await prisma.consumptionRule.findMany({
-    where: { finishedGoodId: wo.finishedGoodId, isActive: true },
-    select: { materialId: true, qtyRequired: true },
-  });
+  // Per-piece quantities come from the WO's own plan, not the current BOM: a colour/size-scoped
+  // rule (#437) covers only some of the WO's variants, and the plan averaged it over its mix.
+  const planRaw = wo.consumptionPlan;
+  const plan = typeof planRaw === 'string' ? (() => { try { return JSON.parse(planRaw); } catch { return []; } })() : planRaw;
   const qtyRequiredByMaterial: Record<string, number> = {};
-  for (const r of rules) {
-    qtyRequiredByMaterial[r.materialId] = Number(r.qtyRequired) || 0;
+  for (const line of Array.isArray(plan) ? (plan as Array<{ itemId?: string; qtyRequired?: number }>) : []) {
+    if (line?.itemId) qtyRequiredByMaterial[line.itemId] = Number(line.qtyRequired) || 0;
   }
 
   const itemIds = new Set<string>();

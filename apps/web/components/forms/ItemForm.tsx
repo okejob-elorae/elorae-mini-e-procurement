@@ -10,6 +10,15 @@ import { getUOMs } from '@/app/actions/uom';
 import { getItems } from '@/app/actions/items';
 import { getItemTypeMasters } from '@/app/actions/item-type-master';
 import { getItemCategories } from '@/app/actions/item-categories';
+import { getVariantColorOptions } from '@/app/actions/variant-colors';
+import {
+  COLOR_AXIS_KEY,
+  SIZE_AXIS_KEY,
+  buildColorIndex,
+  canonicalAxisKey,
+  colorMatchKey,
+  sizeMatchKey,
+} from '@elorae/db/variant-axes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -137,6 +146,8 @@ interface ItemFormProps {
       qtyRequired: number;
       wastePercent: number;
       notes?: string;
+      colorId?: string | null;
+      size?: string | null;
     }>;
   };
   onSubmit: (data: ItemFormData, consumptionRules?: ConsumptionRuleData[]) => Promise<void>;
@@ -157,9 +168,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       materialId: r.materialId,
       qtyRequired: Number(r.qtyRequired),
       wastePercent: Number(r.wastePercent),
-      notes: r.notes
+      notes: r.notes,
+      colorId: r.colorId ?? null,
+      size: r.size ?? null,
     })) || []
   );
+  // null until loaded, so colours are not reported as unknown before the master arrives.
+  const [colorOptions, setColorOptions] = useState<Array<{ id: string; name: string; aliases: string[] }> | null>(null);
 
   const normalizedVariants = useMemo((): Array<Record<string, string>> => {
     const raw = initialData?.variants;
@@ -198,6 +213,28 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     })
   );
   const gridRows = grid.rows;
+
+  // BOM rule scope options (#437): this item's own colours (resolved against the colour master)
+  // and sizes, taken from its colour/size variant attributes.
+  const ALL_SCOPE = '__all__';
+  const bomScope = useMemo(() => {
+    const valuesOf = (axis: string) =>
+      attributes.filter((a) => canonicalAxisKey(a.key) === axis).flatMap((a) => a.values.map((v) => v.trim())).filter(Boolean);
+    const sizes: string[] = [];
+    for (const size of valuesOf(SIZE_AXIS_KEY)) {
+      if (!sizes.some((s) => sizeMatchKey(s) === sizeMatchKey(size))) sizes.push(size);
+    }
+    if (colorOptions == null) return { colors: [], unknownColors: [], sizes };
+    const index = buildColorIndex(colorOptions);
+    const colorIds = new Set<string>();
+    const unknownColors: string[] = [];
+    for (const label of valuesOf(COLOR_AXIS_KEY)) {
+      const id = index.get(colorMatchKey(label));
+      if (id) colorIds.add(id);
+      else if (!unknownColors.includes(label)) unknownColors.push(label);
+    }
+    return { colors: colorOptions.filter((c) => colorIds.has(c.id)), unknownColors, sizes };
+  }, [attributes, colorOptions]);
   const [barcodeFormatConfig, setBarcodeFormatConfig] = useState<VariantBarcodeFormatConfig | null>(
     null
   );
@@ -253,6 +290,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       getItems({ type: 'raw', isActive: true })
         .then((result) => setMaterials(Array.isArray(result) ? (result as unknown as Item[]) : []))
         .catch(() => toast.error(tToasts('failedToLoadMaterials')));
+      getVariantColorOptions().then(setColorOptions).catch(() => setColorOptions([]));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- itemType drives fetch
   }, [itemType]);
@@ -473,6 +511,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       const collidingNames = findCollidingAttributeNames(attributes);
       if (collidingNames.length > 0) {
         toast.error(tToasts("duplicateAttributeName", { names: collidingNames.join(", ") }));
+        return;
+      }
+      // Finished goods have exactly two variant axes (#437); the server refuses any other.
+      const otherAxis =
+        itemType === ItemType.FINISHED_GOOD
+          ? contributingAttributes(attributes).find((attr) => canonicalAxisKey(attr.key) == null)
+          : undefined;
+      if (otherAxis) {
+        toast.error(tToasts('finishedGoodAxesOnly', { name: otherAxis.key.trim() }));
         return;
       }
     }
@@ -831,7 +878,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         <CardContent className="space-y-4">
           <div className="flex items-start justify-between gap-4">
             <p className="text-sm text-muted-foreground">
-              Define attributes (e.g., Color, Size) and their values to generate variant combinations.
+              {itemType === ItemType.FINISHED_GOOD
+                ? 'Finished goods have two attributes only: Warna (colour) and Ukuran (size).'
+                : 'Define attributes (e.g., Color, Size) and their values to generate variant combinations.'}
             </p>
             <Button type="button" variant="outline" onClick={addAttribute}>
               <Plus className="h-4 w-4 mr-2" />
@@ -1022,9 +1071,17 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
-              <p className="text-sm text-muted-foreground">
-                Define materials required to produce this finished good
-              </p>
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Define materials required to produce this finished good. A rule limited to a colour
+                  and/or size applies only to those variants.
+                </p>
+                {bomScope.unknownColors.length > 0 && (
+                  <p className="text-sm text-amber-600">
+                    Colours not in the colour master (Production → Colors): {bomScope.unknownColors.join(', ')}
+                  </p>
+                )}
+              </div>
               <Button
                 type="button"
                 variant="outline"
@@ -1045,6 +1102,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 <TableHeader>
                   <TableRow>
                     <TableHead>Material</TableHead>
+                    <TableHead>Colour</TableHead>
+                    <TableHead>Size</TableHead>
                     <TableHead>Qty Required</TableHead>
                     <TableHead>Waste %</TableHead>
                     <TableHead>Notes</TableHead>
@@ -1066,6 +1125,39 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                           }
                           placeholder="Select material"
                           triggerClassName="max-w-[16rem] min-w-0"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <SearchableCombobox
+                          options={[
+                            { value: ALL_SCOPE, label: 'All colours' },
+                            ...bomScope.colors.map((c) => ({ value: c.id, label: c.name })),
+                            // A saved colour this item no longer has stays selectable, so it is visible.
+                            ...(rule.colorId && !bomScope.colors.some((c) => c.id === rule.colorId)
+                              ? [{ value: rule.colorId, label: colorOptions?.find((c) => c.id === rule.colorId)?.name ?? rule.colorId }]
+                              : []),
+                          ]}
+                          value={rule.colorId ?? ALL_SCOPE}
+                          onValueChange={(value) =>
+                            updateConsumptionRule(index, 'colorId', value === ALL_SCOPE ? null : value)
+                          }
+                          triggerClassName="max-w-[10rem] min-w-0"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <SearchableCombobox
+                          options={[
+                            { value: ALL_SCOPE, label: 'All sizes' },
+                            ...bomScope.sizes.map((size) => ({ value: size, label: size })),
+                            ...(rule.size && !bomScope.sizes.some((size) => sizeMatchKey(size) === sizeMatchKey(rule.size!))
+                              ? [{ value: rule.size, label: rule.size }]
+                              : []),
+                          ]}
+                          value={rule.size ?? ALL_SCOPE}
+                          onValueChange={(value) =>
+                            updateConsumptionRule(index, 'size', value === ALL_SCOPE ? null : value)
+                          }
+                          triggerClassName="max-w-[8rem] min-w-0"
                         />
                       </TableCell>
                       <TableCell>

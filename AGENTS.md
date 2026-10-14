@@ -294,6 +294,13 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
 - Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` (max `thresholdDays` announced) — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
 
+**Production — BOM & variants**
+
+- Reading an FG variant's colour or size? `resolveVariantAxes` (`Warna`/`Ukuran`, old spellings folded), never `v.size`/`v.color`; colour text resolves via the colour master's name/aliases, never rewritten. → `docs/landmines/production.md`
+- Planning a WO's materials? `generateMaterialPlan` with the WO's `skuBreakdown` — scoped rules count only their variants; HPP and additional issues read the WO's `consumptionPlan`, not the current BOM. → `docs/landmines/production.md`
+- Writing `ConsumptionRule` rows? `(finishedGoodId, materialId)` is not unique any more — refuse overlapping colour/size scopes (`findOverlappingRules`) in every writer. → `docs/landmines/production.md`
+- Touching a WO's or an issue's `rollBreakdown`? Entries are per material (`itemId`); match with `rollsForItem`, legacy entries fall back to `consumptionMaterialId`. → `docs/landmines/production.md`
+
 **Forecast**
 
 - Changing which marketplace orders count as forecast demand? Settlement proof only: a settled WIB month (periods cover month end + payout delay), matched net > 0, unique match key; Jubelio status is never read. → `docs/landmines/forecast.md`
