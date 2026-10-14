@@ -10,7 +10,7 @@ import { generateDocNumber } from '@/lib/docNumber';
 import { docNumberPeriod } from "@/lib/doc-numbers/period";
 import { maxIssuedNumber, resyncedCounter } from "@/lib/doc-numbers/recover";
 import { normalizePrefix } from "@/lib/doc-numbers/validate";
-import { generateMaterialPlan, type MaterialPlanOptions } from '@/lib/production/planning';
+import { generateMaterialPlan, type MaterialPlanItem, type MaterialPlanOptions } from '@/lib/production/planning';
 import { MaterialPlanBlockedError } from '@/lib/production/scoped-bom';
 import { rollShortfalls, rollsForItem, withRollItemIds, type RollEntry } from '@/lib/production/roll-allocation';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
@@ -227,6 +227,8 @@ function serializeWorkOrder(wo: {
 const rollBreakdownItemSchema = z.object({
   /** The roll's material (#437); absent on entries made before rolls were per material = consumptionMaterialId. */
   itemId: idStr.optional(),
+  /** The finished-good colour the roll is cut for (#410); null = variants without a resolved colour. */
+  colorId: z.string().nullable().optional(),
   rollRef: z.string(),
   qty: z.number().nonnegative(),
   notes: z.string().optional(),
@@ -278,6 +280,35 @@ const woSchema = z
 
 export type WOFormData = z.infer<typeof woSchema>;
 
+/** Rolls are per material (#437) and per finished-good colour (#410): each must match a section of this plan. */
+function assertRollsInPlan(rolls: WOFormData['rollBreakdown'], materialPlan: MaterialPlanItem[]) {
+  for (const r of rolls ?? []) {
+    if (!r.itemId) continue;
+    const line = materialPlan.find((m) => m.itemId === r.itemId);
+    if (!line) throw new Error(`Roll ${r.rollRef} is for a material that is not in this work order's plan`);
+    if (r.colorId !== undefined && line.byColor && !line.byColor.some((c) => c.colorId === r.colorId)) {
+      throw new Error(`Roll ${r.rollRef} is for a colour that is not in this work order's variant mix`);
+    }
+  }
+}
+
+/** A WO's consumptionPlan line; `byColor` is what the issue and roll screens split by colour (#410). */
+function planSnapshotLine(m: MaterialPlanItem) {
+  return {
+    itemId: m.itemId,
+    itemName: m.itemName,
+    itemType: m.itemType,
+    uomId: m.uomId,
+    uomCode: m.uomCode,
+    qtyRequired: m.qtyRequired.toNumber(),
+    wastePercent: m.wastePercent.toNumber(),
+    plannedQty: m.plannedQty.toNumber(),
+    byColor: m.byColor?.map((c) => ({ colorId: c.colorId, colorName: c.colorName, plannedQty: c.plannedQty.toNumber() })),
+    issuedQty: 0,
+    returnedQty: 0,
+  };
+}
+
 export async function createWorkOrder(
   data: WOFormData,
   userId: string,
@@ -294,9 +325,7 @@ export async function createWorkOrder(
   const materialPlan = await generateMaterialPlan(data.finishedGoodId, plannedOutput, {
     skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
   });
-  // Rolls are per material (#437): each must belong to a material of this plan.
-  const strayRoll = data.rollBreakdown?.find((r) => r.itemId && !materialPlan.some((m) => m.itemId === r.itemId));
-  if (strayRoll) throw new Error(`Roll ${strayRoll.rollRef} is for a material that is not in this work order's plan`);
+  assertRollsInPlan(data.rollBreakdown, materialPlan);
 
   if (!options?.skipStockCheck) {
     const shortages = materialPlan.filter((m) => m.shortage.gt(0));
@@ -329,17 +358,7 @@ export async function createWorkOrder(
         hppAdditionalCost: data.hppAdditionalCost ?? null,
         createdById: userId,
         consumptionPlan: JSON.stringify(
-          materialPlan.map((m) => ({
-            itemId: m.itemId,
-            itemName: m.itemName,
-            uomId: m.uomId,
-            uomCode: m.uomCode,
-            qtyRequired: m.qtyRequired.toNumber(),
-            wastePercent: m.wastePercent.toNumber(),
-            plannedQty: m.plannedQty.toNumber(),
-            issuedQty: 0,
-            returnedQty: 0
-          }))
+          materialPlan.map(planSnapshotLine)
         ),
       };
       if (data.rollBreakdown && data.rollBreakdown.length > 0) {
@@ -452,9 +471,7 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
   const materialPlan = await generateMaterialPlan(data.finishedGoodId, plannedOutput, {
     skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
   });
-  // Rolls are per material (#437): each must belong to a material of this plan.
-  const strayRoll = data.rollBreakdown?.find((r) => r.itemId && !materialPlan.some((m) => m.itemId === r.itemId));
-  if (strayRoll) throw new Error(`Roll ${strayRoll.rollRef} is for a material that is not in this work order's plan`);
+  assertRollsInPlan(data.rollBreakdown, materialPlan);
 
   const shortages = materialPlan.filter((m) => m.shortage.gt(0));
   if (shortages.length > 0) {
@@ -479,17 +496,7 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
       poId: data.poId ?? null,
       notes: data.notes ?? null,
       consumptionPlan: JSON.stringify(
-        materialPlan.map((m) => ({
-          itemId: m.itemId,
-          itemName: m.itemName,
-          uomId: m.uomId,
-          uomCode: m.uomCode,
-          qtyRequired: m.qtyRequired.toNumber(),
-          wastePercent: m.wastePercent.toNumber(),
-          plannedQty: m.plannedQty.toNumber(),
-          issuedQty: 0,
-          returnedQty: 0
-        }))
+        materialPlan.map(planSnapshotLine)
       ),
     };
     if (data.rollBreakdown && data.rollBreakdown.length > 0) {
@@ -1441,6 +1448,7 @@ export async function getWorkOrderById(id: string) {
 export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Array<{
   itemId: string;
   itemName: string | null;
+  colorName: string | null;
   rollRef: string;
   allocatedQty: number;
   initialLength: number | null;
@@ -1463,6 +1471,13 @@ export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Ar
       select: { id: true, nameId: true },
     })).map((i) => [i.id, i.nameId])
   );
+  const colorIds = [...new Set(breakdown.map((e) => e.colorId).filter((id): id is string => !!id))];
+  const colorNames = new Map(
+    colorIds.length === 0
+      ? []
+      : (await prisma.variantColor.findMany({ where: { id: { in: colorIds } }, select: { id: true, name: true } }))
+          .map((c) => [c.id, c.name] as const)
+  );
 
   const out: Awaited<ReturnType<typeof getWorkOrderRollAllocationStatus>> = [];
   for (const entry of breakdown) {
@@ -1475,7 +1490,13 @@ export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Ar
       },
       select: { initialLength: true, remainingLength: true },
     });
-    const base = { itemId: entry.itemId, itemName: names.get(entry.itemId) ?? null, rollRef, allocatedQty };
+    const base = {
+      itemId: entry.itemId,
+      itemName: names.get(entry.itemId) ?? null,
+      colorName: entry.colorId ? colorNames.get(entry.colorId) ?? null : null,
+      rollRef,
+      allocatedQty,
+    };
     if (roll) {
       const initial = Number(roll.initialLength);
       const remaining = Number(roll.remainingLength);
@@ -1550,6 +1571,8 @@ export async function getMaterialPlan(
   const lines = plan.map((m) => ({
     itemId: m.itemId,
     itemName: m.itemName,
+    itemType: m.itemType,
+    byColor: m.byColor?.map((c) => ({ colorId: c.colorId, colorName: c.colorName, plannedQty: c.plannedQty.toNumber() })),
     uomId: m.uomId,
     uomCode: m.uomCode,
     qtyRequired: m.qtyRequired.toNumber(),
@@ -1606,9 +1629,15 @@ type RollAllocationResult = {
  */
 async function filterRollCandidates(
   itemId: string,
-  requiredQty: number
+  requiredQty: number,
+  excludeRollCodes: string[] = []
 ): Promise<{ candidates: RollCandidate[]; bestSingle: RollCandidate | null }> {
-  const baseWhere = { itemId, isClosed: false, remainingLength: { gt: 0 } };
+  const baseWhere = {
+    itemId,
+    isClosed: false,
+    remainingLength: { gt: 0 },
+    ...(excludeRollCodes.length > 0 ? { rollCode: { notIn: excludeRollCodes } } : {}),
+  };
   const selectFields = { id: true, rollCode: true, rollRef: true, remainingLength: true };
 
   // Pass 1: Single-roll shortcut — smallest roll that can cover the requirement alone
@@ -1781,9 +1810,16 @@ function bestFitRollAllocation(
   };
 }
 
-/** Suggest allocation using whole rolls only. Two-phase: DB filter to ~50 candidates, then branch-and-bound for minimum waste. */
-export async function suggestFabricRollAllocation(itemId: string, requiredQty: number): Promise<RollAllocationResult> {
-  const { candidates, bestSingle } = await filterRollCandidates(itemId, requiredQty);
+/**
+ * Suggest allocation using whole rolls only. Two-phase: DB filter to ~50 candidates, then branch-and-bound for minimum waste.
+ * `excludeRollCodes`: rolls another colour section of the same WO already took (#410).
+ */
+export async function suggestFabricRollAllocation(
+  itemId: string,
+  requiredQty: number,
+  excludeRollCodes: string[] = []
+): Promise<RollAllocationResult> {
+  const { candidates, bestSingle } = await filterRollCandidates(itemId, requiredQty, excludeRollCodes);
 
   if (candidates.length === 0) {
     return {

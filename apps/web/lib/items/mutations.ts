@@ -22,6 +22,8 @@ export type ItemFormData = {
   sellingPrice?: number;
   targetMarginPercent?: number;
   additionalCost?: number;
+  /** Optional Pantone of a colour-specific material; finished goods carry colour per variant instead. */
+  pantoneTcx?: string | null;
 };
 
 export type SerializedItem = {
@@ -133,7 +135,18 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     targetMarginPercent: targetMarginPercentNum,
     additionalCost: additionalCostNum,
     sku: raw.sku != null ? String(raw.sku) : undefined,
+    pantoneTcx:
+      raw.type !== 'FINISHED_GOOD' && typeof raw.pantoneTcx === 'string' && raw.pantoneTcx.trim()
+        ? raw.pantoneTcx.trim()
+        : null,
   };
+}
+
+/* relationMode = "prisma" has no FK, so an unknown TCX would be stored silently. */
+async function assertPantoneExists(tcx: string | null | undefined) {
+  if (!tcx) return;
+  const found = await prisma.pantoneColor.findUnique({ where: { tcx }, select: { tcx: true } });
+  if (!found) throw new Error(`pantoneTcx: Kode Pantone ${tcx} tidak ditemukan`);
 }
 
 function serializeSingleItem(item: {
@@ -184,6 +197,7 @@ export async function createItem(data: ItemFormData) {
   validateItemPayload(normalized);
   const { sku: inputSku, ...rest } = normalized;
 
+  await assertPantoneExists(rest.pantoneTcx);
   const finalSku = inputSku?.trim() || (await generateSKU(rest.type));
 
   const existing = await prisma.item.findUnique({ where: { sku: finalSku } });
@@ -245,6 +259,7 @@ export async function updateItem(
   validateItemPayload(normalized);
   const { sku, ...rest } = normalized;
   void sku;
+  await assertPantoneExists(rest.pantoneTcx);
 
   const existing = await client.item.findUnique({
     where: { id },

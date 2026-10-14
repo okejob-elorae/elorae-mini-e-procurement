@@ -38,13 +38,13 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption } from '@/app/actions/production';
 import { MaterialRollAllocation, type MaterialRollEntry } from '@/components/work-orders/MaterialRollAllocation';
-import { rollShortfalls } from '@/lib/production/roll-allocation';
+import { entryMatchesNeed, rollNeedsFromPlan, rollShortfalls, withRollColors } from '@/lib/production/roll-allocation';
 import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs } from '@/app/actions/purchase-orders';
 import { getFinishedGoodVariantStock } from "@/app/actions/work-order-variant-stock";
-import { VariantRatioRows } from "@/components/work-orders/VariantRatioRows";
+import { ColorSizeRatio } from "@/components/work-orders/ColorSizeRatio";
 import { ItemType } from '@/lib/constants/enums';
 
 interface TailorSupplier {
@@ -79,6 +79,9 @@ interface ConsumptionResult {
 interface MaterialPlanRow {
   itemId: string;
   itemName: string;
+  itemType?: string;
+  /** Split by finished-good colour when the WO has a variant ratio (#410). */
+  byColor?: Array<{ colorId: string | null; colorName: string | null; plannedQty: number }>;
   uomCode: string;
   qtyRequired: number;
   wastePercent: number;
@@ -150,8 +153,8 @@ export default function NewWorkOrderPage() {
   const planSkuKey = JSON.stringify(
     outputMode !== 'SKU'
       ? null
-      : variantRatios.length > 1
-        ? Math.abs(variantRatios.reduce((s, x) => s + x.ratioPercent, 0) - 100) < 0.01
+      : finishedGoodVariants.length > 1
+        ? variantRatios.length > 0 && Math.abs(variantRatios.reduce((s, x) => s + x.ratioPercent, 0) - 100) < 0.01
           ? variantRatios
           : null
         : selectedVariantSku
@@ -279,18 +282,8 @@ export default function NewWorkOrderPage() {
         setFinishedGoodVariants(variants);
         setSelectedVariantSku('');
         setSelectedVariantAttributes(null);
-        if (variants.length > 1) {
-          const equal = Math.floor(100 / variants.length);
-          const remainder = 100 - equal * variants.length;
-          setVariantRatios(
-            variants.map((v, i) => ({
-              variantSku: v.sku ?? `variant-${i}`,
-              ratioPercent: i === 0 ? equal + remainder : equal,
-            }))
-          );
-        } else {
-          setVariantRatios([]);
-        }
+        // Colours are picked first, then their sizes (#410): ColorSizeRatio fills the ratio rows.
+        setVariantRatios([]);
       })
       .catch(() => setFinishedGoodVariants([]))
       .finally(() => setIsLoadingVariants(false));
@@ -381,14 +374,18 @@ export default function NewWorkOrderPage() {
   }, [vendorId, plannedNum, tailors, targetTouched, targetDate]);
 
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
-  // Rolls per material of the colour-aware plan (#437); a material left without rolls is not checked.
-  const planRolls = rollBreakdown.filter((r) => materialPlan.some((m) => m.itemId === r.itemId));
-  const rollValid =
-    rollShortfalls(materialPlan.map((m) => ({ itemId: m.itemId, qty: m.plannedQty })), planRolls).length === 0;
+  // Rolls per material and per finished-good colour of the plan (#437, #410); a section left
+  // without rolls is not checked. Rolls saved before #410 join their material's first colour.
+  const rollNeeds = rollNeedsFromPlan(materialPlan);
+  const planRolls = withRollColors(rollBreakdown, rollNeeds).filter((r) => rollNeeds.some((n) => entryMatchesNeed(r, n)));
+  const rollValid = rollShortfalls(rollNeeds, planRolls).length === 0;
   const variantRatioSum = variantRatios.reduce((s, x) => s + x.ratioPercent, 0);
   const skuVariantValid =
     outputMode !== 'SKU' ||
-    (outputMode === 'SKU' && (variantRatios.length > 1 ? Math.abs(variantRatioSum - 100) < 0.01 : selectedVariantSku.length > 0));
+    (outputMode === 'SKU' &&
+      (finishedGoodVariants.length > 1
+        ? variantRatios.length > 0 && Math.abs(variantRatioSum - 100) < 0.01
+        : selectedVariantSku.length > 0));
   const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
   const canSubmit =
     session?.user?.id &&
@@ -421,7 +418,7 @@ export default function NewWorkOrderPage() {
           rollBreakdown: planRolls.length > 0 ? planRolls : undefined,
           skuBreakdown:
             outputMode === 'SKU'
-              ? variantRatios.length > 1
+              ? finishedGoodVariants.length > 1
                 ? variantRatios
                 : selectedVariantSku
                   ? { variantSku: selectedVariantSku, attributes: selectedVariantAttributes ?? undefined }
@@ -519,11 +516,10 @@ export default function NewWorkOrderPage() {
                 </Select>
               </div>
               {outputMode === 'SKU' && finishedGoodVariants.length > 1 && (
-                <VariantRatioRows
+                <ColorSizeRatio
+                  finishedGoodId={finishedGoodId}
                   rows={variantRatios}
-                  onChange={(variantSku, ratioPercent) => {
-                    setVariantRatios((prev) => prev.map((p) => (p.variantSku === variantSku ? { ...p, ratioPercent } : p)));
-                  }}
+                  onRowsChange={setVariantRatios}
                   stock={variantStock}
                   stockState={variantStockState}
                 />
@@ -839,12 +835,7 @@ export default function NewWorkOrderPage() {
                       )}
 
                       <MaterialRollAllocation
-                        lines={materialPlan.map((m) => ({
-                          itemId: m.itemId,
-                          itemName: m.itemName,
-                          uomCode: m.uomCode,
-                          qty: m.plannedQty,
-                        }))}
+                        lines={rollNeeds}
                         value={planRolls}
                         onChange={setRollBreakdown}
                       />

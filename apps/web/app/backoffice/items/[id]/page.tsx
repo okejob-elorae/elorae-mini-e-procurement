@@ -41,6 +41,9 @@ export default async function ItemDetailPage({
     targetMarginPercent:
       item.targetMarginPercent != null ? Number(item.targetMarginPercent) : undefined,
     additionalCost: item.additionalCost != null ? Number(item.additionalCost) : undefined,
+    pantone: item.pantone
+      ? { ...item.pantone, hex: item.pantone.hex.startsWith('#') ? item.pantone.hex : `#${item.pantone.hex}` }
+      : null,
     consumptionRules: (
       item.fgConsumptions as Array<{
         materialId: string;

@@ -10,6 +10,7 @@ import {
   VariantColorError,
   type VariantColorInput,
 } from '@/lib/items/variant-colors';
+import { listPantoneColors } from '@/lib/production-colors/queries';
 
 async function requireSession() {
   const session = await auth();
@@ -33,6 +34,22 @@ export async function getVariantColorOptions() {
     select: { id: true, name: true, aliases: { select: { label: true } } },
   });
   return colors.map((c) => ({ id: c.id, name: c.name, aliases: c.aliases.map((a) => a.label) }));
+}
+
+/** Pantone swatches for the optional Pantone of a colour-specific material (#410). */
+export async function getPantoneOptionsForItems(search: string, page = 1) {
+  const session = await requireSession();
+  requirePermission(session.user.permissions, PERMISSIONS.ITEMS_VIEW);
+  const { colors, totalCount } = await listPantoneColors({ search: search.trim() || undefined }, { page, pageSize: 48 });
+  return {
+    colors: colors.map((c) => ({
+      tcx: c.tcx,
+      name: c.name,
+      hex: c.hex.startsWith('#') ? c.hex.toLowerCase() : `#${c.hex.toLowerCase()}`,
+      groupName: c.groupName,
+    })),
+    totalPages: Math.ceil(totalCount / 48) || 1,
+  };
 }
 
 export async function saveVariantColorAction(

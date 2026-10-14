@@ -497,7 +497,10 @@ export default function WorkOrderDetailPage() {
                   const status = rollAllocationStatus?.[i];
                   return (
                     <TableRow key={i}>
-                      <TableCell>{status?.itemName ?? '-'}</TableCell>
+                      <TableCell>
+                        {status?.colorName ? `${status.colorName} · ` : ''}
+                        {status?.itemName ?? '-'}
+                      </TableCell>
                       <TableCell>{r.rollRef ?? '-'}</TableCell>
                       <TableCell className="text-right">{Number(r.qty ?? 0).toLocaleString()}</TableCell>
                       {rollAllocationStatus != null && (
@@ -534,7 +537,7 @@ export default function WorkOrderDetailPage() {
                   <p><strong>FG:</strong> ${(wo.finishedGood as any)?.nameId ?? ''}</p>
                   <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
                   <tr><th>Material</th><th>Roll / Ref</th><th>Qty</th><th>Notes</th></tr>
-                  ${rollBreakdown.map((r, i) => `<tr><td>${rollAllocationStatus?.[i]?.itemName ?? ''}</td><td>${r.rollRef ?? ''}</td><td>${Number(r.qty ?? 0)}</td><td>${r.notes ?? ''}</td></tr>`).join('')}
+                  ${rollBreakdown.map((r, i) => `<tr><td>${rollAllocationStatus?.[i]?.colorName ? `${rollAllocationStatus[i].colorName} · ` : ''}${rollAllocationStatus?.[i]?.itemName ?? ''}</td><td>${r.rollRef ?? ''}</td><td>${Number(r.qty ?? 0)}</td><td>${r.notes ?? ''}</td></tr>`).join('')}
                   </table>
                   <p style="margin-top:16px"><strong>Materials (consumption plan):</strong></p>
                   <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
