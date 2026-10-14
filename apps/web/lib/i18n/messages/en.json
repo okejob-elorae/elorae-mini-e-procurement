@@ -1256,6 +1256,12 @@
       "errBAD_STATE": "Receipt is not in a postable state.",
       "errFORBIDDEN": "You don't have journal-posting permission.",
       "errUnexpected": "Something went wrong posting the journal."
+    },
+    "ratio": {
+      "label": "Variant ratio % (sum = 100%)",
+      "sum": "Sum:",
+      "stock": "<a>{available} avail</a> · {onHand} on hand",
+      "stockUnavailable": "Stock unavailable"
     }
   },
   "supplierTypes": {

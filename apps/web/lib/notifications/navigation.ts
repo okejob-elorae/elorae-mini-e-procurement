@@ -127,6 +127,13 @@ export function getNotificationHref(
       }
       return "/backoffice/purchase-orders";
     }
+    case "SALES_RETURN_RECEIVED": {
+      const salesReturnId = data.salesReturnId;
+      if (typeof salesReturnId === "string" && salesReturnId !== "") {
+        return `/backoffice/returns/${salesReturnId}`;
+      }
+      return "/backoffice/returns";
+    }
     case 'FULFILLMENT_PUSH_STUCK': {
       const salesOrderId = data.salesOrderId;
       if (typeof salesOrderId === 'string') {

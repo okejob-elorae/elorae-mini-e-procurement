@@ -8,6 +8,7 @@ import {
   KONSI_REPORT_READY,
 } from "@/lib/konsi-count-schedule/categories";
 import { PO_PAYMENT_DUE } from "@/lib/purchase-orders/payment-reminder-copy";
+import { SALES_RETURN_RECEIVED } from "@/lib/sales-returns/bell-copy";
 
 /**
  * Which permission decides who is told about each category.
@@ -29,6 +30,7 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   COLLECTION_PENDING_VERIFICATION: PERMISSIONS.PAYMENTS_MANAGE,
   AR_OVERDUE: PERMISSIONS.COLLECTIONS_MANAGE,
   [PO_PAYMENT_DUE]: PERMISSIONS.PURCHASE_ORDERS_EDIT,
+  [SALES_RETURN_RECEIVED]: PERMISSIONS.SALES_RETURNS_DECIDE,
   DELIVERY_COMPLETION_STUCK: PERMISSIONS.DELIVERIES_SHIP,
   FULFILLMENT_PUSH_STUCK: PERMISSIONS.SALES_ORDERS_FULFILL,
   [KONSI_COUNT_DUE]: PERMISSIONS.STORES_MANAGE,
@@ -77,9 +79,10 @@ export function toFcmData(metadata: unknown): Record<string, string> {
  * each, and firebase-admin retries a connection failure for roughly a minute per recipient, so
  * awaiting it stalls the operation that already committed — a canvasser's thermal nota, a PWA
  * order submit. `void` is safe here specifically because web runs as a long-lived Node process on
- * the VPS, not a serverless runtime that freezes on response. The cron sweeps — `runOverdueSweep`,
- * `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep` and `runPaymentReminderSweep` — await
- * it deliberately: no user is waiting, and an unawaited batch would stampede FCM.
+ * the VPS, not a serverless runtime that freezes on response. The five cron sweeps —
+ * `runOverdueSweep`, `runKonsiCountSweep`, `runFulfillmentPushDivergenceSweep`,
+ * `runPaymentReminderSweep` and `runSalesReturnBellSweep` — await it deliberately: no user is
+ * waiting, and an unawaited batch would stampede FCM.
  * `reportStuckDeliveryCompletionAction` awaits it too: the PWA's offline completion queue calls it
  * mostly from background sync, but also from the pending screen's Retry, where a salesman is
  * waiting, so it is no precedent for an interactive path.

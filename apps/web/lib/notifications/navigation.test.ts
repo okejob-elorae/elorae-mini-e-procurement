@@ -138,3 +138,11 @@ describe("getNotificationHref — PO payment reminder", () => {
     expect(getNotificationHref("PO_PAYMENT_DUE", { poId: "" })).toBe("/backoffice/purchase-orders");
   });
 });
+
+describe("getNotificationHref — new sales return", () => {
+  it("opens the return, and falls back to the returns list when the id is missing", () => {
+    expect(getNotificationHref("SALES_RETURN_RECEIVED", { salesReturnId: "sr1" })).toBe("/backoffice/returns/sr1");
+    expect(getNotificationHref("SALES_RETURN_RECEIVED", {})).toBe("/backoffice/returns");
+    expect(getNotificationHref("SALES_RETURN_RECEIVED", { salesReturnId: "" })).toBe("/backoffice/returns");
+  });
+});
