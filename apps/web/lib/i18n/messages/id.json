@@ -3399,6 +3399,7 @@
     "creditOverLimitTitle": "Toko melebihi limit kredit",
     "creditOverLimitDetail": "Eksposur saat ini {exposure}, limit {limit}. Setujui dengan alasan untuk melanjutkan.",
     "creditOverrideReasonLabel": "Alasan override limit kredit",
+    "creditOverLimitNoOverride": "Eksposur saat ini {exposure}, limit {limit}. Hanya pengguna dengan izin override limit kredit yang dapat menyetujui pesanan ini selama toko melebihi limitnya.",
     "creditWasOverLimitNote": "Melebihi limit saat dibuat — sudah kembali normal.",
     "approveOverCommittedTitle": "{count, plural, other {# baris}} punya stok yang dijanjikan melebihi stok fisik",
     "approveOverCommittedLine": "stok {onHand}, {reserved} dipesan",
@@ -4074,6 +4075,8 @@
     "creditOverLimitDetail": "Eksposur saat ini {exposure}, limit {limit}. Stok yang dikirim tidak ditambahkan ke sana. Kirim dengan alasan untuk melanjutkan.",
     "creditOverrideReasonLabel": "Alasan override limit kredit",
     "needCreditReason": "Isi alasan override limit kredit untuk melanjutkan.",
+    "creditOverLimitNoOverride": "Eksposur saat ini {exposure}, limit {limit}. Hanya pengguna dengan izin override limit kredit yang dapat mengirim stok ke toko ini selama toko melebihi limitnya.",
+    "needCreditOverride": "Melebihi limit kredit — pengguna dengan izin override harus mengirimnya.",
     "err": {
       "NOT_FOUND": "Toko ini sudah tidak ada.",
       "NOT_KONSI": "Toko ini bukan lagi toko konsinyasi.",

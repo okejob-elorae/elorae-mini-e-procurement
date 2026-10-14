@@ -861,6 +861,22 @@ d("approveFieldSalesOrder — konsi", () => {
     expect(audit.metadata).toMatchObject({ creditLimit: 100_000, orderTotal: 0 });
   });
 
+  it("checks credit before stock: an over-limit store with a short line is refused for credit, not stock", async () => {
+    await seedItemWithStock(2, 10000);
+    await seedExposure(150_000);
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const orderId = await createKonsiOrder(5);
+
+    const refused = approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    await expect(refused).rejects.toBeInstanceOf(CreditLimitExceededError);
+    await expect(refused).rejects.not.toBeInstanceOf(InsufficientStockError);
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.status).toBe("PENDING_APPROVAL");
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.reservedQty)).toBe(0);
+  });
+
   it("a whitespace-only override reason is treated as absent", async () => {
     await seedItemWithStock(10, 10000);
     await seedExposure(150_000);

@@ -31,6 +31,8 @@ type Props = {
   defaultSalesmanId: string | null;
   /* The page's live preview, null when the store has no credit limit or the read failed; the writer re-checks at submit. */
   creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
+  /* Holds `field_sales_orders:credit_override`, the permission the action requires before it accepts an override reason. */
+  canOverrideCredit: boolean;
 };
 
 type PushSource = "GAP" | "NEVER_SENT" | "ADDED";
@@ -126,7 +128,7 @@ function buildInitialRows(gaps: KonsiAssortmentGapSuggestion[], neverSent: Konsi
   return rows;
 }
 
-export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFailed, salesmen, defaultSalesmanId, creditCheck }: Props) {
+export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFailed, salesmen, defaultSalesmanId, creditCheck, canOverrideCredit }: Props) {
   const t = useTranslations("konsiPush");
   const router = useRouter();
 
@@ -144,7 +146,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
   const [serverCreditRefusal, setServerCreditRefusal] = useState<{ exposure: number; limit: number } | null>(null);
   const creditReasonRef = useRef<HTMLTextAreaElement>(null);
   const focusCreditReason = useRef(false);
-  const needsCreditReason = !!creditCheck?.overLimit || serverCreditRefusal !== null;
+  const overLimit = !!creditCheck?.overLimit || serverCreditRefusal !== null;
 
   const [catalog, setCatalog] = useState<CatalogState>({ status: "idle" });
   const catalogRequested = useRef(false);
@@ -163,9 +165,11 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
         ? t("needLine")
         : checkedRows.some((r) => !isValidQty(r.qtyRaw))
           ? t("invalidQty")
-          : needsCreditReason && creditReason.trim() === ""
-            ? t("needCreditReason")
-            : null;
+          : overLimit && !canOverrideCredit
+            ? t("needCreditOverride")
+            : overLimit && creditReason.trim() === ""
+              ? t("needCreditReason")
+              : null;
   const canSubmit = !isPending && blockReason === null;
 
   const filteredCatalogOptions = useMemo(() => {
@@ -276,10 +280,11 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
     }
     if (result.reason === "REPLAY_MISMATCH") return t("err.REPLAY_MISMATCH", { orderNo: result.detail ?? "" });
     if (result.reason === "CREDIT_LIMIT_EXCEEDED") {
-      return t("err.CREDIT_LIMIT_EXCEEDED", {
+      const figures = {
         exposure: formatRupiah(result.credit?.exposure.total ?? 0),
         limit: formatRupiah(result.credit?.creditLimit ?? 0),
-      });
+      };
+      return canOverrideCredit ? t("err.CREDIT_LIMIT_EXCEEDED", figures) : t("creditOverLimitNoOverride", figures);
     }
     const key = `err.${result.reason}`;
     if (!t.has(key)) return t("err.UNEXPECTED");
@@ -293,7 +298,8 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
   function submit(): void {
     if (inFlight.current || !canSubmit) return;
     inFlight.current = true;
-    const creditOverrideReason = needsCreditReason ? creditReason.trim() || undefined : undefined;
+    /* Never sent without the permission: the action would refuse it, so the server's credit gate decides alone. */
+    const creditOverrideReason = canOverrideCredit && overLimit ? creditReason.trim() || undefined : undefined;
     startTransition(async () => {
       try {
         const result = await createKonsiPushOrderAction({
@@ -312,12 +318,8 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
         }
         /* The refused push rolled back whole, so the key is still unspent: keep it for the retry with a reason. */
         if (result.reason === "CREDIT_LIMIT_EXCEEDED") {
-          focusCreditReason.current = true;
+          focusCreditReason.current = canOverrideCredit;
           setServerCreditRefusal({ exposure: result.credit?.exposure.total ?? 0, limit: result.credit?.creditLimit ?? 0 });
-        }
-        if (result.reason === "FORBIDDEN" && creditOverrideReason) {
-          toast.error(t("err.CREDIT_OVERRIDE_FORBIDDEN"));
-          return;
         }
         toast.error(errorMessage(result));
       } catch {
@@ -519,28 +521,30 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
 
       {checkedRows.some((r) => r.priceUnset) && <p className="text-xs text-muted-foreground">{t("priceUnsetNote")}</p>}
 
-      {needsCreditReason && (
+      {overLimit && (
         <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
           <p className="text-sm font-medium text-destructive">{t("creditOverLimitTitle")}</p>
           <p className="text-xs text-muted-foreground">
-            {t("creditOverLimitDetail", {
+            {t(canOverrideCredit ? "creditOverLimitDetail" : "creditOverLimitNoOverride", {
               exposure: formatRupiah(serverCreditRefusal?.exposure ?? creditCheck?.exposure ?? 0),
               limit: formatRupiah(serverCreditRefusal?.limit ?? creditCheck?.limit ?? 0),
             })}
           </p>
-          <div className="space-y-1">
-            <Label htmlFor="konsi-push-credit-reason" className="text-xs">
-              {t("creditOverrideReasonLabel")}
-            </Label>
-            <Textarea
-              id="konsi-push-credit-reason"
-              ref={creditReasonRef}
-              value={creditReason}
-              onChange={(e) => setCreditReason(e.target.value)}
-              disabled={isPending}
-              rows={2}
-            />
-          </div>
+          {canOverrideCredit && (
+            <div className="space-y-1">
+              <Label htmlFor="konsi-push-credit-reason" className="text-xs">
+                {t("creditOverrideReasonLabel")}
+              </Label>
+              <Textarea
+                id="konsi-push-credit-reason"
+                ref={creditReasonRef}
+                value={creditReason}
+                onChange={(e) => setCreditReason(e.target.value)}
+                disabled={isPending}
+                rows={2}
+              />
+            </div>
+          )}
         </div>
       )}
 

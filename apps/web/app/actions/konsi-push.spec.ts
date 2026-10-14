@@ -140,10 +140,10 @@ d("createKonsiPushOrderAction (test bed only)", () => {
       expect(await pushedOrders()).toBe(0);
     }, SLOW);
 
-    it("returns FORBIDDEN for an override reason without the credit override permission, creating no order", async () => {
+    it("returns CREDIT_OVERRIDE_FORBIDDEN for an override reason without the credit override permission, creating no order", async () => {
       await overLimit();
       const res = await push({ creditOverrideReason: "Owner approved" });
-      expect(res).toEqual({ ok: false, reason: "FORBIDDEN" });
+      expect(res).toEqual({ ok: false, reason: "CREDIT_OVERRIDE_FORBIDDEN" });
       expect(await pushedOrders()).toBe(0);
     }, SLOW);
 

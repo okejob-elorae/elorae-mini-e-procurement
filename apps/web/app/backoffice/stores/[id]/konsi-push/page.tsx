@@ -66,6 +66,7 @@ export default async function KonsiPushPage({ params }: { params: Promise<{ id: 
       salesmen={salesmen}
       defaultSalesmanId={defaultSalesmanId}
       creditCheck={creditCheck}
+      canOverrideCredit={hasPermission(perms, PERMISSIONS.FIELD_SALES_ORDERS_CREDIT_OVERRIDE)}
     />
   );
 }

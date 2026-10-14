@@ -142,7 +142,14 @@ export type KonsiPushActionResult =
   | { ok: true; orderId: string; orderNo: string }
   | {
       ok: false;
-      reason: KonsiPushErrorCode | "INSUFFICIENT_STOCK" | "CREDIT_LIMIT_EXCEEDED" | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED";
+      reason:
+        | KonsiPushErrorCode
+        | "INSUFFICIENT_STOCK"
+        | "CREDIT_LIMIT_EXCEEDED"
+        | "CREDIT_OVERRIDE_FORBIDDEN"
+        | "FORBIDDEN"
+        | "INVALID_REQUEST"
+        | "UNEXPECTED";
       /* Only ever present on a KonsiPushError code that carries one. */
       detail?: string;
       /* Only ever present on INSUFFICIENT_STOCK. */
@@ -190,11 +197,14 @@ export async function createKonsiPushOrderAction(input: unknown): Promise<KonsiP
   if ("ok" in g) return g;
   const req = parseKonsiPushInput(input);
   if (!req) return { ok: false, reason: "INVALID_REQUEST" };
-  /* Same gate as the approve action: overriding the credit limit is its own permission. */
+  /**
+   * Same gate as the approve action: overriding the credit limit is its own permission. Its own
+   * code rather than FORBIDDEN, so the form can tell "you cannot override" from "you cannot push".
+   */
   if (req.creditOverrideReason && req.creditOverrideReason.trim()) {
     const session = await auth();
     if (!hasPermission(session?.user?.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_CREDIT_OVERRIDE)) {
-      return { ok: false, reason: "FORBIDDEN" };
+      return { ok: false, reason: "CREDIT_OVERRIDE_FORBIDDEN" };
     }
   }
   try {

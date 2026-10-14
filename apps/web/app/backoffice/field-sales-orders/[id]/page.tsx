@@ -32,6 +32,11 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     session.user.permissions ?? [],
     PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
   );
+  /* The same permission both approve actions require before they accept an override reason. */
+  const canOverrideCredit = hasPermission(
+    session.user.permissions ?? [],
+    PERMISSIONS.FIELD_SALES_ORDERS_CREDIT_OVERRIDE,
+  );
   const canDeliver = hasPermission(
     session.user.permissions ?? [],
     PERMISSIONS.FIELD_SALES_ORDERS_DELIVER,
@@ -126,6 +131,7 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
     <FieldSalesOrderDetailClient
       order={order}
       canApprove={canApprove}
+      canOverrideCredit={canOverrideCredit}
       canDeliver={canDeliver}
       canShipShipment={canShipShipment}
       canViewShipments={canViewShipments}
