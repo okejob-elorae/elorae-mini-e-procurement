@@ -142,11 +142,17 @@ export type KonsiPushActionResult =
   | { ok: true; orderId: string; orderNo: string }
   | {
       ok: false;
-      reason: KonsiPushErrorCode | "INSUFFICIENT_STOCK" | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED";
+      reason: KonsiPushErrorCode | "INSUFFICIENT_STOCK" | "CREDIT_LIMIT_EXCEEDED" | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED";
       /* Only ever present on a KonsiPushError code that carries one. */
       detail?: string;
       /* Only ever present on INSUFFICIENT_STOCK. */
       shortLines?: ShortLine[];
+      /* Only ever present on CREDIT_LIMIT_EXCEEDED; the same shape the approve action returns. */
+      credit?: {
+        exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number };
+        creditLimit: number;
+        orderTotal: number;
+      };
     };
 
 function parseKonsiPushInput(input: unknown): CreateKonsiPushOrderInputWithoutActor | null {
@@ -156,6 +162,7 @@ function parseKonsiPushInput(input: unknown): CreateKonsiPushOrderInputWithoutAc
   if (!isNonEmptyString(req.salesmanId)) return null;
   if (!isNonEmptyString(req.idempotencyKey) || !UUID_SHAPE.test(req.idempotencyKey)) return null;
   if (req.note !== undefined && (typeof req.note !== "string" || req.note.length > MAX_NOTE_LENGTH)) return null;
+  if (req.creditOverrideReason !== undefined && typeof req.creditOverrideReason !== "string") return null;
   if (!Array.isArray(req.lines)) return null;
 
   const lines: KonsiPushLine[] = [];
@@ -173,6 +180,7 @@ function parseKonsiPushInput(input: unknown): CreateKonsiPushOrderInputWithoutAc
     salesmanId: req.salesmanId,
     idempotencyKey: req.idempotencyKey,
     note: req.note as string | undefined,
+    creditOverrideReason: req.creditOverrideReason as string | undefined,
     lines,
   };
 }
@@ -182,6 +190,13 @@ export async function createKonsiPushOrderAction(input: unknown): Promise<KonsiP
   if ("ok" in g) return g;
   const req = parseKonsiPushInput(input);
   if (!req) return { ok: false, reason: "INVALID_REQUEST" };
+  /* Same gate as the approve action: overriding the credit limit is its own permission. */
+  if (req.creditOverrideReason && req.creditOverrideReason.trim()) {
+    const session = await auth();
+    if (!hasPermission(session?.user?.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_CREDIT_OVERRIDE)) {
+      return { ok: false, reason: "FORBIDDEN" };
+    }
+  }
   try {
     const result = await createKonsiPushOrder({ ...req, pushedById: g.userId });
     revalidatePath(`/backoffice/stores/${req.storeId}`);
@@ -191,6 +206,13 @@ export async function createKonsiPushOrderAction(input: unknown): Promise<KonsiP
   } catch (e) {
     if (e instanceof KonsiPushError) return e.detail ? { ok: false, reason: e.code, detail: e.detail } : { ok: false, reason: e.code };
     if (e instanceof InsufficientStockError) return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: e.shortLines };
+    if (e instanceof CreditLimitExceededError) {
+      return {
+        ok: false,
+        reason: "CREDIT_LIMIT_EXCEEDED",
+        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal },
+      };
+    }
     console.error("[konsi-push] unexpected failure", e);
     return { ok: false, reason: "UNEXPECTED" };
   }

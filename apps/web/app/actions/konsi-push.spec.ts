@@ -106,6 +106,66 @@ d("createKonsiPushOrderAction (test bed only)", () => {
     });
   }, SLOW);
 
+  describe("credit limit", () => {
+    /* An APPROVED putus order with nothing delivered puts its whole total on the store's exposure; tracked so the fixture teardown removes it. */
+    const overLimit = async () => {
+      const order = await prisma.fieldSalesOrder.create({
+        data: {
+          orderNo: `TEST-KSTW-EXP-${state.run}`,
+          orderType: "PUTUS",
+          storeId: state.storeId,
+          salesmanId: state.userId,
+          status: "APPROVED",
+          subtotal: 500000,
+          total: 500000,
+        },
+      });
+      state.orderIds.push(order.id);
+      await prisma.store.update({ where: { id: state.storeId }, data: { creditLimit: 100000 } });
+    };
+    const pushedOrders = () => prisma.fieldSalesOrder.count({ where: { storeId: seededId(state.storeId), orderType: "KONSI" } });
+
+    it("returns CREDIT_LIMIT_EXCEEDED with the exposure payload, creating no order", async () => {
+      await overLimit();
+      const res = await push();
+      expect(res).toEqual({
+        ok: false,
+        reason: "CREDIT_LIMIT_EXCEEDED",
+        credit: {
+          exposure: { receivableOutstanding: 0, undeliveredOrderResidual: 500000, total: 500000 },
+          creditLimit: 100000,
+          orderTotal: 0,
+        },
+      });
+      expect(await pushedOrders()).toBe(0);
+    }, SLOW);
+
+    it("returns FORBIDDEN for an override reason without the credit override permission, creating no order", async () => {
+      await overLimit();
+      const res = await push({ creditOverrideReason: "Owner approved" });
+      expect(res).toEqual({ ok: false, reason: "FORBIDDEN" });
+      expect(await pushedOrders()).toBe(0);
+    }, SLOW);
+
+    it("pushes over the limit with an override reason and the credit override permission", async () => {
+      await overLimit();
+      mockAuth.mockResolvedValue({
+        user: { id: state.userId, permissions: ["field_sales_orders:approve", "field_sales_orders:credit_override"] },
+      });
+      const res = await push({ creditOverrideReason: "Owner approved" });
+      expect(res).toMatchObject({ ok: true });
+      if (!res.ok) throw new Error("expected ok");
+      state.orderIds.push(res.orderId);
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(res.orderId) } });
+      expect(order).toMatchObject({ status: "APPROVED", creditOverrideReason: "Owner approved" });
+    }, SLOW);
+
+    it("returns INVALID_REQUEST for a non-string override reason", async () => {
+      const res = await push({ creditOverrideReason: 42 });
+      expect(res).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    });
+  });
+
   it("passes a KonsiPushError's code and detail through", async () => {
     const res = await push({
       lines: [

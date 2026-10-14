@@ -1,10 +1,12 @@
 import { notFound, redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getStore } from "@/lib/stores/queries";
 import { listStoreGapSuggestions, listStoreNeverSentSuggestions } from "@/lib/field-sales/queries";
 import { listSellThroughSalesmanCandidates, defaultSellThroughSalesmanId } from "@/lib/konsi-sell-through/salesman-candidates";
 import { filterStageableSuggestions } from "@/lib/field-sales/stageable-suggestions";
+import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { KonsiPushForm } from "./KonsiPushForm";
 
 export default async function KonsiPushPage({ params }: { params: Promise<{ id: string }> }) {
@@ -38,6 +40,22 @@ export default async function KonsiPushPage({ params }: { params: Promise<{ id: 
   const neverSent = neverSentResult.status === "fulfilled" ? neverSentResult.value : [];
   const [stageableGaps, stageableNeverSent] = await filterStageableSuggestions(gaps, neverSent);
 
+  /**
+   * A display preview only, so the form can ask for an override reason up front; the writer
+   * re-checks live at submit and is the authority. Exposure alone, never the push's own value,
+   * matching the konsi approve gate. Degrades to null rather than taking the page down.
+   */
+  let creditCheck: { exposure: number; limit: number; overLimit: boolean } | null = null;
+  const limit = store.creditLimit;
+  if (limit !== null) {
+    try {
+      const exposure = await computeStoreCreditExposure(prisma, store.id);
+      creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total > limit };
+    } catch (error) {
+      console.error("[konsi-push] credit-limit check failed", { storeId: store.id, error });
+    }
+  }
+
   return (
     <KonsiPushForm
       store={{ id: store.id, name: store.name }}
@@ -47,6 +65,7 @@ export default async function KonsiPushPage({ params }: { params: Promise<{ id: 
       neverSentFailed={neverSentResult.status === "rejected"}
       salesmen={salesmen}
       defaultSalesmanId={defaultSalesmanId}
+      creditCheck={creditCheck}
     />
   );
 }

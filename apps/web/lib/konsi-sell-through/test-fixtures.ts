@@ -150,6 +150,8 @@ export function createSellThroughFixtures() {
       await prisma.konsiSellThrough.findMany({ where: { storeId: seededId(state.storeId) }, select: { id: true } })
     ).map((r) => r.id);
     await prisma.auditLog.deleteMany({ where: { entityType: "KonsiSellThrough", entityId: { in: storeReportIds } } });
+    /* A credit-limit override's audit row names its order by id and points at a fixture user, same reason. */
+    await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesOrder", entityId: { in: seededOrderIds } } });
 
     /* Children of a report's optional 1:1 go first: deleting the report would null their source column and the one-source CHECK refuses that. */
     await prisma.taxInvoice.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });

@@ -29,6 +29,8 @@ type Props = {
   neverSentFailed: boolean;
   salesmen: Array<{ id: string; name: string }>;
   defaultSalesmanId: string | null;
+  /* The page's live preview, null when the store has no credit limit or the read failed; the writer re-checks at submit. */
+  creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
 };
 
 type PushSource = "GAP" | "NEVER_SENT" | "ADDED";
@@ -73,6 +75,14 @@ function productLabel(sku: string, name: string, variantLabel: string | null): s
 /* The line qty column is a 32-bit Int; the action refuses anything above it, so the form does too. */
 const MAX_QTY = 2147483647;
 
+function formatRupiah(value: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
 function isValidQty(raw: string): boolean {
   return /^\d+$/.test(raw) && Number(raw) > 0 && Number(raw) <= MAX_QTY;
 }
@@ -116,7 +126,7 @@ function buildInitialRows(gaps: KonsiAssortmentGapSuggestion[], neverSent: Konsi
   return rows;
 }
 
-export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFailed, salesmen, defaultSalesmanId }: Props) {
+export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFailed, salesmen, defaultSalesmanId, creditCheck }: Props) {
   const t = useTranslations("konsiPush");
   const router = useRouter();
 
@@ -126,6 +136,15 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [isPending, startTransition] = useTransition();
   const inFlight = useRef(false);
+  const [creditReason, setCreditReason] = useState("");
+  /**
+   * Set from the WRITER's own live figures when a CREDIT_LIMIT_EXCEEDED refusal arrives — the
+   * authority, and the only way to ask for a reason when the page-load preview was stale or absent.
+   */
+  const [serverCreditRefusal, setServerCreditRefusal] = useState<{ exposure: number; limit: number } | null>(null);
+  const creditReasonRef = useRef<HTMLTextAreaElement>(null);
+  const focusCreditReason = useRef(false);
+  const needsCreditReason = !!creditCheck?.overLimit || serverCreditRefusal !== null;
 
   const [catalog, setCatalog] = useState<CatalogState>({ status: "idle" });
   const catalogRequested = useRef(false);
@@ -144,7 +163,9 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
         ? t("needLine")
         : checkedRows.some((r) => !isValidQty(r.qtyRaw))
           ? t("invalidQty")
-          : null;
+          : needsCreditReason && creditReason.trim() === ""
+            ? t("needCreditReason")
+            : null;
   const canSubmit = !isPending && blockReason === null;
 
   const filteredCatalogOptions = useMemo(() => {
@@ -202,6 +223,17 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
     }
   }
 
+  /**
+   * A refusal arrives while the operator is at the submit bar; bring the reason field to them once
+   * the submit settles, since a disabled field cannot take focus.
+   */
+  useEffect(() => {
+    if (isPending || !focusCreditReason.current) return;
+    focusCreditReason.current = false;
+    creditReasonRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    creditReasonRef.current?.focus({ preventScroll: true });
+  }, [isPending, serverCreditRefusal]);
+
   /* Loaded on mount rather than on first open, so a keyboard user opening the list never finds it empty. */
   useEffect(() => {
     if (catalogRequested.current) return;
@@ -243,6 +275,12 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
       return t("err.INSUFFICIENT_STOCK", { products });
     }
     if (result.reason === "REPLAY_MISMATCH") return t("err.REPLAY_MISMATCH", { orderNo: result.detail ?? "" });
+    if (result.reason === "CREDIT_LIMIT_EXCEEDED") {
+      return t("err.CREDIT_LIMIT_EXCEEDED", {
+        exposure: formatRupiah(result.credit?.exposure.total ?? 0),
+        limit: formatRupiah(result.credit?.creditLimit ?? 0),
+      });
+    }
     const key = `err.${result.reason}`;
     if (!t.has(key)) return t("err.UNEXPECTED");
     if (result.detail) {
@@ -255,6 +293,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
   function submit(): void {
     if (inFlight.current || !canSubmit) return;
     inFlight.current = true;
+    const creditOverrideReason = needsCreditReason ? creditReason.trim() || undefined : undefined;
     startTransition(async () => {
       try {
         const result = await createKonsiPushOrderAction({
@@ -263,11 +302,21 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
           note: note.trim() || undefined,
           idempotencyKey,
           lines: checkedRows.map((r) => ({ itemId: r.itemId, variantSku: r.variantSku, qty: Number(r.qtyRaw) })),
+          creditOverrideReason,
         });
         if (result.ok) {
           toast.success(t("success", { orderNo: result.orderNo }));
           setIdempotencyKey(crypto.randomUUID());
           router.push(`/backoffice/field-sales-orders/${result.orderId}`);
+          return;
+        }
+        /* The refused push rolled back whole, so the key is still unspent: keep it for the retry with a reason. */
+        if (result.reason === "CREDIT_LIMIT_EXCEEDED") {
+          focusCreditReason.current = true;
+          setServerCreditRefusal({ exposure: result.credit?.exposure.total ?? 0, limit: result.credit?.creditLimit ?? 0 });
+        }
+        if (result.reason === "FORBIDDEN" && creditOverrideReason) {
+          toast.error(t("err.CREDIT_OVERRIDE_FORBIDDEN"));
           return;
         }
         toast.error(errorMessage(result));
@@ -469,6 +518,31 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
       </Card>
 
       {checkedRows.some((r) => r.priceUnset) && <p className="text-xs text-muted-foreground">{t("priceUnsetNote")}</p>}
+
+      {needsCreditReason && (
+        <div className="space-y-2 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+          <p className="text-sm font-medium text-destructive">{t("creditOverLimitTitle")}</p>
+          <p className="text-xs text-muted-foreground">
+            {t("creditOverLimitDetail", {
+              exposure: formatRupiah(serverCreditRefusal?.exposure ?? creditCheck?.exposure ?? 0),
+              limit: formatRupiah(serverCreditRefusal?.limit ?? creditCheck?.limit ?? 0),
+            })}
+          </p>
+          <div className="space-y-1">
+            <Label htmlFor="konsi-push-credit-reason" className="text-xs">
+              {t("creditOverrideReasonLabel")}
+            </Label>
+            <Textarea
+              id="konsi-push-credit-reason"
+              ref={creditReasonRef}
+              value={creditReason}
+              onChange={(e) => setCreditReason(e.target.value)}
+              disabled={isPending}
+              rows={2}
+            />
+          </div>
+        </div>
+      )}
 
       {/**
         * `pr-28` (112px) clears `QuickActionFAB` (`components/QuickActionFAB.tsx`), which is

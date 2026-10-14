@@ -88,9 +88,11 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
    * Optional convenience read — a display preview only, never the authority (the writer
    * re-checks at actual approve time per spec § 4). Degrades to null on failure, same pattern
    * as konsiSuggestions/konsiAssortmentGaps above, so it never takes down Approve/Reject.
+   * Mirrors the writer's comparison: a putus order adds its own total, a konsi order is gated on
+   * exposure alone.
    */
   let creditCheck: { exposure: number; limit: number; overLimit: boolean } | null = null;
-  if (order.orderType === "PUTUS" && order.status === "PENDING_APPROVAL" && canApprove) {
+  if (order.status === "PENDING_APPROVAL" && canApprove) {
     try {
       const orderRow = await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { storeId: true } });
       if (orderRow) {
@@ -98,7 +100,8 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
         if (store?.creditLimit !== null && store?.creditLimit !== undefined) {
           const limit = Number(store.creditLimit);
           const exposure = await computeStoreCreditExposure(prisma, orderRow.storeId);
-          creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total + order.total > limit };
+          const orderTotal = order.orderType === "PUTUS" ? order.total : 0;
+          creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total + orderTotal > limit };
         }
       }
     } catch (error) {
