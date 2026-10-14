@@ -12,6 +12,7 @@ import { maxIssuedNumber, resyncedCounter } from "@/lib/doc-numbers/recover";
 import { normalizePrefix } from "@/lib/doc-numbers/validate";
 import { generateMaterialPlan, type MaterialPlanOptions } from '@/lib/production/planning';
 import { MaterialPlanBlockedError } from '@/lib/production/scoped-bom';
+import { rollShortfalls, rollsForItem, withRollItemIds, type RollEntry } from '@/lib/production/roll-allocation';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
 import { notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
@@ -224,6 +225,8 @@ function serializeWorkOrder(wo: {
 }
 
 const rollBreakdownItemSchema = z.object({
+  /** The roll's material (#437); absent on entries made before rolls were per material = consumptionMaterialId. */
+  itemId: idStr.optional(),
   rollRef: z.string(),
   qty: z.number().nonnegative(),
   notes: z.string().optional(),
@@ -291,6 +294,9 @@ export async function createWorkOrder(
   const materialPlan = await generateMaterialPlan(data.finishedGoodId, plannedOutput, {
     skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
   });
+  // Rolls are per material (#437): each must belong to a material of this plan.
+  const strayRoll = data.rollBreakdown?.find((r) => r.itemId && !materialPlan.some((m) => m.itemId === r.itemId));
+  if (strayRoll) throw new Error(`Roll ${strayRoll.rollRef} is for a material that is not in this work order's plan`);
 
   if (!options?.skipStockCheck) {
     const shortages = materialPlan.filter((m) => m.shortage.gt(0));
@@ -446,6 +452,9 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
   const materialPlan = await generateMaterialPlan(data.finishedGoodId, plannedOutput, {
     skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
   });
+  // Rolls are per material (#437): each must belong to a material of this plan.
+  const strayRoll = data.rollBreakdown?.find((r) => r.itemId && !materialPlan.some((m) => m.itemId === r.itemId));
+  if (strayRoll) throw new Error(`Roll ${strayRoll.rollRef} is for a material that is not in this work order's plan`);
 
   const shortages = materialPlan.filter((m) => m.shortage.gt(0));
   if (shortages.length > 0) {
@@ -783,11 +792,12 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
 
     // Deduct from this issue's rolls, or the WO plan if the picker was left empty.
     // Do not overwrite WorkOrder.rollBreakdown — that field is the planned allocation.
+    // Rolls are per material (#437): each issued item draws only the rolls named for it.
     const consumptionMaterialId = (wo as { consumptionMaterialId?: string | null }).consumptionMaterialId ?? null;
-    const parseRolls = (raw: unknown): Array<{ rollRef: string; qty: number }> | null => {
+    const parseRolls = (raw: unknown): RollEntry[] | null => {
       if (raw == null) return null;
       const arr = typeof raw === "string" ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
-      return Array.isArray(arr) ? arr as Array<{ rollRef: string; qty: number }> : null;
+      return Array.isArray(arr) ? arr as RollEntry[] : null;
     };
     const explicitRolls = validated.rollBreakdown;
     const payloadRolls = explicitRolls != null && explicitRolls.length > 0 ? explicitRolls : null;
@@ -795,22 +805,25 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
       ? payloadRolls
       : parseRolls((wo as { rollBreakdown?: unknown }).rollBreakdown);
 
-    if (payloadRolls && consumptionMaterialId) {
-      const fabricQty = validated.items
-        .filter((item) => item.itemId === consumptionMaterialId)
-        .reduce((sum, item) => sum + item.qty, 0);
-      const rollSum = payloadRolls.reduce((sum, row) => sum + row.qty, 0);
-      if (fabricQty > 0 && rollSum + 1e-6 < fabricQty) {
+    if (payloadRolls) {
+      const issuedByItem = new Map<string, number>();
+      for (const item of validated.items) issuedByItem.set(item.itemId, (issuedByItem.get(item.itemId) ?? 0) + item.qty);
+      const short = rollShortfalls(
+        [...issuedByItem].map(([itemId, qty]) => ({ itemId, qty })),
+        withRollItemIds(payloadRolls, consumptionMaterialId)
+      )[0];
+      if (short) {
         throw new Error(
-          `Total roll (${rollSum}) is less than issued fabric qty (${fabricQty})`
+          `Total roll (${short.allocated}) is less than issued qty (${short.required})`
         );
       }
     }
 
     for (const item of validated.items) {
-      if (consumptionMaterialId != null && item.itemId === consumptionMaterialId && rollsToDeduct != null && rollsToDeduct.length > 0) {
+      const itemRolls = rollsToDeduct != null ? rollsForItem(rollsToDeduct, item.itemId, consumptionMaterialId) : [];
+      if (itemRolls.length > 0) {
         let remainingToAllocate = item.qty;
-        for (const entry of rollsToDeduct) {
+        for (const entry of itemRolls) {
           if (remainingToAllocate <= 0) break;
           const roll = await tx.fabricRoll.findFirst({
             where: {
@@ -837,7 +850,7 @@ export async function issueMaterials(data: IssueFormData, userId: string) {
         }
         if (payloadRolls != null && remainingToAllocate > 1e-6) {
           throw new Error(
-            `Selected rolls cannot cover issued fabric qty (short ${remainingToAllocate})`
+            `Selected rolls cannot cover issued qty (short ${remainingToAllocate})`
           );
         }
       }
@@ -1426,6 +1439,8 @@ export async function getWorkOrderById(id: string) {
 
 /** Roll allocation status for WO detail: per-roll initial/remaining (so user sees what’s already issued). */
 export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Array<{
+  itemId: string;
+  itemName: string | null;
   rollRef: string;
   allocatedQty: number;
   initialLength: number | null;
@@ -1436,30 +1451,37 @@ export async function getWorkOrderRollAllocationStatus(woId: string): Promise<Ar
     where: { id: woId },
     select: { consumptionMaterialId: true, rollBreakdown: true },
   });
-  if (!wo?.consumptionMaterialId || !wo.rollBreakdown) return [];
+  if (!wo?.rollBreakdown) return [];
   const raw = wo.rollBreakdown;
   const arr = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return []; } })() : raw;
-  const breakdown = Array.isArray(arr) ? (arr as Array<{ rollRef?: string; qty?: number }>) : [];
+  // Rolls are per material (#437); a legacy entry belongs to the consumption material.
+  const breakdown = withRollItemIds(Array.isArray(arr) ? (arr as RollEntry[]) : [], wo.consumptionMaterialId);
   if (breakdown.length === 0) return [];
+  const names = new Map(
+    (await prisma.item.findMany({
+      where: { id: { in: [...new Set(breakdown.map((e) => e.itemId))] } },
+      select: { id: true, nameId: true },
+    })).map((i) => [i.id, i.nameId])
+  );
 
-  const itemId = wo.consumptionMaterialId;
-  const out: Array<{ rollRef: string; allocatedQty: number; initialLength: number | null; remainingLength: number | null; used: number | null }> = [];
+  const out: Awaited<ReturnType<typeof getWorkOrderRollAllocationStatus>> = [];
   for (const entry of breakdown) {
     const rollRef = entry.rollRef ?? '';
     const allocatedQty = Number(entry.qty ?? 0);
     const roll = await prisma.fabricRoll.findFirst({
       where: {
-        itemId,
+        itemId: entry.itemId,
         OR: [{ rollCode: rollRef }, { rollRef }],
       },
       select: { initialLength: true, remainingLength: true },
     });
+    const base = { itemId: entry.itemId, itemName: names.get(entry.itemId) ?? null, rollRef, allocatedQty };
     if (roll) {
       const initial = Number(roll.initialLength);
       const remaining = Number(roll.remainingLength);
-      out.push({ rollRef, allocatedQty, initialLength: initial, remainingLength: remaining, used: initial - remaining });
+      out.push({ ...base, initialLength: initial, remainingLength: remaining, used: initial - remaining });
     } else {
-      out.push({ rollRef, allocatedQty, initialLength: null, remainingLength: null, used: null });
+      out.push({ ...base, initialLength: null, remainingLength: null, used: null });
     }
   }
   return out;

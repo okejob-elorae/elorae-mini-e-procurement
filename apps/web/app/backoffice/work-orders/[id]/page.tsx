@@ -479,6 +479,7 @@ export default function WorkOrderDetailPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Material</TableHead>
                   <TableHead>Roll / Ref</TableHead>
                   <TableHead className="text-right">Allocated</TableHead>
                   {rollAllocationStatus != null && (
@@ -496,6 +497,7 @@ export default function WorkOrderDetailPage() {
                   const status = rollAllocationStatus?.[i];
                   return (
                     <TableRow key={i}>
+                      <TableCell>{status?.itemName ?? '-'}</TableCell>
                       <TableCell>{r.rollRef ?? '-'}</TableCell>
                       <TableCell className="text-right">{Number(r.qty ?? 0).toLocaleString()}</TableCell>
                       {rollAllocationStatus != null && (
@@ -531,8 +533,8 @@ export default function WorkOrderDetailPage() {
                   <p><strong>Vendor:</strong> ${(wo.vendor as any)?.name ?? ''}</p>
                   <p><strong>FG:</strong> ${(wo.finishedGood as any)?.nameId ?? ''}</p>
                   <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">
-                  <tr><th>Roll / Ref</th><th>Qty</th><th>Notes</th></tr>
-                  ${rollBreakdown.map((r) => `<tr><td>${r.rollRef ?? ''}</td><td>${Number(r.qty ?? 0)}</td><td>${r.notes ?? ''}</td></tr>`).join('')}
+                  <tr><th>Material</th><th>Roll / Ref</th><th>Qty</th><th>Notes</th></tr>
+                  ${rollBreakdown.map((r, i) => `<tr><td>${rollAllocationStatus?.[i]?.itemName ?? ''}</td><td>${r.rollRef ?? ''}</td><td>${Number(r.qty ?? 0)}</td><td>${r.notes ?? ''}</td></tr>`).join('')}
                   </table>
                   <p style="margin-top:16px"><strong>Materials (consumption plan):</strong></p>
                   <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%">

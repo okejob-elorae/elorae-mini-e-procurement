@@ -298,6 +298,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Reading an FG variant's colour or size? `resolveVariantAxes` (`Warna`/`Ukuran`, old spellings folded), never `v.size`/`v.color`; colour text resolves via the colour master's name/aliases, never rewritten. → `docs/landmines/production.md`
 - Planning a WO's materials? `generateMaterialPlan` with the WO's `skuBreakdown` — scoped rules count only their variants; HPP and additional issues read the WO's `consumptionPlan`, not the current BOM. → `docs/landmines/production.md`
 - Writing `ConsumptionRule` rows? `(finishedGoodId, materialId)` is not unique any more — refuse overlapping colour/size scopes (`findOverlappingRules`) in every writer. → `docs/landmines/production.md`
+- Touching a WO's or an issue's `rollBreakdown`? Entries are per material (`itemId`); match with `rollsForItem`, legacy entries fall back to `consumptionMaterialId`. → `docs/landmines/production.md`
 
 **Forecast**
 

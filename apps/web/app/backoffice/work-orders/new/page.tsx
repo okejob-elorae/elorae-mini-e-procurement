@@ -36,7 +36,9 @@ import {
 } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption, suggestFabricRollAllocation, getAvailableFabricRolls } from '@/app/actions/production';
+import { createWorkOrder, getMaterialPlan, computePlannedQtyFromConsumption } from '@/app/actions/production';
+import { MaterialRollAllocation, type MaterialRollEntry } from '@/components/work-orders/MaterialRollAllocation';
+import { rollShortfalls } from '@/lib/production/roll-allocation';
 import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
@@ -107,7 +109,6 @@ export default function NewWorkOrderPage() {
   const [isLoadingFG, setIsLoadingFG] = useState(true);
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
 
   const [vendorId, setVendorId] = useState('');
   const [finishedGoodId, setFinishedGoodId] = useState('');
@@ -129,9 +130,7 @@ export default function NewWorkOrderPage() {
     supplierCode: string;
   } | null>(null);
   const [notes, setNotes] = useState('');
-  const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
-  const [availableRolls, setAvailableRolls] = useState<Array<{ rollId: string; rollCode: string; rollRef: string; remainingLength: number }>>([]);
-  const [addRollValue, setAddRollValue] = useState('');
+  const [rollBreakdown, setRollBreakdown] = useState<MaterialRollEntry[]>([]);
   const [poId, setPoId] = useState('');
   const [purchaseOrders, setPurchaseOrders] = useState<Array<{ id: string; docNumber: string }>>([]);
   const [isLoadingPOs, setIsLoadingPOs] = useState(true);
@@ -262,16 +261,6 @@ export default function NewWorkOrderPage() {
   }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, planSkuKey, t]);
 
   useEffect(() => {
-    if (!consumptionMaterialId) {
-      setAvailableRolls([]);
-      return;
-    }
-    getAvailableFabricRolls(consumptionMaterialId)
-      .then(setAvailableRolls)
-      .catch(() => setAvailableRolls([]));
-  }, [consumptionMaterialId]);
-
-  useEffect(() => {
     if (!finishedGoodId || outputMode !== 'SKU') {
       setFinishedGoodVariants([]);
       setSelectedVariantSku('');
@@ -392,10 +381,10 @@ export default function NewWorkOrderPage() {
   }, [vendorId, plannedNum, tailors, targetTouched, targetDate]);
 
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
-  const rollSum = rollBreakdown.reduce((s, r) => s + r.qty, 0);
-  /** Material qty (consumption UOM); roll total must be at least this (excess allowed) */
-  const materialPlannedQtyForRolls = consumptionResult?.actualConsumption ?? 0;
-  const rollValid = rollBreakdown.length === 0 || rollSum >= materialPlannedQtyForRolls - 1e-6;
+  // Rolls per material of the colour-aware plan (#437); a material left without rolls is not checked.
+  const planRolls = rollBreakdown.filter((r) => materialPlan.some((m) => m.itemId === r.itemId));
+  const rollValid =
+    rollShortfalls(materialPlan.map((m) => ({ itemId: m.itemId, qty: m.plannedQty })), planRolls).length === 0;
   const variantRatioSum = variantRatios.reduce((s, x) => s + x.ratioPercent, 0);
   const skuVariantValid =
     outputMode !== 'SKU' ||
@@ -413,50 +402,6 @@ export default function NewWorkOrderPage() {
     !noVariantsForSku &&
     !isSubmitting;
 
-  const addRollBySelection = (roll: { rollId: string; rollCode: string; rollRef: string; remainingLength: number }) => {
-    setRollBreakdown((prev) => [...prev, { rollRef: roll.rollCode || roll.rollRef, qty: roll.remainingLength, notes: '' }]);
-  };
-  const updateRollRow = (i: number, field: 'rollRef' | 'qty' | 'notes', value: string | number) => {
-    setRollBreakdown((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], [field]: value };
-      return next;
-    });
-  };
-  const removeRollRow = (i: number) => {
-    setRollBreakdown((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  const handleSuggestRolls = async () => {
-    if (!consumptionMaterialId || !consumptionResult?.actualConsumption) return;
-    setIsSuggestingRolls(true);
-    try {
-      const suggestion = await suggestFabricRollAllocation(
-        consumptionMaterialId,
-        consumptionResult.actualConsumption
-      );
-      if (suggestion.selected.length === 0) {
-        toast.error('No available fabric rolls found');
-        return;
-      }
-      setRollBreakdown(
-        suggestion.selected.map((row) => ({
-          rollRef: row.rollCode ?? row.rollRef,
-          qty: row.qty,
-        }))
-      );
-      if (suggestion.unallocated > 0) {
-        toast.error(`Insufficient roll stock, unallocated: ${suggestion.unallocated.toFixed(2)}`);
-      } else {
-        toast.success('Best-fit roll suggestion applied');
-      }
-    } catch {
-      toast.error('Failed to suggest roll allocation');
-    } finally {
-      setIsSuggestingRolls(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || !session?.user?.id) return;
@@ -473,7 +418,7 @@ export default function NewWorkOrderPage() {
           targetDate: parseDateOnly(targetDate),
           poId: poId.trim() || undefined,
           notes: notes.trim() || undefined,
-          rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
+          rollBreakdown: planRolls.length > 0 ? planRolls : undefined,
           skuBreakdown:
             outputMode === 'SKU'
               ? variantRatios.length > 1
@@ -893,94 +838,16 @@ export default function NewWorkOrderPage() {
                         </p>
                       )}
 
-                      <div className="space-y-2 border-t pt-4">
-                        <Label>Alokasi per roll (opsional)</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Pilih roll utuh (whole rolls only). Total allocated minimal sama dengan kebutuhan material.
-                        </p>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Roll / Ref</TableHead>
-                                <TableHead className="text-right">Qty (whole roll)</TableHead>
-                                <TableHead>Notes</TableHead>
-                                <TableHead className="w-12" />
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {rollBreakdown.map((row, i) => (
-                                <TableRow key={i}>
-                                  <TableCell className="font-medium">{row.rollRef}</TableCell>
-                                  <TableCell className="text-right">{Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
-                                  <TableCell>
-                                    <Input
-                                      value={row.notes ?? ''}
-                                      onChange={(e) => updateRollRow(i, 'notes', e.target.value)}
-                                      placeholder="Optional"
-                                      className="h-8"
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => removeRollRow(i)}
-                                    >
-                                      ×
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <SearchableCombobox
-                            options={availableRolls
-                              .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
-                              .map((r) => ({
-                                value: r.rollId,
-                                label: `${r.rollCode} — ${r.remainingLength.toLocaleString()} remaining`,
-                              }))}
-                            value={addRollValue}
-                            onValueChange={(value) => {
-                              const roll = availableRolls.find((r) => r.rollId === value);
-                              if (roll) {
-                                addRollBySelection(roll);
-                                setAddRollValue('');
-                              }
-                            }}
-                            placeholder="Add roll..."
-                            emptyMessage="No more rolls"
-                            triggerClassName="w-[280px]"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleSuggestRolls}
-                            disabled={!consumptionMaterialId || isSuggestingRolls}
-                          >
-                            {isSuggestingRolls ? 'Suggesting...' : 'Suggest best-fit'}
-                          </Button>
-                        </div>
-                        {rollBreakdown.length > 0 && (
-                          <p className="text-sm">
-                            Total allocated: {rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}.
-                            {rollSum >= materialPlannedQtyForRolls - 1e-6
-                              ? ` +${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} over`
-                              : ` ${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} short`}
-                          </p>
-                        )}
-                        {rollBreakdown.length > 0 && !rollValid && (
-                          <p className="text-sm text-destructive">
-                            Total roll ({rollSum.toLocaleString(undefined, { maximumFractionDigits: 4 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}) kurang dari kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}).
-                          </p>
-                        )}
-                      </div>
+                      <MaterialRollAllocation
+                        lines={materialPlan.map((m) => ({
+                          itemId: m.itemId,
+                          itemName: m.itemName,
+                          uomCode: m.uomCode,
+                          qty: m.plannedQty,
+                        }))}
+                        value={planRolls}
+                        onChange={setRollBreakdown}
+                      />
                     </>
                   )}
                 </>
