@@ -151,7 +151,7 @@ d("opname fabric approval keeps a closed roll closed (test bed only)", () => {
 
   it("leaves an uncounted roll unchanged instead of zeroing and closing it", async () => {
     await prisma.stockOpnameRoll.updateMany({
-      where: { opnameId, fabricRollId: r3Id },
+      where: { opnameId: seededId(opnameId), fabricRollId: seededId(r3Id) },
       data: { countedLength: null },
     });
 
