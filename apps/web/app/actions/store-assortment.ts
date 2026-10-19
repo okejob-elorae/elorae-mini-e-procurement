@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma, Prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { addAssortmentSkuToOpenDraft } from "@/lib/stores/stocktake/assortment-sync";
 
 /**
  * Reference data only — no document, no status, no lifecycle. `id` doubles as the created row's
@@ -133,6 +134,13 @@ export async function addAssortmentLineAction(input: AddAssortmentLineInput): Pr
       },
       select: { id: true },
     });
+
+    /* The line is saved either way; a failure here only leaves the old "Added"-badge behaviour on an open draft. */
+    try {
+      await addAssortmentSkuToOpenDraft({ storeId: input.storeId, itemId: input.itemId, variantSku: input.variantSku });
+    } catch (err) {
+      console.error(`[addAssortmentLineAction] could not add the SKU to the open stocktake of store ${input.storeId}:`, err);
+    }
 
     revalidatePath(`/backoffice/stores/${input.storeId}`);
     return { ok: true, id: created.id };

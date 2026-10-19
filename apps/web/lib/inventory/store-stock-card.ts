@@ -10,7 +10,12 @@ export type StoreStockRow = {
   qty: number;
   mainQty: number;
   vanQty: number;
+  /** The store's latest approved stocktake was partial and left this row uncounted, so its drift was not corrected. */
+  uncountedInLastCount: boolean;
 };
+
+/** The store's latest approved stocktake, when it was partial. `uncountedCount` is how many current stock rows it left uncounted. */
+export type LastPartialCount = { id: string; docNo: string; uncountedCount: number };
 
 export type StoreStockMovement = {
   id: string;
@@ -39,6 +44,7 @@ export type StoreStockMovement = {
 export type StoreStockCardData = {
   rows: StoreStockRow[];
   negativeCount: number;
+  lastPartialCount: LastPartialCount | null;
   movements: StoreStockMovement[];
   /** True when the movement fetch below hit `STORE_MOVEMENT_LIMIT` — older rows exist and were dropped. */
   movementsTruncated: boolean;
@@ -118,8 +124,29 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
   const itemIds = Array.from(new Set(stockRows.map((r) => r.itemId)));
   const elsewhere = await getStockAcrossLocations(itemIds);
 
+  /*
+   * A partial count corrects only the lines it counted; every uncounted row stays as drifted as it
+   * was. Flag those rows until the next approved count, so someone chases them. The next count
+   * snapshots every `StoreStock` row, so they are on its sheet without any extra step.
+   */
+  const lastApproved = await prisma.storeStocktake.findFirst({
+    where: { storeId, status: "APPROVED" },
+    orderBy: [{ approvedAt: "desc" }, { id: "desc" }],
+    select: {
+      id: true,
+      docNo: true,
+      isFullCount: true,
+      lines: { where: { countedQty: null }, select: { itemId: true, variantSku: true } },
+    },
+  });
+  const uncountedKeys =
+    lastApproved && !lastApproved.isFullCount
+      ? new Set(lastApproved.lines.map((l) => `${l.itemId}::${l.variantSku}`))
+      : new Set<string>();
+
   const rows: StoreStockRow[] = stockRows.map((r) => {
-    const loc = elsewhere.get(`${r.itemId}::${r.variantSku}`);
+    const key = `${r.itemId}::${r.variantSku}`;
+    const loc = elsewhere.get(key);
     return {
       itemId: r.itemId,
       variantSku: r.variantSku,
@@ -127,8 +154,14 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
       qty: r.qty.toNumber(),
       mainQty: loc?.main ?? 0,
       vanQty: loc?.van ?? 0,
+      uncountedInLastCount: uncountedKeys.has(key),
     };
   });
+  const uncountedCount = rows.filter((r) => r.uncountedInLastCount).length;
+  const lastPartialCount =
+    lastApproved && !lastApproved.isFullCount && uncountedCount > 0
+      ? { id: lastApproved.id, docNo: lastApproved.docNo, uncountedCount }
+      : null;
 
   /* Negative rows sort first, then alphabetically by item + variant. */
   rows.sort((a, b) => {
@@ -197,6 +230,7 @@ export async function getStoreStockCard(storeId: string): Promise<StoreStockCard
   return {
     rows,
     negativeCount,
+    lastPartialCount,
     movements,
     movementsTruncated: isStoreMovementsTruncated(ledgerRows.length),
     movementLimit: STORE_MOVEMENT_LIMIT,

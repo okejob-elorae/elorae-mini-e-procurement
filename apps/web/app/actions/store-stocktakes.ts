@@ -126,12 +126,10 @@ function toResult(e: unknown): StoreStocktakeActionResult {
   return { ok: false, code: "ERROR" };
 }
 
-function isValidCreateInput(input: unknown): input is { storeId: string; countedAt: string } {
+function isValidCreateInput(input: unknown): input is { storeId: string } {
   if (typeof input !== "object" || input === null) return false;
   const i = input as Record<string, unknown>;
-  if (typeof i.storeId !== "string" || i.storeId === "") return false;
-  if (typeof i.countedAt !== "string" || i.countedAt === "") return false;
-  return Number.isFinite(new Date(i.countedAt).getTime());
+  return typeof i.storeId === "string" && i.storeId !== "";
 }
 
 function isValidCountsLine(l: unknown): l is SaveCountsLineInput {
@@ -228,8 +226,12 @@ async function requireSpgActiveStore(
  * `auth()`, the permission check and the writer call all sit inside the one try/catch below —
  * a throwing `auth()` (a corrupted session cookie, a DB hiccup during the session lookup) must
  * come back as a typed `ERROR`, never escape as an opaque production digest.
+ *
+ * `countedAt` is stamped here, never taken from the request: it is the register's "Count Date",
+ * the upper edge of the sold-in-window figure and the next count's `periodFrom`, so a caller's
+ * clock must not set it.
  */
-export async function createAction(input: { storeId: string; countedAt: string }): Promise<StoreStocktakeActionResult> {
+export async function createAction(input: { storeId: string }): Promise<StoreStocktakeActionResult> {
   try {
     const session = await auth();
     const permissions = session?.user?.permissions ?? [];
@@ -240,7 +242,7 @@ export async function createAction(input: { storeId: string; countedAt: string }
     const created = await createStoreStocktake({
       storeId: input.storeId,
       createdById: session.user.id,
-      countedAt: new Date(input.countedAt),
+      countedAt: new Date(),
     });
     revalidatePath("/backoffice/store-stocktakes");
     revalidatePath(`/backoffice/store-stocktakes/${created.id}`);

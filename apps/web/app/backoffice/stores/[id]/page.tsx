@@ -52,9 +52,9 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
     store.termsType === "KONSI"
       ? await listStoreStocktakes({ storeId: store.id, page: 1, perPage: STOCKTAKE_HISTORY_PAGE_SIZE })
       : null;
-  /* Only an active KONSI store with a sell-through method is on the monthly count schedule, the same stores the daily sweep reads. */
+  /* Only an active KONSI store is on the monthly count schedule, the same stores the daily sweep reads. */
   const countState =
-    store.termsType === "KONSI" && store.sellThroughMethod && store.isActive
+    store.termsType === "KONSI" && store.isActive
       ? await getStoreCountState({ id: store.id, createdAt: store.createdAt }, await readCountSchedule(), new Date())
       : null;
   /**
@@ -93,6 +93,7 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
           ? {
               rows: stockCard.rows,
               negativeCount: stockCard.negativeCount,
+              lastPartialCount: stockCard.lastPartialCount,
               inTransitAdminReturn,
               movements: stockCard.movements.map(({ occurredAt, ...m }) => ({ ...m, occurredAtIso: occurredAt.toISOString() })),
               movementsTruncated: stockCard.movementsTruncated,
