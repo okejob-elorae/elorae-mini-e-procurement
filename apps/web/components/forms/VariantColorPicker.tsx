@@ -1,22 +1,20 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { AlertTriangle, Loader2, Plus, X } from 'lucide-react';
-import { toast } from 'sonner';
-import { buildColorIndex, colorMatchKey } from '@elorae/db/variant-axes';
-import {
-  addVariantColorFromItemForm,
-  getPantoneOptionsForItems,
-  type VariantColorOption,
-} from '@/app/actions/variant-colors';
+import { useMemo, useState } from "react";
+import { AlertTriangle, Loader2, Plus, X } from "lucide-react";
+import { toast } from "sonner";
+import { buildColorIndex, colorMatchKey } from "@elorae/db/variant-axes";
+import { addVariantColorFromItemForm, getPantoneOptionsForItems } from "@/app/actions/variant-colors";
+import type { VariantColorOption } from "@/lib/items/variant-colors";
+import { replaceColorLabel } from "@/lib/items/normalize-variants";
 import {
   PantoneThemePickerDialog,
   type PantoneThemeSelection,
-} from '@/components/settings/PantoneThemePickerDialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from "@/components/settings/PantoneThemePickerDialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Command,
   CommandEmpty,
@@ -24,7 +22,7 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command';
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +30,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from "@/components/ui/dialog";
 
 function Swatch({ hex }: { hex?: string | null }) {
   return (
@@ -55,15 +53,17 @@ export function VariantColorPicker({
   values,
   onChange,
   options,
+  loadFailed = false,
   onColorAdded,
 }: {
   values: string[];
   onChange: (values: string[]) => void;
   options: VariantColorOption[] | null;
+  loadFailed?: boolean;
   onColorAdded: (color: VariantColorOption) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pantoneOpen, setPantoneOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -76,13 +76,13 @@ export function VariantColorPicker({
   const filtered = (options ?? []).filter(
     (c) =>
       !selectedIds.has(c.id) &&
-      (!q || [c.name, ...c.aliases, c.pantone?.tcx ?? ''].some((t) => t.toLowerCase().includes(q.toLowerCase())))
+      (!q || [c.name, ...c.aliases, c.pantone?.tcx ?? ""].some((t) => t.toLowerCase().includes(q.toLowerCase())))
   );
   const exactMatch = q ? index.has(colorMatchKey(q)) : false;
 
   const pick = (label: string) => {
     if (!values.some((v) => colorMatchKey(v) === colorMatchKey(label))) onChange([...values, label]);
-    setQuery('');
+    setQuery("");
   };
 
   const openDraft = (name: string, alias: string | null = null) => {
@@ -93,7 +93,7 @@ export function VariantColorPicker({
   const saveDraft = async () => {
     if (!draft) return;
     if (!draft.name.trim() && !draft.pantone) {
-      toast.error('Type a colour name or choose a Pantone');
+      toast.error("Type a colour name or choose a Pantone");
       return;
     }
     setSaving(true);
@@ -107,18 +107,22 @@ export function VariantColorPicker({
         toast.error(result.error);
         return;
       }
-      const color = result.color;
+      const { color, reused } = result;
       onColorAdded(color);
+      if (reused) toast.info(`Using existing colour "${color.name}"`);
       if (draft.alias) {
         const nextIndex = buildColorIndex([...(options ?? []).filter((c) => c.id !== color.id), color]);
-        // An unmatched label that now resolves (as the alias) stays, so its variant SKUs stay put.
+        // An unmatched label that now resolves (as an alias) stays, so its variant SKUs stay put.
         if (nextIndex.get(colorMatchKey(draft.alias)) !== color.id) {
-          onChange(values.map((v) => (v === draft.alias ? color.name : v)));
+          onChange(replaceColorLabel(values, draft.alias, color.name));
         }
       } else {
         pick(color.name);
       }
       setDraft(null);
+    } catch (err) {
+      console.error("addVariantColorFromItemForm failed", err);
+      toast.error(err instanceof Error ? err.message : "Failed to add colour");
     } finally {
       setSaving(false);
     }
@@ -127,17 +131,17 @@ export function VariantColorPicker({
   return (
     <div className="flex min-h-9 w-full flex-wrap items-center gap-2 rounded-md border px-2 py-1.5">
       {values.map((label) => {
-        const color = byId.get(index.get(colorMatchKey(label)) ?? '');
+        const color = byId.get(index.get(colorMatchKey(label)) ?? "");
         const unmatched = options != null && !color;
         return (
           <span
             key={label}
             className={
               unmatched
-                ? 'flex items-center gap-1.5 rounded-full border border-amber-500/60 bg-amber-500/10 px-2 py-0.5 text-xs'
-                : 'flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs'
+                ? "flex items-center gap-1.5 rounded-full border border-amber-500/60 bg-amber-500/10 px-2 py-0.5 text-xs"
+                : "flex items-center gap-1.5 rounded-full bg-muted px-2 py-0.5 text-xs"
             }
-            title={unmatched ? 'Not in the colour master' : color?.pantone ? `Pantone ${color.pantone.tcx}` : undefined}
+            title={unmatched ? "Not in the colour master" : color?.pantone ? `Pantone ${color.pantone.tcx}` : undefined}
           >
             {unmatched ? <AlertTriangle className="h-3 w-3 text-amber-600" aria-hidden /> : <Swatch hex={color?.pantone?.hex} />}
             {label}
@@ -158,39 +162,43 @@ export function VariantColorPicker({
         );
       })}
 
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground" disabled={options == null}>
-            {options == null ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
-            Add colour
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-72 p-0" align="start">
-          <Command shouldFilter={false}>
-            <CommandInput placeholder="Search colour or Pantone code…" value={query} onValueChange={setQuery} />
-            <CommandList>
-              <CommandEmpty>No colour found.</CommandEmpty>
-              <CommandGroup>
-                {filtered.slice(0, 100).map((c) => (
-                  <CommandItem key={c.id} value={c.id} onSelect={() => pick(c.name)}>
-                    <Swatch hex={c.pantone?.hex} />
-                    <span className="truncate">{c.name}</span>
-                    {c.pantone && <span className="ml-auto text-xs text-muted-foreground">{c.pantone.tcx}</span>}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-              {!exactMatch && (
+      {loadFailed ? (
+        <span className="text-xs text-destructive">Colour master failed to load; reload the page.</span>
+      ) : (
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-muted-foreground" disabled={options == null}>
+              {options == null ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Plus className="mr-1 h-3.5 w-3.5" />}
+              Add colour
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-0" align="start">
+            <Command shouldFilter={false}>
+              <CommandInput placeholder="Search colour or Pantone code…" value={query} onValueChange={setQuery} />
+              <CommandList>
+                <CommandEmpty>No colour found.</CommandEmpty>
                 <CommandGroup>
-                  <CommandItem value="__new__" onSelect={() => openDraft(q)}>
-                    <Plus className="h-4 w-4" />
-                    {q ? `New colour “${q}”` : 'New colour…'}
-                  </CommandItem>
+                  {filtered.slice(0, 100).map((c) => (
+                    <CommandItem key={c.id} value={c.id} onSelect={() => pick(c.name)}>
+                      <Swatch hex={c.pantone?.hex} />
+                      <span className="truncate">{c.name}</span>
+                      {c.pantone && <span className="ml-auto text-xs text-muted-foreground">{c.pantone.tcx}</span>}
+                    </CommandItem>
+                  ))}
                 </CommandGroup>
-              )}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
+                {!exactMatch && (
+                  <CommandGroup>
+                    <CommandItem value="__new__" onSelect={() => openDraft(q)}>
+                      <Plus className="h-4 w-4" />
+                      {q ? `New colour “${q}”` : "New colour…"}
+                    </CommandItem>
+                  </CommandGroup>
+                )}
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+      )}
 
       <Dialog open={draft != null} onOpenChange={(o) => !o && setDraft(null)}>
         <DialogContent className="sm:max-w-md">
@@ -208,7 +216,7 @@ export function VariantColorPicker({
                   id="new-colour-name"
                   value={draft.name}
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                  placeholder={draft.pantone?.name ?? 'e.g. Army'}
+                  placeholder={draft.pantone?.name ?? "e.g. Army"}
                 />
               </div>
               <div className="space-y-2">
@@ -221,7 +229,7 @@ export function VariantColorPicker({
                     </span>
                   )}
                   <Button type="button" variant="outline" size="sm" onClick={() => setPantoneOpen(true)}>
-                    {draft.pantone ? 'Change' : 'Choose Pantone'}
+                    {draft.pantone ? "Change" : "Choose Pantone"}
                   </Button>
                   {draft.pantone && (
                     <Button

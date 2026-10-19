@@ -10,7 +10,8 @@ import { getUOMs } from '@/app/actions/uom';
 import { getItems } from '@/app/actions/items';
 import { getItemTypeMasters } from '@/app/actions/item-type-master';
 import { getItemCategories } from '@/app/actions/item-categories';
-import { getVariantColorOptions, type VariantColorOption } from '@/app/actions/variant-colors';
+import { getVariantColorOptions } from '@/app/actions/variant-colors';
+import type { VariantColorOption } from '@/lib/items/variant-colors';
 import { VariantColorPicker } from '@/components/forms/VariantColorPicker';
 import {
   COLOR_AXIS_KEY,
@@ -46,6 +47,7 @@ import { toast } from 'sonner';
 import {
   buildVariantSkuCode,
   slugVariantAttributeValue,
+  unknownVariantColors,
 } from "@/lib/items/normalize-variants";
 import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
@@ -184,6 +186,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   );
   // null until loaded, so colours are not reported as unknown before the master arrives.
   const [colorOptions, setColorOptions] = useState<VariantColorOption[] | null>(null);
+  const [colorLoadFailed, setColorLoadFailed] = useState(false);
 
   const normalizedVariants = useMemo((): Array<Record<string, string>> => {
     const raw = initialData?.variants;
@@ -299,7 +302,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       getItems({ type: 'raw', isActive: true })
         .then((result) => setMaterials(Array.isArray(result) ? (result as unknown as Item[]) : []))
         .catch(() => toast.error(tToasts('failedToLoadMaterials')));
-      getVariantColorOptions().then(setColorOptions).catch(() => setColorOptions([]));
+      setColorLoadFailed(false);
+      // Stays null on failure: an empty list would flag every colour as missing from the master.
+      getVariantColorOptions()
+        .then(setColorOptions)
+        .catch((err) => {
+          console.error('getVariantColorOptions failed', err);
+          setColorLoadFailed(true);
+          toast.error('Failed to load the colour master');
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- itemType drives fetch
   }, [itemType]);
@@ -550,14 +561,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         return;
       }
       // A colour the item already had may stay unmatched (legacy); a new one must be in the master.
-      const savedColorKeys = new Set(
-        normalizedVariants.flatMap((v) =>
-          Object.entries(v).filter(([k]) => canonicalAxisKey(k) === COLOR_AXIS_KEY).map(([, val]) => colorMatchKey(val))
-        )
-      );
       const newUnknown =
-        itemType === ItemType.FINISHED_GOOD
-          ? bomScope.unknownColors.filter((label) => !savedColorKeys.has(colorMatchKey(label)))
+        itemType === ItemType.FINISHED_GOOD && colorOptions != null
+          ? unknownVariantColors(
+              axisValues(COLOR_AXIS_KEY).map((label) => ({ [COLOR_AXIS_KEY]: label })),
+              buildColorIndex(colorOptions),
+              normalizedVariants
+            )
           : [];
       if (newUnknown.length > 0) {
         toast.error(`Add ${newUnknown.join(', ')} to the colour master first (click "Add" on the colour).`);
@@ -962,6 +972,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     values={axisValues(COLOR_AXIS_KEY)}
                     onChange={(values) => setAxisValues(COLOR_AXIS_KEY, values)}
                     options={colorOptions}
+                    loadFailed={colorLoadFailed}
                     onColorAdded={(color) =>
                       setColorOptions((prev) =>
                         [...(prev ?? []).filter((c) => c.id !== color.id), color].sort((a, b) => a.name.localeCompare(b.name))

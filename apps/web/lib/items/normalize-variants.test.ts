@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildColorIndex } from "@elorae/db/variant-axes";
 import {
   buildVariantSkuCode,
+  replaceColorLabel,
   unknownVariantColors,
   validateAndNormalizeVariants,
 } from "./normalize-variants";
@@ -117,9 +118,23 @@ describe("unknownVariantColors", () => {
     expect(out).toEqual(["Dark Navy"]);
   });
 
+  it("reports one entry per spelling and skips variants without a colour", () => {
+    expect(unknownVariantColors([{ Ukuran: "M" }, { Warna: "Navy" }, { Warna: " navy " }], index)).toEqual(["Navy"]);
+  });
+
+  it("grandfathers a colour saved under a legacy axis key", () => {
+    expect(unknownVariantColors([{ Warna: "Teal" }], index, [{ Color: "teal", Size: "M" }])).toEqual([]);
+  });
+
   it("lets through a colour the item already carried", () => {
     expect(unknownVariantColors([{ Warna: "Dark Navy" }, { Warna: "Cream" }], index, [{ Warna: "dark navy" }])).toEqual([
       "Cream",
     ]);
+  });
+});
+
+describe("replaceColorLabel", () => {
+  it("swaps the label and drops a duplicate spelling it creates", () => {
+    expect(replaceColorLabel(["Dark Navy", "navy", "Cream"], "Dark Navy", "Navy")).toEqual(["Navy", "Cream"]);
   });
 });
