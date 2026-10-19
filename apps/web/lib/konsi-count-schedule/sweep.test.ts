@@ -182,19 +182,25 @@ d("runKonsiCountSweep (test bed only)", () => {
         createdById: "test",
       },
     });
-    const noMethod = await seedStore({ method: null });
     const putus = await seedStore({ termsType: "PUTUS" });
     const inactive = await seedStore({ isActive: false });
-    const all = [done, noMethod, putus, inactive];
+    const all = [done, putus, inactive];
 
     const r = await runKonsiCountSweep({ storeIds: all, now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
     expect(r).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
-    /* Only the seeded APPROVED row exists: nothing was opened at any of the four. */
+    /* Only the seeded APPROVED row exists: nothing was opened at any of the three. */
     expect(await prisma.storeStocktake.count({ where: { storeId: { in: all } } })).toBe(1);
 
     const early = await seedStore();
     const notYet = await runKonsiCountSweep({ storeIds: [early], now: wib("2026-09-10"), schedule: DEFAULT_COUNT_SCHEDULE });
     expect(notYet).toEqual({ scanned: 1, opened: 0, alreadyOpen: 0, existingAnnounced: 0, spgNotified: 0, overdueAnnounced: 0, failed: 0 });
+  }, SLOW);
+
+  it("opens the monthly count at an active KONSI store with no sell-through method", async () => {
+    const storeId = await seedStore({ method: null });
+    const r = await runKonsiCountSweep({ storeIds: [storeId], now: wib("2026-09-28"), schedule: DEFAULT_COUNT_SCHEDULE });
+    expect(r.scanned).toBe(1);
+    expect(r.opened).toBe(1);
   }, SLOW);
 
   it("does not treat an approved PARTIAL count as the month's count", async () => {
