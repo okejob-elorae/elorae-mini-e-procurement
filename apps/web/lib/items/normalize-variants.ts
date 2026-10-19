@@ -1,4 +1,10 @@
-import { canonicalAxisKey, normalizeVariantAxisKeys } from "@elorae/db/variant-axes";
+import {
+  canonicalAxisKey,
+  colorMatchKey,
+  normalizeVariantAxisKeys,
+  resolveVariantAxes,
+  type ColorIndex,
+} from "@elorae/db/variant-axes";
 import { skuMatchKey } from "@/lib/items/sku-match-key";
 
 export type VariantGenerationBase = "category" | "parent";
@@ -121,4 +127,41 @@ export function validateAndNormalizeVariants(
   }
 
   return normalized;
+}
+
+/**
+ * Finished-good colours that are not in the colour master. A colour the item already carried
+ * (`existing`) is let through, so a legacy item still saves until ops map its colour.
+ */
+export function unknownVariantColors(
+  variants: Array<Record<string, string>>,
+  index: ColorIndex,
+  existing: Array<Record<string, string>> = [],
+): string[] {
+  const kept = new Set(
+    existing.flatMap((v) => {
+      const { colorLabel } = resolveVariantAxes(v, index);
+      return colorLabel ? [colorMatchKey(colorLabel)] : [];
+    }),
+  );
+  const unknown: string[] = [];
+  const seen = new Set<string>();
+  for (const v of variants) {
+    const { colorId, colorLabel } = resolveVariantAxes(v, index);
+    if (colorId || !colorLabel) continue;
+    const key = colorMatchKey(colorLabel);
+    if (kept.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    unknown.push(colorLabel);
+  }
+  return unknown;
+}
+
+/** Colour labels with `label` swapped for `replacement`, one entry per colour spelling. */
+export function replaceColorLabel(values: string[], label: string, replacement: string): string[] {
+  const out: string[] = [];
+  for (const v of values.map((v) => (v === label ? replacement : v))) {
+    if (!out.some((o) => colorMatchKey(o) === colorMatchKey(v))) out.push(v);
+  }
+  return out;
 }

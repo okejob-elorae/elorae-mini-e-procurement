@@ -11,6 +11,8 @@ import { getItems } from '@/app/actions/items';
 import { getItemTypeMasters } from '@/app/actions/item-type-master';
 import { getItemCategories } from '@/app/actions/item-categories';
 import { getVariantColorOptions } from '@/app/actions/variant-colors';
+import type { VariantColorOption } from '@/lib/items/variant-colors';
+import { VariantColorPicker } from '@/components/forms/VariantColorPicker';
 import {
   COLOR_AXIS_KEY,
   SIZE_AXIS_KEY,
@@ -45,6 +47,7 @@ import { toast } from 'sonner';
 import {
   buildVariantSkuCode,
   slugVariantAttributeValue,
+  unknownVariantColors,
 } from "@/lib/items/normalize-variants";
 import { useTranslations } from 'next-intl';
 import type { z } from 'zod';
@@ -182,7 +185,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     })) || []
   );
   // null until loaded, so colours are not reported as unknown before the master arrives.
-  const [colorOptions, setColorOptions] = useState<Array<{ id: string; name: string; aliases: string[] }> | null>(null);
+  const [colorOptions, setColorOptions] = useState<VariantColorOption[] | null>(null);
+  const [colorLoadFailed, setColorLoadFailed] = useState(false);
 
   const normalizedVariants = useMemo((): Array<Record<string, string>> => {
     const raw = initialData?.variants;
@@ -298,7 +302,15 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       getItems({ type: 'raw', isActive: true })
         .then((result) => setMaterials(Array.isArray(result) ? (result as unknown as Item[]) : []))
         .catch(() => toast.error(tToasts('failedToLoadMaterials')));
-      getVariantColorOptions().then(setColorOptions).catch(() => setColorOptions([]));
+      setColorLoadFailed(false);
+      // Stays null on failure: an empty list would flag every colour as missing from the master.
+      getVariantColorOptions()
+        .then(setColorOptions)
+        .catch((err) => {
+          console.error('getVariantColorOptions failed', err);
+          setColorLoadFailed(true);
+          toast.error('Failed to load the colour master');
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- itemType drives fetch
   }, [itemType]);
@@ -374,6 +386,24 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     updated[index] = { ...updated[index], key };
     commitAttributes(updated);
   };
+
+  /** Finished goods (#437): set one fixed axis; Warna stays first, an emptied axis is dropped. */
+  const setAxisValues = (axis: string, values: string[]) => {
+    const deduped = dedupeAttributeValues(values);
+    const at = attributes.findIndex((attr) => canonicalAxisKey(attr.key) === axis);
+    const updated = [...attributes];
+    if (at >= 0) {
+      if (deduped.length === 0) updated.splice(at, 1);
+      else updated[at] = { ...updated[at], values: deduped };
+    } else if (deduped.length > 0) {
+      const next = { key: axis, values: deduped };
+      if (axis === COLOR_AXIS_KEY) updated.unshift(next);
+      else updated.push(next);
+    }
+    commitAttributes(updated);
+  };
+  const axisValues = (axis: string) =>
+    attributes.find((attr) => canonicalAxisKey(attr.key) === axis)?.values ?? [];
 
   const updateAttributeValues = (index: number, values: string[]) => {
     const deduped = dedupeAttributeValues(values);
@@ -528,6 +558,19 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           : undefined;
       if (otherAxis) {
         toast.error(tToasts('finishedGoodAxesOnly', { name: otherAxis.key.trim() }));
+        return;
+      }
+      // A colour the item already had may stay unmatched (legacy); a new one must be in the master.
+      const newUnknown =
+        itemType === ItemType.FINISHED_GOOD && colorOptions != null
+          ? unknownVariantColors(
+              axisValues(COLOR_AXIS_KEY).map((label) => ({ [COLOR_AXIS_KEY]: label })),
+              buildColorIndex(colorOptions),
+              normalizedVariants
+            )
+          : [];
+      if (newUnknown.length > 0) {
+        toast.error(`Add ${newUnknown.join(', ')} to the colour master first (click "Add" on the colour).`);
         return;
       }
     }
@@ -917,53 +960,100 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           <CardTitle>Variants (Optional)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <p className="text-sm text-muted-foreground">
-              {itemType === ItemType.FINISHED_GOOD
-                ? 'Finished goods have two attributes only: Warna (colour) and Ukuran (size).'
-                : 'Define attributes (e.g., Color, Size) and their values to generate variant combinations.'}
-            </p>
-            <Button type="button" variant="outline" onClick={addAttribute}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Attribute
-            </Button>
-          </div>
-
-          {attributes.length === 0 && (
-            <p className="text-sm text-muted-foreground">No attributes added yet.</p>
-          )}
-
-          {attributes.map((attr, index) => (
-            <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div className="space-y-2">
-                <Label>Attribute Name</Label>
-                <Input
-                  value={attr.key}
-                  onChange={(e) => updateAttributeKey(index, e.target.value)}
-                  placeholder="Color"
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <Label>Values (comma separated)</Label>
-                <div className="flex gap-2">
-                  <TagsInput
-                    value={attr.values}
-                    onChange={(values) => updateAttributeValues(index, values)}
-                    placeholder="Red, Blue, Green"
-                    separator={[',', '\n']}
+          {itemType === ItemType.FINISHED_GOOD ? (
+            <>
+              <p className="text-sm text-muted-foreground">
+                Finished goods have two attributes: Warna (colour, from the colour master) and Ukuran (size).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+                <Label className="md:pt-2.5">{COLOR_AXIS_KEY}</Label>
+                <div className="md:col-span-2">
+                  <VariantColorPicker
+                    values={axisValues(COLOR_AXIS_KEY)}
+                    onChange={(values) => setAxisValues(COLOR_AXIS_KEY, values)}
+                    options={colorOptions}
+                    loadFailed={colorLoadFailed}
+                    onColorAdded={(color) =>
+                      setColorOptions((prev) =>
+                        [...(prev ?? []).filter((c) => c.id !== color.id), color].sort((a, b) => a.name.localeCompare(b.name))
+                      )
+                    }
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeAttribute(index)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               </div>
-            </div>
-          ))}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+                <Label className="md:pt-2.5">{SIZE_AXIS_KEY}</Label>
+                <div className="md:col-span-2">
+                  <TagsInput
+                    value={axisValues(SIZE_AXIS_KEY)}
+                    onChange={(values) => setAxisValues(SIZE_AXIS_KEY, values)}
+                    placeholder="S, M, L, XL"
+                    separator={[',', '\n']}
+                  />
+                </div>
+              </div>
+              {attributes.map((attr, index) =>
+                canonicalAxisKey(attr.key) == null ? (
+                  <div key={index} className="flex items-center justify-between gap-2 rounded-md border border-amber-500/60 bg-amber-500/10 px-3 py-2 text-sm">
+                    <span>
+                      &ldquo;{attr.key.trim() || 'Unnamed'}&rdquo; is not allowed on a finished good ({attr.values.join(', ')}). Remove it to save.
+                    </span>
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Remove ${attr.key}`} onClick={() => removeAttribute(index)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : null
+              )}
+            </>
+          ) : (
+            <>
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-sm text-muted-foreground">
+                  Define attributes (e.g., Color, Size) and their values to generate variant combinations.
+                </p>
+                <Button type="button" variant="outline" onClick={addAttribute}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Attribute
+                </Button>
+              </div>
+
+              {attributes.length === 0 && (
+                <p className="text-sm text-muted-foreground">No attributes added yet.</p>
+              )}
+
+              {attributes.map((attr, index) => (
+                <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+                  <div className="space-y-2">
+                    <Label>Attribute Name</Label>
+                    <Input
+                      value={attr.key}
+                      onChange={(e) => updateAttributeKey(index, e.target.value)}
+                      placeholder="Color"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Values (comma separated)</Label>
+                    <div className="flex gap-2">
+                      <TagsInput
+                        value={attr.values}
+                        onChange={(values) => updateAttributeValues(index, values)}
+                        placeholder="Red, Blue, Green"
+                        separator={[',', '\n']}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeAttribute(index)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
 
           {gridRows.combos.length > 0 && (
             <div className="space-y-2 pt-2 border-t">

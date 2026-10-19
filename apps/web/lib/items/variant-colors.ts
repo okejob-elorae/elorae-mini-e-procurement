@@ -1,4 +1,4 @@
-import { prisma } from "@elorae/db";
+import { Prisma, prisma } from "@elorae/db";
 import {
   buildColorIndex,
   colorMatchKey,
@@ -140,4 +140,101 @@ export async function saveVariantColor(id: string | null, input: VariantColorInp
     }
     return { id: color.id };
   });
+}
+
+export const colorOptionSelect = {
+  id: true,
+  name: true,
+  isActive: true,
+  aliases: { select: { label: true } },
+  pantone: { select: { tcx: true, hex: true } },
+} as const satisfies Prisma.VariantColorSelect;
+
+export type VariantColorOption = {
+  id: string;
+  name: string;
+  aliases: string[];
+  pantone: { tcx: string; hex: string } | null;
+};
+
+export function withHash(hex: string): string {
+  return hex.startsWith("#") ? hex : `#${hex}`;
+}
+
+export function toColorOption(c: Prisma.VariantColorGetPayload<{ select: typeof colorOptionSelect }>): VariantColorOption {
+  return {
+    id: c.id,
+    name: c.name,
+    aliases: c.aliases.map((a) => a.label),
+    pantone: c.pantone ? { tcx: c.pantone.tcx, hex: withHash(c.pantone.hex) } : null,
+  };
+}
+
+export type AddColorInput = {
+  name: string;
+  pantoneTcx?: string | null;
+  /** Spelling already on the item (an unmatched colour), kept as an alias so its variants resolve. */
+  alias?: string | null;
+};
+
+export type AddColorResult =
+  | { ok: true; color: VariantColorOption; reused: boolean }
+  | { ok: false; error: string };
+
+/**
+ * Add a colour from the item form: a name, a Pantone, or both. A Pantone already linked to a
+ * colour, or a name already spelled by one, reuses that colour: the typed name and the item's
+ * spelling become its aliases (so the item's variants keep resolving), and a reused colour with
+ * no Pantone takes the one given. An inactive match is refused rather than silently reused.
+ */
+export async function addColorFromItemForm(input: AddColorInput, retried = false): Promise<AddColorResult> {
+  const pantoneTcx = input.pantoneTcx?.trim() || null;
+  let name = input.name.trim();
+  const alias = input.alias?.trim() || null;
+  if (!name && !pantoneTcx) return { ok: false, error: "Type a colour name or choose a Pantone" };
+  if (!name && pantoneTcx) {
+    name = (await prisma.pantoneColor.findUnique({ where: { tcx: pantoneTcx }, select: { name: true } }))?.name ?? "";
+    if (!name) return { ok: false, error: `Kode Pantone ${pantoneTcx} tidak ditemukan` };
+  }
+
+  const index = await loadColorIndex();
+  const byPantone = pantoneTcx
+    ? await prisma.variantColor.findFirst({ where: { pantoneTcx }, select: colorOptionSelect })
+    : null;
+  const byNameId = index.get(colorMatchKey(name));
+  const match =
+    byPantone ??
+    (byNameId ? await prisma.variantColor.findUniqueOrThrow({ where: { id: byNameId }, select: colorOptionSelect }) : null);
+
+  try {
+    if (!match) {
+      const saved = await saveVariantColor(null, { name, pantoneTcx, aliases: alias ? [alias] : [] });
+      const color = await prisma.variantColor.findUniqueOrThrow({ where: { id: saved.id }, select: colorOptionSelect });
+      return { ok: true, color: toColorOption(color), reused: false };
+    }
+    if (!match.isActive) {
+      return { ok: false, error: `Warna "${match.name}" tidak aktif; aktifkan di Production → Colors` };
+    }
+    // Spellings no colour claims yet join the reused colour; one claimed by another colour is left alone.
+    const newAliases = [name, alias].filter(
+      (t): t is string => !!t && colorMatchKey(t) !== colorMatchKey(match.name) && !index.has(colorMatchKey(t))
+    );
+    const linkPantone = pantoneTcx && !match.pantone;
+    if (newAliases.length > 0 || linkPantone) {
+      await saveVariantColor(match.id, {
+        name: match.name,
+        pantoneTcx: linkPantone ? pantoneTcx : match.pantone?.tcx ?? null,
+        aliases: [...match.aliases.map((a) => a.label), ...newAliases],
+      });
+    }
+    const color = await prisma.variantColor.findUniqueOrThrow({ where: { id: match.id }, select: colorOptionSelect });
+    return { ok: true, color: toColorOption(color), reused: true };
+  } catch (err) {
+    if (err instanceof VariantColorError) return { ok: false, error: err.message };
+    // A concurrent add of the same spelling won the unique index; look again and reuse it.
+    if (!retried && err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return addColorFromItemForm(input, true);
+    }
+    throw err;
+  }
 }
