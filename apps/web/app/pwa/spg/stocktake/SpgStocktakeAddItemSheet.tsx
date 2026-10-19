@@ -6,21 +6,23 @@ import { Check, Loader2, Plus } from "lucide-react";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getItems } from "@/app/actions/items";
-import { itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
+import { searchStocktakeItemsAction } from "@/app/actions/store-stocktakes";
 
 export type AddableItem = { itemId: string; itemSku: string; variantSku: string; productName: string };
 
 type CatalogState =
   | { status: "loading" }
-  | { status: "loaded"; items: AddableItem[] }
+  | { status: "loaded"; items: AddableItem[]; truncated: boolean }
   | { status: "error" };
+
+/** Wait this long after the last keystroke before searching, so typing a word sends one request. */
+const SEARCH_DEBOUNCE_MS = 250;
 
 /**
  * Add-item picker for the SPG stock count — a shelf item the ledger has no `StoreStock` row
  * for. Mirrors the backoffice's own add-item dialog (`StocktakeDetailClient.tsx`), same
- * `getItems` action and variant-flattening helpers, but as a tap-to-add bottom sheet instead
- * of a desktop combobox, matching this screen's other mobile pickers (`SpgVariantSheet`).
+ * `searchStocktakeItemsAction` server search, but as a tap-to-add bottom sheet instead of a
+ * desktop combobox, matching this screen's other mobile pickers (`SpgVariantSheet`).
  */
 export function SpgStocktakeAddItemSheet({
   open,
@@ -41,45 +43,35 @@ export function SpgStocktakeAddItemSheet({
     if (!open) return;
     let alive = true;
     setCatalog({ status: "loading" });
-    (async () => {
+    const timer = setTimeout(async () => {
       try {
-        const items = await getItems({ isActive: true });
+        const result = await searchStocktakeItemsAction(q);
         if (!alive) return;
-        const list = Array.isArray(items) ? items : [];
-        const flattened: AddableItem[] = [];
-        for (const item of list as unknown as Array<{ id: string; sku: string; nameId: string; variants: unknown }>) {
-          if (itemHasSkuVariants(item.variants)) {
-            for (const variant of variantSelectOptions(parseItemVariants(item.variants))) {
-              flattened.push({
-                itemId: item.id,
-                itemSku: item.sku,
-                variantSku: variant.sku,
-                productName: `${item.nameId} · ${variant.label}`,
-              });
-            }
-          } else {
-            flattened.push({ itemId: item.id, itemSku: item.sku, variantSku: "", productName: item.nameId });
-          }
+        if (!result.ok) {
+          setCatalog({ status: "error" });
+          return;
         }
-        setCatalog({ status: "loaded", items: flattened });
+        const items: AddableItem[] = result.options.map((o) => ({
+          itemId: o.itemId,
+          itemSku: o.itemSku,
+          variantSku: o.variantSku,
+          productName: o.variantLabel ? `${o.itemName} · ${o.variantLabel}` : o.itemName,
+        }));
+        setCatalog({ status: "loaded", items, truncated: result.truncated });
       } catch {
         if (alive) setCatalog({ status: "error" });
       }
-    })();
+    }, SEARCH_DEBOUNCE_MS);
     return () => {
       alive = false;
+      clearTimeout(timer);
     };
-  }, [open]);
+  }, [open, q]);
 
   const filtered = useMemo(() => {
     if (catalog.status !== "loaded") return [];
-    const needle = q.trim().toLowerCase();
-    const remaining = catalog.items.filter((it) => !existingKeys.has(`${it.itemId}::${it.variantSku}`));
-    if (!needle) return remaining;
-    return remaining.filter(
-      (it) => it.itemSku.toLowerCase().includes(needle) || it.productName.toLowerCase().includes(needle),
-    );
-  }, [catalog, q, existingKeys]);
+    return catalog.items.filter((it) => !existingKeys.has(`${it.itemId}::${it.variantSku}`));
+  }, [catalog, existingKeys]);
 
   return (
     <Sheet
@@ -130,6 +122,7 @@ export function SpgStocktakeAddItemSheet({
                   </Button>
                 );
               })}
+              {catalog.truncated && <p className="pt-1 text-center text-xs text-muted-foreground">{t("refineSearch")}</p>}
             </div>
           )}
         </div>

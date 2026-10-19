@@ -3978,7 +3978,8 @@
       "cancel": "Cancel",
       "confirm": "Add",
       "loading": "Loading items…",
-      "loadError": "Could not load items. Try again."
+      "loadError": "Could not load items. Try again.",
+      "refineSearch": "Showing the first matches only. Type more to narrow the list."
     },
     "approve": {
       "button": "Approve",
@@ -4050,7 +4051,8 @@
         "empty": "No matching active item.",
         "loading": "Loading items…",
         "loadError": "Failed to load items. Try again.",
-        "done": "Done"
+        "done": "Done",
+        "refineSearch": "Showing the first matches only. Type more to narrow the list."
       },
       "footer": {
         "tally": "{counted}/{total} counted",

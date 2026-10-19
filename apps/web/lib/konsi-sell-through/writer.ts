@@ -1,6 +1,7 @@
 import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { pendingTransfersOverCountedKeys } from "@/lib/stores/transfer/pending";
 import {
   applyResolution,
   InvalidResolutionError,
@@ -116,18 +117,8 @@ async function assertNoTransferInFlight(
   countMoment: Date,
   countedKeys: Array<{ itemId: string; variantSku: string }>,
 ): Promise<void> {
-  if (countedKeys.length === 0) return;
-  const pending = await client.storeTransfer.findMany({
-    where: {
-      status: "PENDING",
-      movedAt: { lte: countMoment },
-      OR: [{ fromStoreId: storeId }, { toStoreId: storeId }],
-      lines: { some: { OR: countedKeys } },
-    },
-    orderBy: { docNo: "asc" },
-    select: { docNo: true },
-  });
-  if (pending.length > 0) throw new SellThroughError("TRANSFER_IN_FLIGHT", pending.map((t) => t.docNo).join(", "));
+  const pending = await pendingTransfersOverCountedKeys(client, storeId, countMoment, countedKeys);
+  if (pending.length > 0) throw new SellThroughError("TRANSFER_IN_FLIGHT", pending.join(", "));
 }
 
 /* The item::variant keys a stocktake actually counted — the only keys a transfer can have been seen under. */

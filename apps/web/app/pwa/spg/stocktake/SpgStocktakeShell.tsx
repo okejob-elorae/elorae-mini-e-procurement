@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { saveCountsAction } from "@/app/actions/store-stocktakes";
+import { browserStorage, clearSpgDraft, readSpgDraft, writeSpgDraft } from "@/lib/stores/stocktake/spg-draft";
 import { SpgStocktakeAddItemSheet, type AddableItem } from "./SpgStocktakeAddItemSheet";
 
 export type SpgStocktakeLine = {
@@ -58,6 +59,29 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+
+  /*
+   * Restore the unsent draft after mount (never during render, so server and client markup match),
+   * then save every change. A restored added row whose SKU is now on the document is dropped, so it
+   * cannot reach the server twice.
+   */
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  useEffect(() => {
+    const draft = readSpgDraft(browserStorage(), storeId);
+    if (draft) {
+      const onDoc = new Set(lines.map((l) => keyOf(l.itemId, l.variantSku)));
+      setCounts(draft.counts);
+      setCountedAtByKey(draft.countedAtByKey);
+      setPendingLines(draft.pendingLines.filter((p) => !onDoc.has(keyOf(p.itemId, p.variantSku))));
+    }
+    setDraftLoaded(true);
+    // Restore once per store; `lines` is the server's snapshot for this mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId]);
+  useEffect(() => {
+    if (!draftLoaded || submitted) return;
+    writeSpgDraft(browserStorage(), storeId, { counts, countedAtByKey, pendingLines });
+  }, [draftLoaded, submitted, storeId, counts, countedAtByKey, pendingLines]);
 
   useEffect(() => {
     const set = () => setOnline(navigator.onLine);
@@ -172,6 +196,7 @@ export function SpgStocktakeShell({ storeId, storeName, lines }: { storeId: stri
           clientSentAtMs: Date.now(),
         });
         if (result.ok) {
+          clearSpgDraft(browserStorage(), storeId);
           setSubmitted(true);
           return;
         }

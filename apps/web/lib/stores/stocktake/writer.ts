@@ -4,6 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
 import { StoreStocktakeError } from "./errors";
+import { pendingTransfersOverCountedKeys } from "@/lib/stores/transfer/pending";
 import { resolveLineCountMoment } from "./count-moment";
 import { bookedCountCents, stockMatchKey, sumMovementsSinceCountCents, type CountMomentLine } from "./booked";
 
@@ -76,12 +77,29 @@ export async function createStoreStocktake(input: {
 
       return created;
     } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-        throw new StoreStocktakeError("ALREADY_OPEN");
-      }
+      if (isOpenKeyCollision(e)) throw new StoreStocktakeError("ALREADY_OPEN");
       throw e;
     }
   });
+}
+
+/**
+ * True for a P2002 on `openKey`, or one that names no constraint at all (kept as `ALREADY_OPEN`,
+ * the old reading). A P2002 naming any other unique index — `docNo`, a line's
+ * `(stocktakeId, itemId, variantSku)` — is rethrown, not reported as an open count. With the
+ * MariaDB driver adapter the index name sits in `meta.driverAdapterError.cause.constraint.index`
+ * and `meta.target` is absent; both are read.
+ */
+export function isOpenKeyCollision(e: unknown): boolean {
+  if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== "P2002") return false;
+  const meta = e.meta as
+    | { target?: unknown; driverAdapterError?: { cause?: { constraint?: { index?: unknown; fields?: unknown } } } }
+    | undefined;
+  const constraint = meta?.driverAdapterError?.cause?.constraint;
+  const named = [meta?.target, constraint?.index, constraint?.fields]
+    .flatMap((v) => (Array.isArray(v) ? v : [v]))
+    .filter((v): v is string => typeof v === "string");
+  return named.length === 0 || named.some((n) => n.includes("openKey"));
 }
 
 /**
@@ -560,20 +578,9 @@ export async function approveStoreStocktake(input: {
       .filter((l) => l.counted !== null)
       .map((l) => ({ itemId: l.itemId, variantSku: l.variantSku ?? "" }));
     const countMoment = st.countFinishedAt ?? approvedAt;
-    if (countedKeys.length > 0) {
-      const pendingTransfers = await tx.storeTransfer.findMany({
-        where: {
-          status: "PENDING",
-          movedAt: { lte: countMoment },
-          OR: [{ fromStoreId: st.storeId }, { toStoreId: st.storeId }],
-          lines: { some: { OR: countedKeys } },
-        },
-        orderBy: { docNo: "asc" },
-        select: { docNo: true },
-      });
-      if (pendingTransfers.length > 0) {
-        throw new StoreStocktakeError("TRANSFER_PENDING", pendingTransfers.map((t) => t.docNo).join(", "));
-      }
+    const pendingTransfers = await pendingTransfersOverCountedKeys(tx, st.storeId, countMoment, countedKeys);
+    if (pendingTransfers.length > 0) {
+      throw new StoreStocktakeError("TRANSFER_PENDING", pendingTransfers.join(", "));
     }
 
     /**

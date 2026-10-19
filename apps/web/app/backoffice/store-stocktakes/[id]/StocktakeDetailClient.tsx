@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -23,12 +23,12 @@ import type {
   StoreStocktakeStatusValue,
 } from "@/lib/stores/stocktake/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
-import { getItems } from "@/app/actions/items";
-import { itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
+import type { StocktakeItemOption } from "@/lib/stores/stocktake/item-search";
 import {
   saveCountsAction,
   approveAction,
   cancelAction,
+  searchStocktakeItemsAction,
   type StoreStocktakeActionResult,
 } from "@/app/actions/store-stocktakes";
 import { createSellThroughAction } from "@/app/actions/konsi-sell-through";
@@ -237,13 +237,33 @@ export function StocktakeDetailClient({
 
   const [addItemOpen, setAddItemOpen] = useState(false);
   const [addItemValue, setAddItemValue] = useState("");
+  const [addItemQuery, setAddItemQuery] = useState("");
   const [catalog, setCatalog] = useState<
     | { status: "idle" }
     | { status: "loading" }
-    | { status: "loaded"; options: SearchableComboboxOption[]; metaByKey: Map<string, { itemId: string; itemSku: string; variantSku: string; productName: string }> }
+    | { status: "loaded"; options: StocktakeItemOption[]; truncated: boolean }
     | { status: "error" }
   >({ status: "idle" });
-  const [catalogPending, startCatalogTransition] = useTransition();
+
+  /* Server search, debounced, while the dialog is open: the picker never loads the whole catalogue. */
+  useEffect(() => {
+    if (!addItemOpen) return;
+    let alive = true;
+    setCatalog({ status: "loading" });
+    const timer = setTimeout(async () => {
+      try {
+        const result = await searchStocktakeItemsAction(addItemQuery);
+        if (!alive) return;
+        setCatalog(result.ok ? { status: "loaded", options: result.options, truncated: result.truncated } : { status: "error" });
+      } catch {
+        if (alive) setCatalog({ status: "error" });
+      }
+    }, 250);
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
+  }, [addItemOpen, addItemQuery]);
 
   const isOpenStatus = OPEN_STATUSES.has(stocktake.status);
   const canEdit = canManage && isOpenStatus;
@@ -418,44 +438,26 @@ export function StocktakeDetailClient({
   }
 
   function openAddItemDialog(): void {
-    setAddItemOpen(true);
     setAddItemValue("");
-    setCatalog({ status: "loading" });
-    startCatalogTransition(async () => {
-      try {
-        const items = await getItems({ isActive: true });
-        const list = Array.isArray(items) ? items : [];
-        const options: SearchableComboboxOption[] = [];
-        const metaByKey = new Map<
-          string,
-          { itemId: string; itemSku: string; variantSku: string; productName: string }
-        >();
-        for (const item of list as unknown as Array<{ id: string; sku: string; nameId: string; variants: unknown }>) {
-          const variantRows = parseItemVariants(item.variants);
-          if (itemHasSkuVariants(item.variants)) {
-            for (const variant of variantSelectOptions(variantRows)) {
-              const key = `${item.id}::${variant.sku}`;
-              if (existingKeys.has(key)) continue;
-              options.push({ value: key, label: `${item.sku} — ${item.nameId} · ${variant.label}` });
-              metaByKey.set(key, { itemId: item.id, itemSku: item.sku, variantSku: variant.sku, productName: item.nameId });
-            }
-          } else {
-            const key = `${item.id}::`;
-            if (existingKeys.has(key)) continue;
-            options.push({ value: key, label: `${item.sku} — ${item.nameId}` });
-            metaByKey.set(key, { itemId: item.id, itemSku: item.sku, variantSku: "", productName: item.nameId });
-          }
-        }
-        setCatalog({ status: "loaded", options, metaByKey });
-      } catch {
-        setCatalog({ status: "error" });
-      }
-    });
+    setAddItemQuery("");
+    setAddItemOpen(true);
+  }
+
+  /* Rows already on the document are left out at render time, since `existingKeys` changes with every edit. */
+  const addItemOptions: SearchableComboboxOption[] = [];
+  const addItemMetaByKey = new Map<string, { itemId: string; itemSku: string; variantSku: string; productName: string }>();
+  if (catalog.status === "loaded") {
+    for (const o of catalog.options) {
+      const key = `${o.itemId}::${o.variantSku}`;
+      if (existingKeys.has(key)) continue;
+      addItemOptions.push({ value: key, label: `${o.itemSku} — ${o.itemName}${o.variantLabel ? ` · ${o.variantLabel}` : ""}` });
+      addItemMetaByKey.set(key, { itemId: o.itemId, itemSku: o.itemSku, variantSku: o.variantSku, productName: o.itemName });
+    }
   }
 
   function confirmAddItem(): void {
     if (catalog.status !== "loaded" || !addItemValue) return;
-    const meta = catalog.metaByKey.get(addItemValue);
+    const meta = addItemMetaByKey.get(addItemValue);
     if (!meta) return;
     setPendingAdded((prev) => [
       ...prev,
@@ -795,25 +797,36 @@ export function StocktakeDetailClient({
         </CardContent>
       </Card>
 
-      <Dialog open={addItemOpen} onOpenChange={(open) => !catalogPending && setAddItemOpen(open)}>
+      <Dialog open={addItemOpen} onOpenChange={setAddItemOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{tAddItem("dialogTitle")}</DialogTitle>
           </DialogHeader>
+          <Input
+            placeholder={tAddItem("searchPlaceholder")}
+            value={addItemQuery}
+            onChange={(e) => {
+              setAddItemQuery(e.target.value);
+              setAddItemValue("");
+            }}
+          />
           {catalog.status === "loading" ? (
             <p className="text-sm text-muted-foreground">{tAddItem("loading")}</p>
           ) : catalog.status === "error" ? (
             <p className="text-sm text-destructive">{tAddItem("loadError")}</p>
           ) : catalog.status === "loaded" ? (
-            <SearchableCombobox
-              options={catalog.options}
-              value={addItemValue}
-              onValueChange={setAddItemValue}
-              placeholder={tAddItem("searchPlaceholder")}
-              searchPlaceholder={tAddItem("searchPlaceholder")}
-              emptyMessage={tAddItem("emptyMessage")}
-              triggerClassName="w-full"
-            />
+            <>
+              <SearchableCombobox
+                options={addItemOptions}
+                value={addItemValue}
+                onValueChange={setAddItemValue}
+                placeholder={tAddItem("searchPlaceholder")}
+                searchPlaceholder={tAddItem("searchPlaceholder")}
+                emptyMessage={tAddItem("emptyMessage")}
+                triggerClassName="w-full"
+              />
+              {catalog.truncated && <p className="text-xs text-muted-foreground">{tAddItem("refineSearch")}</p>}
+            </>
           ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddItemOpen(false)}>
