@@ -220,6 +220,12 @@ export async function applyFabricAdjustments(
   let adjustmentCount = 0;
 
   for (const row of rolls) {
+    /**
+     * An uncounted roll is left as it is, like an uncounted line in a partial count. `toNum` would
+     * read the null as 0 and close the roll. Submit already refuses a fabric opname with an
+     * uncounted roll, so this only guards a caller that skips that check.
+     */
+    if (row.countedLength == null) continue;
     const countedLength = toNum(row.countedLength);
     const fabricRoll = await tx.fabricRoll.findUnique({
       where: { id: row.fabricRollId },

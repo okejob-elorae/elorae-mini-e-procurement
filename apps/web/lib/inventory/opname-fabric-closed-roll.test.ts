@@ -148,4 +148,23 @@ d("opname fabric approval keeps a closed roll closed (test bed only)", () => {
     const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId } });
     expect(Number(inv.qtyOnHand)).toBe(8);
   });
+
+  it("leaves an uncounted roll unchanged instead of zeroing and closing it", async () => {
+    await prisma.stockOpnameRoll.updateMany({
+      where: { opnameId, fabricRollId: r3Id },
+      data: { countedLength: null },
+    });
+
+    const res = await prisma.$transaction((tx) =>
+      applyFabricAdjustments(tx, opnameId, `OPN-FR-${token}`),
+    );
+    expect(res.adjustmentCount).toBe(2);
+
+    const r3 = await prisma.fabricRoll.findUniqueOrThrow({ where: { id: r3Id } });
+    expect(Number(r3.remainingLength)).toBe(3);
+    expect(r3.isClosed).toBe(false);
+
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId } });
+    expect(Number(inv.qtyOnHand)).toBe(11);
+  });
 });
