@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { buildStocktakeLines, getStoreStocktakeById, previousApprovedCountedAt } from "./queries";
+import { buildStocktakeLines, getStoreStocktakeById, listStoreStocktakes, previousApprovedCountedAt } from "./queries";
 import { KONSI_COUNT_SYSTEM_ACTOR } from "@/lib/konsi-count-schedule/schedule";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -253,7 +253,7 @@ d("store stocktake queries (test bed only)", () => {
     assortmentLineIds.push(assortmentLine.id);
 
     const lines = await buildStocktakeLines(prisma, seededId(storeId), null, new Date());
-    const matching = lines.filter((l) => l.itemId === seededId(itemBId) && l.variantSku === "");
+    const matching = lines.filter((l) => l.itemId === itemBId && l.variantSku === "");
 
     expect(matching).toHaveLength(1);
     expect(matching[0].expectedQty).toBe(7);
@@ -288,6 +288,60 @@ d("store stocktake queries (test bed only)", () => {
     const byUser = await getStoreStocktakeById(human.id);
     expect(byUser?.createdByIsSystem).toBe(false);
     expect(byUser?.createdByLabel).toBe("Test Stocktake User");
+  });
+
+  it("lists a store's stocktakes newest first, filtered and paged, with counted-line aggregates", async () => {
+    const older = await prisma.storeStocktake.create({
+      data: {
+        docNo: `STK/${tag}/L1`,
+        storeId,
+        status: "APPROVED",
+        countedAt: new Date("2026-09-01T03:00:00Z"),
+        createdAt: new Date("2026-09-01T03:00:00Z"),
+        createdById: userId,
+        lines: {
+          create: [
+            { itemId: itemAId, productName: "A", expectedQty: 5, countedQty: 4, varianceQty: -1 },
+            { itemId: itemBId, productName: "B", expectedQty: 2, countedQty: 5, varianceQty: 3 },
+            { itemId: itemCId, productName: "C", expectedQty: 1, countedQty: null },
+          ],
+        },
+      },
+    });
+    const newer = await prisma.storeStocktake.create({
+      data: {
+        docNo: `STK/${tag}/L2`,
+        storeId,
+        status: "DRAFT",
+        countedAt: new Date("2026-10-01T03:00:00Z"),
+        createdAt: new Date("2026-10-01T03:00:00Z"),
+        createdById: userId,
+        lines: { create: [{ itemId: itemAId, productName: "A", expectedQty: 4, countedQty: null }] },
+      },
+    });
+    const elsewhere = await prisma.storeStocktake.create({
+      data: { docNo: `STK/${tag}/L3`, storeId: freshStoreId, status: "DRAFT", countedAt: new Date(), createdById: userId },
+    });
+    stocktakeIds.push(older.id, newer.id, elsewhere.id);
+
+    const all = await listStoreStocktakes({ storeId, page: 1, perPage: 10 });
+    expect(all.total).toBe(2);
+    expect(all.rows.map((r) => r.id)).toEqual([newer.id, older.id]);
+
+    const approved = all.rows.find((r) => r.id === older.id)!;
+    expect(approved).toMatchObject({ storeName: "Test Stocktake Store", lineCount: 3, countedLineCount: 2, netVarianceQty: 2 });
+    /* No line counted yet is null, not a zero variance. */
+    expect(all.rows.find((r) => r.id === newer.id)!.netVarianceQty).toBeNull();
+
+    const byStatus = await listStoreStocktakes({ storeId, status: "APPROVED", page: 1, perPage: 10 });
+    expect(byStatus.rows.map((r) => r.id)).toEqual([older.id]);
+
+    const byQuery = await listStoreStocktakes({ q: `${tag}/L2`, page: 1, perPage: 10 });
+    expect(byQuery.rows.map((r) => r.id)).toEqual([newer.id]);
+
+    const page2 = await listStoreStocktakes({ storeId, page: 2, perPage: 1 });
+    expect(page2.total).toBe(2);
+    expect(page2.rows.map((r) => r.id)).toEqual([older.id]);
   });
 
   /* returInFlight — the advisory naming returs in flight at the count moment */

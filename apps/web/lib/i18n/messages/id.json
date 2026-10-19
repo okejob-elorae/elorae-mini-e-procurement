@@ -3976,7 +3976,8 @@
       "cancel": "Batal",
       "confirm": "Tambahkan",
       "loading": "Memuat daftar barang…",
-      "loadError": "Gagal memuat daftar barang. Coba lagi."
+      "loadError": "Gagal memuat daftar barang. Coba lagi.",
+      "refineSearch": "Hanya hasil teratas yang ditampilkan. Ketik lebih spesifik untuk mempersempit."
     },
     "approve": {
       "button": "Setujui",
@@ -4048,7 +4049,8 @@
         "empty": "Tidak ada barang aktif yang cocok.",
         "loading": "Memuat daftar barang…",
         "loadError": "Gagal memuat daftar barang. Coba lagi.",
-        "done": "Selesai"
+        "done": "Selesai",
+        "refineSearch": "Hanya hasil teratas yang ditampilkan. Ketik lebih spesifik untuk mempersempit."
       },
       "footer": {
         "tally": "{counted}/{total} terhitung",

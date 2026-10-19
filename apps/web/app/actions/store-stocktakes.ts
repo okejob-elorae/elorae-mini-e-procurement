@@ -12,6 +12,7 @@ import {
   cancelStoreStocktake,
 } from "@/lib/stores/stocktake/writer";
 import { StoreStocktakeError, type StoreStocktakeErrorCode } from "@/lib/stores/stocktake/errors";
+import { searchStocktakeItems, type StocktakeItemOption } from "@/lib/stores/stocktake/item-search";
 import { autoCreateSellThroughAfterCount, type AutoReportOutcome } from "@/lib/konsi-count-schedule/auto-report";
 
 export type StoreStocktakeActionResult =
@@ -489,4 +490,22 @@ export async function cancelAction(input: { stocktakeId: string; reason: string 
   revalidatePath(`/backoffice/store-stocktakes/${stocktakeId}`);
   revalidatePath(`/backoffice/stores/${storeIdForRevalidate}`);
   return { ok: true, id: stocktakeId };
+}
+
+/**
+ * Search for the stocktake add-item pickers (backoffice count screen and SPG sheet). Any signed-in
+ * user, the same gate `getItems` used before: it reads only item names and SKUs, and both screens
+ * already sit behind their own permission checks. Never throws; a failure comes back as `ok: false`.
+ */
+export async function searchStocktakeItemsAction(
+  q: string,
+): Promise<{ ok: true; options: StocktakeItemOption[]; truncated: boolean } | { ok: false }> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id || typeof q !== "string") return { ok: false };
+    const result = await searchStocktakeItems(q.slice(0, 100));
+    return { ok: true, ...result };
+  } catch {
+    return { ok: false };
+  }
 }
