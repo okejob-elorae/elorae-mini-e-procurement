@@ -66,11 +66,11 @@ export default async function PwaHome() {
 
     /**
      * The due hint shows only while the store has an open count and a month is owed (DUE or
-     * OVERDUE), at the stores the daily sweep reads: active KONSI with a sell-through method. A
-     * count opened while nothing is owed carries no deadline, because no month is waiting on it.
+     * OVERDUE), at the stores the daily sweep reads: every active KONSI store. A count opened
+     * while nothing is owed carries no deadline, because no month is waiting on it.
      */
     let countDue: { overdue: boolean; dueAtIso: string } | null = null;
-    if (store.termsType === "KONSI" && store.sellThroughMethod && store.isActive) {
+    if (store.termsType === "KONSI" && store.isActive) {
       const countState = await getStoreCountState({ id: store.id, createdAt: store.createdAt }, await readCountSchedule(), new Date());
       if (countState.openStocktakeId && (countState.status === "DUE" || countState.status === "OVERDUE")) {
         countDue = { overdue: countState.status === "OVERDUE", dueAtIso: countState.dueAt.toISOString() };

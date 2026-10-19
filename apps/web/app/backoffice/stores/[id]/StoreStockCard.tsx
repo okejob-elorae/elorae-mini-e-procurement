@@ -31,6 +31,8 @@ export type SerializedStockMovement = Omit<StoreStockCardData["movements"][numbe
 type Props = {
   rows: StoreStockCardData["rows"];
   negativeCount: number;
+  /** The latest approved stocktake, when it was partial and left current rows uncounted. */
+  lastPartialCount: StoreStockCardData["lastPartialCount"];
   /**
    * Two figures for an ADMIN-origin return that has left this ledger, or is about to, but has
    * not yet reached APPROVED. `raisedQty` — still `PENDING_WAREHOUSE_RECEIVING` — is claimed but
@@ -111,6 +113,7 @@ function movementBadgeVariant(refType: string): "default" | "secondary" {
 export function StoreStockCard({
   rows,
   negativeCount,
+  lastPartialCount,
   inTransitAdminReturn,
   movements,
   movementsTruncated,
@@ -186,6 +189,11 @@ export function StoreStockCard({
                                 {t("negativeBadge")}
                               </Badge>
                             )}
+                            {row.uncountedInLastCount && (
+                              <Badge variant="outline" className="ml-2 text-amber-700 border-amber-300">
+                                {t("uncountedBadge")}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                             {t("elsewhere", { main: row.mainQty, van: row.vanQty })}
@@ -200,6 +208,17 @@ export function StoreStockCard({
                 <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-2 text-destructive">
                   <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
                   <p className="text-xs">{t("negativeNote")}</p>
+                </div>
+              )}
+              {lastPartialCount && (
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2 text-amber-700">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p className="text-xs">
+                    {t("uncountedNote", { count: lastPartialCount.uncountedCount })}{" "}
+                    <Link href={`/backoffice/store-stocktakes/${lastPartialCount.id}`} className="underline">
+                      {lastPartialCount.docNo}
+                    </Link>
+                  </p>
                 </div>
               )}
             </div>

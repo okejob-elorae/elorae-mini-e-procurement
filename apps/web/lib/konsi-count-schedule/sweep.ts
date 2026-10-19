@@ -49,7 +49,8 @@ function storeMonthKeys(rows: { metadata: unknown }[]): Set<string> {
 }
 
 /**
- * The daily konsi count sweep. For every active KONSI store with a sell-through method, it reads
+ * The daily konsi count sweep. For every active KONSI store, with or without a sell-through method
+ * (a count repairs `StoreStock` drift either way; the auto-report skips a store without one), it reads
  * the store's count state (`getStoreCountState`, the same rule the store screen shows). When the
  * count is DUE or OVERDUE, the store's target month is announced at most ONCE, keyed on the
  * `KONSI_COUNT_DUE` rows already written for (store, month):
@@ -91,7 +92,6 @@ export async function runKonsiCountSweep(input?: {
   const stores = await prisma.store.findMany({
     where: {
       termsType: "KONSI",
-      sellThroughMethod: { not: null },
       isActive: true,
       ...(input?.storeIds !== undefined ? { id: { in: input.storeIds } } : {}),
     },
