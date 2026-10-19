@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
-import { validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
+import { unknownVariantColors, validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
+import { loadColorIndex } from '@/lib/items/variant-colors';
 import { parseItemVariants } from "@/lib/items/variants";
 import {
   findVariantSkuCollisions,
@@ -192,6 +193,18 @@ function serializeSingleItem(item: {
   } as SerializedItem;
 }
 
+/** Finished-good Warna comes from the colour master; a colour already on the item is grandfathered. */
+async function assertColorsInMaster(
+  variants: Array<Record<string, string>>,
+  existing: Array<Record<string, string>> = [],
+) {
+  if (variants.length === 0) return;
+  const unknown = unknownVariantColors(variants, await loadColorIndex(), existing);
+  if (unknown.length > 0) {
+    throw new Error(`Warna not in the colour master: ${unknown.join(', ')}. Add it first.`);
+  }
+}
+
 export async function createItem(data: ItemFormData) {
   const normalized = normalizeItemPayload(data);
   validateItemPayload(normalized);
@@ -211,6 +224,7 @@ export async function createItem(data: ItemFormData) {
     generateFrom: "parent",
     fixedAxes: rest.type === 'FINISHED_GOOD',
   });
+  if (rest.type === 'FINISHED_GOOD') await assertColorsInMaster(normalizedVariants);
 
   const item = await prisma.$transaction(async (tx) => {
     /* The parent SKU joins the check: one equal to another item's variant SKU shares its namespace. */
@@ -285,6 +299,9 @@ export async function updateItem(
     generateFrom: "parent",
     fixedAxes: rest.type === 'FINISHED_GOOD',
   });
+  if (rest.type === 'FINISHED_GOOD') {
+    await assertColorsInMaster(normalizedVariants, parseItemVariants(existing.variants));
+  }
   const updateCollisions = await findVariantSkuCollisions(client, {
     excludeItemId: id,
     skus: skusIntroducedByEdit(

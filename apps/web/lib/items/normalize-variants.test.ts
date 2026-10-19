@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { buildColorIndex } from "@elorae/db/variant-axes";
 import {
   buildVariantSkuCode,
+  unknownVariantColors,
   validateAndNormalizeVariants,
 } from "./normalize-variants";
 
@@ -100,6 +102,24 @@ describe("validateAndNormalizeVariants with fixedAxes (#437)", () => {
   it("leaves other attributes alone without the option", () => {
     expect(validateAndNormalizeVariants("A1", [{ Motif: "Polka", sku: "A1-POLKA" }])).toEqual([
       { Motif: "Polka", sku: "A1-POLKA" },
+    ]);
+  });
+});
+
+describe("unknownVariantColors", () => {
+  const index = buildColorIndex([{ id: "c1", name: "Army", aliases: ["Hijau Army"] }]);
+
+  it("lists colours no master colour spells, once each", () => {
+    const out = unknownVariantColors(
+      [{ Warna: "army", Ukuran: "M" }, { Warna: "Hijau Army" }, { Warna: "Dark Navy" }, { Color: "Dark Navy", Size: "L" }],
+      index,
+    );
+    expect(out).toEqual(["Dark Navy"]);
+  });
+
+  it("lets through a colour the item already carried", () => {
+    expect(unknownVariantColors([{ Warna: "Dark Navy" }, { Warna: "Cream" }], index, [{ Warna: "dark navy" }])).toEqual([
+      "Cream",
     ]);
   });
 });

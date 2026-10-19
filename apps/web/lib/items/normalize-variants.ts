@@ -1,4 +1,10 @@
-import { canonicalAxisKey, normalizeVariantAxisKeys } from "@elorae/db/variant-axes";
+import {
+  canonicalAxisKey,
+  colorMatchKey,
+  normalizeVariantAxisKeys,
+  resolveVariantAxes,
+  type ColorIndex,
+} from "@elorae/db/variant-axes";
 import { skuMatchKey } from "@/lib/items/sku-match-key";
 
 export type VariantGenerationBase = "category" | "parent";
@@ -121,4 +127,25 @@ export function validateAndNormalizeVariants(
   }
 
   return normalized;
+}
+
+/**
+ * Finished-good colours that are not in the colour master. A colour the item already carried
+ * (`existing`) is let through, so a legacy item still saves until ops map its colour.
+ */
+export function unknownVariantColors(
+  variants: Array<Record<string, string>>,
+  index: ColorIndex,
+  existing: Array<Record<string, string>> = [],
+): string[] {
+  const kept = new Set(
+    existing.map((v) => resolveVariantAxes(v, index).colorLabel).filter(Boolean).map((l) => colorMatchKey(l!)),
+  );
+  const unknown: string[] = [];
+  for (const v of variants) {
+    const { colorId, colorLabel } = resolveVariantAxes(v, index);
+    if (colorId || !colorLabel || kept.has(colorMatchKey(colorLabel))) continue;
+    if (!unknown.includes(colorLabel)) unknown.push(colorLabel);
+  }
+  return unknown;
 }
