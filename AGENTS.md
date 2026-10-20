@@ -240,6 +240,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Touching `lib/finance/ar/aging.ts`? `daysOverdue` floors WIB days via a hardcoded `+7h`; `getDate()`/`getFullYear()` use the HOST timezone and break on prod. → `docs/landmines/finance-ar.md`
 - Calling an AR journal builder directly, `postPaymentVoidJournal`/`postSellThroughVoidJournal` included? They MAY THROW — only ever via `postArJournalSafely`. → `docs/landmines/finance-ar.md`
 - Voiding a payment on a `WRITTEN_OFF`/`VOIDED` receivable? Refused `ALREADY_SETTLED`; `VOIDED` is terminal, so a status deny-list names it beside `WRITTEN_OFF`. → `docs/landmines/finance-ar.md`
+- Voiding a store-settlement component? Refused `SETTLEMENT_COMPONENT` (docNo) only under an APPROVED owner, via `settlementComponentKeys`, before `voidPayment`'s own status flip; approval's flip re-checks voids. → `docs/landmines/finance-ar.md`
 - Touching `Store.creditLimit` enforcement? The approve-time live check is authoritative; the create-time flag is advisory — never read it as an override reason. → `docs/landmines/finance-ar.md`
 - Editing `approveFieldSalesOrder`'s PUTUS tail? Throw `CreditLimitExceededError`, never `return`; the finalPrices writes stay AFTER the gate. → `docs/landmines/finance-ar.md`
 - Reading `computeStoreCreditExposure`? Receivables + approved-undelivered residual (floored per order); receivables alone wave undelivered orders through. → `docs/landmines/finance-ar.md`
@@ -277,7 +278,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Enabling settlement approval in a fresh env? Map `TRADE_PROGRAM_EXPENSE` and `ADMIN_FEE_EXPENSE` to a `BEBAN` account, or journals degrade to `JOURNAL_PENDING`. → `docs/landmines/finance-ar.md`
 - Adding a `SettlementErrorCode`? No exhaustive `Record` — add `REASON_KEY`, `financeStoreSettlements.err.<CODE>` (both locales), `SettlementCheckReason` if previewed. → `docs/landmines/finance-ar.md`
 - Reading a `StoreSettlement` as money moved? Status first — `PENDING` posts nothing (but may hold payments); `APPROVED` moved AR, not necessarily journals. → `docs/landmines/finance-ar.md`
-- Calling `approveSettlement`? RESUMABLE, not a tx — never nest its writers; it posts no journals, so loop `postArJournalSafely` over EVERY `paymentIds` id. → `docs/landmines/finance-ar.md`
+- Calling `approveSettlement`? RESUMABLE, not a tx — never nest its writers; it posts no journals, so loop `postArJournalSafely` over EVERY `paymentIds` id; the flip re-counts VOIDED components in-tx BEFORE its CAS. → `docs/landmines/finance-ar.md`
 - Rejecting a settlement? `COMPONENTS_POSTED` while any component is POSTED — throw inside the tx before the CAS, keyed only by the shared key builders. → `docs/landmines/finance-ar.md`
 - Resuming a half-posted approval? A retur component must RE-ENTER `applyReturnOffset` even if its payment exists, or `appliedValue` stays stale forever. → `docs/landmines/finance-ar.md`
 - Re-validating in `approveSettlement`? Scope to what THIS settlement owes; exempt on `settlementAllocated > 0` OR `agreedRemaining <= 0`, before the headroom check. → `docs/landmines/finance-ar.md`

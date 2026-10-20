@@ -31,14 +31,19 @@ export type PaymentActionReason =
   | "INSUFFICIENT_OUTSTANDING"
   | "EXCEEDS_REMAINING"
   | "PAYMENT_VOIDED"
+  | "SETTLEMENT_COMPONENT"
   | "RECEIVABLE_REVENUE_NOT_POSTED_YET"
   | "RECEIVABLE_OUTSIDE_LEDGER"
   | "NOTHING_TO_POST"
   | "ERROR";
 
+/**
+ * `detail` rides only on a refusal whose copy names something — today `SETTLEMENT_COMPONENT`,
+ * where it is the owning store settlement's docNo.
+ */
 export type PaymentActionResult =
   | { ok: true; paymentId?: string; docNo?: string; alreadyVoided?: boolean }
-  | { ok: false; reason: PaymentActionReason };
+  | { ok: false; reason: PaymentActionReason; detail?: string };
 
 export type RecordPaymentActionInput = {
   storeId: string;
@@ -103,15 +108,20 @@ const ERROR_CODE_MAP: Record<PaymentErrorCode, PaymentActionReason> = {
   INSUFFICIENT_OUTSTANDING: "INSUFFICIENT_OUTSTANDING",
   EXCEEDS_REMAINING: "EXCEEDS_REMAINING",
   PAYMENT_VOIDED: "PAYMENT_VOIDED",
+  SETTLEMENT_COMPONENT: "SETTLEMENT_COMPONENT",
 };
 
 /**
- * A caught `PaymentError` keeps its own reason via the map above; anything else (a network
+ * A caught `PaymentError` keeps its own reason via the map above, and its `detail` when it has
+ * one (omitted otherwise, so a plain refusal's shape is unchanged); anything else (a network
  * hiccup, `auth()` throwing on a corrupted session cookie) becomes `ERROR` rather than leaking a
  * thrown message — production digest-masking would swallow it anyway.
  */
-function toResult(e: unknown): { ok: false; reason: PaymentActionReason } {
-  if (e instanceof PaymentError) return { ok: false, reason: ERROR_CODE_MAP[e.code] };
+function toResult(e: unknown): { ok: false; reason: PaymentActionReason; detail?: string } {
+  if (e instanceof PaymentError) {
+    const reason = ERROR_CODE_MAP[e.code];
+    return e.detail === undefined ? { ok: false, reason } : { ok: false, reason, detail: e.detail };
+  }
   return { ok: false, reason: "ERROR" };
 }
 
