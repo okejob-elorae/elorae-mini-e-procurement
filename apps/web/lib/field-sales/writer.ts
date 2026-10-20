@@ -290,6 +290,65 @@ async function currentAssortmentGapKeys(
   return gapKeys;
 }
 
+type CreditOverrideStamp = {
+  creditExposureAtApprove: number;
+  creditLimitAtApprove: number;
+  creditOverrideReason: string;
+  creditOverrideById: string;
+  creditOverrideAt: Date;
+};
+
+/**
+ * The approve-time credit gate both order types share, run inside the approver's serializable
+ * transaction. A store with no credit limit (`null`) is not gated. Otherwise the store's live
+ * `computeStoreCreditExposure` plus `orderTotal` is compared against the limit: a PUTUS approve
+ * passes its final order total, a KONSI approve passes 0, because consigned goods are not owed
+ * until a sell-through report invoices them. Over the limit with no override reason it THROWS
+ * `CreditLimitExceededError` — never a return, since `runSerializable` commits on return. With a
+ * reason it writes the `CREDIT_LIMIT_OVERRIDE` audit row and hands back the five approve-side
+ * columns for the caller's own status write; within the limit it returns null.
+ */
+async function enforceApproveCreditLimit(
+  tx: Prisma.TransactionClient,
+  input: {
+    orderId: string;
+    storeId: string;
+    creditLimit: Prisma.Decimal | null;
+    orderTotal: number;
+    approvedById: string;
+    creditOverrideReason?: string;
+  },
+): Promise<CreditOverrideStamp | null> {
+  if (input.creditLimit === null) return null;
+  const creditLimit = Number(input.creditLimit);
+  const exposure = await computeStoreCreditExposure(tx, input.storeId);
+  if (exposure.total + input.orderTotal > creditLimit) {
+    const reason = input.creditOverrideReason?.trim();
+    if (!reason) {
+      throw new CreditLimitExceededError(exposure, creditLimit, input.orderTotal);
+    }
+    await tx.auditLog.create({
+      data: {
+        userId: input.approvedById,
+        action: "CREDIT_LIMIT_OVERRIDE",
+        entityType: "FieldSalesOrder",
+        entityId: input.orderId,
+        /* `AuditLog.reason` is VARCHAR(191); the full reason is kept on `creditOverrideReason` (`@db.Text`). */
+        reason: Array.from(reason).slice(0, AUDIT_REASON_MAX_LENGTH).join(""),
+        metadata: { exposure, creditLimit, orderTotal: input.orderTotal },
+      },
+    });
+    return {
+      creditExposureAtApprove: exposure.total,
+      creditLimitAtApprove: creditLimit,
+      creditOverrideReason: reason,
+      creditOverrideById: input.approvedById,
+      creditOverrideAt: new Date(),
+    };
+  }
+  return null;
+}
+
 export async function approveFieldSalesOrder(input: {
   orderId: string;
   approvedById: string;
@@ -397,7 +456,11 @@ export async function approveFieldSalesOrder(input: {
         }
       }
 
-      await approveKonsiOrderInTx(tx, { orderId: order.id, approvedById: input.approvedById });
+      await approveKonsiOrderInTx(tx, {
+        orderId: order.id,
+        approvedById: input.approvedById,
+        creditOverrideReason: input.creditOverrideReason,
+      });
       return { ok: true };
     }
 
@@ -442,33 +505,14 @@ export async function approveFieldSalesOrder(input: {
      * The order being approved is still PENDING_APPROVAL here — computeStoreCreditExposure only
      * counts APPROVED orders in its residual term, so this order is not counted against itself.
      */
-    const creditLimit = order.store.creditLimit === null ? null : Number(order.store.creditLimit);
-    let creditExposureAtApprove: number | null = null;
-    let creditLimitAtApprove: number | null = null;
-    let overrideReason: string | null = null;
-    if (creditLimit !== null) {
-      const exposure = await computeStoreCreditExposure(tx, order.storeId);
-      if (exposure.total + total > creditLimit) {
-        const reason = input.creditOverrideReason?.trim();
-        if (!reason) {
-          throw new CreditLimitExceededError(exposure, creditLimit, total);
-        }
-        creditExposureAtApprove = exposure.total;
-        creditLimitAtApprove = creditLimit;
-        overrideReason = reason;
-        await tx.auditLog.create({
-          data: {
-            userId: input.approvedById,
-            action: "CREDIT_LIMIT_OVERRIDE",
-            entityType: "FieldSalesOrder",
-            entityId: order.id,
-            /* `AuditLog.reason` is VARCHAR(191); the full reason is kept on `creditOverrideReason` (`@db.Text`). */
-            reason: Array.from(reason).slice(0, AUDIT_REASON_MAX_LENGTH).join(""),
-            metadata: { exposure, creditLimit, orderTotal: total },
-          },
-        });
-      }
-    }
+    const creditOverride = await enforceApproveCreditLimit(tx, {
+      orderId: order.id,
+      storeId: order.storeId,
+      creditLimit: order.store.creditLimit,
+      orderTotal: total,
+      approvedById: input.approvedById,
+      creditOverrideReason: input.creditOverrideReason,
+    });
 
     for (const l of finalLines) {
       if (l.changed) {
@@ -489,15 +533,7 @@ export async function approveFieldSalesOrder(input: {
         approvedById: input.approvedById,
         subtotal,
         total,
-        ...(creditExposureAtApprove !== null
-          ? {
-              creditExposureAtApprove,
-              creditLimitAtApprove,
-              creditOverrideReason: overrideReason,
-              creditOverrideById: input.approvedById,
-              creditOverrideAt: new Date(),
-            }
-          : {}),
+        ...(creditOverride ?? {}),
       },
     });
     return { ok: true };
@@ -506,21 +542,43 @@ export async function approveFieldSalesOrder(input: {
 
 /**
  * The KONSI half of an approval, shared by `approveFieldSalesOrder` and the admin push
- * (`createKonsiPushOrder`): reserve every line against main stock, price each line at the
- * store's markup (an informational value; nothing bills from it) and flip the order to APPROVED.
- * It runs inside the caller's serializable transaction and throws `InsufficientStockError` naming
- * every short line, so the caller's whole transaction rolls back. It moves no stock.
+ * (`createKonsiPushOrder`): gate on the store's credit exposure, reserve every line against main
+ * stock, price each line at the store's markup (an informational value; nothing bills from it)
+ * and flip the order to APPROVED. It runs inside the caller's serializable transaction and throws
+ * `CreditLimitExceededError` or `InsufficientStockError` (naming every short line), so the
+ * caller's whole transaction rolls back, any lines it wrote first included. It moves no stock.
  * The caller must already have verified a PENDING_APPROVAL KONSI order: this checks neither the
  * status nor the type. A line that already has a reservation is skipped, not re-reserved, so a
  * wrong order is not refused here — it is repriced at the konsi markup and flipped to APPROVED.
  */
 export async function approveKonsiOrderInTx(
   tx: Prisma.TransactionClient,
-  input: { orderId: string; approvedById: string },
+  input: { orderId: string; approvedById: string; creditOverrideReason?: string },
 ): Promise<void> {
   const order = await tx.fieldSalesOrder.findUniqueOrThrow({
     where: { id: input.orderId },
-    select: { id: true, orderNo: true, store: { select: { markupPercent: true, priceDiscountPercent: true } } },
+    select: {
+      id: true,
+      orderNo: true,
+      storeId: true,
+      store: { select: { markupPercent: true, priceDiscountPercent: true, creditLimit: true } },
+    },
+  });
+
+  /**
+   * Gated on exposure alone, before any reservation or price write: the order's own retail value
+   * is never added (orderTotal 0), because consigned goods stay ours until a sell-through report
+   * invoices them — and that invoice's receivable is what counts toward exposure. Both konsi
+   * approve paths reach this through here, so neither can skip it; an already-APPROVED replay
+   * returns before its caller ever gets here and stays ungated.
+   */
+  const creditOverride = await enforceApproveCreditLimit(tx, {
+    orderId: order.id,
+    storeId: order.storeId,
+    creditLimit: order.store.creditLimit,
+    orderTotal: 0,
+    approvedById: input.approvedById,
+    creditOverrideReason: input.creditOverrideReason,
   });
 
   /* Read the lines fresh: the caller may have created some inside this same transaction. */
@@ -560,7 +618,14 @@ export async function approveKonsiOrderInTx(
    */
   await tx.fieldSalesOrder.update({
     where: { id: order.id },
-    data: { status: "APPROVED", approvedAt: new Date(), approvedById: input.approvedById, subtotal: total, total },
+    data: {
+      status: "APPROVED",
+      approvedAt: new Date(),
+      approvedById: input.approvedById,
+      subtotal: total,
+      total,
+      ...(creditOverride ?? {}),
+    },
   });
 }
 
