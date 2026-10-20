@@ -18,6 +18,7 @@ const {
   mockIsArJournalRetryable,
   mockRevalidatePath,
   mockApplyReturnOffset,
+  mockRecordRoundingAdjustment,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -29,6 +30,7 @@ const {
   mockIsArJournalRetryable: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockApplyReturnOffset: vi.fn(),
+  mockRecordRoundingAdjustment: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -36,7 +38,10 @@ vi.mock("@/lib/rbac", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/rbac")>();
   return { ...actual, hasPermission: mockHasPermission };
 });
-vi.mock("@/lib/finance/ar/payment-writer", () => ({ recordPayment: mockRecordPayment }));
+vi.mock("@/lib/finance/ar/payment-writer", () => ({
+  recordPayment: mockRecordPayment,
+  recordRoundingAdjustment: mockRecordRoundingAdjustment,
+}));
 vi.mock("@/lib/finance/ar/void-writer", () => ({ voidPayment: mockVoidPayment }));
 vi.mock("@/lib/finance/ar/post-ar-journal-safely", () => ({ postArJournalSafely: mockPostArJournalSafely }));
 vi.mock("@/lib/finance/ar/payment-journal", () => ({
@@ -54,6 +59,7 @@ import {
   postPaymentJournalAction,
   postPaymentVoidJournalAction,
   applyReturnOffsetAction,
+  recordRoundingAdjustmentAction,
 } from "./payments";
 
 describe("payment action guards", () => {
@@ -68,6 +74,7 @@ describe("payment action guards", () => {
     mockIsArJournalRetryable.mockReset();
     mockRevalidatePath.mockReset();
     mockApplyReturnOffset.mockReset();
+    mockRecordRoundingAdjustment.mockReset();
 
     mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: [] } });
     mockHasPermission.mockReturnValue(true);
@@ -75,6 +82,7 @@ describe("payment action guards", () => {
     mockVoidPayment.mockResolvedValue({ voided: true });
     mockPostArJournalSafely.mockResolvedValue({ ok: true, journalId: "j1", created: true });
     mockIsArJournalRetryable.mockResolvedValue(true);
+    mockRecordRoundingAdjustment.mockResolvedValue({ paymentId: "pay-r", docNo: "KWT/0002", alreadyApplied: false });
   });
 
   it("refuses to record without payments:manage", async () => {
@@ -253,5 +261,60 @@ describe("payment action guards", () => {
     });
     expect(coerced).toEqual({ ok: false, reason: "INVALID_REQUEST" });
     expect(mockApplyReturnOffset).not.toHaveBeenCalled();
+  });
+
+  const ROUNDING_EVENT_ID = "6f1c2b9e-4d3a-4c5b-9e8f-0a1b2c3d4e5f";
+
+  it("refuses to write off a residue without payments:manage", async () => {
+    mockHasPermission.mockReturnValue(false);
+    const res = await recordRoundingAdjustmentAction({ receivableId: "r1", eventId: ROUNDING_EVENT_ID });
+    expect(res).toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect(mockRecordRoundingAdjustment).not.toHaveBeenCalled();
+  });
+
+  it("gates the write-off on the same permission as recording a payment", async () => {
+    mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "payments:manage");
+    const res = await recordRoundingAdjustmentAction({ receivableId: "r1", eventId: ROUNDING_EVENT_ID });
+    expect(res.ok).toBe(true);
+  });
+
+  it("passes the session user as the actor and posts the receipt journal", async () => {
+    const res = await recordRoundingAdjustmentAction({ receivableId: "r1", eventId: ROUNDING_EVENT_ID });
+    expect(res).toEqual({ ok: true, paymentId: "pay-r", docNo: "KWT/0002", alreadyApplied: false });
+    expect(mockRecordRoundingAdjustment).toHaveBeenCalledWith({
+      receivableId: "r1", eventId: ROUNDING_EVENT_ID, actorId: "user-1",
+    });
+    expect(mockPostArJournalSafely).toHaveBeenCalledWith("ar_payment", "pay-r", expect.any(Function));
+  });
+
+  it("reports a replayed event as alreadyApplied", async () => {
+    mockRecordRoundingAdjustment.mockResolvedValue({ paymentId: "pay-r", docNo: "KWT/0002", alreadyApplied: true });
+    const res = await recordRoundingAdjustmentAction({ receivableId: "r1", eventId: ROUNDING_EVENT_ID });
+    expect(res).toMatchObject({ ok: true, alreadyApplied: true });
+  });
+
+  it.each([
+    ["a missing receivable id", { receivableId: "", eventId: ROUNDING_EVENT_ID }],
+    ["a missing event id", { receivableId: "r1", eventId: "" }],
+    ["a non-string event id", { receivableId: "r1", eventId: 42 as unknown as string }],
+  ])("refuses INVALID_REQUEST for %s", async (_label, input) => {
+    const res = await recordRoundingAdjustmentAction(input);
+    expect(res).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(mockRecordRoundingAdjustment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["NOT_A_RESIDUE", "NOT_A_RESIDUE"],
+    ["PENDING_CLAIM", "PENDING_CLAIM"],
+    ["METHOD_NOT_ALLOWED", "METHOD_NOT_ALLOWED"],
+    ["ALREADY_SETTLED", "ALREADY_SETTLED"],
+    ["PAYMENT_VOIDED", "PAYMENT_VOIDED"],
+    ["INVALID_EVENT_ID", "INVALID_REQUEST"],
+  ] as const)("maps writer code %s to reason %s and posts no journal", async (code, reason) => {
+    mockRecordRoundingAdjustment.mockRejectedValue(new PaymentError(code));
+    const res = await recordRoundingAdjustmentAction({ receivableId: "r1", eventId: ROUNDING_EVENT_ID });
+    expect(res).toEqual({ ok: false, reason });
+    expect(mockPostArJournalSafely).not.toHaveBeenCalled();
+    expect(mockRevalidatePath).not.toHaveBeenCalled();
   });
 });

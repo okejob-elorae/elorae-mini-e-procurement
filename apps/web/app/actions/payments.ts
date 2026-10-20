@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { recordPayment } from "@/lib/finance/ar/payment-writer";
+import { recordPayment, recordRoundingAdjustment } from "@/lib/finance/ar/payment-writer";
 import { voidPayment } from "@/lib/finance/ar/void-writer";
 import { applyReturnOffset } from "@/lib/finance/ar/retur-offset-writer";
 import { PaymentError, type PaymentErrorCode } from "@/lib/finance/ar/errors";
@@ -32,6 +32,9 @@ export type PaymentActionReason =
   | "EXCEEDS_REMAINING"
   | "PAYMENT_VOIDED"
   | "SETTLEMENT_COMPONENT"
+  | "NOT_A_RESIDUE"
+  | "PENDING_CLAIM"
+  | "METHOD_NOT_ALLOWED"
   | "RECEIVABLE_REVENUE_NOT_POSTED_YET"
   | "RECEIVABLE_OUTSIDE_LEDGER"
   | "NOTHING_TO_POST"
@@ -42,7 +45,7 @@ export type PaymentActionReason =
  * where it is the owning store settlement's docNo.
  */
 export type PaymentActionResult =
-  | { ok: true; paymentId?: string; docNo?: string; alreadyVoided?: boolean }
+  | { ok: true; paymentId?: string; docNo?: string; alreadyVoided?: boolean; alreadyApplied?: boolean }
   | { ok: false; reason: PaymentActionReason; detail?: string };
 
 export type RecordPaymentActionInput = {
@@ -90,7 +93,9 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
  * this action layer already rejects a blank void reason before the writer ever runs (see
  * `voidPaymentAction`), so the writer's own stricter check — it also refuses a reason made up
  * entirely of zero-width/format characters that survive `.trim()` — reaches an operator as the
- * same "that request was not valid" message the action-level guard already uses.
+ * same "that request was not valid" message the action-level guard already uses. `INVALID_EVENT_ID`
+ * collapses the same way: `recordRoundingAdjustmentAction` rejects a malformed event id itself, so
+ * the writer's own check is the backstop behind it.
  */
 const ERROR_CODE_MAP: Record<PaymentErrorCode, PaymentActionReason> = {
   INVALID_AMOUNT: "INVALID_AMOUNT",
@@ -109,6 +114,10 @@ const ERROR_CODE_MAP: Record<PaymentErrorCode, PaymentActionReason> = {
   EXCEEDS_REMAINING: "EXCEEDS_REMAINING",
   PAYMENT_VOIDED: "PAYMENT_VOIDED",
   SETTLEMENT_COMPONENT: "SETTLEMENT_COMPONENT",
+  NOT_A_RESIDUE: "NOT_A_RESIDUE",
+  PENDING_CLAIM: "PENDING_CLAIM",
+  METHOD_NOT_ALLOWED: "METHOD_NOT_ALLOWED",
+  INVALID_EVENT_ID: "INVALID_REQUEST",
 };
 
 /**
@@ -368,4 +377,56 @@ export async function applyReturnOffsetAction(input: {
   } catch (e) {
     return toResult(e);
   }
+}
+
+/**
+ * Writes off a receivable's sub-rupiah residue as a `ROUNDING_ADJUSTMENT` payment. A separate
+ * action from `recordPaymentAction` for the same reason `applyReturnOffsetAction` is one: the
+ * cash sheet's endpoint stays narrowed to `CASH`/`TRANSFER`, so the write-off method is never
+ * reachable through it. Gated on `payments:manage`, exactly like recording a payment.
+ *
+ * Takes no amount: `recordRoundingAdjustment` reads the residue itself and re-proves it inside
+ * its transaction. `eventId` is the confirm dialog's once-per-open UUID, which makes a
+ * double-click or a retried request replay the same payment (`alreadyApplied`) instead of
+ * posting a second one. The acting user is the session's, never a request field.
+ */
+export async function recordRoundingAdjustmentAction(input: {
+  receivableId: string;
+  eventId: string;
+}): Promise<PaymentActionResult> {
+  let userId = "";
+  let paymentId = "";
+  let docNo = "";
+  let alreadyApplied = false;
+  try {
+    const g = await guard();
+    if ("ok" in g) return g;
+    userId = g.userId;
+
+    if (typeof input !== "object" || input === null) return { ok: false, reason: "INVALID_REQUEST" };
+    if (typeof input.receivableId !== "string" || input.receivableId === "") return { ok: false, reason: "INVALID_REQUEST" };
+    if (typeof input.eventId !== "string" || input.eventId === "") return { ok: false, reason: "INVALID_REQUEST" };
+
+    const res = await recordRoundingAdjustment({
+      receivableId: input.receivableId,
+      eventId: input.eventId,
+      actorId: userId,
+    });
+    paymentId = res.paymentId;
+    docNo = res.docNo;
+    alreadyApplied = res.alreadyApplied;
+  } catch (e) {
+    return toResult(e);
+  }
+
+  /**
+   * Posted on a replay too: the receipt poster returns an existing journal untouched, and a
+   * first attempt whose post never ran gets it now.
+   */
+  await postArJournalSafely("ar_payment", paymentId, () => postPaymentReceiptJournal(paymentId, userId));
+
+  revalidatePath("/backoffice/finance/piutang");
+  revalidatePath(`/backoffice/finance/piutang/${input.receivableId}`);
+  revalidatePath("/backoffice/finance/payments");
+  return { ok: true, paymentId, docNo, alreadyApplied };
 }

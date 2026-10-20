@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { RecordPaymentSheet } from "./RecordPaymentSheet";
 import { AssignCollectorCard } from "./AssignCollectorCard";
+import { RoundingResidueNotice } from "./RoundingResidueNotice";
 
 type ReceivableDetail = NonNullable<Awaited<ReturnType<typeof getReceivable>>>;
 type ReceivableStatusValue = "OUTSTANDING" | "PARTIAL" | "PAID" | "WRITTEN_OFF" | "VOIDED";
@@ -84,7 +85,8 @@ const STATUS_LABEL_KEY: Record<
  * the figures on the page visibly reconcile (`original − paid = outstanding`, and the history rows
  * sum to Paid); rounding some of them and not the others would show arithmetic that does not add
  * up. This is the only formatter on the card — there is no whole-rupiah variant left to reach for
- * by accident.
+ * by accident. That residue is closed by `RoundingResidueNotice`, which posts a rounding
+ * adjustment with its own journal instead.
  *
  * Same shape as the local helper in `RecordPaymentSheet` and `PaymentDetailClient`, which is where
  * an allocation is entered against these figures.
@@ -154,6 +156,8 @@ export function ReceivableDetailClient({
       )
     : t("recordPaymentAction");
   const isOverdueBucket = r.bucket !== "CURRENT";
+  /* Mirrors the writer's own residue test; `recordRoundingAdjustment` re-checks it in its transaction. */
+  const hasRoundingResidue = !isSettled && r.outstandingAmount > 0 && r.outstandingAmount < 1;
   /* Only a DELIVERY-sourced receivable has a delivery to post a journal against; `journalRetryable`
    * (server-resolved) already stays false for a SELL_THROUGH row, so this is a defensive narrow, not
    * the real gate. Sell-through journals are retried from the report's own page. */
@@ -246,6 +250,10 @@ export function ReceivableDetailClient({
             </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {canManagePayments && hasRoundingResidue && (
+        <RoundingResidueNotice receivableId={r.id} residueLabel={formatRupiahExact(r.outstandingAmount)} />
       )}
 
       <Card className="p-4 space-y-2">

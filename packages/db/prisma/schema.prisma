@@ -693,6 +693,7 @@ enum PaymentMethod {
   RETUR_OFFSET
   PROGRAM_DEDUCTION
   ADMIN_FEE
+  ROUNDING_ADJUSTMENT
 }
 
 enum PaymentStatus {

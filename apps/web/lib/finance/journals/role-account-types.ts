@@ -30,6 +30,7 @@ export const POSTING_ROLE_ACCOUNT_TYPES: Record<PostingRole, readonly AccountTyp
   TAX: ["LIABILITAS", "BEBAN"],
   TRADE_PROGRAM_EXPENSE: ["BEBAN"],
   ADMIN_FEE_EXPENSE: ["BEBAN"],
+  ROUNDING_EXPENSE: ["BEBAN"],
 };
 
 export function isAccountTypeValidForRole(role: PostingRole, type: AccountType): boolean {

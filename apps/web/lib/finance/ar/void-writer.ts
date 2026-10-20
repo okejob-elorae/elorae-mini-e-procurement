@@ -87,7 +87,8 @@ export async function voidPayment(input: {
       /*
        * `recordPayment` refuses a WRITTEN_OFF receivable outright (`ALREADY_SETTLED`); this writer
        * must respect the same terminal status rather than silently reviving it. `WRITTEN_OFF` is
-       * reachable only by hand SQL today — this slice ships no write-off writer — so refusing here
+       * reachable only by hand SQL today — no writer sets it; the sub-rupiah rounding write-off is
+       * an ordinary payment this function voids like any other — so refusing here
        * costs almost nothing and forces a deliberate un-write-off instead of letting a void quietly
        * resurrect a closed balance with nothing reversing it in the GL. The throw happens before
        * this allocation's restore runs, and — because the whole body is inside `runSerializable` —

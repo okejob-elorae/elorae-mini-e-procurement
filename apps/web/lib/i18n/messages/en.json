@@ -5190,7 +5190,8 @@
       "INVENTORY_VARIANCE": "Inventory Variance",
       "TAX": "Tax",
       "TRADE_PROGRAM_EXPENSE": "Trade Program Expense",
-      "ADMIN_FEE_EXPENSE": "Admin Fee Expense"
+      "ADMIN_FEE_EXPENSE": "Admin Fee Expense",
+      "ROUNDING_EXPENSE": "Rounding Expense"
     },
     "desc": {
       "INVENTORY": "Asset account debited on stock-in and credited on stock-out.",
@@ -5211,7 +5212,8 @@
       "INVENTORY_VARIANCE": "Account for recording stock opname/reconciliation variances.",
       "TAX": "Account for tax liabilities/expenses.",
       "TRADE_PROGRAM_EXPENSE": "Expense account for trade program deductions a store negotiates at settlement.",
-      "ADMIN_FEE_EXPENSE": "Expense account for the admin fee a store deducts at settlement."
+      "ADMIN_FEE_EXPENSE": "Expense account for the admin fee a store deducts at settlement.",
+      "ROUNDING_EXPENSE": "Expense account for a sub-rupiah receivable residue written off as a rounding adjustment."
     },
     "error": {
       "FORBIDDEN": "You do not have permission to change account mappings.",
@@ -5664,10 +5666,14 @@
       "ERROR": "Something went wrong recording this payment. Try again.",
       "RECEIVABLE_REVENUE_NOT_POSTED_YET": "The invoice this payment settles has no revenue journal yet. Post it first (a nota tagihan from its receivable page, a konsi sell-through invoice from the sell-through report's page), then retry this one. If that revenue was booked by manual journal instead, this keeps refusing; book the receipt by manual journal too.",
       "RECEIVABLE_OUTSIDE_LEDGER": "Every invoice this payment settles predates the ledger, so there is no receivable on the books to credit. Retrying won't post it.",
-      "NOTHING_TO_POST": "Nothing to post: there is no journal entry for this payment to book or reverse."
+      "NOTHING_TO_POST": "Nothing to post: there is no journal entry for this payment to book or reverse.",
+      "NOT_A_RESIDUE": "Only a balance below Rp 1 can be written off as rounding, and this receivable's outstanding is not one or has just changed. Refresh the page to see its current balance.",
+      "PENDING_CLAIM": "A collection submission or store settlement is still pending against this receivable. Verify or reject it first, then write off whatever residue is left.",
+      "METHOD_NOT_ALLOWED": "A rounding adjustment can only be posted from the write-off control on a receivable's own page."
     },
     "methodProgramDeduction": "Program Deduction",
     "methodAdminFee": "Admin Fee",
+    "methodRoundingAdjustment": "Rounding Adjustment",
     "methodUnknown": "Unknown"
   },
   "leadTime": {
@@ -5962,7 +5968,18 @@
       "submissionEmpty": "No submissions recorded yet.",
       "colSubmissionAmount": "Submitted Amount",
       "colSubmissionCollector": "Collector",
-      "submissionRejectReasonLabel": "Rejection Reason"
+      "submissionRejectReasonLabel": "Rejection Reason",
+      "roundingResidue": {
+        "title": "Sub-rupiah residue",
+        "description": "{amount} is left on this receivable. That is less than one rupiah, so it can never be paid in cash. Write it off as a rounding adjustment to close it.",
+        "action": "Write off as rounding",
+        "dialogTitle": "Write off {amount} as rounding?",
+        "dialogDescription": "This posts a rounding adjustment payment for the exact residue and marks the receivable paid. Its journal debits the Rounding Expense account and credits receivables. Like any payment, it can be voided from its own page.",
+        "confirm": "Write off",
+        "submitting": "Writing off…",
+        "successToast": "Residue written off as {docNo}.",
+        "alreadyToast": "This residue was already written off."
+      }
     },
     "journalWarning": {
       "title": "Journal not posted",
@@ -6018,6 +6035,7 @@
     "storeAvailableCreditHint": "Approved returns not yet applied to any payment for this store.",
     "methodProgramDeduction": "Program Deduction",
     "methodAdminFee": "Admin Fee",
+    "methodRoundingAdjustment": "Rounding Adjustment",
     "methodUnknown": "Unknown"
   },
   "profileAccounts": {
