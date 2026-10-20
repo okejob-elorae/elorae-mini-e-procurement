@@ -46,8 +46,8 @@ export async function verifyCollection(input: {
 
   /**
    * `submitCollection` never writes this method, but the column is the shared `PaymentMethod`
-   * enum and `recordPayment`'s input union leaves it out. Hoisted into a `const` so the narrowing
-   * carries into the call below.
+   * enum and `recordPayment`'s input union leaves it out, so this guard refuses it before the
+   * call below.
    */
   const method = submission.method;
   if (method === "ROUNDING_ADJUSTMENT") throw new CollectionError("INVALID_METHOD");

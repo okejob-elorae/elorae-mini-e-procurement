@@ -77,10 +77,15 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
    * amount or allocation shape can make the method acceptable from this entry point.
    */
   if ((input.method as string) === "ROUNDING_ADJUSTMENT") throw new PaymentError("METHOD_NOT_ALLOWED");
-  return postPayment(input);
+  const { paymentId, docNo } = await postPayment(input);
+  return { paymentId, docNo };
 }
 
-async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string; docNo: string }> {
+/**
+ * `replayed` is true when the idempotency key already named a payment, so nothing was written.
+ * `recordPayment` drops it to keep its own result shape; `recordRoundingAdjustment` reports it.
+ */
+async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string; docNo: string; replayed: boolean }> {
   const amount = roundCents(input.amount);
   const allocations = input.allocations.map((a) => ({ ...a, amount: roundCents(a.amount) }));
 
@@ -131,9 +136,17 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
     if (input.idempotencyKey) {
       const existing = await tx.payment.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
-        select: { id: true, docNo: true },
+        select: { id: true, docNo: true, status: true },
       });
-      if (existing) return { paymentId: existing.id, docNo: existing.docNo };
+      if (existing) {
+        /**
+         * Mirrors `recordRoundingAdjustment`'s own replay branch for the request that lost a race
+         * on the same event: a voided write-off is refused, never handed back as a success.
+         * Other methods keep their existing replay behaviour.
+         */
+        if (isRounding && existing.status === "VOIDED") throw new PaymentError("PAYMENT_VOIDED");
+        return { paymentId: existing.id, docNo: existing.docNo, replayed: true };
+      }
     }
 
     /*
@@ -255,7 +268,7 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
       });
     }
 
-    return { paymentId: payment.id, docNo: payment.docNo };
+    return { paymentId: payment.id, docNo: payment.docNo, replayed: false };
   });
 }
 
@@ -318,7 +331,7 @@ export async function recordRoundingAdjustment(
   const residue = roundCents(Number(receivable.outstandingAmount));
   if (!isResidue(residue)) throw new PaymentError("NOT_A_RESIDUE");
 
-  const res = await postPayment({
+  const { paymentId, docNo, replayed } = await postPayment({
     storeId: receivable.storeId,
     paidAt: new Date(),
     method: "ROUNDING_ADJUSTMENT",
@@ -327,5 +340,5 @@ export async function recordRoundingAdjustment(
     allocations: [{ receivableId: receivable.id, amount: residue }],
     idempotencyKey,
   });
-  return { ...res, alreadyApplied: false };
+  return { paymentId, docNo, alreadyApplied: replayed };
 }

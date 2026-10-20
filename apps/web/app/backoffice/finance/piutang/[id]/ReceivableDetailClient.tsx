@@ -158,6 +158,7 @@ export function ReceivableDetailClient({
   const isOverdueBucket = r.bucket !== "CURRENT";
   /* Mirrors the writer's own residue test; `recordRoundingAdjustment` re-checks it in its transaction. */
   const hasRoundingResidue = !isSettled && r.outstandingAmount > 0 && r.outstandingAmount < 1;
+  const hasPendingSubmission = r.submissions.some((s) => s.status === "PENDING");
   /* Only a DELIVERY-sourced receivable has a delivery to post a journal against; `journalRetryable`
    * (server-resolved) already stays false for a SELL_THROUGH row, so this is a defensive narrow, not
    * the real gate. Sell-through journals are retried from the report's own page. */
@@ -253,7 +254,11 @@ export function ReceivableDetailClient({
       )}
 
       {canManagePayments && hasRoundingResidue && (
-        <RoundingResidueNotice receivableId={r.id} residueLabel={formatRupiahExact(r.outstandingAmount)} />
+        <RoundingResidueNotice
+          receivableId={r.id}
+          residueLabel={formatRupiahExact(r.outstandingAmount)}
+          pendingCollection={hasPendingSubmission}
+        />
       )}
 
       <Card className="p-4 space-y-2">

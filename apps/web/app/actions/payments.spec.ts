@@ -297,6 +297,7 @@ describe("payment action guards", () => {
     ["a missing receivable id", { receivableId: "", eventId: ROUNDING_EVENT_ID }],
     ["a missing event id", { receivableId: "r1", eventId: "" }],
     ["a non-string event id", { receivableId: "r1", eventId: 42 as unknown as string }],
+    ["an event id that is not a UUID", { receivableId: "r1", eventId: "evt-1" }],
   ])("refuses INVALID_REQUEST for %s", async (_label, input) => {
     const res = await recordRoundingAdjustmentAction(input);
     expect(res).toEqual({ ok: false, reason: "INVALID_REQUEST" });

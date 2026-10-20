@@ -22,6 +22,7 @@ d("recordRoundingAdjustment (test bed only)", () => {
   let orderIds: string[] = [];
   let deliveryIds: string[] = [];
   let receivableIds: string[] = [];
+  let settlementIds: string[] = [];
   let mappingSnapshot: MappingSnapshot | undefined;
 
   beforeEach(async () => {
@@ -33,7 +34,7 @@ d("recordRoundingAdjustment (test bed only)", () => {
     token = Math.random().toString(36).slice(2, 10);
     seq = 0;
     storeId = ""; userId = ""; roundingAccountId = ""; arAccountId = "";
-    orderIds = []; deliveryIds = []; receivableIds = [];
+    orderIds = []; deliveryIds = []; receivableIds = []; settlementIds = [];
     mappingSnapshot = undefined;
     mappingSnapshot = await snapshotMappings(["ROUNDING_EXPENSE", "AR"]);
 
@@ -71,6 +72,9 @@ d("recordRoundingAdjustment (test bed only)", () => {
     await prisma.journalLine.deleteMany({ where: { journal: { sourceId: { in: sourceIds.map(seededId) } } } });
     await prisma.journal.deleteMany({ where: { sourceId: { in: sourceIds.map(seededId) } } });
     await prisma.collectionSubmission.deleteMany({ where: { receivableId: { in: receivableIds.map(seededId) } } });
+    /* Settlement invoice claims before both the settlement and the receivable they reference. */
+    await prisma.storeSettlementInvoice.deleteMany({ where: { settlementId: { in: settlementIds.map(seededId) } } });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map(seededId) } } });
     await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds.map(seededId) } } });
     await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
     /* Receivables before the delivery they hang off (an optional 1:1 under relationMode = "prisma"). */
@@ -205,6 +209,26 @@ d("recordRoundingAdjustment (test bed only)", () => {
     await prisma.collectionSubmission.create({
       data: { receivableId, collectorId: userId, amount: 0.4, method: "CASH", paidAt: invoiceDate },
     });
+    expect(await codeOf(adjust(receivableId))).toBe("PENDING_CLAIM");
+    expect(await prisma.payment.count({ where: { storeId } })).toBe(0);
+  });
+
+  it("refuses while a PENDING store settlement claims the residue", async () => {
+    const receivableId = await makeReceivable(1000.4, 0.4);
+    const settlement = await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-RND-STL-${token}`,
+        storeId,
+        salesmanId: userId,
+        expectedAmount: 0.4,
+        actualAmount: 0.4,
+        varianceAmount: 0,
+        status: "PENDING",
+        invoices: { create: [{ receivableId, amount: 0.4 }] },
+      },
+      select: { id: true },
+    });
+    settlementIds.push(settlement.id);
     expect(await codeOf(adjust(receivableId))).toBe("PENDING_CLAIM");
     expect(await prisma.payment.count({ where: { storeId } })).toBe(0);
   });

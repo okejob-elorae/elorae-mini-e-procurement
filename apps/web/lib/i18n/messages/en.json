@@ -5978,7 +5978,11 @@
         "confirm": "Write off",
         "submitting": "Writing off…",
         "successToast": "Residue written off as {docNo}.",
-        "alreadyToast": "This residue was already written off."
+        "alreadyToast": "This residue was already written off.",
+        "pendingCollectionHint": "A collection submission for this receivable is pending verification. Verify or reject it first.",
+        "err": {
+          "PAYMENT_VOIDED": "The earlier write-off was voided. Close this dialog and open it again."
+        }
       }
     },
     "journalWarning": {

@@ -23,6 +23,12 @@ type Props = {
   receivableId: string;
   /* Display only: the writer reads the residue itself and never takes an amount from here. */
   residueLabel: string;
+  /**
+   * A PENDING collection submission listed on this page, which the writer always refuses
+   * `PENDING_CLAIM` for. Pending store settlements are not loaded here and stay the writer's to
+   * refuse.
+   */
+  pendingCollection: boolean;
 };
 
 /**
@@ -33,7 +39,7 @@ type Props = {
  * retried confirm inside one opening, so a retry replays the payment already posted instead of
  * posting a second one.
  */
-export function RoundingResidueNotice({ receivableId, residueLabel }: Props) {
+export function RoundingResidueNotice({ receivableId, residueLabel, pendingCollection }: Props) {
   const t = useTranslations("piutang");
   const tPayments = useTranslations("payments");
   const tCommon = useTranslations("common");
@@ -64,6 +70,11 @@ export function RoundingResidueNotice({ receivableId, residueLabel }: Props) {
         router.refresh();
         return;
       }
+      /* `payments.err.PAYMENT_VOIDED` is worded for a retur offset, so this refusal carries its own copy. */
+      if (result.reason === "PAYMENT_VOIDED") {
+        toast.error(t("detail.roundingResidue.err.PAYMENT_VOIDED"));
+        return;
+      }
       toast.error(tPayments(`err.${result.reason}`));
     } catch {
       toast.error(tPayments("err.ERROR"));
@@ -84,10 +95,14 @@ export function RoundingResidueNotice({ receivableId, residueLabel }: Props) {
             size="sm"
             variant="outline"
             className="w-fit h-10"
+            disabled={pendingCollection}
             onClick={() => handleOpenChange(true)}
           >
             {t("detail.roundingResidue.action")}
           </Button>
+          {pendingCollection && (
+            <span className="text-xs text-muted-foreground">{t("detail.roundingResidue.pendingCollectionHint")}</span>
+          )}
         </AlertDescription>
       </Alert>
 

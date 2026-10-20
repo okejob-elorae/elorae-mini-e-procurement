@@ -5978,7 +5978,11 @@
         "confirm": "Hapus sisa",
         "submitting": "Menghapus…",
         "successToast": "Sisa dihapus sebagai {docNo}.",
-        "alreadyToast": "Sisa ini sudah dihapus sebelumnya."
+        "alreadyToast": "Sisa ini sudah dihapus sebelumnya.",
+        "pendingCollectionHint": "Ada setoran penagihan untuk piutang ini yang menunggu verifikasi. Verifikasi atau tolak dulu.",
+        "err": {
+          "PAYMENT_VOIDED": "Penghapusan sisa sebelumnya sudah dibatalkan. Tutup dialog ini lalu buka lagi."
+        }
       }
     },
     "journalWarning": {

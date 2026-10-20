@@ -380,6 +380,13 @@ export async function applyReturnOffsetAction(input: {
 }
 
 /**
+ * The same UUID shape `recordRoundingAdjustment` requires, checked here first so a malformed id
+ * is refused at the boundary. Declared locally like `UUID_SHAPE` in `field-sales-orders.ts`; the
+ * writer keeps its own copy as the backstop.
+ */
+const EVENT_ID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
  * Writes off a receivable's sub-rupiah residue as a `ROUNDING_ADJUSTMENT` payment. A separate
  * action from `recordPaymentAction` for the same reason `applyReturnOffsetAction` is one: the
  * cash sheet's endpoint stays narrowed to `CASH`/`TRANSFER`, so the write-off method is never
@@ -405,7 +412,9 @@ export async function recordRoundingAdjustmentAction(input: {
 
     if (typeof input !== "object" || input === null) return { ok: false, reason: "INVALID_REQUEST" };
     if (typeof input.receivableId !== "string" || input.receivableId === "") return { ok: false, reason: "INVALID_REQUEST" };
-    if (typeof input.eventId !== "string" || input.eventId === "") return { ok: false, reason: "INVALID_REQUEST" };
+    if (typeof input.eventId !== "string" || !EVENT_ID_SHAPE.test(input.eventId)) {
+      return { ok: false, reason: "INVALID_REQUEST" };
+    }
 
     const res = await recordRoundingAdjustment({
       receivableId: input.receivableId,
