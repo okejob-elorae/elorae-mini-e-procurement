@@ -1,4 +1,5 @@
 import { runSerializable } from "@/lib/db/tx-retry";
+import { findLiveSettlementOwningPayment } from "@/lib/finance/ar-settlement/component-owner";
 import { projectReturnOffset } from "./retur-offset-writer";
 import { PaymentError } from "./errors";
 
@@ -8,6 +9,14 @@ import { PaymentError } from "./errors";
  * The payment row is never deleted and neither are its allocations: they are the record of what the
  * voided payment claimed to settle. The reversing journal is posted by the caller, after this
  * transaction commits.
+ *
+ * Refusal order, which is load-bearing: `MISSING_REASON` (before the transaction opens), then
+ * `NOT_FOUND`, then the write-free `{ voided: false }` return for an already-voided payment — so a
+ * repeat stays an idempotent no-op even for a settlement component voided before the next guard
+ * existed — then `SETTLEMENT_COMPONENT` (detail: the settlement's docNo), all ahead of the status
+ * flip; then, per allocation and after the flip, `ALREADY_SETTLED`, whose throw rolls the flip
+ * back. There is no un-void, so a refusal that can be decided from the payment alone goes before
+ * any write.
  */
 export async function voidPayment(input: {
   paymentId: string;
@@ -28,10 +37,25 @@ export async function voidPayment(input: {
   return runSerializable(async (tx) => {
     const payment = await tx.payment.findUnique({
       where: { id: input.paymentId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, storeId: true, idempotencyKey: true },
     });
     if (!payment) throw new PaymentError("NOT_FOUND");
     if (payment.status === "VOIDED") return { voided: false };
+
+    /**
+     * A component of a live store settlement cannot be voided on its own. Under an `APPROVED`
+     * settlement the document would stay `APPROVED` claiming money the ledger no longer carries,
+     * and re-running approval takes its write-free `alreadyApproved` branch, so nothing re-closes
+     * the hole. Under a `PENDING` one (a half-run approval) the resume would then refuse
+     * `COMPONENT_VOIDED` forever. Ownership is decided by the same key set `rejectSettlement`
+     * counts, read with this transaction's client before any write, so the refusal commits nothing.
+     * No interleaving lets a concurrent approval slip past it: the payment being voided is POSTED
+     * and already exists, so its settlement already exists too, and the only status that lets the
+     * void through, `REJECTED`, is terminal. There is no "unapprove a settlement" path yet — see
+     * `docs/FOLLOWUPS.md`.
+     */
+    const owner = await findLiveSettlementOwningPayment(tx, payment);
+    if (owner) throw new PaymentError("SETTLEMENT_COMPONENT", undefined, owner.docNo);
 
     /*
      * Guarded updateMany, not update — defence-in-depth, not the live mechanism. Under this

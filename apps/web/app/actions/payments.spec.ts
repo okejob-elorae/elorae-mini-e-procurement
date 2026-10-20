@@ -130,6 +130,18 @@ describe("payment action guards", () => {
     expect(res).toEqual({ ok: false, reason: "OVER_ALLOCATED" });
   });
 
+  /*
+   * The detail is the owning settlement's docNo — the only thing that tells the operator where
+   * the payment came from — so it has to survive the mapping, and a refused void posts no reversal.
+   */
+  it("carries the settlement docNo through a SETTLEMENT_COMPONENT refusal and posts no reversal", async () => {
+    mockVoidPayment.mockRejectedValue(new PaymentError("SETTLEMENT_COMPONENT", undefined, "BKM/2026/10/0001"));
+    const res = await voidPaymentAction({ paymentId: "p1", reason: "wrong amount" });
+    expect(res).toEqual({ ok: false, reason: "SETTLEMENT_COMPONENT", detail: "BKM/2026/10/0001" });
+    expect(mockPostArJournalSafely).not.toHaveBeenCalled();
+    expect(mockRevalidatePath).not.toHaveBeenCalled();
+  });
+
   it("maps an unexpected non-PaymentError throw onto ERROR rather than leaking it", async () => {
     mockRecordPayment.mockRejectedValue(new Error("db exploded"));
     const res = await recordPaymentAction({

@@ -1157,7 +1157,22 @@ d("approveSettlement (test bed only)", () => {
       allocations: [{ receivableId: recA, amount: 1000 }],
       idempotencyKey: `settlement-${settlementId}-CASH`,
     });
-    await voidPayment({ paymentId: handPosted.paymentId, reason: "salah input", voidedById: approverId });
+    /*
+     * `voidPayment` now refuses this very void (`SETTLEMENT_COMPONENT`), so the state is written as
+     * that writer used to leave it — payment VOIDED, receivable restored — which is what a
+     * component voided before the guard existed still looks like on a live database.
+     */
+    await expect(
+      voidPayment({ paymentId: handPosted.paymentId, reason: "salah input", voidedById: approverId }),
+    ).rejects.toMatchObject({ code: "SETTLEMENT_COMPONENT" });
+    await prisma.payment.update({
+      where: { id: handPosted.paymentId },
+      data: { status: "VOIDED", voidedAt: new Date(), voidedById: approverId, voidReason: "salah input" },
+    });
+    await prisma.receivable.update({
+      where: { id: recA },
+      data: { paidAmount: 0, outstandingAmount: 1000, status: "OUTSTANDING" },
+    });
 
     await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
       code: "COMPONENT_VOIDED",

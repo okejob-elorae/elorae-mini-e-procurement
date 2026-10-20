@@ -240,6 +240,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Touching `lib/finance/ar/aging.ts`? `daysOverdue` floors WIB days via a hardcoded `+7h`; `getDate()`/`getFullYear()` use the HOST timezone and break on prod. → `docs/landmines/finance-ar.md`
 - Calling an AR journal builder directly, `postPaymentVoidJournal`/`postSellThroughVoidJournal` included? They MAY THROW — only ever via `postArJournalSafely`. → `docs/landmines/finance-ar.md`
 - Voiding a payment on a `WRITTEN_OFF`/`VOIDED` receivable? Refused `ALREADY_SETTLED`; `VOIDED` is terminal, so a status deny-list names it beside `WRITTEN_OFF`. → `docs/landmines/finance-ar.md`
+- Voiding a store-settlement component? Refused `SETTLEMENT_COMPONENT` (docNo) under a PENDING/APPROVED owner, matched only via `settlementComponentKeys`, before the flip; no unapprove exists. → `docs/landmines/finance-ar.md`
 - Touching `Store.creditLimit` enforcement? The approve-time live check is authoritative; the create-time flag is advisory — never read it as an override reason. → `docs/landmines/finance-ar.md`
 - Editing `approveFieldSalesOrder`'s PUTUS tail? Throw `CreditLimitExceededError`, never `return`; the finalPrices writes stay AFTER the gate. → `docs/landmines/finance-ar.md`
 - Reading `computeStoreCreditExposure`? Receivables + approved-undelivered residual (floored per order); receivables alone wave undelivered orders through. → `docs/landmines/finance-ar.md`

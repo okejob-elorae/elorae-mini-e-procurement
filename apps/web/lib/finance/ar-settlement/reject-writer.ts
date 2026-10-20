@@ -1,7 +1,7 @@
 import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
-import { DEDUCTION_TYPE_TO_PAYMENT_METHOD, returComponentKey, simpleComponentKey } from "./approve-writer";
+import { settlementComponentKeys } from "./approve-writer";
 import { SettlementError } from "./errors";
 
 /**
@@ -94,13 +94,17 @@ async function notifySalesmanOfRejection(
  * settlement that never reached approval never posted a component. But `approveSettlement` is a
  * resumable sequence rather than one transaction, so a run that posts a component and then throws
  * leaves the document `PENDING` with a real `Payment` behind it. Rejecting it from there is
- * REFUSED with `COMPONENTS_POSTED` while any component payment is still `POSTED`: the remedy is to
- * resume the approval, or to void each posted component from `/backoffice/finance/payments` and
- * then reject. A `VOIDED` component does not block. A `REJECTED` document can therefore still
- * carry voided components (voided before the reject), posted ones rejected before this guard
- * existed, or posted ones from a reject that read before a running approval's first component
- * committed (see the guard below); the finance approval screen surfaces all three
- * (`componentsTitleOrphaned` in `app/backoffice/finance/pelunasan/[id]`).
+ * REFUSED with `COMPONENTS_POSTED` while any component payment is still `POSTED`, and the remedy is
+ * to resume the approval. Voiding the posted components first is no longer a way round it:
+ * `voidPayment` refuses `SETTLEMENT_COMPONENT` for a component of a `PENDING` settlement, because a
+ * voided component strands the resume on `COMPONENT_VOIDED`. A settlement whose resume itself
+ * keeps refusing therefore has no way out today (`docs/FOLLOWUPS.md`). A `VOIDED` component does
+ * not block. A `REJECTED` document can therefore still carry voided components (voided before the
+ * reject, while that was still allowed), posted ones rejected before this guard existed, or posted
+ * ones from a reject that read before a running approval's first component committed (see the
+ * guard below); the finance approval screen surfaces all three (`componentsTitleOrphaned` in
+ * `app/backoffice/finance/pelunasan/[id]`), and `voidPayment` does void a `REJECTED` document's
+ * components.
  *
  * A second call against a settlement that is no longer `PENDING` (already `REJECTED`, or since
  * `APPROVED`) throws `NOT_PENDING`, the same shape as `rejectCollection`
@@ -137,10 +141,11 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
     /**
      * Refuse while any component of a half-run approval is still POSTED — rejecting would strand
      * real money behind a `REJECTED` document. The keys are exactly the ones `approveSettlement`
-     * writes, built through its own exports, so the guard cannot drift from the writer. Read before
-     * any write, so the refusal commits nothing. Under SERIALIZABLE this read also S-locks the key
-     * range, so a component insert racing it either commits first (and this refuses) or waits
-     * behind this transaction. That covers a crashed or abandoned approval, and a running one
+     * writes, built through its own `settlementComponentKeys` (the same set `voidPayment` matches a
+     * payment against), so the guard cannot drift from the writer. Read before any write, so the
+     * refusal commits nothing. Under SERIALIZABLE this read also S-locks the key range, so a
+     * component insert racing it either commits first (and this refuses) or waits behind this
+     * transaction. That covers a crashed or abandoned approval, and a running one
      * once its FIRST component has committed: every later reject then sees that POSTED key and
      * refuses. One window stays open — a reject that reads before the first component commits.
      * The first insert waits on this range lock, then posts once the reject has committed, and
@@ -148,14 +153,7 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
      * transaction the rest follow, all behind a `REJECTED` document; the approval then logs them
      * as orphaned and refuses `NOT_PENDING`.
      */
-    const keys = [
-      simpleComponentKey(row.id, DEDUCTION_TYPE_TO_PAYMENT_METHOD.PROGRAM),
-      simpleComponentKey(row.id, DEDUCTION_TYPE_TO_PAYMENT_METHOD.ADMIN_FEE),
-      simpleComponentKey(row.id, "CASH"),
-      ...row.deductions
-        .filter((d) => d.type === "RETUR_OFFSET" && d.fieldReturnId !== null)
-        .map((d) => returComponentKey(d.fieldReturnId as string, d.id)),
-    ];
+    const keys = settlementComponentKeys(row);
     const posted = await tx.payment.count({ where: { idempotencyKey: { in: keys }, status: "POSTED" } });
     if (posted > 0) throw new SettlementError("COMPONENTS_POSTED");
 

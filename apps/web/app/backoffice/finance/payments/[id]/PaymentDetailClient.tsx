@@ -150,6 +150,16 @@ export function PaymentDetailClient({
         router.refresh();
         return;
       }
+      /**
+       * A settlement component is refused for good, not for a retry, so the dialog closes and the
+       * toast stays up long enough to read which settlement owns the payment.
+       */
+      if (result.reason === "SETTLEMENT_COMPONENT") {
+        setVoidOpen(false);
+        setVoidReason("");
+        toast.error(t("err.SETTLEMENT_COMPONENT", { docNo: result.detail ?? "—" }), { duration: 10000 });
+        return;
+      }
       toast.error(t(errKey(result.reason)));
     } catch {
       toast.error(t("err.ERROR"));

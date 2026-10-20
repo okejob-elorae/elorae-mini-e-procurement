@@ -230,7 +230,8 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
    *
    * Once REJECTED nothing was meant to post, so the card only earns its place if something did.
    * `rejectSettlement` now refuses while any component is still POSTED, so a rejected document
-   * lists payments only in three cases: components voided before the reject, a document rejected
+   * lists payments only in three cases: components voided before the reject (possible only before
+   * `voidPayment` began refusing a pending settlement's components), a document rejected
    * before that guard existed, or a reject that read before a running approval's first component
    * committed (the orphaned-payment case the approve writer logs). Its copy tells finance to void any listed row
    * still Posted, so the list has to be the payments and nothing else: showing the unposted
@@ -244,7 +245,8 @@ export function SettlementApprovalClient({ settlement: s, canViewAccountMapping 
   const showComponents = visibleComponents.length > 0;
   /**
    * Mirrors `rejectSettlement`'s `COMPONENTS_POSTED` refusal: a half-run approval with a posted
-   * component cannot be rejected until that payment is voided or the approval is resumed.
+   * component cannot be rejected, and resuming the approval is the only way forward — `voidPayment`
+   * refuses that component with `SETTLEMENT_COMPONENT` while the document is pending.
    */
   const hasPostedComponent = s.components.some((component) => component.paymentStatus === "POSTED");
 

@@ -4,6 +4,7 @@ import { recordPayment } from "./payment-writer";
 import { voidPayment } from "./void-writer";
 import { applyReturnOffset } from "./retur-offset-writer";
 import { PaymentError } from "./errors";
+import { returComponentKey, simpleComponentKey } from "@/lib/finance/ar-settlement/approve-writer";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -30,11 +31,12 @@ d("voidPayment (test bed only)", () => {
   let recB = "";
   let paymentId = "";
   let returId = "";
+  let settlementIds: string[] = [];
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; userId = ""; orderAId = ""; orderBId = ""; deliveryAId = ""; deliveryBId = "";
-    recA = ""; recB = ""; paymentId = ""; returId = "";
+    recA = ""; recB = ""; paymentId = ""; returId = ""; settlementIds = [];
 
     const store = await prisma.store.create({
       data: { code: `TEST-VOID-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -97,6 +99,14 @@ d("voidPayment (test bed only)", () => {
      * emulation a failed clear throws and leaks every fixture below onto the shared :3308 bed.
      */
     await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
+    /*
+     * Deductions before both the settlement and the retur they reference, for the same emulated
+     * `relationMode = "prisma"` reason as the payments above.
+     */
+    await prisma.storeSettlementDeduction.deleteMany({
+      where: { settlementId: { in: settlementIds.map(seededId) } },
+    });
+    await prisma.storeSettlement.deleteMany({ where: { id: { in: settlementIds.map(seededId) } } });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(returId) } });
     await prisma.receivable.deleteMany({
@@ -350,5 +360,158 @@ d("voidPayment (test bed only)", () => {
     expect(untouched.offsetStatus).toBe("AVAILABLE");
     const untouchedPayment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
     expect(untouchedPayment.fieldReturnId).toBeNull();
+  });
+
+  /** A store settlement row only; its components are posted by each test under the real keys. */
+  async function seedSettlement(status: "PENDING" | "APPROVED" | "REJECTED"): Promise<{ id: string; docNo: string }> {
+    const settlement = await prisma.storeSettlement.create({
+      data: {
+        docNo: `TEST-VOID-STL-${status}-${token}`,
+        storeId,
+        salesmanId: userId,
+        expectedAmount: 300,
+        actualAmount: 300,
+        varianceAmount: 0,
+        status,
+      },
+      select: { id: true, docNo: true },
+    });
+    settlementIds.push(settlement.id);
+    return settlement;
+  }
+
+  /** What the refusal must leave behind: nothing written, the beforeEach 400 plus the component's 300 still applied. */
+  async function expectComponentUntouched(componentId: string): Promise<void> {
+    const component = await prisma.payment.findUniqueOrThrow({ where: { id: componentId } });
+    expect(component.status).toBe("POSTED");
+    expect(component.voidedAt).toBeNull();
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
+    expect(Number(after.paidAmount)).toBe(700);
+    expect(Number(after.outstandingAmount)).toBe(300);
+    expect(after.status).toBe("PARTIAL");
+    expect(await prisma.journal.count({ where: { sourceType: "PAYMENT_VOID", sourceId: componentId } })).toBe(0);
+  }
+
+  it("refuses SETTLEMENT_COMPONENT, naming the settlement, for a cash component of an APPROVED settlement", async () => {
+    const settlement = await seedSettlement("APPROVED");
+    const component = await recordPayment({
+      storeId, paidAt, method: "CASH", amount: 300, recordedById: userId,
+      allocations: [{ receivableId: recA, amount: 300 }],
+      idempotencyKey: simpleComponentKey(settlement.id, "CASH"),
+    });
+
+    const err = await voidPayment({
+      paymentId: component.paymentId, reason: "wrong amount keyed", voidedById: userId,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("SETTLEMENT_COMPONENT");
+    expect(err.detail).toBe(settlement.docNo);
+
+    await expectComponentUntouched(component.paymentId);
+  });
+
+  it("refuses SETTLEMENT_COMPONENT for a retur draw of an APPROVED settlement and leaves the retur drawn", async () => {
+    const settlement = await seedSettlement("APPROVED");
+    const ret = await prisma.fieldReturn.create({
+      data: {
+        docNo: `TEST-VOID-STLRET-${token}`, storeId, raisedById: userId,
+        status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE",
+        totalValue: 1000, approvedAt: paidAt, approvedById: userId,
+      },
+    });
+    returId = ret.id;
+    const deduction = await prisma.storeSettlementDeduction.create({
+      data: { settlementId: settlement.id, type: "RETUR_OFFSET", amount: 300, fieldReturnId: returId },
+    });
+    /* The event id is the deduction row's id, exactly as `approveSettlement` draws it. */
+    const draw = await applyReturnOffset({
+      returnId: returId, eventId: deduction.id, drawAmount: 300,
+      allocations: [{ receivableId: recA, amount: 300 }], appliedById: userId,
+    });
+    const drawn = await prisma.payment.findUniqueOrThrow({ where: { id: draw.paymentId } });
+    expect(drawn.idempotencyKey).toBe(returComponentKey(returId, deduction.id));
+
+    const err = await voidPayment({ paymentId: draw.paymentId, reason: "test", voidedById: userId }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("SETTLEMENT_COMPONENT");
+    expect(err.detail).toBe(settlement.docNo);
+
+    await expectComponentUntouched(draw.paymentId);
+    const retur = await prisma.fieldReturn.findUniqueOrThrow({
+      where: { id: returId },
+      select: { appliedValue: true },
+    });
+    expect(Number(retur.appliedValue)).toBe(300);
+  });
+
+  /*
+   * A half-run approval: the document is still PENDING but this component already posted. Voiding
+   * it would leave the resume refusing `COMPONENT_VOIDED` forever, the same strand as the APPROVED
+   * case. The admin-fee key also pins that the lookup covers the method-mapped keys, not only CASH.
+   */
+  it("refuses SETTLEMENT_COMPONENT for a posted component of a PENDING settlement", async () => {
+    const settlement = await seedSettlement("PENDING");
+    const component = await recordPayment({
+      storeId, paidAt, method: "ADMIN_FEE", amount: 300, recordedById: userId,
+      allocations: [{ receivableId: recA, amount: 300 }],
+      idempotencyKey: simpleComponentKey(settlement.id, "ADMIN_FEE"),
+    });
+
+    const err = await voidPayment({ paymentId: component.paymentId, reason: "test", voidedById: userId }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentError);
+    expect(err.code).toBe("SETTLEMENT_COMPONENT");
+    expect(err.detail).toBe(settlement.docNo);
+
+    await expectComponentUntouched(component.paymentId);
+  });
+
+  /*
+   * A REJECTED settlement's posted components are the orphans the approval screen lists, and
+   * voiding them is their remedy — the reject guard means a REJECTED document holds none it did
+   * not already strand, so nothing is left for a void to desynchronise.
+   */
+  it("voids a posted component left behind by a REJECTED settlement", async () => {
+    const settlement = await seedSettlement("REJECTED");
+    const component = await recordPayment({
+      storeId, paidAt, method: "CASH", amount: 300, recordedById: userId,
+      allocations: [{ receivableId: recA, amount: 300 }],
+      idempotencyKey: simpleComponentKey(settlement.id, "CASH"),
+    });
+
+    const result = await voidPayment({ paymentId: component.paymentId, reason: "orphan", voidedById: userId });
+    expect(result.voided).toBe(true);
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
+    expect(Number(after.paidAmount)).toBe(400);
+  });
+
+  /*
+   * Keyed on purpose: an unkeyed payment returns before the settlement read, so only a keyed one
+   * proves the match does not over-reach to a live settlement it is not a component of.
+   */
+  it("voids a keyed payment that is no settlement's component even while the store has an APPROVED settlement", async () => {
+    await seedSettlement("APPROVED");
+    const keyed = await recordPayment({
+      storeId, paidAt, method: "CASH", amount: 300, recordedById: userId,
+      allocations: [{ receivableId: recA, amount: 300 }],
+      idempotencyKey: `test-void-manual-${token}`,
+    });
+    const result = await voidPayment({ paymentId: keyed.paymentId, reason: "wrong amount keyed", voidedById: userId });
+    expect(result.voided).toBe(true);
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
+    expect(Number(after.paidAmount)).toBe(400);
+  });
+
+  /* The idempotent replay stays ahead of the refusal: an already-voided component still reads as a no-op. */
+  it("still short-circuits an already-voided component of an APPROVED settlement", async () => {
+    const settlement = await seedSettlement("APPROVED");
+    const component = await recordPayment({
+      storeId, paidAt, method: "CASH", amount: 300, recordedById: userId,
+      allocations: [{ receivableId: recA, amount: 300 }],
+      idempotencyKey: simpleComponentKey(settlement.id, "CASH"),
+    });
+    await prisma.payment.update({ where: { id: component.paymentId }, data: { status: "VOIDED" } });
+
+    const result = await voidPayment({ paymentId: component.paymentId, reason: "again", voidedById: userId });
+    expect(result.voided).toBe(false);
   });
 });

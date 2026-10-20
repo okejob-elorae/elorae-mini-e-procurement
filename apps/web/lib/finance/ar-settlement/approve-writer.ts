@@ -35,8 +35,9 @@ const MAX_OVERRIDE_REASON_LENGTH = 191;
  * and then dies at the MariaDB `ENUM` column with a data-truncation error at runtime, mid
  * approval, with earlier components already posted. This map is the only permitted translation.
  *
- * PUBLIC API — do not strip the `export`. `reject-writer.ts` uses it to spell the component keys
- * it checks for a posted payment, so both writers derive each key from the same method.
+ * PUBLIC API — do not strip the `export`. `settlementComponentKeys` below uses it to spell the
+ * component keys `reject-writer.ts` and `voidPayment` check, so every reader derives each key from
+ * the same method this writer posts with.
  */
 export const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
   RETUR_OFFSET: "RETUR_OFFSET",
@@ -72,9 +73,10 @@ export type InvoiceRow = { receivableId: string; amount: number };
  * from the writer it claims to mirror. Same fork shape as `EPSILON` in `calc.ts`, and the same
  * rule: change one, change the other by hand in the same commit.
  *
- * The five exports that ARE a shared seam — `computeComponentHeadroom`, `returComponentKey`,
- * `simpleComponentKey`, `InvoiceRow` and `DEDUCTION_TYPE_TO_PAYMENT_METHOD` — are the ones
- * `queries.ts` and `reject-writer.ts` actually import, and those the compiler does hold together.
+ * The exports that ARE a shared seam — `computeComponentHeadroom`, `returComponentKey`,
+ * `simpleComponentKey`, `settlementComponentKeys`, `InvoiceRow` and
+ * `DEDUCTION_TYPE_TO_PAYMENT_METHOD` — are the ones `queries.ts`, `reject-writer.ts`,
+ * `component-owner.ts` and the specs actually import, and those the compiler does hold together.
  */
 export type HeadroomRow = AllocationInput & {
   agreedRemaining: number;
@@ -105,9 +107,9 @@ type Component =
  * `applyReturnOffset` actually wrote would make every resume re-draw the retur.
  *
  * PUBLIC API — do not strip the `export`, here or on `simpleComponentKey`. `queries.ts` spells the
- * approval screen's posted-component checks with them, and `reject-writer.ts` its refusal to reject
- * a settlement with a posted component; a consumer that spelled a key itself would miss every
- * payment this writer posted.
+ * approval screen's posted-component checks with them, and `settlementComponentKeys` below builds
+ * from them the key set `reject-writer.ts` and `voidPayment` read; a consumer that spelled a key
+ * itself would miss every payment this writer posted.
  */
 export function returComponentKey(returnId: string, deductionId: string): string {
   return `returoffset-${returnId}-${deductionId}`;
@@ -115,6 +117,32 @@ export function returComponentKey(returnId: string, deductionId: string): string
 
 export function simpleComponentKey(settlementId: string, method: SettlementPaymentMethod): string {
   return `settlement-${settlementId}-${method}`;
+}
+
+/**
+ * Every key a settlement's components can carry, spelled through the two builders above: the
+ * trade-program, admin-fee and cash keys, plus one draw key per `RETUR_OFFSET` deduction that names
+ * a retur. A key whose component posted nothing (a zero fee, no cash) is still listed and simply
+ * matches no payment.
+ *
+ * PUBLIC API — the one place "which payments belong to this settlement" is answered.
+ * `reject-writer.ts` counts the POSTED ones for `COMPONENTS_POSTED`, and
+ * `component-owner.ts` matches a payment against it for `voidPayment`'s `SETTLEMENT_COMPONENT`.
+ * This writer builds the same keys inline with each component's amount, so a component kind added
+ * there must be added here in the same change.
+ */
+export function settlementComponentKeys(settlement: {
+  id: string;
+  deductions: Array<{ id: string; type: string; fieldReturnId: string | null }>;
+}): string[] {
+  return [
+    simpleComponentKey(settlement.id, DEDUCTION_TYPE_TO_PAYMENT_METHOD.PROGRAM),
+    simpleComponentKey(settlement.id, DEDUCTION_TYPE_TO_PAYMENT_METHOD.ADMIN_FEE),
+    simpleComponentKey(settlement.id, "CASH"),
+    ...settlement.deductions
+      .filter((d) => d.type === "RETUR_OFFSET" && d.fieldReturnId !== null)
+      .map((d) => returComponentKey(d.fieldReturnId as string, d.id)),
+  ];
 }
 
 /**
@@ -559,8 +587,9 @@ export async function approveSettlement(
    * retur between submission and approval is enough. Without this the shortfall surfaces inside
    * `recordPayment`'s own in-transaction ceiling as `EXCEEDS_REMAINING`, and with two retur
    * deduction rows the first draw has already committed by then: the retry skips it and fails
-   * again on the second, and voiding the first to unstick it only converts the refusal into
-   * `COMPONENT_VOIDED`.
+   * again on the second, and the first cannot be voided to unstick it — `voidPayment` refuses a
+   * component of a `PENDING` settlement with `SETTLEMENT_COMPONENT`, since a voided one would only
+   * convert the refusal into `COMPONENT_VOIDED`.
    *
    * Only components this run still OWES are counted — a draw that already posted is inside the
    * `alreadyDrawn` aggregate, so counting it twice would refuse every resume.
@@ -605,7 +634,8 @@ export async function approveSettlement(
      * that projection is the entire reason the branch exists: it recovers from a failure between
      * the payment committing and `FieldReturn.appliedValue` being written. Skipping the call
      * strands the retur at a stale `appliedValue` with `offsetStatus: "AVAILABLE"` permanently —
-     * nothing else re-projects except voiding that very draw — and `submitSettlement` computes
+     * nothing else re-projects except voiding that very draw, which `voidPayment` now refuses
+     * while this settlement is live (`SETTLEMENT_COMPONENT`) — and `submitSettlement` computes
      * retur headroom as `totalValue - appliedValue - other PENDING claims`, so every later
      * settlement over-claims at submit time and then dies at approval on `EXCEEDS_REMAINING`.
      * This does not need a process kill to happen: `projectReturnOffset` opens its own
