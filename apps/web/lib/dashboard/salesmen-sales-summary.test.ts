@@ -11,6 +11,8 @@ d("getSalesmenSalesSummary (test bed only)", () => {
   let storeId = "";
   let salesmanAId = "";
   let salesmanBId = "";
+  let uomId = "";
+  let itemId = "";
   const fsoIds: string[] = [];
   const vanSaleIds: string[] = [];
 
@@ -18,6 +20,8 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     storeId = "";
     salesmanAId = "";
     salesmanBId = "";
+    uomId = "";
+    itemId = "";
     const store = await prisma.store.create({
       data: { code: tag, name: "T", address: "T", termsType: "PUTUS", isActive: true },
     });
@@ -35,8 +39,12 @@ d("getSalesmenSalesSummary (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.vanSale.deleteMany({ where: { id: { in: vanSaleIds.map(seededId) } } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { delivery: { orderId: { in: fsoIds.map(seededId) } } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: { in: fsoIds.map(seededId) } } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: fsoIds.map(seededId) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: fsoIds.map(seededId) } } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.user.deleteMany({ where: { id: { in: [salesmanAId, salesmanBId].map(seededId) } } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     fsoIds.length = 0;
@@ -178,6 +186,60 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     const rowB = summary.rows.find((r) => r.salesmanId === salesmanBId);
     expect(rowB!.awaitingDelivery).toEqual({ count: 1, amount: 500 });
     expect(rowB!.realised).toEqual({ count: 1, amount: 300 });
+  });
+
+  it("awaitingDelivery: subtracts a delivery's exact goods value, not its whole-rupiah total", async () => {
+    /**
+     * A 2-unit line at 999.70 (a store-discounted price) with a 100 line discount: order total
+     * 1899.40. Shipping 1 unit takes the pro-rated 50, so that delivery's exact goods value is
+     * 949.70 while the writer charges `total` 950. What is still awaiting delivery is the other
+     * 949.70 — subtracting the rounded total would report 949.40. A non-closing delivery's
+     * discount share is always whole rupiah, so the sen here come from the unit price.
+     */
+    const uom = await prisma.uOM.create({ data: { code: `${tag}-UOM`, nameId: "test", nameEn: "test" } });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku: `${tag}-ITEM`, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId, sellingPrice: 999.7 },
+    });
+    itemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${tag}-19`,
+        storeId,
+        salesmanId: salesmanBId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 1999.4,
+        total: 1899.4,
+        deliveryStatus: "PARTIAL",
+        lines: {
+          create: [{ itemId, variantSku: "", productName: "test", qty: 2, unitPrice: 999.7, lineTotal: 1999.4, discountAmount: 100, deliveredQty: 1 }],
+        },
+      },
+      include: { lines: true },
+    });
+    fsoIds.push(order.id);
+    await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `${tag}-DLV-8`,
+        orderId: order.id,
+        deliveredAt: new Date(),
+        deliveredById: salesmanBId,
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        subtotal: 999.7,
+        total: 950,
+        lines: {
+          create: [{ orderLineId: order.lines[0].id, itemId, variantSku: "", productName: "test", qty: 1, unitPrice: 999.7, discountAmount: 50, lineTotal: 999.7 }],
+        },
+      },
+    });
+
+    const summary = await getSalesmenSalesSummary();
+    const rowB = summary.rows.find((r) => r.salesmanId === salesmanBId);
+    expect(rowB!.awaitingDelivery.count).toBe(1);
+    expect(rowB!.awaitingDelivery.amount).toBeCloseTo(949.7, 6);
+    expect(rowB!.realised).toEqual({ count: 1, amount: 950 });
   });
 
   it("awaitingDelivery: floors the residual per order, so an over-delivered order lends nothing to a sibling", async () => {

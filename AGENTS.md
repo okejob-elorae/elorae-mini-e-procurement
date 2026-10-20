@@ -179,7 +179,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Wondering why a store stops getting konsi suggestions for an item? `listKonsiSuggestions`'s never-sent exclusion is PERMANENT — the `StoreAssortmentLine` gap covers it. → `docs/landmines/field-sales.md`
 - Writing an assortment-gap test? On-hand is `StoreStock` PLUS `openKonsiQtyByKey`, always via that helper; never fold the open qty into `AssortmentGapRow.onHandQty`. → `docs/landmines/field-sales.md`
 - Touching `Store.priceDiscountPercent`/`markupPercent` or an SPG/van price? SPG prices by real `termsType` via `spgUnitPrice`; van hardcodes PUTUS, so KONSI holds no discount. → `docs/landmines/field-sales.md`
-- Touching `VanSale`/`SpgSale`/`FieldSalesDelivery` `total`/`subtotal`? `total` is whole rupiah via `roundToWholeRupiah`, the rest stays exact; shells preview through the same helper. → `docs/landmines/field-sales.md`
+- Touching `VanSale`/`SpgSale`/`FieldSalesDelivery` `total`/`subtotal`? `total` is whole rupiah via `roundToWholeRupiah`, the rest exact; van/SPG payment compares against `total`, never `subtotal`, and their shells preview through the helper. → `docs/landmines/field-sales.md`
 - Widening `PaymentMethod`? FOUR edits beyond the enum, incl. TWO `ALTER TABLE … MODIFY` (`Payment.method`, `CollectionSubmission.method`). → `docs/landmines/field-sales.md`
 - Touching `voidPayment`? It re-projects the retur via `projectReturnOffset(fieldReturnId, tx)` — `tx` is load-bearing; early returns stay write-free. → `docs/landmines/field-sales.md`
 - Pricing a `FieldReturn` approved with `valuationStatus: PENDING`? `priceApprovedReturnLine` prices it per line until `VALUED` — never reprice a valued retur. → `docs/landmines/field-sales.md`

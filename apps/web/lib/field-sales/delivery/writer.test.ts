@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "./writer";
 import { DeliveryError } from "../errors";
+import { deliveredGoodsValue } from "./undelivered-residual";
 import { postFieldDeliveryRevenueJournal } from "@/lib/finance/ar/delivery-journal";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
@@ -883,7 +884,7 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
   });
 
-  it("the deliveries still sum to the order total when a line strands residue before the closing delivery", async () => {
+  it("the deliveries' exact goods values still sum to the order total when a line strands residue before the closing delivery", async () => {
     await recordFieldSalesDelivery({
       orderId,
       deliveredById: userId,
@@ -922,8 +923,17 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
     expect(order.deliveryStatus).toBe("DELIVERED");
 
-    const totals = deliveries.reduce((sum, d) => sum + Number(d.total), 0);
-    expect(totals).toBe(Number(order.total));
+    const goodsValues = deliveries.reduce(
+      (sum, d) =>
+        sum +
+        deliveredGoodsValue({
+          subtotal: Number(d.subtotal),
+          discountAmount: Number(d.discountAmount),
+          lineDiscounts: d.lines.map((l) => Number(l.discountAmount)),
+        }),
+      0,
+    );
+    expect(goodsValues).toBe(Number(order.total));
 
     const lineDiscounts = deliveries.flatMap((d) => d.lines).reduce((sum, l) => sum + Number(l.discountAmount), 0);
     const headerDiscounts = deliveries.reduce((sum, d) => sum + Number(d.discountAmount), 0);

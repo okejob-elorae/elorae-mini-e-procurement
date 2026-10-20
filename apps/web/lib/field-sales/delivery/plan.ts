@@ -72,15 +72,18 @@ export function computeDueDate(invoiceDate: Date, paymentTempoDays: number): Dat
 /**
  * Allocates line and order discounts to one delivery. A non-closing delivery takes its rounded
  * pro-rata share, capped at what is still unallocated. The delivery that drives the order's
- * outstanding qty to zero takes the entire remainder, so the deliveries sum back to the order
- * exactly and no rounding residue escapes.
+ * outstanding qty to zero takes the entire remainder, so the deliveries' discounts sum back to the
+ * order's exactly and no discount residue escapes. What sums back to the order total is each
+ * delivery's exact goods value (`deliveredGoodsValue`), not its `total`, which the writer then
+ * rounds to whole rupiah on its own.
  *
  * `lines` must carry EVERY line of the order, not only the ones in this delivery. A line that
  * finished in an earlier delivery can still hold rounding residue — three 1-unit deliveries of a
  * 3-unit line discounted 100 allocate round(100/3) = 33 each and strand 1 — and the closing
  * delivery is the last place that residue can go. Lines with `deliveredQty` 0 get no line discount
  * of their own; on the closing delivery their residue folds into the header `discountAmount`
- * instead, which is what keeps the sum of delivery totals equal to the order total.
+ * instead, which is what keeps the sum of the deliveries' exact goods values equal to the order
+ * total.
  */
 export function allocateDeliveryDiscounts(input: DiscountAllocationInput): DiscountAllocation {
   const lineDiscounts = input.lines
