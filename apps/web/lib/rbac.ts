@@ -84,6 +84,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/van-sales/[id]': 'canvassing:manage',
   '/backoffice/spg-sales': 'spg_sales:view',
   '/backoffice/spg-sales/[id]': 'spg_sales:view',
+  "/backoffice/spg-commission": "spg_sales:view",
   '/packer': 'packer:menu',
   '/packer/record': 'packer:menu',
   '/api/packer': 'packer:menu',
@@ -117,6 +118,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/finance/collections': 'collections:manage',
   '/backoffice/settings/piutang': 'collections:manage',
   "/backoffice/settings/purchasing": "purchase_orders:edit",
+  "/backoffice/settings/spg-commission": "spg_commission:manage",
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -303,6 +305,8 @@ export const PERMISSIONS = {
   // SPG Sales (in-store promoter)
   SPG_SALES_RECORD: "spg_sales:record",
   SPG_SALES_VIEW: "spg_sales:view",
+  // SPG Commission (rates per item category)
+  SPG_COMMISSION_MANAGE: "spg_commission:manage",
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",

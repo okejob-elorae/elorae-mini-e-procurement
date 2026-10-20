@@ -309,6 +309,7 @@ model ItemCategory {
   items            Item[]
   jubelioCategoryMappings JubelioCategoryMapping[]
   planCategories   PlanCategory[]
+  spgCommissionRates SpgCommissionRate[]
 }
 
 model Store {
@@ -2544,6 +2545,18 @@ model SpgSaleLine {
   spgSale     SpgSale @relation(fields: [spgSaleId], references: [id], onDelete: Cascade)
   item        Item    @relation(fields: [itemId], references: [id])
   @@index([spgSaleId])
+}
+
+model SpgCommissionRate {
+  id             String       @id @default(cuid())
+  itemCategoryId String
+  amountPerPiece Decimal      @db.Decimal(15, 2)
+  effectiveFrom  String       @db.VarChar(7)
+  createdById    String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  itemCategory   ItemCategory @relation(fields: [itemCategoryId], references: [id])
+  @@unique([itemCategoryId, effectiveFrom])
 }
 
 enum DocType {

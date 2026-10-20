@@ -84,6 +84,7 @@ interface ItemCategoryRecord {
 export default function ItemCategoriesPage() {
   const t = useTranslations('items');
   const tCommon = useTranslations('common');
+  const tToasts = useTranslations("toasts");
   const [categories, setCategories] = useState<ItemCategoryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -179,7 +180,11 @@ export default function ItemCategoriesPage() {
     if (!deleteId) return;
     setIsDeleting(true);
     try {
-      await deleteItemCategory(deleteId);
+      const result = await deleteItemCategory(deleteId);
+      if (!result.success) {
+        toast.error(tToasts(result.messageKey));
+        return;
+      }
       toast.success(tCommon('delete') + ' OK');
       setDeleteId(null);
       fetchCategories();

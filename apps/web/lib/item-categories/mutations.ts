@@ -36,10 +36,27 @@ export async function updateItemCategoryRecord(
   });
 }
 
-export async function deleteItemCategoryRecord(id: string) {
-  const itemCount = await prisma.item.count({ where: { categoryId: id } });
-  if (itemCount > 0) {
-    throw new Error('Cannot delete category with assigned items');
+export type ItemCategoryDeleteErrorCode = "HAS_ITEMS" | "HAS_COMMISSION_RATES";
+
+export class ItemCategoryDeleteError extends Error {
+  constructor(readonly code: ItemCategoryDeleteErrorCode) {
+    super(code);
+    this.name = "ItemCategoryDeleteError";
   }
-  await prisma.itemCategory.delete({ where: { id } });
+}
+
+/**
+ * Refuses while any item or SPG commission rate still points at the category. The row is locked
+ * first because `setRate` takes the same lock before writing a rate, so a rate cannot slip in
+ * between this count and the delete.
+ */
+export async function deleteItemCategoryRecord(id: string) {
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT \`id\` FROM \`ItemCategory\` WHERE \`id\` = ${id} FOR UPDATE`;
+    const itemCount = await tx.item.count({ where: { categoryId: id } });
+    if (itemCount > 0) throw new ItemCategoryDeleteError("HAS_ITEMS");
+    const rateCount = await tx.spgCommissionRate.count({ where: { itemCategoryId: id } });
+    if (rateCount > 0) throw new ItemCategoryDeleteError("HAS_COMMISSION_RATES");
+    await tx.itemCategory.delete({ where: { id } });
+  });
 }
