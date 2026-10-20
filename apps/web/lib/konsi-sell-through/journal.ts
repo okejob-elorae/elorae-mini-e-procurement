@@ -239,11 +239,19 @@ export async function postSellThroughSurplusJournal(id: string, postedById: stri
 
 /**
  * Reverses one original journal of a VOIDED report by mirroring it as posted: every line's debit
- * and credit swapped on the same chart account, dated on the original's date, under the reversal's
- * own source type. It deliberately bypasses `resolveAccount` — a mapping changed since approve must
- * not send the reversal to a different account than the original hit. A replay is a no-op through
- * the `(sourceType, sourceId)` unique key. NOTHING_TO_POST when the report is not VOIDED or the
+ * and credit swapped on the same chart account, under the reversal's own source type. It
+ * deliberately bypasses `resolveAccount` — a mapping changed since approve must not send the
+ * reversal to a different account than the original hit. A replay is a no-op through the
+ * `(sourceType, sourceId)` unique key. NOTHING_TO_POST when the report is not VOIDED or the
  * original was never posted.
+ *
+ * Dated on the report's `voidedAt`, not on the original's date, the way `postPaymentVoidJournal`
+ * dates on the payment's: the correction belongs to the period it was made in, so a void never
+ * moves figures in an earlier period that may already have been reported. Never before the
+ * original, though — the later of the two wins. The writers cannot produce an original dated after
+ * the void (it is dated on the invoice date, which approve caps at the approve day), so that arm is
+ * a guard only. A VOIDED report with no `voidedAt` falls back to the original's date. Both inputs
+ * are stored, never the clock, so a retry dates the reversal exactly as the first attempt would have.
  */
 export async function postSellThroughVoidJournal(
   kind: SellThroughVoidJournalKind,
@@ -251,17 +259,18 @@ export async function postSellThroughVoidJournal(
   postedById: string,
   client: AnyClient = prisma,
 ): Promise<GenerateAutoJournalResult> {
-  const doc = await client.konsiSellThrough.findUnique({ where: { id }, select: { docNo: true, status: true } });
+  const doc = await client.konsiSellThrough.findUnique({ where: { id }, select: { docNo: true, status: true, voidedAt: true } });
   if (!doc || doc.status !== "VOIDED") return { ok: false, code: "NOTHING_TO_POST" };
   const original = await client.journal.findFirst({
     where: { sourceType: SELL_THROUGH_JOURNAL_SOURCE_TYPES[VOID_OF[kind]], sourceId: id },
     select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
   });
   if (!original) return { ok: false, code: "NOTHING_TO_POST" };
+  const date = doc.voidedAt !== null && doc.voidedAt > original.date ? doc.voidedAt : original.date;
   try {
     const res = await postJournal(client, {
       source: { type: SELL_THROUGH_VOID_JOURNAL_SOURCE_TYPES[kind], id },
-      date: original.date,
+      date,
       description: `${VOID_DESCRIPTION[kind]} ${doc.docNo}`,
       postedById,
       lines: original.lines.map((l) => ({
