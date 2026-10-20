@@ -278,7 +278,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Enabling settlement approval in a fresh env? Map `TRADE_PROGRAM_EXPENSE` and `ADMIN_FEE_EXPENSE` to a `BEBAN` account, or journals degrade to `JOURNAL_PENDING`. → `docs/landmines/finance-ar.md`
 - Adding a `SettlementErrorCode`? No exhaustive `Record` — add `REASON_KEY`, `financeStoreSettlements.err.<CODE>` (both locales), `SettlementCheckReason` if previewed. → `docs/landmines/finance-ar.md`
 - Reading a `StoreSettlement` as money moved? Status first — `PENDING` posts nothing (but may hold payments); `APPROVED` moved AR, not necessarily journals. → `docs/landmines/finance-ar.md`
-- Calling `approveSettlement`? RESUMABLE, not a tx — never nest its writers; the flip re-counts VOIDED components in-tx BEFORE its CAS; loop `postArJournalSafely` over EVERY `paymentIds` id. → `docs/landmines/finance-ar.md`
+- Calling `approveSettlement`? RESUMABLE, not a tx — never nest its writers; it posts no journals, so loop `postArJournalSafely` over EVERY `paymentIds` id; the flip re-counts VOIDED components in-tx BEFORE its CAS. → `docs/landmines/finance-ar.md`
 - Rejecting a settlement? `COMPONENTS_POSTED` while any component is POSTED — throw inside the tx before the CAS, keyed only by the shared key builders. → `docs/landmines/finance-ar.md`
 - Resuming a half-posted approval? A retur component must RE-ENTER `applyReturnOffset` even if its payment exists, or `appliedValue` stays stale forever. → `docs/landmines/finance-ar.md`
 - Re-validating in `approveSettlement`? Scope to what THIS settlement owes; exempt on `settlementAllocated > 0` OR `agreedRemaining <= 0`, before the headroom check. → `docs/landmines/finance-ar.md`
