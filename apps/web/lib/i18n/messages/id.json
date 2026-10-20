@@ -46,6 +46,7 @@
     "navCanvassing": "Canvassing",
     "navVanSales": "Penjualan Van",
     "navSpgSales": "Penjualan SPG",
+    "navSpgCommission": "Komisi SPG",
     "navRecordPacker": "Record Packer",
     "promos": "Promo",
     "finance": "Keuangan",
@@ -4867,6 +4868,51 @@
           "lineTotal": "Total Baris"
         }
       }
+    }
+  },
+  "spgCommission": {
+    "pageTitle": "Komisi SPG",
+    "subtitle": "Rupiah tetap per pcs untuk setiap kategori barang. Hanya penjualan POS SPG yang dikonfirmasi laporan sell-through yang disetujui yang dihitung; laporan yang dibatalkan setelah bulannya tercatat sebagai minus di bulan pembatalan.",
+    "prevMonth": "Bulan sebelumnya",
+    "nextMonth": "Bulan berikutnya",
+    "monthLabel": "Bulan rekap",
+    "loadErrorTitle": "Gagal memuat rekap komisi",
+    "loadErrorMessage": "Terjadi kesalahan saat membaca bulan ini. Coba lagi.",
+    "retry": "Coba lagi",
+    "listTitle": "Komisi per SPG — {month}",
+    "emptyTitle": "Tidak ada penjualan SPG yang terkonfirmasi di {month}",
+    "emptyBody": "Penjualan POS SPG dihitung setelah dikonfirmasi laporan sell-through yang disetujui.",
+    "colExpand": "Rincian",
+    "colSpg": "SPG",
+    "colStores": "Toko",
+    "colPieces": "Pcs",
+    "colEarned": "Diperoleh",
+    "colReversed": "Dibatalkan",
+    "colNet": "Bersih",
+    "colCategory": "Kategori",
+    "colRate": "Tarif",
+    "expand": "Tampilkan rincian per kategori untuk {name}",
+    "collapse": "Sembunyikan rincian per kategori untuk {name}",
+    "breakdownTitle": "Per kategori",
+    "rowNoRate": "{count} pcs tanpa tarif",
+    "totalLabel": "Total ({count} SPG)",
+    "uncategorized": "Tanpa kategori",
+    "unknownCategory": "Kategori tidak dikenal",
+    "piecesValue": "{count} pcs",
+    "perPiece": "{amount} / pcs",
+    "noRateShort": "Tanpa tarif",
+    "noRate": {
+      "title": "Pcs tanpa tarif komisi",
+      "description": "Pcs ini terkonfirmasi di {month} tetapi tidak menghasilkan komisi: barangnya tanpa kategori, atau kategorinya belum punya tarif yang berlaku untuk bulan itu.",
+      "uncategorizedHint": "Barang tanpa kategori tidak menghasilkan komisi sampai diberi kategori.",
+      "setRates": "Atur tarif komisi",
+      "askAdmin": "Minta admin mengatur tarif komisi untuk kategori ini."
+    },
+    "export": {
+      "csv": "Ekspor CSV",
+      "excel": "Ekspor Excel",
+      "started": "Ekspor dimulai",
+      "failed": "Ekspor gagal"
     }
   },
   "financeSettlements": {

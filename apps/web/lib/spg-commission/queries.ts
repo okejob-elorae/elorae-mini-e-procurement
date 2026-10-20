@@ -24,6 +24,8 @@ export type CommissionRecap = {
   noRate: Array<{ categoryId: string | null; categoryName: string | null; pieces: number }>;
   /* The month's events, one per report × SPG × category × kind, for a per-report export. */
   events: CommissionEvent[];
+  /* Each loaded report's `docNo` by id, so every event's `sellThroughId` can be printed as the report number. */
+  reportDocNos: Record<string, string>;
   spgNames: Record<string, string>;
   storeNames: Record<string, string>;
   categoryNames: Record<string, string>;
@@ -116,6 +118,7 @@ export async function getCommissionRecap(
     orderBy: [{ approvedAt: "asc" }, { id: "asc" }],
     select: {
       id: true,
+      docNo: true,
       storeId: true,
       baseline: true,
       approvedAt: true,
@@ -270,6 +273,7 @@ export async function getCommissionRecap(
       pieces: r.pieces,
     })),
     events: summary.events,
+    reportDocNos: Object.fromEntries(reports.map((r) => [r.id, r.docNo])),
     spgNames,
     storeNames,
     categoryNames,

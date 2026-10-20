@@ -225,6 +225,11 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.SPG_SALES_VIEW,
       },
       {
+        labelKey: "navSpgCommission",
+        href: "/backoffice/spg-commission",
+        permission: PERMISSIONS.SPG_SALES_VIEW,
+      },
+      {
         labelKey: 'promos',
         href: '/backoffice/promos',
         permission: PERMISSIONS.PROMOS_VIEW,
@@ -475,6 +480,7 @@ function Sidebar({
       path.startsWith('/backoffice/canvassing') ||
       path.startsWith('/backoffice/van-sales') ||
       path.startsWith('/backoffice/spg-sales') ||
+      path.startsWith("/backoffice/spg-commission") ||
       path.startsWith('/backoffice/promos')
     ) {
       return '/backoffice/sales-orders';

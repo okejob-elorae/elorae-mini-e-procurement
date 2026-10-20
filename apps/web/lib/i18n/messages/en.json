@@ -46,6 +46,7 @@
     "navCanvassing": "Canvassing",
     "navVanSales": "Van Sales",
     "navSpgSales": "SPG Sales",
+    "navSpgCommission": "SPG Commission",
     "navRecordPacker": "Record Packer",
     "promos": "Promos",
     "finance": "Finance",
@@ -4867,6 +4868,51 @@
           "lineTotal": "Line Total"
         }
       }
+    }
+  },
+  "spgCommission": {
+    "pageTitle": "SPG Commission",
+    "subtitle": "A flat rupiah per piece for each item category. Only SPG POS sales confirmed by an approved sell-through report count; a report voided after its month lands as a negative in the month of the void.",
+    "prevMonth": "Previous month",
+    "nextMonth": "Next month",
+    "monthLabel": "Recap month",
+    "loadErrorTitle": "Failed to load the commission recap",
+    "loadErrorMessage": "Something went wrong reading this month. Try again.",
+    "retry": "Try again",
+    "listTitle": "Commission per SPG — {month}",
+    "emptyTitle": "No confirmed SPG sales in {month}",
+    "emptyBody": "SPG POS sales count once an approved sell-through report confirms them.",
+    "colExpand": "Details",
+    "colSpg": "SPG",
+    "colStores": "Store(s)",
+    "colPieces": "Pieces",
+    "colEarned": "Earned",
+    "colReversed": "Reversed",
+    "colNet": "Net",
+    "colCategory": "Category",
+    "colRate": "Rate",
+    "expand": "Show the category breakdown for {name}",
+    "collapse": "Hide the category breakdown for {name}",
+    "breakdownTitle": "Per category",
+    "rowNoRate": "{count} pcs without a rate",
+    "totalLabel": "Total ({count} SPG)",
+    "uncategorized": "Uncategorized",
+    "unknownCategory": "Unknown category",
+    "piecesValue": "{count} pcs",
+    "perPiece": "{amount} / pcs",
+    "noRateShort": "No rate",
+    "noRate": {
+      "title": "Pieces without a commission rate",
+      "description": "These pieces were confirmed in {month} but earned nothing: they have no category, or their category has no rate in force for that month.",
+      "uncategorizedHint": "Uncategorized items earn nothing until they are given a category.",
+      "setRates": "Set commission rates",
+      "askAdmin": "Ask an admin to set the commission rate for these categories."
+    },
+    "export": {
+      "csv": "Export CSV",
+      "excel": "Export Excel",
+      "started": "Export started",
+      "failed": "Export failed"
     }
   },
   "financeSettlements": {
