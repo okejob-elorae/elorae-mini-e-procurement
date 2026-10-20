@@ -37,6 +37,7 @@ import { buildSuratKeluarLabels } from "./surat-keluar-labels";
 type Props = {
   order: FieldSalesOrderDetail;
   canApprove: boolean;
+  canOverrideCredit: boolean;
   canDeliver: boolean;
   canShipShipment: boolean;
   canViewShipments: boolean;
@@ -69,6 +70,7 @@ function formatRupiah(value: number): string {
 export function FieldSalesOrderDetailClient({
   order,
   canApprove,
+  canOverrideCredit,
   canDeliver,
   canShipShipment,
   canViewShipments,
@@ -236,6 +238,7 @@ export function FieldSalesOrderDetailClient({
           orderId={order.id}
           status={order.status}
           canApprove={canApprove}
+          canOverrideCredit={canOverrideCredit}
           orderType={order.orderType}
           appealedLines={appealedLines}
           orderLines={orderLineRefs}

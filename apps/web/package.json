@@ -27,7 +27,8 @@
     "legacy:stubs:delete": "tsx scripts/delete-legacy-fg-stubs.ts",
     "legacy:fabric:uom": "tsx scripts/relabel-legacy-fabric-uom.ts",
     "legacy:grn": "tsx scripts/import-legacy-grn.ts",
-    "legacy:opening": "tsx scripts/legacy-opening-adjustments.ts"
+    "legacy:opening": "tsx scripts/legacy-opening-adjustments.ts",
+    "variants:colors": "tsx scripts/seed-variant-colors.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",

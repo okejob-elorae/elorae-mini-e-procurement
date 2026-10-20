@@ -113,6 +113,8 @@ function serializeListItemForClientWithDetails(item: {
   fgConsumptions?: Array<{
     qtyRequired: unknown;
     wastePercent: unknown;
+    size?: string | null;
+    color?: { name: string } | null;
     material?: { sku?: string; nameId?: string; nameEn?: string } | null;
   }>;
   [k: string]: unknown;
@@ -126,6 +128,7 @@ function serializeListItemForClientWithDetails(item: {
       ? item.fgConsumptions.map((r) => ({
           qtyRequired: toNum(r.qtyRequired) ?? 0,
           wastePercent: toNum(r.wastePercent) ?? 0,
+          scope: [r.color?.name, r.size].filter(Boolean).join(' · ') || null,
           material: r.material
             ? {
                 sku: r.material.sku,
@@ -145,6 +148,7 @@ type ItemWithRelations = Prisma.ItemGetPayload<{
     inventoryValues: true;
     fgConsumptions: { include: { material: { include: { uom: true } } } };
     materialUsages: { include: { finishedGood: { include: { uom: true } } } };
+    pantone: { select: { tcx: true; name: true; hex: true } };
   };
 }>;
 
@@ -256,6 +260,7 @@ export async function listItems(
                   nameEn: true,
                 },
               },
+              color: { select: { name: true } },
             },
           },
         },
@@ -378,6 +383,7 @@ export async function getItemById(id: string) {
           },
         },
       },
+      pantone: { select: { tcx: true, name: true, hex: true } },
     },
   });
   return serializeItemForClient(item);

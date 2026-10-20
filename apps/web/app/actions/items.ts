@@ -11,6 +11,7 @@ import { getActorName } from "@/lib/notifications/actor-name";
 import {
   getConsumptionRules as getConsumptionRulesFromLib,
   saveConsumptionRules as saveConsumptionRulesFromLib,
+  type ConsumptionRuleInput,
 } from '@/lib/production/consumption';
 import {
   listItems,
@@ -215,12 +216,7 @@ export async function getConsumptionRules(finishedGoodId: string) {
 
 export async function saveConsumptionRules(
   finishedGoodId: string,
-  rules: Array<{
-    materialId: string;
-    qtyRequired: number;
-    wastePercent: number;
-    notes?: string;
-  }>
+  rules: ConsumptionRuleInput[]
 ) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT);

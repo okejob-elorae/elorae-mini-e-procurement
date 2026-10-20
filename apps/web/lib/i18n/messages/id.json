@@ -898,6 +898,7 @@
     "pleaseSelectItemTypeFirst": "Pilih tipe item terlebih dahulu",
     "failedToGenerateSKU": "Gagal membuat SKU",
     "provideNameAndAttributeValues": "Berikan nama dan minimal satu nilai untuk setiap atribut",
+    "finishedGoodAxesOnly": "Varian barang jadi hanya warna (Warna) dan ukuran (Ukuran). Ganti nama atau hapus \"{name}\".",
     "includeAtLeastOneVariant": "Pilih minimal satu kombinasi varian, atau hapus atributnya.",
     "duplicateAttributeValue": "Nilai itu sudah ada (beda huruf besar/kecil saja).",
     "duplicateAttributeName": "Nama atribut harus unik (huruf besar/kecil diabaikan): {names}.",
@@ -1260,7 +1261,13 @@
       "label": "Rasio varian % (total = 100%)",
       "sum": "Total:",
       "stock": "<a>{available} tersedia</a> · {onHand} di gudang",
-      "stockUnavailable": "Stok tidak tersedia"
+      "stockUnavailable": "Stok tidak tersedia",
+      "colors": "Warna yang diproduksi",
+      "colorsHint": "Pilih satu atau beberapa warna; ukuran tiap warna muncul di bawah. Mengubah warna membagi rasio rata lagi.",
+      "pickColor": "Pilih minimal satu warna.",
+      "subtotal": "{percent}% dari WO ini",
+      "noColor": "Tanpa warna",
+      "otherVariants": "Varian lain"
     }
   },
   "supplierTypes": {
@@ -1742,7 +1749,8 @@
       "all": "Semua Warna",
       "book": "Fan Deck",
       "favorites": "Favorit",
-      "photoAnalyzer": "Photo Analyzer"
+      "photoAnalyzer": "Photo Analyzer",
+      "product": "Warna Produk"
     },
     "filtersTitle": "Filter",
     "searchLabel": "Cari",
@@ -1861,7 +1869,37 @@
     "bookPositionRow": "Baris",
     "bookPositionSaved": "Posisi buku disimpan",
     "bookPositionSaveError": "Gagal menyimpan posisi",
-    "bookGoToPage": "Buka di tampilan fan deck"
+    "bookGoToPage": "Buka di tampilan fan deck",
+    "titleProduct": "Warna Produk",
+    "product": {
+      "intro": "Warna varian barang jadi. Teks warna varian (Warna) dicocokkan ke warna lewat namanya atau ejaan lainnya. Aturan BOM bisa dibatasi ke satu warna.",
+      "unresolvedTitle": "Warna varian yang belum ada di master",
+      "variantText": "Teks di varian",
+      "usage": "Dipakai",
+      "usageValue": "{items} barang · {variants} varian",
+      "resolve": "Selesaikan",
+      "addAsColor": "Tambah sebagai warna",
+      "aliasOf": "Ejaan dari…",
+      "mapAlias": "Tambah ejaan",
+      "listTitle": "Warna ({count})",
+      "add": "Tambah warna",
+      "empty": "Belum ada warna.",
+      "name": "Nama",
+      "aliases": "Ejaan lain",
+      "bomRules": "Aturan BOM",
+      "inactive": "Nonaktif",
+      "edit": "Ubah",
+      "editTitle": "Ubah warna",
+      "addTitle": "Tambah warna",
+      "pantoneTcx": "Kode Pantone TCX",
+      "pantoneHint": "Opsional, mis. 19-0303. Cari kodenya di tab Semua Warna.",
+      "aliasPlaceholder": "Ketik ejaan lalu Enter",
+      "aliasHint": "Ejaan yang dipakai Jubelio untuk warna ini, mis. salah ketik. Huruf besar/kecil dan spasi diabaikan.",
+      "active": "Aktif (muncul di editor BOM)",
+      "cancel": "Batal",
+      "save": "Simpan",
+      "saved": "Warna tersimpan"
+    }
   },
   "planning": {
     "title": "Plan Kerja",
@@ -2846,6 +2884,8 @@
       "elsewhere": "Gudang: {main} · Van: {van}",
       "negativeBadge": "Stok negatif",
       "negativeNote": "Stok negatif akan diserap otomatis oleh pengiriman konsi berikutnya ke toko ini, atau dikoreksi dengan menyetujui perhitungan stok toko.",
+      "uncountedBadge": "Belum dihitung",
+      "uncountedNote": "{count} baris tidak dihitung pada perhitungan stok terakhir yang disetujui (perhitungan sebagian), jadi stoknya belum dikoreksi. Hitung baris ini pada perhitungan berikutnya:",
       "inTransitNote": "{qty} unit sedang dalam retur admin yang belum diterima gudang — stok toko ini masih menghitung unit tersebut sampai gudang benar-benar menerimanya.",
       "receivedAwaitingApprovalNote": "{qty} unit sudah diterima gudang dari retur admin yang masih menunggu persetujuan — stok toko ini sudah berkurang sejumlah itu, meskipun retur belum selesai.",
       "movementsTitle": "Pergerakan Stok",
@@ -3404,6 +3444,7 @@
     "creditOverLimitTitle": "Toko melebihi limit kredit",
     "creditOverLimitDetail": "Eksposur saat ini {exposure}, limit {limit}. Setujui dengan alasan untuk melanjutkan.",
     "creditOverrideReasonLabel": "Alasan override limit kredit",
+    "creditOverLimitNoOverride": "Eksposur saat ini {exposure}, limit {limit}. Hanya pengguna dengan izin override limit kredit yang dapat menyetujui pesanan ini selama toko melebihi limitnya.",
     "creditWasOverLimitNote": "Melebihi limit saat dibuat — sudah kembali normal.",
     "approveOverCommittedTitle": "{count, plural, other {# baris}} punya stok yang dijanjikan melebihi stok fisik",
     "approveOverCommittedLine": "stok {onHand}, {reserved} dipesan",
@@ -3938,7 +3979,8 @@
       "cancel": "Batal",
       "confirm": "Tambahkan",
       "loading": "Memuat daftar barang…",
-      "loadError": "Gagal memuat daftar barang. Coba lagi."
+      "loadError": "Gagal memuat daftar barang. Coba lagi.",
+      "refineSearch": "Hanya hasil teratas yang ditampilkan. Ketik lebih spesifik untuk mempersempit."
     },
     "approve": {
       "button": "Setujui",
@@ -4010,7 +4052,8 @@
         "empty": "Tidak ada barang aktif yang cocok.",
         "loading": "Memuat daftar barang…",
         "loadError": "Gagal memuat daftar barang. Coba lagi.",
-        "done": "Selesai"
+        "done": "Selesai",
+        "refineSearch": "Hanya hasil teratas yang ditampilkan. Ketik lebih spesifik untuk mempersempit."
       },
       "footer": {
         "tally": "{counted}/{total} terhitung",
@@ -4075,6 +4118,12 @@
     "priceUnset": "Harga belum diset",
     "priceUnsetNote": "Produk bertanda “Harga belum diset” tetap bisa dikirim, tetapi faktur sell-through-nya ditolak sampai harga jual diisi.",
     "qtyFor": "Jumlah untuk {product}",
+    "creditOverLimitTitle": "Toko melebihi limit kredit",
+    "creditOverLimitDetail": "Eksposur saat ini {exposure}, limit {limit}. Stok yang dikirim tidak ditambahkan ke sana. Kirim dengan alasan untuk melanjutkan.",
+    "creditOverrideReasonLabel": "Alasan override limit kredit",
+    "needCreditReason": "Isi alasan override limit kredit untuk melanjutkan.",
+    "creditOverLimitNoOverride": "Eksposur saat ini {exposure}, limit {limit}. Hanya pengguna dengan izin override limit kredit yang dapat mengirim stok ke toko ini selama toko melebihi limitnya.",
+    "needCreditOverride": "Melebihi limit kredit — pengguna dengan izin override harus mengirimnya.",
     "err": {
       "NOT_FOUND": "Toko ini sudah tidak ada.",
       "NOT_KONSI": "Toko ini bukan lagi toko konsinyasi.",
@@ -4088,6 +4137,8 @@
       "KEY_CONFLICT": "Pengiriman ini bentrok dengan yang lain. Muat ulang halaman dan coba lagi.",
       "REPLAY_MISMATCH": "Percobaan sebelumnya sudah membuat pesanan {orderNo} dengan salesman, produk, atau jumlah yang berbeda. Buka pesanan itu untuk memeriksanya, atau muat ulang halaman ini untuk mengirim pengiriman baru.",
       "INSUFFICIENT_STOCK": "Stok gudang tidak cukup untuk: {products}.",
+      "CREDIT_LIMIT_EXCEEDED": "Toko melebihi limit kredit (eksposur {exposure}, limit {limit}). Berikan alasan untuk override.",
+      "CREDIT_OVERRIDE_FORBIDDEN": "Anda tidak punya izin untuk override limit kredit.",
       "FORBIDDEN": "Anda tidak punya izin untuk mengirim stok.",
       "INVALID_REQUEST": "Ada isian yang tidak valid. Muat ulang dan coba lagi.",
       "UNEXPECTED": "Terjadi kesalahan. Coba lagi."

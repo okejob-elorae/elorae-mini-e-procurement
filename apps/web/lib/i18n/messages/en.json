@@ -898,6 +898,7 @@
     "pleaseSelectItemTypeFirst": "Please select item type first",
     "failedToGenerateSKU": "Failed to generate SKU",
     "provideNameAndAttributeValues": "Please provide a name and at least one value for each attribute",
+    "finishedGoodAxesOnly": "Finished goods only have colour (Warna) and size (Ukuran) variants. Rename or remove \"{name}\".",
     "includeAtLeastOneVariant": "Include at least one variant combination, or remove the attributes.",
     "duplicateAttributeValue": "That value already exists (differs only in letter case).",
     "duplicateAttributeName": "Attribute names must be unique (letter case is ignored): {names}.",
@@ -1260,7 +1261,13 @@
       "label": "Variant ratio % (sum = 100%)",
       "sum": "Sum:",
       "stock": "<a>{available} avail</a> · {onHand} on hand",
-      "stockUnavailable": "Stock unavailable"
+      "stockUnavailable": "Stock unavailable",
+      "colors": "Colours to produce",
+      "colorsHint": "Pick one or more colours; each colour's sizes appear below. Changing colours splits the ratio evenly again.",
+      "pickColor": "Pick at least one colour.",
+      "subtotal": "{percent}% of this WO",
+      "noColor": "No colour",
+      "otherVariants": "Other variants"
     }
   },
   "supplierTypes": {
@@ -1742,7 +1749,8 @@
       "all": "All Colors",
       "book": "Fan Deck",
       "favorites": "Favorites",
-      "photoAnalyzer": "Photo Analyzer"
+      "photoAnalyzer": "Photo Analyzer",
+      "product": "Product Colors"
     },
     "filtersTitle": "Filters",
     "searchLabel": "Search",
@@ -1861,7 +1869,37 @@
     "bookPositionRow": "Row",
     "bookPositionSaved": "Book position saved",
     "bookPositionSaveError": "Could not save book position",
-    "bookGoToPage": "Open in fan deck view"
+    "bookGoToPage": "Open in fan deck view",
+    "titleProduct": "Product Colors",
+    "product": {
+      "intro": "Colours of finished-good variants. A variant's colour text (Warna) is matched to a colour by its name or one of its other spellings. BOM rules can be limited to a colour.",
+      "unresolvedTitle": "Variant colours not in the master",
+      "variantText": "Text on variants",
+      "usage": "Used by",
+      "usageValue": "{items} items · {variants} variants",
+      "resolve": "Resolve",
+      "addAsColor": "Add as colour",
+      "aliasOf": "Spelling of…",
+      "mapAlias": "Add spelling",
+      "listTitle": "Colours ({count})",
+      "add": "Add colour",
+      "empty": "No colours yet.",
+      "name": "Name",
+      "aliases": "Other spellings",
+      "bomRules": "BOM rules",
+      "inactive": "Inactive",
+      "edit": "Edit",
+      "editTitle": "Edit colour",
+      "addTitle": "Add colour",
+      "pantoneTcx": "Pantone TCX code",
+      "pantoneHint": "Optional, e.g. 19-0303. Look codes up in the All Colors tab.",
+      "aliasPlaceholder": "Type a spelling and press Enter",
+      "aliasHint": "Spellings Jubelio uses for this colour, e.g. typos. Case and spacing are ignored.",
+      "active": "Active (offered in the BOM editor)",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saved": "Colour saved"
+    }
   },
   "planning": {
     "title": "Production Plan",
@@ -2846,6 +2884,8 @@
       "elsewhere": "Main: {main} · Van: {van}",
       "negativeBadge": "Negative stock",
       "negativeNote": "A negative row is absorbed automatically by the next konsi transfer to this store, or corrected by approving a store stocktake.",
+      "uncountedBadge": "Not counted",
+      "uncountedNote": "{count} row(s) were not counted in the last approved stocktake (a partial count), so their stock was not corrected. Count them in the next stocktake:",
       "inTransitNote": "{qty} unit(s) are on an admin return the warehouse has not received yet — this store's stock still counts those units until the warehouse actually receives them.",
       "receivedAwaitingApprovalNote": "{qty} unit(s) were already received by the warehouse on an admin return still awaiting approval — this store's stock has already dropped by that amount, even though the return has not settled yet.",
       "movementsTitle": "Stock Movements",
@@ -3404,6 +3444,7 @@
     "creditOverLimitTitle": "Store is over its credit limit",
     "creditOverLimitDetail": "Current exposure {exposure}, limit {limit}. Approve with a reason to proceed.",
     "creditOverrideReasonLabel": "Credit limit override reason",
+    "creditOverLimitNoOverride": "Current exposure {exposure}, limit {limit}. Only someone with the credit limit override permission can approve this order while the store is over its limit.",
     "creditWasOverLimitNote": "Was over limit when raised — since settled.",
     "approveOverCommittedTitle": "{count, plural, one {# line has} other {# lines have}} more stock promised than on hand",
     "approveOverCommittedLine": "{onHand} on hand, {reserved} reserved",
@@ -3938,7 +3979,8 @@
       "cancel": "Cancel",
       "confirm": "Add",
       "loading": "Loading items…",
-      "loadError": "Could not load items. Try again."
+      "loadError": "Could not load items. Try again.",
+      "refineSearch": "Showing the first matches only. Type more to narrow the list."
     },
     "approve": {
       "button": "Approve",
@@ -4010,7 +4052,8 @@
         "empty": "No matching active item.",
         "loading": "Loading items…",
         "loadError": "Failed to load items. Try again.",
-        "done": "Done"
+        "done": "Done",
+        "refineSearch": "Showing the first matches only. Type more to narrow the list."
       },
       "footer": {
         "tally": "{counted}/{total} counted",
@@ -4075,6 +4118,12 @@
     "priceUnset": "Price not set",
     "priceUnsetNote": "Products tagged “Price not set” can still be sent, but their sell-through invoice is refused until a selling price is set.",
     "qtyFor": "Quantity for {product}",
+    "creditOverLimitTitle": "Store is over its credit limit",
+    "creditOverLimitDetail": "Current exposure {exposure}, limit {limit}. The stock being sent is not added to it. Send with a reason to proceed.",
+    "creditOverrideReasonLabel": "Credit limit override reason",
+    "needCreditReason": "Enter a credit limit override reason to continue.",
+    "creditOverLimitNoOverride": "Current exposure {exposure}, limit {limit}. Only someone with the credit limit override permission can send stock to this store while it is over its limit.",
+    "needCreditOverride": "Over the credit limit — someone with the override permission must send this.",
     "err": {
       "NOT_FOUND": "This store no longer exists.",
       "NOT_KONSI": "This store is no longer a consignment store.",
@@ -4088,6 +4137,8 @@
       "KEY_CONFLICT": "This submission clashed with another. Reload the page and try again.",
       "REPLAY_MISMATCH": "An earlier attempt already created order {orderNo} with a different salesman, products or quantities. Open that order to check it, or reload this page to send a new push.",
       "INSUFFICIENT_STOCK": "Not enough stock at the warehouse for: {products}.",
+      "CREDIT_LIMIT_EXCEEDED": "Store is over its credit limit (exposure {exposure}, limit {limit}). Provide a reason to override.",
+      "CREDIT_OVERRIDE_FORBIDDEN": "You do not have permission to override the credit limit.",
       "FORBIDDEN": "You do not have permission to send stock.",
       "INVALID_REQUEST": "Something in the form is invalid. Reload and try again.",
       "UNEXPECTED": "Something went wrong. Try again."

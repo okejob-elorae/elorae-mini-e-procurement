@@ -51,9 +51,9 @@ d("field-sales lifecycle writers (test bed only)", () => {
       await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId2) } });
     }
     /**
-     * The "a konsi order is never gated regardless of the store's limit" test issues a real
-     * KonsiTransfer; clean it up before the FieldSalesOrder/Store deletes below, both of which
-     * it holds a required FK against.
+     * A guard for any konsi case in this block whose order ships: a KonsiTransfer holds a required
+     * FK against both the FieldSalesOrder and the Store deleted below. Konsi approve itself only
+     * reserves, so the cases here write none today.
      */
     await prisma.konsiTransferLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
@@ -403,7 +403,7 @@ d("field-sales lifecycle writers (test bed only)", () => {
     expect(order!.status).toBe("PENDING_APPROVAL");
   });
 
-  it("a konsi order is never gated regardless of the store's limit", async () => {
+  it("a konsi order's own value never counts against the limit — a store with no exposure approves under a limit of 1", async () => {
     await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI", creditLimit: 1 } });
     const { orderId } = await createFieldSalesOrder({ storeId, salesmanId, visitId, lines: [line()] });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
@@ -770,6 +770,11 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.konsiTransfer.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    /* The credit-override case's CREDIT_LIMIT_OVERRIDE row carries the order id as a plain string, no FK — scoped to this store's own orders. */
+    const orderIds = (await prisma.fieldSalesOrder.findMany({ where: { storeId: seededId(storeId) }, select: { id: true } })).map((o) => o.id);
+    if (orderIds.length > 0) {
+      await prisma.auditLog.deleteMany({ where: { entityType: "FieldSalesOrder", entityId: { in: orderIds.map(seededId) } } });
+    }
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -779,6 +784,146 @@ d("approveFieldSalesOrder — konsi", () => {
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  /**
+   * Credit exposure on the store without the cost of a delivery or a sell-through invoice: an
+   * APPROVED putus order with nothing delivered counts its whole total as undelivered residual.
+   * It carries no lines, so it reserves nothing, and the storeId teardown above removes it.
+   */
+  let exposureSeq = 0;
+  const seedExposure = (total: number) =>
+    prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${sku}-EXP-${++exposureSeq}`,
+        orderType: "PUTUS",
+        storeId,
+        salesmanId,
+        status: "APPROVED",
+        subtotal: total,
+        total,
+      },
+    });
+
+  const createKonsiOrder = async (qty = 4) => {
+    const { orderId } = await createFieldSalesOrder({
+      storeId,
+      salesmanId,
+      visitId,
+      lines: [{ itemId, variantSku: "", productName: "X", qty, unitPrice: 0 }],
+    });
+    return orderId;
+  };
+
+  it("refuses with CreditLimitExceededError when the store's exposure is over its limit, reserving and pricing nothing", async () => {
+    await seedItemWithStock(10, 10000);
+    await seedExposure(150_000);
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const orderId = await createKonsiOrder();
+
+    const refused = approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    await expect(refused).rejects.toBeInstanceOf(CreditLimitExceededError);
+    /* Exposure only: the order's own retail value (4 × 12000) is never added, so orderTotal is 0. */
+    await expect(refused).rejects.toMatchObject({ creditLimit: 100_000, orderTotal: 0, exposure: { total: 150_000 } });
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    expect(order.status).toBe("PENDING_APPROVAL");
+    expect(order.approvedAt).toBeNull();
+    expect(Number(order.total)).toBe(0);
+    expect(Number(order.lines[0].unitPrice)).toBe(0);
+    expect(order.creditOverrideReason).toBeNull();
+    expect(await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: order.lines[0].id } })).toBeNull();
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.reservedQty)).toBe(0);
+    expect(await prisma.auditLog.count({ where: { action: "CREDIT_LIMIT_OVERRIDE", entityId: seededId(orderId) } })).toBe(0);
+  });
+
+  it("approves over the limit with an override reason, stamping the order and writing the audit row", async () => {
+    await seedItemWithStock(10, 10000);
+    await seedExposure(150_000);
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const orderId = await createKonsiOrder();
+
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId, creditOverrideReason: "  Toko sudah janji bayar minggu ini  " });
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.status).toBe("APPROVED");
+    expect(Number(order.total)).toBe(48000);
+    expect(order.creditOverrideReason).toBe("Toko sudah janji bayar minggu ini");
+    expect(order.creditOverrideById).toBe(salesmanId);
+    expect(order.creditOverrideAt).not.toBeNull();
+    expect(Number(order.creditExposureAtApprove)).toBe(150_000);
+    expect(Number(order.creditLimitAtApprove)).toBe(100_000);
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.reservedQty)).toBe(4);
+    const audit = await prisma.auditLog.findFirstOrThrow({ where: { action: "CREDIT_LIMIT_OVERRIDE", entityId: seededId(orderId) } });
+    expect(audit).toMatchObject({ userId: salesmanId, entityType: "FieldSalesOrder", reason: "Toko sudah janji bayar minggu ini" });
+    expect(audit.metadata).toMatchObject({ creditLimit: 100_000, orderTotal: 0 });
+  });
+
+  it("checks credit before stock: an over-limit store with a short line is refused for credit, not stock", async () => {
+    await seedItemWithStock(2, 10000);
+    await seedExposure(150_000);
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const orderId = await createKonsiOrder(5);
+
+    const refused = approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+    await expect(refused).rejects.toBeInstanceOf(CreditLimitExceededError);
+    await expect(refused).rejects.not.toBeInstanceOf(InsufficientStockError);
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.status).toBe("PENDING_APPROVAL");
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.reservedQty)).toBe(0);
+  });
+
+  it("a whitespace-only override reason is treated as absent", async () => {
+    await seedItemWithStock(10, 10000);
+    await seedExposure(150_000);
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const orderId = await createKonsiOrder();
+    await expect(approveFieldSalesOrder({ orderId, approvedById: salesmanId, creditOverrideReason: "   " }))
+      .rejects.toBeInstanceOf(CreditLimitExceededError);
+  });
+
+  it("approves without a reason while exposure alone is within the limit, even though exposure plus the order's value is not", async () => {
+    await seedItemWithStock(10, 10000);
+    await seedExposure(90_000);
+    /* 90000 exposure is within 100000; adding the order's 48000 retail value would not be. */
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+    const orderId = await createKonsiOrder();
+
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.status).toBe("APPROVED");
+    expect(order.creditOverrideReason).toBeNull();
+    expect(order.creditExposureAtApprove).toBeNull();
+  });
+
+  it("does not gate a store with no credit limit, whatever its exposure", async () => {
+    await seedItemWithStock(10, 10000);
+    await seedExposure(5_000_000);
+    const orderId = await createKonsiOrder();
+
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.status).toBe("APPROVED");
+    expect(order.creditExposureAtApprove).toBeNull();
+  });
+
+  it("re-approving an already-APPROVED order stays an idempotent ok after the store goes over its limit", async () => {
+    await seedItemWithStock(10, 10000);
+    const orderId = await createKonsiOrder();
+    await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
+
+    await seedExposure(150_000);
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100_000 } });
+
+    await expect(approveFieldSalesOrder({ orderId, approvedById: salesmanId })).resolves.toEqual({ ok: true });
+    const inv = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(itemId) } });
+    expect(Number(inv.reservedQty)).toBe(4);
   });
 
   it("reserves stock at approve, stores the retail value at markup, writes NO SalesHistory", async () => {

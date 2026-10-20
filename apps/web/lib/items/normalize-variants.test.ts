@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { buildColorIndex } from "@elorae/db/variant-axes";
 import {
   buildVariantSkuCode,
+  replaceColorLabel,
+  unknownVariantColors,
   validateAndNormalizeVariants,
 } from "./normalize-variants";
 
@@ -81,5 +84,57 @@ describe("validateAndNormalizeVariants", () => {
     ).toBe("KMJ01-LIGHTBLUE-M");
     expect(buildVariantSkuCode("KMJ01", {}, ["Warna"])).toBe("KMJ01");
     expect(buildVariantSkuCode("", { Warna: "Red" }, ["Warna"])).toBe("RED");
+  });
+});
+
+describe("validateAndNormalizeVariants with fixedAxes (#437)", () => {
+  it("stores colour/size spellings as Warna/Ukuran", () => {
+    expect(
+      validateAndNormalizeVariants("FG1", [{ Color: "Red", size: "S", sku: "FG1-RED-S" }], { fixedAxes: true }),
+    ).toEqual([{ Warna: "Red", Ukuran: "S", sku: "FG1-RED-S" }]);
+  });
+
+  it("refuses an attribute other than colour and size", () => {
+    expect(() =>
+      validateAndNormalizeVariants("FG1", [{ Warna: "Red", Motif: "Polka", sku: "FG1-RED" }], { fixedAxes: true }),
+    ).toThrow('Finished-good variants may only have Warna (colour) and Ukuran (size); found "Motif"');
+  });
+
+  it("leaves other attributes alone without the option", () => {
+    expect(validateAndNormalizeVariants("A1", [{ Motif: "Polka", sku: "A1-POLKA" }])).toEqual([
+      { Motif: "Polka", sku: "A1-POLKA" },
+    ]);
+  });
+});
+
+describe("unknownVariantColors", () => {
+  const index = buildColorIndex([{ id: "c1", name: "Army", aliases: ["Hijau Army"] }]);
+
+  it("lists colours no master colour spells, once each", () => {
+    const out = unknownVariantColors(
+      [{ Warna: "army", Ukuran: "M" }, { Warna: "Hijau Army" }, { Warna: "Dark Navy" }, { Color: "Dark Navy", Size: "L" }],
+      index,
+    );
+    expect(out).toEqual(["Dark Navy"]);
+  });
+
+  it("reports one entry per spelling and skips variants without a colour", () => {
+    expect(unknownVariantColors([{ Ukuran: "M" }, { Warna: "Navy" }, { Warna: " navy " }], index)).toEqual(["Navy"]);
+  });
+
+  it("grandfathers a colour saved under a legacy axis key", () => {
+    expect(unknownVariantColors([{ Warna: "Teal" }], index, [{ Color: "teal", Size: "M" }])).toEqual([]);
+  });
+
+  it("lets through a colour the item already carried", () => {
+    expect(unknownVariantColors([{ Warna: "Dark Navy" }, { Warna: "Cream" }], index, [{ Warna: "dark navy" }])).toEqual([
+      "Cream",
+    ]);
+  });
+});
+
+describe("replaceColorLabel", () => {
+  it("swaps the label and drops a duplicate spelling it creates", () => {
+    expect(replaceColorLabel(["Dark Navy", "navy", "Cream"], "Dark Navy", "Navy")).toEqual(["Navy", "Cream"]);
   });
 });

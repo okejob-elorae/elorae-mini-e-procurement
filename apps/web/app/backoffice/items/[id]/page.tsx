@@ -41,12 +41,17 @@ export default async function ItemDetailPage({
     targetMarginPercent:
       item.targetMarginPercent != null ? Number(item.targetMarginPercent) : undefined,
     additionalCost: item.additionalCost != null ? Number(item.additionalCost) : undefined,
+    pantone: item.pantone
+      ? { ...item.pantone, hex: item.pantone.hex.startsWith('#') ? item.pantone.hex : `#${item.pantone.hex}` }
+      : null,
     consumptionRules: (
       item.fgConsumptions as Array<{
         materialId: string;
         qtyRequired: number;
         wastePercent: number;
         notes?: string | null;
+        colorId?: string | null;
+        size?: string | null;
         material?: {
           sku: string;
           nameId: string;
@@ -70,6 +75,8 @@ export default async function ItemDetailPage({
         qtyRequired: Number(rule.qtyRequired),
         wastePercent: Number(rule.wastePercent),
         notes: rule.notes || undefined,
+        colorId: rule.colorId ?? null,
+        size: rule.size ?? null,
       })),
   };
 

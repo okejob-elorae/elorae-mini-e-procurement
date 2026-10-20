@@ -1543,7 +1543,10 @@ export async function suggestAccessoryFromBom(planCategoryId: string) {
     parent: category.parent ? { targetQty: category.parent.targetQty } : null,
   };
   const effectiveTarget = getEffectiveTarget(planningNode);
-  const bom = await generateMaterialPlan(category.itemId, new Decimal(effectiveTarget));
+  // A plan category has no variant ratio, so colour/size-scoped rules use an even split (#437).
+  const bom = await generateMaterialPlan(category.itemId, new Decimal(effectiveTarget), {
+    fallbackToEqualSplit: true,
+  });
   const itemIds = bom.map((row) => row.itemId);
   const accessoryItems =
     itemIds.length > 0

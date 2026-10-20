@@ -121,6 +121,7 @@ type Visit = {
 type StockCardProps = {
   rows: StoreStockCardData["rows"];
   negativeCount: number;
+  lastPartialCount: StoreStockCardData["lastPartialCount"];
   inTransitAdminReturn: { raisedQty: number; receivedQty: number };
   movements: SerializedStockMovement[];
   movementsTruncated: boolean;
@@ -365,7 +366,7 @@ export function StoreDetailView({
   function handleStartStocktake(): void {
     startCreateStocktakeTransition(async () => {
       try {
-        const result = await createStocktakeAction({ storeId: store.id, countedAt: new Date().toISOString() });
+        const result = await createStocktakeAction({ storeId: store.id });
         if (result.ok && result.id) {
           router.push(`/backoffice/store-stocktakes/${result.id}`);
           return;
@@ -965,6 +966,7 @@ export function StoreDetailView({
         <StoreStockCard
           rows={stockCard.rows}
           negativeCount={stockCard.negativeCount}
+          lastPartialCount={stockCard.lastPartialCount}
           inTransitAdminReturn={stockCard.inTransitAdminReturn}
           movements={stockCard.movements}
           movementsTruncated={stockCard.movementsTruncated}

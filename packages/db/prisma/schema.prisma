@@ -1260,6 +1260,9 @@ model Item {
   categoryId       String?
   category         ItemCategory?     @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   variants         Json?
+  /// Optional Pantone of a colour-specific material (one fabric item per colour, #410)
+  pantoneTcx       String?
+  pantone          PantoneColor?     @relation(fields: [pantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: NoAction)
   isActive         Boolean           @default(true)
   reorderPoint     Decimal?          @db.Decimal(10,2)
   overReceiveThreshold Decimal?      @db.Decimal(10,2)
@@ -1308,6 +1311,7 @@ model Item {
   @@index([sku])
   @@index([uomId])
   @@index([categoryId])
+  @@index([pantoneTcx])
 }
 
 model ItemImage {
@@ -1338,10 +1342,42 @@ model ConsumptionRule {
   wastePercent    Decimal  @default(0) @db.Decimal(5,2)
   isActive        Boolean  @default(true)
   notes           String?
+  /// Variant scope (#437): null = every colour / every size. One material may carry several
+  /// rules only when their scopes cannot both match one variant (checked in saveConsumptionRules).
+  colorId         String?
+  color           VariantColor? @relation(fields: [colorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  size            String?
   createdAt       DateTime @default(now())
-  @@unique([finishedGoodId, materialId])
+  @@index([finishedGoodId, materialId])
   @@index([finishedGoodId])
   @@index([materialId])
+  @@index([colorId])
+}
+
+/// Colour master for finished-good variants (#437). A variant's `Warna` text resolves to a row
+/// by its name or one of its aliases (the spellings Jubelio sends), compared under colorMatchKey.
+model VariantColor {
+  id               String              @id @default(cuid())
+  name             String              @unique
+  pantoneTcx       String?
+  pantone          PantoneColor?       @relation(fields: [pantoneTcx], references: [tcx], onDelete: SetNull, onUpdate: NoAction)
+  isActive         Boolean             @default(true)
+  aliases          VariantColorAlias[]
+  consumptionRules ConsumptionRule[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  @@index([pantoneTcx])
+}
+
+model VariantColorAlias {
+  id        String       @id @default(cuid())
+  /// colorMatchKey(label): unique across all colours, so one spelling resolves to one colour.
+  matchKey  String       @unique
+  label     String
+  colorId   String
+  color     VariantColor @relation(fields: [colorId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  createdAt DateTime     @default(now())
+  @@index([colorId])
 }
 
 // ==========================================
@@ -2593,6 +2629,8 @@ model PantoneColor {
   bookRow     Int?
   favorites   PantoneColorFavorite[]
   themeUsers  User[]
+  variantColors VariantColor[]
+  items       Item[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -3239,6 +3277,8 @@ model StockLedgerEntry {
   createdAt    DateTime          @default(now())
 
   @@index([locationType, locationId, itemId, variantSku, createdAt], map: "StockLedgerEntry_location_item_idx")
+  /// A whole location's history by time: the store stocktake save's movements-since read and the store stock card.
+  @@index([locationType, locationId, createdAt], map: "StockLedgerEntry_location_time_idx")
   @@index([itemId, createdAt])
   @@index([refType, refId])
 }

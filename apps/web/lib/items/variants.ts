@@ -1,9 +1,13 @@
+import { resolveVariantAxes } from '@elorae/db/variant-axes';
+
 export type ItemVariantRow = Record<string, string>;
 
 export function parseItemVariants(raw: unknown): ItemVariantRow[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((v): v is ItemVariantRow => v != null && typeof v === 'object' && !Array.isArray(v));
 }
+
+const NO_COLORS = new Map<string, string>();
 
 /** Options for PO/GRN variant selects; skips rows without sku. */
 /** Human-readable attributes for a variant row (excludes sku key). */
@@ -26,7 +30,8 @@ export function variantSelectOptions(variants: ItemVariantRow[]): { sku: string;
   for (const v of variants) {
     const sku = (v.sku ?? '').trim();
     if (!sku) continue;
-    const labelParts = [v.color, v.size, v.name, v.nameId]
+    const axes = resolveVariantAxes(v, NO_COLORS);
+    const labelParts = [axes.colorLabel, axes.size, v.name, v.nameId]
       .map((x) => (x != null ? String(x).trim() : ''))
       .filter(Boolean);
     const label = labelParts.length > 0 ? `${labelParts.join(' · ')} (${sku})` : sku;

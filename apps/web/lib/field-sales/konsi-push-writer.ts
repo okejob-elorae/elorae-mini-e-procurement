@@ -16,6 +16,8 @@ export type CreateKonsiPushOrderInput = {
   lines: KonsiPushLine[];
   note?: string;
   idempotencyKey: string;
+  /* Required only when the store's credit exposure is over its limit; see `approveKonsiOrderInTx`. */
+  creditOverrideReason?: string;
 };
 
 type PushResult = { orderId: string; orderNo: string };
@@ -74,8 +76,11 @@ type ExistingPush = {
  * it, and completing that shipment is what moves the stock. Nothing here moves stock, raises a
  * receivable or posts a journal.
  *
- * Every check runs before the first write, and every refusal throws. A short line fails the whole
- * push with `InsufficientStockError`, leaving no order behind. The idempotency key is the caller's
+ * Every input check runs before the first write, and every refusal throws. A short line fails the
+ * whole push with `InsufficientStockError`, and a store whose credit exposure is over its limit
+ * fails it with `CreditLimitExceededError` unless an override reason is given — either way leaving
+ * no order behind. Both of those checks run inside the shared approve core, after the order row is
+ * written, so it is the transaction's rollback that removes the order. The idempotency key is the caller's
  * to keep stable across retries of one submission; a replay must carry the same salesman and lines and
  * returns the order it created, while a changed one is refused with `REPLAY_MISMATCH`. Two
  * concurrent submissions of one key both return the order the first one committed: the loser's
@@ -152,7 +157,11 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
         select: { id: true },
       });
 
-      await approveKonsiOrderInTx(tx, { orderId: order.id, approvedById: input.pushedById });
+      await approveKonsiOrderInTx(tx, {
+        orderId: order.id,
+        approvedById: input.pushedById,
+        creditOverrideReason: input.creditOverrideReason,
+      });
 
       return { orderId: order.id, orderNo };
     });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { approveFieldSalesOrder, createFieldSalesOrder } from "./writer";
-import { InsufficientStockError, InvalidOrderTransitionError } from "./errors";
+import { CreditLimitExceededError, InsufficientStockError, InvalidOrderTransitionError } from "./errors";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -30,6 +30,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
   let priorOrderId = "";
   let gapVariantOrderId = "";
   let variantPriorOrderId = "";
+  let exposureOrderId = "";
   const assortmentLineIds: string[] = [];
 
   beforeEach(async () => {
@@ -49,6 +50,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     priorOrderId = "";
     gapVariantOrderId = "";
     variantPriorOrderId = "";
+    exposureOrderId = "";
     assortmentLineIds.length = 0;
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-KAL-${token}`, nameId: "pcs", nameEn: "pcs" } });
@@ -164,6 +166,7 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
       seededId(priorOrderId),
       seededId(gapVariantOrderId),
       seededId(variantPriorOrderId),
+      seededId(exposureOrderId),
     ];
     await prisma.storeAssortmentLine.deleteMany({ where: { id: { in: assortmentLineIds.map(seededId) } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: allItemIds() } } });
@@ -246,6 +249,27 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     ).rejects.toBeInstanceOf(InsufficientStockError);
     const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
     expect(lines).toHaveLength(1);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { status: true } });
+    expect(order.status).toBe("PENDING_APPROVAL");
+  });
+
+  it("a credit-limit refusal leaves no added line, reservation or price behind", async () => {
+    /* An approved putus order with nothing delivered puts its whole total on the store's exposure. */
+    const exposureOrder = await prisma.fieldSalesOrder.create({
+      data: { orderNo: `TEST-KAL-EXP-${token}`, orderType: "PUTUS", storeId, salesmanId: userId, status: "APPROVED", subtotal: 500000, total: 500000 },
+    });
+    exposureOrderId = exposureOrder.id;
+    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: 100000 } });
+
+    await expect(
+      approveFieldSalesOrder({ orderId, approvedById: userId, addedLines: [{ itemId: neverSentItemId, variantSku: "", qty: 3 }] }),
+    ).rejects.toBeInstanceOf(CreditLimitExceededError);
+
+    const lines = await prisma.fieldSalesOrderLine.findMany({ where: { orderId: seededId(orderId) } });
+    expect(lines).toHaveLength(1);
+    expect(Number(lines[0].unitPrice)).toBe(0);
+    expect(await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: lines[0].id } })).toBeNull();
+    expect(await prisma.stockReservation.count({ where: { itemId: seededId(neverSentItemId) } })).toBe(0);
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, select: { status: true } });
     expect(order.status).toBe("PENDING_APPROVAL");
   });

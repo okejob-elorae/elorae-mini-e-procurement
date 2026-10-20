@@ -315,6 +315,7 @@ d("getStoreStockCard", () => {
     await prisma.konsiTransfer.deleteMany({ where: { id: seededId(transferId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
+    await prisma.storeStocktake.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStock.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.vanStock.deleteMany({ where: { itemId: seededId(itemAId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemAId) } });
@@ -332,6 +333,49 @@ d("getStoreStockCard", () => {
     expect(card.rows[1].itemId).toBe(itemAId);
     expect(card.rows[1].qty).toBe(6);
     expect(card.negativeCount).toBe(1);
+    expect(card.lastPartialCount).toBeNull();
+    expect(card.rows.every((r) => !r.uncountedInLastCount)).toBe(true);
+  });
+
+  it("flags the rows the latest approved PARTIAL count left uncounted, and clears them after a full count", async () => {
+    const partial = await prisma.storeStocktake.create({
+      data: {
+        docNo: `STK/TEST-SSC/${token}/partial`,
+        storeId,
+        status: "APPROVED",
+        isFullCount: false,
+        countedAt: new Date("2026-10-01T03:00:00Z"),
+        approvedAt: new Date("2026-10-01T05:00:00Z"),
+        createdById: userId,
+        lines: {
+          create: [
+            { itemId: itemAId, productName: "A", expectedQty: 6, countedQty: 6 },
+            { itemId: itemBId, productName: "B", expectedQty: -3, countedQty: null },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+
+    const card = await getStoreStockCard(storeId);
+    expect(card.rows.find((r) => r.itemId === itemBId)!.uncountedInLastCount).toBe(true);
+    expect(card.rows.find((r) => r.itemId === itemAId)!.uncountedInLastCount).toBe(false);
+    expect(card.lastPartialCount).toEqual({ id: partial.id, docNo: `STK/TEST-SSC/${token}/partial`, uncountedCount: 1 });
+
+    await prisma.storeStocktake.create({
+      data: {
+        docNo: `STK/TEST-SSC/${token}/full`,
+        storeId,
+        status: "APPROVED",
+        isFullCount: true,
+        countedAt: new Date("2026-10-05T03:00:00Z"),
+        approvedAt: new Date("2026-10-05T05:00:00Z"),
+        createdById: userId,
+      },
+    });
+    const after = await getStoreStockCard(storeId);
+    expect(after.lastPartialCount).toBeNull();
+    expect(after.rows.every((r) => !r.uncountedInLastCount)).toBe(true);
   });
 
   it("joins getStockAcrossLocations onto the right row via itemId::variantSku, not the other item", async () => {

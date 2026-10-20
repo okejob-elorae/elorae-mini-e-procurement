@@ -146,6 +146,7 @@ d("production stock movement (test bed only)", () => {
     await step("fg receipts", () => prisma.fGReceipt.deleteMany({ where: { woId: seededId(woId) } }));
     await step("material issues", () => prisma.materialIssue.deleteMany({ where: { woId: seededId(woId) } }));
     await step("work order", () => prisma.workOrder.deleteMany({ where: { id: seededId(woId) } }));
+    await step("rolls", () => prisma.fabricRoll.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } }));
     await step("ledger", () => prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } }));
     await step("inventory", () => prisma.inventoryValue.deleteMany({ where: { itemId: { in: itemIds.map(seededId) } } }));
     await step("fg item", () => prisma.item.deleteMany({ where: { id: seededId(fgItemId) } }));
@@ -198,6 +199,63 @@ d("production stock movement (test bed only)", () => {
       expect(await rawQty(rawEmptyRowId)).toBe(10);
       expect(await prisma.materialIssue.count({ where: { woId: seededId(woId) } })).toBe(0);
       expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(rawItemId) } })).toBe(0);
+    });
+
+    // Rolls are per material (#437): an issued item draws the rolls named for it, even with no
+    // consumption material on the WO (an accessory bought in rolls).
+    const seedRolls = async () => {
+      for (const [code, len] of [["A", 5], ["B", 8]] as const) {
+        await prisma.fabricRoll.create({
+          data: {
+            grnId: `TEST-GRN-${token}`,
+            itemId: rawItemId,
+            rollCode: `ROLL-PS-${token}-${code}`,
+            rollRef: code,
+            initialLength: len,
+            remainingLength: len,
+            uomId,
+          },
+        });
+      }
+    };
+    const rollLeft = async (code: string) =>
+      Number((await prisma.fabricRoll.findUniqueOrThrow({ where: { rollCode: `ROLL-PS-${token}-${code}` } })).remainingLength);
+
+    it("deducts an issued item's own rolls in the order given", async () => {
+      await seedRolls();
+      await issueMaterials(
+        {
+          woId,
+          items: [{ itemId: rawItemId, qty: 7, uomId }],
+          issueType: "ACCESSORIES",
+          isPartial: false,
+          rollBreakdown: [
+            { itemId: rawItemId, rollRef: `ROLL-PS-${token}-A`, qty: 5 },
+            { itemId: rawItemId, rollRef: `ROLL-PS-${token}-B`, qty: 8 },
+          ],
+        },
+        userId,
+      );
+      expect(await rollLeft("A")).toBe(0);
+      expect(await rollLeft("B")).toBe(6);
+    });
+
+    it("refuses rolls that do not cover their item's issued qty and writes nothing", async () => {
+      await seedRolls();
+      await expect(
+        issueMaterials(
+          {
+            woId,
+            items: [{ itemId: rawItemId, qty: 7, uomId }],
+            issueType: "ACCESSORIES",
+            isPartial: false,
+            rollBreakdown: [{ itemId: rawItemId, rollRef: `ROLL-PS-${token}-A`, qty: 5 }],
+          },
+          userId,
+        ),
+      ).rejects.toThrow(/less than issued qty/);
+      expect(await rollLeft("A")).toBe(5);
+      expect(await rawQty(rawEmptyRowId)).toBe(10);
     });
 
     it("refuses a work order that is already completed and writes nothing", async () => {

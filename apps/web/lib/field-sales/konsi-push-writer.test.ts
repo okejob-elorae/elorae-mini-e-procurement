@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createKonsiPushOrder } from "./konsi-push-writer";
+import { CreditLimitExceededError } from "./errors";
+import { createSellThrough } from "@/lib/konsi-sell-through/writer";
 import { createSellThroughFixtures } from "@/lib/konsi-sell-through/test-fixtures";
 import {
   createDeliveryShipment,
@@ -231,6 +233,91 @@ d("createKonsiPushOrder (test bed only)", () => {
     await push({ lines: [{ itemId: state.itemId, variantSku: "", qty: 1 }] });
     await expect(push({ lines: [{ itemId: state.itemId, variantSku: "", qty: 1 }] })).resolves.toMatchObject({ orderNo: expect.any(String) });
   }, SLOW);
+
+  describe("credit gate", () => {
+    /**
+     * Credit exposure without the cost of a delivery: an APPROVED putus order with nothing
+     * delivered counts its whole total as undelivered residual. No lines, so it reserves nothing;
+     * tracking its id lets the fixture teardown remove it.
+     */
+    const seedExposure = async (total: number) => {
+      const order = await prisma.fieldSalesOrder.create({
+        data: {
+          orderNo: `TEST-KSTW-EXP-${state.run}`,
+          orderType: "PUTUS",
+          storeId: state.storeId,
+          salesmanId: state.userId,
+          status: "APPROVED",
+          subtotal: total,
+          total,
+        },
+      });
+      state.orderIds.push(order.id);
+    };
+
+    it("refuses a push to a store whose sell-through invoice puts it over its limit, leaving no order or reservation", async () => {
+      await fx.setMethod("SHELF_COUNT");
+      await fx.transferIn(6);
+      const stocktakeId = await fx.count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+      const report = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      await fx.approve(report.id);
+      await prisma.store.update({ where: { id: state.storeId }, data: { creditLimit: 100000 } });
+
+      const ordersBefore = await prisma.fieldSalesOrder.count({ where: { storeId: seededId(state.storeId) } });
+      const reservedBefore = Number((await inventory()).reservedQty);
+      const refused = push();
+      await expect(refused).rejects.toBeInstanceOf(CreditLimitExceededError);
+      /* The 4 units billed at 40000 are the whole exposure; the push's own value is never added. */
+      await expect(refused).rejects.toMatchObject({
+        creditLimit: 100000,
+        orderTotal: 0,
+        exposure: { receivableOutstanding: 160000, total: 160000 },
+      });
+      expect(await prisma.fieldSalesOrder.count({ where: { storeId: seededId(state.storeId) } })).toBe(ordersBefore);
+      expect(Number((await inventory()).reservedQty)).toBe(reservedBefore);
+    }, SLOW);
+
+    it("pushes over the limit with an override reason, stamping the order and writing the audit row", async () => {
+      await seedExposure(500000);
+      await prisma.store.update({ where: { id: state.storeId }, data: { creditLimit: 100000 } });
+
+      const { orderId } = await push({ creditOverrideReason: "Owner approved the restock" });
+
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) } });
+      expect(order).toMatchObject({
+        status: "APPROVED",
+        creditOverrideReason: "Owner approved the restock",
+        creditOverrideById: state.userId,
+      });
+      expect(Number(order.creditExposureAtApprove)).toBe(500000);
+      expect(Number(order.creditLimitAtApprove)).toBe(100000);
+      expect(await prisma.auditLog.count({ where: { action: "CREDIT_LIMIT_OVERRIDE", entityId: seededId(orderId) } })).toBe(1);
+    }, SLOW);
+
+    it("does not gate a store with no credit limit", async () => {
+      await seedExposure(500000);
+      const { orderId } = await push();
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) } });
+      expect(order.status).toBe("APPROVED");
+      expect(order.creditExposureAtApprove).toBeNull();
+    }, SLOW);
+
+    it("answers a replay of a push that already went through, after the store goes over its limit", async () => {
+      const key = crypto.randomUUID();
+      const first = await push({ idempotencyKey: key });
+      await seedExposure(500000);
+      await prisma.store.update({ where: { id: state.storeId }, data: { creditLimit: 100000 } });
+
+      const again = await createKonsiPushOrder({
+        storeId: state.storeId,
+        salesmanId: state.salesmanId,
+        pushedById: state.userId,
+        lines: [{ itemId: state.itemId, variantSku: "", qty: 3 }],
+        idempotencyKey: key,
+      });
+      expect(again).toEqual(first);
+    }, SLOW);
+  });
 
   it("a pushed order ships and completes like any konsi order, landing the stock at the store", async () => {
     const { orderId } = await push({ lines: [{ itemId: state.itemId, variantSku: "", qty: 4 }] });

@@ -29,12 +29,17 @@ type PantoneThemePickerDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (selection: PantoneThemeSelection) => void;
+  /** Swatch source; defaults to the theme list, which needs the settings permission. */
+  load?: (search: string, page: number) => Promise<{ colors: PantoneThemeSwatch[]; totalPages: number }>;
+  description?: string;
 };
 
 export function PantoneThemePickerDialog({
   open,
   onOpenChange,
   onSelect,
+  load = listPantoneColorsForTheme,
+  description,
 }: PantoneThemePickerDialogProps) {
   const t = useTranslations('settings.theme');
   const [search, setSearch] = useState('');
@@ -52,7 +57,7 @@ export function PantoneThemePickerDialog({
   const loadColors = useCallback(async (searchTerm: string, pageNum: number) => {
     setLoading(true);
     try {
-      const result = await listPantoneColorsForTheme(searchTerm, pageNum);
+      const result = await load(searchTerm, pageNum);
       setColors(
         result.colors.map((c: PantoneThemeSwatch) => ({
           tcx: c.tcx,
@@ -69,7 +74,7 @@ export function PantoneThemePickerDialog({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     if (!open) return;
@@ -92,7 +97,7 @@ export function PantoneThemePickerDialog({
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col gap-4">
         <DialogHeader>
           <DialogTitle>{t('pickerTitle')}</DialogTitle>
-          <DialogDescription>{t('pickerDescription')}</DialogDescription>
+          <DialogDescription>{description ?? t('pickerDescription')}</DialogDescription>
         </DialogHeader>
 
         <div className="relative">

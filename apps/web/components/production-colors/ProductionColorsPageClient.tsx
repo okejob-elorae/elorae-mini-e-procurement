@@ -6,6 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ColorsBrowseClient } from "@/components/production-colors/ColorsBrowseClient";
 import { BookBrowseClient } from "@/components/production-colors/BookBrowseClient";
 import { PhotoAnalyzerWorkspace } from "@/components/production-colors/PhotoAnalyzerWorkspace";
+import {
+  VariantColorsClient,
+  type VariantColorsProps,
+} from "@/components/production-colors/VariantColorsClient";
 import type {
   ColorFiltersState,
   FilterFacetCounts,
@@ -16,23 +20,25 @@ import type {
   BookSectionMeta,
 } from "@/lib/production-colors/book-queries";
 
-export type ProductionColorsTab = "all" | "book" | "favorites" | "photo-analyzer";
+export type ProductionColorsTab = "all" | "book" | "favorites" | "photo-analyzer" | "product";
 
 const TAB_KEYS: ProductionColorsTab[] = [
   "all",
   "book",
   "favorites",
   "photo-analyzer",
+  "product",
 ];
 
 const TITLE_KEYS: Record<
   ProductionColorsTab,
-  "titleAll" | "titleBook" | "titleFavorites" | "titlePhotoAnalyzer"
+  "titleAll" | "titleBook" | "titleFavorites" | "titlePhotoAnalyzer" | "titleProduct"
 > = {
   all: "titleAll",
   book: "titleBook",
   favorites: "titleFavorites",
   "photo-analyzer": "titlePhotoAnalyzer",
+  product: "titleProduct",
 };
 
 const BROWSE_PARAM_KEYS = [
@@ -69,12 +75,14 @@ type ProductionColorsPageClientProps = {
   tab: ProductionColorsTab;
   browseProps: BrowseProps | null;
   bookProps: BookProps | null;
+  productProps?: VariantColorsProps | null;
 };
 
 export function ProductionColorsPageClient({
   tab,
   browseProps,
   bookProps,
+  productProps,
 }: ProductionColorsPageClientProps) {
   const t = useTranslations("productionColors");
   const tt = useTranslations("productionColors.tabs");
@@ -88,7 +96,7 @@ export function ProductionColorsPageClient({
     } else {
       params.set("tab", value);
     }
-    if (value === "photo-analyzer") {
+    if (value === "photo-analyzer" || value === "product") {
       for (const key of BROWSE_PARAM_KEYS) {
         params.delete(key);
       }
@@ -126,6 +134,8 @@ export function ProductionColorsPageClient({
               {tt(
                 key === "photo-analyzer"
                   ? "photoAnalyzer"
+                  : key === "product"
+                    ? "product"
                   : key === "book"
                     ? "book"
                     : key
@@ -146,6 +156,10 @@ export function ProductionColorsPageClient({
           {browseProps?.tab === "favorites" && (
             <ColorsBrowseClient {...browseProps} />
           )}
+        </TabsContent>
+
+        <TabsContent value="product" className="mt-6">
+          {productProps && <VariantColorsClient {...productProps} />}
         </TabsContent>
 
         <TabsContent value="photo-analyzer" className="mt-6">

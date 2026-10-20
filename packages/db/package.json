@@ -44,6 +44,10 @@
     "./sales-order-fulfillment-writer": {
       "types": "./dist/src/sales-order-fulfillment-writer.d.ts",
       "default": "./dist/src/sales-order-fulfillment-writer.js"
+    },
+    "./variant-axes": {
+      "types": "./dist/src/variant-axes.d.ts",
+      "default": "./dist/src/variant-axes.js"
     }
   },
   "scripts": {

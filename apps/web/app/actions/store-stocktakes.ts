@@ -12,6 +12,7 @@ import {
   cancelStoreStocktake,
 } from "@/lib/stores/stocktake/writer";
 import { StoreStocktakeError, type StoreStocktakeErrorCode } from "@/lib/stores/stocktake/errors";
+import { searchStocktakeItems, type StocktakeItemOption } from "@/lib/stores/stocktake/item-search";
 import { autoCreateSellThroughAfterCount, type AutoReportOutcome } from "@/lib/konsi-count-schedule/auto-report";
 
 export type StoreStocktakeActionResult =
@@ -125,12 +126,10 @@ function toResult(e: unknown): StoreStocktakeActionResult {
   return { ok: false, code: "ERROR" };
 }
 
-function isValidCreateInput(input: unknown): input is { storeId: string; countedAt: string } {
+function isValidCreateInput(input: unknown): input is { storeId: string } {
   if (typeof input !== "object" || input === null) return false;
   const i = input as Record<string, unknown>;
-  if (typeof i.storeId !== "string" || i.storeId === "") return false;
-  if (typeof i.countedAt !== "string" || i.countedAt === "") return false;
-  return Number.isFinite(new Date(i.countedAt).getTime());
+  return typeof i.storeId === "string" && i.storeId !== "";
 }
 
 function isValidCountsLine(l: unknown): l is SaveCountsLineInput {
@@ -227,8 +226,12 @@ async function requireSpgActiveStore(
  * `auth()`, the permission check and the writer call all sit inside the one try/catch below —
  * a throwing `auth()` (a corrupted session cookie, a DB hiccup during the session lookup) must
  * come back as a typed `ERROR`, never escape as an opaque production digest.
+ *
+ * `countedAt` is stamped here, never taken from the request: it is the register's "Count Date",
+ * the upper edge of the sold-in-window figure and the next count's `periodFrom`, so a caller's
+ * clock must not set it.
  */
-export async function createAction(input: { storeId: string; countedAt: string }): Promise<StoreStocktakeActionResult> {
+export async function createAction(input: { storeId: string }): Promise<StoreStocktakeActionResult> {
   try {
     const session = await auth();
     const permissions = session?.user?.permissions ?? [];
@@ -239,7 +242,7 @@ export async function createAction(input: { storeId: string; countedAt: string }
     const created = await createStoreStocktake({
       storeId: input.storeId,
       createdById: session.user.id,
-      countedAt: new Date(input.countedAt),
+      countedAt: new Date(),
     });
     revalidatePath("/backoffice/store-stocktakes");
     revalidatePath(`/backoffice/store-stocktakes/${created.id}`);
@@ -489,4 +492,22 @@ export async function cancelAction(input: { stocktakeId: string; reason: string 
   revalidatePath(`/backoffice/store-stocktakes/${stocktakeId}`);
   revalidatePath(`/backoffice/stores/${storeIdForRevalidate}`);
   return { ok: true, id: stocktakeId };
+}
+
+/**
+ * Search for the stocktake add-item pickers (backoffice count screen and SPG sheet). Any signed-in
+ * user, the same gate `getItems` used before: it reads only item names and SKUs, and both screens
+ * already sit behind their own permission checks. Never throws; a failure comes back as `ok: false`.
+ */
+export async function searchStocktakeItemsAction(
+  q: string,
+): Promise<{ ok: true; options: StocktakeItemOption[]; truncated: boolean } | { ok: false }> {
+  try {
+    const session = await auth();
+    if (!session?.user?.id || typeof q !== "string") return { ok: false };
+    const result = await searchStocktakeItems(q.slice(0, 100));
+    return { ok: true, ...result };
+  } catch {
+    return { ok: false };
+  }
 }

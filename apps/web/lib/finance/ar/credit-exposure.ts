@@ -16,9 +16,14 @@ export type CreditExposure = {
  * committed exposure invisible to the receivable ledger without the residual term — see
  * docs/superpowers/specs/2026-08-27-credit-limit-enforcement-design.md § 2.
  *
- * Takes a transaction client so both call sites (create, approve) run this inside their own
- * serializable transaction against a consistent snapshot, rather than racing the writes they
- * are gating through the un-transacted `prisma` singleton.
+ * Takes a transaction client so the gating callers run this inside their own serializable
+ * transaction against a consistent snapshot, rather than racing the writes they are gating
+ * through the un-transacted `prisma` singleton: `createFieldSalesOrder`'s advisory create-time
+ * flag, and `enforceApproveCreditLimit` (`lib/field-sales/writer.ts`), called by the putus
+ * approve tail and by `approveKonsiOrderInTx`, the konsi approve core both
+ * `approveFieldSalesOrder` and the admin push (`createKonsiPushOrder`) go through. The display
+ * previews pass the plain `prisma` client instead and gate nothing: the field-sales order detail
+ * page, the konsi push page and the store detail page.
  */
 export async function computeStoreCreditExposure(
   client: Prisma.TransactionClient,

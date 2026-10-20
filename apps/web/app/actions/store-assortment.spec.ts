@@ -16,7 +16,9 @@ const {
   mockLineCreate,
   mockLineUpdateMany,
   mockLineDeleteMany,
+  mockAddToOpenDraft,
 } = vi.hoisted(() => ({
+  mockAddToOpenDraft: vi.fn(),
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
   mockRevalidatePath: vi.fn(),
@@ -33,6 +35,7 @@ vi.mock("@/lib/rbac", async (importActual) => {
   return { ...actual, hasPermission: mockHasPermission };
 });
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
+vi.mock("@/lib/stores/stocktake/assortment-sync", () => ({ addAssortmentSkuToOpenDraft: mockAddToOpenDraft }));
 vi.mock("@elorae/db", () => ({
   prisma: {
     item: { findUnique: mockItemFindUnique },
@@ -75,6 +78,8 @@ describe("store assortment actions (unit — prisma mocked)", () => {
     mockLineCreate.mockResolvedValue({ id: "line-1" });
     mockLineUpdateMany.mockResolvedValue({ count: 1 });
     mockLineDeleteMany.mockResolvedValue({ count: 1 });
+    mockAddToOpenDraft.mockReset();
+    mockAddToOpenDraft.mockResolvedValue(false);
   });
 
   describe("addAssortmentLineAction", () => {
@@ -86,6 +91,22 @@ describe("store assortment actions (unit — prisma mocked)", () => {
         select: { id: true },
       });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/stores/s1");
+      expect(mockAddToOpenDraft).toHaveBeenCalledWith({ storeId: "s1", itemId: "item-1", variantSku: "" });
+    });
+
+    it("still succeeds when adding the SKU to an open stocktake throws, since the line is already saved", async () => {
+      mockAddToOpenDraft.mockRejectedValue(new Error("lock wait"));
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const res = await addAssortmentLineAction({ storeId: "s1", itemId: "item-1", variantSku: "", targetQty: 5 });
+      expect(res).toEqual({ ok: true, id: "line-1" });
+      expect(errSpy).toHaveBeenCalled();
+      errSpy.mockRestore();
+    });
+
+    it("does not touch an open stocktake when the line is refused", async () => {
+      mockLineFindUnique.mockResolvedValue({ id: "existing-line" });
+      await addAssortmentLineAction({ storeId: "s1", itemId: "item-1", variantSku: "", targetQty: 5 });
+      expect(mockAddToOpenDraft).not.toHaveBeenCalled();
     });
 
     it("accepts and stores targetQty: null since it is a meaningful value, not an absent one", async () => {

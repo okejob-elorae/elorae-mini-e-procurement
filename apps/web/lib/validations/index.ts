@@ -42,6 +42,7 @@ export function createItemSchema(t: ValidationTranslate = defaultT) {
     sellingPrice: z.number().min(0).optional(),
     targetMarginPercent: z.number().min(0).optional(),
     additionalCost: z.number().min(0).optional(),
+    pantoneTcx: z.string().nullable().optional(),
   });
 }
 
@@ -52,6 +53,9 @@ export const consumptionRuleSchema = z.object({
   qtyRequired: z.number().positive(),
   wastePercent: z.number().min(0).max(100).default(0),
   notes: z.string().optional(),
+  /** Variant scope (#437): null = every colour / every size. */
+  colorId: z.string().nullable().optional(),
+  size: z.string().nullable().optional(),
 });
 
 export function createPoItemSchema(t: ValidationTranslate = defaultT) {

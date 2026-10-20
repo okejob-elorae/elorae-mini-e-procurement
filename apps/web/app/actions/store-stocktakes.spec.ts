@@ -100,9 +100,9 @@ describe("store stocktake actions (unit — writers mocked)", () => {
      */
     it("succeeds at a store with NO SPG assigned — the primary path", async () => {
       mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "stores:manage");
-      const res = await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "s1" });
       expect(res.ok).toBe(true);
-      expect(mockCreate).toHaveBeenCalledWith({ storeId: "s1", createdById: "user-1", countedAt: new Date("2026-08-25") });
+      expect(mockCreate).toHaveBeenCalledWith({ storeId: "s1", createdById: "user-1", countedAt: expect.any(Date) });
     });
 
     /*
@@ -111,57 +111,60 @@ describe("store stocktake actions (unit — writers mocked)", () => {
      */
     it("pins the permission it checks", async () => {
       mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "stores:manage");
-      await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      await createAction({ storeId: "s1" });
       expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "stores:manage");
     });
 
     it("returns FORBIDDEN without stores:manage and never calls the writer", async () => {
       mockHasPermission.mockReturnValue(false);
-      const res = await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "s1" });
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
     it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
       mockAuth.mockResolvedValue({ user: null });
-      const res = await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "s1" });
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
     it("returns INVALID_REQUEST for a missing storeId without calling the writer", async () => {
-      const res = await createAction({ storeId: "", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "" });
       expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
-    it("returns INVALID_REQUEST for an unparseable countedAt without calling the writer", async () => {
-      const res = await createAction({ storeId: "s1", countedAt: "not-a-date" });
-      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
-      expect(mockCreate).not.toHaveBeenCalled();
+    it("stamps countedAt with the server's clock and ignores one a caller sends", async () => {
+      const before = Date.now();
+      const res = await createAction({ storeId: "s1", countedAt: "2020-01-01" } as never);
+      expect(res.ok).toBe(true);
+      const sent = mockCreate.mock.calls[0][0].countedAt as Date;
+      expect(sent.getTime()).toBeGreaterThanOrEqual(before);
+      expect(sent.getTime()).toBeLessThanOrEqual(Date.now());
     });
 
     it("refuses a second stocktake while one is open, naming the open one", async () => {
       mockCreate.mockRejectedValue(new StoreStocktakeError("ALREADY_OPEN"));
-      const res = await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "s1" });
       expect(res).toEqual({ ok: false, code: "ALREADY_OPEN" });
     });
 
     it("returns ERROR rather than throwing when auth() rejects", async () => {
       mockAuth.mockRejectedValue(new Error("boom"));
-      const res = await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "s1" });
       expect(res).toEqual({ ok: false, code: "ERROR" });
       expect(mockCreate).not.toHaveBeenCalled();
     });
 
     it("maps an unknown throw from the writer onto ERROR rather than leaking it", async () => {
       mockCreate.mockRejectedValue(new Error("db exploded"));
-      const res = await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "s1" });
       expect(res).toEqual({ ok: false, code: "ERROR" });
     });
 
     it("revalidates the list, the new document's detail route, and the store detail route on success", async () => {
-      const res = await createAction({ storeId: "s1", countedAt: "2026-08-25" });
+      const res = await createAction({ storeId: "s1" });
       expect(res).toEqual({ ok: true, id: "st-1" });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes/st-1");

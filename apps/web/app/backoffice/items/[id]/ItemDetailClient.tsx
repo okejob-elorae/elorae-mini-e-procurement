@@ -107,6 +107,8 @@ export function ItemDetailClient({
       qtyRequired: number;
       wastePercent: number;
       notes?: string;
+      colorId?: string | null;
+      size?: string | null;
     }>
   ) => {
     if (!initialData?.id) return;

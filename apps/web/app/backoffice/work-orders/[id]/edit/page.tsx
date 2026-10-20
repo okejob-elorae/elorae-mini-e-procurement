@@ -41,15 +41,15 @@ import {
   updateWorkOrder,
   getMaterialPlan,
   computePlannedQtyFromConsumption,
-  suggestFabricRollAllocation,
-  getAvailableFabricRolls
 } from '@/app/actions/production';
+import { MaterialRollAllocation, type MaterialRollEntry } from '@/components/work-orders/MaterialRollAllocation';
+import { entryMatchesNeed, rollNeedsFromPlan, rollShortfalls, withRollItemIds, type RollEntry, withRollColors } from '@/lib/production/roll-allocation';
 import { previewChainDays } from '@/app/actions/lead-time';
 import { EtaSuggestionHint } from '@/components/lead-time/eta-suggestion-hint';
 import { getItemsByType, getConsumptionRules, getItemById } from '@/app/actions/items';
 import { getPOs, getPOById } from '@/app/actions/purchase-orders';
 import { getFinishedGoodVariantStock } from "@/app/actions/work-order-variant-stock";
-import { VariantRatioRows } from "@/components/work-orders/VariantRatioRows";
+import { ColorSizeRatio } from "@/components/work-orders/ColorSizeRatio";
 import { ItemType } from '@/lib/constants/enums';
 
 interface TailorSupplier {
@@ -84,6 +84,9 @@ interface ConsumptionResult {
 interface MaterialPlanRow {
   itemId: string;
   itemName: string;
+  itemType?: string;
+  /** Split by finished-good colour when the WO has a variant ratio (#410). */
+  byColor?: Array<{ colorId: string | null; colorName: string | null; plannedQty: number }>;
   uomCode: string;
   qtyRequired: number;
   wastePercent: number;
@@ -123,7 +126,6 @@ export default function EditWorkOrderPage() {
   const [isLoadingFG, setIsLoadingFG] = useState(true);
   const [isLoadingPlan, setIsLoadingPlan] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuggestingRolls, setIsSuggestingRolls] = useState(false);
 
   const [vendorId, setVendorId] = useState('');
   const [finishedGoodId, setFinishedGoodId] = useState('');
@@ -145,9 +147,7 @@ export default function EditWorkOrderPage() {
     supplierCode: string;
   } | null>(null);
   const [notes, setNotes] = useState('');
-  const [rollBreakdown, setRollBreakdown] = useState<Array<{ rollRef: string; qty: number; notes?: string }>>([]);
-  const [availableRolls, setAvailableRolls] = useState<Array<{ rollId: string; rollCode: string; rollRef: string; remainingLength: number }>>([]);
-  const [addRollValue, setAddRollValue] = useState('');
+  const [rollBreakdown, setRollBreakdown] = useState<MaterialRollEntry[]>([]);
   const [poId, setPoId] = useState('');
   const [purchaseOrders, setPurchaseOrders] = useState<Array<{ id: string; docNumber: string }>>([]);
   const [isLoadingPOs, setIsLoadingPOs] = useState(true);
@@ -161,6 +161,20 @@ export default function EditWorkOrderPage() {
   const [steps, setSteps] = useState<WorkOrderStepForm[]>([]);
 
   const plannedNum = consumptionResult?.plannedQty ?? 0;
+
+  // The material plan follows the variant ratio: colour/size-scoped BOM rules only count the
+  // pieces of the variants they cover (#437). Passed as a JSON key so effects re-run on change.
+  const planSkuKey = JSON.stringify(
+    outputMode !== 'SKU'
+      ? null
+      : finishedGoodVariants.length > 1
+        ? variantRatios.length > 0 && Math.abs(variantRatios.reduce((s, x) => s + x.ratioPercent, 0) - 100) < 0.01
+          ? variantRatios
+          : null
+        : selectedVariantSku
+          ? { variantSku: selectedVariantSku }
+          : null
+  );
 
   useEffect(() => {
     if (!id) return;
@@ -235,12 +249,15 @@ export default function EditWorkOrderPage() {
     setTargetDate(w.targetDate ? formatDateOnly(new Date(w.targetDate)) : '');
     setNotes(w.notes ?? '');
     setPoId(w.poId ?? '');
-    const rolls = Array.isArray(w.rollBreakdown) ? w.rollBreakdown : [];
-    setRollBreakdown(rolls.map((r: { rollRef?: string; qty?: number; notes?: string }) => ({
+    const rolls = Array.isArray(w.rollBreakdown) ? (w.rollBreakdown as Array<Partial<RollEntry>>) : [];
+    // Rolls saved before they were per material belong to the WO's consumption material (#437).
+    setRollBreakdown(withRollItemIds(rolls.map((r) => ({
+      itemId: r.itemId,
+      colorId: r.colorId,
       rollRef: r.rollRef ?? '',
       qty: typeof r.qty === 'number' ? r.qty : 0,
       notes: r.notes,
-    })));
+    })), w.consumptionMaterialId ?? null));
 
     const stepList = Array.isArray(w.steps) ? w.steps : [];
     setSteps(stepList.map((s: { sequence: number; supplierId: string; stepName?: string; servicePrice?: number; servicePpnIncluded?: boolean; qty?: number; notes?: string }) => ({
@@ -267,11 +284,14 @@ export default function EditWorkOrderPage() {
     getConsumptionRules(finishedGoodId)
       .then((rules) => {
         setConsumptionRules(
-          rules.map((r: { materialId: string; material: { nameId: string; uom: { code: string } } }) => ({
-            materialId: r.materialId,
-            materialName: r.material.nameId,
-            uomCode: r.material.uom.code,
-          }))
+          rules
+            // One option per material: a colour/size-scoped BOM may hold several rules for one (#437).
+            .filter((r: { materialId: string }, i: number, all: Array<{ materialId: string }>) => all.findIndex((x) => x.materialId === r.materialId) === i)
+            .map((r: { materialId: string; material: { nameId: string; uom: { code: string } } }) => ({
+              materialId: r.materialId,
+              materialName: r.material.nameId,
+              uomCode: r.material.uom.code,
+            }))
         );
         setConsumptionMaterialId('');
         setConsumptionInput('');
@@ -299,7 +319,7 @@ export default function EditWorkOrderPage() {
     setConsumptionInput(val);
     setConsumptionInputDebounced(val);
     setIsComputingConsumption(true);
-    computePlannedQtyFromConsumption(w.finishedGoodId, cMid, Number(expConsumption))
+    computePlannedQtyFromConsumption(w.finishedGoodId, cMid, Number(expConsumption), w.skuBreakdown ?? undefined)
       .then(setConsumptionResult)
       .catch(() => setConsumptionResult(null))
       .finally(() => setIsComputingConsumption(false));
@@ -330,15 +350,13 @@ export default function EditWorkOrderPage() {
           } else if (sku && typeof sku === 'object' && 'variantSku' in sku && sku.variantSku) {
             setSelectedVariantSku(sku.variantSku);
             setSelectedVariantAttributes((sku as { attributes?: Record<string, string> }).attributes ?? null);
-            setVariantRatios([]);
+            // One variant of a multi-variant item is that variant at 100% in the colour-first ratio (#410).
+            setVariantRatios(variants.length > 1 ? [{ variantSku: sku.variantSku, ratioPercent: 100 }] : []);
           } else {
             setVariantRatios([]);
           }
-        } else if (variants.length > 1) {
-          const equal = Math.floor(100 / variants.length);
-          const remainder = 100 - equal * variants.length;
-          setVariantRatios(variants.map((v, i) => ({ variantSku: v.sku ?? `variant-${i}`, ratioPercent: i === 0 ? equal + remainder : equal })));
         } else {
+          // Colours are picked first, then their sizes (#410): ColorSizeRatio fills the ratio rows.
           setVariantRatios([]);
         }
       })
@@ -393,7 +411,7 @@ export default function EditWorkOrderPage() {
     }
     let cancelled = false;
     setIsComputingConsumption(true);
-    computePlannedQtyFromConsumption(finishedGoodId, consumptionMaterialId, amount)
+    computePlannedQtyFromConsumption(finishedGoodId, consumptionMaterialId, amount, JSON.parse(planSkuKey) ?? undefined)
       .then((res) => {
         if (!cancelled) setConsumptionResult(res);
       })
@@ -404,7 +422,7 @@ export default function EditWorkOrderPage() {
         if (!cancelled) setIsComputingConsumption(false);
       });
     return () => { cancelled = true; };
-  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, t]);
+  }, [finishedGoodId, consumptionMaterialId, consumptionInputDebounced, planSkuKey, t]);
 
   useEffect(() => {
     if (!finishedGoodId || plannedNum <= 0) {
@@ -413,9 +431,11 @@ export default function EditWorkOrderPage() {
     }
     let cancelled = false;
     setIsLoadingPlan(true);
-    getMaterialPlan(finishedGoodId, plannedNum)
-      .then((plan) => {
-        if (!cancelled) setMaterialPlan(plan);
+    getMaterialPlan(finishedGoodId, plannedNum, JSON.parse(planSkuKey) ?? undefined)
+      .then(({ lines, blocked }) => {
+        if (cancelled) return;
+        setMaterialPlan(lines);
+        if (blocked) toast.error(blocked);
       })
       .catch(() => {
         if (!cancelled) setMaterialPlan([]);
@@ -424,7 +444,7 @@ export default function EditWorkOrderPage() {
         if (!cancelled) setIsLoadingPlan(false);
       });
     return () => { cancelled = true; };
-  }, [finishedGoodId, plannedNum, t]);
+  }, [finishedGoodId, plannedNum, planSkuKey, t]);
 
   useEffect(() => {
     if (!vendorId) {
@@ -460,24 +480,19 @@ export default function EditWorkOrderPage() {
     return () => clearTimeout(handle);
   }, [vendorId, plannedNum, tailors, targetTouched, targetDate]);
 
-  useEffect(() => {
-    if (!consumptionMaterialId) {
-      setAvailableRolls([]);
-      return;
-    }
-    getAvailableFabricRolls(consumptionMaterialId)
-      .then(setAvailableRolls)
-      .catch(() => setAvailableRolls([]));
-  }, [consumptionMaterialId]);
-
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
-  const rollSum = rollBreakdown.reduce((s, r) => s + r.qty, 0);
-  const materialPlannedQtyForRolls = consumptionResult?.actualConsumption ?? 0;
-  const rollValid = rollBreakdown.length === 0 || rollSum >= materialPlannedQtyForRolls - 1e-6;
+  // Rolls per material and per finished-good colour of the plan (#437, #410); a section left
+  // without rolls is not checked. Rolls saved before #410 join their material's first colour.
+  const rollNeeds = rollNeedsFromPlan(materialPlan);
+  const planRolls = withRollColors(rollBreakdown, rollNeeds).filter((r) => rollNeeds.some((n) => entryMatchesNeed(r, n)));
+  const rollValid = rollShortfalls(rollNeeds, planRolls).length === 0;
   const variantRatioSum = variantRatios.reduce((s, x) => s + x.ratioPercent, 0);
   const skuVariantValid =
     outputMode !== 'SKU' ||
-    (outputMode === 'SKU' && (variantRatios.length > 1 ? Math.abs(variantRatioSum - 100) < 0.01 : selectedVariantSku.length > 0));
+    (outputMode === 'SKU' &&
+      (finishedGoodVariants.length > 1
+        ? variantRatios.length > 0 && Math.abs(variantRatioSum - 100) < 0.01
+        : selectedVariantSku.length > 0));
   const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
   const canSubmit =
     session?.user?.id &&
@@ -490,50 +505,6 @@ export default function EditWorkOrderPage() {
     skuVariantValid &&
     !noVariantsForSku &&
     !isSubmitting;
-
-  const addRollBySelection = (roll: { rollId: string; rollCode: string; rollRef: string; remainingLength: number }) => {
-    setRollBreakdown((prev) => [...prev, { rollRef: roll.rollCode || roll.rollRef, qty: roll.remainingLength, notes: '' }]);
-  };
-  const updateRollRow = (i: number, field: 'rollRef' | 'qty' | 'notes', value: string | number) => {
-    setRollBreakdown((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], [field]: value };
-      return next;
-    });
-  };
-  const removeRollRow = (i: number) => {
-    setRollBreakdown((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  const handleSuggestRolls = async () => {
-    if (!consumptionMaterialId || !consumptionResult?.actualConsumption) return;
-    setIsSuggestingRolls(true);
-    try {
-      const suggestion = await suggestFabricRollAllocation(
-        consumptionMaterialId,
-        consumptionResult.actualConsumption
-      );
-      if (suggestion.selected.length === 0) {
-        toast.error('No available fabric rolls found');
-        return;
-      }
-      setRollBreakdown(
-        suggestion.selected.map((row) => ({
-          rollRef: row.rollCode ?? row.rollRef,
-          qty: row.qty,
-        }))
-      );
-      if (suggestion.unallocated > 0) {
-        toast.error(`Insufficient roll stock, unallocated: ${suggestion.unallocated.toFixed(2)}`);
-      } else {
-        toast.success('Best-fit roll suggestion applied');
-      }
-    } catch {
-      toast.error('Failed to suggest roll allocation');
-    } finally {
-      setIsSuggestingRolls(false);
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -552,10 +523,10 @@ export default function EditWorkOrderPage() {
           targetDate: parseDateOnly(targetDate),
           poId: poId.trim() || undefined,
           notes: notes.trim() || undefined,
-          rollBreakdown: rollBreakdown.length > 0 ? rollBreakdown : undefined,
+          rollBreakdown: planRolls.length > 0 ? planRolls : undefined,
           skuBreakdown:
             outputMode === 'SKU'
-              ? variantRatios.length > 1
+              ? finishedGoodVariants.length > 1
                 ? variantRatios
                 : selectedVariantSku
                   ? { variantSku: selectedVariantSku, attributes: selectedVariantAttributes ?? undefined }
@@ -665,11 +636,10 @@ export default function EditWorkOrderPage() {
                 </Select>
               </div>
               {outputMode === 'SKU' && finishedGoodVariants.length > 1 && (
-                <VariantRatioRows
+                <ColorSizeRatio
+                  finishedGoodId={finishedGoodId}
                   rows={variantRatios}
-                  onChange={(variantSku, ratioPercent) => {
-                    setVariantRatios((prev) => prev.map((p) => (p.variantSku === variantSku ? { ...p, ratioPercent } : p)));
-                  }}
+                  onRowsChange={setVariantRatios}
                   stock={variantStock}
                   stockState={variantStockState}
                 />
@@ -977,94 +947,11 @@ export default function EditWorkOrderPage() {
                         </p>
                       )}
 
-                      <div className="space-y-2 border-t pt-4">
-                        <Label>Alokasi per roll (opsional)</Label>
-                        <p className="text-xs text-muted-foreground">
-                          Total qty per roll minimal sama dengan kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}). Boleh melebihi.
-                        </p>
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead>Roll / Ref</TableHead>
-                                <TableHead className="text-right">Qty (whole roll)</TableHead>
-                                <TableHead>Notes</TableHead>
-                                <TableHead className="w-12" />
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {rollBreakdown.map((row, i) => (
-                                <TableRow key={i}>
-                                  <TableCell className="font-medium">{row.rollRef}</TableCell>
-                                  <TableCell className="text-right">{Number(row.qty).toLocaleString(undefined, { maximumFractionDigits: 2 })}</TableCell>
-                                  <TableCell>
-                                    <Input
-                                      value={row.notes ?? ''}
-                                      onChange={(e) => updateRollRow(i, 'notes', e.target.value)}
-                                      placeholder="Optional"
-                                      className="h-8"
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => removeRollRow(i)}
-                                    >
-                                      ×
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <SearchableCombobox
-                            options={availableRolls
-                              .filter((r) => !rollBreakdown.some((b) => b.rollRef === r.rollCode || b.rollRef === r.rollRef))
-                              .map((r) => ({
-                                value: r.rollId,
-                                label: `${r.rollCode} — ${r.remainingLength.toLocaleString()} remaining`,
-                              }))}
-                            value={addRollValue}
-                            onValueChange={(value) => {
-                              const roll = availableRolls.find((r) => r.rollId === value);
-                              if (roll) {
-                                addRollBySelection(roll);
-                                setAddRollValue('');
-                              }
-                            }}
-                            placeholder="Add roll..."
-                            emptyMessage="No more rolls"
-                            triggerClassName="w-[280px]"
-                          />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={handleSuggestRolls}
-                            disabled={!consumptionMaterialId || isSuggestingRolls}
-                          >
-                            {isSuggestingRolls ? 'Suggesting...' : 'Suggest best-fit'}
-                          </Button>
-                        </div>
-                        {rollBreakdown.length > 0 && (
-                          <p className="text-sm">
-                            Total allocated: {rollSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}.
-                            {rollSum >= materialPlannedQtyForRolls - 1e-6
-                              ? ` +${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} over`
-                              : ` ${(rollSum - materialPlannedQtyForRolls).toLocaleString(undefined, { maximumFractionDigits: 2 })} short`}
-                          </p>
-                        )}
-                        {rollBreakdown.length > 0 && !rollValid && (
-                          <p className="text-sm text-destructive">
-                            Total roll ({rollSum.toLocaleString(undefined, { maximumFractionDigits: 4 })}{consumptionResult ? ` ${consumptionResult.uomCode}` : ''}) kurang dari kebutuhan material ({consumptionResult ? `${materialPlannedQtyForRolls.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${consumptionResult.uomCode}` : '—'}).
-                          </p>
-                        )}
-                      </div>
+                      <MaterialRollAllocation
+                        lines={rollNeeds}
+                        value={planRolls}
+                        onChange={setRollBreakdown}
+                      />
                     </>
                   )}
                 </>

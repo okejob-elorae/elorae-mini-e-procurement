@@ -243,7 +243,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Touching `Store.creditLimit` enforcement? The approve-time live check is authoritative; the create-time flag is advisory — never read it as an override reason. → `docs/landmines/finance-ar.md`
 - Editing `approveFieldSalesOrder`'s PUTUS tail? Throw `CreditLimitExceededError`, never `return`; the finalPrices writes stay AFTER the gate. → `docs/landmines/finance-ar.md`
 - Reading `computeStoreCreditExposure`? Receivables + approved-undelivered residual (floored per order); receivables alone wave undelivered orders through. → `docs/landmines/finance-ar.md`
-- Konsi orders never trip the credit limit? By construction. Gating them is an open decision in `docs/FOLLOWUPS.md`, not a missing guard. → `docs/landmines/finance-ar.md`
+- Gating a konsi order on the credit limit, or adding a konsi approve path? Exposure ONLY, never the order's value; the gate lives in `approveKonsiOrderInTx` so both paths hit it; an already-APPROVED replay stays ungated. → `docs/landmines/finance-ar.md`
 - Adding any `AdminNotification` category (collection, overdue, other)? Add it to `admin-fanout.ts`'s `CATEGORY_PERMISSION` or it reaches nobody, silently. → `docs/landmines/finance-ar.md`
 - Touching a `CollectionSubmission`? It moves no money — `outstandingAmount` waits for `verifyCollection`, and credit exposure ignores pending submissions. → `docs/landmines/finance-ar.md`
 - Writing `submitCollection`? Net BOTH pending claim kinds via `sumPendingClaimsOnReceivable` inside the tx, never raw `outstandingAmount`. → `docs/landmines/finance-ar.md`
@@ -293,6 +293,13 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Writing a PO's terms or its GRNs (receipt, decline, void)? With `paymentTermsDays` set the due date is DERIVED — `recomputePaymentDueDate` in the same tx, never client input. → `docs/landmines/purchasing.md`
 - Touching the PO payment reminder sweep? Dedup reads EVERY `PO_PAYMENT_DUE` row, keyed on `poId` + `dueDate` (max `thresholdDays` announced) — never add a `take`/floor or drop `dueDate`; marker before the cron-only awaited fan-out. → `docs/landmines/purchasing.md`
+
+**Production — BOM & variants**
+
+- Reading an FG variant's colour or size? `resolveVariantAxes` (`Warna`/`Ukuran`, old spellings folded), never `v.size`/`v.color`; colour text resolves via the colour master's name/aliases, never rewritten. → `docs/landmines/production.md`
+- Planning a WO's materials? `generateMaterialPlan` with the WO's `skuBreakdown` — scoped rules count only their variants; HPP and additional issues read the WO's `consumptionPlan`, not the current BOM. → `docs/landmines/production.md`
+- Writing `ConsumptionRule` rows? `(finishedGoodId, materialId)` is not unique any more — refuse overlapping colour/size scopes (`findOverlappingRules`) in every writer. → `docs/landmines/production.md`
+- Touching a WO's or an issue's `rollBreakdown`? Entries are per material (`itemId`); match with `rollsForItem`, legacy entries fall back to `consumptionMaterialId`. → `docs/landmines/production.md`
 
 **Forecast**
 

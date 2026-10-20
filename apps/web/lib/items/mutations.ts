@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from '@elorae/db';
 import { generateSKU } from '@/lib/sku-generator';
-import { validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
+import { unknownVariantColors, validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
+import { loadColorIndex } from '@/lib/items/variant-colors';
 import { parseItemVariants } from "@/lib/items/variants";
 import {
   findVariantSkuCollisions,
@@ -22,6 +23,8 @@ export type ItemFormData = {
   sellingPrice?: number;
   targetMarginPercent?: number;
   additionalCost?: number;
+  /** Optional Pantone of a colour-specific material; finished goods carry colour per variant instead. */
+  pantoneTcx?: string | null;
 };
 
 export type SerializedItem = {
@@ -133,7 +136,18 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
     targetMarginPercent: targetMarginPercentNum,
     additionalCost: additionalCostNum,
     sku: raw.sku != null ? String(raw.sku) : undefined,
+    pantoneTcx:
+      raw.type !== 'FINISHED_GOOD' && typeof raw.pantoneTcx === 'string' && raw.pantoneTcx.trim()
+        ? raw.pantoneTcx.trim()
+        : null,
   };
+}
+
+/* relationMode = "prisma" has no FK, so an unknown TCX would be stored silently. */
+async function assertPantoneExists(tcx: string | null | undefined) {
+  if (!tcx) return;
+  const found = await prisma.pantoneColor.findUnique({ where: { tcx }, select: { tcx: true } });
+  if (!found) throw new Error(`pantoneTcx: Kode Pantone ${tcx} tidak ditemukan`);
 }
 
 function serializeSingleItem(item: {
@@ -179,11 +193,24 @@ function serializeSingleItem(item: {
   } as SerializedItem;
 }
 
+/** Finished-good Warna comes from the colour master; a colour already on the item is grandfathered. */
+async function assertColorsInMaster(
+  variants: Array<Record<string, string>>,
+  existing: Array<Record<string, string>> = [],
+) {
+  if (variants.length === 0) return;
+  const unknown = unknownVariantColors(variants, await loadColorIndex(), existing);
+  if (unknown.length > 0) {
+    throw new Error(`Warna not in the colour master: ${unknown.join(', ')}. Add it first.`);
+  }
+}
+
 export async function createItem(data: ItemFormData) {
   const normalized = normalizeItemPayload(data);
   validateItemPayload(normalized);
   const { sku: inputSku, ...rest } = normalized;
 
+  await assertPantoneExists(rest.pantoneTcx);
   const finalSku = inputSku?.trim() || (await generateSKU(rest.type));
 
   const existing = await prisma.item.findUnique({ where: { sku: finalSku } });
@@ -195,7 +222,9 @@ export async function createItem(data: ItemFormData) {
   const normalizedVariants = validateAndNormalizeVariants(finalSku, rest.variants, {
     categoryCode,
     generateFrom: "parent",
+    fixedAxes: rest.type === 'FINISHED_GOOD',
   });
+  if (rest.type === 'FINISHED_GOOD') await assertColorsInMaster(normalizedVariants);
 
   const item = await prisma.$transaction(async (tx) => {
     /* The parent SKU joins the check: one equal to another item's variant SKU shares its namespace. */
@@ -244,6 +273,7 @@ export async function updateItem(
   validateItemPayload(normalized);
   const { sku, ...rest } = normalized;
   void sku;
+  await assertPantoneExists(rest.pantoneTcx);
 
   const existing = await client.item.findUnique({
     where: { id },
@@ -267,7 +297,11 @@ export async function updateItem(
   const normalizedVariants = validateAndNormalizeVariants(existing.sku, rest.variants, {
     categoryCode,
     generateFrom: "parent",
+    fixedAxes: rest.type === 'FINISHED_GOOD',
   });
+  if (rest.type === 'FINISHED_GOOD') {
+    await assertColorsInMaster(normalizedVariants, parseItemVariants(existing.variants));
+  }
   const updateCollisions = await findVariantSkuCollisions(client, {
     excludeItemId: id,
     skus: skusIntroducedByEdit(
