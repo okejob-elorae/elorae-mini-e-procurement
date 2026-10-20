@@ -313,6 +313,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Writing `Item` or `StockAdjustment` from apps/api? Dual-owner — go through the `@elorae/db` writer helpers, never a direct Prisma write. See also `docs/BOUNDARY.md §3`. → `docs/landmines/data-ownership-auth.md`
 - Adding a relation under `relationMode = "prisma"`? Grep migrations for hand-authored FKs; if REQUIRED, verify the id in the writer's tx and make every `delete<Parent>` count the child. → `docs/landmines/data-ownership-auth.md`
+- Adding an FK to an EXISTING relation? Self-aborting pre-flight before the DDL, read-only prod orphan audit before the deploy; field-sales order columns now refuse made-up ids (ERROR 1452). → `docs/landmines/data-ownership-auth.md`
 - Adding a permission and assuming ADMIN is gated by it? The admin wildcard is granted in CODE (`isSystem` → `['*']`) — a seed only makes it grantable to non-admin roles. → `docs/landmines/data-ownership-auth.md`
 - Building an R2 key from request input? `buildR2Key` after a 400 on `isSafeR2KeySegment`, never a hand-templated key; never tighten a `newLocalId()` id to UUID-only. → `docs/landmines/data-ownership-auth.md`
 - Calling apps/api via `apiFetch`? Inputs in the PATH or a POST body, never a query string — `InternalSignGuard` verifies `req.path`, so it 401s every time. → `docs/landmines/data-ownership-auth.md`
@@ -324,6 +325,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Running a migration or destructive query locally? Check `DATABASE_URL` is not the 3307 prod tunnel (default is the 3308 bed); `migrate:deploy` only, never `migrate dev`. → `docs/landmines/database-ops.md`
 - Shipping a migration alongside app code? The `migrate` job's `always()` is load-bearing — a legitimately SKIPPED image build must not cascade-skip it. → `docs/landmines/database-ops.md`
+- First deploy carrying the field-sales FK migration? Run `scripts/audit-field-sales-orphans.sql` read-only against prod first — sections 1-10 must be empty. → `docs/landmines/database-ops.md`
 - Assuming a green deploy run means your code is live? Check the `Deploy api`/`Deploy web` jobs and the image tag — they can skip or fail under a green run. → `docs/landmines/database-ops.md`
 - Expecting the deploy to seed RBAC rows? It migrates but NEVER seeds — permission rows are hand-run SQL, post-merge. → `docs/landmines/database-ops.md`
 - Running `mariadb`/`mariadb-dump` against prod? SSL off (`--skip-ssl`, or `--ssl-mode=DISABLED` on MySQL 8); a failure is silent in `| gzip` — check the `Dump completed on` trailer. → `docs/landmines/database-ops.md`

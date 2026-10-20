@@ -14,8 +14,8 @@
 -- optional ones (visitId, addedById), CASCADE for the order's own lines (declared
 -- `onDelete: Cascade`). The four relation-less actor columns get RESTRICT, like
 -- `FieldSalesDelivery.deliveredById`: they record who approved, rejected, closed or overrode an
--- order, and erasing that silently is worse than refusing the delete. Nothing in the app deletes a
--- User (accounts are deactivated), and `deleteItem` already counts `FieldSalesOrderLine`.
+-- order, and erasing that silently is worse than refusing the delete. No app path deletes a User,
+-- Store or StoreVisit, and `deleteItem` already counts `FieldSalesOrderLine`.
 -- ON UPDATE CASCADE everywhere, as in 20260809120000.
 --
 -- Every referencing column is VARCHAR(191) in a utf8mb4_unicode_ci table, the same as each
@@ -33,9 +33,10 @@
 -- re-runs it. `prisma migrate deploy` (the local test bed) records it as failed instead: run
 -- `prisma migrate resolve --rolled-back 20261021100000_field_sales_foreign_keys` before re-running.
 --
--- Each table gets ONE ALTER so its constraints land together or not at all. If the second ALTER
--- fails after the first succeeded, drop the seven `FieldSalesOrder_*_fkey` constraints by hand
--- before re-running, or the re-run stops on a duplicate constraint name.
+-- Re-runnable: every constraint is `FOREIGN KEY IF NOT EXISTS` (MariaDB syntax: the clause sits
+-- after FOREIGN KEY, before the column list), so a constraint already present is skipped with a
+-- warning. A re-run after a partial apply, or after the deploy lost its `_prisma_migrations` insert,
+-- adds only what is missing.
 
 SELECT IF(
   (SELECT COUNT(*) FROM `FieldSalesOrder` o
@@ -57,16 +58,16 @@ SELECT IF(
 
 -- AddForeignKey
 ALTER TABLE `FieldSalesOrder`
-  ADD CONSTRAINT `FieldSalesOrder_storeId_fkey` FOREIGN KEY (`storeId`) REFERENCES `Store`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrder_salesmanId_fkey` FOREIGN KEY (`salesmanId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrder_visitId_fkey` FOREIGN KEY (`visitId`) REFERENCES `StoreVisit`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrder_approvedById_fkey` FOREIGN KEY (`approvedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrder_rejectedById_fkey` FOREIGN KEY (`rejectedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrder_closedById_fkey` FOREIGN KEY (`closedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrder_creditOverrideById_fkey` FOREIGN KEY (`creditOverrideById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+  ADD CONSTRAINT `FieldSalesOrder_storeId_fkey` FOREIGN KEY IF NOT EXISTS (`storeId`) REFERENCES `Store`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrder_salesmanId_fkey` FOREIGN KEY IF NOT EXISTS (`salesmanId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrder_visitId_fkey` FOREIGN KEY IF NOT EXISTS (`visitId`) REFERENCES `StoreVisit`(`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrder_approvedById_fkey` FOREIGN KEY IF NOT EXISTS (`approvedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrder_rejectedById_fkey` FOREIGN KEY IF NOT EXISTS (`rejectedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrder_closedById_fkey` FOREIGN KEY IF NOT EXISTS (`closedById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrder_creditOverrideById_fkey` FOREIGN KEY IF NOT EXISTS (`creditOverrideById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `FieldSalesOrderLine`
-  ADD CONSTRAINT `FieldSalesOrderLine_orderId_fkey` FOREIGN KEY (`orderId`) REFERENCES `FieldSalesOrder`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrderLine_itemId_fkey` FOREIGN KEY (`itemId`) REFERENCES `Item`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT `FieldSalesOrderLine_addedById_fkey` FOREIGN KEY (`addedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+  ADD CONSTRAINT `FieldSalesOrderLine_orderId_fkey` FOREIGN KEY IF NOT EXISTS (`orderId`) REFERENCES `FieldSalesOrder`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrderLine_itemId_fkey` FOREIGN KEY IF NOT EXISTS (`itemId`) REFERENCES `Item`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `FieldSalesOrderLine_addedById_fkey` FOREIGN KEY IF NOT EXISTS (`addedById`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
