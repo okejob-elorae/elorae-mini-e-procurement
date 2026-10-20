@@ -6,6 +6,7 @@ import {
   type PrismaClient,
 } from "@elorae/db";
 import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
+import { roundCents, roundToWholeRupiah } from "@elorae/db/pricing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { DeliveryError, type DeliveryErrorCode, type DeliveryReplayDetail } from "../errors";
@@ -181,9 +182,20 @@ export async function recordFieldSalesDelivery(input: {
     });
     const lineDiscountByOrderLine = new Map(allocation.lineDiscounts.map((l) => [l.orderLineId, l.discountAmount]));
 
+    /**
+     * `subtotal`, the discounts and every line figure stay exact 2dp; `total` is the whole-rupiah
+     * CHARGED figure, the same cash-boundary rule as `VanSale.total`/`SpgSale.total`. A store pays
+     * a nota tagihan in whole rupiah, so a total carrying sen left its receivable at a sub-rupiah
+     * `PARTIAL` that no real payment could clear. Rounding here, once, is what makes every figure
+     * downstream agree: the receivable is created from `total`, the revenue journal posts `total` on
+     * both its AR and SALES_REVENUE sides, and the nota prints it. The exact figure stays derivable
+     * as `subtotal - discountAmount - Σ line discountAmount`, which is what the undelivered-residual
+     * readers measure against the order. `roundCents` first so a float sum that lands a hair under
+     * a half rupiah (`x.4999999`) still rounds half-up as its 2dp value would.
+     */
     const subtotal = deliveredLines.reduce((s, d) => s + d.deliveredSubtotal, 0);
     const lineDiscountTotal = allocation.lineDiscounts.reduce((s, l) => s + l.discountAmount, 0);
-    const total = subtotal - lineDiscountTotal - allocation.orderDiscountAmount;
+    const total = roundToWholeRupiah(roundCents(subtotal - lineDiscountTotal - allocation.orderDiscountAmount));
 
     const docNo = await generateDocNumber("DELIVERY", tx);
     const now = input.deliveredAt ?? new Date();

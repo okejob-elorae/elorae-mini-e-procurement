@@ -2,6 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "./writer";
 import { DeliveryError } from "../errors";
+import { postFieldDeliveryRevenueJournal } from "@/lib/finance/ar/delivery-journal";
+import { recordPayment } from "@/lib/finance/ar/payment-writer";
+import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
+import { snapshotMappings, restoreMappings, type MappingSnapshot } from "@/lib/finance/journals/mapping-test-fixture";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -929,5 +933,210 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
     const closingRow = deliveries.find((d) => d.id === closing.deliveryId)!;
     expect(Number(closingRow.discountAmount)).toBe(1);
     expect(Number(closingRow.lines[0].discountAmount)).toBe(0);
+  });
+});
+
+d("recordFieldSalesDelivery — whole-rupiah total (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let uomId = "";
+  let itemId = "";
+  let invId = "";
+  let storeId = "";
+  let userId = "";
+  let orderId = "";
+  let lineId = "";
+  let arAccountId = "";
+  let revenueAccountId = "";
+  let deliveryIds: string[] = [];
+  let mappingSnapshot: MappingSnapshot = {};
+
+  beforeEach(async () => {
+    uomId = ""; itemId = ""; invId = ""; storeId = ""; userId = ""; orderId = ""; lineId = "";
+    arAccountId = ""; revenueAccountId = ""; deliveryIds = [];
+    mappingSnapshot = await snapshotMappings(["AR", "SALES_REVENUE"]);
+
+    const uom = await prisma.uOM.create({
+      data: { code: `TEST-UOM-FSD5-${token}`, nameId: "test", nameEn: "test" },
+    });
+    uomId = uom.id;
+
+    const item = await prisma.item.create({
+      data: { sku: `TEST-FSD5-${token}`, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId, sellingPrice: 1000 },
+    });
+    itemId = item.id;
+
+    const inv = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 10, reservedQty: 2, avgCost: 500, totalValue: 5000 },
+    });
+    invId = inv.id;
+
+    const store = await prisma.store.create({
+      data: { code: `TEST-FSD5-STORE-${token}`, name: "Test FSD5 Store", address: "Test address", termsType: "PUTUS", paymentTempo: 30, isActive: true },
+    });
+    storeId = store.id;
+
+    const user = await prisma.user.create({
+      data: { email: `test-fsd5-${token}@example.com`, name: "Test FSD5 Salesman" },
+    });
+    userId = user.id;
+
+    /**
+     * A promo line discount the promo engine leaves unrounded (`PERCENT` is a bare
+     * `(lineTotal * value) / 100`), so the exact net is 2000 − 100.60 = 1899.40 and the nota
+     * charges 1899. Rounding DOWN is the case that matters: it is the one that would strand the
+     * order's rounding as undelivered residual on a fully delivered order.
+     */
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `PUTUS/TEST-FSD5-${token}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        orderType: "PUTUS",
+        subtotal: 2000,
+        total: 1899.4,
+        lines: {
+          create: [{ itemId, variantSku: "", productName: "Test FSD5 Product", qty: 2, unitPrice: 1000, lineTotal: 2000, discountAmount: 100.6 }],
+        },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty: 2, state: "RESERVED" },
+    });
+
+    const account = async (suffix: string, type: "ASET" | "PENDAPATAN") =>
+      (await prisma.chartAccount.create({ data: { code: `TFSD5-${token}-${suffix}`, name: "test", type, depth: 1, isActive: true } })).id;
+    arAccountId = await account("AR", "ASET");
+    revenueAccountId = await account("REV", "PENDAPATAN");
+    await prisma.journalAccountMapping.upsert({
+      where: { role: "AR" },
+      create: { role: "AR", chartAccountId: arAccountId },
+      update: { chartAccountId: arAccountId },
+    });
+    await prisma.journalAccountMapping.upsert({
+      where: { role: "SALES_REVENUE" },
+      create: { role: "SALES_REVENUE", chartAccountId: revenueAccountId },
+      update: { chartAccountId: revenueAccountId },
+    });
+  });
+
+  afterEach(async () => {
+    await restoreMappings(mappingSnapshot);
+    await prisma.journalLine.deleteMany({ where: { journal: { sourceId: { in: deliveryIds.map(seededId) } } } });
+    await prisma.journal.deleteMany({ where: { sourceId: { in: deliveryIds.map(seededId) } } });
+    await prisma.paymentAllocation.deleteMany({ where: { receivable: { storeId: seededId(storeId) } } });
+    await prisma.payment.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
+    await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(arAccountId), seededId(revenueAccountId)] } } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+    await prisma.user.deleteMany({ where: { id: seededId(userId) } });
+  });
+
+  const deliverAll = async (): Promise<{ deliveryId: string; docNo: string }> => {
+    const res = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+      idempotencyKey: `dlv-round-${token}`,
+    });
+    deliveryIds.push(res.deliveryId);
+    return res;
+  };
+
+  it("charges whole rupiah while the subtotal and line discount stay exact", async () => {
+    const { deliveryId, docNo } = await deliverAll();
+
+    const delivery = await prisma.fieldSalesDelivery.findUniqueOrThrow({ where: { id: deliveryId }, include: { lines: true } });
+    expect(Number(delivery.total)).toBe(1899);
+    expect(Number(delivery.subtotal)).toBe(2000);
+    expect(Number(delivery.lines[0].discountAmount)).toBe(100.6);
+    expect(Number(delivery.lines[0].lineTotal)).toBe(2000);
+
+    const receivable = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId } });
+    expect(Number(receivable.originalAmount)).toBe(1899);
+    expect(Number(receivable.outstandingAmount)).toBe(1899);
+
+    const history = await prisma.salesHistory.findFirstOrThrow({ where: { orderId: docNo } });
+    expect(Number(history.orderTotal)).toBe(1899);
+    expect(Number(history.lineTotal)).toBe(1899.4);
+  });
+
+  it("posts a balanced revenue journal at the rounded total", async () => {
+    const { deliveryId } = await deliverAll();
+    const posted = await postFieldDeliveryRevenueJournal(deliveryId, userId);
+    expect(posted).toMatchObject({ ok: true, created: true });
+
+    const journal = await prisma.journal.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: "FIELD_DELIVERY_REVENUE", sourceId: deliveryId } },
+      include: { lines: true },
+    });
+    const debit = journal.lines.reduce((sum, l) => sum + Number(l.debit), 0);
+    const credit = journal.lines.reduce((sum, l) => sum + Number(l.credit), 0);
+    expect(debit).toBe(1899);
+    expect(credit).toBe(1899);
+    const arLine = journal.lines.find((l) => l.chartAccountId === arAccountId)!;
+    const revenueLine = journal.lines.find((l) => l.chartAccountId === revenueAccountId)!;
+    expect(Number(arLine.debit)).toBe(1899);
+    expect(Number(revenueLine.credit)).toBe(1899);
+  });
+
+  it("settles to PAID on a whole-rupiah cash payment of the total", async () => {
+    const { deliveryId } = await deliverAll();
+    const receivable = await prisma.receivable.findUniqueOrThrow({ where: { deliveryId } });
+    await recordPayment({
+      storeId,
+      paidAt: defaultInvoiceDate,
+      method: "CASH",
+      recordedById: userId,
+      amount: 1899,
+      allocations: [{ receivableId: receivable.id, amount: 1899 }],
+    });
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: receivable.id } });
+    expect(Number(after.outstandingAmount)).toBe(0);
+    expect(after.status).toBe("PAID");
+  });
+
+  it("returns the recorded delivery on a replay of the same request", async () => {
+    const first = await deliverAll();
+    await expect(
+      recordFieldSalesDelivery({
+        orderId,
+        deliveredById: userId,
+        lines: [{ orderLineId: lineId, qty: 2 }],
+        invoiceDate: defaultInvoiceDate,
+        dueDate: defaultDueDate,
+        idempotencyKey: `dlv-round-${token}`,
+      }),
+    ).resolves.toEqual(first);
+    const all = await prisma.fieldSalesDelivery.findMany({ where: { orderId: seededId(orderId) } });
+    expect(all).toHaveLength(1);
+    expect(Number(all[0].total)).toBe(1899);
+  });
+
+  it("leaves no undelivered residual in credit exposure once the order is fully delivered", async () => {
+    await deliverAll();
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.deliveryStatus).toBe("DELIVERED");
+    const exposure = await computeStoreCreditExposure(prisma, storeId);
+    expect(exposure.receivableOutstanding).toBe(1899);
+    expect(exposure.undeliveredOrderResidual).toBeCloseTo(0, 6);
   });
 });
