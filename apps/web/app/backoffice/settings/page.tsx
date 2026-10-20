@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import {
   AlarmClock,
   BellRing,
+  Coins,
   FileDigit,
   Layers,
   Loader2,
@@ -33,6 +34,7 @@ import {
 } from '@/lib/theme/theme-color';
 import { readThemeFromLocalStorage, saveThemeToLocalStorage } from '@/lib/theme/theme-storage';
 import { DEFAULT_THEME_PRIMARY_COLOR } from '@/lib/theme/theme-presets';
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 
 type ThemeDraft = {
   pantoneTcx: string | null;
@@ -64,7 +66,12 @@ export default function SettingsPage() {
     { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
     { titleKey: 'overdueThresholds.title' as const, descriptionKey: 'overdueThresholds.description' as const, href: '/backoffice/settings/piutang', icon: AlarmClock },
     { titleKey: "paymentReminders.title" as const, descriptionKey: "paymentReminders.description" as const, href: "/backoffice/settings/purchasing", icon: BellRing },
+    { titleKey: "spgCommission.title" as const, descriptionKey: "spgCommission.description" as const, href: "/backoffice/settings/spg-commission", icon: Coins, permission: PERMISSIONS.SPG_COMMISSION_MANAGE },
   ];
+  const permissions = session?.user?.permissions ?? [];
+  const visibleItems = items.filter(
+    (item) => item.permission === undefined || hasPermission(permissions, item.permission),
+  );
 
   const userId = session?.user?.id ?? null;
 
@@ -335,7 +342,7 @@ export default function SettingsPage() {
       />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <Link key={item.href} href={item.href}>
             <Card className="h-full transition-colors hover:bg-muted/50">
               <CardHeader>
