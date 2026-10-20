@@ -35,9 +35,11 @@ const MAX_OVERRIDE_REASON_LENGTH = 191;
  * and then dies at the MariaDB `ENUM` column with a data-truncation error at runtime, mid
  * approval, with earlier components already posted. This map is the only permitted translation.
  *
- * PUBLIC API — do not strip the `export`. `settlementComponentKeys` below uses it to spell the
- * component keys `reject-writer.ts` and `voidPayment` check, so every reader derives each key from
- * the same method this writer posts with.
+ * Exported, but nothing outside this module imports it today: this writer and
+ * `settlementComponentKeys` below spell the program and fee methods through it, and the readers
+ * (`reject-writer.ts`, `component-owner.ts`) get those keys from `settlementComponentKeys` rather
+ * than from this map. Any new code outside this module that turns a deduction type into a method
+ * must import it rather than cast or spell the method.
  */
 export const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
   RETUR_OFFSET: "RETUR_OFFSET",
@@ -73,10 +75,11 @@ export type InvoiceRow = { receivableId: string; amount: number };
  * from the writer it claims to mirror. Same fork shape as `EPSILON` in `calc.ts`, and the same
  * rule: change one, change the other by hand in the same commit.
  *
- * The exports that ARE a shared seam — `computeComponentHeadroom`, `returComponentKey`,
- * `simpleComponentKey`, `settlementComponentKeys`, `InvoiceRow` and
- * `DEDUCTION_TYPE_TO_PAYMENT_METHOD` — are the ones `queries.ts`, `reject-writer.ts`,
- * `component-owner.ts` and the specs actually import, and those the compiler does hold together.
+ * The exports that ARE a shared seam are the ones actually imported elsewhere, and those the
+ * compiler does hold together: `computeComponentHeadroom`, `returComponentKey`,
+ * `simpleComponentKey` and `InvoiceRow` (`queries.ts`; the two key builders also by the
+ * reject-writer and void-writer specs), and `settlementComponentKeys` (`reject-writer.ts`,
+ * `component-owner.ts`) — plus `approveSettlement` and its result type for the action.
  */
 export type HeadroomRow = AllocationInput & {
   agreedRemaining: number;
@@ -125,11 +128,12 @@ export function simpleComponentKey(settlementId: string, method: SettlementPayme
  * a retur. A key whose component posted nothing (a zero fee, no cash) is still listed and simply
  * matches no payment.
  *
- * PUBLIC API — the one place "which payments belong to this settlement" is answered.
- * `reject-writer.ts` counts the POSTED ones for `COMPONENTS_POSTED`, and
- * `component-owner.ts` matches a payment against it for `voidPayment`'s `SETTLEMENT_COMPONENT`.
- * This writer builds the same keys inline with each component's amount, so a component kind added
- * there must be added here in the same change.
+ * PUBLIC API — the key SET the ownership questions read: `reject-writer.ts` counts the POSTED ones
+ * for `COMPONENTS_POSTED`, and `component-owner.ts` matches a payment against it for
+ * `voidPayment`'s `SETTLEMENT_COMPONENT`. It is not the only place the keys are spelled: this
+ * writer and the approval screen's `queries.ts` each build them per component, alongside the
+ * component's amount and method, through the same two builders. A component kind added to this
+ * writer must be added here and in `queries.ts` in the same change.
  */
 export function settlementComponentKeys(settlement: {
   id: string;
@@ -193,10 +197,12 @@ function allocateForComponent(amount: number, headroom: HeadroomRow[]): Allocati
  * rather than a second copy of it. The same applies to `returComponentKey`/`simpleComponentKey`
  * above and to the `InvoiceRow` they are fed: a preview that spelled the idempotency keys itself
  * would report every already-posted component as unposted and mis-state both the headroom and the
- * retur-credit checks. `reject-writer.ts` imports the two key builders too, with
- * `DEDUCTION_TYPE_TO_PAYMENT_METHOD`, to find a posted component before it rejects. Those FIVE are
- * the shared seam. `HeadroomRow` and `SettlementPaymentMethod` are exported but imported nowhere —
- * see the warning on `HeadroomRow` above for the fork that hides behind that.
+ * retur-credit checks. `reject-writer.ts` and `component-owner.ts` read the keys through
+ * `settlementComponentKeys` instead, which spells them with the same two builders. Those five —
+ * this function, the two builders, `InvoiceRow` and `settlementComponentKeys` — are the shared
+ * seam. `HeadroomRow` and `SettlementPaymentMethod` are exported but imported nowhere, and
+ * `DEDUCTION_TYPE_TO_PAYMENT_METHOD` only inside this module — see the warning on `HeadroomRow`
+ * above for the fork that hides behind that.
  */
 export async function computeComponentHeadroom(
   invoiceRows: InvoiceRow[],

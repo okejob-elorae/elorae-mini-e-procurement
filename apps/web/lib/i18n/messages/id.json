@@ -5649,7 +5649,7 @@
       "INSUFFICIENT_OUTSTANDING": "Saldo piutang toko ini tidak cukup untuk menyerap seluruh nilai retur.",
       "EXCEEDS_REMAINING": "Jumlah potongan melebihi sisa nilai retur.",
       "PAYMENT_VOIDED": "Offset sebelumnya untuk retur ini sudah dibatalkan. Buka kembali panel offset dan coba lagi.",
-      "SETTLEMENT_COMPONENT": "Pembayaran ini diposting oleh pelunasan toko {docNo} yang sudah disetujui dan tidak bisa dibatalkan sendiri — pelunasannya akan tetap mencatat uang yang sudah tidak ada di buku besar. Pelunasan yang sudah disetujui belum bisa dibongkar; laporkan ke finance.",
+      "SETTLEMENT_COMPONENT": "Pembayaran ini diposting oleh pelunasan toko {docNo} yang sudah disetujui dan tidak bisa dibatalkan sendiri — pelunasannya akan tetap mencatat uang yang sudah tidak ada di buku besar. Pelunasan yang sudah disetujui belum bisa dibongkar di aplikasi, jadi pembayaran ini untuk sementara harus tetap seperti yang diposting.",
       "NOT_RETRYABLE": "Jurnal pembayaran ini belum pernah ditandai gagal, jadi tidak ada yang perlu dicoba ulang.",
       "STILL_PENDING": "Jurnal masih gagal diposting. Periksa pemetaan akun, lalu coba lagi.",
       "ERROR": "Terjadi kesalahan saat mencatat pembayaran ini. Coba lagi.",

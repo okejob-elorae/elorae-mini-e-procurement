@@ -10,15 +10,18 @@ export type ApprovedOwningSettlement = { id: string; docNo: string };
  *
  * A payment is a component exactly when its `idempotencyKey` is in a settlement's
  * `settlementComponentKeys` — the set `approveSettlement` posts under and `rejectSettlement` counts
- * — so this never infers ownership from method, amount or reference. A payment with no key
- * (recorded from the payment sheet without one) is no settlement's component.
+ * — so this never infers ownership from method, amount or reference. Every component carries a
+ * key, so the null-key early return only covers legacy or otherwise unkeyed rows (the backoffice
+ * payment sheet always sends a `crypto.randomUUID()` key), which are no settlement's component.
  *
  * Candidates are the `APPROVED` settlements of the payment's OWN store, on the `[storeId, status]`
  * index. That is sound because a component always posts against its settlement's store:
  * `recordPayment` is called with `settlement.storeId`, and a retur draw posts on the retur's store,
  * which `submitSettlement` refuses to differ (`RETUR_WRONG_STORE`). Not narrowed further on
  * purpose: inverting a key back to a settlement id would be a second spelling of the builders,
- * which is the drift the shared key set exists to prevent.
+ * which is the drift the shared key set exists to prevent. The cost is that the scan loads every
+ * `APPROVED` settlement of the store, with its deductions, on each void — fine at today's volume,
+ * and logged in `docs/FOLLOWUPS.md` for bounding if a store accumulates many settlements.
  *
  * Only `APPROVED` blocks a void. A `PENDING` settlement's posted component (a half-run approval)
  * stays voidable: the resume then refuses `COMPONENT_VOIDED`, so void-each-then-reject is the safe

@@ -1,9 +1,32 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { voidPayment } from "@/lib/finance/ar/void-writer";
 import { approveSettlement } from "./approve-writer";
 import { VARIANCE_TOLERANCE_SETTING_KEY } from "./variance-tolerance";
+
+/**
+ * A pass-through wrapper around the real `recordPayment`, so one test can run a step in the middle
+ * of an approval — after the component loop has checked an earlier component, before the final
+ * flip. With no hook armed every call goes straight to the real writer, so the rest of this file
+ * is unaffected. A module wrapper rather than a spy on a `prisma` delegate, which the
+ * `@elorae/db` proxy makes fragile (AGENTS.md).
+ */
+const recordPaymentHook = vi.hoisted(() => ({
+  before: null as null | ((input: { idempotencyKey?: string }) => Promise<void>),
+}));
+
+vi.mock("@/lib/finance/ar/payment-writer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/finance/ar/payment-writer")>();
+  return {
+    ...actual,
+    recordPayment: async (...args: Parameters<typeof actual.recordPayment>) => {
+      const hook = recordPaymentHook.before;
+      if (hook) await hook(args[0]);
+      return actual.recordPayment(...args);
+    },
+  };
+});
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -1134,6 +1157,50 @@ d("approveSettlement (test bed only)", () => {
       code: "RETUR_WRONG_STORE",
     });
     expect(await paymentsForStore()).toHaveLength(0);
+  });
+
+  /*
+   * The void lands AFTER the component loop has passed the program payment and BEFORE the flip, so
+   * only the flip transaction's own re-count can see it — the loop's per-component check already
+   * ran. Without that re-count the document flips to APPROVED around a voided component.
+   */
+  it("refuses COMPONENT_VOIDED at the flip when a component is voided mid-approval", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [evidencedDeduction("PROGRAM", 200)],
+      actualAmount: 800,
+      expectedAmount: 800,
+    });
+    const programKey = `settlement-${settlementId}-PROGRAM_DEDUCTION`;
+    const cashKey = `settlement-${settlementId}-CASH`;
+
+    /* The program component posts first; the void fires as the cash component, the last one, starts. */
+    recordPaymentHook.before = async (input) => {
+      if (input.idempotencyKey !== cashKey) return;
+      recordPaymentHook.before = null;
+      const program = await prisma.payment.findUniqueOrThrow({ where: { idempotencyKey: programKey } });
+      await voidPayment({ paymentId: program.id, reason: "voided mid-approval", voidedById: approverId });
+    };
+    try {
+      await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
+        code: "COMPONENT_VOIDED",
+      });
+    } finally {
+      recordPaymentHook.before = null;
+    }
+
+    const program = await prisma.payment.findUniqueOrThrow({ where: { idempotencyKey: programKey } });
+    expect(program.status).toBe("VOIDED");
+    const cash = await prisma.payment.findUniqueOrThrow({ where: { idempotencyKey: cashKey } });
+    expect(cash.status).toBe("POSTED");
+
+    const settlement = await prisma.storeSettlement.findUnique({ where: { id: settlementId } });
+    expect(settlement!.status).toBe("PENDING");
+    expect(
+      await prisma.auditLog.count({
+        where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_APPROVE" },
+      }),
+    ).toBe(0);
   });
 
   it("refuses to resume onto a component payment that was voided", async () => {

@@ -5649,7 +5649,7 @@
       "INSUFFICIENT_OUTSTANDING": "This store doesn't have enough outstanding balance to absorb the return's full value.",
       "EXCEEDS_REMAINING": "This draw is larger than the value left on the retur.",
       "PAYMENT_VOIDED": "The prior offset for this return was voided. Reopen the offset sheet and try again.",
-      "SETTLEMENT_COMPONENT": "This payment was posted by approved store settlement {docNo} and can't be voided on its own — the settlement would keep claiming money the ledger no longer carries. An approved settlement can't be taken apart yet; raise it with finance.",
+      "SETTLEMENT_COMPONENT": "This payment was posted by approved store settlement {docNo} and can't be voided on its own — the settlement would keep claiming money the ledger no longer carries. An approved settlement can't be taken apart in the app yet, so this payment has to stay as posted for now.",
       "NOT_RETRYABLE": "This payment's journal was never flagged as failed, so there is nothing to retry.",
       "STILL_PENDING": "The journal still failed to post. Check the account mapping, then try again.",
       "ERROR": "Something went wrong recording this payment. Try again.",
