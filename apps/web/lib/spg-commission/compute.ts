@@ -163,7 +163,8 @@ export function splitByLargestRemainder(total: number, weights: readonly SpgPosQ
  * The per-SPG units in positions `[skip, skip + take)` of an ordered run of POS units — the query
  * layer's way of saying which of a window's SpgSale units a report counted (see `queries.ts`). A
  * row may straddle either edge and is split there. Units of a row with no known SPG are consumed
- * but credited to no one. Ordered by salesman id.
+ * (they still take their positions) but add to no SPG's weight, so `splitByLargestRemainder` then
+ * divides the line's confirmed pieces over the SPGs that remain. Ordered by salesman id.
  */
 export function takeUnitsBySalesman(
   rows: ReadonlyArray<{ salesmanId: string | null; units: number }>,

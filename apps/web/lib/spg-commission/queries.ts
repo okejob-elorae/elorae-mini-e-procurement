@@ -89,10 +89,18 @@ async function windowSaleRows(
  *
  * A late row has no identity of its own — the carry-forward stores only a per-key difference and no
  * row records when it committed — so "the newest units are the late ones" is an attribution, not a
- * fact. What it guarantees is that a window's units are partitioned between the report and its
- * successor with nothing counted twice, so a late row cannot change the split of the month that
- * approved the earlier report. Units that committed after BOTH reports were approved fall outside
- * both shares, as they fell outside both bills. A sale row whose SpgSale is gone credits no one.
+ * fact. What it guarantees is that a window's units are partitioned by position between the report
+ * and its successor with nothing counted twice, and that each report's pieces come from its stored
+ * figures, so no report's total ever moves. The per-SPG split of the earlier report's month holds
+ * only while every late row sorts after the rows that report counted. A row's `createdAt` is fixed
+ * when its insert runs, not when it commits, so a row inserted before a counted one but committed
+ * after approval sorts among the counted rows and, on the next read, displaces one of them into the
+ * late share: the earlier report's split between SPGs shifts in an already-closed month, its total
+ * does not. Units that committed after BOTH reports were approved fall outside both shares, as they
+ * fell outside both bills. A sale row whose SpgSale cannot be found still occupies its position but
+ * adds to no SPG's weight, and the line's confirmed pieces are split over the weights that remain,
+ * so its units go to the other SPGs on that line, not to no one. That is unreachable today:
+ * `SpgSale.salesmanId` is required and no path deletes a sale.
  *
  * `scope.storeIds` limits the reports read (an empty array reads none); omitted, every store is
  * read. Read-only.

@@ -82,14 +82,48 @@ describe("exportSpgCommissionRecap", () => {
 
     expect(mockGetCommissionRecap).toHaveBeenCalledWith("2026-10");
     expect(result.filename).toBe("komisi-spg-2026-10.csv");
-    expect(result.data).toBe(
-      [
-        "SPG,Toko,Pcs,Komisi Diperoleh,Komisi Dibatalkan,Komisi Bersih",
-        `"Ani, ""Mbak"" Ani","Toko Satu","3","3000","0","3000"`,
-        `"Budi","Toko Dua, Toko Satu","-2","0","-2000","-2000"`,
-        "",
-      ].join("\n"),
-    );
+    const body = [
+      "SPG,Toko,Pcs,Komisi Diperoleh,Komisi Dibatalkan,Komisi Bersih",
+      `"Ani, ""Mbak"" Ani","Toko Satu","3","3000","0","3000"`,
+      `"Budi","Toko Dua, Toko Satu","-2","0","-2000","-2000"`,
+      "",
+    ].join("\n");
+    expect(result.data).toBe(`﻿${body}`);
+  });
+
+  it("opens the CSV with a UTF-8 BOM so Excel reads non-ASCII names", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u9", permissions: ["spg_sales:view"] } });
+    mockGetCommissionRecap.mockResolvedValue({ ...recap(), spgNames: { u1: "Siti Nurhayati", u2: "Ayşe Çelik" } });
+    const result = await exportSpgCommissionRecap("2026-10", "csv");
+
+    expect(result.data?.charCodeAt(0)).toBe(0xfeff);
+    expect(result.data?.slice(1).startsWith("SPG,Toko,")).toBe(true);
+    expect(result.data).toContain(`"Ayşe Çelik","Toko Dua, Toko Satu"`);
+  });
+
+  it("prefixes a text cell that would open as a formula with a quote, and never a negative amount", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u9", permissions: ["spg_sales:view"] } });
+    const base = recap();
+    mockGetCommissionRecap.mockResolvedValue({
+      ...base,
+      rows: [base.rows[0], { ...base.rows[1], storeIds: ["s2"] }],
+      spgNames: { u1: `=HYPERLINK("http://x","y")`, u2: "@SUM(A1)" },
+      storeNames: { s1: "+62 Toko", s2: "-Toko Dua" },
+    });
+    const result = await exportSpgCommissionRecap("2026-10", "csv");
+
+    const [, first, second] = (result.data ?? "").split("\n");
+    expect(first).toBe(`"'=HYPERLINK(""http://x"",""y"")","'+62 Toko","3","3000","0","3000"`);
+    expect(second).toBe(`"'@SUM(A1)","'-Toko Dua","-2","0","-2000","-2000"`);
+  });
+
+  it("guards a text cell opening with a tab or a carriage return", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u9", permissions: ["spg_sales:view"] } });
+    mockGetCommissionRecap.mockResolvedValue({ ...recap(), spgNames: { u1: "\t=1+1", u2: "\r=1+1" } });
+    const result = await exportSpgCommissionRecap("2026-10", "csv");
+
+    expect(result.data).toContain(`"'\t=1+1","Toko Satu"`);
+    expect(result.data).toContain(`"'\r=1+1","Toko Dua, Toko Satu"`);
   });
 
   it("writes an XLSX with the summary and one detail row per event", async () => {

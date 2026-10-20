@@ -6,6 +6,7 @@ import { createSellThroughFixtures } from "@/lib/konsi-sell-through/test-fixture
 import { recordSpgSale } from "@/lib/spg/sale-writer";
 import { wibYearMonth } from "./month";
 import { getCommissionRecap } from "./queries";
+import { shiftYearMonth } from "./recap-display";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -19,6 +20,9 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 const SLOW = 60_000;
 
 const RATE = 1500;
+
+/* Distinct from RATE so a reversal is seen to mirror the approval month's rate, not the void month's. */
+const PREVIOUS_MONTH_RATE = 2500;
 
 d("getCommissionRecap (test bed only)", () => {
   const fx = createSellThroughFixtures();
@@ -125,6 +129,44 @@ d("getCommissionRecap (test bed only)", () => {
       expect(reversed.rows.find((r) => r.salesmanId === spgAId)).toMatchObject({ pieces: -3, earned: 0, reversed: -3 * RATE, net: -3 * RATE });
       expect((await recap(earnedMonth)).rows.find((r) => r.salesmanId === spgAId)).toMatchObject({ net: 3 * RATE });
     }
+  }, SLOW);
+
+  it("books a report approved last month and voided this month as EARNED there and only REVERSED here, at the approval month's rate", async () => {
+    const report = await approvedReport();
+    await voidSellThrough({ id: report.id, voidedById: state.userId, reason: "Recount needed." });
+    const voidMonth = wibYearMonth((await reportOf(report.id)).voidedAt!);
+    const approvalMonth = shiftYearMonth(voidMonth, -1);
+    /* Mid-month at noon WIB, so the moved approval sits well inside the previous WIB month. */
+    await prisma.konsiSellThrough.update({
+      where: { id: report.id },
+      data: { approvedAt: new Date(`${approvalMonth}-15T12:00:00+07:00`) },
+    });
+    /* Written directly: `setRate` closes past months, a UI rule this case has to step around to back-date one. */
+    await prisma.spgCommissionRate.createMany({
+      data: [
+        { itemCategoryId: categoryId, amountPerPiece: PREVIOUS_MONTH_RATE, effectiveFrom: approvalMonth, createdById: "test-spg-commission-recap" },
+        { itemCategoryId: categoryId, amountPerPiece: RATE, effectiveFrom: voidMonth, createdById: "test-spg-commission-recap" },
+      ],
+    });
+
+    const earned = await recap(approvalMonth);
+    expect(earned.events.filter((e) => e.sellThroughId === report.id).map((e) => [e.kind, e.salesmanId, e.pieces, e.amount]).sort()).toEqual(
+      [
+        ["EARNED", spgAId, 3, 3 * PREVIOUS_MONTH_RATE],
+        ["EARNED", spgBId, 1, PREVIOUS_MONTH_RATE],
+      ].sort(),
+    );
+    expect(earned.rows.find((r) => r.salesmanId === spgAId)).toMatchObject({ pieces: 3, earned: 3 * PREVIOUS_MONTH_RATE, reversed: 0, net: 3 * PREVIOUS_MONTH_RATE });
+
+    const reversed = await recap(voidMonth);
+    expect(reversed.events.filter((e) => e.sellThroughId === report.id).map((e) => [e.kind, e.salesmanId, e.pieces, e.ratePerPiece, e.amount]).sort()).toEqual(
+      [
+        ["REVERSED", spgAId, -3, PREVIOUS_MONTH_RATE, -3 * PREVIOUS_MONTH_RATE],
+        ["REVERSED", spgBId, -1, PREVIOUS_MONTH_RATE, -PREVIOUS_MONTH_RATE],
+      ].sort(),
+    );
+    expect(reversed.rows.find((r) => r.salesmanId === spgAId)).toMatchObject({ pieces: -3, earned: 0, reversed: -3 * PREVIOUS_MONTH_RATE, net: -3 * PREVIOUS_MONTH_RATE });
+    expect(reversed.rows.find((r) => r.salesmanId === spgBId)).toMatchObject({ pieces: -1, earned: 0, reversed: -PREVIOUS_MONTH_RATE, net: -PREVIOUS_MONTH_RATE });
   }, SLOW);
 
   it("reads only the stores in scope: an empty store list reads nothing", async () => {

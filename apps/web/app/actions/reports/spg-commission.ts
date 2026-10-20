@@ -48,11 +48,26 @@ function detailRows(recap: CommissionRecap): Array<Record<string, Cell>> {
   }));
 }
 
-/* Every cell quoted with embedded quotes doubled; an empty cell stays empty rather than printing "null". */
+/* Excel's UTF-8 signature: without it, Excel on Windows reads the file as ANSI and garbles non-ASCII names. */
+const UTF8_BOM = "﻿";
+
+/* A text cell opening with one of these is run by a spreadsheet as a formula. */
+const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
+
+/**
+ * Every cell quoted with embedded quotes doubled; an empty cell stays empty rather than printing
+ * "null". A TEXT cell that would open as a formula gets a leading `'`, which a spreadsheet shows as
+ * text. Numbers never do: a negative amount starts with `-` and must stay a number.
+ */
 function toCsv(headers: string[], rows: Array<Record<string, Cell>>): string {
-  const quote = (value: Cell) => `"${(value === null ? "" : String(value)).replace(/"/g, `""`)}"`;
+  const text = (value: Cell) => {
+    if (value === null) return "";
+    if (typeof value === "number") return String(value);
+    return FORMULA_TRIGGER.test(value) ? `'${value}` : value;
+  };
+  const quote = (value: Cell) => `"${text(value).replace(/"/g, `""`)}"`;
   const lines = rows.map((r) => headers.map((h) => quote(r[h] ?? null)).join(","));
-  return `${[headers.join(","), ...lines].join("\n")}\n`;
+  return `${UTF8_BOM}${[headers.join(","), ...lines].join("\n")}\n`;
 }
 
 /**

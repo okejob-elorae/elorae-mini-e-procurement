@@ -132,7 +132,7 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
   const hasUncategorized = (recap?.noRate ?? []).some((r) => r.categoryId === null);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>

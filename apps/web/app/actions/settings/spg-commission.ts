@@ -8,6 +8,7 @@ import { listItemCategories } from "@/lib/item-categories/queries";
 import { listRates, MAX_AMOUNT_PER_PIECE, setRate } from "@/lib/spg-commission/rates";
 import { SpgCommissionRateError, type SpgCommissionRateErrorCode } from "@/lib/spg-commission/errors";
 import { isYearMonth, wibYearMonth } from "@/lib/spg-commission/month";
+import { shiftYearMonth } from "@/lib/spg-commission/recap-display";
 
 const PAGE_PATH = "/backoffice/settings/spg-commission";
 
@@ -48,14 +49,6 @@ export type SetSpgCommissionRateReason = SpgCommissionRateErrorCode | "FORBIDDEN
 
 export type SetSpgCommissionRateResult = { ok: true } | { ok: false; reason: SetSpgCommissionRateReason };
 
-function addYearMonths(yearMonth: string, offset: number): string {
-  const [year, month] = yearMonth.split("-").map(Number);
-  const index = year * 12 + (month - 1) + offset;
-  const nextYear = String(Math.floor(index / 12)).padStart(4, "0");
-  const nextMonth = String((index % 12) + 1).padStart(2, "0");
-  return `${nextYear}-${nextMonth}`;
-}
-
 /**
  * Every active category, plus each inactive one that still has rates (shown read-only), with its
  * full rate history newest first. The page resolves the rate in force itself, from `currentMonth`.
@@ -91,7 +84,7 @@ export async function getSpgCommissionSettings(): Promise<SpgCommissionSettings>
   const currentMonth = wibYearMonth(new Date());
   return {
     currentMonth,
-    openMonths: Array.from({ length: OPEN_MONTH_COUNT }, (_, offset) => addYearMonths(currentMonth, offset)),
+    openMonths: Array.from({ length: OPEN_MONTH_COUNT }, (_, offset) => shiftYearMonth(currentMonth, offset)),
     categories: categories
       .map((category) => ({
         id: category.id,
