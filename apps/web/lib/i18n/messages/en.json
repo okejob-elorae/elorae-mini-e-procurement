@@ -4276,7 +4276,7 @@
       "buttonBaseline": "Void report",
       "confirmTitle": "Void this invoice?",
       "confirmTitleBaseline": "Void this report?",
-      "confirmDescription": "The report, its receivable and its faktur are voided, and the journals are reversed on their original dates. This cannot be undone.",
+      "confirmDescription": "The report, its receivable and its faktur are voided, and the journals are reversed as of today. This cannot be undone.",
       "confirmDescriptionBaseline": "The report is voided and its stock count is freed for a corrected report. Nothing was billed, so there is nothing to reverse. This cannot be undone.",
       "receivable": "Receivable {amount} becomes void.",
       "faktur": "The faktur is marked cancelled.",
