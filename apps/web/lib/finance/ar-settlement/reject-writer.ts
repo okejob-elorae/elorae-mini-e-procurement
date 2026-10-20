@@ -94,17 +94,15 @@ async function notifySalesmanOfRejection(
  * settlement that never reached approval never posted a component. But `approveSettlement` is a
  * resumable sequence rather than one transaction, so a run that posts a component and then throws
  * leaves the document `PENDING` with a real `Payment` behind it. Rejecting it from there is
- * REFUSED with `COMPONENTS_POSTED` while any component payment is still `POSTED`, and the remedy is
- * to resume the approval. Voiding the posted components first is no longer a way round it:
- * `voidPayment` refuses `SETTLEMENT_COMPONENT` for a component of a `PENDING` settlement, because a
- * voided component strands the resume on `COMPONENT_VOIDED`. A settlement whose resume itself
- * keeps refusing therefore has no way out today (`docs/FOLLOWUPS.md`). A `VOIDED` component does
- * not block. A `REJECTED` document can therefore still carry voided components (voided before the
- * reject, while that was still allowed), posted ones rejected before this guard existed, or posted
- * ones from a reject that read before a running approval's first component committed (see the
- * guard below); the finance approval screen surfaces all three (`componentsTitleOrphaned` in
- * `app/backoffice/finance/pelunasan/[id]`), and `voidPayment` does void a `REJECTED` document's
- * components.
+ * REFUSED with `COMPONENTS_POSTED` while any component payment is still `POSTED`: the remedy is to
+ * resume the approval, or to void each posted component from `/backoffice/finance/payments` and
+ * then reject. `voidPayment` refuses `SETTLEMENT_COMPONENT` only for an `APPROVED` settlement's
+ * components, so that path stays open here, and a resume after such a void refuses
+ * `COMPONENT_VOIDED` rather than approving around it. A `VOIDED` component does not block. A
+ * `REJECTED` document can therefore still carry voided components (voided before the reject),
+ * posted ones rejected before this guard existed, or posted ones from a reject that read before a
+ * running approval's first component committed (see the guard below); the finance approval screen
+ * surfaces all three (`componentsTitleOrphaned` in `app/backoffice/finance/pelunasan/[id]`).
  *
  * A second call against a settlement that is no longer `PENDING` (already `REJECTED`, or since
  * `APPROVED`) throws `NOT_PENDING`, the same shape as `rejectCollection`

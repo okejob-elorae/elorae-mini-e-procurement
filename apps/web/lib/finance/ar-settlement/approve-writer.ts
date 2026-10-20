@@ -587,9 +587,8 @@ export async function approveSettlement(
    * retur between submission and approval is enough. Without this the shortfall surfaces inside
    * `recordPayment`'s own in-transaction ceiling as `EXCEEDS_REMAINING`, and with two retur
    * deduction rows the first draw has already committed by then: the retry skips it and fails
-   * again on the second, and the first cannot be voided to unstick it — `voidPayment` refuses a
-   * component of a `PENDING` settlement with `SETTLEMENT_COMPONENT`, since a voided one would only
-   * convert the refusal into `COMPONENT_VOIDED`.
+   * again on the second, and voiding the first to unstick it only converts the refusal into
+   * `COMPONENT_VOIDED`.
    *
    * Only components this run still OWES are counted — a draw that already posted is inside the
    * `alreadyDrawn` aggregate, so counting it twice would refuse every resume.
@@ -634,8 +633,7 @@ export async function approveSettlement(
      * that projection is the entire reason the branch exists: it recovers from a failure between
      * the payment committing and `FieldReturn.appliedValue` being written. Skipping the call
      * strands the retur at a stale `appliedValue` with `offsetStatus: "AVAILABLE"` permanently —
-     * nothing else re-projects except voiding that very draw, which `voidPayment` now refuses
-     * while this settlement is live (`SETTLEMENT_COMPONENT`) — and `submitSettlement` computes
+     * nothing else re-projects except voiding that very draw — and `submitSettlement` computes
      * retur headroom as `totalValue - appliedValue - other PENDING claims`, so every later
      * settlement over-claims at submit time and then dies at approval on `EXCEEDS_REMAINING`.
      * This does not need a process kill to happen: `projectReturnOffset` opens its own
@@ -706,6 +704,24 @@ export async function approveSettlement(
    * against.
    */
   return runSerializable<ApproveSettlementResult>(async (tx) => {
+    /**
+     * The loop above checked each component for `VOIDED` before it posted, in earlier
+     * transactions, so a void landing after that check and before this flip would otherwise
+     * approve a document with a voided component — the desync `voidPayment`'s
+     * `SETTLEMENT_COMPONENT` exists to prevent, which it cannot see while this document is still
+     * `PENDING`. Re-read here, before any write, so the refusal commits nothing. Under SERIALIZABLE
+     * a void racing this read either commits first (and this refuses, leaving the document
+     * `PENDING`), or serialises behind this transaction and then reads the `APPROVED` document and
+     * refuses itself. Scoped to `amount > 0` like the loop's own check.
+     */
+    const postableKeys = components
+      .filter((component) => component.amount > 0)
+      .map((component) => component.idempotencyKey);
+    const voidedComponents = await tx.payment.count({
+      where: { idempotencyKey: { in: postableKeys }, status: "VOIDED" },
+    });
+    if (voidedComponents > 0) throw new SettlementError("COMPONENT_VOIDED");
+
     const flipped = await tx.storeSettlement.updateMany({
       where: { id: settlement.id, status: "PENDING" },
       data: {

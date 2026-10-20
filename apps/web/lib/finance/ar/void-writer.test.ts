@@ -444,13 +444,9 @@ d("voidPayment (test bed only)", () => {
     expect(Number(retur.appliedValue)).toBe(300);
   });
 
-  /*
-   * A half-run approval: the document is still PENDING but this component already posted. Voiding
-   * it would leave the resume refusing `COMPONENT_VOIDED` forever, the same strand as the APPROVED
-   * case. The admin-fee key also pins that the lookup covers the method-mapped keys, not only CASH.
-   */
-  it("refuses SETTLEMENT_COMPONENT for a posted component of a PENDING settlement", async () => {
-    const settlement = await seedSettlement("PENDING");
+  /* The admin-fee key pins that the lookup covers the method-mapped keys, not only CASH. */
+  it("refuses SETTLEMENT_COMPONENT for an admin-fee component of an APPROVED settlement", async () => {
+    const settlement = await seedSettlement("APPROVED");
     const component = await recordPayment({
       storeId, paidAt, method: "ADMIN_FEE", amount: 300, recordedById: userId,
       allocations: [{ receivableId: recA, amount: 300 }],
@@ -463,6 +459,25 @@ d("voidPayment (test bed only)", () => {
     expect(err.detail).toBe(settlement.docNo);
 
     await expectComponentUntouched(component.paymentId);
+  });
+
+  /*
+   * A half-run approval: the document is still PENDING but this component already posted. The void
+   * goes through — the resume then refuses `COMPONENT_VOIDED` (pinned in the approve-writer spec),
+   * which makes void-each-then-reject that settlement's safe exit.
+   */
+  it("voids a posted component of a PENDING settlement", async () => {
+    const settlement = await seedSettlement("PENDING");
+    const component = await recordPayment({
+      storeId, paidAt, method: "CASH", amount: 300, recordedById: userId,
+      allocations: [{ receivableId: recA, amount: 300 }],
+      idempotencyKey: simpleComponentKey(settlement.id, "CASH"),
+    });
+
+    const result = await voidPayment({ paymentId: component.paymentId, reason: "half-run", voidedById: userId });
+    expect(result.voided).toBe(true);
+    const after = await prisma.receivable.findUniqueOrThrow({ where: { id: recA } });
+    expect(Number(after.paidAmount)).toBe(400);
   });
 
   /*
@@ -486,7 +501,7 @@ d("voidPayment (test bed only)", () => {
 
   /*
    * Keyed on purpose: an unkeyed payment returns before the settlement read, so only a keyed one
-   * proves the match does not over-reach to a live settlement it is not a component of.
+   * proves the match does not over-reach to an APPROVED settlement it is not a component of.
    */
   it("voids a keyed payment that is no settlement's component even while the store has an APPROVED settlement", async () => {
     await seedSettlement("APPROVED");
