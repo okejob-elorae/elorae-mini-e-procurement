@@ -209,7 +209,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Trusting a declared `number` from a `"use server"` export? Validate with `Number.isFinite` plus a range check, never the global `isFinite`. → `docs/landmines/delivery-shipments.md`
 - Changing the delivery POD radius? It reuses `checkin.radiusMeters`/`Store.checkinRadiusMeters` — widening either widens store check-in too. → `docs/landmines/delivery-shipments.md`
 - Reading `evaluateCheckinRadius`'s `distanceMeters: null`? Check-in passes it, the POD gate refuses — never gate on `outOfRadius` alone. → `docs/landmines/delivery-shipments.md`
-- Hitting a shipment whose `Store` row is missing? That is `NOT_FOUND`, never `STORE_NOT_GEOCODED` — no FK backs `FieldSalesOrder.storeId`. → `docs/landmines/delivery-shipments.md`
+- Hitting a shipment whose `Store` row is missing? That is `NOT_FOUND`, never `STORE_NOT_GEOCODED` — the FK on `FieldSalesOrder.storeId` makes it defensive; keep it. → `docs/landmines/delivery-shipments.md`
 - Setting `carriedById`? The writer does NOT verify it exists — add that check once anything but the admin combobox can set it. → `docs/landmines/delivery-shipments.md`
 - Reassigning a shipment's carrier after it ships? Impossible — `carriedById` freezes at `IN_TRANSIT`; cancel and recreate. → `docs/landmines/delivery-shipments.md`
 - Touching `SALESMAN_CARRY` completion, or a new `completeDeliveryShipment` caller? `carriedById` must EQUAL `deliveredById` (`NOT_CARRIER`); GPS is no substitute. → `docs/landmines/delivery-shipments.md`
