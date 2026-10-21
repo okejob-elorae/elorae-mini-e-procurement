@@ -171,6 +171,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Correcting a retur's warehouse count? `correctFieldReturnReceipt` APPENDS an `INVESTIGATE` to a changed, resolved line — never edit or delete a resolution. → `docs/landmines/field-sales.md`
 - Cancelling a field retur? `cancelFieldReturn` is pre-receipt only and moves no stock; every in-flight check must ignore CANCELLED. → `docs/landmines/field-sales.md`
 - Rendering a retur value? `unitPrice` is only a rounded reference — `lineValue`/`totalValue` are authoritative; a partly priced `totalValue` is `null`, never a partial sum. → `docs/landmines/field-sales.md`
+- Reading `FieldSalesDeliveryLine.lineTotal` as what the store was billed? It is GROSS (`qty × unitPrice`) — price or credit from `deliveredLineNetValues` (line discount + header share), never `lineTotal` or `lineTotal − discountAmount`. → `docs/landmines/field-sales.md`
 - Editing `lib/field-sales/retur/variance.ts` or `pricing-rules.ts`? Keep both import-free — a client component imports `variance.ts`, so an import drags `@elorae/db` into the browser. → `docs/landmines/field-sales.md`
 - Adding a doc-number sequence for a new register? Take your own `DocType` — field retur is `FIELDRET`, never the vendor-return `RET`; a shared counter interleaves them. → `docs/landmines/field-sales.md`
 - Touching `recordFieldSalesDelivery`? It must create exactly one `TaxInvoice` per nota tagihan — a delivery without one is silently invisible to finance. → `docs/landmines/field-sales.md`

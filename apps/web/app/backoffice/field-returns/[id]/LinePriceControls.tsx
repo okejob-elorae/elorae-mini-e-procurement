@@ -135,7 +135,7 @@ export function LinePriceControls({ line, afterApproval = false }: Props) {
   }
 
   if (isAuto) {
-    const c = candidates[0];
+    const c = candidates.find((candidate) => candidate.deliveryLineId === line.autoPriceDeliveryLineId);
     const autoBodyKey = afterApproval ? "pricing.autoBodyAfterApproval" : "pricing.autoBody";
     return (
       <div className="space-y-2">

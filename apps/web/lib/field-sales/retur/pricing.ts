@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@elorae/db";
 import { matchKey } from "@/lib/items/variant-rows";
+import { deliveredLineNetValues } from "@/lib/field-sales/delivery/undelivered-residual";
 import { effectiveUnitPrice, classifyPriceCandidates } from "./pricing-rules";
 
 type PrismaClientOrTx = PrismaClient | Prisma.TransactionClient;
@@ -10,15 +11,52 @@ export type PriceCandidate = {
   docNo: string;
   deliveredAt: Date;
   qty: number;
-  lineTotal: number;
+  /** The line's NET delivered value — what the store was billed for it, exact to the sen. */
+  netValue: number;
   unitPrice: number;
 };
 
 /**
+ * What a price read needs from one delivery line: its own figures, plus its delivery's header
+ * discount and every sibling line, because the line's share of the header discount is allocated
+ * across the whole delivery. Siblings come ordered by id so the allocation's tie-break is stable.
+ */
+const PRICED_DELIVERY_LINE_SELECT = {
+  id: true,
+  deliveryId: true,
+  qty: true,
+  lineTotal: true,
+  discountAmount: true,
+} as const;
+
+const PRICED_DELIVERY_SELECT = {
+  docNo: true,
+  deliveredAt: true,
+  discountAmount: true,
+  lines: { select: { id: true, lineTotal: true, discountAmount: true }, orderBy: { id: "asc" } },
+} as const;
+
+type PricedDeliveryLineRow = {
+  id: string;
+  deliveryId: string;
+  qty: number;
+  lineTotal: Prisma.Decimal | null;
+  discountAmount: Prisma.Decimal;
+  delivery: {
+    docNo: string;
+    deliveredAt: Date;
+    discountAmount: Prisma.Decimal;
+    lines: Array<{ id: string; lineTotal: Prisma.Decimal | null; discountAmount: Prisma.Decimal }>;
+  };
+};
+
+/**
  * Every delivery line that shipped this exact item + variant to this store, newest delivery
- * first, priced from lineTotal (net of the line's pro-rated discount and its share of the
- * order discount) rather than the gross unitPrice. A null lineTotal is a line that cannot
- * price anything and is skipped rather than credited at zero.
+ * first, priced from the line's NET delivered value (`deliveredLineNetValues`: gross `lineTotal`
+ * less the line's own discount and its share of the delivery's header discount, which is the
+ * order discount plus, on a closing delivery, any line-discount residue it absorbed) rather than the
+ * gross `lineTotal` or `unitPrice`. A null lineTotal is a line that cannot price anything and is
+ * skipped rather than credited at zero.
  */
 export async function listPriceCandidates(
   client: PrismaClientOrTx,
@@ -31,13 +69,10 @@ export async function listPriceCandidates(
       delivery: { order: { storeId: input.storeId } },
     },
     select: {
-      id: true,
-      deliveryId: true,
-      qty: true,
-      lineTotal: true,
-      delivery: { select: { docNo: true, deliveredAt: true } },
+      ...PRICED_DELIVERY_LINE_SELECT,
+      delivery: { select: PRICED_DELIVERY_SELECT },
     },
-    orderBy: { delivery: { deliveredAt: "desc" } },
+    orderBy: [{ delivery: { deliveredAt: "desc" } }, { id: "asc" }],
   });
 
   const out: PriceCandidate[] = [];
@@ -68,15 +103,12 @@ export async function listPriceCandidatesForKeys(
       delivery: { order: { storeId: { in: Array.from(new Set(keys.map((k) => k.storeId))) } } },
     },
     select: {
-      id: true,
+      ...PRICED_DELIVERY_LINE_SELECT,
       itemId: true,
       variantSku: true,
-      deliveryId: true,
-      qty: true,
-      lineTotal: true,
-      delivery: { select: { docNo: true, deliveredAt: true, order: { select: { storeId: true } } } },
+      delivery: { select: { ...PRICED_DELIVERY_SELECT, order: { select: { storeId: true } } } },
     },
-    orderBy: { delivery: { deliveredAt: "desc" } },
+    orderBy: [{ delivery: { deliveredAt: "desc" } }, { id: "asc" }],
   });
 
   for (const r of rows) {
@@ -100,15 +132,10 @@ export function priceCandidateKey(input: { storeId: string; itemId: string; vari
   return `${input.storeId}::${input.itemId}::${matchKey(input.variantSku)}`;
 }
 
-function toPriceCandidate(r: {
-  id: string;
-  deliveryId: string;
-  qty: number;
-  lineTotal: Prisma.Decimal | null;
-  delivery: { docNo: string; deliveredAt: Date };
-}): PriceCandidate | null {
-  if (r.lineTotal === null) return null;
-  const unitPrice = effectiveUnitPrice(r.lineTotal.toNumber(), r.qty);
+function toPriceCandidate(r: PricedDeliveryLineRow): PriceCandidate | null {
+  const net = netDeliveryLineValue(r);
+  if (net === null) return null;
+  const unitPrice = effectiveUnitPrice(net, r.qty);
   if (unitPrice === null) return null;
   return {
     deliveryLineId: r.id,
@@ -116,15 +143,56 @@ function toPriceCandidate(r: {
     docNo: r.delivery.docNo,
     deliveredAt: r.delivery.deliveredAt,
     qty: r.qty,
-    lineTotal: r.lineTotal.toNumber(),
+    netValue: net,
     unitPrice,
   };
 }
 
 /**
+ * The line's net delivered value, or null when it cannot price anything: a null `lineTotal`, or a
+ * net below zero (a header discount larger than what the delivery's lines carry net of their line
+ * discounts, so its share pushes a line under zero), which would credit the store a negative
+ * amount and is left for an admin to price.
+ */
+function netDeliveryLineValue(r: PricedDeliveryLineRow): number | null {
+  if (r.lineTotal === null) return null;
+  const nets = deliveredLineNetValues({
+    discountAmount: r.delivery.discountAmount.toNumber(),
+    lines: r.delivery.lines.map((l) => ({
+      lineTotal: l.lineTotal === null ? 0 : l.lineTotal.toNumber(),
+      discountAmount: l.discountAmount.toNumber(),
+    })),
+  });
+  const index = r.delivery.lines.findIndex((l) => l.id === r.id);
+  if (index === -1) return null;
+  const net = nets[index];
+  return net < 0 ? null : net;
+}
+
+/**
+ * The per-unit credit price of ONE named delivery line, by the same rule `listPriceCandidates`
+ * applies: null when the line is gone or cannot price anything. For a caller that already holds
+ * an admin's chosen `priceDeliveryLineId` and must not re-scope it by store, item and variant.
+ */
+export async function deliveryLineUnitPrice(
+  client: PrismaClientOrTx,
+  deliveryLineId: string,
+): Promise<number | null> {
+  const row = await client.fieldSalesDeliveryLine.findUnique({
+    where: { id: deliveryLineId },
+    select: { ...PRICED_DELIVERY_LINE_SELECT, delivery: { select: PRICED_DELIVERY_SELECT } },
+  });
+  if (!row) return null;
+  const candidate = toPriceCandidate(row);
+  return candidate === null ? null : candidate.unitPrice;
+}
+
+/**
  * Resolves a single credit price for this item + variant at this store: AUTO when every
- * delivery priced it identically, AMBIGUOUS when deliveries disagree (the caller must pick
- * one), UNPRICEABLE when nothing was ever delivered.
+ * delivery priced it the same within `SAME_PRICE_TOLERANCE_RUPIAH` (at the lowest of them, with
+ * that candidate as the price source), AMBIGUOUS when deliveries genuinely disagree (the caller
+ * must pick one), UNPRICEABLE when no delivery of this item to this store can supply a price —
+ * none was ever made, or every one has a null `lineTotal` or a net below zero.
  */
 export async function resolveLinePrice(
   client: PrismaClientOrTx,
@@ -137,7 +205,7 @@ export async function resolveLinePrice(
   const candidates = await listPriceCandidates(client, input);
   const verdict = classifyPriceCandidates(candidates.map((c) => c.unitPrice));
   if (verdict.kind === "AUTO") {
-    return { kind: "AUTO", price: verdict.price, candidate: candidates[0] };
+    return { kind: "AUTO", price: verdict.price, candidate: candidates[verdict.index] };
   }
   if (verdict.kind === "AMBIGUOUS") {
     return { kind: "AMBIGUOUS", candidates };
