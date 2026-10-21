@@ -5,6 +5,7 @@ import {
   UnknownLedgerRefTypeError,
   type DerivedLine,
   type LateMovement,
+  type LedgerRow,
 } from "./derive";
 import { SellThroughError } from "./errors";
 import { loadSellThroughInputs } from "./window";
@@ -75,6 +76,27 @@ export function diffLateMovements(fresh: DerivedLine[], stored: StoredLineFigure
 }
 
 /**
+ * What the carry-forward read beside its result: the previous report's re-read window rows and its
+ * stored per-line POS figures. Approve hands both to the SPG commission split snapshot
+ * (`perSpgPosQtyForLines`), so the late share it stores is cut from exactly the rows this
+ * comparison saw. Empty for a store's first report.
+ */
+export type LateCarryForward = {
+  lateMovements: LateMovement[];
+  previousRows: LedgerRow[];
+  previousLines: Array<{ itemId: string; variantSku: string; posSoldQty: number; latePosSoldQty: number }>;
+};
+
+/* `computeLateCarryForward` for a caller that needs only the late movements. */
+export async function computeLateMovements(
+  client: Prisma.TransactionClient,
+  storeId: string,
+  previous: { id: string; closingStocktakeId: string } | null,
+): Promise<LateMovement[]> {
+  return (await computeLateCarryForward(client, storeId, previous)).lateMovements;
+}
+
+/**
  * The boundary race, closed one level deep. A store ledger row stamped at or before the previous
  * report's boundary by a transaction that committed only after that report was approved belongs to
  * no window — the next window starts strictly after the boundary. So each report re-derives its
@@ -89,12 +111,12 @@ export function diffLateMovements(fresh: DerivedLine[], stored: StoredLineFigure
  * docs/FOLLOWUPS.md. Callers pass their own transaction client: create and approve both run it
  * inside their serializable transaction, so approve's `STALE` comparison covers the late figures too.
  */
-export async function computeLateMovements(
+export async function computeLateCarryForward(
   client: Prisma.TransactionClient,
   storeId: string,
   previous: { id: string; closingStocktakeId: string } | null,
-): Promise<LateMovement[]> {
-  if (!previous) return [];
+): Promise<LateCarryForward> {
+  if (!previous) return { lateMovements: [], previousRows: [], previousLines: [] };
 
   const report = await client.konsiSellThrough.findUnique({
     where: { id: previous.id },
@@ -132,19 +154,27 @@ export async function computeLateMovements(
   const inputs = await loadSellThroughInputs(client, { storeId, closingStocktakeId: previous.closingStocktakeId, previous: beforePrevious });
   const fresh = deriveOrRefuse({ method: report.method, openings: inputs.openings, rows: inputs.rows, counted: inputs.counted });
 
-  return diffLateMovements(
-    fresh,
-    report.lines.map((l) => ({
+  const stored = report.lines.map((l) => ({
+    itemId: l.itemId,
+    variantSku: l.variantSku,
+    inQty: roundQty(l.inQty.toNumber()),
+    outQty: roundQty(l.outQty.toNumber()),
+    posSoldQty: roundQty(l.posSoldQty.toNumber()),
+    gapQty: roundQty(l.gapQty.toNumber()),
+    lateInQty: roundQty(l.lateInQty.toNumber()),
+    lateOutQty: roundQty(l.lateOutQty.toNumber()),
+    latePosSoldQty: roundQty(l.latePosSoldQty.toNumber()),
+    lateGapQty: roundQty(l.lateGapQty.toNumber()),
+  }));
+
+  return {
+    lateMovements: diffLateMovements(fresh, stored),
+    previousRows: inputs.rows,
+    previousLines: stored.map((l) => ({
       itemId: l.itemId,
       variantSku: l.variantSku,
-      inQty: roundQty(l.inQty.toNumber()),
-      outQty: roundQty(l.outQty.toNumber()),
-      posSoldQty: roundQty(l.posSoldQty.toNumber()),
-      gapQty: roundQty(l.gapQty.toNumber()),
-      lateInQty: roundQty(l.lateInQty.toNumber()),
-      lateOutQty: roundQty(l.lateOutQty.toNumber()),
-      latePosSoldQty: roundQty(l.latePosSoldQty.toNumber()),
-      lateGapQty: roundQty(l.lateGapQty.toNumber()),
+      posSoldQty: l.posSoldQty,
+      latePosSoldQty: l.latePosSoldQty,
     })),
-  );
+  };
 }

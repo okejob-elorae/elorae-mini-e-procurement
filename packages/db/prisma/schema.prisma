@@ -1054,9 +1054,11 @@ model KonsiSellThrough {
   voidedById         String?
   voidedAt           DateTime?
   voidReason         String?                @db.Text
+  spgSplitSnapshotAt DateTime?
   store              Store                  @relation(fields: [storeId], references: [id])
   salesman           User?                  @relation("KonsiSellThroughSalesman", fields: [salesmanId], references: [id])
   lines              KonsiSellThroughLine[]
+  spgShares          KonsiSellThroughSpgShare[]
   receivable         Receivable?
   taxInvoice         TaxInvoice?
 
@@ -1100,6 +1102,26 @@ model KonsiSellThroughLine {
   @@unique([sellThroughId, itemId, variantSku])
   @@index([sellThroughId])
   @@index([itemId])
+}
+
+enum SellThroughSpgShareKind {
+  OWN
+  LATE
+}
+
+model KonsiSellThroughSpgShare {
+  id            String                  @id @default(cuid())
+  sellThroughId String
+  itemId        String
+  variantSku    String                  @default("")
+  salesmanId    String
+  share         SellThroughSpgShareKind
+  units         Int
+  createdAt     DateTime                @default(now())
+  sellThrough   KonsiSellThrough        @relation(fields: [sellThroughId], references: [id], onDelete: Cascade)
+
+  @@unique([sellThroughId, itemId, variantSku, salesmanId, share], map: "KonsiSellThroughSpgShare_split_key")
+  @@index([sellThroughId])
 }
 
 enum StoreStocktakeStatus {

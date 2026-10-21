@@ -150,7 +150,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Adding a sell-through approve refusal? `konsiSellThrough.err.<CODE>` in BOTH locales (invoicing codes get NO `storeStocktakes…` key); a data `detail` needs an `errorMessage` branch. → `docs/landmines/konsi-sell-through.md`
 - Pricing a sell-through line? Bill the CATALOG selling price via `priceSellThroughLines` — never `computeStorePrice` or `Store.markupPercent`, which the store keeps. → `docs/landmines/konsi-sell-through.md`
 - Creating a sell-through report or changing KONSI returs? `RETUR_IN_FLIGHT` also refuses returs approved after the count — never narrow it or copy that arm to `TRANSFER_IN_FLIGHT`. → `docs/landmines/konsi-sell-through.md`
-- Adding a sell-through approve/void path or a POS return, or touching how report lines derive? SPG commission is recomputed per read from `approvedAt`/`voidedAt` months; a new exit from `APPROVED` must end `VOIDED` (any other status erases a paid month), and the per-SPG split re-reads live `SpgSale` ledger rows — never edit a counted sale. → `docs/landmines/konsi-sell-through.md`
+- Adding a sell-through approve/void path or a POS return, or touching how report lines derive? SPG commission is recomputed per read from `approvedAt`/`voidedAt` months; a new exit from `APPROVED` must end `VOIDED` (any other status erases a paid month), and the per-SPG split is snapshotted at approve (`KonsiSellThroughSpgShare`) — never edit those rows; only pre-snapshot reports re-read live `SpgSale` rows. → `docs/landmines/konsi-sell-through.md`
 
 **Konsi count schedule**
 

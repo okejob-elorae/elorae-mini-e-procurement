@@ -7,8 +7,10 @@ import { resolveRate } from "./resolve-rate";
  * from those events.
  *
  * Client-safe and import-free apart from `./month` and `./resolve-rate`, which are client-safe
- * themselves; the query layer (`queries.ts`) loads the rows. Nothing here is stored: every event is
- * recomputed from the reports each time, so a month's recap is a reading, never a snapshot.
+ * themselves; the query layer (`queries.ts`) loads the rows. No commission amount is stored: every
+ * event is recomputed from the reports each time, so a month's recap is a reading. Only the split
+ * WEIGHTS between SPGs are snapshotted, at approval (`KonsiSellThroughSpgShare`), so a later ledger
+ * row cannot shift a closed month's split.
  *
  * Event-month accounting: a report EARNS in the WIB month of its `approvedAt`; a void REVERSES the
  * exact same pieces and amounts, at the same (approval-month) rate, in the WIB month of its
@@ -160,11 +162,12 @@ export function splitByLargestRemainder(total: number, weights: readonly SpgPosQ
 }
 
 /**
- * The per-SPG units in positions `[skip, skip + take)` of an ordered run of POS units — the query
- * layer's way of saying which of a window's SpgSale units a report counted (see `queries.ts`). A
- * row may straddle either edge and is split there. Units of a row with no known SPG are consumed
- * (they still take their positions) but add to no SPG's weight, so `splitByLargestRemainder` then
- * divides the line's confirmed pieces over the SPGs that remain. Ordered by salesman id.
+ * The per-SPG units in positions `[skip, skip + take)` of an ordered run of POS units — how
+ * `perSpgPosQtyForLines` (`split-weights.ts`) says which of a window's SpgSale units a report
+ * counted. A row may straddle either edge and is split there. Units of a row with no known SPG are
+ * consumed (they still take their positions) but add to no SPG's weight, so
+ * `splitByLargestRemainder` then divides the line's confirmed pieces over the SPGs that remain.
+ * Ordered by salesman id.
  */
 export function takeUnitsBySalesman(
   rows: ReadonlyArray<{ salesmanId: string | null; units: number }>,

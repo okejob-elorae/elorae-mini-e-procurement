@@ -3,6 +3,7 @@ import { prisma, seededId, type Prisma } from "@elorae/db";
 import { createSellThrough, resolveSellThroughLine, cancelSellThrough, approveSellThrough } from "./writer";
 import { createSellThroughFixtures } from "./test-fixtures";
 import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
+import { recordSpgSale } from "@/lib/spg/sale-writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
 const url = process.env.DATABASE_URL ?? "";
@@ -567,7 +568,11 @@ d("konsi sell-through writer (test bed only)", () => {
     await prisma.stockLedgerEntry.update({ where: { id: saleRow.id }, data: { createdAt: new Date(doc.periodEnd.getTime() - 1000) } });
 
     await expect(fx.approve(id)).rejects.toMatchObject({ code: "STALE" });
-    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
+    const refused = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+    expect(refused.status).toBe("DRAFT");
+    /* A refused approve snapshots nothing: no SPG split rows and no marker. */
+    expect(refused.spgSplitSnapshotAt).toBeNull();
+    expect(await prisma.konsiSellThroughSpgShare.count({ where: { sellThroughId: seededId(id) } })).toBe(0);
   }, SLOW);
 
   it("approve refuses STALE ahead of HELD, so a report that must be recreated never asks for resolutions first", async () => {
@@ -643,6 +648,8 @@ d("konsi sell-through writer (test bed only)", () => {
     expect(doc.status).toBe("CANCELLED");
     expect(doc.approvedById).toBeNull();
     expect(doc.approvedAt).toBeNull();
+    expect(doc.spgSplitSnapshotAt).toBeNull();
+    expect(await prisma.konsiSellThroughSpgShare.count({ where: { sellThroughId: seededId(id) } })).toBe(0);
   }, SLOW);
 
   it("reads the method snapshotted at creation: switching the store to SHELF_COUNT does not release a held SPG_POS line", async () => {
@@ -831,6 +838,112 @@ d("konsi sell-through writer (test bed only)", () => {
       expect(Number(line.closingQty)).toBe(1);
       expect(Number(line.billedQty)).toBe(0);
       expect(line.negativeSold).toBe(false);
+    }, SLOW);
+  });
+
+  describe("SPG commission split snapshot", () => {
+    /* One POS sale by the given SPG; the fixture's two users stand in for two SPGs. */
+    const sellAs = async (salesmanId: string, qty: number) => {
+      const res = await recordSpgSale({ salesmanId, storeId: state.storeId, lines: [{ itemId: state.itemId, variantSku: null, qty }] });
+      if (!res.ok) throw new Error(`recordSpgSale refused the fixture sale: ${res.code}`);
+      await tick();
+      return res.spgSaleId;
+    };
+
+    const saleRowOf = (saleId: string) =>
+      prisma.stockLedgerEntry.findFirstOrThrow({
+        where: { locationType: "STORE", locationId: seededId(state.storeId), refType: "SpgSale", refId: seededId(saleId) },
+      });
+
+    const sharesOf = async (id: string) =>
+      (
+        await prisma.konsiSellThroughSpgShare.findMany({
+          where: { sellThroughId: seededId(id) },
+          orderBy: [{ share: "asc" }, { salesmanId: "asc" }],
+        })
+      ).map((r) => [r.share, r.salesmanId, r.itemId, r.variantSku, r.units]);
+
+    const byId = (a: unknown[], b: unknown[]) => String(a[1]).localeCompare(String(b[1]));
+
+    /* SPG_POS: 10 in, A sells 3 and B 1, the shelf holds the expected 6 — no gap, billed = POS 4. */
+    async function approvedTwoSpgReport() {
+      await setMethod("SPG_POS");
+      await transferIn(10);
+      const firstSaleId = await sellAs(state.userId, 3);
+      await sellAs(state.salesmanId, 1);
+      const stocktakeId = await count(6);
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      await fx.approve(id);
+      return { id, firstSaleId };
+    }
+
+    it("an invoicing approve stores each SPG's own POS units and stamps spgSplitSnapshotAt with the approval time", async () => {
+      const { id } = await approvedTwoSpgReport();
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(doc.status).toBe("APPROVED");
+      expect(doc.spgSplitSnapshotAt?.getTime()).toBe(doc.approvedAt?.getTime());
+      expect((await sharesOf(id)).sort(byId)).toEqual(
+        [
+          ["OWN", state.userId, state.itemId, "", 3],
+          ["OWN", state.salesmanId, state.itemId, "", 1],
+        ].sort(byId),
+      );
+    }, SLOW);
+
+    it("credits a late unit to the SPG who sold it, by difference against the previous report's snapshot, even when it sorts before the counted rows", async () => {
+      const r1 = await approvedTwoSpgReport();
+      const r1Doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r1.id) } });
+      await tick();
+      /**
+       * A sale by A whose store row is then stamped just before A's first counted sale — test-only —
+       * standing in for an insert that ran before the counted rows and committed after report 1's
+       * approval. The positional cut would credit its unit to B, the last row in the window.
+       */
+      const lateSaleId = await sellAs(state.userId, 1);
+      const firstRow = await saleRowOf(r1.firstSaleId);
+      const lateRow = await saleRowOf(lateSaleId);
+      await prisma.stockLedgerEntry.update({ where: { id: lateRow.id }, data: { createdAt: new Date(firstRow.createdAt.getTime() - 1) } });
+      await tick();
+      /* StoreStock 6 − 1 = 5 and the shelf holds 5: the count matches and writes no row. */
+      const secondCount = await count(5);
+      const r2 = await createSellThrough({ closingStocktakeId: secondCount, createdById: state.userId });
+      const line = await onlyLine(r2.id);
+      expect(Number(line.posSoldQty)).toBe(1);
+      expect(Number(line.latePosSoldQty)).toBe(1);
+      await fx.approve(r2.id);
+
+      expect(await sharesOf(r2.id)).toEqual([["LATE", state.userId, state.itemId, "", 1]]);
+      /* Report 1's snapshot is untouched by the row that landed in its window afterwards. */
+      expect((await sharesOf(r1.id)).sort(byId)).toEqual(
+        [
+          ["OWN", state.userId, state.itemId, "", 3],
+          ["OWN", state.salesmanId, state.itemId, "", 1],
+        ].sort(byId),
+      );
+      expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(r1.id) } })).spgSplitSnapshotAt?.getTime()).toBe(
+        r1Doc.spgSplitSnapshotAt?.getTime(),
+      );
+    }, SLOW);
+
+    it("a report with no POS sales stamps the marker and stores no rows", async () => {
+      const { id } = await buildShelfCountReportBilling4();
+      await fx.approve(id);
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(doc.spgSplitSnapshotAt?.getTime()).toBe(doc.approvedAt?.getTime());
+      expect(await sharesOf(id)).toEqual([]);
+    }, SLOW);
+
+    it("a baseline approve snapshots its own POS units too, for its successor's late share, though it earns nothing", async () => {
+      await setMethod("SPG_POS");
+      await transferIn(10);
+      await sellAs(state.userId, 2);
+      const stocktakeId = await count(8);
+      const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+      await fx.approveBaseline(id);
+      const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(doc.baseline).toBe(true);
+      expect(doc.spgSplitSnapshotAt?.getTime()).toBe(doc.approvedAt?.getTime());
+      expect(await sharesOf(id)).toEqual([["OWN", state.userId, state.itemId, "", 2]]);
     }, SLOW);
   });
 

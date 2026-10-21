@@ -201,15 +201,28 @@ d("getCommissionRecap (test bed only)", () => {
     );
   }, SLOW);
 
-  it("credits a late carry-forward sale to its SPG on the report that billed it, and leaves the earlier report's split alone", async () => {
-    const first = await approvedReport();
+  it("pins report 1's split by its snapshot when a late row sorts among its counted rows, and credits the late unit to the SPG who sold it", async () => {
+    await transferIn(10);
+    const firstSaleId = await sell(spgAId, 3);
+    await sell(spgBId, 1);
+    const firstCount = await count(6);
+    const created = await createSellThrough({ closingStocktakeId: firstCount, createdById: state.userId });
+    await fx.approve(created.id);
+    const first = await reportOf(created.id);
     await tick();
-    /* A sale by B whose store row is then stamped at report 1's boundary: inside its window, committed after its approval. */
-    const lateSaleId = await sell(spgBId, 1);
-    const lateRow = await prisma.stockLedgerEntry.findFirstOrThrow({
-      where: { locationType: "STORE", locationId: seededId(state.storeId), refType: "SpgSale", refId: seededId(lateSaleId) },
-    });
-    await prisma.stockLedgerEntry.update({ where: { id: lateRow.id }, data: { createdAt: first.periodEnd } });
+    /**
+     * A sale by A whose store row is then stamped just before A's first counted sale: its insert ran
+     * before the counted rows, its commit landed after report 1's approval. Re-read live, report 1's
+     * own share would be the first 4 units — A's 4 — and B's counted unit would pass to report 2.
+     */
+    const lateSaleId = await sell(spgAId, 1);
+    const saleRow = (saleId: string) =>
+      prisma.stockLedgerEntry.findFirstOrThrow({
+        where: { locationType: "STORE", locationId: seededId(state.storeId), refType: "SpgSale", refId: seededId(saleId) },
+      });
+    const firstRow = await saleRow(firstSaleId);
+    const lateRow = await saleRow(lateSaleId);
+    await prisma.stockLedgerEntry.update({ where: { id: lateRow.id }, data: { createdAt: new Date(firstRow.createdAt.getTime() - 1) } });
     await tick();
     /* StoreStock 6 − 1 = 5 and the shelf holds 5: the count matches and writes no row. */
     const secondCount = await count(5);
@@ -228,7 +241,36 @@ d("getCommissionRecap (test bed only)", () => {
       ].sort(),
     );
     const secondEvents = (await recap(wibYearMonth(secondDoc.approvedAt!))).events.filter((e) => e.sellThroughId === second.id);
-    expect(secondEvents.map((e) => [e.kind, e.salesmanId, e.pieces, e.amount])).toEqual([["EARNED", spgBId, 1, RATE]]);
+    expect(secondEvents.map((e) => [e.kind, e.salesmanId, e.pieces, e.amount])).toEqual([["EARNED", spgAId, 1, RATE]]);
+  }, SLOW);
+
+  it("weighs a snapshotted report by its stored share rows, and a report with no snapshot marker by the live ledger", async () => {
+    const report = await approvedReport();
+    const month = wibYearMonth(report.approvedAt!);
+    const piecesOf = async () =>
+      (await recap(month)).events
+        .filter((e) => e.sellThroughId === report.id)
+        .map((e) => [e.salesmanId, e.pieces])
+        .sort();
+
+    /* Rewritten test-only to a split the ledger does not hold, so the recap is seen to read the rows. */
+    await prisma.konsiSellThroughSpgShare.updateMany({ where: { sellThroughId: seededId(report.id), salesmanId: seededId(spgAId) }, data: { units: 1 } });
+    await prisma.konsiSellThroughSpgShare.updateMany({ where: { sellThroughId: seededId(report.id), salesmanId: seededId(spgBId) }, data: { units: 3 } });
+    expect(await piecesOf()).toEqual(
+      [
+        [spgAId, 1],
+        [spgBId, 3],
+      ].sort(),
+    );
+
+    /* A report approved before the snapshot existed carries no marker: its split is derived from the ledger, its rows ignored. */
+    await prisma.konsiSellThrough.update({ where: { id: seededId(report.id) }, data: { spgSplitSnapshotAt: null } });
+    expect(await piecesOf()).toEqual(
+      [
+        [spgAId, 3],
+        [spgBId, 1],
+      ].sort(),
+    );
   }, SLOW);
 
   it("a baseline report earns nothing", async () => {
