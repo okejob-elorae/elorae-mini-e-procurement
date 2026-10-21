@@ -404,7 +404,7 @@ async function writeSpgSplitSnapshot(
     carry: LateCarryForward;
   },
 ): Promise<void> {
-  /* A previous report approved before snapshots existed has no marker, and its late share falls back to the positional cut. */
+  /* Against a previous report approved before snapshots existed (no marker), this report's late share falls back to the positional cut. */
   const previous = input.previousId
     ? await tx.konsiSellThrough.findUnique({
         where: { id: input.previousId },

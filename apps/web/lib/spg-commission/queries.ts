@@ -87,7 +87,8 @@ async function windowRows(
  *   it always was, by the same rule approve now stores (`perSpgPosQtyForLines`, `split-weights.ts`):
  *   its own share is the first `posSoldQty − latePosSoldQty` units of the SpgSale rows in its window,
  *   re-read through `loadSellThroughInputs` in ledger order (`createdAt`, then id), and its late share
- *   the next `latePosSoldQty` units after the previous report's own share in the previous window.
+ *   the next `latePosSoldQty` units after the previous report's own share in the previous window —
+ *   or, should that previous report carry a snapshot, the previous window's units beyond it.
  *   That live read keeps the old race for these reports only: a row's `createdAt` is fixed when its
  *   insert runs, not when it commits, so a row inserted before a counted one but committed after
  *   approval sorts among the counted rows and, on the next read, displaces one of them into the late
@@ -172,7 +173,9 @@ export async function getCommissionRecap(
           id: true,
           closingStocktakeId: true,
           previousId: true,
+          spgSplitSnapshotAt: true,
           lines: { select: { itemId: true, variantSku: true, posSoldQty: true, latePosSoldQty: true } },
+          spgShares: { where: { share: "OWN" }, select: { itemId: true, variantSku: true, salesmanId: true, units: true } },
         },
       })
     : [];
@@ -230,6 +233,12 @@ export async function getCommissionRecap(
       ownRows: own,
       previousRows: late,
       previousLines: (previous?.lines ?? []).map(splitLine),
+      /**
+       * A report without a marker normally follows a previous report without one. If it does not —
+       * an older image approving after a newer one snapshotted its predecessor — its late share is
+       * still cut against that snapshot, never positionally (see `split-weights.ts`).
+       */
+      previousOwnShares: previous?.spgSplitSnapshotAt ? previous.spgShares : null,
       salesmanBySale,
     });
     for (const w of lineWeights) byKey.set(lineKey(w.itemId, w.variantSku), [...w.own, ...w.late]);

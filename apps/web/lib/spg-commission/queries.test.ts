@@ -201,7 +201,13 @@ d("getCommissionRecap (test bed only)", () => {
     );
   }, SLOW);
 
-  it("pins report 1's split by its snapshot when a late row sorts among its counted rows, and credits the late unit to the SPG who sold it", async () => {
+  /**
+   * Report 1 (A 3, B 1) approved, then a late sale by A whose store row is stamped just before A's
+   * first counted sale: its insert ran before the counted rows, its commit landed after report 1's
+   * approval. Re-read live, report 1's own share would be the first 4 units — A's 4 — and B's
+   * counted unit would pass to report 2, which carries the 1 late unit and is approved.
+   */
+  async function lateRowAmongCountedChain() {
     await transferIn(10);
     const firstSaleId = await sell(spgAId, 3);
     await sell(spgBId, 1);
@@ -210,11 +216,6 @@ d("getCommissionRecap (test bed only)", () => {
     await fx.approve(created.id);
     const first = await reportOf(created.id);
     await tick();
-    /**
-     * A sale by A whose store row is then stamped just before A's first counted sale: its insert ran
-     * before the counted rows, its commit landed after report 1's approval. Re-read live, report 1's
-     * own share would be the first 4 units — A's 4 — and B's counted unit would pass to report 2.
-     */
     const lateSaleId = await sell(spgAId, 1);
     const saleRow = (saleId: string) =>
       prisma.stockLedgerEntry.findFirstOrThrow({
@@ -232,6 +233,11 @@ d("getCommissionRecap (test bed only)", () => {
     expect(Number(line.latePosSoldQty)).toBe(1);
     await fx.approve(second.id);
     const secondDoc = await reportOf(second.id);
+    return { first, secondDoc };
+  }
+
+  it("pins report 1's split by its snapshot when a late row sorts among its counted rows, and credits the late unit to the SPG who sold it", async () => {
+    const { first, secondDoc } = await lateRowAmongCountedChain();
 
     const firstEvents = (await recap(wibYearMonth(first.approvedAt!))).events.filter((e) => e.sellThroughId === first.id);
     expect(firstEvents.map((e) => [e.salesmanId, e.pieces]).sort()).toEqual(
@@ -240,8 +246,19 @@ d("getCommissionRecap (test bed only)", () => {
         [spgBId, 1],
       ].sort(),
     );
-    const secondEvents = (await recap(wibYearMonth(secondDoc.approvedAt!))).events.filter((e) => e.sellThroughId === second.id);
+    const secondEvents = (await recap(wibYearMonth(secondDoc.approvedAt!))).events.filter((e) => e.sellThroughId === secondDoc.id);
     expect(secondEvents.map((e) => [e.kind, e.salesmanId, e.pieces, e.amount])).toEqual([["EARNED", spgAId, 1, RATE]]);
+  }, SLOW);
+
+  it("a report with no marker after a snapshotted one still cuts its late share by difference, never positionally", async () => {
+    const { secondDoc } = await lateRowAmongCountedChain();
+    /* Test-only: report 2 as an older image would have approved it — no marker, no rows — after report 1 was snapshotted. */
+    await prisma.konsiSellThroughSpgShare.deleteMany({ where: { sellThroughId: seededId(secondDoc.id) } });
+    await prisma.konsiSellThrough.update({ where: { id: seededId(secondDoc.id) }, data: { spgSplitSnapshotAt: null } });
+
+    /* Positionally the late unit would be the 5th of report 1's window — B's counted sale; by difference it is A's. */
+    const events = (await recap(wibYearMonth(secondDoc.approvedAt!))).events.filter((e) => e.sellThroughId === secondDoc.id);
+    expect(events.map((e) => [e.kind, e.salesmanId, e.pieces, e.amount])).toEqual([["EARNED", spgAId, 1, RATE]]);
   }, SLOW);
 
   it("weighs a snapshotted report by its stored share rows, and a report with no snapshot marker by the live ledger", async () => {

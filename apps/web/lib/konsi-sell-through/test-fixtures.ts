@@ -156,7 +156,7 @@ export function createSellThroughFixtures() {
     /* Children of a report's optional 1:1 go first: deleting the report would null their source column and the one-source CHECK refuses that. */
     await prisma.taxInvoice.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });
     await prisma.receivable.deleteMany({ where: { storeId: seededId(state.storeId) } });
-    /* The SPG split snapshot approve writes, keyed by report id like the lines below it. */
+    /* The SPG split snapshot approve writes, by the store's report ids gathered above; the lines below go by the reports' store. */
     await prisma.konsiSellThroughSpgShare.deleteMany({ where: { sellThroughId: { in: storeReportIds.map(seededId) } } });
     await prisma.konsiSellThroughLine.deleteMany({ where: { sellThrough: { storeId: seededId(state.storeId) } } });
     await prisma.konsiSellThrough.deleteMany({ where: { storeId: seededId(state.storeId) } });
