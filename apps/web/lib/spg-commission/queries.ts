@@ -1,10 +1,10 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { loadSellThroughInputs } from "@/lib/konsi-sell-through/window";
 import { getJakartaMonthBounds } from "@/lib/planning/calculations";
+import type { LedgerRow } from "@/lib/konsi-sell-through/derive";
 import {
   computeCommissionEvents,
   summariseRecap,
-  takeUnitsBySalesman,
   type CommissionEvent,
   type CommissionReport,
   type RecapDetailRow,
@@ -14,6 +14,7 @@ import {
 import { SpgCommissionRateError } from "./errors";
 import { isYearMonth } from "./month";
 import { listRates } from "./rates";
+import { perSpgPosQtyForLines, spgSaleIdsOf, type SplitLine } from "./split-weights";
 
 type Client = Prisma.TransactionClient | typeof prisma;
 
@@ -35,36 +36,34 @@ type ChainLink = { id: string; closingStocktakeId: string; previousId: string | 
 
 type StoredLine = { itemId: string; variantSku: string; posSoldQty: Prisma.Decimal; latePosSoldQty: Prisma.Decimal };
 
-/* One SpgSale ledger row of a window, in the window's ledger order, before its sale is resolved to an SPG. */
-type WindowSaleRow = { key: string; saleId: string; units: number };
-
 const lineKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
 
-/* The units a line's own window contributed to its stored POS figure: the total minus what it carried in as late. */
-const ownPosUnits = (line: { posSoldQty: Prisma.Decimal; latePosSoldQty: Prisma.Decimal }) =>
-  Math.max(0, Math.round(line.posSoldQty.toNumber() - line.latePosSoldQty.toNumber()));
+const splitLine = (l: StoredLine): SplitLine => ({
+  itemId: l.itemId,
+  variantSku: l.variantSku,
+  posSoldQty: l.posSoldQty.toNumber(),
+  latePosSoldQty: l.latePosSoldQty.toNumber(),
+});
 
 /**
- * The SpgSale rows in one report's ledger window, through the same `loadSellThroughInputs` the
- * report writer derives from, so the window — lower edge exclusive, store-scoped, boundary at the
- * closing stocktake's own rows — is never re-spelled here. A sale row's qty is negative; its units
- * are the opposite.
+ * The ledger rows of one report's window, read only to derive the split of a report approved before
+ * the split was snapshotted. Through the same `loadSellThroughInputs` the report writer derives
+ * from, so the window — lower edge exclusive, store-scoped, boundary at the closing stocktake's own
+ * rows — is never re-spelled here.
  */
-async function windowSaleRows(
+async function windowRows(
   client: Client,
   storeId: string,
   report: ChainLink,
   previous: { id: string; closingStocktakeId: string } | null,
-): Promise<WindowSaleRow[]> {
+): Promise<LedgerRow[]> {
   /* The base client carries every TransactionClient member; the helper is typed for a tx only because its writers call it inside one. */
   const inputs = await loadSellThroughInputs(client as Prisma.TransactionClient, {
     storeId,
     closingStocktakeId: report.closingStocktakeId,
     previous,
   });
-  return inputs.rows
-    .filter((r) => r.refType === "SpgSale" && r.qty < 0)
-    .map((r) => ({ key: lineKey(r.itemId, r.variantSku), saleId: r.refId, units: -r.qty }));
+  return inputs.rows;
 }
 
 /**
@@ -72,35 +71,31 @@ async function windowSaleRows(
  *
  * Loads every non-DRAFT, non-CANCELLED report with an event in the month: APPROVED or VOIDED with
  * `approvedAt` in it, or VOIDED with `voidedAt` in it. A report voided this month but approved
- * earlier is loaded for its reversal, which mirrors the earlier EARNED event; only the month's
- * events are summarised.
+ * earlier is loaded for its reversal, which mirrors the earlier EARNED event from the same split
+ * weights; only the month's events are summarised.
  *
  * The pieces a line confirms come from the line's STORED figures (`posSoldQty`, which already
- * includes `latePosSoldQty`, and `billedQty`), never from the live ledger. The live ledger supplies
- * only the per-SPG split key, by enumerating the SpgSale rows the report counted:
+ * includes `latePosSoldQty`, and `billedQty`), never from the live ledger. The split between SPGs
+ * is weighted by each SPG's POS units on the line, and where those weights come from depends on
+ * when the report was approved:
  *
- * - Its own window's share is the FIRST `posSoldQty − latePosSoldQty` units of the SpgSale rows in
- *   its window, in ledger order (`createdAt`, then id), re-read through `loadSellThroughInputs`.
- *   Rows beyond that are rows that committed after the report was approved (the boundary race),
- *   which its successor carried forward as late.
- * - Its late share (`latePosSoldQty`, carried from the previous report P) is the units right after
- *   P's own share in P's window: the next `latePosSoldQty` units after P's first
- *   `posSoldQty − latePosSoldQty`.
- *
- * A late row has no identity of its own — the carry-forward stores only a per-key difference and no
- * row records when it committed — so "the newest units are the late ones" is an attribution, not a
- * fact. What it guarantees is that a window's units are partitioned by position between the report
- * and its successor with nothing counted twice, and that each report's pieces come from its stored
- * figures, so no report's total ever moves. The per-SPG split of the earlier report's month holds
- * only while every late row sorts after the rows that report counted. A row's `createdAt` is fixed
- * when its insert runs, not when it commits, so a row inserted before a counted one but committed
- * after approval sorts among the counted rows and, on the next read, displaces one of them into the
- * late share: the earlier report's split between SPGs shifts in an already-closed month, its total
- * does not. Units that committed after BOTH reports were approved fall outside both shares, as they
- * fell outside both bills. A sale row whose SpgSale cannot be found still occupies its position but
- * adds to no SPG's weight, and the line's confirmed pieces are split over the weights that remain,
- * so its units go to the other SPGs on that line, not to no one. That is unreachable today:
- * `SpgSale.salesmanId` is required and no path deletes a sale.
+ * - A report with `spgSplitSnapshotAt` set reads them from its `KonsiSellThroughSpgShare` rows,
+ *   OWN and LATE together, written by approve in its own transaction (`writeSpgSplitSnapshot`,
+ *   `lib/konsi-sell-through/writer.ts`). No ledger row that commits later can move them, so a closed
+ *   month's split is fixed. A snapshotted report with no rows sold nothing through POS.
+ * - A report approved before the snapshot existed (`spgSplitSnapshotAt` null) is derived live, as
+ *   it always was, by the same rule approve now stores (`perSpgPosQtyForLines`, `split-weights.ts`):
+ *   its own share is the first `posSoldQty − latePosSoldQty` units of the SpgSale rows in its window,
+ *   re-read through `loadSellThroughInputs` in ledger order (`createdAt`, then id), and its late share
+ *   the next `latePosSoldQty` units after the previous report's own share in the previous window —
+ *   or, should that previous report carry a snapshot, the previous window's units beyond it.
+ *   That live read keeps the old race for these reports only: a row's `createdAt` is fixed when its
+ *   insert runs, not when it commits, so a row inserted before a counted one but committed after
+ *   approval sorts among the counted rows and, on the next read, displaces one of them into the late
+ *   share — the report's split between SPGs shifts in an already-closed month, its total does not.
+ *   A sale row whose SpgSale cannot be found still occupies its position but adds to no SPG's
+ *   weight, so its units go to the other SPGs on that line, not to no one. That is unreachable
+ *   today: `SpgSale.salesmanId` is required and no path deletes a sale.
  *
  * `scope.storeIds` limits the reports read (an empty array reads none); omitted, every store is
  * read. Read-only.
@@ -131,6 +126,7 @@ export async function getCommissionRecap(
       baseline: true,
       approvedAt: true,
       voidedAt: true,
+      spgSplitSnapshotAt: true,
       closingStocktakeId: true,
       previousId: true,
       lines: {
@@ -146,10 +142,30 @@ export async function getCommissionRecap(
       },
     },
   });
-  /* A baseline report confirms nothing, and a report with no approval time never earned, so neither needs its window read. */
+  /* A baseline report confirms nothing, and a report with no approval time never earned, so neither needs its weights read. */
   const earning = reports.flatMap((r) => (!r.baseline && r.approvedAt ? [{ ...r, approvedAt: r.approvedAt }] : []));
+  const snapshotted = earning.filter((r) => r.spgSplitSnapshotAt !== null);
+  const legacy = earning.filter((r) => r.spgSplitSnapshotAt === null);
 
-  const previousIds = Array.from(new Set(earning.map((r) => r.previousId).filter((id): id is string => id !== null)));
+  /* Every snapshotted report's weights in one read, by report, then by line key. */
+  const shares = snapshotted.length > 0
+    ? await client.konsiSellThroughSpgShare.findMany({
+        where: { sellThroughId: { in: snapshotted.map((r) => r.id) } },
+        orderBy: [{ sellThroughId: "asc" }, { itemId: "asc" }, { variantSku: "asc" }, { share: "asc" }, { salesmanId: "asc" }],
+        select: { sellThroughId: true, itemId: true, variantSku: true, salesmanId: true, units: true },
+      })
+    : [];
+  const weightsByReport = new Map<string, Map<string, SpgPosQty[]>>();
+  for (const share of shares) {
+    const byKey = weightsByReport.get(share.sellThroughId) ?? new Map<string, SpgPosQty[]>();
+    const key = lineKey(share.itemId, share.variantSku);
+    const weights = byKey.get(key) ?? [];
+    weights.push({ salesmanId: share.salesmanId, qty: share.units });
+    byKey.set(key, weights);
+    weightsByReport.set(share.sellThroughId, byKey);
+  }
+
+  const previousIds = Array.from(new Set(legacy.map((r) => r.previousId).filter((id): id is string => id !== null)));
   const previousRows = previousIds.length > 0
     ? await client.konsiSellThrough.findMany({
         where: { id: { in: previousIds } },
@@ -157,14 +173,16 @@ export async function getCommissionRecap(
           id: true,
           closingStocktakeId: true,
           previousId: true,
+          spgSplitSnapshotAt: true,
           lines: { select: { itemId: true, variantSku: true, posSoldQty: true, latePosSoldQty: true } },
+          spgShares: { where: { share: "OWN" }, select: { itemId: true, variantSku: true, salesmanId: true, units: true } },
         },
       })
     : [];
   const previousById = new Map(previousRows.map((p) => [p.id, p]));
 
   /* Only a previous report whose successor carried late POS units needs its own window re-read, and that needs ITS previous. */
-  const lateCarriers = earning.filter(
+  const lateCarriers = legacy.filter(
     (r) => r.previousId !== null && previousById.has(r.previousId) && r.lines.some((l) => l.latePosSoldQty.toNumber() > 0),
   );
   const beforePreviousIds = Array.from(
@@ -179,21 +197,21 @@ export async function getCommissionRecap(
     : [];
   const beforePreviousById = new Map(beforePreviousRows.map((p) => [p.id, p]));
 
-  const windows = new Map<string, Promise<WindowSaleRow[]>>();
+  const windows = new Map<string, Promise<LedgerRow[]>>();
   const loadWindow = (storeId: string, report: ChainLink, previous: { id: string; closingStocktakeId: string } | null) => {
     let pending = windows.get(report.id);
     if (!pending) {
-      pending = windowSaleRows(client, storeId, report, previous);
+      pending = windowRows(client, storeId, report, previous);
       windows.set(report.id, pending);
     }
     return pending;
   };
 
   const loaded = await Promise.all(
-    earning.map(async (r) => {
+    legacy.map(async (r) => {
       const previous = r.previousId ? previousById.get(r.previousId) ?? null : null;
       const own = await loadWindow(r.storeId, r, previous ? { id: previous.id, closingStocktakeId: previous.closingStocktakeId } : null);
-      let late: WindowSaleRow[] = [];
+      let late: LedgerRow[] = [];
       if (previous && lateCarriers.includes(r)) {
         const beforePrevious = previous.previousId ? beforePreviousById.get(previous.previousId) ?? null : null;
         late = await loadWindow(r.storeId, previous, beforePrevious);
@@ -202,51 +220,47 @@ export async function getCommissionRecap(
     }),
   );
 
-  const saleIds = Array.from(new Set(loaded.flatMap((l) => [...l.own, ...l.late].map((row) => row.saleId))));
+  const saleIds = spgSaleIdsOf(...loaded.flatMap((l) => [l.own, l.late]));
   const sales = saleIds.length > 0
     ? await client.spgSale.findMany({ where: { id: { in: saleIds } }, select: { id: true, salesmanId: true } })
     : [];
   const salesmanBySale = new Map(sales.map((s) => [s.id, s.salesmanId]));
 
-  const unitsByKey = (rows: WindowSaleRow[]) => {
-    const byKey = new Map<string, Array<{ salesmanId: string | null; units: number }>>();
-    for (const row of rows) {
-      const list = byKey.get(row.key) ?? [];
-      list.push({ salesmanId: salesmanBySale.get(row.saleId) ?? null, units: row.units });
-      byKey.set(row.key, list);
-    }
-    return byKey;
-  };
+  for (const { report, previous, own, late } of loaded) {
+    const byKey = new Map<string, SpgPosQty[]>();
+    const lineWeights = perSpgPosQtyForLines({
+      lines: report.lines.map(splitLine),
+      ownRows: own,
+      previousRows: late,
+      previousLines: (previous?.lines ?? []).map(splitLine),
+      /**
+       * A report without a marker normally follows a previous report without one. If it does not —
+       * an older image approving after a newer one snapshotted its predecessor — its late share is
+       * still cut against that snapshot, never positionally (see `split-weights.ts`).
+       */
+      previousOwnShares: previous?.spgSplitSnapshotAt ? previous.spgShares : null,
+      salesmanBySale,
+    });
+    for (const w of lineWeights) byKey.set(lineKey(w.itemId, w.variantSku), [...w.own, ...w.late]);
+    weightsByReport.set(report.id, byKey);
+  }
 
-  const commissionReports: CommissionReport[] = loaded.map(({ report, previous, own, late }) => {
-    const ownUnits = unitsByKey(own);
-    const lateUnits = unitsByKey(late);
-    const previousLines = new Map<string, StoredLine>((previous?.lines ?? []).map((l) => [lineKey(l.itemId, l.variantSku), l]));
-
+  const commissionReports: CommissionReport[] = earning.map((report) => {
+    const weights = weightsByReport.get(report.id);
     return {
       id: report.id,
       storeId: report.storeId,
       baseline: report.baseline,
       approvedAt: report.approvedAt,
       voidedAt: report.voidedAt,
-      lines: report.lines.map((l) => {
-        const key = lineKey(l.itemId, l.variantSku);
-        const perSpgPosQty: SpgPosQty[] = takeUnitsBySalesman(ownUnits.get(key) ?? [], 0, ownPosUnits(l));
-        const latePieces = Math.round(l.latePosSoldQty.toNumber());
-        if (latePieces > 0) {
-          const previousLine = previousLines.get(key);
-          const skip = previousLine ? ownPosUnits(previousLine) : 0;
-          perSpgPosQty.push(...takeUnitsBySalesman(lateUnits.get(key) ?? [], skip, latePieces));
-        }
-        return {
-          itemId: l.itemId,
-          variantSku: l.variantSku,
-          categoryId: l.item.categoryId,
-          posQty: l.posSoldQty.toNumber(),
-          billedQty: l.billedQty.toNumber(),
-          perSpgPosQty,
-        };
-      }),
+      lines: report.lines.map((l) => ({
+        itemId: l.itemId,
+        variantSku: l.variantSku,
+        categoryId: l.item.categoryId,
+        posQty: l.posSoldQty.toNumber(),
+        billedQty: l.billedQty.toNumber(),
+        perSpgPosQty: weights?.get(lineKey(l.itemId, l.variantSku)) ?? [],
+      })),
     };
   });
 

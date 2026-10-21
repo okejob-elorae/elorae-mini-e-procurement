@@ -9,16 +9,18 @@ import {
   roundQty,
   SELL_THROUGH_RESOLUTIONS,
   unabsorbedSurplusQty,
+  type LedgerRow,
   type SellThroughMethodValue,
   type SellThroughResolutionValue,
 } from "./derive";
 import { loadSellThroughInputs, stocktakeBoundary } from "./window";
-import { computeLateMovements, deriveOrRefuse } from "./late";
+import { computeLateCarryForward, computeLateMovements, deriveOrRefuse, type LateCarryForward } from "./late";
 import { SellThroughError } from "./errors";
 import { priceSellThroughLines } from "./pricing";
 import { isInvoiceDateAllowed, dueDateFor } from "./invoice-dates";
 import { isSellThroughSalesmanCandidate } from "./salesman-candidates";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
+import { perSpgPosQtyForLines, spgSaleIdsOf } from "@/lib/spg-commission/split-weights";
 
 /* A UX bound on a free-text reason — all three columns (resolutionReason, baselineReason, cancelReason) are TEXT. The screens cap their inputs at the same figure. */
 const REASON_MAX_LENGTH = 1000;
@@ -381,6 +383,69 @@ export async function resolveSellThroughLine(input: {
 }
 
 /**
+ * Stores the per-SPG split weights of an approving report as `KonsiSellThroughSpgShare` rows, one
+ * per line × SPG × share (`OWN`, `LATE`) with units above zero, so the SPG commission recap
+ * (`getCommissionRecap`) never re-reads the live ledger for this report again: a row that commits
+ * after approval but sorts among the counted ones can no longer shift a closed month's split.
+ * Called by approve inside its own transaction, right after the status CAS that also stamps
+ * `spgSplitSnapshotAt`, from the inputs approve has just proved derive to the stored figures
+ * (`STALE`): the window's rows for the own share, and the carry-forward's re-read of the previous
+ * window plus the previous report's own snapshot for the late share. The rule is
+ * `perSpgPosQtyForLines`, shared with the recap's fallback for reports approved before this table
+ * existed. A failure throws and rolls the approval back with it.
+ */
+async function writeSpgSplitSnapshot(
+  tx: Prisma.TransactionClient,
+  input: {
+    sellThroughId: string;
+    previousId: string | null;
+    lines: ReadonlyArray<{ itemId: string; variantSku: string; posSoldQty: Prisma.Decimal; latePosSoldQty: Prisma.Decimal }>;
+    ownRows: readonly LedgerRow[];
+    carry: LateCarryForward;
+  },
+): Promise<void> {
+  /* Against a previous report approved before snapshots existed (no marker), this report's late share falls back to the positional cut. */
+  const previous = input.previousId
+    ? await tx.konsiSellThrough.findUnique({
+        where: { id: input.previousId },
+        select: {
+          spgSplitSnapshotAt: true,
+          spgShares: { where: { share: "OWN" }, select: { itemId: true, variantSku: true, salesmanId: true, units: true } },
+        },
+      })
+    : null;
+  const previousOwnShares = previous?.spgSplitSnapshotAt ? previous.spgShares : null;
+
+  const saleIds = spgSaleIdsOf(input.ownRows, input.carry.previousRows);
+  const sales = saleIds.length > 0
+    ? await tx.spgSale.findMany({ where: { id: { in: saleIds } }, select: { id: true, salesmanId: true } })
+    : [];
+  const weights = perSpgPosQtyForLines({
+    lines: input.lines.map((l) => ({
+      itemId: l.itemId,
+      variantSku: l.variantSku,
+      posSoldQty: l.posSoldQty.toNumber(),
+      latePosSoldQty: l.latePosSoldQty.toNumber(),
+    })),
+    ownRows: input.ownRows,
+    previousRows: input.carry.previousRows,
+    previousLines: input.carry.previousLines,
+    previousOwnShares,
+    salesmanBySale: new Map(sales.map((s) => [s.id, s.salesmanId])),
+  });
+
+  const rows = weights.flatMap((w) => [
+    ...w.own.map((q) => ({ share: "OWN" as const, salesmanId: q.salesmanId, units: q.qty, itemId: w.itemId, variantSku: w.variantSku })),
+    ...w.late.map((q) => ({ share: "LATE" as const, salesmanId: q.salesmanId, units: q.qty, itemId: w.itemId, variantSku: w.variantSku })),
+  ]).filter((r) => r.units > 0);
+  if (rows.length === 0) return;
+
+  await tx.konsiSellThroughSpgShare.createMany({
+    data: rows.map((r) => ({ sellThroughId: input.sellThroughId, ...r })),
+  });
+}
+
+/**
  * `expectedTotal` is the total the admin was shown. The approve action always sends it; leaving it
  * out skips the comparison, which only internal and fixture callers do.
  */
@@ -395,7 +460,10 @@ export type ApproveSellThroughInput =
  * (`unabsorbedSurplusQty`), which the surplus journal values. BASELINE mode is for a store's first
  * report only: it freezes the figures with a reason and bills nothing, for a period already
  * invoiced by hand outside the ERP, and leaves `surplusQty` at 0. Journals are posted by the
- * action after commit, not here.
+ * action after commit, not here. Both modes snapshot the per-SPG POS split
+ * (`writeSpgSplitSnapshot`) and stamp `spgSplitSnapshotAt`: INVOICE so the commission recap's split
+ * of this report never moves, BASELINE (which earns no commission) only so its successor's late
+ * share can be cut against it.
  *
  * It moves no stock. Re-checks, in order: the store is still KONSI (`NOT_KONSI`), no retur and no
  * store transfer was in flight at the closing count (`RETUR_IN_FLIGHT`, `TRANSFER_IN_FLIGHT` — a
@@ -478,8 +546,14 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
     if (previous && previous.status !== "APPROVED") throw new SellThroughError("INVALID_STATE", "PREVIOUS_REPORT");
 
     const inputs = await loadSellThroughInputs(tx, { storeId: doc.storeId, closingStocktakeId: doc.closingStocktakeId, previous });
-    const lateMovements = await computeLateMovements(tx, doc.storeId, previous);
-    const recomputed = deriveOrRefuse({ method: doc.method, openings: inputs.openings, rows: inputs.rows, counted: inputs.counted, lateMovements });
+    const carry = await computeLateCarryForward(tx, doc.storeId, previous);
+    const recomputed = deriveOrRefuse({
+      method: doc.method,
+      openings: inputs.openings,
+      rows: inputs.rows,
+      counted: inputs.counted,
+      lateMovements: carry.lateMovements,
+    });
 
     const freshByKey = new Map(recomputed.map((l) => [lineKey(l.itemId, l.variantSku), l]));
     if (freshByKey.size !== doc.lines.length) throw new SellThroughError("STALE");
@@ -507,9 +581,18 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
       if (reason.length > REASON_MAX_LENGTH) throw new SellThroughError("BASELINE_REASON_REQUIRED", "REASON_TOO_LONG");
       const flipped = await tx.konsiSellThrough.updateMany({
         where: { id: doc.id, status: "DRAFT" },
-        data: { status: "APPROVED", approvedById: input.approvedById, approvedAt, baseline: true, baselineReason: reason },
+        data: {
+          status: "APPROVED",
+          approvedById: input.approvedById,
+          approvedAt,
+          baseline: true,
+          baselineReason: reason,
+          spgSplitSnapshotAt: approvedAt,
+        },
       });
       if (flipped.count === 0) throw new SellThroughError("INVALID_STATE");
+      /* A baseline earns no commission; its snapshot is for its successor, whose late share is cut against it. */
+      await writeSpgSplitSnapshot(tx, { sellThroughId: doc.id, previousId: doc.previousId, lines: doc.lines, ownRows: inputs.rows, carry });
       return { ok: true as const, invoiced: false };
     }
 
@@ -541,9 +624,12 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
         dueDate,
         total: pricing.total,
         salesmanId: input.salesmanId,
+        spgSplitSnapshotAt: approvedAt,
       },
     });
     if (flipped.count === 0) throw new SellThroughError("INVALID_STATE");
+
+    await writeSpgSplitSnapshot(tx, { sellThroughId: doc.id, previousId: doc.previousId, lines: doc.lines, ownRows: inputs.rows, carry });
 
     for (const [i, l] of doc.lines.entries()) {
       const surplusQty = unabsorbedSurplusQty({
