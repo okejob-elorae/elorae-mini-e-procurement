@@ -82,7 +82,7 @@ export interface PendingGRN {
     unitCost: number;
     uomId: string;
     /** Fabric line: per-roll lengths so roll detail is not lost when saved offline. */
-    rolls?: Array<{ rollRef: string; length: number }>;
+    rolls?: Array<{ rollRef: string; length: number; notes?: string }>;
   }>;
   notes?: string;
   photoBase64?: string[];
