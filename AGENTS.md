@@ -209,7 +209,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Trusting a declared `number` from a `"use server"` export? Validate with `Number.isFinite` plus a range check, never the global `isFinite`. → `docs/landmines/delivery-shipments.md`
 - Changing the delivery POD radius? It reuses `checkin.radiusMeters`/`Store.checkinRadiusMeters` — widening either widens store check-in too. → `docs/landmines/delivery-shipments.md`
 - Reading `evaluateCheckinRadius`'s `distanceMeters: null`? Check-in passes it, the POD gate refuses — never gate on `outOfRadius` alone. → `docs/landmines/delivery-shipments.md`
-- Hitting a shipment whose `Store` row is missing? That is `NOT_FOUND`, never `STORE_NOT_GEOCODED` — no FK backs `FieldSalesOrder.storeId`. → `docs/landmines/delivery-shipments.md`
+- Hitting a shipment whose `Store` row is missing? That is `NOT_FOUND`, never `STORE_NOT_GEOCODED` — the FK on `FieldSalesOrder.storeId` makes it defensive; keep it. → `docs/landmines/delivery-shipments.md`
 - Setting `carriedById`? The writer does NOT verify it exists — add that check once anything but the admin combobox can set it. → `docs/landmines/delivery-shipments.md`
 - Reassigning a shipment's carrier after it ships? Impossible — `carriedById` freezes at `IN_TRANSIT`; cancel and recreate. → `docs/landmines/delivery-shipments.md`
 - Touching `SALESMAN_CARRY` completion, or a new `completeDeliveryShipment` caller? `carriedById` must EQUAL `deliveredById` (`NOT_CARRIER`); GPS is no substitute. → `docs/landmines/delivery-shipments.md`
@@ -313,6 +313,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Writing `Item` or `StockAdjustment` from apps/api? Dual-owner — go through the `@elorae/db` writer helpers, never a direct Prisma write. See also `docs/BOUNDARY.md §3`. → `docs/landmines/data-ownership-auth.md`
 - Adding a relation under `relationMode = "prisma"`? Grep migrations for hand-authored FKs; if REQUIRED, verify the id in the writer's tx and make every `delete<Parent>` count the child. → `docs/landmines/data-ownership-auth.md`
+- Adding an FK to an EXISTING relation? Self-aborting pre-flight before the DDL, read-only prod orphan audit before the deploy; field-sales order columns now refuse made-up ids (ERROR 1452). → `docs/landmines/data-ownership-auth.md`
 - Adding a permission and assuming ADMIN is gated by it? The admin wildcard is granted in CODE (`isSystem` → `['*']`) — a seed only makes it grantable to non-admin roles. → `docs/landmines/data-ownership-auth.md`
 - Building an R2 key from request input? `buildR2Key` after a 400 on `isSafeR2KeySegment`, never a hand-templated key; never tighten a `newLocalId()` id to UUID-only. → `docs/landmines/data-ownership-auth.md`
 - Calling apps/api via `apiFetch`? Inputs in the PATH or a POST body, never a query string — `InternalSignGuard` verifies `req.path`, so it 401s every time. → `docs/landmines/data-ownership-auth.md`

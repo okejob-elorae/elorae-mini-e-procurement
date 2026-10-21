@@ -1,9 +1,13 @@
--- Read-only pre-flight for adding the missing field-sales foreign keys.
+-- Read-only pre-flight for migration 20261021100000_field_sales_foreign_keys.
 --
 -- Lists every row whose reference points at a parent that no longer exists, on
--- the relations that carry NO database constraint today (declared under
--- relationMode = "prisma" and never given a hand-authored FK). Strictly SELECT:
--- no INSERT, UPDATE, DELETE, DDL or session changes.
+-- the ten relations that migration constrains (declared under
+-- relationMode = "prisma", with no database FK before it). Run it against a
+-- database BEFORE that migration is applied there: the migration's own guard
+-- aborts on any orphan, and this script names them. Once the migration is
+-- applied the FKs make sections 1-10 behave like the controls: they must always
+-- return zero rows. Strictly SELECT: no INSERT, UPDATE, DELETE, DDL or session
+-- changes.
 --
 -- Run (owner only), against the prod tunnel on local port 3307 or on the VPS:
 --   MySQL 8 client:   mysql --ssl-mode=DISABLED -h 127.0.0.1 -P 3307 -u <user> -p elorae < scripts/audit-field-sales-orphans.sql
@@ -13,7 +17,7 @@
 -- Reading the result:
 --   Sections 1-10 (relation, id, dangling_value): every row returned is one
 --   orphan. Zero rows for a section means that relation is clean. Any rows
---   must be repaired or retired before the matching FK migration is written.
+--   must be repaired or retired before the FK migration is applied there.
 --   Sections C1-C5 are CONTROLS on relations that already have real FKs and
 --   must always return zero rows. A control returning rows means the probe is
 --   broken (or a constraint was dropped), not that the data has a problem.
