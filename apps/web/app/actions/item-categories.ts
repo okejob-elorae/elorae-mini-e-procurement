@@ -8,6 +8,7 @@ import {
   createItemCategoryRecord,
   updateItemCategoryRecord,
   deleteItemCategoryRecord,
+  ItemCategoryDeleteError,
 } from '@/lib/item-categories/mutations';
 
 async function requireSession() {
@@ -53,10 +54,29 @@ export async function updateItemCategory(
   return row;
 }
 
-export async function deleteItemCategory(id: string) {
+export type DeleteItemCategoryActionResult =
+  | { success: true }
+  | {
+      success: false;
+      messageKey: "cannotDeleteCategoryWithItems" | "cannotDeleteCategoryWithCommissionRates" | "failedToDeleteCategory";
+    };
+
+export async function deleteItemCategory(id: string): Promise<DeleteItemCategoryActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_DELETE);
-  await deleteItemCategoryRecord(id);
+  try {
+    await deleteItemCategoryRecord(id);
+  } catch (error) {
+    if (error instanceof ItemCategoryDeleteError) {
+      return {
+        success: false,
+        messageKey: error.code === "HAS_ITEMS" ? "cannotDeleteCategoryWithItems" : "cannotDeleteCategoryWithCommissionRates",
+      };
+    }
+    console.error("[deleteItemCategory]", error);
+    return { success: false, messageKey: "failedToDeleteCategory" };
+  }
   revalidatePath('/backoffice/items');
   revalidatePath('/backoffice/items/categories');
+  return { success: true };
 }
