@@ -6254,6 +6254,7 @@
     "colOrdered": "Dipesan",
     "colReceived": "Sudah diterima",
     "colAfter": "Setelah GRN ini",
+    "applySkipped": "{count} baris kain dilewati karena sudah berubah sejak file diperiksa. Buka import lagi untuk memeriksanya ulang.",
     "overBadge": "+{qty} {uom} lebih",
     "overNote": "Menerima lebih dari yang dipesan akan mengirim GRN ini untuk persetujuan owner.",
     "errorsTitle": "{count} error ditemukan",

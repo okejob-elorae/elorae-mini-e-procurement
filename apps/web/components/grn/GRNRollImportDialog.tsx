@@ -43,7 +43,11 @@ type Phase =
     errors: GrnRollImportError[];
     summary: GrnRollImportLineSummary[];
     plan: Plan | null;
+    /* The lines the file was checked against, so apply can refuse a line that changed since. */
+    targets: GrnRollImportTargetLine[];
   };
+
+export type GrnRollImportApplyOutcome = { lines: number; rolls: number; skipped: number };
 
 type Props = {
   open: boolean;
@@ -51,7 +55,7 @@ type Props = {
   lines: GrnRollImportTargetLine[];
   existingRollCounts: Record<string, number>;
   templateFileName: string;
-  onApply: (plan: Plan) => void;
+  onApply: (plan: Plan, targets: GrnRollImportTargetLine[]) => GrnRollImportApplyOutcome;
 };
 
 const MAX_MB = GRN_ROLL_IMPORT_MAX_BYTES / (1024 * 1024);
@@ -188,15 +192,20 @@ export function GRNRollImportDialog({
       errors: [...parsed.errors, ...result.errors],
       summary: result.summary,
       plan: result.plan,
+      targets: lines,
     });
   }
 
   function apply() {
     if (!checked || !checked.plan || !canApply) return;
     const plan = checked.plan;
-    const rolls = Object.values(plan).reduce((sum, list) => sum + list.length, 0);
-    onApply(plan);
-    toast.success(t("applied", { rolls, lines: Object.keys(plan).length }));
+    const outcome = onApply(plan, checked.targets);
+    if (outcome.lines > 0) {
+      toast.success(t("applied", { rolls: outcome.rolls, lines: outcome.lines }));
+    }
+    if (outcome.skipped > 0) {
+      toast.warning(t("applySkipped", { count: outcome.skipped }));
+    }
     handleOpenChange(false);
   }
 

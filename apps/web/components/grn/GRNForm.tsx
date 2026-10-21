@@ -36,7 +36,7 @@ import { useSession } from 'next-auth/react';
 import { FabricRollInput, FabricRackPreview } from '@/components/grn/FabricRollInput';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
 import { useTranslations } from "next-intl";
-import { GRNRollImportDialog } from "@/components/grn/GRNRollImportDialog";
+import { GRNRollImportDialog, type GrnRollImportApplyOutcome } from "@/components/grn/GRNRollImportDialog";
 import { buildRollPayload } from "@/lib/grn/roll-import/payload";
 import type { GrnRollImportTargetLine, ImportedRoll } from "@/lib/grn/roll-import/types";
 import {
@@ -269,7 +269,11 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
 
   const setLineVariantSku = (lineId: string, variantSku: string | undefined) => {
     setLines((prev) =>
-      prev.map((r) => (r.id === lineId ? { ...r, variantSku } : r))
+      prev.map((r) => {
+        if (r.id !== lineId) return r;
+        if (!r.importedRolls || r.variantSku === variantSku) return { ...r, variantSku };
+        return { ...r, variantSku, importedRolls: undefined, qty: 0 };
+      })
     );
   };
 
@@ -298,12 +302,36 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const sumLengths = (lengths: number[]): number =>
     lengths.reduce((sum, n) => sum + Math.round(n * 100), 0) / 100;
 
-  const applyRollImport = (plan: Record<string, ImportedRoll[]>) => {
+  /*
+   * Line ids repeat across POs (`po-0`…), so a plan is applied only to a row that is still the
+   * fabric line the file was checked against: same SKU and variant, not just the same id.
+   */
+  const applyRollImport = (
+    plan: Record<string, ImportedRoll[]>,
+    targets: GrnRollImportTargetLine[]
+  ): GrnRollImportApplyOutcome => {
+    const applicable: Record<string, ImportedRoll[]> = {};
+    let skipped = 0;
+    Object.entries(plan).forEach(([lineId, rolls]) => {
+      const row = lines.find((r) => r.id === lineId);
+      const target = targets.find((tl) => tl.lineId === lineId);
+      const same =
+        row !== undefined &&
+        target !== undefined &&
+        row.itemType === "FABRIC" &&
+        row.sku === target.sku &&
+        (row.variantSku ?? null) === target.variantSku;
+      if (same && rolls.length > 0) applicable[lineId] = rolls;
+      else skipped += 1;
+    });
+    const appliedLines = Object.keys(applicable).length;
+    const appliedRolls = Object.values(applicable).reduce((sum, list) => sum + list.length, 0);
+    if (appliedLines === 0) return { lines: 0, rolls: 0, skipped };
     setErrors((e) => ({ ...e, lines: undefined }));
     setLines((prev) =>
       prev.map((r) => {
-        const rolls = plan[r.id];
-        if (!rolls || rolls.length === 0) return r;
+        const rolls = applicable[r.id];
+        if (!rolls) return r;
         return {
           ...r,
           importedRolls: rolls,
@@ -312,6 +340,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         };
       })
     );
+    return { lines: appliedLines, rolls: appliedRolls, skipped };
   };
 
   const clearImportedRolls = (lineId: string) => {

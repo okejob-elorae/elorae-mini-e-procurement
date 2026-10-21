@@ -6254,6 +6254,7 @@
     "colOrdered": "Ordered",
     "colReceived": "Received before",
     "colAfter": "After this GRN",
+    "applySkipped": "{count, plural, one {# fabric line was} other {# fabric lines were}} skipped because it changed since the file was checked. Open the import again to re-check.",
     "overBadge": "+{qty} {uom} over",
     "overNote": "Receiving more than ordered sends this GRN for owner approval.",
     "errorsTitle": "{count, plural, one {# error found} other {# errors found}}",
