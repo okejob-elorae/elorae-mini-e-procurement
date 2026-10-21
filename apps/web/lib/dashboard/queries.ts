@@ -1,5 +1,5 @@
 import { prisma } from '@elorae/db';
-import { undeliveredResidual } from "@/lib/field-sales/delivery/undelivered-residual";
+import { deliveredGoodsValue, undeliveredResidual } from "@/lib/field-sales/delivery/undelivered-residual";
 
 function getWeekStart(d: Date): Date {
   const date = new Date(d);
@@ -507,7 +507,8 @@ type RealisedDeliveryRow = {
  * never counts.
  * - realised = sum of FieldSalesDelivery.total on PUTUS orders + all VanSale.total.
  * - awaitingDelivery = APPROVED PUTUS orders whose deliveryStatus is PENDING or PARTIAL, valued at
- *   the undelivered residual (see undeliveredResidual), with the count being orders.
+ *   the undelivered residual (see undeliveredResidual), measured against each delivery's exact
+ *   goods value (deliveredGoodsValue), not its whole-rupiah total, with the count being orders.
  * - outstanding = PENDING_APPROVAL PUTUS FieldSalesOrder.total, i.e. awaiting approval.
  *
  * Realised counts DELIVERIES, not approved orders. Approval stopped moving stock once delivery
@@ -540,7 +541,11 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     }),
     prisma.fieldSalesOrder.findMany({
       where: { orderType: "PUTUS", status: "APPROVED", deliveryStatus: { in: ["PENDING", "PARTIAL"] } },
-      select: { salesmanId: true, total: true, deliveries: { select: { total: true } } },
+      select: {
+        salesmanId: true,
+        total: true,
+        deliveries: { select: { subtotal: true, discountAmount: true, lines: { select: { discountAmount: true } } } },
+      },
     }),
   ]);
 
@@ -585,7 +590,13 @@ export async function getSalesmenSalesSummary(): Promise<SalesmenSalesSummary> {
     rec.awaitingDelivery.count += 1;
     rec.awaitingDelivery.amount += undeliveredResidual(
       Number(o.total),
-      o.deliveries.map((d) => Number(d.total)),
+      o.deliveries.map((d) =>
+        deliveredGoodsValue({
+          subtotal: Number(d.subtotal),
+          discountAmount: Number(d.discountAmount),
+          lineDiscounts: d.lines.map((l) => Number(l.discountAmount)),
+        }),
+      ),
     );
   }
 

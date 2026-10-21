@@ -410,12 +410,13 @@ export async function countItemDeleteBlockers(id: string): Promise<number> {
     prisma.planAccessory.count({ where: { itemId: id } }),
     prisma.salesReturnItem.count({ where: { itemId: id } }),
     prisma.fieldReturnLine.count({ where: { itemId: id } }),
-    /*
-     * relationMode = "prisma" means none of these required `item` relations is backed by a real
-     * database FK, so nothing stops `tx.item.delete()` below from succeeding while one of these
-     * rows still points at it — every one below has a REQUIRED Prisma relation to Item, so the
-     * first read that joins it (`select: { item: ... }`, as every one of these documents' detail
-     * pages does) throws "Inconsistent query result" forever, with no UI repair path.
+    /**
+     * Every one below has a REQUIRED Prisma relation to Item. Under relationMode = "prisma" most of
+     * them have no database FK, so nothing stops `tx.item.delete()` below from succeeding while one
+     * of these rows still points at it, and the first read that joins it (`select: { item: ... }`,
+     * as every one of these documents' detail pages does) throws "Inconsistent query result"
+     * forever, with no UI repair path. The two field-sales line tables do carry a real FK
+     * (`ON DELETE RESTRICT`); for them this count turns a raw FK error into ITEM_DELETE_BLOCKED.
      */
     prisma.fieldSalesOrderLine.count({ where: { itemId: id } }),
     prisma.fieldSalesDeliveryLine.count({ where: { itemId: id } }),

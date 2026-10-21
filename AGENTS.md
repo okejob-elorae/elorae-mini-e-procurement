@@ -179,7 +179,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Wondering why a store stops getting konsi suggestions for an item? `listKonsiSuggestions`'s never-sent exclusion is PERMANENT — the `StoreAssortmentLine` gap covers it. → `docs/landmines/field-sales.md`
 - Writing an assortment-gap test? On-hand is `StoreStock` PLUS `openKonsiQtyByKey`, always via that helper; never fold the open qty into `AssortmentGapRow.onHandQty`. → `docs/landmines/field-sales.md`
 - Touching `Store.priceDiscountPercent`/`markupPercent` or an SPG/van price? SPG prices by real `termsType` via `spgUnitPrice`; van hardcodes PUTUS, so KONSI holds no discount. → `docs/landmines/field-sales.md`
-- Touching `VanSale`/`SpgSale` `total`/`subtotal`? Payment compares against `total`, whole rupiah via `roundToWholeRupiah`; shells preview through the same helper. → `docs/landmines/field-sales.md`
+- Touching `VanSale`/`SpgSale`/`FieldSalesDelivery` `total`/`subtotal`? `total` is whole rupiah via `roundToWholeRupiah`, the rest exact; van/SPG payment compares against `total`, never `subtotal`, and their shells preview through the helper. → `docs/landmines/field-sales.md`
 - Widening `PaymentMethod`? FOUR edits beyond the enum, incl. TWO `ALTER TABLE … MODIFY` (`Payment.method`, `CollectionSubmission.method`). → `docs/landmines/field-sales.md`
 - Touching `voidPayment`? It re-projects the retur via `projectReturnOffset(fieldReturnId, tx)` — `tx` is load-bearing; early returns stay write-free. → `docs/landmines/field-sales.md`
 - Pricing a `FieldReturn` approved with `valuationStatus: PENDING`? `priceApprovedReturnLine` prices it per line until `VALUED` — never reprice a valued retur. → `docs/landmines/field-sales.md`
@@ -209,7 +209,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Trusting a declared `number` from a `"use server"` export? Validate with `Number.isFinite` plus a range check, never the global `isFinite`. → `docs/landmines/delivery-shipments.md`
 - Changing the delivery POD radius? It reuses `checkin.radiusMeters`/`Store.checkinRadiusMeters` — widening either widens store check-in too. → `docs/landmines/delivery-shipments.md`
 - Reading `evaluateCheckinRadius`'s `distanceMeters: null`? Check-in passes it, the POD gate refuses — never gate on `outOfRadius` alone. → `docs/landmines/delivery-shipments.md`
-- Hitting a shipment whose `Store` row is missing? That is `NOT_FOUND`, never `STORE_NOT_GEOCODED` — no FK backs `FieldSalesOrder.storeId`. → `docs/landmines/delivery-shipments.md`
+- Hitting a shipment whose `Store` row is missing? That is `NOT_FOUND`, never `STORE_NOT_GEOCODED` — the FK on `FieldSalesOrder.storeId` makes it defensive; keep it. → `docs/landmines/delivery-shipments.md`
 - Setting `carriedById`? The writer does NOT verify it exists — add that check once anything but the admin combobox can set it. → `docs/landmines/delivery-shipments.md`
 - Reassigning a shipment's carrier after it ships? Impossible — `carriedById` freezes at `IN_TRANSIT`; cancel and recreate. → `docs/landmines/delivery-shipments.md`
 - Touching `SALESMAN_CARRY` completion, or a new `completeDeliveryShipment` caller? `carriedById` must EQUAL `deliveredById` (`NOT_CARRIER`); GPS is no substitute. → `docs/landmines/delivery-shipments.md`
@@ -236,7 +236,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Retrying a supplier payment journal, or its PO banner? Need a real `supplier_payment` `JOURNAL_PENDING` row + paid + no journal — never "paid, no journal" alone. → `docs/landmines/finance-ar.md`
 - Adding a code to `RECEIPT_BLOCKED_MARK_CODES`, or touching `setPOPaidAt`'s abort? Receipt-state codes only; THROW inside the tx after the CAS (a `return` commits `paidAt`); `poBookedPayable` checks receipts BEFORE resolving AP. → `docs/landmines/finance-ar.md`
 - Correcting delivery dates (`updateDeliveryDatesAction`)? Refused once `paidAmount > 0`; `runSerializable` commits on return — throw, never `return`, after a write. → `docs/landmines/finance-ar.md`
-- Checking a receivable is `PAID`? Needs `outstandingAmount === 0` exactly — a sub-rupiah residue stays `PARTIAL` until written off (next line), never relaxed to < Rp 1. → `docs/landmines/finance-ar.md`
+- Checking a receivable is `PAID`? Needs `outstandingAmount === 0` exactly — konsi, admin-fee, retur-draw and legacy sen leave a sub-rupiah residue at `PARTIAL` until written off (next line); never relax it to < Rp 1. → `docs/landmines/finance-ar.md`
 - Writing off a sub-rupiah residue? Only via `recordRoundingAdjustment` (`ROUNDING_ADJUSTMENT`, < Rp 1, one allocation) — never PAID-by-flag, never the method from another caller. → `docs/landmines/finance-ar.md`
 - Touching `lib/finance/ar/aging.ts`? `daysOverdue` floors WIB days via a hardcoded `+7h`; `getDate()`/`getFullYear()` use the HOST timezone and break on prod. → `docs/landmines/finance-ar.md`
 - Calling an AR journal builder directly, `postPaymentVoidJournal`/`postSellThroughVoidJournal` included? They MAY THROW — only ever via `postArJournalSafely`. → `docs/landmines/finance-ar.md`
@@ -314,6 +314,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Writing `Item` or `StockAdjustment` from apps/api? Dual-owner — go through the `@elorae/db` writer helpers, never a direct Prisma write. See also `docs/BOUNDARY.md §3`. → `docs/landmines/data-ownership-auth.md`
 - Adding a relation under `relationMode = "prisma"`? Grep migrations for hand-authored FKs; if REQUIRED, verify the id in the writer's tx and make every `delete<Parent>` count the child. → `docs/landmines/data-ownership-auth.md`
+- Adding an FK to an EXISTING relation? Self-aborting pre-flight before the DDL, read-only prod orphan audit before the deploy; field-sales order columns now refuse made-up ids (ERROR 1452). → `docs/landmines/data-ownership-auth.md`
 - Adding a permission and assuming ADMIN is gated by it? The admin wildcard is granted in CODE (`isSystem` → `['*']`) — a seed only makes it grantable to non-admin roles. → `docs/landmines/data-ownership-auth.md`
 - Building an R2 key from request input? `buildR2Key` after a 400 on `isSafeR2KeySegment`, never a hand-templated key; never tighten a `newLocalId()` id to UUID-only. → `docs/landmines/data-ownership-auth.md`
 - Calling apps/api via `apiFetch`? Inputs in the PATH or a POST body, never a query string — `InternalSignGuard` verifies `req.path`, so it 401s every time. → `docs/landmines/data-ownership-auth.md`

@@ -212,9 +212,10 @@ export function deriveProofPhoto(
 
 /**
  * Read-only audit view of one shipment. Users and the store are looked up by id rather than
- * `include`d: under `relationMode = "prisma"` there is no FK behind them, and an `include` of a
- * dangling REQUIRED relation throws instead of returning null. A missing user renders as null; a
- * missing order or store returns null overall (same `NOT_FOUND` reading the writer uses).
+ * `include`d: under `relationMode = "prisma"` the shipment's user columns have no FK behind them,
+ * and an `include` of a dangling REQUIRED relation throws instead of returning null. The order's
+ * `storeId` does carry a real FK, so a missing store is defensive only. A missing user renders as
+ * null; a missing order or store returns null overall (same `NOT_FOUND` reading the writer uses).
  */
 export async function getDeliveryShipmentDetail(id: string): Promise<DeliveryShipmentDetail | null> {
   const row = await prisma.deliveryShipment.findUnique({

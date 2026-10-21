@@ -1,5 +1,5 @@
 import { type Prisma } from "@elorae/db";
-import { undeliveredResidual } from "@/lib/field-sales/delivery/undelivered-residual";
+import { deliveredGoodsValue, undeliveredResidual } from "@/lib/field-sales/delivery/undelivered-residual";
 
 export type CreditExposure = {
   receivableOutstanding: number;
@@ -10,7 +10,10 @@ export type CreditExposure = {
 /**
  * A store's live credit exposure: outstanding receivables plus each of its APPROVED putus
  * orders' undelivered residual, floored at zero PER ORDER (never on the grand sum — an
- * over-delivered order must not lend negative headroom to a sibling order's shortfall).
+ * over-delivered order must not lend negative headroom to a sibling order's shortfall). The
+ * residual subtracts each delivery's exact goods value (`deliveredGoodsValue`), never its
+ * whole-rupiah `total`: the rounding is already inside the receivable side, and subtracting the
+ * rounded figure would leave a fully delivered order holding its rounding as phantom exposure.
  *
  * Receivable is created at delivery, not at approve, so an approved-but-undelivered order is
  * committed exposure invisible to the receivable ledger without the residual term — see
@@ -39,14 +42,20 @@ export async function computeStoreCreditExposure(
     where: { storeId, status: "APPROVED", orderType: "PUTUS", deliveryStatus: { not: "CLOSED" } },
     select: {
       total: true,
-      deliveries: { select: { total: true } },
+      deliveries: { select: { subtotal: true, discountAmount: true, lines: { select: { discountAmount: true } } } },
     },
   });
   let undeliveredOrderResidual = 0;
   for (const order of approvedOrders) {
     undeliveredOrderResidual += undeliveredResidual(
       Number(order.total),
-      order.deliveries.map((d) => Number(d.total)),
+      order.deliveries.map((d) =>
+        deliveredGoodsValue({
+          subtotal: Number(d.subtotal),
+          discountAmount: Number(d.discountAmount),
+          lineDiscounts: d.lines.map((l) => Number(l.discountAmount)),
+        }),
+      ),
     );
   }
 

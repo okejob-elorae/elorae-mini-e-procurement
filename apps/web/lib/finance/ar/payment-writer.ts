@@ -256,10 +256,11 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
       });
       /*
        * Status is recomputed from the RETURNED value, not from the pre-read one. PAID requires exact
-       * zero: a delivery total can carry sen (unlike a van sale, which rounds to whole rupiah), so a
-       * receivable can be settled in cash and legitimately sit at PARTIAL with sub-rupiah residue.
-       * Declaring PAID early would write money off with no journal behind it; such a residue is
-       * closed by `recordRoundingAdjustment`, a payment with its own journal.
+       * zero: a delivery total is whole rupiah now, but a konsi sell-through total, a settlement's
+       * admin fee, a retur draw and every pre-rounding delivery can still carry sen, so a receivable
+       * can be settled in cash and legitimately sit at PARTIAL with sub-rupiah residue. Declaring
+       * PAID early would write money off with no journal behind it; such a residue is closed by
+       * `recordRoundingAdjustment`, a payment with its own journal.
        */
       const outstanding = Number(updated.outstandingAmount);
       await tx.receivable.update({
