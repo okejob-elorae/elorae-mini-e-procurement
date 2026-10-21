@@ -53,9 +53,10 @@ function isDateCell(cell: XLSX.CellObject | undefined): boolean {
 
 /**
  * A number typed into a cell with a custom format (`0000` on No. Roll turns 12 into "0012") keeps
- * only the bare number as its raw value. For text columns the formatted text is what the person
- * sees, so it wins; General-format cells keep the raw value, since Excel's General display rounds
- * long digit runs such as a numeric SKU into scientific notation.
+ * only the bare number as its raw value, so for No. Roll the formatted text is what the person sees
+ * and wins. General-format cells keep the raw value, since Excel's General display rounds long digit
+ * runs into scientific notation. Only No. Roll reads it: SKU and Varian SKU must match the form's
+ * codes, which a `0.00` or `#,##0` format would turn into "10234.00" or "10,234".
  */
 function formattedNumber(cell: XLSX.CellObject | undefined): string | null {
   if (!cell || cell.t !== "n" || typeof cell.w !== "string" || cell.w === "") return null;
@@ -108,7 +109,7 @@ export function parseGrnRollImportWorkbook(data: ArrayBuffer): { rows: GrnRollIm
       if (col === undefined) continue;
       const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r + i, c: range.s.c + col })] as XLSX.CellObject | undefined;
       if (isDateCell(cell)) rowErrors.push(rollImportError("DATE_CELL", { row: firstRow + i, column: key }));
-      const shown = formattedNumber(cell);
+      const shown = key === "noRoll" ? formattedNumber(cell) : null;
       if (shown !== null) formatted.set(key, shown);
     }
     const text = (key: GrnRollImportColumnKey): string => {
