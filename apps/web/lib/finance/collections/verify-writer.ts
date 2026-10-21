@@ -44,13 +44,21 @@ export async function verifyCollection(input: {
   });
   if (!receivable) throw new CollectionError("NOT_FOUND");
 
+  /**
+   * `submitCollection` never writes this method, but the column is the shared `PaymentMethod`
+   * enum and `recordPayment`'s input union leaves it out, so this guard refuses it before the
+   * call below.
+   */
+  const method = submission.method;
+  if (method === "ROUNDING_ADJUSTMENT") throw new CollectionError("INVALID_METHOD");
+
   // recordPayment itself refuses ALREADY_SETTLED / OVER_ALLOCATED / WRONG_STORE — this call
   // inherits every guard the backoffice payment sheet has. A throw here propagates unmodified
   // and the submission is left untouched at PENDING — still rejectable, nothing half-applied.
   const { paymentId } = await recordPayment({
     storeId: receivable.storeId,
     paidAt: submission.paidAt,
-    method: submission.method,
+    method,
     amount: Number(submission.amount),
     recordedById: input.verifiedById,
     allocations: [{ receivableId: submission.receivableId, amount: Number(submission.amount) }],

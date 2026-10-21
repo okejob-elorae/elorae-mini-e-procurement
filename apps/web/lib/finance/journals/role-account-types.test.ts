@@ -47,6 +47,13 @@ describe("isAccountTypeValidForRole", () => {
     }
   });
 
+  it("requires expense accounts for the roles a non-cash payment debits", () => {
+    for (const role of ["TRADE_PROGRAM_EXPENSE", "ADMIN_FEE_EXPENSE", "ROUNDING_EXPENSE"] as const) {
+      expect(isAccountTypeValidForRole(role, "BEBAN")).toBe(true);
+      expect(isAccountTypeValidForRole(role, "ASET")).toBe(false);
+    }
+  });
+
   it("accepts either a liability or an expense account for tax", () => {
     expect(isAccountTypeValidForRole("TAX", "LIABILITAS")).toBe(true);
     expect(isAccountTypeValidForRole("TAX", "BEBAN")).toBe(true);

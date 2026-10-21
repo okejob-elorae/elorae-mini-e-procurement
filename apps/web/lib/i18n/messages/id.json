@@ -5285,7 +5285,8 @@
       "INVENTORY_VARIANCE": "Selisih Persediaan",
       "TAX": "Pajak",
       "TRADE_PROGRAM_EXPENSE": "Biaya Program Dagang",
-      "ADMIN_FEE_EXPENSE": "Biaya Admin"
+      "ADMIN_FEE_EXPENSE": "Biaya Admin",
+      "ROUNDING_EXPENSE": "Beban Selisih Pembulatan"
     },
     "desc": {
       "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
@@ -5306,7 +5307,8 @@
       "INVENTORY_VARIANCE": "Akun untuk mencatat selisih stock opname/rekonsiliasi.",
       "TAX": "Akun untuk kewajiban/beban pajak.",
       "TRADE_PROGRAM_EXPENSE": "Akun beban untuk potongan program dagang yang dinegosiasikan toko saat pelunasan.",
-      "ADMIN_FEE_EXPENSE": "Akun beban untuk biaya admin yang dipotong toko saat pelunasan."
+      "ADMIN_FEE_EXPENSE": "Akun beban untuk biaya admin yang dipotong toko saat pelunasan.",
+      "ROUNDING_EXPENSE": "Akun beban untuk sisa piutang di bawah satu rupiah yang dihapus sebagai penyesuaian pembulatan."
     },
     "error": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
@@ -5759,10 +5761,14 @@
       "ERROR": "Terjadi kesalahan saat mencatat pembayaran ini. Coba lagi.",
       "RECEIVABLE_REVENUE_NOT_POSTED_YET": "Tagihan yang dilunasi pembayaran ini belum punya jurnal pendapatan. Posting jurnalnya dulu (nota tagihan dari halaman piutangnya, tagihan sell-through konsi dari halaman laporan sell-through), lalu coba lagi. Kalau pendapatan itu dicatat dengan jurnal manual, ini akan terus ditolak; catat penerimaannya dengan jurnal manual juga.",
       "RECEIVABLE_OUTSIDE_LEDGER": "Semua tagihan yang dilunasi pembayaran ini tercatat sebelum buku besar dimulai, sehingga tidak ada piutang yang bisa dikreditkan. Mencoba lagi tidak akan memposting jurnalnya.",
-      "NOTHING_TO_POST": "Tidak ada yang perlu diposting: tidak ada jurnal yang perlu dibuat atau dibalik untuk pembayaran ini."
+      "NOTHING_TO_POST": "Tidak ada yang perlu diposting: tidak ada jurnal yang perlu dibuat atau dibalik untuk pembayaran ini.",
+      "NOT_A_RESIDUE": "Hanya sisa di bawah Rp 1 yang bisa dihapus sebagai pembulatan, dan sisa piutang ini bukan sisa pembulatan atau baru saja berubah. Muat ulang halaman untuk melihat saldo terkininya.",
+      "PENDING_CLAIM": "Masih ada setoran penagihan atau pelunasan toko yang menunggu untuk piutang ini. Verifikasi atau tolak dulu, lalu hapus sisa yang tertinggal.",
+      "METHOD_NOT_ALLOWED": "Penyesuaian pembulatan hanya bisa diposting dari tombol hapus sisa di halaman piutangnya sendiri."
     },
     "methodProgramDeduction": "Potongan Program",
     "methodAdminFee": "Biaya Admin",
+    "methodRoundingAdjustment": "Penyesuaian Pembulatan",
     "methodUnknown": "Tidak Diketahui"
   },
   "leadTime": {
@@ -6057,7 +6063,22 @@
       "submissionEmpty": "Belum ada setoran yang tercatat.",
       "colSubmissionAmount": "Jumlah Setoran",
       "colSubmissionCollector": "Kolektor",
-      "submissionRejectReasonLabel": "Alasan Penolakan"
+      "submissionRejectReasonLabel": "Alasan Penolakan",
+      "roundingResidue": {
+        "title": "Sisa di bawah satu rupiah",
+        "description": "Sisa piutang ini {amount}, kurang dari satu rupiah, jadi tidak mungkin dibayar tunai. Hapus sebagai penyesuaian pembulatan untuk menutupnya.",
+        "action": "Hapus sebagai pembulatan",
+        "dialogTitle": "Hapus {amount} sebagai pembulatan?",
+        "dialogDescription": "Ini memposting pembayaran penyesuaian pembulatan sebesar sisa yang tepat dan menandai piutang lunas. Jurnalnya mendebit akun Beban Selisih Pembulatan dan mengkredit piutang. Seperti pembayaran lain, ini bisa dibatalkan dari halaman pembayarannya.",
+        "confirm": "Hapus sisa",
+        "submitting": "Menghapus…",
+        "successToast": "Sisa dihapus sebagai {docNo}.",
+        "alreadyToast": "Sisa ini sudah dihapus sebelumnya.",
+        "pendingCollectionHint": "Ada setoran penagihan untuk piutang ini yang menunggu verifikasi. Verifikasi atau tolak dulu.",
+        "err": {
+          "PAYMENT_VOIDED": "Penghapusan sisa sebelumnya sudah dibatalkan. Tutup dialog ini lalu buka lagi."
+        }
+      }
     },
     "journalWarning": {
       "title": "Jurnal belum diposting",
@@ -6113,6 +6134,7 @@
     "storeAvailableCreditHint": "Retur yang disetujui dan belum diterapkan ke pembayaran mana pun untuk toko ini.",
     "methodProgramDeduction": "Potongan Program",
     "methodAdminFee": "Biaya Admin",
+    "methodRoundingAdjustment": "Penyesuaian Pembulatan",
     "methodUnknown": "Tidak Diketahui"
   },
   "profileAccounts": {

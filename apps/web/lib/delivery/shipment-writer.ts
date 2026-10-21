@@ -340,9 +340,9 @@ export async function completeDeliveryShipment(input: {
       select: { lat: true, lng: true, checkinRadiusMeters: true },
     });
     /**
-     * Two distinct failures, two distinct codes: under `relationMode = "prisma"` there is no real
-     * FK behind `FieldSalesOrder.storeId`, so a missing row is genuinely possible and is a
-     * NOT_FOUND, not a geocoding gap the ops team could fix by entering coordinates.
+     * Two distinct failures, two distinct codes: a missing row is a NOT_FOUND, not a geocoding gap
+     * the ops team could fix by entering coordinates. `FieldSalesOrder.storeId` carries a real FK
+     * (`ON DELETE RESTRICT`), so this branch is defensive; keep it distinct from the geocoding one.
      */
     if (!store) throw new DeliveryShipmentError("NOT_FOUND");
     if (store.lat === null || store.lng === null) {
