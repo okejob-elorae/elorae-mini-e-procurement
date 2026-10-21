@@ -20,13 +20,14 @@
     { "code": "5101", "name": "Harga Pokok Penjualan",            "type": "HPP" },
     { "code": "6",    "name": "Beban",                            "type": "BEBAN" },
     { "code": "6101", "name": "Selisih Persediaan",               "type": "BEBAN" },
-    { "code": "6201", "name": "Beban Marketplace",                "type": "BEBAN" },
-    { "code": "6202", "name": "Beban Administrasi Marketplace",   "type": "BEBAN" },
-    { "code": "6203", "name": "Beban Layanan Marketplace",        "type": "BEBAN" },
-    { "code": "6204", "name": "Beban Komisi Marketplace",         "type": "BEBAN" },
-    { "code": "6205", "name": "Beban Proses Pesanan Marketplace", "type": "BEBAN" },
-    { "code": "6206", "name": "Beban Marketplace Lainnya",        "type": "BEBAN" },
-    { "code": "6301", "name": "Beban Program Toko",               "type": "BEBAN" },
-    { "code": "6302", "name": "Beban Administrasi Toko",          "type": "BEBAN" }
+    { "code": "6201", "name": "Biaya Marketplace",                "type": "BEBAN" },
+    { "code": "6202", "name": "Biaya Administrasi Marketplace",   "type": "BEBAN" },
+    { "code": "6203", "name": "Biaya Layanan Marketplace",        "type": "BEBAN" },
+    { "code": "6204", "name": "Biaya Komisi Marketplace",         "type": "BEBAN" },
+    { "code": "6205", "name": "Biaya Proses Pesanan Marketplace", "type": "BEBAN" },
+    { "code": "6206", "name": "Biaya Marketplace Lainnya",        "type": "BEBAN" },
+    { "code": "6301", "name": "Biaya Program Dagang",               "type": "BEBAN" },
+    { "code": "6302", "name": "Biaya Administrasi Pelunasan",     "type": "BEBAN" },
+    { "code": "6303", "name": "Biaya Selisih Pembulatan",         "type": "BEBAN" }
   ]
 }
