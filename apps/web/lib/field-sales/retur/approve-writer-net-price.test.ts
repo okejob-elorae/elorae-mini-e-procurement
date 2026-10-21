@@ -165,10 +165,10 @@ d("approveFieldReturn values a discounted delivery at its net (test bed only)", 
     ]);
     const disc = ret.lines.find((l) => l.itemId === discItemId)!;
     const plain = ret.lines.find((l) => l.itemId === plainItemId)!;
-    /* 2000 - 100.60 - 20 (its 2000/3500 share of the 35 order discount) */
-    expect(Number(disc.lineValue)).toBe(1879.4);
-    /* 1500 - 15 */
-    expect(Number(plain.lineValue)).toBe(1485);
+    /* 2000 - 100.60 - 19.56 (its 1899.40 : 1500 share of the 35 order discount) */
+    expect(Number(disc.lineValue)).toBe(1879.84);
+    /* 1500 - 15.44 */
+    expect(Number(plain.lineValue)).toBe(1484.56);
     expect(Number(ret.totalValue)).toBe(3364.4);
     expect(Number(ret.totalValue)).not.toBe(3500);
     expect(ret.valuationStatus).toBe("VALUED");
@@ -178,9 +178,9 @@ d("approveFieldReturn values a discounted delivery at its net (test bed only)", 
   it("credits a partial retur of a discounted line per net unit, rounded once", async () => {
     const ret = await returnAndApprove([{ itemId: discItemId, qty: 1 }]);
     const [line] = ret.lines;
-    /* 1879.40 over 2 units: one unit credits 939.70, never the 1000 gross unit price. */
-    expect(Number(line.lineValue)).toBe(939.7);
-    expect(Number(line.unitPrice)).toBe(939.7);
-    expect(Number(ret.totalValue)).toBe(939.7);
+    /* 1879.84 over 2 units: one unit credits 939.92, never the 1000 gross unit price. */
+    expect(Number(line.lineValue)).toBe(939.92);
+    expect(Number(line.unitPrice)).toBe(939.92);
+    expect(Number(ret.totalValue)).toBe(939.92);
   });
 });

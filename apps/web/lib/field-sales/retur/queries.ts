@@ -224,6 +224,12 @@ export type FieldReturnLineDetail = {
   priceDeliveryDocNo: string | null;
   priceNote: string | null;
   priceState: FieldReturnPriceState;
+  /**
+   * The candidate an `AUTO` line will take: the LOWEST of near-equal prices
+   * (`classifyPriceCandidates`), which is not necessarily the newest delivery, `priceCandidates[0]`.
+   * `null` for every other state.
+   */
+  autoPriceDeliveryLineId: string | null;
   /** Only populated while the retur can still be priced: not yet approved, or approved with its valuation still PENDING. */
   priceCandidates?: PriceCandidate[];
 };
@@ -417,11 +423,10 @@ export async function getFieldReturnById(
       : null,
     lines: r.lines.map((l) => {
       const priceCandidates = candidatesByLineId.get(l.id);
-      const priceState: FieldReturnPriceState = l.priceSource
-        ? "SET"
-        : priceCandidates
-          ? classifyPriceCandidates(priceCandidates.map((c) => c.unitPrice)).kind
-          : "UNPRICEABLE";
+      const verdict = priceCandidates ? classifyPriceCandidates(priceCandidates.map((c) => c.unitPrice)) : null;
+      const priceState: FieldReturnPriceState = l.priceSource ? "SET" : verdict ? verdict.kind : "UNPRICEABLE";
+      const autoPriceDeliveryLineId =
+        !l.priceSource && priceCandidates && verdict?.kind === "AUTO" ? priceCandidates[verdict.index].deliveryLineId : null;
 
       return {
         id: l.id,
@@ -451,6 +456,7 @@ export async function getFieldReturnById(
         priceDeliveryDocNo: l.priceDeliveryLineId ? (docNoByDeliveryLineId.get(l.priceDeliveryLineId) ?? null) : null,
         priceNote: l.priceNote,
         priceState,
+        autoPriceDeliveryLineId,
         ...(isOpenForPricing ? { priceCandidates: priceCandidates ?? [] } : {}),
       };
     }),

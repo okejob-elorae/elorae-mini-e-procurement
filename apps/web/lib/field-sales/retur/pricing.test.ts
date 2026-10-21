@@ -260,19 +260,19 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
   });
 
   it("prices a line-discounted line at its net: gross less its discount less its order-discount share", async () => {
-    /* 2000 gross - 100.60 line discount - 20 of the 35 order discount (2000 of the 3500 gross) */
+    /* 2000 gross - 100.60 line discount - 19.56 of the 35 order discount, split 1899.40 : 1500 */
     const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "DISC" });
     expect(found).toHaveLength(1);
-    expect(found[0].netValue).toBeCloseTo(1879.4, 10);
-    expect(found[0].unitPrice).toBeCloseTo(939.7, 10);
+    expect(found[0].netValue).toBeCloseTo(1879.84, 10);
+    expect(found[0].unitPrice).toBeCloseTo(939.92, 10);
   });
 
   it("prices an undiscounted line of a discounted delivery net of its order-discount share", async () => {
-    /* 1500 gross - 15 of the 35 order discount */
+    /* 1500 gross - 15.44 of the 35 order discount */
     const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "DISC2" });
     expect(found).toHaveLength(1);
-    expect(found[0].netValue).toBeCloseTo(1485, 10);
-    expect(found[0].unitPrice).toBeCloseTo(495, 10);
+    expect(found[0].netValue).toBeCloseTo(1484.56, 10);
+    expect(found[0].unitPrice).toBeCloseTo(1484.56 / 3, 10);
   });
 
   it("prices every line of a discounted delivery so their nets sum to what the store was billed, not the gross", async () => {

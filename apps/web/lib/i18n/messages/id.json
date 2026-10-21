@@ -3904,7 +3904,7 @@
       "switchToPicker": "Pilih dari pengiriman",
       "provenanceDeliveryTitle": "Harga dari pengiriman",
       "provenanceManualTitle": "Harga manual",
-      "unpriceableBody": "Barang ini belum pernah dikirim ke toko ini sehingga tidak ada harga otomatis untuk dipakai — masukkan harga manual beserta catatannya.",
+      "unpriceableBody": "Tidak ada pengiriman barang ini ke toko ini yang dapat memberikan harga, sehingga tidak ada harga otomatis untuk dipakai — masukkan harga manual beserta catatannya.",
       "successSet": "Harga baris berhasil disimpan."
     },
     "approveConfirmValuationWarning": "{count} baris belum memiliki harga. Baris ini tetap akan disetujui dan dikembalikan ke stok, dan harganya masih bisa diisi setelahnya — tetapi retur ini tidak bisa dioffset sampai semua baris memiliki harga.",

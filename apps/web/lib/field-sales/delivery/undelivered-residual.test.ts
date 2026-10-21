@@ -59,7 +59,7 @@ describe("deliveredLineNetValues", () => {
     expect(deliveredLineNetValues({ discountAmount: 0, lines: [{ lineTotal: 2000, discountAmount: 100.6 }] })).toEqual([1899.4]);
   });
 
-  it("splits the order discount across the lines in proportion to their gross", () => {
+  it("splits the header discount in proportion to the lines' value when no line is discounted", () => {
     const nets = deliveredLineNetValues({
       discountAmount: 500,
       lines: [
@@ -80,7 +80,8 @@ describe("deliveredLineNetValues", () => {
       ],
     };
     const nets = deliveredLineNetValues(delivery);
-    expect(nets).toEqual([1879.4, 1485]);
+    /* The 35 splits on 1899.40 : 1500 (net of the line discount), 19.56 / 15.44. */
+    expect(nets).toEqual([1879.84, 1484.56]);
     const goods = deliveredGoodsValue({
       subtotal: delivery.subtotal,
       discountAmount: delivery.discountAmount,
@@ -105,7 +106,7 @@ describe("deliveredLineNetValues", () => {
   });
 
   it("gives the leftover sen to the line with the largest fractional share", () => {
-    /* Shares of 10.00 over gross 1, 2 and 4 are 1.428..., 2.857... and 5.714... */
+    /* Shares of 10.00 in the ratio 1 : 2 : 4 are 1.428..., 2.857... and 5.714... */
     const nets = deliveredLineNetValues({
       discountAmount: 10,
       lines: [
@@ -116,6 +117,43 @@ describe("deliveredLineNetValues", () => {
     });
     expect(nets).toEqual([98.57, 197.14, 394.29]);
     expect(sum(nets)).toBeCloseTo(690, 10);
+  });
+
+  it("splits the header on each line's value net of its own line discount, as the order promo was computed", () => {
+    /* A 1 x 1000 less a 500 line promo, B 1 x 1000; a 10% order promo on the 1500 net is 150,
+       which splits 500 : 1000 into 50 / 100, never 75 / 75 by gross. */
+    const nets = deliveredLineNetValues({
+      discountAmount: 150,
+      lines: [
+        { lineTotal: 1000, discountAmount: 500 },
+        { lineTotal: 1000, discountAmount: 0 },
+      ],
+    });
+    expect(nets).toEqual([450, 900]);
+  });
+
+  it("gives a line fully discounted at line level no header share, so it never goes negative", () => {
+    const nets = deliveredLineNetValues({
+      discountAmount: 100,
+      lines: [
+        { lineTotal: 1000, discountAmount: 1000 },
+        { lineTotal: 1000, discountAmount: 0 },
+      ],
+    });
+    expect(nets).toEqual([0, 900]);
+  });
+
+  it("falls back to gross weights when every line is fully discounted at line level", () => {
+    /* Nothing net to weigh on, yet a header remains: split it by gross so it lowers the lines
+       (here below zero, which retur pricing reads as unpriceable) instead of vanishing. */
+    const nets = deliveredLineNetValues({
+      discountAmount: 30,
+      lines: [
+        { lineTotal: 1000, discountAmount: 1000 },
+        { lineTotal: 500, discountAmount: 500 },
+      ],
+    });
+    expect(nets).toEqual([-20, -10]);
   });
 
   it("is the gross when nothing is discounted", () => {

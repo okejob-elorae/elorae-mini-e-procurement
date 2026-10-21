@@ -18,7 +18,7 @@ export type PriceCandidate = {
 
 /**
  * What a price read needs from one delivery line: its own figures, plus its delivery's header
- * discount and every sibling line, because the line's share of the order discount is allocated
+ * discount and every sibling line, because the line's share of the header discount is allocated
  * across the whole delivery. Siblings come ordered by id so the allocation's tie-break is stable.
  */
 const PRICED_DELIVERY_LINE_SELECT = {
@@ -53,7 +53,8 @@ type PricedDeliveryLineRow = {
 /**
  * Every delivery line that shipped this exact item + variant to this store, newest delivery
  * first, priced from the line's NET delivered value (`deliveredLineNetValues`: gross `lineTotal`
- * less the line's own discount and its share of the delivery's order discount) rather than the
+ * less the line's own discount and its share of the delivery's header discount, which is the
+ * order discount plus, on a closing delivery, any line-discount residue it absorbed) rather than the
  * gross `lineTotal` or `unitPrice`. A null lineTotal is a line that cannot price anything and is
  * skipped rather than credited at zero.
  */
@@ -149,8 +150,9 @@ function toPriceCandidate(r: PricedDeliveryLineRow): PriceCandidate | null {
 
 /**
  * The line's net delivered value, or null when it cannot price anything: a null `lineTotal`, or a
- * net below zero (a line discount larger than the line's own goods after its order-discount
- * share), which would credit the store a negative amount and is left for an admin to price.
+ * net below zero (a header discount larger than what the delivery's lines carry net of their line
+ * discounts, so its share pushes a line under zero), which would credit the store a negative
+ * amount and is left for an admin to price.
  */
 function netDeliveryLineValue(r: PricedDeliveryLineRow): number | null {
   if (r.lineTotal === null) return null;
@@ -187,8 +189,10 @@ export async function deliveryLineUnitPrice(
 
 /**
  * Resolves a single credit price for this item + variant at this store: AUTO when every
- * delivery priced it identically, AMBIGUOUS when deliveries disagree (the caller must pick
- * one), UNPRICEABLE when nothing was ever delivered.
+ * delivery priced it the same within `SAME_PRICE_TOLERANCE_RUPIAH` (at the lowest of them, with
+ * that candidate as the price source), AMBIGUOUS when deliveries genuinely disagree (the caller
+ * must pick one), UNPRICEABLE when no delivery of this item to this store can supply a price —
+ * none was ever made, or every one has a null `lineTotal` or a net below zero.
  */
 export async function resolveLinePrice(
   client: PrismaClientOrTx,
@@ -201,7 +205,7 @@ export async function resolveLinePrice(
   const candidates = await listPriceCandidates(client, input);
   const verdict = classifyPriceCandidates(candidates.map((c) => c.unitPrice));
   if (verdict.kind === "AUTO") {
-    return { kind: "AUTO", price: verdict.price, candidate: candidates[0] };
+    return { kind: "AUTO", price: verdict.price, candidate: candidates[verdict.index] };
   }
   if (verdict.kind === "AMBIGUOUS") {
     return { kind: "AMBIGUOUS", candidates };

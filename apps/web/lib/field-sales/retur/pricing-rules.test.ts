@@ -75,11 +75,11 @@ describe("pricing a retur of a discounted delivery", () => {
 
 describe("classifyPriceCandidates", () => {
   it("auto-prices when exactly one distinct price exists", () => {
-    expect(classifyPriceCandidates([833_333.3333])).toEqual({ kind: "AUTO", price: 833_333.3333 });
+    expect(classifyPriceCandidates([833_333.3333])).toEqual({ kind: "AUTO", price: 833_333.3333, index: 0 });
   });
 
   it("auto-prices when several deliveries carry the SAME price — there is no decision to make", () => {
-    expect(classifyPriceCandidates([500, 500, 500])).toEqual({ kind: "AUTO", price: 500 });
+    expect(classifyPriceCandidates([500, 500, 500])).toEqual({ kind: "AUTO", price: 500, index: 0 });
   });
 
   it("is ambiguous when two distinct prices exist", () => {
@@ -98,7 +98,25 @@ describe("classifyPriceCandidates", () => {
     const a = (0.1 + 0.2) * 1_000_000;
     const b = 0.3 * 1_000_000;
     expect(a).not.toBe(b);
-    expect(classifyPriceCandidates([a, b])).toEqual({ kind: "AUTO", price: a });
+    expect(classifyPriceCandidates([a, b])).toEqual({ kind: "AUTO", price: b, index: 1 });
+  });
+
+  it("auto-prices candidates under a rupiah apart at the LOWEST of them, never above it", () => {
+    /* One promo, two deliveries, each rounding its own discount share: 967 against 966.50. */
+    expect(classifyPriceCandidates([967, 966.5])).toEqual({ kind: "AUTO", price: 966.5, index: 1 });
+  });
+
+  it("is ambiguous when two candidates are a whole rupiah apart", () => {
+    expect(classifyPriceCandidates([967, 966])).toEqual({ kind: "AMBIGUOUS" });
+  });
+
+  it("judges the spread of the whole set, so pairwise-close steps cannot chain past a rupiah", () => {
+    /* 966.40 -> 967.20 -> 967.90 are each under a rupiah apart, but the set spans 1.50. */
+    expect(classifyPriceCandidates([966.4, 967.2, 967.9])).toEqual({ kind: "AMBIGUOUS" });
+  });
+
+  it("names the first of tied lowest candidates", () => {
+    expect(classifyPriceCandidates([966.9, 966.5, 966.5])).toEqual({ kind: "AUTO", price: 966.5, index: 1 });
   });
 });
 
