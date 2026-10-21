@@ -175,9 +175,10 @@ export function GRNRollImportDialog({
       return;
     }
     if (run !== runId.current) return;
-    /* A file-level failure returns no rows; row-level errors come back beside the rows. */
+    /* A file-level failure returns no rows; a header-only sheet returns no rows AND no errors. */
     if (parsed.rows.length === 0) {
-      setPhase({ kind: "fileError", fileName, errors: parsed.errors });
+      const errors = parsed.errors.length > 0 ? parsed.errors : [rollImportError("EMPTY_FILE")];
+      setPhase({ kind: "fileError", fileName, errors });
       return;
     }
     const result = validateGrnRollImport(parsed.rows, lines);
