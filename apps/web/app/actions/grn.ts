@@ -21,6 +21,7 @@ import { docNumberPeriod } from "@/lib/doc-numbers/period";
 import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
 import { grnSchema } from "@/lib/grn/schema";
 import { fabricRollCode } from "@/lib/grn/roll-code";
+import { overReceiveBy, sumRollLengths } from "@/lib/grn/over-receive";
 
 export type GRNFormData = z.infer<typeof grnSchema>;
 
@@ -92,7 +93,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
         const isFabric = itemRow.type === 'FABRIC';
         const rolls = item.rolls ?? [];
         const derivedQty = isFabric && rolls.length > 0
-          ? rolls.reduce((sum, roll) => sum + roll.length, 0)
+          ? sumRollLengths(rolls.map((roll) => roll.length))
           : item.qty;
         const qty = new Decimal(derivedQty);
         const unitCost = new Decimal(item.unitCost);
@@ -131,10 +132,13 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
       for (const item of baseItems) {
         const poItem = poMap.get(grnPoLineKey(item.itemId, item.variantSku));
         if (!poItem) continue;
-        const nextReceivedQty = Number(poItem.receivedQty) + Number(item.qty);
-        const overBy = nextReceivedQty - Number(poItem.qty);
+        const overBy = overReceiveBy(
+          poItem.receivedQty.toString(),
+          item.qty,
+          poItem.qty.toString()
+        );
         const threshold = Number(item.overReceiveThreshold ?? 0);
-        if (overBy > threshold) {
+        if (overBy.gt(threshold)) {
           requiresOwnerApproval = true;
           break;
         }
