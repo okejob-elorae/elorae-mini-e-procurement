@@ -72,7 +72,7 @@ export async function listPriceCandidates(
       ...PRICED_DELIVERY_LINE_SELECT,
       delivery: { select: PRICED_DELIVERY_SELECT },
     },
-    orderBy: { delivery: { deliveredAt: "desc" } },
+    orderBy: [{ delivery: { deliveredAt: "desc" } }, { id: "asc" }],
   });
 
   const out: PriceCandidate[] = [];
@@ -108,7 +108,7 @@ export async function listPriceCandidatesForKeys(
       variantSku: true,
       delivery: { select: { ...PRICED_DELIVERY_SELECT, order: { select: { storeId: true } } } },
     },
-    orderBy: { delivery: { deliveredAt: "desc" } },
+    orderBy: [{ delivery: { deliveredAt: "desc" } }, { id: "asc" }],
   });
 
   for (const r of rows) {
