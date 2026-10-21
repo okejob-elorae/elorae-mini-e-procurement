@@ -51,6 +51,18 @@ function isDateCell(cell: XLSX.CellObject | undefined): boolean {
   return cell.t === "n" && typeof cell.z === "string" && Boolean(XLSX.SSF.is_date(cell.z));
 }
 
+/**
+ * A number typed into a cell with a custom format (`0000` on No. Roll turns 12 into "0012") keeps
+ * only the bare number as its raw value. For text columns the formatted text is what the person
+ * sees, so it wins; General-format cells keep the raw value, since Excel's General display rounds
+ * long digit runs such as a numeric SKU into scientific notation.
+ */
+function formattedNumber(cell: XLSX.CellObject | undefined): string | null {
+  if (!cell || cell.t !== "n" || typeof cell.w !== "string" || cell.w === "") return null;
+  if (typeof cell.z !== "string" || cell.z === "General") return null;
+  return cell.w.trim();
+}
+
 export function parseGrnRollImportWorkbook(data: ArrayBuffer): { rows: GrnRollImportRow[]; errors: GrnRollImportError[] } {
   let workbook: XLSX.WorkBook;
   try {
@@ -90,19 +102,26 @@ export function parseGrnRollImportWorkbook(data: ArrayBuffer): { rows: GrnRollIm
   for (let i = 1; i < grid.length; i++) {
     const cells = grid[i];
     if (cells.every((c) => cellText(c) === "")) continue;
+    const formatted = new Map<GrnRollImportColumnKey, string>();
     for (const { key } of GRN_ROLL_IMPORT_COLUMNS) {
       const col = indexByKey.get(key);
       if (col === undefined) continue;
       const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r + i, c: range.s.c + col })] as XLSX.CellObject | undefined;
       if (isDateCell(cell)) rowErrors.push(rollImportError("DATE_CELL", { row: firstRow + i, column: key }));
+      const shown = formattedNumber(cell);
+      if (shown !== null) formatted.set(key, shown);
     }
+    const text = (key: GrnRollImportColumnKey): string => {
+      const shown = formatted.get(key);
+      return shown === undefined ? textCell(read(cells, key)) : textCell(shown);
+    };
     rows.push({
       row: firstRow + i,
-      sku: textCell(read(cells, "sku")),
-      varianSku: textCell(read(cells, "varianSku")),
+      sku: text("sku"),
+      varianSku: text("varianSku"),
       panjang: lengthCell(read(cells, "panjang")),
-      noRoll: textCell(read(cells, "noRoll")),
-      catatan: textCell(read(cells, "catatan")),
+      noRoll: text("noRoll"),
+      catatan: text("catatan"),
     });
   }
 

@@ -94,6 +94,17 @@ describe("parseGrnRollImportWorkbook", () => {
     expect(errors.map((e) => e.code)).toEqual(["TOO_MANY_ROWS"]);
   });
 
+  it("keeps the zero padding of a number-formatted No. Roll cell", () => {
+    const sheet = XLSX.utils.aoa_to_sheet([HEADERS, ["FAB-01", "", 10, 12, ""]]);
+    sheet["D2"].z = "0000";
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "Rol");
+    const data = XLSX.write(wb, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+    const { rows, errors } = parseGrnRollImportWorkbook(data);
+    expect(errors).toEqual([]);
+    expect(rows[0]).toMatchObject({ noRoll: "0012", panjang: 10 });
+  });
+
   it("reports a date-formatted No. Roll cell as DATE_CELL, still returning the row", () => {
     const { rows, errors } = parseGrnRollImportWorkbook(
       workbookFrom([HEADERS, ["FAB-01", "", 10, new Date(2026, 2, 4), ""]]),
