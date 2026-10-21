@@ -22,6 +22,7 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
   let otherOrderId = "";
   let deliveryAId = "";
   let deliveryBId = "";
+  let discountedDeliveryId = "";
   let otherDeliveryId = "";
 
   beforeEach(async () => {
@@ -34,6 +35,7 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     otherOrderId = "";
     deliveryAId = "";
     deliveryBId = "";
+    discountedDeliveryId = "";
     otherDeliveryId = "";
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-FSP-${token}`, nameId: "pcs", nameEn: "pcs" } });
@@ -72,6 +74,8 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
             { itemId, variantSku: "M", productName: "Test Item M", qty: 5, unitPrice: 200_000, lineTotal: 1_000_000 },
             { itemId, variantSku: "NULLTOTAL", productName: "Test Item NullTotal", qty: 3, unitPrice: 100_000, lineTotal: 300_000 },
             { itemId, variantSku: "AMBIG", productName: "Test Item Ambig", qty: 4, unitPrice: 1_000_000, lineTotal: 3_800_000 },
+            { itemId, variantSku: "DISC", productName: "Test Item Disc", qty: 2, unitPrice: 1000, lineTotal: 2000, discountAmount: 100.6 },
+            { itemId, variantSku: "DISC2", productName: "Test Item Disc2", qty: 3, unitPrice: 500, lineTotal: 1500 },
           ],
         },
       },
@@ -82,6 +86,8 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     const lineM = order.lines.find((l) => l.variantSku === "M")!;
     const lineNullTotal = order.lines.find((l) => l.variantSku === "NULLTOTAL")!;
     const lineAmbig = order.lines.find((l) => l.variantSku === "AMBIG")!;
+    const lineDisc = order.lines.find((l) => l.variantSku === "DISC")!;
+    const lineDisc2 = order.lines.find((l) => l.variantSku === "DISC2")!;
 
     const otherOrder = await prisma.fieldSalesOrder.create({
       data: {
@@ -149,6 +155,30 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     });
     deliveryBId = deliveryB.id;
 
+    /* A discounted delivery, in the shape `recordFieldSalesDelivery` writes it: each lineTotal
+       GROSS (qty x unitPrice), the line discount beside it, the order discount on the header.
+       Gross 3500, line discount 100.60, order discount 35: the store was billed 3364.40. */
+    const discountedDelivery = await prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `TEST-FSP-DLV-DISC-${token}`,
+        orderId,
+        deliveredAt: new Date("2026-08-03T00:00:00.000Z"),
+        deliveredById: userId,
+        invoiceDate: new Date("2026-08-03T00:00:00.000Z"),
+        dueDate: new Date("2026-08-10T00:00:00.000Z"),
+        subtotal: 3500,
+        discountAmount: 35,
+        total: 3364,
+        lines: {
+          create: [
+            { orderLineId: lineDisc.id, itemId, variantSku: "DISC", productName: "Test Item Disc", qty: 2, unitPrice: 1000, discountAmount: 100.6, lineTotal: 2000 },
+            { orderLineId: lineDisc2.id, itemId, variantSku: "DISC2", productName: "Test Item Disc2", qty: 3, unitPrice: 500, lineTotal: 1500 },
+          ],
+        },
+      },
+    });
+    discountedDeliveryId = discountedDelivery.id;
+
     /* A delivery of the SAME item + variant (XL) but to a DIFFERENT store. */
     const otherDelivery = await prisma.fieldSalesDelivery.create({
       data: {
@@ -171,7 +201,7 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const deliveryIds = [deliveryAId, deliveryBId, otherDeliveryId];
+    const deliveryIds = [deliveryAId, deliveryBId, discountedDeliveryId, otherDeliveryId];
     const orderIds = [orderId, otherOrderId];
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: { in: deliveryIds.map(seededId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
@@ -189,8 +219,8 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     expect(found[0].unitPrice).toBeCloseTo(833_333.3333, 4);
   });
 
-  it("prices from lineTotal, NOT unitPrice — lineTotal is net of the pro-rated discounts", async () => {
-    /* the fixture's line carries unitPrice 1.000.000 and lineTotal 10.000.000 over 12 pcs */
+  it("prices from the delivery line's own value over its qty, NOT its unitPrice", async () => {
+    /* the fixture's line carries unitPrice 1.000.000 and lineTotal 10.000.000 over 12 pcs, undiscounted */
     const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "XL" });
     expect(found[0].unitPrice).not.toBeCloseTo(1_000_000, 4);
     expect(found[0].unitPrice).toBeCloseTo(833_333.3333, 4);
@@ -227,6 +257,31 @@ d("listPriceCandidates / resolveLinePrice (test bed only)", () => {
     /* the backfill wrote deliveries whose lines can carry a null lineTotal */
     const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "NULLTOTAL" });
     expect(found).toHaveLength(0);
+  });
+
+  it("prices a line-discounted line at its net: gross less its discount less its order-discount share", async () => {
+    /* 2000 gross - 100.60 line discount - 20 of the 35 order discount (2000 of the 3500 gross) */
+    const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "DISC" });
+    expect(found).toHaveLength(1);
+    expect(found[0].netValue).toBeCloseTo(1879.4, 10);
+    expect(found[0].unitPrice).toBeCloseTo(939.7, 10);
+  });
+
+  it("prices an undiscounted line of a discounted delivery net of its order-discount share", async () => {
+    /* 1500 gross - 15 of the 35 order discount */
+    const found = await listPriceCandidates(prisma, { storeId, itemId, variantSku: "DISC2" });
+    expect(found).toHaveLength(1);
+    expect(found[0].netValue).toBeCloseTo(1485, 10);
+    expect(found[0].unitPrice).toBeCloseTo(495, 10);
+  });
+
+  it("prices every line of a discounted delivery so their nets sum to what the store was billed, not the gross", async () => {
+    const grouped = await listPriceCandidatesForKeys(prisma, [
+      { storeId, itemId, variantSku: "DISC" },
+      { storeId, itemId, variantSku: "DISC2" },
+    ]);
+    const nets = ["DISC", "DISC2"].map((variantSku) => grouped.get(priceCandidateKey({ storeId, itemId, variantSku }))?.[0]?.netValue ?? 0);
+    expect(nets[0] + nets[1]).toBeCloseTo(3364.4, 10);
   });
 
   it("auto-resolves when one distinct price exists", async () => {

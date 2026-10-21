@@ -23,14 +23,17 @@ export function round2(n: number): number {
 }
 
 /**
- * The price the store was actually billed per unit, taken from the delivery line's lineTotal —
- * which is already net of its pro-rated line discount and its share of the order discount.
+ * The price the store was actually billed per unit: the delivery line's NET value divided by its
+ * qty. The net value is NOT `FieldSalesDeliveryLine.lineTotal`, which is stored gross; the caller
+ * derives it with `deliveredLineNetValues` (`lib/field-sales/delivery/undelivered-residual.ts`),
+ * which takes off the line's own discount and its share of the delivery's order discount. Passing
+ * the gross here credits the store for discounts it never paid.
  * Deliberately UNROUNDED: the caller multiplies by the credited qty and rounds once, so that
  * the line total is exact. Rounding here first is what produces 12 x 833.333,33 = 9.999.999,96.
  */
-export function effectiveUnitPrice(lineTotal: number, qty: number): number | null {
+export function effectiveUnitPrice(netLineValue: number, qty: number): number | null {
   if (qty <= 0) return null;
-  return lineTotal / qty;
+  return netLineValue / qty;
 }
 
 /**
