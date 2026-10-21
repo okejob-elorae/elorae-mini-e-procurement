@@ -5,8 +5,8 @@ import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
 import { allDiscrepantLinesSettled, creditedQtyForLine } from "./variance";
-import { effectiveUnitPrice, round2 } from "./pricing-rules";
-import { resolveLinePrice } from "./pricing";
+import { round2 } from "./pricing-rules";
+import { deliveryLineUnitPrice, resolveLinePrice } from "./pricing";
 
 /**
  * The point where goods a store sent back physically re-enter sellable stock. Runs inside
@@ -190,7 +190,8 @@ export async function approveFieldReturn(input: {
        * Resolve the per-unit price: an admin's existing choice wins, otherwise auto-resolve.
        * `preserveAdminChoice` marks a line where an admin already picked MANUAL or DELIVERY
        * and that choice failed to resolve (a manual price that was never actually set, or a
-       * priceDeliveryLineId that is dangling / whose lineTotal has since gone null). That is
+       * priceDeliveryLineId that `deliveryLineUnitPrice` no longer prices: dangling, a null
+       * lineTotal, or a net value below zero). That is
        * a recorded admin decision, not an absence of one — wiping priceSource/
        * priceDeliveryLineId/priceNote here would destroy the only trace it existed, on an
        * APPROVED retur where the post-approval pricing path (open only until the valuation is
@@ -220,13 +221,7 @@ export async function approveFieldReturn(input: {
           preserveAdminChoice = true;
         }
       } else if (line.priceSource === "DELIVERY") {
-        const dl = line.priceDeliveryLineId
-          ? await tx.fieldSalesDeliveryLine.findUnique({
-              where: { id: line.priceDeliveryLineId },
-              select: { qty: true, lineTotal: true },
-            })
-          : null;
-        const resolved = dl && dl.lineTotal !== null ? effectiveUnitPrice(dl.lineTotal.toNumber(), dl.qty) : null;
+        const resolved = line.priceDeliveryLineId ? await deliveryLineUnitPrice(tx, line.priceDeliveryLineId) : null;
         if (resolved !== null) {
           unitPrice = resolved;
           priceSource = "DELIVERY";

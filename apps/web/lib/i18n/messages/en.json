@@ -3904,7 +3904,7 @@
       "switchToPicker": "Choose from a delivery instead",
       "provenanceDeliveryTitle": "Priced from a delivery",
       "provenanceManualTitle": "Manual price",
-      "unpriceableBody": "This item has never been delivered to this store, so there is no automatic price to use — enter a manual price with a note.",
+      "unpriceableBody": "No delivery of this item to this store can supply a price, so there is no automatic price to use — enter a manual price with a note.",
       "successSet": "Line price saved."
     },
     "approveConfirmValuationWarning": "{count} line(s) still have no price. They will still be approved and restored to stock, and you can price them afterwards — but this return can't be offset until every line is priced.",
