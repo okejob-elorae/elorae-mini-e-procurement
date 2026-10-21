@@ -41,17 +41,15 @@ function lengthCell(value: unknown): string | number | null {
 }
 
 /**
- * Excel turns text like `1-2` typed into a General cell into a date, which the raw value then
- * carries as a serial. Such a cell is refused rather than imported as that number; Panjang is
- * the one numeric column and is never checked.
+ * Excel turns text like `1-2` or, under an id-ID locale, a length like `12.5` typed into a General
+ * cell into a date, which the raw value then carries as a serial such as `46086`. Such a cell is
+ * refused rather than imported as that number, Panjang included.
  */
 function isDateCell(cell: XLSX.CellObject | undefined): boolean {
   if (!cell) return false;
   if (cell.t === "d") return true;
   return cell.t === "n" && typeof cell.z === "string" && Boolean(XLSX.SSF.is_date(cell.z));
 }
-
-const TEXT_COLUMNS = GRN_ROLL_IMPORT_COLUMNS.filter((c) => c.key !== "panjang").map((c) => c.key);
 
 export function parseGrnRollImportWorkbook(data: ArrayBuffer): { rows: GrnRollImportRow[]; errors: GrnRollImportError[] } {
   let workbook: XLSX.WorkBook;
@@ -92,7 +90,7 @@ export function parseGrnRollImportWorkbook(data: ArrayBuffer): { rows: GrnRollIm
   for (let i = 1; i < grid.length; i++) {
     const cells = grid[i];
     if (cells.every((c) => cellText(c) === "")) continue;
-    for (const key of TEXT_COLUMNS) {
+    for (const { key } of GRN_ROLL_IMPORT_COLUMNS) {
       const col = indexByKey.get(key);
       if (col === undefined) continue;
       const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r + i, c: range.s.c + col })] as XLSX.CellObject | undefined;

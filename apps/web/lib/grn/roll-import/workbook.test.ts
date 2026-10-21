@@ -101,4 +101,11 @@ describe("parseGrnRollImportWorkbook", () => {
     expect(rows).toHaveLength(1);
     expect(errors.map((e) => [e.code, e.row, e.column])).toEqual([["DATE_CELL", 2, "noRoll"]]);
   });
+
+  it("reports a date-formatted Panjang cell as DATE_CELL instead of accepting its serial", () => {
+    const { errors } = parseGrnRollImportWorkbook(
+      workbookFrom([HEADERS, ["FAB-01", "", new Date(2026, 4, 12), "", ""]]),
+    );
+    expect(errors.map((e) => [e.code, e.row, e.column])).toEqual([["DATE_CELL", 2, "panjang"]]);
+  });
 });
