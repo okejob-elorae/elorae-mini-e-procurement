@@ -28,13 +28,15 @@ export function roundCents(value: number): number {
 
 /**
  * Half-up to whole rupiah. Applied ONLY at the cash boundary — the total a human actually
- * collects and compares payment against (VanSale.total / SpgSale.total) — never to a line's
- * unitPrice, which stays at 2dp (Decimal(15,2)) exactly as computeStorePrice produces it. Sen do
+ * collects and compares payment against (VanSale.total / SpgSale.total, and the nota tagihan's
+ * FieldSalesDelivery.total a store pays its receivable against) — never to a line's unitPrice,
+ * which stays at 2dp (Decimal(15,2)) exactly as computeStorePrice produces it. Sen do
  * not exist as physical currency: a store discount (or any fractional Item.sellingPrice, which
  * Decimal(14,2) permits regardless of discount) can leave the exact line sum on a sub-rupiah
  * fraction, and a drawer cannot take that fraction whatever caused it. The exact 2dp sum stays
  * available as `subtotal`, so `total - subtotal` is always the derivable rounding adjustment —
- * nothing is silently lost, just charged at whole rupiah.
+ * nothing is silently lost, just charged at whole rupiah. (A delivery also carries discounts, so
+ * its adjustment is `total - (subtotal - discountAmount - Σ line discountAmount)`.)
  *
  * A single, client-safe home (this module has zero imports) is load-bearing: the writer and the
  * PWA cash-screen preview MUST derive the charged total from this same function, or the preview
