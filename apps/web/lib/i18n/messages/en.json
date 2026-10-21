@@ -6237,7 +6237,7 @@
     "title": "Import fabric rolls from Excel",
     "subtitle": "Fill in the length of every roll in a spreadsheet instead of typing them one by one.",
     "step1Title": "1. Download the template",
-    "step1Body": "The template lists the fabric lines on this GRN. Fill one row per roll: SKU, the roll length, and optionally a roll number and a note.",
+    "step1Body": "The template lists the fabric lines on this GRN. Fill one row per roll: SKU, the roll length, and optionally a roll number and a note. Fill Varian SKU too for lines that have a variant.",
     "downloadTemplate": "Download template",
     "templateFailed": "The template could not be downloaded. Reload the page and try again.",
     "step2Title": "2. Upload the file",
@@ -6254,9 +6254,10 @@
     "colOrdered": "Ordered",
     "colReceived": "Received before",
     "colAfter": "After this GRN",
+    "moreErrors": "+{count} more errors. Fix these and re-upload.",
     "applySkipped": "{count, plural, one {# fabric line was} other {# fabric lines were}} skipped because it changed since the file was checked. Open the import again to re-check.",
     "overBadge": "+{qty} {uom} over",
-    "overNote": "Receiving more than ordered sends this GRN for owner approval.",
+    "overNote": "Receiving more than ordered may need owner approval when it exceeds the item's over-receive tolerance.",
     "errorsTitle": "{count, plural, one {# error found} other {# errors found}}",
     "colRow": "Row",
     "colColumn": "Column",
@@ -6290,7 +6291,7 @@
       "TOO_MANY_DECIMALS": "At most 2 decimal places.",
       "TOO_LARGE": "The length, or the total for this fabric line, is too large.",
       "TOO_LONG": "Longer than {detail} characters.",
-      "DATE_CELL": "Excel turned this cell into a date. Format the cell as Number and type the length again.",
+      "DATE_CELL": "Excel turned this cell into a date. Format the column as Text (Number for Panjang) and type the value again.",
       "DUPLICATE_REF": "Roll number {detail} is used twice on the same fabric line."
     }
   }

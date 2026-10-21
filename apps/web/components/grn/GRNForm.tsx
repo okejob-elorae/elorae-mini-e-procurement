@@ -653,12 +653,14 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                   size="sm"
                   className="min-h-[44px]"
                   disabled={rollImportLines.length === 0}
-                  title={rollImportLines.length === 0 ? t("openHint") : undefined}
                   onClick={() => setRollImportOpen(true)}
                 >
                   <FileSpreadsheet className="mr-2 h-4 w-4" />
                   {t("open")}
                 </Button>
+                {rollImportLines.length === 0 ? (
+                  <span className="self-center text-xs text-muted-foreground">{t("openHint")}</span>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"

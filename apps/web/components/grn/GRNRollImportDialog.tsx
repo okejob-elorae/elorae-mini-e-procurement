@@ -58,6 +58,7 @@ type Props = {
   onApply: (plan: Plan, targets: GrnRollImportTargetLine[]) => GrnRollImportApplyOutcome;
 };
 
+const MAX_SHOWN_ERRORS = 100;
 const MAX_MB = GRN_ROLL_IMPORT_MAX_BYTES / (1024 * 1024);
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -384,7 +385,7 @@ export function GRNRollImportDialog({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {checked.errors.map((e, i) => (
+                    {checked.errors.slice(0, MAX_SHOWN_ERRORS).map((e, i) => (
                       <TableRow key={`${e.row ?? "file"}-${e.column ?? "none"}-${e.code}-${i}`}>
                         <TableCell className="tabular-nums">{e.row ?? "—"}</TableCell>
                         <TableCell>{e.column && COLUMN_KEYS.has(e.column) ? t(`col.${e.column}`) : "—"}</TableCell>
@@ -394,6 +395,11 @@ export function GRNRollImportDialog({
                   </TableBody>
                 </Table>
               </div>
+              {checked.errors.length > MAX_SHOWN_ERRORS ? (
+                <p className="text-xs text-muted-foreground">
+                  {t("moreErrors", { count: checked.errors.length - MAX_SHOWN_ERRORS })}
+                </p>
+              ) : null}
             </section>
           ) : null}
         </div>
