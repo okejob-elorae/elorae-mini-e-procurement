@@ -30,16 +30,28 @@ export type PostPaymentReceiptJournalResult = GenerateAutoJournalResult | { ok: 
  * "receipt" here is a revenue counter-entry (DR SALES_REVENUE / CR AR), the same shape a
  * marketplace sales-return revenue leg already posts. PROGRAM_DEDUCTION and ADMIN_FEE are
  * settlement deductions the business absorbs as a cost against revenue rather than cash or
- * bank.
+ * bank. ROUNDING_ADJUSTMENT closes a sub-rupiah residue no store can pay in cash, so the
+ * business absorbs it as ROUNDING_EXPENSE; `recordRoundingAdjustment` is its only writer.
  */
 function debitRole(
-  method: "CASH" | "TRANSFER" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE",
-): "CASH" | "BANK" | "SALES_REVENUE" | "TRADE_PROGRAM_EXPENSE" | "ADMIN_FEE_EXPENSE" {
+  method: "CASH" | "TRANSFER" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE" | "ROUNDING_ADJUSTMENT",
+): "CASH" | "BANK" | "SALES_REVENUE" | "TRADE_PROGRAM_EXPENSE" | "ADMIN_FEE_EXPENSE" | "ROUNDING_EXPENSE" {
   if (method === "CASH") return "CASH";
   if (method === "TRANSFER") return "BANK";
   if (method === "PROGRAM_DEDUCTION") return "TRADE_PROGRAM_EXPENSE";
   if (method === "ADMIN_FEE") return "ADMIN_FEE_EXPENSE";
+  if (method === "ROUNDING_ADJUSTMENT") return "ROUNDING_EXPENSE";
   return "SALES_REVENUE";
+}
+
+/**
+ * A rounding adjustment always carries exactly one allocation, so it can never post the partial
+ * `sebagian` form: an excluded allocation leaves nothing to credit and refuses outright.
+ */
+function receiptDescription(docNo: string, method: string, excluded: number): string {
+  if (method === "ROUNDING_ADJUSTMENT") return `Penyesuaian pembulatan ${docNo}`;
+  if (excluded > 0) return `Pembayaran ${docNo} (sebagian: ${excluded} piutang di luar buku besar)`;
+  return `Pembayaran ${docNo}`;
 }
 
 /**
@@ -203,10 +215,7 @@ async function postReceiptLocked(
   ];
   return generateAutoJournal(tx, "PAYMENT_RECEIPT", paymentId, lines, {
     date: payment.paidAt,
-    description:
-      excluded > 0
-        ? `Pembayaran ${payment.docNo} (sebagian: ${excluded} piutang di luar buku besar)`
-        : `Pembayaran ${payment.docNo}`,
+    description: receiptDescription(payment.docNo, payment.method, excluded),
     postedById,
   });
 }

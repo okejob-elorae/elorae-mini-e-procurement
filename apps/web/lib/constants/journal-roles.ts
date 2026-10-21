@@ -18,6 +18,7 @@ export const POSTING_ROLES = [
   "TAX",
   "TRADE_PROGRAM_EXPENSE",
   "ADMIN_FEE_EXPENSE",
+  "ROUNDING_EXPENSE",
 ] as const;
 
 export type PostingRole = (typeof POSTING_ROLES)[number];

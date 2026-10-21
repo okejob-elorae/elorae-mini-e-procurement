@@ -14,7 +14,11 @@ export type PaymentErrorCode =
   | "INSUFFICIENT_OUTSTANDING"
   | "EXCEEDS_REMAINING"
   | "PAYMENT_VOIDED"
-  | "SETTLEMENT_COMPONENT";
+  | "SETTLEMENT_COMPONENT"
+  | "NOT_A_RESIDUE"
+  | "PENDING_CLAIM"
+  | "METHOD_NOT_ALLOWED"
+  | "INVALID_EVENT_ID";
 
 export class PaymentError extends Error {
   code: PaymentErrorCode;

@@ -13,13 +13,19 @@
  * payment render to finance as "Retur Offset" — silently, because the chains took `string`.
  * `PAYMENT_METHOD_LABEL_KEY` is an exhaustive `Record`, so the next member added to the union
  * below is a compile error here instead of a wrong label in the payments list.
+ *
+ * `PAYMENT_METHOD_VALUES` lists every member, `ROUNDING_ADJUSTMENT` included, because it drives
+ * READ surfaces only: the payments list filter and the query-string parser. No human picks a
+ * method from it for a write — the payment sheet and the collector's sheet each hand-list
+ * `CASH`/`TRANSFER`, and a rounding adjustment is posted only by `recordRoundingAdjustment`.
  */
 export type PaymentMethodValue =
   | "CASH"
   | "TRANSFER"
   | "RETUR_OFFSET"
   | "PROGRAM_DEDUCTION"
-  | "ADMIN_FEE";
+  | "ADMIN_FEE"
+  | "ROUNDING_ADJUSTMENT";
 
 export const PAYMENT_METHOD_VALUES = [
   "CASH",
@@ -27,6 +33,7 @@ export const PAYMENT_METHOD_VALUES = [
   "RETUR_OFFSET",
   "PROGRAM_DEDUCTION",
   "ADMIN_FEE",
+  "ROUNDING_ADJUSTMENT",
 ] as const satisfies readonly PaymentMethodValue[];
 
 export type PaymentMethodLabelKey =
@@ -35,6 +42,7 @@ export type PaymentMethodLabelKey =
   | "methodReturOffset"
   | "methodProgramDeduction"
   | "methodAdminFee"
+  | "methodRoundingAdjustment"
   | "methodUnknown";
 
 export const PAYMENT_METHOD_LABEL_KEY: Record<PaymentMethodValue, PaymentMethodLabelKey> = {
@@ -43,6 +51,7 @@ export const PAYMENT_METHOD_LABEL_KEY: Record<PaymentMethodValue, PaymentMethodL
   RETUR_OFFSET: "methodReturOffset",
   PROGRAM_DEDUCTION: "methodProgramDeduction",
   ADMIN_FEE: "methodAdminFee",
+  ROUNDING_ADJUSTMENT: "methodRoundingAdjustment",
 };
 
 /**

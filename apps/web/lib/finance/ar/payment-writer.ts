@@ -1,7 +1,9 @@
+import { prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { roundCents } from "@elorae/db/pricing";
 import { PaymentError } from "./errors";
+import { sumPendingClaimsOnReceivable } from "./pending-claims";
 
 export type RecordPaymentInput = {
   storeId: string;
@@ -11,6 +13,10 @@ export type RecordPaymentInput = {
    * this, and a method missing here simply cannot be posted. `PROGRAM_DEDUCTION` and `ADMIN_FEE`
    * are the settlement's non-cash components; `debitRole` in `payment-journal.ts` already maps
    * both to their expense roles.
+   *
+   * `ROUNDING_ADJUSTMENT` is deliberately NOT in this union, and `recordPayment` refuses it at
+   * runtime too: it writes money off, so its only way in is `recordRoundingAdjustment`, which
+   * derives the amount itself and posts through the module-private `postPayment` below.
    */
   method: "CASH" | "TRANSFER" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE";
   amount: number;
@@ -39,12 +45,47 @@ export type RecordPaymentInput = {
 const EPSILON = 1e-6;
 
 /**
+ * The one rupiah a rounding adjustment must stay strictly below. Anything at or above it is
+ * real money, which only a cash, transfer or settlement payment may settle.
+ */
+const ROUNDING_RESIDUE_CEILING = 1;
+
+/**
+ * The input of `postPayment`, the body `recordPayment` and `recordRoundingAdjustment` share,
+ * widened to the one method neither the public union nor any other caller may name. Both stay
+ * module-private on purpose: exporting either would hand every caller the write-off method
+ * `recordPayment` refuses.
+ */
+type PostPaymentInput = Omit<RecordPaymentInput, "method"> & {
+  method: RecordPaymentInput["method"] | "ROUNDING_ADJUSTMENT";
+};
+
+function isResidue(outstanding: number): boolean {
+  return outstanding > 0 && outstanding < ROUNDING_RESIDUE_CEILING;
+}
+
+/**
  * Records one payment against one or more receivables of the same store.
  *
  * Every guard lives here rather than in the form. Each `"use server"` export is an independently
  * callable endpoint, so a control the UI withholds is not a guarantee about what reaches the writer.
  */
 export async function recordPayment(input: RecordPaymentInput): Promise<{ paymentId: string; docNo: string }> {
+  /**
+   * The type already excludes `ROUNDING_ADJUSTMENT`; this is the runtime half, for a caller that
+   * reached here through a cast or an untyped request. Refused before any other check, so no
+   * amount or allocation shape can make the method acceptable from this entry point.
+   */
+  if ((input.method as string) === "ROUNDING_ADJUSTMENT") throw new PaymentError("METHOD_NOT_ALLOWED");
+  const { paymentId, docNo } = await postPayment(input);
+  return { paymentId, docNo };
+}
+
+/**
+ * `replayed` is true when the idempotency key already named a payment, so nothing was written.
+ * `recordPayment` drops it to keep its own result shape; `recordRoundingAdjustment` reports it.
+ */
+async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string; docNo: string; replayed: boolean }> {
   const amount = roundCents(input.amount);
   const allocations = input.allocations.map((a) => ({ ...a, amount: roundCents(a.amount) }));
 
@@ -80,13 +121,32 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
    */
   if (input.method === "RETUR_OFFSET" && !input.fieldReturnId) throw new PaymentError("NOT_FOUND");
 
+  /**
+   * A rounding adjustment writes money off, so its shape is pinned here whoever built the
+   * input: one receivable, no retur behind it, and strictly under one rupiah. The live
+   * outstanding it must equal is checked inside the transaction below.
+   */
+  const isRounding = input.method === "ROUNDING_ADJUSTMENT";
+  if (isRounding) {
+    if (allocations.length !== 1 || input.fieldReturnId) throw new PaymentError("METHOD_NOT_ALLOWED");
+    if (!(amount < ROUNDING_RESIDUE_CEILING)) throw new PaymentError("NOT_A_RESIDUE");
+  }
+
   return runSerializable(async (tx) => {
     if (input.idempotencyKey) {
       const existing = await tx.payment.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
-        select: { id: true, docNo: true },
+        select: { id: true, docNo: true, status: true },
       });
-      if (existing) return { paymentId: existing.id, docNo: existing.docNo };
+      if (existing) {
+        /**
+         * Mirrors `recordRoundingAdjustment`'s own replay branch for the request that lost a race
+         * on the same event: a voided write-off is refused, never handed back as a success.
+         * Other methods keep their existing replay behaviour.
+         */
+        if (isRounding && existing.status === "VOIDED") throw new PaymentError("PAYMENT_VOIDED");
+        return { paymentId: existing.id, docNo: existing.docNo, replayed: true };
+      }
     }
 
     /*
@@ -132,6 +192,25 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
       if (receivable.storeId !== input.storeId) throw new PaymentError("WRONG_STORE");
       if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF" || receivable.status === "VOIDED") {
         throw new PaymentError("ALREADY_SETTLED");
+      }
+      if (isRounding) {
+        /**
+         * The amount was read before this transaction opened, so it is re-proved here against
+         * the row this transaction reads: it must still be a residue and still equal the whole
+         * outstanding to the cent. A payment or void that committed in between fails the match
+         * and refuses rather than writing off a stale figure.
+         */
+        const outstanding = roundCents(Number(receivable.outstandingAmount));
+        if (!isResidue(outstanding) || Math.abs(a.amount - outstanding) > EPSILON) {
+          throw new PaymentError("NOT_A_RESIDUE");
+        }
+        /**
+         * A pending collection submission or store settlement may be claiming this residue.
+         * Closing the receivable under it would leave that claim to fail at verify or approval
+         * against a balance that is gone, so the claim is decided first.
+         */
+        const pending = await sumPendingClaimsOnReceivable(tx, { receivableId: receivable.id, storeId: receivable.storeId });
+        if (pending.total > 0) throw new PaymentError("PENDING_CLAIM");
       }
       if (a.amount - Number(receivable.outstandingAmount) > EPSILON) {
         throw new PaymentError("OVER_ALLOCATED");
@@ -180,7 +259,8 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
        * zero: a delivery total is whole rupiah now, but a konsi sell-through total, a settlement's
        * admin fee, a retur draw and every pre-rounding delivery can still carry sen, so a receivable
        * can be settled in cash and legitimately sit at PARTIAL with sub-rupiah residue. Declaring
-       * PAID early would write money off with no journal behind it.
+       * PAID early would write money off with no journal behind it; such a residue is closed by
+       * `recordRoundingAdjustment`, a payment with its own journal.
        */
       const outstanding = Number(updated.outstandingAmount);
       await tx.receivable.update({
@@ -189,6 +269,77 @@ export async function recordPayment(input: RecordPaymentInput): Promise<{ paymen
       });
     }
 
-    return { paymentId: payment.id, docNo: payment.docNo };
+    return { paymentId: payment.id, docNo: payment.docNo, replayed: false };
   });
+}
+
+export type RecordRoundingAdjustmentInput = {
+  receivableId: string;
+  actorId: string;
+  eventId: string;
+};
+
+/**
+ * The shape the caller's `eventId` must take before it is spliced into the idempotency key. A
+ * `crypto.randomUUID()` is 36 characters, so the key (`rounding-` + a cuid + `-` + the id) stays
+ * far inside `Payment.idempotencyKey`'s `VARCHAR(191)`.
+ */
+const EVENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Closes a receivable's sub-rupiah residue — `0 < outstanding < 1`, which no store can pay in
+ * cash and which `PAID`'s exact-zero rule otherwise leaves at `PARTIAL` forever — by posting a
+ * `ROUNDING_ADJUSTMENT` payment for exactly that residue. It is an ordinary payment in every
+ * other respect: one allocation, the atomic outstanding decrement and the PAID flip in
+ * `postPayment`, a `PAYMENT_RECEIPT` journal debiting `ROUNDING_EXPENSE` (posted by the
+ * caller), and a plain `voidPayment` to undo it. Never `WRITTEN_OFF`, which carries no journal.
+ *
+ * The amount is never caller input: it is the receivable's outstanding, read here and re-proved
+ * inside `postPayment`'s transaction, so nothing can use this path to write off real money.
+ *
+ * The idempotency key is `rounding-<receivableId>-<eventId>`, with the event id minted by the
+ * caller once per confirm dialog, the same contract as `applyReturnOffset`'s. It is not derived
+ * from the receivable's paid state: a void restores that state exactly, so a derived key would
+ * hand a fresh write-off after a void the voided payment back. A replay of the same event returns
+ * its payment, or refuses `PAYMENT_VOIDED` once that payment has been voided; a second event
+ * against an already closed receivable refuses `ALREADY_SETTLED` in the transaction.
+ */
+export async function recordRoundingAdjustment(
+  input: RecordRoundingAdjustmentInput,
+): Promise<{ paymentId: string; docNo: string; alreadyApplied: boolean }> {
+  if (typeof input.eventId !== "string" || !EVENT_ID_PATTERN.test(input.eventId)) {
+    throw new PaymentError("INVALID_EVENT_ID");
+  }
+  const idempotencyKey = `rounding-${input.receivableId}-${input.eventId}`;
+
+  const existing = await prisma.payment.findUnique({
+    where: { idempotencyKey },
+    select: { id: true, docNo: true, status: true },
+  });
+  if (existing) {
+    if (existing.status === "VOIDED") throw new PaymentError("PAYMENT_VOIDED");
+    return { paymentId: existing.id, docNo: existing.docNo, alreadyApplied: true };
+  }
+
+  const receivable = await prisma.receivable.findUnique({
+    where: { id: input.receivableId },
+    select: { id: true, storeId: true, outstandingAmount: true, status: true },
+  });
+  if (!receivable) throw new PaymentError("NOT_FOUND");
+  if (receivable.status === "PAID" || receivable.status === "WRITTEN_OFF" || receivable.status === "VOIDED") {
+    throw new PaymentError("ALREADY_SETTLED");
+  }
+  const residue = roundCents(Number(receivable.outstandingAmount));
+  if (!isResidue(residue)) throw new PaymentError("NOT_A_RESIDUE");
+
+  const { paymentId, docNo, replayed } = await postPayment({
+    storeId: receivable.storeId,
+    paidAt: new Date(),
+    method: "ROUNDING_ADJUSTMENT",
+    amount: residue,
+    recordedById: input.actorId,
+    allocations: [{ receivableId: receivable.id, amount: residue }],
+    idempotencyKey,
+  });
+  return { paymentId, docNo, alreadyApplied: replayed };
 }
