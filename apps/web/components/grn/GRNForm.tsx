@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/dialog';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Plus, Trash2, Loader2, Barcode, X } from 'lucide-react';
+import { Plus, Trash2, Loader2, Barcode, X, FileSpreadsheet } from 'lucide-react';
 import { BarcodeScanner } from '@/components/scanners/BarcodeScanner';
 import { createGRN, type GRNFormData } from '@/app/actions/grn';
 import { getPOs } from '@/app/actions/purchase-orders';
@@ -35,6 +35,10 @@ import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
 import { FabricRollInput, FabricRackPreview } from '@/components/grn/FabricRollInput';
 import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
+import { useTranslations } from "next-intl";
+import { GRNRollImportDialog, type GrnRollImportApplyOutcome } from "@/components/grn/GRNRollImportDialog";
+import { buildRollPayload } from "@/lib/grn/roll-import/payload";
+import type { GrnRollImportTargetLine, ImportedRoll } from "@/lib/grn/roll-import/types";
 import {
   Select,
   SelectContent,
@@ -81,6 +85,8 @@ interface LineRow {
   unitCost: number;
   /** Fabric: tokenized roll lengths (one string per roll). Qty is derived from valid numeric values. */
   rollValues?: string[];
+  /** Fabric: rolls filled from the Excel import. When set it replaces rollValues and qty is their sum. */
+  importedRolls?: ImportedRoll[];
   /** PO ordered qty for this line when loaded from PO – used for "Received X / Y" in FabricRollInput. */
   poOrderedQty?: number | null;
   /** Already received qty for this line from previous GRNs (from PO line receivedQty). */
@@ -94,6 +100,7 @@ interface GRNFormProps {
 
 export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const { data: session } = useSession();
+  const t = useTranslations("grnRollImport");
   const [poId, setPoId] = useState<string>('');
   const [supplierId, setSupplierId] = useState<string>('');
   const [lines, setLines] = useState<LineRow[]>([
@@ -120,6 +127,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const [items, setItems] = useState<ItemOption[]>([]);
   const [categories, setCategories] = useState<ItemCategoryOption[]>([]);
   const [scanOpen, setScanOpen] = useState(false);
+  const [rollImportOpen, setRollImportOpen] = useState(false);
   const [nextLineId, setNextLineId] = useState(1);
   const [errors, setErrors] = useState<{ supplierId?: string; lines?: string }>({});
   /** Number of existing GRNs for the selected PO (when loaded from PO). */
@@ -251,6 +259,8 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
               uomCode: item.uom?.code ?? '',
               variantSku: vOpts.length === 1 ? vOpts[0].sku : undefined,
               rollValues: item.type === 'FABRIC' ? (r.rollValues ?? []) : undefined,
+              importedRolls: undefined,
+              qty: r.importedRolls ? 0 : r.qty,
             }
           : r
       )
@@ -259,7 +269,11 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
 
   const setLineVariantSku = (lineId: string, variantSku: string | undefined) => {
     setLines((prev) =>
-      prev.map((r) => (r.id === lineId ? { ...r, variantSku } : r))
+      prev.map((r) => {
+        if (r.id !== lineId) return r;
+        if (!r.importedRolls || r.variantSku === variantSku) return { ...r, variantSku };
+        return { ...r, variantSku, importedRolls: undefined, qty: 0 };
+      })
     );
   };
 
@@ -280,6 +294,68 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         if (r.id !== lineId) return r;
         const lengths = parseRollValuesToLengths(rollValues);
         return { ...r, rollValues, qty: lengths.reduce((sum, n) => sum + n, 0) };
+      })
+    );
+  };
+
+  /* Summed in integer cents so 0.1 + 0.2 style float drift never reaches the line qty */
+  const sumLengths = (lengths: number[]): number =>
+    lengths.reduce((sum, n) => sum + Math.round(n * 100), 0) / 100;
+
+  /*
+   * Line ids repeat across POs (`po-0`…), so a plan is applied only to a row that is still the
+   * fabric line the file was checked against: same SKU and variant, not just the same id.
+   */
+  const applyRollImport = (
+    plan: Record<string, ImportedRoll[]>,
+    targets: GrnRollImportTargetLine[]
+  ): GrnRollImportApplyOutcome => {
+    const applicable: Record<string, ImportedRoll[]> = {};
+    let skipped = 0;
+    Object.entries(plan).forEach(([lineId, rolls]) => {
+      const row = lines.find((r) => r.id === lineId);
+      const target = targets.find((tl) => tl.lineId === lineId);
+      const same =
+        row !== undefined &&
+        target !== undefined &&
+        row.itemType === "FABRIC" &&
+        row.sku === target.sku &&
+        (row.variantSku ?? null) === target.variantSku;
+      if (same && rolls.length > 0) applicable[lineId] = rolls;
+      else skipped += 1;
+    });
+    const appliedLines = Object.keys(applicable).length;
+    const appliedRolls = Object.values(applicable).reduce((sum, list) => sum + list.length, 0);
+    if (appliedLines === 0) return { lines: 0, rolls: 0, skipped };
+    setErrors((e) => ({ ...e, lines: undefined }));
+    setLines((prev) =>
+      prev.map((r) => {
+        const rolls = applicable[r.id];
+        if (!rolls) return r;
+        return {
+          ...r,
+          importedRolls: rolls,
+          rollValues: [],
+          qty: sumLengths(rolls.map((roll) => roll.length)),
+        };
+      })
+    );
+    return { lines: appliedLines, rolls: appliedRolls, skipped };
+  };
+
+  const clearImportedRolls = (lineId: string) => {
+    setLines((prev) =>
+      prev.map((r) => (r.id === lineId ? { ...r, importedRolls: undefined, qty: 0 } : r))
+    );
+  };
+
+  const removeImportedRoll = (lineId: string, index: number) => {
+    setLines((prev) =>
+      prev.map((r) => {
+        if (r.id !== lineId || !r.importedRolls) return r;
+        const rest = r.importedRolls.filter((_, i) => i !== index);
+        if (rest.length === 0) return { ...r, importedRolls: undefined, qty: 0 };
+        return { ...r, importedRolls: rest, qty: sumLengths(rest.map((roll) => roll.length)) };
       })
     );
   };
@@ -328,6 +404,27 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
       toast.error(`Item not found for: ${trimmed}`);
     }
   };
+
+  const rollImportLines: GrnRollImportTargetLine[] = lines
+    .filter((row) => row.itemType === "FABRIC" && row.itemId)
+    .map((row) => ({
+      lineId: row.id,
+      sku: row.sku,
+      variantSku: row.variantSku ?? null,
+      name: items.find((i) => i.id === row.itemId)?.nameId ?? row.nameId,
+      uomCode: row.uomCode,
+      orderedQty: row.poOrderedQty ?? null,
+      alreadyReceivedQty: row.poAlreadyReceivedQty ?? null,
+    }));
+
+  const rollImportExistingCounts: Record<string, number> = {};
+  lines.forEach((row) => {
+    rollImportExistingCounts[row.id] =
+      row.importedRolls?.length ?? parseRollValuesToLengths(row.rollValues ?? []).length;
+  });
+
+  const rollImportPoDoc = poList.find((po) => po.id === poId)?.docNumber ?? "";
+  const rollImportFileName = `template-rol-${(rollImportPoDoc || "grn").replaceAll("/", "-")}.xlsx`;
 
   const runningTotal = lines.reduce(
     (sum, r) => sum + (r.qty || 0) * (r.unitCost || 0),
@@ -399,6 +496,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           supplierId,
           items: validLines.map((l) => {
             const lengths = l.itemType === 'FABRIC' ? parseRollValuesToLengths(l.rollValues ?? []) : [];
+            const rolls = l.itemType === 'FABRIC' ? buildRollPayload(l.sku, l.importedRolls, lengths) : [];
             const base = {
               itemId: l.itemId,
               sku: l.sku,
@@ -408,14 +506,8 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
               unitCost: l.unitCost,
               uomId: l.uomId,
             };
-            if (l.itemType === 'FABRIC' && lengths.length > 0) {
-              return {
-                ...base,
-                rolls: lengths.map((length, idx) => ({
-                  rollRef: `${l.sku || 'ROLL'}-${idx + 1}`,
-                  length,
-                })),
-              };
+            if (rolls.length > 0) {
+              return { ...base, rolls };
             }
             return base;
           }),
@@ -459,15 +551,9 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         supplierId,
         items: validLines.map((l) => {
           const lengths = l.itemType === 'FABRIC' ? parseRollValuesToLengths(l.rollValues ?? []) : [];
+          const rolls = l.itemType === 'FABRIC' ? buildRollPayload(l.sku, l.importedRolls, lengths) : [];
           return {
-            ...(l.itemType === 'FABRIC' && lengths.length > 0
-              ? {
-                  rolls: lengths.map((length, idx) => ({
-                    rollRef: `${l.sku || 'ROLL'}-${idx + 1}`,
-                    length,
-                  })),
-                }
-              : {}),
+            ...(rolls.length > 0 ? { rolls } : {}),
             itemId: l.itemId,
             variantSku: l.variantSku?.trim() || undefined,
             qty: l.itemType === 'FABRIC' && lengths.length > 0 ? lengths.reduce((a, b) => a + b, 0) : l.qty,
@@ -560,7 +646,21 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <Label>Line items</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="min-h-[44px]"
+                  disabled={rollImportLines.length === 0}
+                  onClick={() => setRollImportOpen(true)}
+                >
+                  <FileSpreadsheet className="mr-2 h-4 w-4" />
+                  {t("open")}
+                </Button>
+                {rollImportLines.length === 0 ? (
+                  <span className="self-center text-xs text-muted-foreground">{t("openHint")}</span>
+                ) : null}
                 <Button
                   type="button"
                   variant="outline"
@@ -643,7 +743,24 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                         </TableCell>
                         <TableCell>{row.uomCode || '-'}</TableCell>
                         <TableCell className="align-top">
-                          {row.itemType === 'FABRIC' ? (
+                          {row.itemType === 'FABRIC' && row.importedRolls ? (
+                            <div className="flex min-w-[260px] items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate text-sm">
+                                {t("importedSummary", { count: row.importedRolls.length })}
+                                {` · ${row.qty.toLocaleString()} ${row.uomCode || "MTR"}`}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="min-h-[44px] shrink-0"
+                                onClick={() => clearImportedRolls(row.id)}
+                              >
+                                <X className="mr-1 h-4 w-4" />
+                                {t("clear")}
+                              </Button>
+                            </div>
+                          ) : row.itemType === 'FABRIC' ? (
                             <FabricRollInput
                               value={row.rollValues ?? []}
                               onChange={(v) => setLineRollValues(row.id, v)}
@@ -696,8 +813,10 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                           </Button>
                         </TableCell>
                       </TableRow>
-                      {row.itemType === 'FABRIC' && (row.rollValues?.length ?? 0) > 0 && (() => {
-                        const rollVals = row.rollValues ?? [];
+                      {row.itemType === 'FABRIC' && (row.importedRolls?.length ?? row.rollValues?.length ?? 0) > 0 && (() => {
+                        const rollVals = row.importedRolls
+                          ? row.importedRolls.map((roll) => String(roll.length))
+                          : (row.rollValues ?? []);
                         const lengths = parseRollValuesToLengths(rollVals);
                         const totalLength = lengths.reduce((a, b) => a + b, 0);
                         const invalidCount = rollVals.length - lengths.length;
@@ -724,10 +843,12 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
                                 rollValues={rollVals}
                                 uomCode={row.uomCode || 'MTR'}
                                 onRemoveRoll={(index) =>
-                                  setLineRollValues(
-                                    row.id,
-                                    (row.rollValues ?? []).filter((_, i) => i !== index)
-                                  )
+                                  row.importedRolls
+                                    ? removeImportedRoll(row.id, index)
+                                    : setLineRollValues(
+                                      row.id,
+                                      (row.rollValues ?? []).filter((_, i) => i !== index)
+                                    )
                                 }
                               />
                             </TableCell>
@@ -806,6 +927,15 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
           'Create GRN'
         )}
       </Button>
+
+      <GRNRollImportDialog
+        open={rollImportOpen}
+        onOpenChange={setRollImportOpen}
+        lines={rollImportLines}
+        existingRollCounts={rollImportExistingCounts}
+        templateFileName={rollImportFileName}
+        onApply={applyRollImport}
+      />
 
       <Dialog open={scanOpen} onOpenChange={setScanOpen}>
         <DialogContent className="sm:max-w-md">
