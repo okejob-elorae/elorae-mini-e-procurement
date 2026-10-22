@@ -3,7 +3,7 @@
 # Build context: repo root (NOT apps/web). docker-compose.prod.yml sets this.
 
 # ---------- 1. base ----------
-FROM node:22.23.4-slim AS base
+FROM node:22-slim AS base
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
