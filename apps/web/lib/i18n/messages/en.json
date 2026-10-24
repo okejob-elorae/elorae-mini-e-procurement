@@ -32,6 +32,14 @@
     "errorOccurred": "An error occurred. Please try again."
   },
   "navigation": {
+    "purchasing": "Purchasing",
+    "marketplaceSales": "Marketplace Sales",
+    "canvassingSales": "Canvassing Sales",
+    "consignmentSales": "Consignment Sales",
+    "accounting": "Accounting",
+    "navStockOnHand": "Stock on Hand",
+    "navStockCard": "Stock Card",
+    "navRejectedGoods": "Rejected Goods",
     "dashboard": "Dashboard",
     "suppliers": "Suppliers",
     "masterSuppliers": "Master Suppliers",
