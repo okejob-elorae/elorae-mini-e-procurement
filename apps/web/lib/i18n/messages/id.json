@@ -32,6 +32,14 @@
     "errorOccurred": "Terjadi kesalahan. Silakan coba lagi."
   },
   "navigation": {
+    "purchasing": "Pembelian",
+    "marketplaceSales": "Penjualan Marketplace",
+    "canvassingSales": "Penjualan Canvassing",
+    "consignmentSales": "Penjualan Konsinyasi",
+    "accounting": "Pembukuan",
+    "navStockOnHand": "Stok Barang",
+    "navStockCard": "Kartu Stok",
+    "navRejectedGoods": "Barang Reject",
     "dashboard": "Beranda",
     "suppliers": "Pemasok",
     "masterSuppliers": "Master Pemasok",

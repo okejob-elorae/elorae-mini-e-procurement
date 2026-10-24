@@ -27,6 +27,10 @@ import {
   PanelLeft,
   Users,
   Loader2,
+  ShoppingCart,
+  ShoppingBag,
+  Truck,
+  BookOpen,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
@@ -101,6 +105,12 @@ interface NavItem {
   adminOnly?: boolean;
 }
 
+/**
+ * Grouping follows the 2026-10 menu audit: one group per business flow (purchasing, warehouse,
+ * production, each sales channel, cash, bookkeeping, reports). Every child names its own
+ * permission — children move between groups, so none may lean on its parent's code.
+ * A group's `href` is only its open-state key; `getOpenKeyFromPath` derives it from the children.
+ */
 const navItems: NavItem[] = [
   {
     labelKey: 'dashboard',
@@ -109,10 +119,10 @@ const navItems: NavItem[] = [
     permission: PERMISSIONS.DASHBOARD_VIEW,
   },
   {
-    labelKey: 'suppliers',
-    href: '/backoffice/suppliers',
-    icon: Building2,
-    permission: PERMISSIONS.SUPPLIERS_VIEW,
+    labelKey: 'purchasing',
+    href: '#purchasing',
+    icon: ShoppingCart,
+    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
     children: [
       {
         labelKey: 'masterSuppliers',
@@ -124,6 +134,148 @@ const navItems: NavItem[] = [
         href: '/backoffice/suppliers/types',
         permission: PERMISSIONS.SUPPLIER_TYPES_VIEW,
       },
+      {
+        labelKey: 'leadTime',
+        href: '/backoffice/lead-time',
+        permission: PERMISSIONS.LEAD_TIME_VIEW,
+      },
+      {
+        labelKey: 'purchaseOrders',
+        href: '/backoffice/purchase-orders',
+        permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'registerNotaCmt',
+        href: '/backoffice/work-orders/nota-register',
+        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
+      },
+      {
+        labelKey: 'vendorReturns',
+        href: '/backoffice/vendor-returns',
+        permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
+      },
+    ],
+  },
+  {
+    labelKey: 'inventory',
+    href: '#inventory',
+    icon: Package,
+    permission: PERMISSIONS.INVENTORY_VIEW,
+    children: [
+      { labelKey: 'navStockOnHand', href: '/backoffice/inventory', permission: PERMISSIONS.INVENTORY_VIEW },
+      { labelKey: 'navItemsAll', href: '/backoffice/items', permission: PERMISSIONS.ITEMS_VIEW },
+      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories', permission: PERMISSIONS.ITEMS_VIEW },
+      { labelKey: 'navStockCard', href: '/backoffice/inventory/stock-card', permission: PERMISSIONS.INVENTORY_VIEW },
+      {
+        labelKey: 'navStockMovements',
+        href: '/backoffice/inventory/movements',
+        permission: PERMISSIONS.INVENTORY_VIEW,
+      },
+      {
+        labelKey: 'navStockOpname',
+        href: '/backoffice/inventory/stock-opname',
+        permission: PERMISSIONS.INVENTORY_OPNAME_VIEW,
+      },
+      {
+        labelKey: 'navStockReconciliation',
+        href: '/backoffice/inventory/reconciliation',
+        permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW,
+      },
+      {
+        labelKey: 'navRejectedGoods',
+        href: '/backoffice/inventory/rejected-goods',
+        permission: PERMISSIONS.INVENTORY_VIEW,
+      },
+      { labelKey: 'navFulfillment', href: '/backoffice/fulfillment', permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      {
+        labelKey: 'navDeliveries',
+        href: '/backoffice/deliveries',
+        anyPermissions: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD],
+      },
+    ],
+  },
+  {
+    labelKey: 'production',
+    href: '#production',
+    icon: CalendarDays,
+    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
+    children: [
+      {
+        labelKey: 'navForecast',
+        href: '/backoffice/forecast',
+        permission: PERMISSIONS.FORECAST_VIEW,
+      },
+      {
+        labelKey: 'navProductionPlanning',
+        href: '/backoffice/production/planning',
+        permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
+      },
+      {
+        labelKey: 'navProductionColors',
+        href: '/backoffice/production/colors',
+        permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
+      },
+      {
+        labelKey: 'navWorkOrdersList',
+        href: '/backoffice/work-orders',
+        permission: PERMISSIONS.WORK_ORDERS_VIEW,
+      },
+    ],
+  },
+  {
+    labelKey: 'marketplaceSales',
+    href: '#marketplace',
+    icon: ShoppingBag,
+    permission: PERMISSIONS.SALES_ORDERS_VIEW,
+    children: [
+      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders', permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      { labelKey: 'navSalesReturns', href: '/backoffice/returns', permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      {
+        labelKey: 'navFinanceSettlements',
+        href: '/backoffice/finance/settlements',
+        permission: PERMISSIONS.SETTLEMENTS_VIEW,
+      },
+      {
+        labelKey: 'navRecordPacker',
+        href: '/packer',
+        permission: PERMISSIONS.PACKER_MENU,
+      },
+    ],
+  },
+  {
+    labelKey: 'canvassingSales',
+    href: '#canvassing',
+    icon: Truck,
+    permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+    children: [
+      {
+        labelKey: 'navCanvassing',
+        href: '/backoffice/canvassing',
+        permission: PERMISSIONS.CANVASSING_MANAGE,
+      },
+      {
+        labelKey: 'navFieldSalesOrders',
+        href: '/backoffice/field-sales-orders',
+        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'navVanSales',
+        href: '/backoffice/van-sales',
+        permission: PERMISSIONS.CANVASSING_MANAGE,
+      },
+      {
+        labelKey: 'navFieldReturns',
+        href: '/backoffice/field-returns',
+        anyPermissions: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_RETURNS_MANAGE],
+      },
+    ],
+  },
+  {
+    labelKey: 'consignmentSales',
+    href: '#consignment',
+    icon: Store,
+    permission: PERMISSIONS.STORES_VIEW,
+    children: [
       {
         labelKey: 'masterStores',
         href: '/backoffice/stores',
@@ -145,81 +297,6 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.STORES_MANAGE,
       },
       {
-        labelKey: 'leadTime',
-        href: '/backoffice/lead-time',
-        permission: PERMISSIONS.LEAD_TIME_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'items',
-    href: '/backoffice/items',
-    icon: Package,
-    permission: PERMISSIONS.ITEMS_VIEW,
-    children: [
-      { labelKey: 'navItemsAll', href: '/backoffice/items' },
-      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories' },
-    ],
-  },
-  {
-    labelKey: 'inventory',
-    href: '/backoffice/inventory',
-    icon: Package,
-    permission: PERMISSIONS.INVENTORY_VIEW,
-    children: [
-      { labelKey: 'inventory', href: '/backoffice/inventory' },
-      {
-        labelKey: 'navStockOpname',
-        href: '/backoffice/inventory/stock-opname',
-        permission: PERMISSIONS.INVENTORY_OPNAME_VIEW,
-      },
-      {
-        labelKey: 'navStockReconciliation',
-        href: '/backoffice/inventory/reconciliation',
-        permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW,
-      },
-      {
-        labelKey: 'navStockMovements',
-        href: '/backoffice/inventory/movements',
-        permission: PERMISSIONS.INVENTORY_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'sales',
-    href: '/backoffice/sales-orders',
-    icon: Store,
-    permission: PERMISSIONS.SALES_ORDERS_VIEW,
-    children: [
-      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders' },
-      { labelKey: 'navFulfillment', href: '/backoffice/fulfillment' },
-      { labelKey: 'navSalesReturns', href: '/backoffice/returns' },
-      {
-        labelKey: 'navFieldSalesOrders',
-        href: '/backoffice/field-sales-orders',
-        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'navFieldReturns',
-        href: '/backoffice/field-returns',
-        anyPermissions: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_RETURNS_MANAGE],
-      },
-      {
-        labelKey: 'navDeliveries',
-        href: '/backoffice/deliveries',
-        anyPermissions: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD],
-      },
-      {
-        labelKey: 'navCanvassing',
-        href: '/backoffice/canvassing',
-        permission: PERMISSIONS.CANVASSING_MANAGE,
-      },
-      {
-        labelKey: 'navVanSales',
-        href: '/backoffice/van-sales',
-        permission: PERMISSIONS.CANVASSING_MANAGE,
-      },
-      {
         labelKey: 'navSpgSales',
         href: '/backoffice/spg-sales',
         permission: PERMISSIONS.SPG_SALES_VIEW,
@@ -234,24 +311,47 @@ const navItems: NavItem[] = [
         href: '/backoffice/promos',
         permission: PERMISSIONS.PROMOS_VIEW,
       },
-      {
-        labelKey: 'navRecordPacker',
-        href: '/packer',
-        permission: PERMISSIONS.PACKER_MENU,
-      },
     ],
   },
   {
     labelKey: 'finance',
-    href: '#',
+    href: '#finance',
     icon: Wallet,
+    permission: PERMISSIONS.RECEIVABLES_VIEW,
+    children: [
+      {
+        labelKey: "navFinancePiutang",
+        href: "/backoffice/finance/piutang",
+        permission: PERMISSIONS.RECEIVABLES_VIEW,
+      },
+      {
+        labelKey: "navFinancePayments",
+        href: "/backoffice/finance/payments",
+        permission: PERMISSIONS.PAYMENTS_MANAGE,
+      },
+      {
+        labelKey: "navFinanceStoreSettlements",
+        href: "/backoffice/finance/pelunasan",
+        permission: PERMISSIONS.COLLECTIONS_MANAGE,
+      },
+      {
+        labelKey: 'supplierPayment',
+        href: '/backoffice/supplier-payments',
+        permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
+      },
+    ],
+  },
+  {
+    labelKey: 'accounting',
+    href: '#accounting',
+    icon: BookOpen,
     permission: PERMISSIONS.COA_VIEW,
     children: [
       { labelKey: 'navCoa', href: '/backoffice/finance/coa', permission: PERMISSIONS.COA_VIEW },
       {
-        labelKey: 'navFinanceSettlements',
-        href: '/backoffice/finance/settlements',
-        permission: PERMISSIONS.SETTLEMENTS_VIEW,
+        labelKey: 'navFinanceAccountMapping',
+        href: '/backoffice/finance/account-mapping',
+        permission: PERMISSIONS.JOURNALS_VIEW,
       },
       {
         labelKey: 'navFinanceJournals',
@@ -259,10 +359,23 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.JOURNALS_VIEW,
       },
       {
-        labelKey: 'navFinanceAccountMapping',
-        href: '/backoffice/finance/account-mapping',
+        labelKey: 'navFinanceCashFlowSections',
+        href: '/backoffice/finance/cash-flow-sections',
         permission: PERMISSIONS.JOURNALS_VIEW,
       },
+      {
+        labelKey: 'navFakturPajak',
+        href: '/backoffice/finance/faktur-pajak',
+        permission: PERMISSIONS.TAX_INVOICES_VIEW,
+      },
+    ],
+  },
+  {
+    labelKey: 'reports',
+    href: '#reports',
+    icon: BarChart2,
+    permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
+    children: [
       {
         labelKey: 'navFinanceTrialBalance',
         href: '/backoffice/finance/reports/trial-balance',
@@ -283,88 +396,7 @@ const navItems: NavItem[] = [
         href: '/backoffice/finance/reports/cash-flow',
         permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
       },
-      {
-        labelKey: 'navFinanceCashFlowSections',
-        href: '/backoffice/finance/cash-flow-sections',
-        permission: PERMISSIONS.JOURNALS_VIEW,
-      },
-      {
-        labelKey: 'navFakturPajak',
-        href: '/backoffice/finance/faktur-pajak',
-        permission: PERMISSIONS.TAX_INVOICES_VIEW,
-      },
-      {
-        labelKey: "navFinancePiutang",
-        href: "/backoffice/finance/piutang",
-        permission: PERMISSIONS.RECEIVABLES_VIEW,
-      },
-      {
-        labelKey: "navFinancePayments",
-        href: "/backoffice/finance/payments",
-        permission: PERMISSIONS.PAYMENTS_MANAGE,
-      },
-      {
-        labelKey: "navFinanceStoreSettlements",
-        href: "/backoffice/finance/pelunasan",
-        permission: PERMISSIONS.COLLECTIONS_MANAGE,
-      },
-    ],
-  },
-  {
-    labelKey: 'production',
-    href: '/backoffice/production/planning',
-    icon: CalendarDays,
-    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
-    children: [
-      {
-        labelKey: 'navForecast',
-        href: '/backoffice/forecast',
-        permission: PERMISSIONS.FORECAST_VIEW,
-      },
-      {
-        labelKey: 'navProductionPlanning',
-        href: '/backoffice/production/planning',
-        permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
-      },
-      {
-        labelKey: 'navProductionColors',
-        href: '/backoffice/production/colors',
-        permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
-      },
-      {
-        labelKey: 'purchaseOrders',
-        href: '/backoffice/purchase-orders',
-        permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'supplierPayment',
-        href: '/backoffice/supplier-payments',
-        permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
-      },
-      {
-        labelKey: 'navWorkOrdersList',
-        href: '/backoffice/work-orders',
-        permission: PERMISSIONS.WORK_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'registerNotaCmt',
-        href: '/backoffice/work-orders/nota-register',
-        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
-      },
-      {
-        labelKey: 'vendorReturns',
-        href: '/backoffice/vendor-returns',
-        permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'reports',
-    href: '/backoffice/reports/hpp',
-    icon: BarChart2,
-    permission: PERMISSIONS.REPORTS_HPP_VIEW,
-    children: [
-      { labelKey: 'hppReport', href: '/backoffice/reports/hpp' },
+      { labelKey: 'hppReport', href: '/backoffice/reports/hpp', permission: PERMISSIONS.REPORTS_HPP_VIEW },
     ],
   },
   {
@@ -445,47 +477,18 @@ function Sidebar({
 }) {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
+  // Longest matching child href wins, so `/work-orders/nota-register` opens Purchasing while
+  // `/work-orders/123` opens Production. A page under no child falls through to null, which
+  // leaves the open group as it is.
   const getOpenKeyFromPath = (path: string) => {
-    if (
-      path.startsWith('/backoffice/suppliers') ||
-      path.startsWith('/backoffice/lead-time') ||
-      path.startsWith('/backoffice/stores') ||
-      path.startsWith('/backoffice/store-stocktakes') ||
-      path.startsWith('/backoffice/konsi-sell-through')
-    ) {
-      return '/backoffice/suppliers';
+    let best: { key: string; length: number } | null = null;
+    for (const item of navItems) {
+      for (const child of item.children ?? []) {
+        if (path !== child.href && !path.startsWith(`${child.href}/`)) continue;
+        if (!best || child.href.length > best.length) best = { key: item.href, length: child.href.length };
+      }
     }
-    if (path.startsWith('/backoffice/items')) return '/backoffice/items';
-    if (path.startsWith('/backoffice/inventory')) return '/backoffice/inventory';
-    if (
-      path.startsWith('/backoffice/forecast') ||
-      path.startsWith('/backoffice/production') ||
-      path.startsWith('/backoffice/purchase-orders') ||
-      path.startsWith('/backoffice/supplier-payments') ||
-      path.startsWith('/backoffice/work-orders') ||
-      path.startsWith('/backoffice/vendor-returns')
-    ) {
-      return '/backoffice/production/planning';
-    }
-    if (path.startsWith('/backoffice/jubelio')) return '/backoffice/jubelio/admin';
-    if (path.startsWith('/backoffice/finance')) return '#';
-    if (path.startsWith('/backoffice/reports')) return '/backoffice/reports/hpp';
-    if (
-      path.startsWith('/backoffice/sales-orders') ||
-      path.startsWith('/backoffice/fulfillment') ||
-      path.startsWith('/backoffice/returns') ||
-      path.startsWith('/backoffice/field-sales-orders') ||
-      path.startsWith('/backoffice/field-returns') ||
-      path.startsWith('/backoffice/deliveries') ||
-      path.startsWith('/backoffice/canvassing') ||
-      path.startsWith('/backoffice/van-sales') ||
-      path.startsWith('/backoffice/spg-sales') ||
-      path.startsWith("/backoffice/spg-commission") ||
-      path.startsWith('/backoffice/promos')
-    ) {
-      return '/backoffice/sales-orders';
-    }
-    return null;
+    return best?.key ?? null;
   };
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
 
