@@ -3,6 +3,7 @@ import { aggregateInventoryValues } from "@/lib/items/queries";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { outstandingQty } from "./delivery/plan";
+import { deliveredGoodsValue, undeliveredResidual } from "./delivery/undelivered-residual";
 import type { PlanHistory } from "./smart-request/plan";
 import type { TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 
@@ -344,21 +345,61 @@ export type StoreOrderSummaryRow = {
   createdAtIso: string;
 };
 
+/**
+ * `total` is the order's EFFECTIVE value, not the raw `FieldSalesOrder.total`, for an APPROVED
+ * putus order: what its deliveries billed (their whole-rupiah `total`s) plus the still-open
+ * undelivered remainder, so a remainder-closed order counts only what was delivered. The remainder
+ * is measured the way credit exposure measures it (exact delivered goods values through
+ * `undeliveredResidual`) and is zero once the order is CLOSED. Konsi and not-yet-approved orders
+ * keep the order's own total.
+ */
 export async function getStoreOrderSummary(storeId: string): Promise<StoreOrderSummaryRow[]> {
   const rows = await prisma.fieldSalesOrder.findMany({
     where: { storeId, status: { not: "REJECTED" } },
     orderBy: { createdAt: "desc" },
     take: 5,
-    select: { id: true, orderNo: true, orderType: true, status: true, total: true, createdAt: true },
+    select: {
+      id: true,
+      orderNo: true,
+      orderType: true,
+      status: true,
+      total: true,
+      deliveryStatus: true,
+      createdAt: true,
+      deliveries: {
+        select: {
+          total: true,
+          subtotal: true,
+          discountAmount: true,
+          lines: { select: { discountAmount: true } },
+        },
+      },
+    },
   });
-  return rows.map(r => ({
-    id: r.id,
-    orderNo: r.orderNo,
-    orderType: r.orderType as FieldSalesOrderType,
-    status: r.status as "PENDING_APPROVAL" | "APPROVED",
-    total: Number(r.total),
-    createdAtIso: r.createdAt.toISOString(),
-  }));
+  return rows.map(r => {
+    const effective = r.status === "APPROVED" && r.orderType === "PUTUS";
+    const delivered = r.deliveries.reduce((sum, d) => sum + Number(d.total), 0);
+    const residual = r.deliveryStatus === "CLOSED"
+      ? 0
+      : undeliveredResidual(
+        Number(r.total),
+        r.deliveries.map((d) =>
+          deliveredGoodsValue({
+            subtotal: Number(d.subtotal),
+            discountAmount: Number(d.discountAmount),
+            lineDiscounts: d.lines.map((l) => Number(l.discountAmount)),
+          }),
+        ),
+      );
+    return {
+      id: r.id,
+      orderNo: r.orderNo,
+      orderType: r.orderType as FieldSalesOrderType,
+      status: r.status as "PENDING_APPROVAL" | "APPROVED",
+      total: effective ? delivered + residual : Number(r.total),
+      createdAtIso: r.createdAt.toISOString(),
+    };
+  });
 }
 
 export type StoreSentItemRow = {
@@ -381,7 +422,7 @@ export async function getStoreSentItems(storeId: string): Promise<StoreSentItemR
   const [deliveredPutus, deliveredKonsi] = await Promise.all([
     prisma.fieldSalesDeliveryLine.groupBy({
       by: ["itemId", "variantSku"],
-      where: { delivery: { order: { storeId } } },
+      where: { delivery: { order: { storeId, orderType: "PUTUS" } } },
       _sum: { qty: true },
     }),
     prisma.fieldSalesOrderLine.groupBy({

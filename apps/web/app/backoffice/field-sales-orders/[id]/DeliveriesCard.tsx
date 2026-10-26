@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -59,6 +59,7 @@ import {
   updateDeliveryDatesAction,
 } from "@/app/actions/field-sales-deliveries";
 import { logPrint } from "@/app/actions/audit";
+import { promoNameForDeliveryLine } from "@/lib/field-sales/delivery-nota-promos";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
 import {
@@ -79,7 +80,8 @@ type Props = {
   status: FieldSalesOrderStatus;
   deliveryStatus: FieldSalesDeliveryStatus;
   deliveries: FieldSalesDeliverySummary[];
-  lines: DeliverableLine[];
+  lines: Array<DeliverableLine & { appliedPromoName: string | null }>;
+  appliedOrderPromoName: string | null;
   paymentTempo: number;
   canDeliver: boolean;
   canShipShipment: boolean;
@@ -137,6 +139,7 @@ export function DeliveriesCard({
   deliveryStatus,
   deliveries,
   lines,
+  appliedOrderPromoName,
   paymentTempo,
   canDeliver,
   canShipShipment,
@@ -160,6 +163,11 @@ export function DeliveriesCard({
   const [editInvoiceDate, setEditInvoiceDate] = useState("");
   const [editDueDate, setEditDueDate] = useState("");
   const [editReason, setEditReason] = useState("");
+  /**
+   * Bumped each time the edit dialog opens. A save that outlives its dialog (Esc during the
+   * pending state, then Edit on another row) must not close the dialog opened after it.
+   */
+  const editSessionRef = useRef(0);
 
   /* Konsi orders render KonsiShipmentsCard instead — no accounting deliveries exist for them. */
   if (orderType === "KONSI") return null;
@@ -187,7 +195,7 @@ export function DeliveriesCard({
   }
 
   async function handlePrintGudang(delivery: FieldSalesDeliverySummary): Promise<void> {
-    await logPrint("FieldSalesNotaGudang", delivery.id);
+    await logPrint("FieldSalesDeliveryNotaGudang", delivery.id);
     const html = buildNotaGudangPrintHtml({
       docNo: delivery.docNo,
       orderNo,
@@ -249,7 +257,7 @@ export function DeliveriesCard({
         footnote: tagihanFootnote,
         subtotal: delivery.subtotal,
         orderDiscountAmount: delivery.discountAmount,
-        appliedOrderPromoName: null,
+        appliedOrderPromoName,
         total: delivery.total,
         lines: delivery.lines.map((line) => ({
           productName: line.productName,
@@ -259,7 +267,7 @@ export function DeliveriesCard({
           unitPrice: line.unitPrice,
           lineTotal: line.lineTotal,
           discountAmount: line.discountAmount,
-          appliedPromoName: null,
+          appliedPromoName: promoNameForDeliveryLine(lines, line.orderLineId),
         })),
         labels: {
           title: t("print.tagihanTitle"),
@@ -313,12 +321,14 @@ export function DeliveriesCard({
     setEditInvoiceDate(formatDateOnlyJakarta(delivery.invoiceDate));
     setEditDueDate(formatDateOnlyJakarta(delivery.dueDate));
     setEditReason("");
+    editSessionRef.current += 1;
     setEditOpen(true);
   }
 
   function callUpdateDates(): void {
     const reason = editReason.trim();
     if (!editTargetId || !reason || !editDatesValid) return;
+    const session = editSessionRef.current;
     startTransition(async () => {
       try {
         const result = await updateDeliveryDatesAction({
@@ -329,7 +339,7 @@ export function DeliveriesCard({
         });
         if (result.ok) {
           toast.success(t("delivery.successDatesUpdated"));
-          setEditOpen(false);
+          if (session === editSessionRef.current) setEditOpen(false);
           router.refresh();
           return;
         }
@@ -401,7 +411,7 @@ export function DeliveriesCard({
                 <TableHead className="text-right">{t("delivery.qty")}</TableHead>
                 <TableHead className="text-right">{t("delivery.value")}</TableHead>
                 <TableHead>{t("delivery.deliveredBy")}</TableHead>
-                <TableHead>{t("delivery.dueDate")}</TableHead>
+                <TableHead>{t("delivery.invoiceDueDates")}</TableHead>
                 <TableHead>{t("delivery.taxInvoiceStatus")}</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
@@ -418,8 +428,8 @@ export function DeliveriesCard({
                     {formatIDR(delivery.total)}
                   </TableCell>
                   <TableCell className="max-w-40 truncate">{delivery.deliveredByName}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {formatDay(delivery.dueDate, locale)}
+                  <TableCell className="max-w-56 truncate whitespace-nowrap">
+                    {formatDay(delivery.invoiceDate, locale)} → {formatDay(delivery.dueDate, locale)}
                   </TableCell>
                   <TableCell>
                     {delivery.taxInvoiceStatus ? (

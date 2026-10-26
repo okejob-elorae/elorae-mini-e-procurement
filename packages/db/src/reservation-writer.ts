@@ -310,7 +310,10 @@ export type PartialConsumeShortLine = {
   itemId: string;
   variantSku: string;
   requested: number;
+  /* On-hand before this call moved anything. */
   onHand: number;
+  /* What was left for THIS line after earlier lines in the same call took from the same row. */
+  available: number;
 };
 
 export class PartialConsumeError extends Error {
@@ -347,7 +350,7 @@ export async function consumeFieldSalesOrderPartial(
       const affected = await tx.$executeRaw`
         UPDATE StockReservation
         SET consumedQty = consumedQty + ${line.qty}
-        WHERE fieldSalesLineId = ${line.fieldSalesLineId} AND state = 'RESERVED' AND consumedQty + ${line.qty} <= qty
+        WHERE fieldSalesLineId = ${line.fieldSalesLineId} AND source = 'FIELD_SALES' AND state = 'RESERVED' AND consumedQty + ${line.qty} <= qty
       `;
       if (affected === 0) throw new PartialConsumeError("OVER_CONSUME");
 
@@ -372,6 +375,8 @@ export async function consumeFieldSalesOrderPartial(
 
     let consumed = 0;
     const consumedLines: Array<{ fieldSalesLineId: string; qty: number; avgCost: number }> = [];
+    /* Quantity this call has already taken per resolved row, so a short line reports on-hand as it stood before the call. */
+    const takenByRow = new Map<string, number>();
     for (const p of prepared) {
       const qty = p.line.qty;
       /**
@@ -394,7 +399,8 @@ export async function consumeFieldSalesOrderPartial(
           itemId: p.line.itemId,
           variantSku: p.line.variantSku,
           requested: qty,
-          onHand: Number(current.qtyOnHand),
+          onHand: Number(current.qtyOnHand) + (takenByRow.get(p.invId) ?? 0),
+          available: Number(current.qtyOnHand),
         });
         continue;
       }
@@ -450,89 +456,12 @@ export async function consumeFieldSalesOrderPartial(
           externalRef: `fieldsales:${input.orderNo}`,
         },
       });
+      takenByRow.set(p.invId, (takenByRow.get(p.invId) ?? 0) + qty);
       consumed += 1;
       consumedLines.push({ fieldSalesLineId: p.line.fieldSalesLineId, qty, avgCost: p.avgCost });
     }
     if (shortLines.length > 0) throw new PartialConsumeError("INSUFFICIENT_STOCK", shortLines);
     return { consumed, lines: consumedLines };
-  };
-  return hasTx(client) ? client.$transaction(run) : run(client);
-}
-
-export async function consumeFieldSalesOrder(
-  client: AnyClient,
-  input: { orderNo: string; fieldSalesLineIds: string[] },
-): Promise<ConsumeOrderResult> {
-  const run = async (tx: Prisma.TransactionClient): Promise<ConsumeOrderResult> => {
-    const rows = await tx.stockReservation.findMany({
-      where: { source: "FIELD_SALES", fieldSalesLineId: { in: input.fieldSalesLineIds }, state: "RESERVED" },
-    });
-    let consumed = 0;
-    for (const row of rows) {
-      const upd = await tx.stockReservation.updateMany({
-        where: { fieldSalesLineId: row.fieldSalesLineId, state: "RESERVED", consumedQty: 0 },
-        data: { state: "CONSUMED", consumedQty: row.qty, resolvedAt: new Date() },
-      });
-      if (upd.count === 0) continue;
-      const qty = Number(row.qty);
-      const inv = await resolveReservedInventory(tx, row);
-      if (!inv) throw new InventoryValueMissingError(row.itemId, row.variantSku);
-      const avgCost = Number(inv.avgCost);
-      const updated = await tx.inventoryValue.update({
-        where: { id: inv.id },
-        data: {
-          qtyOnHand: { decrement: qty },
-          reservedQty: { decrement: qty },
-          totalValue: { decrement: qty * avgCost },
-          lastUpdated: new Date(),
-        },
-        select: { qtyOnHand: true },
-      });
-      const newOnHand = Number(updated.qtyOnHand);
-      const prevOnHand = newOnHand + qty;
-      /**
-       * One ledger entry for the qtyOnHand movement only. The same statement also releases the
-       * reservation, but that half moves nothing and is deliberately not a second entry.
-       * The where clause above already restricts to non-null fieldSalesLineId; the fallback to
-       * the reservation row id only keeps refId typed as a string.
-       *
-       * totalCost/balanceValue reuse the SAME `qty * avgCost` expression the update above just
-       * decremented totalValue by — avgCost is unchanged by a consume, so newOnHand * avgCost is
-       * the row's real new total value.
-       */
-      await appendStockLedger(tx, {
-        location: { type: "MAIN" },
-        itemId: row.itemId,
-        variantSku: row.variantSku,
-        type: ledgerTypeForDelta(-qty),
-        qty: -qty,
-        balanceQty: newOnHand,
-        unitCost: avgCost,
-        totalCost: -(qty * avgCost),
-        balanceValue: newOnHand * avgCost,
-        refType: "FieldSalesConsume" satisfies StockLedgerRefType,
-        refId: row.fieldSalesLineId ?? row.id,
-        refDocNumber: input.orderNo,
-      });
-      await tx.stockAdjustment.create({
-        data: {
-          docNumber: `CONSUME-${input.orderNo}-${row.fieldSalesLineId}`,
-          itemId: row.itemId,
-          type: AdjustmentType.NEGATIVE,
-          qtyChange: -qty,
-          reason: `Field-sales putus order ${input.orderNo}`,
-          prevQty: prevOnHand,
-          newQty: newOnHand,
-          prevAvgCost: avgCost,
-          newAvgCost: avgCost,
-          source: "FIELD_SALES_CONSUME" satisfies StockAdjustmentSource,
-          idempotencyKey: `fieldsales-${input.orderNo}-consume-line-${row.fieldSalesLineId}`,
-          externalRef: `fieldsales:${input.orderNo}`,
-        },
-      });
-      consumed += 1;
-    }
-    return { consumed };
   };
   return hasTx(client) ? client.$transaction(run) : run(client);
 }

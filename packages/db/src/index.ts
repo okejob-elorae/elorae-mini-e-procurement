@@ -110,7 +110,6 @@ export {
   consumeOrder,
   releaseOrder,
   reserveFieldSalesOrder,
-  consumeFieldSalesOrder,
   consumeFieldSalesOrderPartial,
   PartialConsumeError,
   releaseFieldSalesOrder,

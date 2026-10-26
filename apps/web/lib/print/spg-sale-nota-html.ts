@@ -21,6 +21,30 @@ function rupiah(n: number): string {
   return `Rp ${Math.round(n).toLocaleString("id-ID")}`;
 }
 
+/**
+ * Exact 2dp, for the Subtotal and rounding rows only: whole-rupiah would print Subtotal
+ * identical to the already-rounded TOTAL, which is the very difference those rows explain.
+ */
+function rupiahExact(n: number): string {
+  return `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function adjustmentExact(n: number): string {
+  return `${n >= 0 ? "+" : "-"}${rupiahExact(Math.abs(n))}`;
+}
+
+/**
+ * The Subtotal and rounding rows, printed only when the whole-rupiah TOTAL differs from the
+ * exact line sum. Same rule and labels as the cash screens.
+ */
+function roundingRows(subtotal: number, total: number): string {
+  const adjustment = Math.round((total - subtotal) * 100) / 100;
+  if (adjustment === 0) return "";
+  return `<div class="tot-row"><span>Subtotal</span><span>${rupiahExact(subtotal)}</span></div>
+  <div class="tot-row"><span>Pembulatan tunai</span><span>${adjustmentExact(adjustment)}</span></div>
+  `;
+}
+
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "-";
@@ -125,7 +149,7 @@ export function spgSaleNotaHtml(sale: SpgSaleDetail): string {
   <div class="divider"></div>
   <div class="lines">${lines}</div>
   <div class="divider"></div>
-  <div class="tot-row grand"><span>TOTAL</span><span>${rupiah(sale.total)}</span></div>
+  ${roundingRows(sale.subtotal, sale.total)}<div class="tot-row grand"><span>TOTAL</span><span>${rupiah(sale.total)}</span></div>
   <div class="tot-row"><span>TUNAI</span><span>${rupiah(sale.cashReceived)}</span></div>
   <div class="tot-row"><span>KEMBALI</span><span>${rupiah(sale.changeGiven)}</span></div>
   <div class="divider"></div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -16,8 +16,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { computeDueDate, deliverableQty } from "@/lib/field-sales/delivery/plan";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { computeDueDate, deliverableQty, shortLineClampQty } from "@/lib/field-sales/delivery/plan";
+import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import {
   recordDeliveryAction,
   type DeliveryActionResult,
@@ -34,7 +34,7 @@ export type DeliverableLine = {
 
 type DeliveryFailure = Extract<DeliveryActionResult, { ok: false }>;
 
-type ShortLine = { requested: number; onHand: number };
+type ShortLine = { requested: number; onHand: number; available: number };
 
 type Props = {
   orderId: string;
@@ -68,8 +68,7 @@ function seedQtyInputs(lines: DeliverableLine[]): Record<string, string> {
  */
 export function parseDateOnlyInput(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const parsed = new Date(`${value}T00:00:00.000+07:00`);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  return parseDateOnly(value) ?? null;
 }
 
 export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenChange }: Props) {
@@ -91,6 +90,11 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
    * until the open effect runs, which is why submit is gated on it.
    */
   const [idempotencyKey, setIdempotencyKey] = useState("");
+  /**
+   * Bumped each time the dialog opens. A save that outlives its session (Esc during the pending
+   * state, then reopen) must not close the session opened after it.
+   */
+  const sessionRef = useRef(0);
 
   const rows = lines.filter((line) => line.outstanding > 0);
 
@@ -102,6 +106,7 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
     setInvoiceDate(formatDateOnlyJakarta(new Date()));
     setDueDate("");
     setIdempotencyKey(crypto.randomUUID());
+    sessionRef.current += 1;
     /* eslint-disable-next-line react-hooks/exhaustive-deps -- seed once per open; re-running on every parent render would wipe typed quantities */
   }, [open]);
 
@@ -150,17 +155,18 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
   const canSubmit = !isPending && payload.length > 0 && idempotencyKey !== "" && datesValid;
 
   /**
-   * A short line is snapped down to what the server just said is on hand, and the order is
+   * A short line is snapped down to what the server just said was left for it, and the order is
    * refreshed so the helper text stops contradicting the error. setQtyInputs is written
    * directly rather than through setQty, which would clear the inline error we just set.
    */
-  function handleFailure(result: DeliveryFailure): void {
-    if (result.reason === "INSUFFICIENT_STOCK" && result.shortLines?.length) {
+  function handleFailure(result: DeliveryFailure, session: number): void {
+    /* A save that outlived its session must not write into a reopened dialog. */
+    if (result.reason === "INSUFFICIENT_STOCK" && result.shortLines?.length && session === sessionRef.current) {
       const next: Record<string, ShortLine> = {};
       const clamped: Record<string, string> = {};
       for (const short of result.shortLines) {
-        next[short.orderLineId] = { requested: short.requested, onHand: short.onHand };
-        clamped[short.orderLineId] = String(Math.max(0, Math.floor(short.onHand)));
+        next[short.orderLineId] = { requested: short.requested, onHand: short.onHand, available: short.available };
+        clamped[short.orderLineId] = String(shortLineClampQty(short.requested, short.available));
       }
       setShortLines(next);
       setQtyInputs((prev) => ({ ...prev, ...clamped }));
@@ -184,7 +190,7 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
         }),
       );
       setIdempotencyKey(crypto.randomUUID());
-      onOpenChange(false);
+      if (session === sessionRef.current) onOpenChange(false);
       router.refresh();
     }
   }
@@ -192,6 +198,7 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
   function submit(): void {
     if (!canSubmit) return;
     const trimmedNote = note.trim();
+    const session = sessionRef.current;
     startTransition(async () => {
       try {
         const result = await recordDeliveryAction({
@@ -206,11 +213,11 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
           toast.success(t("delivery.successCreated"));
           /* Rotate before closing so a reopen can never replay the delivery that just succeeded. */
           setIdempotencyKey(crypto.randomUUID());
-          onOpenChange(false);
+          if (session === sessionRef.current) onOpenChange(false);
           router.refresh();
           return;
         }
-        handleFailure(result);
+        handleFailure(result, session);
       } catch {
         toast.error(t("errGeneric"));
       }
@@ -234,7 +241,13 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
               const variantText = line.variantLabel ?? line.variantSku;
               const short = shortLines[line.id];
               const shortText = short
-                ? t("delivery.shortStock", { onHand: short.onHand, requested: short.requested })
+                ? short.available === short.onHand
+                  ? t("delivery.shortStock", { available: short.available, requested: short.requested })
+                  : t("delivery.shortStockShared", {
+                      available: short.available,
+                      onHand: short.onHand,
+                      requested: short.requested,
+                    })
                 : null;
               return (
                 <div key={line.id} className="rounded-md border p-3">

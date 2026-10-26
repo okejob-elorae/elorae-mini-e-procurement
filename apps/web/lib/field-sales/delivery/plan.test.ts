@@ -6,6 +6,7 @@ import {
   nextDeliveryStatus,
   computeDueDate,
   allocateDeliveryDiscounts,
+  shortLineClampQty,
 } from "./plan";
 
 describe("outstandingQty", () => {
@@ -240,6 +241,42 @@ describe("allocateDeliveryDiscounts", () => {
     expect(allocatedToLines + allocatedToHeaders).toBe(100);
   });
 
+  it("folds a fractional percent discount stranded by a two-delivery order into the closing header discount", () => {
+    /*
+     * Line A: qty 1, discount 33.33 (10% of 333.30), ships whole on a non-closing delivery and so
+     * takes round(33.33) = 33. Line B ships alone on the closing delivery, so A's 0.33 can only
+     * leave through the header discount.
+     */
+    const lineA = { orderLineId: "a", lineDiscount: 33.33, orderedQty: 1 };
+    const lineB = { orderLineId: "b", lineDiscount: 0, orderedQty: 1 };
+    const base = { orderSubtotal: 433.3, orderDiscount: 0, orderDiscountAllocated: 0 };
+
+    const first = allocateDeliveryDiscounts({
+      ...base,
+      closesOrder: false,
+      lines: [
+        { ...lineA, deliveredQty: 1, lineDiscountAllocated: 0, deliveredSubtotal: 333.3 },
+        { ...lineB, deliveredQty: 0, lineDiscountAllocated: 0, deliveredSubtotal: 0 },
+      ],
+    });
+    expect(first.lineDiscounts).toEqual([{ orderLineId: "a", discountAmount: 33 }]);
+
+    const closing = allocateDeliveryDiscounts({
+      ...base,
+      closesOrder: true,
+      lines: [
+        { ...lineA, deliveredQty: 0, lineDiscountAllocated: 33, deliveredSubtotal: 0 },
+        { ...lineB, deliveredQty: 1, lineDiscountAllocated: 0, deliveredSubtotal: 100 },
+      ],
+    });
+    expect(closing.lineDiscounts).toEqual([{ orderLineId: "b", discountAmount: 0 }]);
+    expect(closing.orderDiscountAmount).toBeCloseTo(0.33, 2);
+
+    const total =
+      first.lineDiscounts[0].discountAmount + first.orderDiscountAmount + closing.lineDiscounts[0].discountAmount + closing.orderDiscountAmount;
+    expect(total).toBeCloseTo(33.33, 2);
+  });
+
   it("adds the stranded line residue to the order discount remainder rather than replacing it", () => {
     const got = allocateDeliveryDiscounts({
       closesOrder: true,
@@ -252,5 +289,20 @@ describe("allocateDeliveryDiscounts", () => {
       ],
     });
     expect(got.orderDiscountAmount).toBe(31); /* 30 order remainder + 1 stranded on line a */
+  });
+});
+
+describe("shortLineClampQty", () => {
+  it("clamps to what was left for the line, not the on-hand shared with earlier lines", () => {
+    expect(shortLineClampQty(5, 2)).toBe(2);
+  });
+
+  it("never exceeds what was requested", () => {
+    expect(shortLineClampQty(3, 8)).toBe(3);
+  });
+
+  it("floors fractions and never goes negative", () => {
+    expect(shortLineClampQty(5, 2.9)).toBe(2);
+    expect(shortLineClampQty(5, -1)).toBe(0);
   });
 });

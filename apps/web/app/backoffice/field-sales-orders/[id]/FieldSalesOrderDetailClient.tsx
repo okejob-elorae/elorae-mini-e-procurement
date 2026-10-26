@@ -275,7 +275,8 @@ export function FieldSalesOrderDetailClient({
           status={order.status}
           deliveryStatus={order.deliveryStatus}
           deliveries={order.deliveries}
-          lines={deliverableLines}
+          lines={order.lines.map((line, i) => ({ ...deliverableLines[i], appliedPromoName: line.appliedPromoName }))}
+          appliedOrderPromoName={order.appliedOrderPromoName}
           paymentTempo={order.paymentTempo}
           canDeliver={canDeliver}
           canShipShipment={canShipShipment}

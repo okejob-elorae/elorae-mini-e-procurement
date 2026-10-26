@@ -31,6 +31,7 @@ d("getStoreOrderSummary (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.fieldSalesDelivery.deleteMany({ where: { order: { storeId: seededId(storeId) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
@@ -57,5 +58,43 @@ d("getStoreOrderSummary (test bed only)", () => {
     await makeOrder(2, "APPROVED", "KONSI", 2000);
     const rows = await getStoreOrderSummary(storeId);
     expect(rows.map(r => r.orderType).sort()).toEqual(["KONSI", "PUTUS"]);
+  });
+
+  async function makeDelivery(orderId: string, seq: number, subtotal: number, total: number) {
+    return prisma.fieldSalesDelivery.create({
+      data: {
+        docNo: `${tag}-DLV-${seq}`,
+        orderId,
+        deliveredAt: new Date(),
+        deliveredById: (await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } })).id,
+        invoiceDate: new Date(),
+        dueDate: new Date(),
+        subtotal,
+        total,
+      },
+    });
+  }
+
+  it("reports the billed delivered total plus the open remainder for a partly delivered approved putus order", async () => {
+    const order = await makeOrder(1, "APPROVED", "PUTUS", 1000);
+    await makeDelivery(order.id, 1, 400.4, 400);
+    const [row] = await getStoreOrderSummary(storeId);
+    /* Billed 400 + residual (1000 − exact goods 400.40 = 599.60) — not the raw order total of 1000. */
+    expect(row.total).toBeCloseTo(999.6, 2);
+  });
+
+  it("counts only what was delivered once the remainder is closed", async () => {
+    const order = await makeOrder(1, "APPROVED", "PUTUS", 1000);
+    await makeDelivery(order.id, 1, 400, 400);
+    await prisma.fieldSalesOrder.update({ where: { id: order.id }, data: { deliveryStatus: "CLOSED" } });
+    const [row] = await getStoreOrderSummary(storeId);
+    expect(row.total).toBe(400);
+  });
+
+  it("keeps the order total for konsi and unapproved orders", async () => {
+    await makeOrder(1, "APPROVED", "KONSI", 2000);
+    await makeOrder(2, "PENDING_APPROVAL", "PUTUS", 3000);
+    const rows = await getStoreOrderSummary(storeId);
+    expect(rows.map((r) => r.total).sort()).toEqual([2000, 3000]);
   });
 });

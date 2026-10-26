@@ -42,7 +42,7 @@ d("consumeFieldSalesOrderPartial (test bed only)", () => {
   afterEach(async () => {
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.stockReservation.deleteMany({ where: { id: seededId(reservationId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -96,6 +96,27 @@ d("consumeFieldSalesOrderPartial (test bed only)", () => {
     expect(Number(inv.qtyOnHand)).toBe(10);
   });
 
+  it("ignores a reservation of another source for the same line and moves no stock", async () => {
+    const otherLineId = `${lineId}-konsi`;
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES_KONSI", fieldSalesLineId: otherLineId, itemId, variantSku: "", qty: 10, state: "RESERVED" },
+    });
+
+    const err = await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS/2026/9001",
+      deliveryId: "dlv-1",
+      lines: [{ fieldSalesLineId: otherLineId, itemId, variantSku: "", qty: 4 }],
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(PartialConsumeError);
+    expect(err.code).toBe("OVER_CONSUME");
+
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.qtyOnHand)).toBe(10);
+    const other = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: otherLineId } });
+    expect(Number(other.consumedQty)).toBe(0);
+  });
+
   it("hard-blocks when on-hand is below the requested qty and names the short line", async () => {
     await prisma.inventoryValue.update({ where: { id: invId }, data: { qtyOnHand: 2 } });
 
@@ -107,10 +128,34 @@ d("consumeFieldSalesOrderPartial (test bed only)", () => {
 
     expect(err).toBeInstanceOf(PartialConsumeError);
     expect(err.code).toBe("INSUFFICIENT_STOCK");
-    expect(err.shortLines).toEqual([{ fieldSalesLineId: lineId, itemId, variantSku: "", requested: 5, onHand: 2 }]);
+    expect(err.shortLines).toEqual([{ fieldSalesLineId: lineId, itemId, variantSku: "", requested: 5, onHand: 2, available: 2 }]);
 
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
     expect(Number(inv.qtyOnHand)).toBe(2);
+  });
+
+  it("reports the on-hand from before the call when an earlier line on the same row already took stock", async () => {
+    const secondLineId = `${lineId}-b`;
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: secondLineId, itemId, variantSku: "", qty: 5, state: "RESERVED" },
+    });
+    await prisma.inventoryValue.update({ where: { id: invId }, data: { qtyOnHand: 8 } });
+
+    const err = await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS/2026/9001",
+      deliveryId: "dlv-1",
+      lines: [
+        { fieldSalesLineId: lineId, itemId, variantSku: "", qty: 6 },
+        { fieldSalesLineId: secondLineId, itemId, variantSku: "", qty: 5 },
+      ],
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(PartialConsumeError);
+    expect(err.code).toBe("INSUFFICIENT_STOCK");
+    expect(err.shortLines).toEqual([{ fieldSalesLineId: secondLineId, itemId, variantSku: "", requested: 5, onHand: 8, available: 2 }]);
+
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.qtyOnHand)).toBe(8);
   });
 
   it("writes one audited negative adjustment per delivery line", async () => {
