@@ -6437,6 +6437,8 @@
     "cancel": "Batal",
     "applied": "{rolls} rol diimport ke {lines} baris kain",
     "importedSummary": "{count} rol diimport dari Excel",
+    "typedTooManyDecimals": "Panjang roll maksimal 2 angka desimal.",
+    "photoLimit": "Maksimal {max} foto.",
     "clear": "Hapus rol hasil import",
     "col": {
       "sku": "SKU",

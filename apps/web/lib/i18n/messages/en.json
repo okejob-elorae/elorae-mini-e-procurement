@@ -6437,6 +6437,8 @@
     "cancel": "Cancel",
     "applied": "{rolls, plural, one {# roll} other {# rolls}} imported into {lines, plural, one {# fabric line} other {# fabric lines}}",
     "importedSummary": "{count, plural, one {# roll} other {# rolls}} imported from Excel",
+    "typedTooManyDecimals": "Roll lengths allow at most 2 decimal places.",
+    "photoLimit": "You can attach at most {max} photos.",
     "clear": "Clear imported rolls",
     "col": {
       "sku": "SKU",
