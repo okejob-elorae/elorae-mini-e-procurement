@@ -5311,7 +5311,7 @@
       "pageTitle": "Neraca Saldo",
       "subtitle": "Total debit dan kredit setiap akun untuk periode terpilih.",
       "listTitle": "Neraca Saldo",
-      "empty": "Belum ada pendapatan, HPP, atau beban pada periode ini.",
+      "empty": "Belum ada jurnal pada periode ini.",
       "emptyFiltered": "Tidak ada akun yang cocok dengan filter.",
       "colCode": "Kode",
       "colName": "Nama Akun",
@@ -5334,7 +5334,7 @@
       "totalBeban": "Total Beban Operasional",
       "labaKotor": "Laba Kotor",
       "labaBersih": "Laba Bersih",
-      "empty": "Belum ada jurnal pada periode ini.",
+      "empty": "Belum ada pendapatan, HPP, atau beban pada periode ini.",
       "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
       "coverageTitle": "Cakupan data",
       "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur penjualan marketplace, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, penjualan kanvas, penjualan lapangan (pengiriman putus dan laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting), dan jurnal manual. Pembayaran ke pemasok hanya menghasilkan jurnal neraca (utang usaha dan bank) sehingga tidak memengaruhi laba rugi. BELUM termasuk: penjualan SPG, yang tidak menghasilkan jurnal; dan retur lapangan (barang yang dikembalikan toko), yang tidak menghasilkan jurnal saat disetujui — pendapatannya baru berkurang ketika kreditnya dipotongkan ke tagihan, sedangkan HPP dan persediaan untuk barang yang kembali tidak pernah dijurnal."
