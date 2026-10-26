@@ -128,6 +128,18 @@ The MariaDB port is bound to `127.0.0.1` on the VPS — no public reach, tunnel 
 
 `.github/workflows/ci.yml` runs on every pull request to `master` and on every push to `master` that touches more than docs and markdown. Its `checks` job needs no database: it type-checks `apps/api` and `apps/web`, lints `apps/web` (`apps/api` has no ESLint config yet, so it is not linted) and runs the api jest suite. Its `db-specs` job runs the full `packages/db` and `apps/web` vitest suites against a throwaway MariaDB 11.4, migrated through the same `mariadb` client the deploy uses and seeded with `packages/db/prisma/seed.ts`. CI does not gate the deploy, and no check is required for merging. Local runs stay scoped to the specs you changed, as `AGENTS.md` describes.
 
+### Running checks locally without starving the machine
+
+`scripts/verify.sh` runs any `pnpm` command in a throwaway `node:22` container capped at 4 GB of memory (no swap), 4 CPUs and a read/write bandwidth limit on the disk that holds the repo. Its arguments go to `pnpm` verbatim:
+
+```bash
+scripts/verify.sh -F @elorae/web type-check
+scripts/verify.sh -F @elorae/web exec vitest run lib/items/variant-rows
+scripts/verify.sh -F @elorae/api exec jest --maxWorkers=2 outbox
+```
+
+It reuses the host's `node_modules` (run `pnpm install` on the host first) and reaches the `:3308` test bed over host networking. It refuses to start if any of the repo's `.env` files points `DATABASE_URL` at the `:3307` prod tunnel. A run that outgrows the memory cap is killed (exit 137, or a V8 heap-limit abort) rather than pushing the machine into swap. Raise `VERIFY_MEMORY` and `VERIFY_HEAP_MB`, or run fewer test workers, to fix that; the script's header lists every knob. The disk caps apply only when the script can resolve the repo's disk, and it warns when it cannot.
+
 ## Production deploy — Hostinger VPS
 
 Both `apps/web` and `apps/api` run on the same Hostinger VPS alongside MariaDB + Redis + Caddy, all via Docker Compose. Vercel is no longer used (decommissioned 2026-06-18). Public URLs: `https://elorae.cloud` (web) and `https://api.elorae.cloud` (api).
