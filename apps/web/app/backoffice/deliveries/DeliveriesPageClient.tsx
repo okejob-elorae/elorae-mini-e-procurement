@@ -15,7 +15,11 @@ import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Pagination } from "@/components/ui/pagination";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listShipmentsAction } from "@/app/actions/delivery-shipments";
-import { SHIPMENT_STATUS_BADGE, SHIPMENT_STATUS_LABEL_KEY } from "@/lib/delivery/shipment-status-display";
+import {
+  SHIPMENT_STATUS_BADGE,
+  SHIPMENT_STATUS_LABEL_KEY,
+  toShipmentStatusValue,
+} from "@/lib/delivery/shipment-status-display";
 import { ShipmentTrackingDialog } from "./ShipmentTrackingDialog";
 import { CompleteShipmentDialog } from "./CompleteShipmentDialog";
 
@@ -90,7 +94,7 @@ export function DeliveriesPageClient({
         setTotal(result.total);
         setPage(nextPage);
       } catch {
-        toast.error("Failed to load deliveries");
+        toast.error(t("loadListFailed"));
       }
     });
   }
@@ -190,7 +194,9 @@ export function DeliveriesPageClient({
         <CardContent>
           <div className={isPending ? "opacity-60 pointer-events-none" : ""}>
             {items.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">{t("empty")}</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {hasFilters ? t("emptyFiltered") : t("empty")}
+              </p>
             ) : (
               <>
                 <Table>
@@ -225,16 +231,16 @@ export function DeliveriesPageClient({
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge className={SHIPMENT_STATUS_BADGE[item.status] ?? ""}>
-                            {t(SHIPMENT_STATUS_LABEL_KEY[item.status] ?? "statusPacked")}
+                          <Badge className={SHIPMENT_STATUS_BADGE[toShipmentStatusValue(item.status)]}>
+                            {t(SHIPMENT_STATUS_LABEL_KEY[toShipmentStatusValue(item.status)])}
                           </Badge>
                         </TableCell>
                         <TableCell>{item.resiNumber ?? "-"}</TableCell>
                         <TableCell className="text-right">
                           {/**
-                           * Both buttons are permission-gated, and on the permission the action
-                           * they open actually checks — tracking/ship/cancel are
-                           * `deliveries:ship`, completion is `deliveries:pod`. Either can be held
+                           * Every button is permission-gated, and on the permission the action
+                           * it opens actually checks — tracking/ship/cancel and "Change carrier"
+                           * are `deliveries:ship`, completion is `deliveries:pod`. Either can be held
                            * without the other, so an ungated button here is a button that 403s on
                            * submit with nothing explaining why.
                            *
@@ -249,6 +255,11 @@ export function DeliveriesPageClient({
                           {canShip && item.status === "PACKED" && (
                             <Button size="sm" variant="outline" onClick={() => setTrackingShipmentId(item.id)}>
                               {t("editTracking")}
+                            </Button>
+                          )}
+                          {canShip && item.status === "IN_TRANSIT" && item.method === "SALESMAN_CARRY" && (
+                            <Button size="sm" variant="outline" onClick={() => setTrackingShipmentId(item.id)}>
+                              {t("changeCarrier")}
                             </Button>
                           )}
                           {canPod && item.status === "IN_TRANSIT" && item.method === "EXPEDITION" && (

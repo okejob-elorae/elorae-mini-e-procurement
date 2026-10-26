@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listCarrierCandidates } from "./carrier-queries";
+import { listCarrierCandidates, isEligibleCarrier } from "./carrier-queries";
 
 /**
  * Same prod guard every other spec in this repo that writes live `User`/`RoleDefinition` rows
@@ -13,8 +13,8 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 /**
- * `connectOrCreate`, not a `findUnique` + assert: `deliveries:pod` has never been seeded anywhere
- * in this repo (no `seed-*-permissions.sql` counterpart exists for it), so asserting the row
+ * `connectOrCreate`, not a `findUnique` + assert: `deliveries:pod` is granted only by a hand-run SQL
+ * file, never by `seed.ts`, so a fresh CI database has no such row, and asserting the row
  * already exists made this file's only positive test die in its own setup — never reaching
  * `listCarrierCandidates()` at all, while reading as two passing tests. The fixture creates
  * whatever is missing and reuses whatever is already there, so it is correct on a freshly seeded
@@ -84,5 +84,45 @@ d("listCarrierCandidates (test bed only)", () => {
 
     const candidates = await listCarrierCandidates();
     expect(candidates.some((c) => c.id === userId)).toBe(false);
+  });
+
+  it("isEligibleCarrier agrees with the list for eligible, ineligible and unknown users", async () => {
+    const role = await prisma.roleDefinition.create({
+      data: {
+        name: `carrier-eligible-role-${Date.now()}`,
+        isSystem: false,
+        permissions: { create: [{ permission: podPermission }, { permission: pwaPermission }] },
+      },
+    });
+    roleId = role.id;
+    const user = await prisma.user.create({
+      data: { name: "Eligible", email: `eligible-${Date.now()}@test.local`, roleId },
+    });
+    userId = user.id;
+
+    const weakRole = await prisma.roleDefinition.create({
+      data: {
+        name: `carrier-ineligible-role-${Date.now()}`,
+        isSystem: false,
+        permissions: { create: [{ permission: pwaPermission }] },
+      },
+    });
+    const weakUser = await prisma.user.create({
+      data: { name: "Ineligible", email: `ineligible-${Date.now()}@test.local`, roleId: weakRole.id },
+    });
+    try {
+      const members = new Set((await listCarrierCandidates()).map((c) => c.id));
+      for (const [id, expected] of [
+        [userId, true],
+        [weakUser.id, false],
+        ["does-not-exist", false],
+      ] as const) {
+        expect(await isEligibleCarrier(prisma, id)).toBe(expected);
+        expect(members.has(id)).toBe(expected);
+      }
+    } finally {
+      await prisma.user.deleteMany({ where: { id: seededId(weakUser.id) } });
+      await prisma.roleDefinition.deleteMany({ where: { id: seededId(weakRole.id) } });
+    }
   });
 });

@@ -1,70 +1,43 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
   createDeliveryShipment,
   updateShipmentTracking,
+  reassignShipmentCarrier,
   shipDeliveryShipment,
   completeDeliveryShipment,
   cancelDeliveryShipment,
 } from "@/lib/delivery/shipment-writer";
 import { listDeliveryShipments, getDeliveryShipment } from "@/lib/delivery/shipment-queries";
-import { DeliveryShipmentError, type DeliveryShipmentErrorCode } from "@/lib/delivery/errors";
-import { DeliveryError, type DeliveryErrorCode } from "@/lib/field-sales/errors";
-import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
+import { mapError, type ShipmentActionReason, type ShipmentActionResult } from "@/lib/delivery/action-errors";
+import { DeliveryError } from "@/lib/field-sales/errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 
-/**
- * `DeliveryErrorCode` is in here because a putus completion calls straight through to
- * `recordFieldSalesDelivery`, which throws `DeliveryError` — a DIFFERENT class from
- * `DeliveryShipmentError` — for OVER_DELIVER, INSUFFICIENT_STOCK, INVALID_DATES, NO_LINES,
- * REPLAY_MISMATCH (a retry whose quantities — or, on an EXPEDITION shipment, dates — differ from
- * the delivery already recorded under the shipment's key; `completeDeliveryShipment` raises it
- * itself for an all-zero retry) and
- * RESERVATION_MISMATCH (the line's reservation disagrees with its recorded deliveries), and the
- * konsi completion maps a main-stock floor refusal onto the same `DeliveryError`
- * INSUFFICIENT_STOCK. Those are reachable through ordinary operator sequences (two shipments
- * claiming one order line, a stock-out between packing and delivery, a retry after a lost
- * response), not rare edge cases. The two unions overlap on NOT_FOUND / INVALID_STATE / NO_LINES,
- * which is fine — a union dedupes.
- */
-export type ShipmentActionReason =
-  | "FORBIDDEN"
-  | "INVALID_REQUEST"
-  | "UNEXPECTED"
-  | DeliveryShipmentErrorCode
-  | DeliveryErrorCode;
+export type { ShipmentActionReason, ShipmentActionResult };
 
-export type ShipmentActionResult =
-  | { ok: true }
-  | { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay };
+const ERROR_TAG = "delivery-shipments";
 
 /**
- * Every failure leaves as a mapped `reason` the dialogs can render. Rethrowing anything — which
- * this used to do for everything that was not a `DeliveryShipmentError` — surfaces in production
- * as a digest-masked server-action crash: the operator sees nothing at all, and the dialog sits
- * there. The stack still reaches the container logs via `console.error`, so nothing is lost by
- * not rethrowing; none of these actions call `redirect()`/`notFound()`, so there is no Next
- * control-flow error to swallow here.
- *
- * Not exported for the same reason `canReadShipments` below is not: a `"use server"` module may
- * only export async functions, and this is a plain sync helper. `app/pwa/deliveries/actions.ts`
- * reimplements this exact body (importing `DeliveryShipmentError`/`DeliveryError` directly)
- * rather than importing it — keep the two in sync by hand if either error class gains a case.
+ * Revalidates the order detail page a shipment belongs to. The writer's return carries no order
+ * id, so it is looked up here, after the write has committed; a failed lookup is logged and
+ * swallowed because the write already succeeded and the register path is revalidated regardless.
  */
-function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay } {
-  if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
-  if (error instanceof DeliveryError) {
-    return error.replay
-      ? { ok: false, reason: error.code, replay: serializeReplay(error.replay) }
-      : { ok: false, reason: error.code };
+async function revalidateShipmentOrder(shipmentId: string): Promise<void> {
+  try {
+    const shipment = await prisma.deliveryShipment.findUnique({
+      where: { id: shipmentId },
+      select: { orderId: true },
+    });
+    if (shipment) revalidatePath(`/backoffice/field-sales-orders/${shipment.orderId}`);
+  } catch (error) {
+    console.error(`[${ERROR_TAG}] order revalidation lookup failed`, error);
   }
-  console.error("[delivery-shipments] unexpected failure", error);
-  return { ok: false, reason: "UNEXPECTED" };
 }
 
 /**
@@ -129,7 +102,7 @@ export async function createShipmentAction(input: {
     revalidatePath(`/backoffice/field-sales-orders/${input.orderId}`);
     return { ok: true, shipmentId: result.shipmentId };
   } catch (error) {
-    return mapError(error);
+    return mapError(error, ERROR_TAG);
   }
 }
 
@@ -173,7 +146,29 @@ export async function updateShipmentTrackingAction(input: {
     revalidatePath("/backoffice/deliveries");
     return { ok: true };
   } catch (error) {
-    return mapError(error);
+    return mapError(error, ERROR_TAG);
+  }
+}
+
+export async function reassignShipmentCarrierAction(input: {
+  shipmentId: string;
+  carriedById: string;
+}): Promise<ShipmentActionResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  try {
+    const result = await reassignShipmentCarrier({
+      shipmentId: input.shipmentId,
+      carriedById: input.carriedById,
+      reassignedById: session.user.id,
+    });
+    revalidatePath("/backoffice/deliveries");
+    revalidatePath(`/backoffice/field-sales-orders/${result.orderId}`);
+    return { ok: true };
+  } catch (error) {
+    return mapError(error, ERROR_TAG);
   }
 }
 
@@ -185,9 +180,10 @@ export async function shipShipmentAction(input: { shipmentId: string }): Promise
   try {
     await shipDeliveryShipment({ shipmentId: input.shipmentId, shippedById: session.user.id });
     revalidatePath("/backoffice/deliveries");
+    await revalidateShipmentOrder(input.shipmentId);
     return { ok: true };
   } catch (error) {
-    return mapError(error);
+    return mapError(error, ERROR_TAG);
   }
 }
 
@@ -247,6 +243,7 @@ export async function completeShipmentAction(input: {
     if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
 
     revalidatePath("/backoffice/deliveries");
+    await revalidateShipmentOrder(input.shipmentId);
     return { ok: true };
   } catch (error) {
     if (error instanceof DeliveryError && error.code === "REPLAY_MISMATCH" && error.replay) {
@@ -259,7 +256,7 @@ export async function completeShipmentAction(input: {
        */
       await postDeliveryJournals(error.replay.deliveryId, session.user.id);
     }
-    return mapError(error);
+    return mapError(error, ERROR_TAG);
   }
 }
 
@@ -271,9 +268,10 @@ export async function cancelShipmentAction(input: { shipmentId: string }): Promi
   try {
     await cancelDeliveryShipment({ shipmentId: input.shipmentId, cancelledById: session.user.id });
     revalidatePath("/backoffice/deliveries");
+    await revalidateShipmentOrder(input.shipmentId);
     return { ok: true };
   } catch (error) {
-    return mapError(error);
+    return mapError(error, ERROR_TAG);
   }
 }
 

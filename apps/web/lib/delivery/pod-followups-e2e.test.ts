@@ -133,9 +133,12 @@ async function shipment(
   asAdmin();
   const c = await createShipmentAction({ orderId, method, lines });
   if (!c.ok || !c.shipmentId) throw new Error(`create ${tag}: ${c.ok ? "no id" : c.reason}`);
+  /* Direct write: the seeded salesman/spg may not be eligible carriers on every database (CI's seed.ts grants no `deliveries:pod`), so the spec assigns the column directly. */
+  if (opts.carrier) {
+    await prisma.deliveryShipment.update({ where: { id: c.shipmentId }, data: { carriedById: opts.carrier } });
+  }
   const t = await updateShipmentTrackingAction({
     shipmentId: c.shipmentId,
-    carriedById: opts.carrier,
     carrierName: method === "EXPEDITION" ? "JNE" : undefined,
     resiNumber: method === "EXPEDITION" ? `RESI-${run}-${tag}` : undefined,
     invoiceDate: INV,

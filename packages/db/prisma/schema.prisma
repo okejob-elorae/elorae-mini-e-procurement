@@ -84,6 +84,7 @@ model User {
   deliveryShipmentsShipped   DeliveryShipment[] @relation("DeliveryShipmentShippedBy")
   deliveryShipmentsDelivered DeliveryShipment[] @relation("DeliveryShipmentDeliveredBy")
   deliveryShipmentsCarried   DeliveryShipment[] @relation("DeliveryShipmentCarriedBy")
+  deliveryShipmentsCancelled DeliveryShipment[] @relation("DeliveryShipmentCancelledBy")
   taxInvoicesMarked TaxInvoice[] @relation("TaxInvoiceMarkedBy")
   storeChangeRequestsMade      StoreChangeRequest[] @relation("StoreChangeRequestedBy")
   storeChangeRequestsReviewed  StoreChangeRequest[] @relation("StoreChangeReviewedBy")
@@ -572,17 +573,21 @@ model DeliveryShipment {
   signatureR2Key  String?
   signedByName    String?
   completedOfflineAt DateTime?
+  cancelledAt     DateTime?
+  cancelledById   String?
   createdAt       DateTime                @default(now())
   order           FieldSalesOrder         @relation(fields: [orderId], references: [id])
   packedBy        User                    @relation("DeliveryShipmentPackedBy", fields: [packedById], references: [id])
   shippedBy       User?                   @relation("DeliveryShipmentShippedBy", fields: [shippedById], references: [id])
   deliveredBy     User?                   @relation("DeliveryShipmentDeliveredBy", fields: [deliveredById], references: [id])
   carriedBy       User?                   @relation("DeliveryShipmentCarriedBy", fields: [carriedById], references: [id])
+  cancelledBy     User?                   @relation("DeliveryShipmentCancelledBy", fields: [cancelledById], references: [id])
   delivery        FieldSalesDelivery?     @relation(fields: [deliveryId], references: [id])
   lines           DeliveryShipmentLine[]
   konsiTransfer   KonsiTransfer?
   @@index([orderId])
   @@index([status])
+  @@index([carriedById])
 }
 
 model DeliveryShipmentLine {

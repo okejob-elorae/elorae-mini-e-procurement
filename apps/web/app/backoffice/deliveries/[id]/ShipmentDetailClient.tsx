@@ -10,7 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import type { DeliveryShipmentDetail } from "@/lib/delivery/shipment-queries";
-import { SHIPMENT_STATUS_BADGE, SHIPMENT_STATUS_LABEL_KEY } from "@/lib/delivery/shipment-status-display";
+import {
+  SHIPMENT_STATUS_BADGE,
+  SHIPMENT_STATUS_LABEL_KEY,
+  toShipmentStatusValue,
+} from "@/lib/delivery/shipment-status-display";
 import { ShipmentPhotoPanel } from "./ShipmentPhotoPanel";
 
 type Props = {
@@ -86,8 +90,8 @@ export function ShipmentDetailClient({ shipment }: Props) {
         <h1 className="min-w-0 max-w-full truncate font-mono text-2xl font-semibold" title={shipment.docNo}>
           {shipment.docNo}
         </h1>
-        <Badge className={SHIPMENT_STATUS_BADGE[shipment.status] ?? ""}>
-          {t(SHIPMENT_STATUS_LABEL_KEY[shipment.status] ?? "statusPacked")}
+        <Badge className={SHIPMENT_STATUS_BADGE[toShipmentStatusValue(shipment.status)]}>
+          {t(SHIPMENT_STATUS_LABEL_KEY[toShipmentStatusValue(shipment.status)])}
         </Badge>
         <Badge variant="outline">
           {isCarry ? t("methodSalesmanCarry") : t("methodExpedition")}

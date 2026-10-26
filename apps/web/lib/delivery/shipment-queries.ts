@@ -1,6 +1,11 @@
-import { prisma } from "@elorae/db";
+import { prisma, type DeliveryShipmentStatus } from "@elorae/db";
+import { SHIPMENT_STATUS_LABEL_KEY, type ShipmentStatusLabelKey } from "@/lib/delivery/shipment-status-display";
 import { urlFromKey } from "@/lib/r2";
 import { isR2KeyInFolder } from "@/lib/r2-key";
+
+/* Compile-time pin: a Prisma `DeliveryShipmentStatus` member missing from the client-safe display maps is a type error here. */
+const SHIPMENT_STATUS_COVERS_PRISMA: Record<DeliveryShipmentStatus, ShipmentStatusLabelKey> = SHIPMENT_STATUS_LABEL_KEY;
+void SHIPMENT_STATUS_COVERS_PRISMA;
 
 export async function listDeliveryShipments(input: {
   status?: "PACKED" | "IN_TRANSIT" | "DELIVERED" | "PARTIALLY_DELIVERED" | "CANCELLED";
@@ -100,7 +105,7 @@ export async function getDeliveryShipment(id: string): Promise<{
     where: { id },
     include: {
       order: { include: { store: { select: { name: true, lat: true, lng: true, checkinRadiusMeters: true } } } },
-      lines: { include: { } },
+      lines: { orderBy: { id: "asc" } },
     },
   });
   if (!row) return null;

@@ -9,6 +9,20 @@ import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
 import { isR2KeyInFolder } from "@/lib/r2-key";
 import { DeliveryShipmentError } from "./errors";
 import { isSameActorReplay } from "./pod-completion-guard";
+import { isEligibleCarrier } from "./carrier-queries";
+
+/**
+ * A compare-and-swap `updateMany` that matched nothing means one of two things the caller must
+ * tell apart: the shipment is gone (NOT_FOUND) or it exists in a state the CAS excludes
+ * (INVALID_STATE).
+ */
+async function throwForMissedCas(shipmentId: string): Promise<never> {
+  const exists = await prisma.deliveryShipment.findUnique({
+    where: { id: shipmentId },
+    select: { id: true },
+  });
+  throw new DeliveryShipmentError(exists ? "INVALID_STATE" : "NOT_FOUND");
+}
 
 export async function createDeliveryShipment(input: {
   orderId: string;
@@ -117,18 +131,92 @@ export async function updateShipmentTracking(input: {
   invoiceDate?: Date;
   dueDate?: Date;
 }): Promise<{ ok: true }> {
+  if (input.carriedById && !(await isEligibleCarrier(prisma, input.carriedById))) {
+    throw new DeliveryShipmentError("INVALID_CARRIER");
+  }
   const result = await prisma.deliveryShipment.updateMany({
     where: { id: input.shipmentId, status: "PACKED" },
     data: {
-      ...(input.carrierName !== undefined ? { carrierName: input.carrierName } : {}),
-      ...(input.resiNumber !== undefined ? { resiNumber: input.resiNumber } : {}),
+      ...(input.carrierName !== undefined ? { carrierName: input.carrierName.trim() } : {}),
+      ...(input.resiNumber !== undefined ? { resiNumber: input.resiNumber.trim() } : {}),
       ...(input.carriedById !== undefined ? { carriedById: input.carriedById } : {}),
       ...(input.invoiceDate !== undefined ? { invoiceDate: input.invoiceDate } : {}),
       ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
     },
   });
-  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  if (result.count === 0) return throwForMissedCas(input.shipmentId);
   return { ok: true };
+}
+
+/**
+ * Moves an in-transit salesman-carry shipment to a different carrier — the escape hatch for a
+ * salesman who cannot make the run, which previously meant cancel-and-recreate.
+ *
+ * IN_TRANSIT only: while PACKED the carrier is already editable through `updateShipmentTracking`,
+ * and once the shipment is delivered or cancelled the carrier is history. EXPEDITION shipments
+ * have no carrier to reassign.
+ *
+ * Two concurrent reassigns are last-writer-wins: under MariaDB SERIALIZABLE the loser usually
+ * deadlocks and `runSerializable` retries it against the new carrier, so both commit and leave two
+ * audit rows. The audit row is written with `tx.auditLog.create`, not `logAudit`, which swallows
+ * its own errors.
+ *
+ * A reassign is refused `INVALID_STATE` once a delivery is recorded under this shipment's key: the
+ * putus completion records the delivery before its CAS, so a crash in that window leaves a
+ * delivery that only the carrier who recorded it may finish.
+ *
+ * A completion the previous carrier queued offline now fails `NOT_CARRIER` and lands in their
+ * stuck list. That is correct: it is no longer their delivery. The identity check in
+ * `completeDeliveryShipment` reads outside any transaction, so both of its completion CASes also
+ * bind `carriedById` to the completing actor; a reassign committing after that read makes the old
+ * carrier's completion miss and throw instead of landing under the wrong carrier.
+ */
+export async function reassignShipmentCarrier(input: {
+  shipmentId: string;
+  carriedById: string;
+  reassignedById: string;
+}): Promise<{ ok: true; orderId: string }> {
+  if (!input.carriedById || !(await isEligibleCarrier(prisma, input.carriedById))) {
+    throw new DeliveryShipmentError("INVALID_CARRIER");
+  }
+  return runSerializable(async (tx) => {
+    const shipment = await tx.deliveryShipment.findUnique({
+      where: { id: input.shipmentId },
+      select: { id: true, orderId: true, status: true, method: true, carriedById: true },
+    });
+    if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
+    if (shipment.method !== "SALESMAN_CARRY" || shipment.status !== "IN_TRANSIT") {
+      throw new DeliveryShipmentError("INVALID_STATE");
+    }
+    if (shipment.carriedById === input.carriedById) {
+      return { ok: true as const, orderId: shipment.orderId };
+    }
+    const recorded = await findRecordedDelivery(tx, `shipment-${shipment.id}`, shipment.orderId);
+    if (recorded) throw new DeliveryShipmentError("INVALID_STATE");
+    const result = await tx.deliveryShipment.updateMany({
+      where: {
+        id: shipment.id,
+        status: "IN_TRANSIT",
+        method: "SALESMAN_CARRY",
+        carriedById: shipment.carriedById,
+      },
+      data: { carriedById: input.carriedById },
+    });
+    if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+    await tx.auditLog.create({
+      data: {
+        userId: input.reassignedById,
+        action: "DELIVERY_SHIPMENT_CARRIER_REASSIGNED",
+        entityType: "DeliveryShipment",
+        entityId: shipment.id,
+        changes: {
+          before: { carriedById: shipment.carriedById },
+          after: { carriedById: input.carriedById },
+        },
+      },
+    });
+    return { ok: true as const, orderId: shipment.orderId };
+  });
 }
 
 export async function shipDeliveryShipment(input: {
@@ -141,7 +229,7 @@ export async function shipDeliveryShipment(input: {
   });
   if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
   if (shipment.status !== "PACKED") throw new DeliveryShipmentError("INVALID_STATE");
-  if (shipment.method === "EXPEDITION" && !shipment.resiNumber) {
+  if (shipment.method === "EXPEDITION" && !shipment.resiNumber?.trim()) {
     throw new DeliveryShipmentError("MISSING_RESI");
   }
   if (shipment.method === "SALESMAN_CARRY" && !shipment.carriedById) {
@@ -156,11 +244,18 @@ export async function shipDeliveryShipment(input: {
     throw new DeliveryShipmentError("MISSING_DATES");
   }
 
+  /* The resi condition re-checks what the read above saw, so one cleared in between cannot ship. */
   const result = await prisma.deliveryShipment.updateMany({
-    where: { id: input.shipmentId, status: "PACKED" },
+    where: {
+      id: input.shipmentId,
+      status: "PACKED",
+      ...(shipment.method === "EXPEDITION"
+        ? { resiNumber: { not: null }, NOT: { resiNumber: "" } }
+        : {}),
+    },
     data: { status: "IN_TRANSIT", shippedAt: new Date(), shippedById: input.shippedById },
   });
-  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  if (result.count === 0) return throwForMissedCas(input.shipmentId);
   return { ok: true };
 }
 
@@ -488,7 +583,11 @@ export async function completeDeliveryShipment(input: {
      */
     await runSerializable(async (tx) => {
       const result = await tx.deliveryShipment.updateMany({
-        where: { id: input.shipmentId, status: "IN_TRANSIT" },
+        where: {
+          id: input.shipmentId,
+          status: "IN_TRANSIT",
+          ...(shipment.method === "SALESMAN_CARRY" ? { carriedById: input.deliveredById } : {}),
+        },
         data: completionData,
       });
       if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
@@ -623,7 +722,11 @@ export async function completeDeliveryShipment(input: {
       if (recorded) throw new DeliveryError("REPLAY_MISMATCH", [], recorded);
     }
     const result = await tx.deliveryShipment.updateMany({
-      where: { id: input.shipmentId, status: "IN_TRANSIT" },
+      where: {
+        id: input.shipmentId,
+        status: "IN_TRANSIT",
+        ...(shipment.method === "SALESMAN_CARRY" ? { carriedById: input.deliveredById } : {}),
+      },
       data: { ...completionData, ...(deliveryId ? { deliveryId } : {}) },
     });
     if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
@@ -645,8 +748,8 @@ export async function cancelDeliveryShipment(input: {
 }): Promise<{ ok: true }> {
   const result = await prisma.deliveryShipment.updateMany({
     where: { id: input.shipmentId, status: { in: ["PACKED", "IN_TRANSIT"] } },
-    data: { status: "CANCELLED" },
+    data: { status: "CANCELLED", cancelledAt: new Date(), cancelledById: input.cancelledById },
   });
-  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  if (result.count === 0) return throwForMissedCas(input.shipmentId);
   return { ok: true };
 }

@@ -35,6 +35,7 @@ describe("reportStuckDeliveryCompletionAction", () => {
   afterEach(async () => {
     const created = [...(await stuckRows(carryId)), ...(await stuckRows(expeditionId))].map((r) => r.id);
     await prisma.adminNotification.deleteMany({ where: { id: { in: created.map(seededId) } } });
+    await prisma.auditLog.deleteMany({ where: { entityType: "DeliveryShipment", entityId: seededId(carryId) } });
     await prisma.deliveryShipment.delete({ where: { id: seededId(carryId) } });
     await prisma.deliveryShipment.delete({ where: { id: seededId(expeditionId) } });
   });
@@ -53,6 +54,28 @@ describe("reportStuckDeliveryCompletionAction", () => {
     mockAuth.mockResolvedValue({ user: { id: otherId, permissions: ["deliveries:pod"] } });
     await reportStuckDeliveryCompletionAction(carryId, "NOT_CARRIER");
     expect(await stuckRows(carryId)).toHaveLength(0);
+  });
+
+  it("still raises the alert for the PREVIOUS carrier after a reassign, but not for an unrelated user", async () => {
+    const admin = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    await prisma.deliveryShipment.update({ where: { id: carryId }, data: { carriedById: otherId } });
+    await prisma.auditLog.create({
+      data: {
+        userId: admin!.id,
+        action: "DELIVERY_SHIPMENT_CARRIER_REASSIGNED",
+        entityType: "DeliveryShipment",
+        entityId: carryId,
+        changes: { before: { carriedById: carrierId }, after: { carriedById: otherId } },
+      },
+    });
+
+    mockAuth.mockResolvedValue({ user: { id: `stranger-${token}`, permissions: [] } });
+    await reportStuckDeliveryCompletionAction(carryId, "NOT_CARRIER");
+    expect(await stuckRows(carryId)).toHaveLength(0);
+
+    mockAuth.mockResolvedValue({ user: { id: carrierId, permissions: [] } });
+    await reportStuckDeliveryCompletionAction(carryId, "NOT_CARRIER");
+    expect(await stuckRows(carryId)).toHaveLength(1);
   });
 
   it("raises nothing for a missing or non-salesman-carry shipment", async () => {

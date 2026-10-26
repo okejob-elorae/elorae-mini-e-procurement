@@ -5,30 +5,13 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { completeDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { listMyDeliveries } from "@/lib/delivery/shipment-queries";
-import { DeliveryShipmentError } from "@/lib/delivery/errors";
+import { mapError, type ShipmentActionResult } from "@/lib/delivery/action-errors";
 import { DeliveryError } from "@/lib/field-sales/errors";
-import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
-import type { ShipmentActionResult, ShipmentActionReason } from "@/app/actions/delivery-shipments";
 
-/**
- * Identical body to `mapError` in `@/app/actions/delivery-shipments` — reimplemented here
- * rather than imported because that one is a plain sync helper inside a `"use server"` module,
- * which may only export async functions, so it is not exported. Keep both in sync by hand if
- * either `DeliveryShipmentError` or `DeliveryError` gains a new code.
- */
-function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay } {
-  if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
-  if (error instanceof DeliveryError) {
-    return error.replay
-      ? { ok: false, reason: error.code, replay: serializeReplay(error.replay) }
-      : { ok: false, reason: error.code };
-  }
-  console.error("[pwa/deliveries] unexpected failure", error);
-  return { ok: false, reason: "UNEXPECTED" };
-}
+const ERROR_TAG = "pwa/deliveries";
 
 /**
  * Same body as `postDeliveryJournals` in `@/app/actions/delivery-shipments`: both of a PUTUS
@@ -121,7 +104,7 @@ export async function completePodAction(input: {
        */
       await postDeliveryJournals(error.replay.deliveryId, session.user.id);
     }
-    return mapError(error);
+    return mapError(error, ERROR_TAG);
   }
 }
 
@@ -132,6 +115,10 @@ const STUCK_REASON_PATTERN = /^[A-Z_]{1,64}$/;
  * is exactly one of the failures it must still report. The binding is to the shipment instead —
  * only its assigned carrier may raise the alert, and a shipment that is missing, not
  * SALESMAN_CARRY or someone else's resolves silently (the queue then stops re-reporting it).
+ * "Assigned carrier" includes a PREVIOUS one: after a reassign, that carrier's queued completion
+ * dies terminally with `NOT_CARRIER`, and the alert is how an admin learns evidence was captured
+ * for a delivery that has since moved, so a user named as `before.carriedById` on one of this
+ * shipment's reassign audit rows is accepted too.
  * The reason is an error code from the queue; anything else is recorded as `UNKNOWN` rather than
  * copied into an admin-facing message.
  */
@@ -146,7 +133,23 @@ export async function reportStuckDeliveryCompletionAction(
     where: { id: shipmentId },
     select: { docNo: true, method: true, carriedById: true },
   });
-  if (!shipment || shipment.method !== "SALESMAN_CARRY" || shipment.carriedById !== session.user.id) return;
+  if (!shipment || shipment.method !== "SALESMAN_CARRY") return;
+  if (shipment.carriedById !== session.user.id) {
+    /* The JSON column has no reliable path filter under the adapter, so match in code. */
+    const reassigns = await prisma.auditLog.findMany({
+      where: {
+        action: "DELIVERY_SHIPMENT_CARRIER_REASSIGNED",
+        entityType: "DeliveryShipment",
+        entityId: shipmentId,
+      },
+      select: { changes: true },
+    });
+    const wasCarrier = reassigns.some((row) => {
+      const changes = row.changes as { before?: { carriedById?: string | null } } | null;
+      return changes?.before?.carriedById === session.user.id;
+    });
+    if (!wasCarrier) return;
+  }
   const code = typeof reason === "string" && STUCK_REASON_PATTERN.test(reason) ? reason : "UNKNOWN";
   const recent = await prisma.adminNotification.findMany({
     where: { category: "DELIVERY_COMPLETION_STUCK", readAt: null },

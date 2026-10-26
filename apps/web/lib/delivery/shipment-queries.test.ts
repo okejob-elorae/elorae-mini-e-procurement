@@ -10,11 +10,13 @@ describe("shipment-queries", () => {
   let lineId = "";
   let itemId = "";
   let shipmentId = "";
+  let token = "";
 
   beforeEach(async () => {
     storeId = userId = orderId = lineId = itemId = shipmentId = "";
+    token = Math.random().toString(36).slice(2, 10);
     const store = await prisma.store.create({
-      data: { code: `ST-${Date.now()}`, name: "Query Store", address: "x", termsType: "PUTUS" },
+      data: { code: `TEST-DSQ-${token}`, name: "Query Store", address: "x", termsType: "PUTUS" },
     });
     storeId = store.id;
     const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
@@ -82,11 +84,11 @@ describe("shipment-queries", () => {
   it("does not list an EXPEDITION shipment for its carriedById, even when IN_TRANSIT", async () => {
     await updateShipmentTracking({
       shipmentId,
-      carriedById: userId,
       resiNumber: "RESI-TEST",
       invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
       dueDate: new Date("2026-09-20T00:00:00.000Z"),
     });
+    await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { carriedById: userId } });
     /* shipmentId from this describe's beforeEach is still PACKED (never shipped in this
        describe) — ship it here so it qualifies for the IN_TRANSIT filter. */
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
@@ -111,9 +113,10 @@ describe("shipment-queries", () => {
         lines: [{ orderLineId: line.id, qty }],
         packedById: userId,
       });
+      /* Direct write: the seeded users may not be eligible carriers on every database (CI's seed.ts grants no `deliveries:pod`), so the spec assigns the column directly. */
+      await prisma.deliveryShipment.update({ where: { id: created.shipmentId }, data: { carriedById: carrierId } });
       await updateShipmentTracking({
         shipmentId: created.shipmentId,
-        carriedById: carrierId,
         invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
         dueDate: new Date("2026-09-20T00:00:00.000Z"),
       });
