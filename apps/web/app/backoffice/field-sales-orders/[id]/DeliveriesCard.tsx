@@ -59,6 +59,7 @@ import {
   updateDeliveryDatesAction,
 } from "@/app/actions/field-sales-deliveries";
 import { logPrint } from "@/app/actions/audit";
+import { promoNameForDeliveryLine } from "@/lib/field-sales/delivery-nota-promos";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
 import {
@@ -79,7 +80,8 @@ type Props = {
   status: FieldSalesOrderStatus;
   deliveryStatus: FieldSalesDeliveryStatus;
   deliveries: FieldSalesDeliverySummary[];
-  lines: DeliverableLine[];
+  lines: Array<DeliverableLine & { appliedPromoName: string | null }>;
+  appliedOrderPromoName: string | null;
   paymentTempo: number;
   canDeliver: boolean;
   canShipShipment: boolean;
@@ -137,6 +139,7 @@ export function DeliveriesCard({
   deliveryStatus,
   deliveries,
   lines,
+  appliedOrderPromoName,
   paymentTempo,
   canDeliver,
   canShipShipment,
@@ -187,7 +190,7 @@ export function DeliveriesCard({
   }
 
   async function handlePrintGudang(delivery: FieldSalesDeliverySummary): Promise<void> {
-    await logPrint("FieldSalesNotaGudang", delivery.id);
+    await logPrint("FieldSalesDeliveryNotaGudang", delivery.id);
     const html = buildNotaGudangPrintHtml({
       docNo: delivery.docNo,
       orderNo,
@@ -249,7 +252,7 @@ export function DeliveriesCard({
         footnote: tagihanFootnote,
         subtotal: delivery.subtotal,
         orderDiscountAmount: delivery.discountAmount,
-        appliedOrderPromoName: null,
+        appliedOrderPromoName,
         total: delivery.total,
         lines: delivery.lines.map((line) => ({
           productName: line.productName,
@@ -259,7 +262,7 @@ export function DeliveriesCard({
           unitPrice: line.unitPrice,
           lineTotal: line.lineTotal,
           discountAmount: line.discountAmount,
-          appliedPromoName: null,
+          appliedPromoName: promoNameForDeliveryLine(lines, line.orderLineId),
         })),
         labels: {
           title: t("print.tagihanTitle"),

@@ -418,7 +418,7 @@ d("order processing — end to end (opt-in)", () => {
     await recordNotaTagihanPrinted(deliveryId);
     const t2 = await prisma.taxInvoice.findFirstOrThrow({ where: { deliveryId } });
     const after2 = (await notif()).filter((n) => (n.metadata as { deliveryId?: string } | null)?.deliveryId === deliveryId);
-    const prints = await prisma.auditLog.count({ where: { entityId: deliveryId, action: "PRINT", entityType: "FieldSalesNotaTagihan" } });
+    const prints = await prisma.auditLog.count({ where: { entityId: deliveryId, action: "PRINT", entityType: "FieldSalesDeliveryNotaTagihan" } });
     check(
       "C-01",
       t1.notaPrintedAt !== null && before === 0 && after1.length === 1 && after1[0].message.includes(ids.store_P ? "OPE P" : ""),

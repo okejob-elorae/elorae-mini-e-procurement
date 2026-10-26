@@ -449,7 +449,7 @@ export async function recordNotaTagihanPrinted(deliveryId: string): Promise<void
     if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_VIEW)) return;
 
     try {
-      await logPrint("FieldSalesNotaTagihan", deliveryId);
+      await logPrint("FieldSalesDeliveryNotaTagihan", deliveryId);
     } catch (err) {
       console.error("[nota-tagihan-print] failed to write the print audit row", err);
     }
