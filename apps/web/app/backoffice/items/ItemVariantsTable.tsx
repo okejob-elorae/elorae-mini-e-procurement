@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
 import { ChevronRight, Edit, Layers } from "lucide-react";
@@ -51,13 +51,8 @@ export function ItemVariantsTable({
   const locale = useLocale();
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const groupsKey = groups.map((group) => group.itemId).join(",");
   const expandable = groups.filter((group) => !group.variantless);
   const allCollapsed = expandable.length > 0 && expandable.every((group) => collapsed.has(group.itemId));
-
-  useEffect(() => {
-    setCollapsed(new Set());
-  }, [groupsKey]);
 
   const toggle = (itemId: string) => {
     setCollapsed((prev) => {
@@ -92,7 +87,7 @@ export function ItemVariantsTable({
           <>
             {expandable.length > 0 ? (
               <div className="mb-2 flex justify-end">
-                <Button type="button" variant="ghost" size="sm" onClick={toggleAll}>
+                <Button type="button" variant="ghost" size="lg" onClick={toggleAll}>
                   {allCollapsed ? t("expandAll") : t("collapseAll")}
                 </Button>
               </div>

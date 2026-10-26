@@ -372,6 +372,7 @@ export function ItemsPageClient({
 
       {view === 'variant' ? (
         <ItemVariantsTable
+          key={`${page}|${initialSearch}|${typeFilter}`}
           groups={variantGroups}
           totalCount={totalCount}
           page={page}
