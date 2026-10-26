@@ -9,8 +9,9 @@ vi.mock("@elorae/db", () => ({
 
 import { prisma } from "@elorae/db";
 import {
+  buildVariantGroups,
   buildVariantRows,
-  listItemVariantRows,
+  listItemVariantGroups,
   type VariantRowInventory,
   type VariantRowItem,
 } from "./variant-rows";
@@ -130,58 +131,95 @@ describe("buildVariantRows", () => {
   });
 });
 
-describe("listItemVariantRows", () => {
+describe("buildVariantGroups", () => {
+  const stock = [inv("shirt", "KMJ-01-M", 4, 40, 1), inv("shirt", "KMJ-01-L", 2, 60), inv("shirt", "KMJ-01-XL", 0, 15000)];
+
+  it("follows the input item order", () => {
+    expect(buildVariantGroups([scarf, shirt], [], "").map((g) => g.itemId)).toEqual(["scarf", "shirt"]);
+  });
+
+  it("totals every row, including an off-catalog row that holds only value", () => {
+    const [group] = buildVariantGroups([shirt], stock, "");
+    expect(group.totals).toEqual({ qtyOnHand: 6, reservedQty: 1, available: 5, avgCost: 15100 / 6, totalValue: 15100 });
+    expect(group.variantCount).toBe(3);
+  });
+
+  it("gives a zero avgCost when nothing is on hand", () => {
+    const [group] = buildVariantGroups([shirt], [inv("shirt", "KMJ-01-XL", 0, 15000)], "");
+    expect(group.totals).toMatchObject({ qtyOnHand: 0, avgCost: 0, totalValue: 15000 });
+  });
+
+  it("narrows rows on a variant search while the count and totals still read every row", () => {
+    const unfiltered = buildVariantGroups([shirt], stock, "")[0];
+    const [group] = buildVariantGroups([shirt], stock, "kmj-01-l");
+    expect(group.rows.map((r) => r.code)).toEqual(["KMJ-01-L"]);
+    expect(group.variantCount).toBe(3);
+    expect(group.totals).toEqual(unfiltered.totals);
+  });
+
+  it("keeps every row on a parent name search", () => {
+    const [group] = buildVariantGroups([shirt], stock, "name kmj");
+    expect(group.rows).toHaveLength(3);
+  });
+
+  it("leaves out a product nothing in it matches", () => {
+    expect(buildVariantGroups([shirt, scarf], [], "kmj-01-l").map((g) => g.itemId)).toEqual(["shirt"]);
+  });
+
+  it("flags only a single-row variantless product as variantless", () => {
+    const groups = buildVariantGroups([shirt, scarf], [], "");
+    expect(groups.map((g) => [g.itemId, g.variantless])).toEqual([
+      ["shirt", false],
+      ["scarf", true],
+    ]);
+  });
+});
+
+describe("listItemVariantGroups", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("filters items by type in the database, then pages the flattened rows", async () => {
-    vi.mocked(prisma.item.findMany).mockResolvedValue([
-      {
-        id: "shirt",
-        sku: "KMJ-01",
-        nameId: "Kemeja",
-        nameEn: "Shirt",
-        type: "FINISHED_GOOD",
-        variants: shirt.variants,
-        sellingPrice: { toNumber: () => 150000 },
-        uom: { code: "PCS" },
-      },
-      {
-        id: "scarf",
-        sku: "SYL-02",
-        nameId: "Syal",
-        nameEn: "Scarf",
-        type: "FINISHED_GOOD",
-        variants: null,
-        sellingPrice: null,
-        uom: { code: "PCS" },
-      },
-    ] as never);
-    vi.mocked(prisma.inventoryValue.findMany).mockResolvedValue([
-      { itemId: "shirt", variantSku: "KMJ-01-L", qtyOnHand: { toNumber: () => 5 }, reservedQty: 0, totalValue: 50 },
-    ] as never);
+  const dbItem = (id: string, sku: string, variants: unknown) => ({
+    id,
+    sku,
+    nameId: sku,
+    nameEn: sku,
+    type: "FINISHED_GOOD",
+    variants,
+    sellingPrice: null,
+    uom: { code: "PCS" },
+  });
 
-    const result = await listItemVariantRows({ type: "FINISHED_GOOD" }, { page: 2, pageSize: 2 });
+  it("filters items by type in the database, then pages whole products", async () => {
+    vi.mocked(prisma.item.findMany).mockResolvedValue([
+      dbItem("A", "A", [{ sku: "A-1" }, { sku: "A-2" }, { sku: "A-3" }]),
+      dbItem("B", "B", [{ sku: "B-1" }, { sku: "B-2" }]),
+      dbItem("C", "C", null),
+    ] as never);
+    vi.mocked(prisma.inventoryValue.findMany).mockResolvedValue([]);
+
+    const result = await listItemVariantGroups({ type: "FINISHED_GOOD" }, { page: 2, pageSize: 1 });
 
     const itemArgs = vi.mocked(prisma.item.findMany).mock.calls[0][0] as { where: unknown };
     expect(itemArgs.where).toEqual({ type: "FINISHED_GOOD" });
     expect(prisma.inventoryValue.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { itemId: { in: ["shirt", "scarf"] } } }),
+      expect.objectContaining({ where: { itemId: { in: ["A", "B", "C"] } } }),
     );
+    expect(result.groups.map((g) => g.itemId)).toEqual(["B"]);
+    expect(result.groups[0].rows).toHaveLength(2);
     expect(result.totalCount).toBe(3);
-    expect(result.rows.map((r) => r.code)).toEqual(["SYL-02"]);
   });
 
   it("skips the inventory query when no item matches", async () => {
     vi.mocked(prisma.item.findMany).mockResolvedValue([]);
-    expect(await listItemVariantRows({}, { page: 1, pageSize: 25 })).toEqual({ rows: [], totalCount: 0 });
+    expect(await listItemVariantGroups({}, { page: 1, pageSize: 25 })).toEqual({ groups: [], totalCount: 0 });
     expect(prisma.inventoryValue.findMany).not.toHaveBeenCalled();
   });
 
   it("does not push the search into the database, since variant SKUs live inside the variants JSON", async () => {
     vi.mocked(prisma.item.findMany).mockResolvedValue([]);
-    await listItemVariantRows({ search: "KMJ-01-L" }, { page: 1, pageSize: 25 });
+    await listItemVariantGroups({ search: "KMJ-01-L" }, { page: 1, pageSize: 25 });
     const itemArgs = vi.mocked(prisma.item.findMany).mock.calls[0][0] as { where: Record<string, unknown> };
     expect(itemArgs.where.OR).toBeUndefined();
   });

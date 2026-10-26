@@ -70,6 +70,21 @@ function matchesSearch(needle: string, fields: Array<string | null>): boolean {
 }
 
 /**
+ * The one search rule: a row survives when the needle is empty, matches its product's SKU or
+ * name (which keeps every variant of that product), or matches the row's own variant SKU or barcode.
+ */
+function rowMatchesSearch(
+  needle: string,
+  item: VariantRowItem,
+  row: { variantSku: string; barcode: string | null },
+): boolean {
+  if (needle === "") return true;
+  return (
+    matchesSearch(needle, [item.sku, item.nameId, item.nameEn]) || matchesSearch(needle, [row.variantSku, row.barcode])
+  );
+}
+
+/**
  * One row per (item, variant key). Catalog variants come first in catalog order, then any
  * inventory key the catalog does not list that still holds stock, a reservation or value — the
  * variantless `""` bucket first, the rest by SKU. A variantless item always gets its `""` row.
@@ -99,10 +114,9 @@ export function buildVariantRows(
     const byKey = invByItem.get(item.id) ?? new Map<string, InventoryGroup>();
     const catalog = catalogVariants(item.variants);
     const catalogKeys = new Set(catalog.map((v) => matchKey(v.sku)));
-    const itemMatches = needle !== "" && matchesSearch(needle, [item.sku, item.nameId, item.nameEn]);
 
     const pushRow = (variantSku: string, variant: CatalogVariant | null, inCatalog: boolean) => {
-      if (needle !== "" && !itemMatches && !matchesSearch(needle, [variantSku, variant?.barcode ?? null])) return;
+      if (!rowMatchesSearch(needle, item, { variantSku, barcode: variant?.barcode ?? null })) return;
       const stock = aggregateInventoryValues(byKey.get(matchKey(variantSku))?.rows);
       out.push({
         key: `${item.id}|${variantSku}`,
@@ -150,17 +164,86 @@ const toNumber = (v: unknown): number => {
   return Number.isNaN(n) ? 0 : n;
 };
 
+export type ItemVariantGroupTotals = {
+  qtyOnHand: number;
+  reservedQty: number;
+  available: number;
+  avgCost: number;
+  totalValue: number;
+};
+
+export type ItemVariantGroup = {
+  itemId: string;
+  sku: string;
+  nameId: string;
+  nameEn: string;
+  type: ItemType;
+  uomCode: string;
+  sellingPrice: number | null;
+  /** Rows that survive the search. */
+  rows: ItemVariantListRow[];
+  /** Every row of the product, before the search. */
+  variantCount: number;
+  /** Summed over every row of the product, before the search, so they equal the per-product view. */
+  totals: ItemVariantGroupTotals;
+  /** Exactly one row before the search, and it is the `""` bucket. */
+  variantless: boolean;
+};
+
 /**
- * Variant SKUs live inside `Item.variants` JSON, so search cannot run in SQL: every item
- * matching the type/active filters is loaded with its inventory, flattened, filtered and
- * paged in memory. Fine at the current catalog size (about a thousand variants); revisit
- * before it grows by an order of magnitude.
+ * One group per item, in input order, holding that item's rows after the search. Items with no
+ * surviving row are left out. Variant count, totals and the variantless flag read every row, so a
+ * search narrows what is listed without changing what the product header says.
  */
-export async function listItemVariantRows(
+export function buildVariantGroups(
+  items: VariantRowItem[],
+  inventory: VariantRowInventory[],
+  search: string,
+): ItemVariantGroup[] {
+  const needle = search.trim().toLowerCase();
+  const rowsByItem = new Map<string, ItemVariantListRow[]>();
+  for (const row of buildVariantRows(items, inventory, "")) {
+    const list = rowsByItem.get(row.itemId) ?? [];
+    list.push(row);
+    rowsByItem.set(row.itemId, list);
+  }
+
+  const groups: ItemVariantGroup[] = [];
+  for (const item of items) {
+    const all = rowsByItem.get(item.id) ?? [];
+    const rows = all.filter((row) => rowMatchesSearch(needle, item, row));
+    if (rows.length === 0) continue;
+
+    const qtyOnHand = all.reduce((sum, r) => sum + r.qtyOnHand, 0);
+    const reservedQty = all.reduce((sum, r) => sum + r.reservedQty, 0);
+    const totalValue = all.reduce((sum, r) => sum + r.totalValue, 0);
+    groups.push({
+      itemId: item.id,
+      sku: item.sku,
+      nameId: item.nameId,
+      nameEn: item.nameEn,
+      type: item.type,
+      uomCode: item.uomCode,
+      sellingPrice: item.sellingPrice,
+      rows,
+      variantCount: all.length,
+      totals: {
+        qtyOnHand,
+        reservedQty,
+        available: qtyOnHand - reservedQty,
+        avgCost: qtyOnHand > 0 ? totalValue / qtyOnHand : 0,
+        totalValue,
+      },
+      variantless: all.length === 1 && all[0].variantSku === "",
+    });
+  }
+  return groups;
+}
+
+async function loadVariantRowSources(
   filters: ListItemsFilters,
-  opts: ListItemsOpts,
-): Promise<{ rows: ItemVariantListRow[]; totalCount: number }> {
-  const items = await prisma.item.findMany({
+): Promise<{ items: VariantRowItem[]; inventory: VariantRowInventory[] }> {
+  const rows = await prisma.item.findMany({
     where: buildItemsWhere({ ...filters, search: undefined }),
     orderBy: [{ createdAt: "desc" }, { id: "asc" }],
     select: {
@@ -174,15 +257,15 @@ export async function listItemVariantRows(
       uom: { select: { code: true } },
     },
   });
-  if (items.length === 0) return { rows: [], totalCount: 0 };
+  if (rows.length === 0) return { items: [], inventory: [] };
 
   const inventory = await prisma.inventoryValue.findMany({
-    where: { itemId: { in: items.map((i) => i.id) } },
+    where: { itemId: { in: rows.map((i) => i.id) } },
     select: { itemId: true, variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true },
   });
 
-  const rows = buildVariantRows(
-    items.map((i) => ({
+  return {
+    items: rows.map((i) => ({
       id: i.id,
       sku: i.sku,
       nameId: i.nameId,
@@ -192,16 +275,30 @@ export async function listItemVariantRows(
       sellingPrice: i.sellingPrice === null ? null : toNumber(i.sellingPrice),
       variants: i.variants,
     })),
-    inventory.map((r) => ({
+    inventory: inventory.map((r) => ({
       itemId: r.itemId,
       variantSku: r.variantSku,
       qtyOnHand: toNumber(r.qtyOnHand),
       reservedQty: toNumber(r.reservedQty),
       totalValue: toNumber(r.totalValue),
     })),
-    filters.search ?? "",
-  );
+  };
+}
 
+/**
+ * Variant SKUs live inside `Item.variants` JSON, so search cannot run in SQL: every item
+ * matching the type/active filters is loaded with its inventory, grouped by product, filtered
+ * and paged in memory — a page is a page of products, never a slice through one. Fine at the
+ * current catalog size (about a thousand variants); revisit before it grows by an order of magnitude.
+ */
+export async function listItemVariantGroups(
+  filters: ListItemsFilters,
+  opts: ListItemsOpts,
+): Promise<{ groups: ItemVariantGroup[]; totalCount: number }> {
+  const { items, inventory } = await loadVariantRowSources(filters);
+  if (items.length === 0) return { groups: [], totalCount: 0 };
+
+  const groups = buildVariantGroups(items, inventory, filters.search ?? "");
   const start = (opts.page - 1) * opts.pageSize;
-  return { rows: rows.slice(start, start + opts.pageSize), totalCount: rows.length };
+  return { groups: groups.slice(start, start + opts.pageSize), totalCount: groups.length };
 }
