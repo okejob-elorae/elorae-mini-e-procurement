@@ -11,7 +11,7 @@ import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { assertActor } from "@/lib/auth/assert-actor";
 import { z } from 'zod';
-import { notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/app/actions/notifications';
+import { notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
 import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/mutations';
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';

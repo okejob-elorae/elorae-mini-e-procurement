@@ -37,7 +37,7 @@ vi.mock("@/lib/docNumber", () => ({ generateDocNumber: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn().mockResolvedValue("Actor"),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifyPOCreated: vi.fn(),
   notifyPOStatusUpdated: vi.fn(),
   notifyPOPaymentToggled: vi.fn(),

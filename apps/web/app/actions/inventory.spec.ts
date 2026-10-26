@@ -23,7 +23,7 @@ vi.mock("@/lib/security/pin", () => ({ verifyPin: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifyStockAdjustmentCreated: vi.fn(),
 }));
 

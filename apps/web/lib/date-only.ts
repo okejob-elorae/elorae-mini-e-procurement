@@ -40,8 +40,10 @@ export function endOfTodayJakarta(): Date {
   return parseDateOnlyEnd(formatDateOnlyJakarta(new Date())) ?? new Date();
 }
 
+/** Calendar day of the instant in WIB, pinned like `formatDateOnlyJakarta` so a UTC host renders the same day. */
 export function toDisplayDate(date: Date): string {
   return date.toLocaleDateString('id-ID', {
+    timeZone: 'Asia/Jakarta',
     day: 'numeric',
     month: 'short',
     year: 'numeric',

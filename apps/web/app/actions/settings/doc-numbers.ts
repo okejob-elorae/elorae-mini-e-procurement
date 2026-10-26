@@ -5,7 +5,7 @@ import { prisma } from "@elorae/db";
 import type { DocNumberConfig, DocType } from "@elorae/db";
 import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import { auth } from "@/lib/auth";
-import { notifyDocNumberAltered } from "@/app/actions/notifications";
+import { notifyDocNumberAltered } from "@/lib/notifications/events";
 import { getActorName } from "@/lib/notifications/actor-name";
 import {
   findPrefixConflict,

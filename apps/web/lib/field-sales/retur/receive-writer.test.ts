@@ -3,6 +3,7 @@ import { prisma, seededId } from "@elorae/db";
 import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
 import { notifySalesmanOfMismatch } from "./mismatch-notice";
+import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 /* The writer chains `.catch` on the sender, so the stub must return a promise. */
@@ -59,6 +60,7 @@ d("receiveFieldReturn (test bed only)", () => {
     lineBId = "";
     adminReturnId = "";
     vi.mocked(notifySalesmanOfMismatch).mockClear();
+    vi.mocked(fanOutAdminNotification).mockClear();
 
     const uom = await prisma.uOM.create({ data: { code: `TEST-UOM-FRR-${token}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
@@ -188,6 +190,14 @@ d("receiveFieldReturn (test bed only)", () => {
       storeId,
       mismatchedLineCount: 1,
     });
+    expect(fanOutAdminNotification).toHaveBeenCalledTimes(1);
+    expect(fanOutAdminNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: after[0].id,
+        category: "FIELD_RETURN_MISMATCH",
+        metadata: expect.objectContaining({ returnId, docNo: retDoc.docNo }),
+      }),
+    );
   });
 
   it("a clean count writes no FIELD_RETURN_MISMATCH admin notification", async () => {
@@ -199,6 +209,7 @@ d("receiveFieldReturn (test bed only)", () => {
 
     const after = await mismatchNotificationsFor(returnId);
     expect(after).toHaveLength(0);
+    expect(fanOutAdminNotification).not.toHaveBeenCalled();
   });
 
   it("a mismatched FIELD retur tells the raising salesman, once", async () => {

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { auth } from '@/lib/auth';
 import { prisma } from '@elorae/db';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
-import { notifySupplierApproved } from '@/app/actions/notifications';
+import { notifySupplierApproved } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
 
 // POST /api/suppliers/[id]/approve - Approve a pending supplier

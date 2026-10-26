@@ -1,5 +1,3 @@
-'use server';
-
 import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
 import { getActorName } from '@/lib/notifications/actor-name';
