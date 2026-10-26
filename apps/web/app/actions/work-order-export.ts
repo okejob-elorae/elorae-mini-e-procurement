@@ -2,7 +2,10 @@
 
 import * as XLSX from "xlsx";
 import { prisma } from "@elorae/db";
+import { resolveVariantAxes } from "@elorae/db/variant-axes";
 import { auth } from "@/lib/auth";
+import { loadColorIndex } from "@/lib/items/variant-colors";
+import { parseItemVariants } from "@/lib/items/variants";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { buildWorkOrderExportSheets, type SheetRows } from "@/lib/work-orders/export/sheets";
 
@@ -52,6 +55,18 @@ export async function exportWorkOrderXlsx(workOrderId: string): Promise<WorkOrde
   });
   if (!wo) return { status: "not_found" };
 
+  const colorIndex = await loadColorIndex();
+  const colorIds = new Set<string>();
+  for (const v of parseItemVariants(wo.finishedGood.variants)) {
+    const colorId = resolveVariantAxes(v, colorIndex).colorId;
+    if (colorId) colorIds.add(colorId);
+  }
+  const colorRows =
+    colorIds.size === 0
+      ? []
+      : await prisma.variantColor.findMany({ where: { id: { in: [...colorIds] } }, select: { id: true, name: true } });
+  const colorNames = Object.fromEntries(colorRows.map((c) => [c.id, c.name]));
+
   const sheets = buildWorkOrderExportSheets({
     docNumber: wo.docNumber,
     status: wo.status,
@@ -70,6 +85,8 @@ export async function exportWorkOrderXlsx(workOrderId: string): Promise<WorkOrde
     },
     skuBreakdown: wo.skuBreakdown,
     consumptionPlan: wo.consumptionPlan,
+    colorIndex,
+    colorNames,
   });
 
   const wb = XLSX.utils.book_new();
