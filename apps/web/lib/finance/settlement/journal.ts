@@ -254,40 +254,6 @@ export async function postSettlementJournal(
     Math.abs(Number(s.totalPengeluaran)),
   );
 
-  let bank: string, ar: string;
-  const feeAccounts = new Map<MarketplaceFeeRole, string>();
-  try {
-    bank = await resolveAccount("BANK", client);
-    ar = await resolveAccount("AR", client);
-    for (const split of feeSplit) {
-      feeAccounts.set(split.role, await resolveFeeAccount(split.role, client));
-    }
-  } catch (e) {
-    if (e instanceof UnmappedRoleError) return { ok: false, code: "UNMAPPED_ROLE", role: e.role };
-    throw e;
-  }
-
-  /*
-   * A journal line must carry exactly one of debit/credit greater than zero, so
-   * a zero total (a fully refunded period) is omitted, the same way
-   * `splitMarketplaceFees` drops a zero fee category.
-   */
-  const lines = [
-    { chartAccountId: bank, debit: Number(s.totalDilepas), credit: 0 },
-    ...feeSplit.map((split) => ({
-      chartAccountId: feeAccounts.get(split.role)!,
-      debit: split.debit,
-      credit: split.credit,
-      /* Distinguishes categories that share the legacy MARKETPLACE_FEE fallback account. */
-      memo: split.role,
-    })),
-    { chartAccountId: ar, debit: 0, credit: Number(s.totalPendapatan) },
-  ].filter((l) => l.debit !== 0 || l.credit !== 0);
-
-  if (lines.length === 0) return { ok: false, code: "NOTHING_TO_POST" };
-  /* One surviving line can never balance, and `postJournal` would throw TOO_FEW_LINES. */
-  if (lines.length < 2) return { ok: false, code: "UNBALANCED" };
-
   const run = async (tx: Prisma.TransactionClient) => {
     /**
      * First statement of the transaction: `matchSettlement` holds this same row lock for its whole
@@ -301,6 +267,50 @@ export async function postSettlementJournal(
      * `matchSettlement` rewrites `matchedSalesOrderId` under it.
      */
     await lockSettlementRow(tx, s.id);
+    /*
+     * Right after the lock and ahead of every mapping lookup and the gate: a settlement already
+     * journaled costs this one read on a re-post. Under the lock, so a post racing the one that
+     * creates the journal waits for its commit and then lands here.
+     */
+    const existing = await tx.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: s.id } },
+      select: { id: true },
+    });
+    if (existing) return { ok: true as const, journalId: existing.id, created: false };
+    let bank: string, ar: string;
+    const feeAccounts = new Map<MarketplaceFeeRole, string>();
+    try {
+      bank = await resolveAccount("BANK", tx);
+      ar = await resolveAccount("AR", tx);
+      for (const split of feeSplit) {
+        feeAccounts.set(split.role, await resolveFeeAccount(split.role, tx));
+      }
+    } catch (e) {
+      if (e instanceof UnmappedRoleError) return { ok: false as const, code: "UNMAPPED_ROLE" as const, role: e.role };
+      throw e;
+    }
+
+    /*
+     * A journal line must carry exactly one of debit/credit greater than zero, so
+     * a zero total (a fully refunded period) is omitted, the same way
+     * `splitMarketplaceFees` drops a zero fee category.
+     */
+    const lines = [
+      { chartAccountId: bank, debit: Number(s.totalDilepas), credit: 0 },
+      ...feeSplit.map((split) => ({
+        chartAccountId: feeAccounts.get(split.role)!,
+        debit: split.debit,
+        credit: split.credit,
+        /* Distinguishes categories that share the legacy MARKETPLACE_FEE fallback account. */
+        memo: split.role,
+      })),
+      { chartAccountId: ar, debit: 0, credit: Number(s.totalPendapatan) },
+    ].filter((l) => l.debit !== 0 || l.credit !== 0);
+
+    if (lines.length === 0) return { ok: false as const, code: "NOTHING_TO_POST" as const };
+    /* One surviving line can never balance, and `postJournal` would throw TOO_FEW_LINES. */
+    if (lines.length < 2) return { ok: false as const, code: "UNBALANCED" as const };
+
     const gate = await settlementGate(s.id, s.marketplace, tx);
     /* Write-free so far (the lock is a read), so this return commits nothing. */
     if (gate != null) return { ok: false as const, code: gate.code, count: gate.count };

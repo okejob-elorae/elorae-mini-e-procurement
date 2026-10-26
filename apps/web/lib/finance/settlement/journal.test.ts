@@ -382,6 +382,15 @@ d("postSettlementJournal (test bed only)", () => {
     if (a.ok && b.ok) expect(b.journalId).toBe(a.journalId);
   });
 
+  it("re-posts an already-posted settlement without touching the account mappings", async () => {
+    const a = await postSettlementJournal(settlementId, adminId, prisma);
+    /* A mapping lookup would now refuse UNMAPPED_ROLE, so a success proves none ran. */
+    await prisma.journalAccountMapping.delete({ where: { role: "BANK" } });
+    const b = await postSettlementJournal(settlementId, adminId, prisma);
+    expect(b).toMatchObject({ ok: true, created: false });
+    if (a.ok && b.ok) expect(b.journalId).toBe(a.journalId);
+  });
+
   it("blocks when checksum failed", async () => {
     await prisma.settlement.update({ where: { id: settlementId }, data: { checksumOk: false } });
     const r = await postSettlementJournal(settlementId, adminId, prisma);

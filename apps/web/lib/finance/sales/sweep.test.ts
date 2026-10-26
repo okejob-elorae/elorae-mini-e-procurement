@@ -118,6 +118,18 @@ d("postPendingSalesJournals (test bed only)", () => {
     expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESORDER_REVENUE", sourceId: orderId } } })).toBeNull();
   });
 
+  it("does not re-file once the operator has read the JOURNAL_PENDING row", async () => {
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "AR" } });
+    await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
+    await prisma.adminNotification.updateMany({
+      where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } },
+      data: { readAt: new Date() },
+    });
+    await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
+    const notifs = await prisma.adminNotification.count({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } });
+    expect(notifs).toBe(1);
+  });
+
   it("an empty orderIds scope posts nothing instead of falling back to a global sweep", async () => {
     const res = await postPendingSalesJournals({ limit: 100, orderIds: [] });
     expect(res.posted).toBe(0);

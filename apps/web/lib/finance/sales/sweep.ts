@@ -3,6 +3,7 @@ import { parseDateOnly, formatDateOnlyJakarta } from "@/lib/date-only";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { hasJournalPendingRow } from "@/lib/finance/journal-pending-dedup";
 
 /** SystemSetting key holding the GL go-live day as a date-only `YYYY-MM-DD` string, read as WIB. */
 export const GL_CUTOVER_SETTING_KEY = "finance.glCutoverDate";
@@ -72,19 +73,8 @@ async function flag(
   kind: "revenue" | "cogs",
   res: Extract<GenerateAutoJournalResult, { ok: false }>,
 ): Promise<void> {
-  // Dedup: at most one unread JOURNAL_PENDING per (orderId, kind). MariaDB JSON-path
-  // filtering on this adapter is unreliable, so fetch recent unread rows and dedup in JS.
-  const recent = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING", readAt: null },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: { metadata: true },
-  });
-  const already = recent.some((n) => {
-    const m = n.metadata as { orderId?: string; kind?: string } | null;
-    return m?.orderId === orderId && m?.kind === kind;
-  });
-  if (already) return;
+  /* Dedup: file only when no JOURNAL_PENDING row of this kind exists for the order, read or unread. */
+  if (await hasJournalPendingRow((m) => m.orderId === orderId && m.kind === kind)) return;
 
   const salesJournalPendingNotification = await prisma.adminNotification.create({
     data: {

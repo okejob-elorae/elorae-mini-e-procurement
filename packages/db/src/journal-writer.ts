@@ -16,6 +16,18 @@ export class JournalError extends Error {
   }
 }
 
+/**
+ * True only for a P2002 on the journal's `(sourceType, sourceId)` unique. The MariaDB driver
+ * adapter reports the index name (`Journal_sourceType_sourceId_key`) in
+ * `meta.driverAdapterError.cause.constraint` rather than `meta.target`, so the whole error is
+ * searched for both column names. A P2002 on any other index, or naming none, is not this one.
+ */
+function isSourceCollision(e: unknown): boolean {
+  if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== "P2002") return false;
+  const text = `${e.message} ${JSON.stringify(e.meta ?? {})}`;
+  return text.includes("sourceType") && text.includes("sourceId");
+}
+
 export type JournalLineInput = { chartAccountId: string; debit: number; credit: number; memo?: string };
 
 export type PostJournalInput = {
@@ -86,5 +98,22 @@ export async function postJournal(
     return { journalId: j.id, created: true };
   };
 
-  return hasTx(client) ? client.$transaction(run) : run(client as Prisma.TransactionClient);
+  /*
+   * Two concurrent posts for one source both pass the existence read, and the loser's create dies
+   * on the unique. That is an idempotent success, not a failure: re-read the winner's row and
+   * return it. With a PrismaClient the loser's own transaction has already rolled back, so the
+   * re-read runs on a clean client; inside a caller's transaction MariaDB discards only the failed
+   * statement, so the same client can still read.
+   */
+  try {
+    return await (hasTx(client) ? client.$transaction(run) : run(client as Prisma.TransactionClient));
+  } catch (e) {
+    if (!input.source || !isSourceCollision(e)) throw e;
+    const existing = await client.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: input.source.type, sourceId: input.source.id } },
+      select: { id: true },
+    });
+    if (!existing) throw e;
+    return { journalId: existing.id, created: false };
+  }
 }
