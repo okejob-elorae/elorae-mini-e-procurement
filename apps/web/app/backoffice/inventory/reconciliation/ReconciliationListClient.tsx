@@ -93,7 +93,8 @@ export function ReconciliationListClient({ initialPushEnabled }: { initialPushEn
       if (r.skipped) {
         toast.message(t("skipped", { reason: r.reason ?? "unknown" }));
       } else {
-        toast.success(t("runComplete", { flagged: r.flagged }));
+        if (r.failed > 0) toast.warning(t("runCompleteWithFailures", { flagged: r.flagged, failed: r.failed }));
+        else toast.success(t("runComplete", { flagged: r.flagged }));
       }
       await load();
     } catch (err) {
@@ -234,6 +235,11 @@ export function ReconciliationListClient({ initialPushEnabled }: { initialPushEn
                       <Badge variant={actionBadgeVariant(run.status)}>
                         {t(`runStatuses.${run.status as "RUNNING" | "COMPLETED" | "FAILED"}`)}
                       </Badge>
+                      {run.failedCount > 0 && (
+                        <Badge variant="destructive" className="ml-2">
+                          {t("failedCount", { count: run.failedCount })}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>{run.totalScanned}</TableCell>
                     <TableCell>{run.inSync}</TableCell>

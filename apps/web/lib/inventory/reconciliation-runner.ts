@@ -233,6 +233,8 @@ export async function runReconciliation(
   inSync: number;
   autoCorrected: number;
   flagged: number;
+  /* Rows whose reconcile threw and were stored with an `errorMessage`; they are also counted in `flagged` or `autoCorrected`. */
+  failed: number;
 }> {
   if (trigger === "CRON") {
     const config = await loadReconciliationConfig();
@@ -244,6 +246,7 @@ export async function runReconciliation(
         inSync: 0,
         autoCorrected: 0,
         flagged: 0,
+        failed: 0,
       };
     }
   }
@@ -256,6 +259,7 @@ export async function runReconciliation(
       inSync: 0,
       autoCorrected: 0,
       flagged: 0,
+      failed: 0,
     };
   }
 
@@ -447,7 +451,7 @@ export async function runReconciliation(
       },
     });
 
-    return { runId: run.id, inSync, autoCorrected, flagged };
+    return { runId: run.id, inSync, autoCorrected, flagged, failed: failedCount };
   } catch (err) {
     await prisma.reconciliationRun.update({
       where: { id: run.id },
@@ -463,6 +467,20 @@ export async function runReconciliation(
     });
     throw err;
   }
+}
+
+/**
+ * Failed-row count per run: results carrying an `errorMessage`, grouped in one query. A run with
+ * no failed rows is absent from the map, so read it with `?? 0`. Empty input skips the query.
+ */
+export async function countFailedResultsByRun(runIds: string[]): Promise<Map<string, number>> {
+  if (runIds.length === 0) return new Map();
+  const groups = await prisma.reconciliationResult.groupBy({
+    by: ["runId"],
+    where: { runId: { in: runIds }, errorMessage: { not: null } },
+    _count: { _all: true },
+  });
+  return new Map(groups.map((g) => [g.runId, g._count._all]));
 }
 
 export type ResolveReconciliationResult =
@@ -569,8 +587,13 @@ async function resolveOneResult(
 
   /* REASSERT_ELORAE: no local stock write, just push Elorae's own current figure back. */
   await enqueueReconStockPush(result.itemId, userId);
-  await prisma.reconciliationResult.update({
-    where: { id: resultId },
+  /*
+   * Conditional on still being FLAGGED, like the MATCH_JUBELIO mark: a concurrent resolve that
+   * got there first keeps its own resolvedById and resolutionDirection. The push is already
+   * enqueued by then, which is harmless: it sends Elorae's own current figure.
+   */
+  const reasserted = await prisma.reconciliationResult.updateMany({
+    where: { id: resultId, action: "FLAGGED" },
     data: {
       action: "MANUALLY_RESOLVED",
       resolvedAt: new Date(),
@@ -578,6 +601,7 @@ async function resolveOneResult(
       resolutionDirection: direction,
     },
   });
+  if (reasserted.count === 0) return { success: false, reason: "ALREADY_RESOLVED" };
 
   return { success: true };
 }

@@ -5,6 +5,7 @@ import { prisma, type ReconDirection, type ReconTrigger } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import {
+  countFailedResultsByRun,
   loadReconciliationConfig,
   resolveReconciliationItem as resolveItem,
   resolveReconciliationItems as resolveItems,
@@ -39,6 +40,7 @@ export type SerializedReconciliationRun = {
   inSync: number;
   autoCorrected: number;
   flagged: number;
+  failedCount: number;
   startedById: string | null;
   startedAt: string;
   completedAt: string | null;
@@ -107,9 +109,10 @@ export async function getReconciliationRuns() {
     orderBy: { startedAt: "desc" },
     take: 50,
   });
+  const failedByRun = await countFailedResultsByRun(rows.map((r) => r.id));
   return rows.map((r) => {
     const serialized = serializeRow(r as unknown as Record<string, unknown>);
-    return serialized as unknown as SerializedReconciliationRun;
+    return { ...serialized, failedCount: failedByRun.get(r.id) ?? 0 } as unknown as SerializedReconciliationRun;
   });
 }
 
@@ -126,6 +129,7 @@ export async function getReconciliationRunById(
   if (!run) return null;
   return {
     ...(serializeRow(run as unknown as Record<string, unknown>) as SerializedReconciliationRun),
+    failedCount: run.results.filter((r) => r.errorMessage !== null).length,
     results: run.results.map(
       (r) => serializeRow(r as unknown as Record<string, unknown>) as SerializedReconciliationResult,
     ),
