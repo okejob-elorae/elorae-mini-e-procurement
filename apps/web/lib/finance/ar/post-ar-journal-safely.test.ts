@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, JournalError } from "@elorae/db";
 import { postArJournalSafely } from "./post-ar-journal-safely";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -65,6 +65,31 @@ d("postArJournalSafely (test bed only)", () => {
       }),
     ).resolves.toEqual({ ok: false, code: "ERROR" });
     expect(await flaggedCount()).toBe(1);
+  });
+
+  const messageFor = async () => {
+    const rows = await prisma.adminNotification.findMany({
+      where: { category: "JOURNAL_PENDING" },
+      select: { message: true, metadata: true },
+    });
+    return rows.filter((r) => (r.metadata as { docId?: string } | null)?.docId === docId).map((r) => r.message);
+  };
+
+  it("tells the operator to reactivate the original account when a void reversal hits NON_POSTABLE_ACCOUNT", async () => {
+    await postArJournalSafely("ar_payment_void", docId, async () => {
+      throw new JournalError("NON_POSTABLE_ACCOUNT");
+    });
+    const [message] = await messageFor();
+    expect(message).toContain("Reactivate that original account");
+    expect(message).not.toContain("Map the account");
+  });
+
+  it("keeps the map-the-account advice for a non-void kind hitting NON_POSTABLE_ACCOUNT", async () => {
+    await postArJournalSafely("ar_payment", docId, async () => {
+      throw new JournalError("NON_POSTABLE_ACCOUNT");
+    });
+    const [message] = await messageFor();
+    expect(message).toContain("Map the account");
   });
 
   it("keeps kinds separate for the same document", async () => {

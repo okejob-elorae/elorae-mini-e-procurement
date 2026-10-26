@@ -7,6 +7,7 @@ import { ClipboardList } from "lucide-react";
 import type { SellThroughListItem, SellThroughStatusValue } from "@/lib/konsi-sell-through/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
@@ -50,6 +51,7 @@ type Props = {
   storeOptions: { id: string; name: string }[];
   storeId: string;
   status: SellThroughStatusValue | "";
+  periodMonth: string;
   page: number;
   pageSize: number;
 };
@@ -86,7 +88,7 @@ export function SellThroughPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("colStore")}</label>
             <SearchableCombobox
@@ -123,6 +125,17 @@ export function SellThroughPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filterPeriod")}</label>
+            <Input
+              type="month"
+              value={props.periodMonth}
+              disabled={isPending}
+              onChange={(e) => pushParams({ period: e.target.value || undefined, page: undefined })}
+              className="h-10 w-full"
+              aria-label={t("filterPeriod")}
+            />
+          </div>
           <div className="flex flex-col justify-end">
             <Button variant="outline" disabled={isPending} onClick={reset} className="h-10 w-full">
               {t("reset")}
@@ -143,7 +156,7 @@ export function SellThroughPageClient(props: Props) {
             <div className="text-center py-12">
               <ClipboardList className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">
-                {props.storeId || props.status ? t("emptyFiltered") : t("empty")}
+                {props.storeId || props.status || props.periodMonth ? t("emptyFiltered") : t("empty")}
               </p>
             </div>
           ) : (

@@ -1,4 +1,4 @@
-import { prisma, type AdminNotification } from "@elorae/db";
+import { prisma, JournalError, type AdminNotification } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 
@@ -76,6 +76,21 @@ const GATE_REMEDY: Record<string, string> = {
     "Every receivable this payment settles predates the ledger (no revenue journal was ever posted for it), so there is no receivable on the books to credit. A retry will not post it; record it by manual journal if the opening balance carries that receivable.",
 };
 
+const VOID_KINDS: ReadonlySet<ArJournalKind> = new Set<ArJournalKind>([
+  "ar_payment_void",
+  "konsi_sell_through_revenue_void",
+  "konsi_sell_through_cogs_void",
+  "konsi_sell_through_shrinkage_void",
+  "konsi_sell_through_surplus_void",
+]);
+
+/**
+ * A mirrored reversal reuses the original's chart accounts as posted, so when one of them has since
+ * been deactivated or turned into a parent the writer refuses it, and mapping a role cannot help.
+ */
+const MIRROR_NON_POSTABLE_REMEDY =
+  "The reversal mirrors the original entry on the same accounts, and one of them is no longer postable (deactivated or now a parent account). Reactivate that original account, then retry; otherwise post the reversal by manual journal.";
+
 export type ArPostOutcome =
   | GenerateAutoJournalResult
   | { ok: false; code: string }
@@ -104,7 +119,8 @@ export async function postArJournalSafely(
     await notify(kind, docId, res.code, "role" in res ? (res.role ?? null) : null);
     return res;
   } catch (e) {
-    await notify(kind, docId, "ERROR", null, e instanceof Error ? e.message : "unknown");
+    const nonPostable = e instanceof JournalError && e.code === "NON_POSTABLE_ACCOUNT";
+    await notify(kind, docId, "ERROR", null, e instanceof Error ? e.message : "unknown", nonPostable);
     return { ok: false, code: "ERROR" };
   }
 }
@@ -156,6 +172,7 @@ async function notify(
   reason: string,
   role: string | null,
   detail?: string,
+  nonPostableAccount = false,
 ): Promise<void> {
   let arJournalNotification: AdminNotification | null = null;
   try {
@@ -169,7 +186,11 @@ async function notify(
         message:
           `${TITLE[kind]} (${reason}${role ? `: ${role}` : ""}${detail ? `: ${detail}` : ""}). ` +
           /* `in` rather than an index-and-`??`: a Record lookup types as present even for the codes not in it. */
-          (reason in GATE_REMEDY ? GATE_REMEDY[reason] : `Map the account, then ${RETRY_HINT[kind]}.`),
+          (reason in GATE_REMEDY
+            ? GATE_REMEDY[reason]
+            : nonPostableAccount && VOID_KINDS.has(kind)
+              ? `${MIRROR_NON_POSTABLE_REMEDY} Retry: ${RETRY_HINT[kind]}.`
+              : `Map the account, then ${RETRY_HINT[kind]}.`),
         metadata: { docId, kind, reason, role, ...(receivableId ? { receivableId } : {}) },
       },
     });

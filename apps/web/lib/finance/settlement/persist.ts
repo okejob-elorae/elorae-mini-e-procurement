@@ -8,6 +8,9 @@ export type PersistResult = {
   lineCount: number;
 };
 
+/* A settlement file carries thousands of income lines, which the 5s interactive default cannot cover; `maxWait` is how long it may queue for a connection. */
+const PERSIST_TX_OPTIONS = { timeout: 60_000, maxWait: 10_000 } as const;
+
 export async function persistSettlement(
   input: { parsed: ParsedSettlement; fileName: string; uploadedById: string; marketplace: string; fileSha256?: string },
   client: Prisma.TransactionClient | typeof prisma = prisma,
@@ -57,6 +60,6 @@ export async function persistSettlement(
   };
 
   return "$transaction" in client
-    ? (client as typeof prisma).$transaction(run)
+    ? (client as typeof prisma).$transaction(run, PERSIST_TX_OPTIONS)
     : run(client as Prisma.TransactionClient);
 }

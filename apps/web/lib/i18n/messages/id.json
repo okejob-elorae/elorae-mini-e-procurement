@@ -4340,6 +4340,7 @@
     "storeSearchPlaceholder": "Cari toko",
     "storeSearchEmpty": "Tidak ada toko yang cocok.",
     "filterStatus": "Semua status",
+    "filterPeriod": "Periode berakhir di bulan",
     "reset": "Reset",
     "cardTitle": "Laporan Sell-Through",
     "colDocNo": "No. Dokumen",

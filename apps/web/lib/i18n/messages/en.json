@@ -4340,6 +4340,7 @@
     "storeSearchPlaceholder": "Search store",
     "storeSearchEmpty": "No matching store.",
     "filterStatus": "All statuses",
+    "filterPeriod": "Period ends in month",
     "reset": "Reset",
     "cardTitle": "Sell-Through Reports",
     "colDocNo": "Doc No.",

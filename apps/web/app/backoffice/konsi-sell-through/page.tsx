@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
+import { isYearMonth } from "@/lib/spg-commission/month";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listSellThroughs, type SellThroughStatusValue } from "@/lib/konsi-sell-through/queries";
@@ -12,6 +13,7 @@ type PageProps = {
   searchParams: Promise<{
     storeId?: string;
     status?: string;
+    period?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -38,11 +40,12 @@ export default async function KonsiSellThroughPage({ searchParams }: PageProps) 
   const sp = await searchParams;
   const storeId = sp.storeId?.trim() || undefined;
   const status = parseStatus(sp.status);
+  const periodMonth = isYearMonth(sp.period) ? sp.period : undefined;
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = parsePageSize(sp.pageSize);
 
   const [{ items, total }, { items: allStores }] = await Promise.all([
-    listSellThroughs({ storeId, status, page, pageSize }),
+    listSellThroughs({ storeId, status, periodMonth, page, pageSize }),
     listStores({}),
   ]);
   /* Sell-through reports only ever exist for a KONSI store, so a PUTUS store in this filter would just filter to nothing. */
@@ -55,6 +58,7 @@ export default async function KonsiSellThroughPage({ searchParams }: PageProps) 
       storeOptions={storeOptions}
       storeId={storeId ?? ""}
       status={status ?? ""}
+      periodMonth={periodMonth ?? ""}
       page={page}
       pageSize={pageSize}
     />

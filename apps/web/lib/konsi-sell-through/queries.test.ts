@@ -3,7 +3,8 @@ import { prisma, seededId } from "@elorae/db";
 import { createSellThrough, resolveSellThroughLine, cancelSellThrough } from "./writer";
 import { voidSellThrough } from "./void-writer";
 import { createSellThroughFixtures } from "./test-fixtures";
-import { listSellThroughs, getSellThrough, getSellThroughEligibility } from "./queries";
+import { listSellThroughs, getSellThrough, getSellThroughEligibility, wibMonthRange } from "./queries";
+import { wibYearMonth } from "@/lib/forecast/marketplace-demand";
 import { approveStoreStocktake } from "@/lib/stores/stocktake/writer";
 
 /* Stock-mutating — never run against the shared prod DB (port 3307 tunnel / VPS host). */
@@ -65,6 +66,29 @@ d("konsi sell-through queries (test bed only)", () => {
 
     const otherStore = await listSellThroughs({ storeId: `missing-store-${state.run}`, page: 1, pageSize: 10 });
     expect(otherStore).toEqual({ items: [], total: 0 });
+  }, SLOW);
+
+  it("filters the list by the WIB month the report period ends in", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktake = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const report = await createSellThrough({ closingStocktakeId: stocktake, createdById: state.userId });
+    const ended = (await listSellThroughs({ storeId: state.storeId, page: 1, pageSize: 10 })).items[0].periodEnd;
+    const { year, month } = wibYearMonth(ended);
+    const key = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}`;
+    const prevKey = month === 1 ? `${year - 1}-12` : `${String(year).padStart(4, "0")}-${String(month - 1).padStart(2, "0")}`;
+
+    const inMonth = await listSellThroughs({ storeId: state.storeId, periodMonth: key, page: 1, pageSize: 10 });
+    expect(inMonth.items.map((i) => i.id)).toEqual([report.id]);
+    const otherMonth = await listSellThroughs({ storeId: state.storeId, periodMonth: prevKey, page: 1, pageSize: 10 });
+    expect(otherMonth).toEqual({ items: [], total: 0 });
+
+    /* WIB boundaries: the month starts at 17:00 UTC the evening before, and December rolls the year. */
+    expect(wibMonthRange("2026-03")).toEqual({
+      gte: new Date("2026-02-28T17:00:00.000Z"),
+      lt: new Date("2026-03-31T17:00:00.000Z"),
+    });
+    expect(wibMonthRange("2026-12").lt).toEqual(new Date("2026-12-31T17:00:00.000Z"));
   }, SLOW);
 
   it("computes heldCount for a SPG_POS report and clears it once the gap line is resolved", async () => {
