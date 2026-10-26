@@ -8,6 +8,7 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
 
 export type ReceivableExportResult =
+  | { empty: true; data?: never; base64?: never }
   | { data: string; filename: string; truncated: boolean; totalRows: number; base64?: never }
   | { base64: string; filename: string; truncated: boolean; totalRows: number; data?: never };
 
@@ -45,6 +46,7 @@ export async function exportReceivablesReport(
   requirePermission(session.user.permissions, PERMISSIONS.RECEIVABLES_VIEW);
 
   const { rows: exportRows, truncated, totalRows } = await listReceivablesForExport(filters);
+  if (totalRows === 0) return { empty: true };
   const rows = toRows(exportRows);
   const filename = `piutang-overdue-${Date.now()}`;
 

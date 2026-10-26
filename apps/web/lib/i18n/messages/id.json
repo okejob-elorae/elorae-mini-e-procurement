@@ -3865,6 +3865,7 @@
     "valuationIncomplete": "Belum Ternilai",
     "needsPrice": "{count} baris perlu harga",
     "originalValueHint": "dari total awal {total}",
+    "fullyApplied": "Sudah terpakai seluruhnya",
     "colCredit": "Kredit",
     "creditFilterLabel": "Status Kredit",
     "creditFilterAll": "Semua",
@@ -5774,8 +5775,7 @@
       "INVALID_REQUEST": "Permintaan tidak valid. Tutup dialog ini lalu buka kembali.",
       "UNEXPECTED": "Terjadi kesalahan. Silakan coba lagi.",
       "NO_ALLOCATIONS": "Salah satu pembayaran pelunasan ini tidak punya faktur untuk dialokasikan.",
-      "DUPLICATE_ALLOCATION": "Salah satu pembayaran pelunasan ini mengalokasikan ke faktur yang sama dua kali.",
-      "ALREADY_APPLIED": "Kredit retur tersebut sudah terpakai seluruhnya."
+      "DUPLICATE_ALLOCATION": "Salah satu pembayaran pelunasan ini mengalokasikan ke faktur yang sama dua kali."
     }
   },
   "settlementBkm": {
@@ -5911,7 +5911,6 @@
       "DUPLICATE_ALLOCATION": "Piutang yang sama dialokasikan lebih dari satu kali.",
       "RETURN_NOT_APPROVED": "Retur ini belum disetujui, jadi belum ada nilai yang bisa dioffset.",
       "NOT_VALUED": "Nilai retur ini belum lengkap dan tidak bisa dioffset.",
-      "ALREADY_APPLIED": "Nilai retur ini sudah diterapkan ke pembayaran lain.",
       "INSUFFICIENT_OUTSTANDING": "Saldo piutang toko ini tidak cukup untuk menyerap seluruh nilai retur.",
       "EXCEEDS_REMAINING": "Jumlah potongan melebihi sisa nilai retur.",
       "PAYMENT_VOIDED": "Offset sebelumnya untuk retur ini sudah dibatalkan. Buka kembali panel offset dan coba lagi.",
@@ -6268,7 +6267,7 @@
       "proofUploadError": "Gagal mengunggah bukti. Coba lagi.",
       "proofNotUploadedHint": "Klik Unggah untuk melampirkan berkas ini.",
       "allocationTitle": "Alokasikan ke Piutang",
-      "allocationEmpty": "Toko ini tidak memiliki piutang lain yang belum lunas.",
+      "allocationEmpty": "Toko ini tidak memiliki piutang yang belum lunas untuk dialokasikan.",
       "colAllocation": "Alokasi",
       "negativeAmount": "Jumlah tidak boleh negatif.",
       "overAllocated": "Melebihi sisa piutang ini.",
@@ -6288,7 +6287,8 @@
       "excel": "Ekspor Excel",
       "started": "Ekspor dimulai",
       "failed": "Ekspor gagal",
-      "truncated": "Menampilkan 10.000 dari {total} baris — persempit filter untuk data lengkap"
+      "truncated": "Ekspor dibatasi 10.000 baris; persempit filter untuk sisanya",
+      "empty": "Tidak ada data untuk diekspor pada filter ini"
     },
     "storeAvailableCreditTitle": "Kredit Retur Tersedia",
     "storeAvailableCreditHint": "Retur yang disetujui dan belum diterapkan ke pembayaran mana pun untuk toko ini.",

@@ -251,6 +251,8 @@ export function FieldReturnsPageClient(props: Props) {
                       const remainingValue = r.remainingValue;
                       const partiallyDrawn =
                         totalValue !== null && remainingValue !== null && remainingValue < totalValue;
+                      const fullyApplied =
+                        totalValue !== null && totalValue > 0 && remainingValue !== null && remainingValue <= 0;
                       const displayValue = partiallyDrawn ? remainingValue : totalValue;
                       return (
                         <TableRow
@@ -269,12 +271,14 @@ export function FieldReturnsPageClient(props: Props) {
                           </TableCell>
                           <TableCell className="text-right tabular-nums">{r.lineCount}</TableCell>
                           <TableCell className="text-right tabular-nums whitespace-nowrap">
-                            {displayValue !== null ? (
+                            {fullyApplied ? (
+                              <span className="font-medium">{t("fullyApplied")}</span>
+                            ) : displayValue !== null ? (
                               formatMoney2(displayValue)
                             ) : (
                               <span className="text-muted-foreground">—</span>
                             )}
-                            {partiallyDrawn && totalValue !== null && (
+                            {(partiallyDrawn || fullyApplied) && totalValue !== null && (
                               <div className="mt-1 text-xs text-muted-foreground">
                                 {t("originalValueHint", { total: formatMoney2(totalValue) })}
                               </div>

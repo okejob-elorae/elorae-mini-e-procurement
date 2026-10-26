@@ -265,11 +265,11 @@ export function PaymentDetailClient({
       )}
 
       {/**
-       * `isVoided` is checked here even though the server only ever raises this flag for a VOIDED
-       * payment — the entry gate the server used may be stale by the time this renders (another
-       * retry could have won the race between load and click), and this is the ONLY route back to
-       * the reversal journal from a VOIDED payment, so it must never render for a POSTED one.
-       */}
+        * `isVoided` is checked here even though the server only ever raises this flag for a VOIDED
+        * payment — the entry gate the server used may be stale by the time this renders (another
+        * retry could have won the race between load and click), and this is the ONLY route back to
+        * the reversal journal from a VOIDED payment, so it must never render for a POSTED one.
+        */}
       {isVoided && voidJournalRetryable && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />

@@ -9,7 +9,7 @@ import { AlertTriangle, ArrowLeft, ExternalLink, Loader2, Receipt, Wallet } from
 import type { getReceivable, AllocationCandidate } from "@/lib/finance/ar/queries";
 import { postFieldDeliveryJournalsAction } from "@/app/actions/field-sales-deliveries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
-import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
+import { AGING_BUCKET_LABELS, isOverdueDisplay } from "@/lib/finance/ar/aging";
 import { paymentMethodLabelKey } from "@/lib/finance/ar/payment-method-display";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -155,7 +155,7 @@ export function ReceivableDetailClient({
             : "detail.primaryActionDisabledVoided",
       )
     : t("recordPaymentAction");
-  const isOverdueBucket = r.bucket !== "CURRENT";
+  const isOverdue = isOverdueDisplay(status, r.daysOverdue);
   /* Mirrors the writer's own residue test; `recordRoundingAdjustment` re-checks it in its transaction. */
   const hasRoundingResidue = !isSettled && r.outstandingAmount > 0 && r.outstandingAmount < 1;
   const hasPendingSubmission = r.submissions.some((s) => s.status === "PENDING");
@@ -300,23 +300,27 @@ export function ReceivableDetailClient({
         <Field label={t("colDueDate")} value={formatDateOnlyJakarta(r.dueDate)} />
         <div className="flex justify-between gap-4 text-sm">
           <span className="text-muted-foreground">{t("colDaysOverdue")}</span>
-          <span className="flex items-center gap-2">
-            {r.daysOverdue > 0 ? (
-              <span className="font-medium text-red-600 dark:text-red-400 tabular-nums">{r.daysOverdue}</span>
-            ) : (
-              <span className="text-muted-foreground">{t("notYetDue")}</span>
-            )}
-            <Badge
-              variant="outline"
-              className={cn(
-                isOverdueBucket
-                  ? "border-red-200 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-900 dark:text-red-200"
-                  : "border-blue-200 bg-blue-100 text-blue-800 dark:border-blue-800 dark:bg-blue-900 dark:text-blue-200",
+          {isSettled ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <span className="flex items-center gap-2">
+              {isOverdue ? (
+                <span className="font-medium text-red-600 dark:text-red-400 tabular-nums">{r.daysOverdue}</span>
+              ) : (
+                <span className="text-muted-foreground">{t("notYetDue")}</span>
               )}
-            >
-              {AGING_BUCKET_LABELS[r.bucket]}
-            </Badge>
-          </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  isOverdue
+                    ? "border-red-200 bg-red-100 text-red-800 dark:border-red-800 dark:bg-red-900 dark:text-red-200"
+                    : "border-blue-200 bg-blue-100 text-blue-800 dark:border-blue-800 dark:bg-blue-900 dark:text-blue-200",
+                )}
+              >
+                {AGING_BUCKET_LABELS[r.bucket]}
+              </Badge>
+            </span>
+          )}
         </div>
       </Card>
 
@@ -338,13 +342,15 @@ export function ReceivableDetailClient({
         </div>
       </Card>
 
-      <AssignCollectorCard
-        receivableId={r.id}
-        collectorId={r.collectorId}
-        collectorName={r.collectorName}
-        collectors={collectorCandidates}
-        canManageCollections={canManageCollections}
-      />
+      {!isSettled && (
+        <AssignCollectorCard
+          receivableId={r.id}
+          collectorId={r.collectorId}
+          collectorName={r.collectorName}
+          collectors={collectorCandidates}
+          canManageCollections={canManageCollections}
+        />
+      )}
 
       <Card>
         <CardHeader>

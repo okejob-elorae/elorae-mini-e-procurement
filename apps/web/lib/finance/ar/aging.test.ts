@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { daysOverdue, agingBucket, AGING_BUCKETS } from "./aging";
+import { daysOverdue, agingBucket, isOverdueDisplay, AGING_BUCKETS } from "./aging";
 
 const due = new Date("2026-03-01T00:00:00.000+07:00");
 const on = (iso: string) => new Date(iso);
@@ -51,5 +51,23 @@ describe("agingBucket", () => {
 describe("AGING_BUCKETS", () => {
   it("lists all six buckets oldest-last", () => {
     expect(AGING_BUCKETS).toEqual(["CURRENT", "D1_30", "D31_60", "D61_90", "D91_120", "D120_PLUS"]);
+  });
+});
+
+describe("isOverdueDisplay", () => {
+  it("is overdue for an open receivable past due", () => {
+    expect(isOverdueDisplay("OUTSTANDING", 1)).toBe(true);
+    expect(isOverdueDisplay("PARTIAL", 45)).toBe(true);
+  });
+
+  it("is not overdue for an open receivable on or before its due date", () => {
+    expect(isOverdueDisplay("OUTSTANDING", 0)).toBe(false);
+    expect(isOverdueDisplay("PARTIAL", -3)).toBe(false);
+  });
+
+  it("is never overdue once settled, however late", () => {
+    expect(isOverdueDisplay("PAID", 90)).toBe(false);
+    expect(isOverdueDisplay("WRITTEN_OFF", 90)).toBe(false);
+    expect(isOverdueDisplay("VOIDED", 90)).toBe(false);
   });
 });
