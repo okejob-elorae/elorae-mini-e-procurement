@@ -312,6 +312,91 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(mockLogPrint).toHaveBeenCalledTimes(2);
   }, SLOW);
 
+  it("reports a clean first print and a clean reprint as ok with no failed halves", async () => {
+    const id = await billingDraft();
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
+
+    await expect(recordSellThroughNotaPrinted(id)).resolves.toEqual({ ok: true, failed: [] });
+    await expect(recordSellThroughNotaPrinted(id)).resolves.toEqual({ ok: true, failed: [] });
+  }, SLOW);
+
+  it("names AUDIT but still stamps and notifies when the audit write fails", async () => {
+    const id = await billingDraft();
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
+    mockLogPrint.mockRejectedValueOnce(new Error("audit down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockFanOut.mockClear();
+
+    try {
+      await expect(recordSellThroughNotaPrinted(id)).resolves.toEqual({ ok: false, failed: ["AUDIT"] });
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    const faktur = await prisma.taxInvoice.findUniqueOrThrow({ where: { sellThroughId: seededId(id) } });
+    expect(faktur.notaPrintedAt).not.toBeNull();
+    expect(mockFanOut).toHaveBeenCalledTimes(1);
+  }, SLOW);
+
+  it("names STAMP and skips the notification when the CAS throws", async () => {
+    const id = await billingDraft();
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
+    mockFanOut.mockClear();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    /* Pinned back to a bound original in the `finally`: a delegate spy has no own property for `mockRestore` to restore. */
+    const original = prisma.taxInvoice.updateMany.bind(prisma.taxInvoice);
+    const spy = vi.spyOn(prisma.taxInvoice, "updateMany").mockImplementation(original as unknown as typeof prisma.taxInvoice.updateMany);
+    spy.mockRejectedValueOnce(new Error("db down"));
+
+    try {
+      await expect(recordSellThroughNotaPrinted(id)).resolves.toEqual({ ok: false, failed: ["STAMP"] });
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.taxInvoice.updateMany);
+      errorSpy.mockRestore();
+    }
+
+    const faktur = await prisma.taxInvoice.findUniqueOrThrow({ where: { sellThroughId: seededId(id) } });
+    expect(faktur.notaPrintedAt).toBeNull();
+    expect(mockFanOut).not.toHaveBeenCalled();
+  }, SLOW);
+
+  it("names NOTIFY when the finance notification write fails after the stamp", async () => {
+    const id = await billingDraft();
+    await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });
+    mockFanOut.mockClear();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const original = prisma.adminNotification.create.bind(prisma.adminNotification);
+    const spy = vi.spyOn(prisma.adminNotification, "create").mockImplementation(original as unknown as typeof prisma.adminNotification.create);
+    spy.mockRejectedValueOnce(new Error("db down"));
+
+    try {
+      await expect(recordSellThroughNotaPrinted(id)).resolves.toEqual({ ok: false, failed: ["NOTIFY"] });
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.adminNotification.create);
+      errorSpy.mockRestore();
+    }
+
+    const faktur = await prisma.taxInvoice.findUniqueOrThrow({ where: { sellThroughId: seededId(id) } });
+    expect(faktur.notaPrintedAt).not.toBeNull();
+    expect(mockFanOut).not.toHaveBeenCalled();
+  }, SLOW);
+
+  it("returns FORBIDDEN without the stores:manage permission and UNEXPECTED when auth throws", async () => {
+    const id = await billingDraft();
+    mockAuth.mockReset();
+    mockAuth.mockResolvedValue({ user: { id: state.userId, permissions: [] } });
+    await expect(recordSellThroughNotaPrinted(id)).resolves.toEqual({ ok: false, failed: [], reason: "FORBIDDEN" });
+
+    mockAuth.mockReset();
+    mockAuth.mockRejectedValue(new Error("auth down"));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await expect(recordSellThroughNotaPrinted(id)).resolves.toEqual({ ok: false, failed: [], reason: "UNEXPECTED" });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  }, SLOW);
+
   it("does nothing at all for a missing or empty id", async () => {
     const id = await billingDraft();
     await approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal: await previewTotal(id) });

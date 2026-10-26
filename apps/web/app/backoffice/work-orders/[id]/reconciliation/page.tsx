@@ -56,6 +56,7 @@ export default function WorkOrderReconciliationPage() {
   const params = useParams();
   const t = useTranslations('production');
   const tWO = useTranslations('workOrders');
+  const tToasts = useTranslations('toasts');
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [recon, setRecon] = useState<{
@@ -120,7 +121,7 @@ export default function WorkOrderReconciliationPage() {
       },
     });
 
-    printHtmlInIframe(html, 'Print reconciliation');
+    printHtmlInIframe(html, 'Print reconciliation', { errorMessage: tToasts('failedToLoadForPrint') });
     logPrintQuietly('WorkOrderReconciliation', String(wo.id));
   };
 

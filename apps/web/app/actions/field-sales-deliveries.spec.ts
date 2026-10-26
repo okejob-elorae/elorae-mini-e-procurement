@@ -747,6 +747,24 @@ describe("recordNotaTagihanPrinted", () => {
     expect(mockFanOut).not.toHaveBeenCalled();
   });
 
+  it("names NOTIFY when the delivery lookup returns null after winning the CAS", async () => {
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockFindDelivery.mockResolvedValue(null);
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: false, failed: ["NOTIFY"] });
+    expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
+    expect(mockFanOut).not.toHaveBeenCalled();
+  });
+
+  it("returns UNEXPECTED, never throws, when auth() throws", async () => {
+    mockAuth.mockRejectedValue(new Error("auth down"));
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({
+      ok: false,
+      failed: [],
+      reason: "UNEXPECTED",
+    });
+    expect(mockUpdateMany).not.toHaveBeenCalled();
+  });
+
   /* Prisma drops an `undefined` filter term, so without the guard the CAS would match every unprinted faktur. */
   it("does nothing at all for a missing or empty delivery id", async () => {
     mockUpdateMany.mockResolvedValue({ count: 1 });

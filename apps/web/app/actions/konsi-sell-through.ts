@@ -26,6 +26,7 @@ import {
   type SellThroughAnyJournalKind,
 } from "@/lib/konsi-sell-through/journal";
 import { logPrint } from "./audit";
+import type { NotaTagihanPrintHalf, NotaTagihanPrintResult } from "./field-sales-deliveries";
 
 export type SellThroughActionReason = SellThroughErrorCode | "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED" | "NOT_RETRYABLE";
 
@@ -374,58 +375,82 @@ export async function getSellThroughNotaAction(id: unknown): Promise<SellThrough
  * faktur on a voided invoice; with it the CAS matches nothing, the same silent no-op as a reprint.
  *
  * Gated on `STORES_MANAGE` directly via `hasPermission` rather than this module's `guard()`
- * helper: `guard()` returns an error result, but this function returns void and must never
- * throw or resolve to anything a caller could branch on.
+ * helper, whose failure shape is a `SellThroughActionFailure` the print caller has no use for.
  *
- * The whole body is one try/catch returning void: the nota is already printed by the time this
- * runs, so a ping failure (or any other failure here) must never surface as a print failure.
+ * Never throws: the nota is already printed by the time this runs, so no failure here may surface
+ * as a print failure. It returns the same `NotaTagihanPrintResult` as its delivery counterpart,
+ * naming which halves failed (audit, stamp, notify) so the caller can warn the operator instead
+ * of failing silently. A failed audit does not stop the CAS or the notification, and a failed CAS
+ * skips the notification (only the call that won the stamp sends it).
  *
- * `logPrint` is wrapped in its OWN try/catch, separate from the outer one: it is the least
+ * `logPrint` is wrapped in its OWN try/catch, separate from the CAS: it is the least
  * important write here, but it runs before the CAS, so an unguarded throw from it would abort
  * the whole function and leave `notaPrintedAt` null — vetoing both the stamp and the finance
  * notification because the audit trail hiccuped. Left in its current position (before the CAS)
  * on purpose, so a reprint still gets its own audit row; moving it after the early return would
  * silently stop reprints being audited at all.
  */
-export async function recordSellThroughNotaPrinted(id: unknown): Promise<void> {
-  if (typeof id !== "string" || id === "") return;
+export async function recordSellThroughNotaPrinted(id: unknown): Promise<NotaTagihanPrintResult> {
+  if (typeof id !== "string" || id === "") {
+    return { ok: false, failed: [], reason: "INVALID_REQUEST" };
+  }
+  const failed: NotaTagihanPrintHalf[] = [];
   try {
     const session = await auth();
-    if (!session?.user?.id) return;
-    if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.STORES_MANAGE)) return;
+    if (!session?.user?.id) return { ok: false, failed: [], reason: "FORBIDDEN" };
+    if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.STORES_MANAGE)) {
+      return { ok: false, failed: [], reason: "FORBIDDEN" };
+    }
 
     try {
       await logPrint("KonsiSellThroughNota", id);
     } catch (err) {
+      failed.push("AUDIT");
       console.error("[konsi-sell-through-nota-print] failed to write the print audit row", err);
     }
 
-    const swapped = await prisma.taxInvoice.updateMany({
-      where: { sellThroughId: id, notaPrintedAt: null, sellThrough: { status: "APPROVED" } },
-      data: { notaPrintedAt: new Date(), notaPrintedById: session.user.id },
-    });
-    if (swapped.count !== 1) return;
+    let swapped: { count: number };
+    try {
+      swapped = await prisma.taxInvoice.updateMany({
+        where: { sellThroughId: id, notaPrintedAt: null, sellThrough: { status: "APPROVED" } },
+        data: { notaPrintedAt: new Date(), notaPrintedById: session.user.id },
+      });
+    } catch (err) {
+      failed.push("STAMP");
+      console.error("[konsi-sell-through-nota-print] failed to stamp notaPrintedAt", err);
+      return { ok: false, failed };
+    }
+    if (swapped.count !== 1) return { ok: failed.length === 0, failed };
 
-    const report = await prisma.konsiSellThrough.findUnique({
-      where: { id },
-      select: { docNo: true, store: { select: { name: true } } },
-    });
-    if (!report) return;
+    try {
+      const report = await prisma.konsiSellThrough.findUnique({
+        where: { id },
+        select: { docNo: true, store: { select: { name: true } } },
+      });
+      if (!report) {
+        failed.push("NOTIFY");
+        return { ok: false, failed };
+      }
 
-    const storeName = report.store.name;
-    const notification = await prisma.adminNotification.create({
-      data: {
-        category: "TAX_INVOICE_PENDING",
-        severity: "INFO",
-        title: `Nota ${report.docNo} sudah di-print`,
-        message: `Nota ${report.docNo} untuk toko ${storeName} sudah di-print. Pastikan buat faktur pajak.`,
-        metadata: { sellThroughId: id, docNo: report.docNo, storeName },
-      },
-    });
+      const storeName = report.store.name;
+      const notification = await prisma.adminNotification.create({
+        data: {
+          category: "TAX_INVOICE_PENDING",
+          severity: "INFO",
+          title: `Nota ${report.docNo} sudah di-print`,
+          message: `Nota ${report.docNo} untuk toko ${storeName} sudah di-print. Pastikan buat faktur pajak.`,
+          metadata: { sellThroughId: id, docNo: report.docNo, storeName },
+        },
+      });
 
-    void fanOutAdminNotification(notification);
+      void fanOutAdminNotification(notification);
+    } catch (err) {
+      failed.push("NOTIFY");
+      console.error("[konsi-sell-through-nota-print] failed to notify finance", err);
+    }
+    return { ok: failed.length === 0, failed };
   } catch (err) {
-    /* Best-effort: the nota is already printed by the time this runs, so a ping must never fail a print. */
     console.error("[konsi-sell-through-nota-print] failed to record print", err);
+    return { ok: false, failed, reason: "UNEXPECTED" };
   }
 }

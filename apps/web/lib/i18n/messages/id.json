@@ -254,6 +254,7 @@
       "empty": "Belum ada ukuran. Tambahkan minimal satu.",
       "save": "Simpan",
       "loadError": "Gagal memuat rasio pack.",
+      "retry": "Coba lagi",
       "errEmpty": "Tambahkan minimal satu ukuran.",
       "errBadSize": "Nama ukuran tidak boleh kosong.",
       "errDupSize": "Ukuran tidak boleh sama.",
@@ -3088,7 +3089,7 @@
       "searchPlaceholder": "Cari SKU atau nama",
       "allCategories": "Semua",
       "suggestNew": "Sarankan produk baru",
-      "suggestAdded": "{count} produk baru ditambahkan",
+      "suggestAdded": "{count, plural, other {# produk baru ditambahkan}}",
       "loading": "Memuat katalog…",
       "loadError": "Gagal memuat katalog. Periksa koneksi lalu coba lagi.",
       "noMatch": "Tidak ada produk cocok.",
@@ -3108,7 +3109,7 @@
       "total": "Total",
       "review": "Tinjau",
       "cartItems": "{count} item",
-      "cartSkus": "{count} SKU",
+      "cartSkus": "{count, plural, other {# SKU}}",
       "offlineNotice": "Offline — pesanan disimpan & dikirim otomatis saat online",
       "sending": "Mengirim…",
       "send": "Kirim",
@@ -3700,6 +3701,7 @@
       "tagihanDialogPrint": "Cetak",
       "tagihanBookkeepingFailed": "Nota sedang dicetak, tetapi bagian catatan cetak ini gagal tersimpan: {parts}. Beri tahu finance untuk memeriksa faktur pajak.",
       "tagihanBookkeepingFailedGeneric": "Nota sedang dicetak, tetapi catatan cetak gagal tersimpan. Beri tahu finance untuk memeriksa faktur pajak.",
+      "tagihanAuditOnlyFailed": "Nota sedang dicetak, tetapi pencetakan ini tidak tercatat di log audit.",
       "tagihanPart": {
         "AUDIT": "log audit",
         "STAMP": "stempel cetak",
@@ -4019,6 +4021,8 @@
     }
   },
   "storeStocktakes": {
+    "loadingList": "Memuat stok opname…",
+    "loadingDetail": "Memuat stok opname…",
     "pageTitle": "Perhitungan Stok Toko",
     "subtitle": "Perhitungan fisik stok konsinyasi yang ada di toko",
     "search": "Cari",
@@ -4297,6 +4301,8 @@
     }
   },
   "konsiSellThrough": {
+    "loadingList": "Memuat laporan sell-through…",
+    "loadingDetail": "Memuat laporan sell-through…",
     "pageTitle": "Laporan Sell-Through Konsi",
     "subtitle": "Apa yang terjual di setiap toko konsinyasi per periode perhitungan, diverifikasi terhadap hasil hitungnya.",
     "filterStore": "Semua toko",
@@ -4459,6 +4465,14 @@
       "retrying": "Mencoba ulang…",
       "retryDone": "Semua jurnal berhasil diposting.",
       "retryStillPending": "{n, plural, other {# jurnal}} masih tertunda — periksa Pemetaan Akun, lalu coba lagi.",
+      "bookkeepingFailed": "Nota sedang dicetak, tetapi bagian catatan cetak ini gagal tersimpan: {parts}. Beri tahu finance untuk memeriksa faktur pajak.",
+      "bookkeepingAuditOnlyFailed": "Nota sedang dicetak, tetapi pencetakan ini tidak tercatat di log audit.",
+      "bookkeepingFailedGeneric": "Nota sedang dicetak, tetapi catatan cetak gagal tersimpan. Beri tahu finance untuk memeriksa faktur pajak.",
+      "bookkeepingPart": {
+        "AUDIT": "log audit",
+        "STAMP": "stempel cetak",
+        "NOTIFY": "notifikasi finance"
+      },
       "printNota": "Cetak Nota",
       "printing": "Menyiapkan…",
       "baselineBadge": "Baseline",
@@ -4973,6 +4987,7 @@
     }
   },
   "spgCommission": {
+    "loading": "Memuat rekap komisi SPG…",
     "pageTitle": "Komisi SPG",
     "subtitle": "Rupiah tetap per pcs untuk setiap kategori barang. Hanya penjualan POS SPG yang dikonfirmasi laporan sell-through yang disetujui yang dihitung; laporan yang dibatalkan setelah bulannya tercatat sebagai minus di bulan pembatalan.",
     "prevMonth": "Bulan sebelumnya",

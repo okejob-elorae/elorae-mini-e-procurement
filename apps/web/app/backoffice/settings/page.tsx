@@ -63,14 +63,18 @@ export default function SettingsPage() {
     { titleKey: 'itemCodes.title' as const, descriptionKey: 'itemCodes.description' as const, href: '/backoffice/settings/item-codes', icon: FileDigit },
     { titleKey: 'tax.title' as const, descriptionKey: 'tax.description' as const, href: '/backoffice/settings/tax', icon: Percent },
     { titleKey: 'uom.title' as const, descriptionKey: 'uom.description' as const, href: '/backoffice/settings/uom', icon: Ruler },
-    { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers },
+    { titleKey: 'packRatio.title' as const, descriptionKey: 'packRatio.description' as const, href: '/backoffice/settings/pack-ratio', icon: Layers, permission: [PERMISSIONS.SETTINGS_PACK_RATIO_VIEW, PERMISSIONS.SETTINGS_PACK_RATIO_MANAGE] },
     { titleKey: 'overdueThresholds.title' as const, descriptionKey: 'overdueThresholds.description' as const, href: '/backoffice/settings/piutang', icon: AlarmClock },
     { titleKey: "paymentReminders.title" as const, descriptionKey: "paymentReminders.description" as const, href: "/backoffice/settings/purchasing", icon: BellRing },
     { titleKey: "spgCommission.title" as const, descriptionKey: "spgCommission.description" as const, href: "/backoffice/settings/spg-commission", icon: Coins, permission: PERMISSIONS.SPG_COMMISSION_MANAGE },
   ];
   const permissions = session?.user?.permissions ?? [];
   const visibleItems = items.filter(
-    (item) => item.permission === undefined || hasPermission(permissions, item.permission),
+    (item) => {
+      if (item.permission === undefined) return true;
+      const required: string[] = Array.isArray(item.permission) ? item.permission : [item.permission];
+      return required.some((code) => hasPermission(permissions, code));
+    },
   );
 
   const userId = session?.user?.id ?? null;

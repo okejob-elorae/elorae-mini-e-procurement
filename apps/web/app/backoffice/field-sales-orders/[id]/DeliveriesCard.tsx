@@ -276,12 +276,16 @@ export function DeliveriesCard({
       try {
         const result = await recordNotaTagihanPrinted(delivery.id);
         if (!result.ok) {
-          const parts = result.failed.map((half) => t(`print.tagihanPart.${half}`));
-          toast.warning(
-            parts.length > 0
-              ? t("print.tagihanBookkeepingFailed", { parts: parts.join(", ") })
-              : t("print.tagihanBookkeepingFailedGeneric"),
-          );
+          /* Only a failed stamp or notification can leave finance unaware of a faktur pajak. */
+          const financeAffected = result.failed.includes("STAMP") || result.failed.includes("NOTIFY");
+          if (result.failed.length === 0) {
+            toast.warning(t("print.tagihanBookkeepingFailedGeneric"));
+          } else if (!financeAffected) {
+            toast.warning(t("print.tagihanAuditOnlyFailed"));
+          } else {
+            const parts = result.failed.map((half) => t(`print.tagihanPart.${half}`));
+            toast.warning(t("print.tagihanBookkeepingFailed", { parts: parts.join(", ") }));
+          }
         }
       } catch {
         toast.warning(t("print.tagihanBookkeepingFailedGeneric"));

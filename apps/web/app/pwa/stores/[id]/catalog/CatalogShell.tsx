@@ -511,7 +511,7 @@ export function CatalogShell({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-10 w-10"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
                 aria-label={t("prevPage")}
@@ -524,7 +524,7 @@ export function CatalogShell({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-10 w-10"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
                 aria-label={t("nextPage")}

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { parsePackRatio, validatePackRatio, type PackRatioRow } from "@elorae/db/pack-ratio";
 import { auth } from "@/lib/auth";
-import { requirePermission, PERMISSIONS } from "@/lib/rbac";
+import { requireAnyPermission, requirePermission, PERMISSIONS } from "@/lib/rbac";
 
 const KEY = "putus.packRatio";
 
@@ -16,7 +16,10 @@ export async function getPackRatio(): Promise<PackRatioRow[]> {
 export async function getPackRatioForSettings(): Promise<PackRatioRow[]> {
   const session = await auth();
   if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_PACK_RATIO_VIEW);
+  requireAnyPermission(session.user.permissions, [
+    PERMISSIONS.SETTINGS_PACK_RATIO_VIEW,
+    PERMISSIONS.SETTINGS_PACK_RATIO_MANAGE,
+  ]);
 
   return getPackRatio();
 }

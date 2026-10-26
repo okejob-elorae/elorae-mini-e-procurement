@@ -59,8 +59,7 @@ type RegisterRow = {
 };
 
 export default function NotaRegisterPage() {
-  const _t = useTranslations('toasts');
-  void _t;
+  const tToasts = useTranslations('toasts');
   const tNota = useTranslations('notaRegister');
   const tPlaceholders = useTranslations('placeholders');
   const [issues, setIssues] = useState<RegisterRow[]>([]);
@@ -156,7 +155,7 @@ export default function NotaRegisterPage() {
         totalCost: 'Total cost',
       },
     });
-    printHtmlInIframe(html, 'Print Nota ke CMT');
+    printHtmlInIframe(html, 'Print Nota ke CMT', { errorMessage: tToasts('failedToLoadForPrint') });
   };
 
   return (

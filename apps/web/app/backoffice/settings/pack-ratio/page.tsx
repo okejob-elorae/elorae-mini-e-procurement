@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -16,7 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Layers, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Layers, Loader2, Plus, RotateCw, Trash2 } from "lucide-react";
 
 type ValidationCode = Extract<ValidatePackRatioResult, { ok: false }>["code"];
 
@@ -34,19 +34,27 @@ export default function PackRatioSettingsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<PackRatioRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  /* The editor renders only from a successful load: saving an empty form over the stored ratio would wipe it. */
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setLoadFailed(false);
+    getPackRatioForSettings()
+      .then(setRows)
+      .catch(() => setLoadFailed(true))
+      .finally(() => setIsLoading(false));
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/login");
       return;
     }
-    getPackRatioForSettings()
-      .then(setRows)
-      .catch(() => toast.error(t("loadError")))
-      .finally(() => setIsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
-  }, [status, router]);
+    if (status !== "authenticated") return;
+    load();
+  }, [status, router, load]);
 
   const validation = validatePackRatio(rows);
   const error = validation.ok ? null : validation.code;
@@ -94,6 +102,21 @@ export default function PackRatioSettingsPage() {
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <Card className="max-w-2xl">
+        <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+          <p className="text-sm text-muted-foreground">{t("loadError")}</p>
+          <Button type="button" variant="outline" className="h-10" onClick={load}>
+            <RotateCw className="h-4 w-4" />
+            {t("retry")}
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 

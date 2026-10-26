@@ -225,7 +225,7 @@ export default function WorkOrderDetailPage() {
         totalCost: 'Total cost',
       },
     });
-    printHtmlInIframe(html, 'Print Nota ke CMT');
+    printHtmlInIframe(html, 'Print Nota ke CMT', { errorMessage: tToasts('failedToLoadIssueForPrint') });
   };
 
   const handleSaveHpp = async () => {

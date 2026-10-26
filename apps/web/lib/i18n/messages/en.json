@@ -254,6 +254,7 @@
       "empty": "No sizes yet. Add at least one.",
       "save": "Save",
       "loadError": "Failed to load pack ratio.",
+      "retry": "Retry",
       "errEmpty": "Add at least one size.",
       "errBadSize": "Size name cannot be empty.",
       "errDupSize": "Sizes cannot repeat.",
@@ -3088,7 +3089,7 @@
       "searchPlaceholder": "Search SKU or name",
       "allCategories": "All",
       "suggestNew": "Suggest new products",
-      "suggestAdded": "{count} new products added",
+      "suggestAdded": "{count, plural, one {# new product added} other {# new products added}}",
       "loading": "Loading catalog…",
       "loadError": "Failed to load the catalog. Check your connection and try again.",
       "noMatch": "No matching products.",
@@ -3108,7 +3109,7 @@
       "total": "Total",
       "review": "Review",
       "cartItems": "{count, plural, one {# item} other {# items}}",
-      "cartSkus": "{count} SKU",
+      "cartSkus": "{count, plural, one {# SKU} other {# SKUs}}",
       "offlineNotice": "Offline — orders are saved and sent automatically when you're back online",
       "sending": "Sending…",
       "send": "Send",
@@ -3700,6 +3701,7 @@
       "tagihanDialogPrint": "Print",
       "tagihanBookkeepingFailed": "The invoice is printing, but these parts of the print record failed to save: {parts}. Tell finance to check the faktur pajak.",
       "tagihanBookkeepingFailedGeneric": "The invoice is printing, but the print record could not be saved. Tell finance to check the faktur pajak.",
+      "tagihanAuditOnlyFailed": "The invoice is printing, but the print was not recorded in the audit log.",
       "tagihanPart": {
         "AUDIT": "audit log",
         "STAMP": "printed stamp",
@@ -4019,6 +4021,8 @@
     }
   },
   "storeStocktakes": {
+    "loadingList": "Loading stocktakes…",
+    "loadingDetail": "Loading stocktake…",
     "pageTitle": "Store Stocktakes",
     "subtitle": "Physical counts of consignment stock held at stores",
     "search": "Search",
@@ -4297,6 +4301,8 @@
     }
   },
   "konsiSellThrough": {
+    "loadingList": "Loading sell-through reports…",
+    "loadingDetail": "Loading sell-through report…",
     "pageTitle": "Konsi Sell-Through Reports",
     "subtitle": "What each consignment store sold per counting period, verified against its counts.",
     "filterStore": "All stores",
@@ -4459,6 +4465,14 @@
       "retrying": "Retrying…",
       "retryDone": "All journals posted.",
       "retryStillPending": "{n, plural, one {# journal is} other {# journals are}} still pending — check Account Mapping, then retry.",
+      "bookkeepingFailed": "The nota is printing, but these parts of the print record failed to save: {parts}. Tell finance to check the faktur pajak.",
+      "bookkeepingAuditOnlyFailed": "The nota is printing, but the print was not recorded in the audit log.",
+      "bookkeepingFailedGeneric": "The nota is printing, but the print record could not be saved. Tell finance to check the faktur pajak.",
+      "bookkeepingPart": {
+        "AUDIT": "audit log",
+        "STAMP": "printed stamp",
+        "NOTIFY": "finance notification"
+      },
       "printNota": "Print Nota",
       "printing": "Preparing…",
       "baselineBadge": "Baseline",
@@ -4973,6 +4987,7 @@
     }
   },
   "spgCommission": {
+    "loading": "Loading SPG commission recap…",
     "pageTitle": "SPG Commission",
     "subtitle": "A flat rupiah per piece for each item category. Only SPG POS sales confirmed by an approved sell-through report count; a report voided after its month lands as a negative in the month of the void.",
     "prevMonth": "Previous month",

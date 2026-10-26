@@ -120,7 +120,7 @@ export function CheckInButton({ storeId, autoCloseStoreName }: Props) {
 
   return (
     <div className="space-y-2">
-      <Button type="button" onClick={onTap} disabled={busy} className="w-full py-3 text-lg font-medium">
+      <Button type="button" size="lg" onClick={onTap} disabled={busy} className="w-full py-3 text-lg font-medium">
         {busy ? (
           <>
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />

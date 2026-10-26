@@ -145,7 +145,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
       void flushPendingPhotos().then((r) => { void refresh(); if (r.synced > 0) router.refresh(); });
       closeOverlay();
     } catch {
-      // leave the overlay open so the user can retry "Simpan"
+      /* Leave the overlay open so the user can retry the save button (`pwa.visitPhoto.save`). */
     } finally {
       setBusy(false);
     }
