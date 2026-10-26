@@ -48,6 +48,12 @@ describe("exportWorkOrderXlsx", () => {
     expect(findUnique).not.toHaveBeenCalled();
   });
 
+  it.each(["work_orders:view", "work_orders:create", "work_orders:manage", "*"])("allows %s", async (code) => {
+    vi.mocked(auth).mockResolvedValueOnce({ user: { id: "u1", permissions: [code] } } as never);
+    const r = await exportWorkOrderXlsx("wo1");
+    expect(r.status).toBe("ok");
+  });
+
   it("refuses without any work order permission, reading nothing", async () => {
     vi.mocked(auth).mockResolvedValueOnce({ user: { id: "u1", permissions: ["items:view"] } } as never);
     expect(await exportWorkOrderXlsx("wo1")).toEqual({ status: "forbidden" });
