@@ -1,8 +1,15 @@
 import { esc, fmtDocDate, printCssBase, printPageLandscape } from "@/lib/print/print-theme";
 import type { FsPrintLine } from "@/lib/print/field-sales-nota-gudang-html";
 
-/* Nullable money renders as an em dash rather than "null" or "NaN" — never reaches arithmetic. */
-const idr = (n: number | null): string => (n == null ? "—" : `Rp ${Math.round(n).toLocaleString("id-ID")}`);
+/**
+ * All of this document's money renders at two decimals, so the line columns visibly add up to the
+ * totals. Nullable money renders as an em dash rather than "null" or "NaN" — never reaches
+ * arithmetic.
+ */
+const idr = (n: number | null): string =>
+  n == null
+    ? "—"
+    : `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export type FsTagihanLine = FsPrintLine & {
   unitPrice: number | null;

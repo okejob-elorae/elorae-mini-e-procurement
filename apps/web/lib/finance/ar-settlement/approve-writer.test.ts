@@ -910,6 +910,34 @@ d("approveSettlement (test bed only)", () => {
     expect(audits).toHaveLength(1);
   });
 
+  it("replays an APPROVED settlement whose retur deduction lacks a fieldReturnId", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [{ type: "RETUR_OFFSET", amount: 300 }],
+      actualAmount: 700,
+      expectedAmount: 700,
+      status: "APPROVED",
+    });
+
+    const replay = await approveSettlement({ settlementId, approvedById: approverId });
+
+    expect(replay).toEqual({ ok: true, paymentIds: [], alreadyApproved: true });
+    expect(await paymentsForStore()).toHaveLength(0);
+  });
+
+  it("still refuses a PENDING settlement whose retur deduction lacks a fieldReturnId", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [{ type: "RETUR_OFFSET", amount: 300 }],
+      actualAmount: 700,
+      expectedAmount: 700,
+    });
+
+    await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
+      code: "MISSING_FIELD_RETURN_ID",
+    });
+  });
+
   it("refuses a settlement that is not PENDING", async () => {
     const settlementId = await createSettlement({
       invoices: [{ receivableId: recA, amount: 1000 }],

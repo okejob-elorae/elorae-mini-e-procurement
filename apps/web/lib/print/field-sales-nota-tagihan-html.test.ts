@@ -13,9 +13,22 @@ describe("buildNotaTagihanPrintHtml", () => {
       labels,
     });
     expect(html).toContain("NOTA TAGIHAN");
-    expect(html).toContain("Rp 10.000");
-    expect(html).toContain("Rp 55.000"); /* grand total */
+    expect(html).toContain("Rp 10.000,00");
+    expect(html).toContain("Rp 60.000,00"); /* subtotal */
+    expect(html).toContain("Rp 55.000,00"); /* grand total, whole rupiah on the stored total */
     expect(html).toContain("Promo Juli");
+  });
+
+  it("prints sen on a line column instead of rounding it away", () => {
+    const html = buildNotaTagihanPrintHtml({
+      docNo: "PTG/2607/0001", orderNo: "PUTUS/2607/0001", storeName: "Toko A", salesmanName: "Budi",
+      invoiceDate: "2026-07-20T00:00:00Z", dueDate: "2026-08-19T00:00:00Z",
+      subtotal: 1000.4, orderDiscountAmount: 0, appliedOrderPromoName: null, total: 1000,
+      lines: [{ productName: "Kaos", variantSku: "K-M", variantLabel: "size: M", qty: 1, unitPrice: 1000.4, lineTotal: 1000.4, discountAmount: 0, appliedPromoName: null }],
+      labels,
+    });
+    expect(html).toContain("Rp 1.000,40");
+    expect(html).toContain("Rp 1.000,00");
   });
 
   it("renders in landscape orientation", () => {
@@ -99,9 +112,9 @@ describe("buildNotaTagihanPrintHtml", () => {
     /* One for the unknown unit price, one for the unknown line total. */
     expect(html.match(/<td class="col-num">—<\/td>/g) ?? []).toHaveLength(2);
     /* The known figure on the same row still prints, so the em dashes are not a blanket blank-out. */
-    expect(html).toContain('<td class="col-num">Rp 500</td>');
-    expect(html).not.toContain('<td class="col-num">Rp 0</td>');
+    expect(html).toContain('<td class="col-num">Rp 500,00</td>');
+    expect(html).not.toContain('<td class="col-num">Rp 0,00</td>');
     /* `null - 500` coerces to -500, which is what the guard in lineNetTotal exists to prevent. */
-    expect(html).not.toContain('<td class="col-num">Rp -500</td>');
+    expect(html).not.toContain('<td class="col-num">Rp -500,00</td>');
   });
 });

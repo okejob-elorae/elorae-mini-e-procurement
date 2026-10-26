@@ -375,11 +375,16 @@ export async function approveSettlement(
   /**
    * Every component this settlement can own, in the order they post. The keys are needed even on
    * the already-approved replay path below, which reports the payments a prior run created rather
-   * than re-deriving anything.
+   * than re-deriving anything. An already-approved settlement skips a retur row without a
+   * `fieldReturnId` instead of throwing: no payment could ever have been keyed from it, so the
+   * replay has nothing to report for it.
    */
   const components: Component[] = [];
   for (const deduction of returDeductions) {
-    if (!deduction.fieldReturnId) throw new SettlementError("MISSING_FIELD_RETURN_ID");
+    if (!deduction.fieldReturnId) {
+      if (settlement.status === "APPROVED") continue;
+      throw new SettlementError("MISSING_FIELD_RETURN_ID");
+    }
     components.push({
       kind: "RETUR",
       method: DEDUCTION_TYPE_TO_PAYMENT_METHOD.RETUR_OFFSET,
@@ -464,7 +469,7 @@ export async function approveSettlement(
     select: { id: true, storeId: true, status: true },
   });
   const receivableById = new Map(receivables.map((receivable) => [receivable.id, receivable]));
-  /*
+  /**
    * Existence and ownership are unconditional. The COLLECTIBILITY check is not, and deliberately
    * runs later, once the headroom is known — see the `NOT_OUTSTANDING` block below.
    */
@@ -476,7 +481,7 @@ export async function approveSettlement(
 
   for (const deduction of deductions) {
     if (deduction.type === "RETUR_OFFSET") continue;
-    /*
+    /**
      * Evidence is a submit-time requirement for every non-retur deduction; a row that lost it
      * since — a botched correction, a raw call that created it another way — must not be approved
      * into a real expense posting with nothing behind it.
@@ -529,7 +534,7 @@ export async function approveSettlement(
   if (variance > EPSILON) throw new SettlementError("OVER_TENDER");
 
   const overrideReason = (input.overrideReason ?? "").trim();
-  /*
+  /**
    * Same visible-content check as `rejectCollection` and `voidPayment`: a reason made only of
    * zero-width/format characters (Unicode `Cf`, e.g. U+200B) or U+2800 BRAILLE PATTERN BLANK
    * survives `.trim()` unchanged and would otherwise persist as an audit trail that renders blank.
@@ -609,7 +614,7 @@ export async function approveSettlement(
     }
   }
 
-  /*
+  /**
    * Ordered AFTER the collectibility check on purpose: a receivable closed elsewhere leaves zero
    * headroom too, and reporting that as an allocation shortfall would point an operator at the
    * invoice selection instead of at the invoice someone else already settled.
@@ -773,7 +778,7 @@ export async function approveSettlement(
     });
 
     if (flipped.count === 0) {
-      /*
+      /**
        * Zero rows matched does not always mean "a concurrent approval already flipped this" —
        * `StoreSettlementStatus` also has REJECTED, and a concurrent reject between the read at the
        * top of this function and this CAS produces the same zero count. By now the components

@@ -113,6 +113,7 @@
     "profileAccounts": "Akun Profil",
     "navDeliveries": "Pengiriman",
     "navFinanceStoreSettlements": "Pelunasan Toko",
+    "navFinanceCollections": "Verifikasi Setoran",
     "navKonsiSellThrough": "Laporan Sell-Through"
   },
   "notifications": {
@@ -3302,7 +3303,7 @@
       "useExpectedButton": "Gunakan jumlah seharusnya",
       "actualAmountRequired": "Jumlah wajib diisi.",
       "varianceZero": "Sesuai dengan jumlah seharusnya.",
-      "varianceOver": "{amount} lebih dari seharusnya.",
+      "varianceOver": "{amount} lebih dari seharusnya. Persetujuan menolak kelebihan setoran, jadi koreksi jumlahnya sebelum diajukan.",
       "varianceUnder": "{amount} kurang dari seharusnya.",
       "noteLabel": "Catatan (opsional)",
       "submitButton": "Kirim Pelunasan",
@@ -6055,11 +6056,6 @@
     "searchPlaceholder": "Cari nomor nota, nama toko, atau nomor faktur...",
     "reset": "Reset",
     "statusAll": "Semua",
-    "statusPending": "Pending",
-    "statusCreated": "Dibuat",
-    "statusSentToStore": "Terkirim ke Toko",
-    "statusNotRequired": "Tidak Perlu",
-    "statusCancelled": "Batal",
     "colDocNo": "No. Nota",
     "colStore": "Toko",
     "colInvoiceDate": "Tanggal Faktur",

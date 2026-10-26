@@ -113,6 +113,7 @@
     "profileAccounts": "Profile Accounts",
     "navDeliveries": "Deliveries",
     "navFinanceStoreSettlements": "Store Settlements",
+    "navFinanceCollections": "Collection Verification",
     "navKonsiSellThrough": "Sell-Through Reports"
   },
   "notifications": {
@@ -3302,7 +3303,7 @@
       "useExpectedButton": "Use expected amount",
       "actualAmountRequired": "Amount is required.",
       "varianceZero": "Matches the expected amount.",
-      "varianceOver": "{amount} more than expected.",
+      "varianceOver": "{amount} more than expected. Approval refuses an over-tender, so correct the amount before filing.",
       "varianceUnder": "{amount} less than expected.",
       "noteLabel": "Note (optional)",
       "submitButton": "Submit Settlement",
@@ -6055,11 +6056,6 @@
     "searchPlaceholder": "Search by nota number, store name, or invoice number...",
     "reset": "Reset",
     "statusAll": "All",
-    "statusPending": "Pending",
-    "statusCreated": "Created",
-    "statusSentToStore": "Sent to Store",
-    "statusNotRequired": "Not Required",
-    "statusCancelled": "Cancelled",
     "colDocNo": "Nota No.",
     "colStore": "Store",
     "colInvoiceDate": "Invoice Date",
