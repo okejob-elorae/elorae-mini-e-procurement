@@ -9,6 +9,20 @@ import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
 import { isR2KeyInFolder } from "@/lib/r2-key";
 import { DeliveryShipmentError } from "./errors";
 import { isSameActorReplay } from "./pod-completion-guard";
+import { isEligibleCarrier } from "./carrier-queries";
+
+/**
+ * A compare-and-swap `updateMany` that matched nothing means one of two things the caller must
+ * tell apart: the shipment is gone (NOT_FOUND) or it exists in a state the CAS excludes
+ * (INVALID_STATE).
+ */
+async function throwForMissedCas(shipmentId: string): Promise<never> {
+  const exists = await prisma.deliveryShipment.findUnique({
+    where: { id: shipmentId },
+    select: { id: true },
+  });
+  throw new DeliveryShipmentError(exists ? "INVALID_STATE" : "NOT_FOUND");
+}
 
 export async function createDeliveryShipment(input: {
   orderId: string;
@@ -117,6 +131,9 @@ export async function updateShipmentTracking(input: {
   invoiceDate?: Date;
   dueDate?: Date;
 }): Promise<{ ok: true }> {
+  if (input.carriedById && !(await isEligibleCarrier(prisma, input.carriedById))) {
+    throw new DeliveryShipmentError("INVALID_CARRIER");
+  }
   const result = await prisma.deliveryShipment.updateMany({
     where: { id: input.shipmentId, status: "PACKED" },
     data: {
@@ -127,7 +144,7 @@ export async function updateShipmentTracking(input: {
       ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
     },
   });
-  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  if (result.count === 0) return throwForMissedCas(input.shipmentId);
   return { ok: true };
 }
 
@@ -156,11 +173,18 @@ export async function shipDeliveryShipment(input: {
     throw new DeliveryShipmentError("MISSING_DATES");
   }
 
+  /* The resi condition re-checks what the read above saw, so one cleared in between cannot ship. */
   const result = await prisma.deliveryShipment.updateMany({
-    where: { id: input.shipmentId, status: "PACKED" },
+    where: {
+      id: input.shipmentId,
+      status: "PACKED",
+      ...(shipment.method === "EXPEDITION"
+        ? { resiNumber: { not: null }, NOT: { resiNumber: "" } }
+        : {}),
+    },
     data: { status: "IN_TRANSIT", shippedAt: new Date(), shippedById: input.shippedById },
   });
-  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  if (result.count === 0) return throwForMissedCas(input.shipmentId);
   return { ok: true };
 }
 
@@ -645,8 +669,8 @@ export async function cancelDeliveryShipment(input: {
 }): Promise<{ ok: true }> {
   const result = await prisma.deliveryShipment.updateMany({
     where: { id: input.shipmentId, status: { in: ["PACKED", "IN_TRANSIT"] } },
-    data: { status: "CANCELLED" },
+    data: { status: "CANCELLED", cancelledAt: new Date(), cancelledById: input.cancelledById },
   });
-  if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+  if (result.count === 0) return throwForMissedCas(input.shipmentId);
   return { ok: true };
 }

@@ -100,7 +100,7 @@ export async function getDeliveryShipment(id: string): Promise<{
     where: { id },
     include: {
       order: { include: { store: { select: { name: true, lat: true, lng: true, checkinRadiusMeters: true } } } },
-      lines: { include: { } },
+      lines: { orderBy: { id: "asc" } },
     },
   });
   if (!row) return null;

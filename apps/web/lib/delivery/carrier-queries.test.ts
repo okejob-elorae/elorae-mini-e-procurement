@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { listCarrierCandidates } from "./carrier-queries";
+import { listCarrierCandidates, isEligibleCarrier } from "./carrier-queries";
 
 /**
  * Same prod guard every other spec in this repo that writes live `User`/`RoleDefinition` rows
@@ -84,5 +84,23 @@ d("listCarrierCandidates (test bed only)", () => {
 
     const candidates = await listCarrierCandidates();
     expect(candidates.some((c) => c.id === userId)).toBe(false);
+  });
+
+  it("isEligibleCarrier agrees with the list for eligible, ineligible and unknown users", async () => {
+    const role = await prisma.roleDefinition.create({
+      data: {
+        name: `carrier-eligible-role-${Date.now()}`,
+        isSystem: false,
+        permissions: { create: [{ permission: podPermission }, { permission: pwaPermission }] },
+      },
+    });
+    roleId = role.id;
+    const user = await prisma.user.create({
+      data: { name: "Eligible", email: `eligible-${Date.now()}@test.local`, roleId },
+    });
+    userId = user.id;
+
+    expect(await isEligibleCarrier(prisma, userId)).toBe(true);
+    expect(await isEligibleCarrier(prisma, "does-not-exist")).toBe(false);
   });
 });

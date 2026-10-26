@@ -133,9 +133,12 @@ async function shipment(
   asAdmin();
   const c = await createShipmentAction({ orderId, method, lines });
   if (!c.ok || !c.shipmentId) throw new Error(`create ${tag}: ${c.ok ? "no id" : c.reason}`);
+  /* Direct write: the seeded salesman/spg hold no `deliveries:pod`, so the tracking action would refuse them as carriers. */
+  if (opts.carrier) {
+    await prisma.deliveryShipment.update({ where: { id: c.shipmentId }, data: { carriedById: opts.carrier } });
+  }
   const t = await updateShipmentTrackingAction({
     shipmentId: c.shipmentId,
-    carriedById: opts.carrier,
     carrierName: method === "EXPEDITION" ? "JNE" : undefined,
     resiNumber: method === "EXPEDITION" ? `RESI-${run}-${tag}` : undefined,
     invoiceDate: INV,

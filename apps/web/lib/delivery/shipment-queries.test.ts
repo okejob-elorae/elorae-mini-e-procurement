@@ -10,11 +10,13 @@ describe("shipment-queries", () => {
   let lineId = "";
   let itemId = "";
   let shipmentId = "";
+  let token = "";
 
   beforeEach(async () => {
     storeId = userId = orderId = lineId = itemId = shipmentId = "";
+    token = Math.random().toString(36).slice(2, 10);
     const store = await prisma.store.create({
-      data: { code: `ST-${Date.now()}`, name: "Query Store", address: "x", termsType: "PUTUS" },
+      data: { code: `TEST-DSQ-${token}`, name: "Query Store", address: "x", termsType: "PUTUS" },
     });
     storeId = store.id;
     const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
@@ -74,6 +76,26 @@ describe("shipment-queries", () => {
     expect(detail?.lines[0].plannedQty).toBe(4);
   });
 
+  it("returns a shipment's lines in a stable id order", async () => {
+    const extra = [];
+    for (const qty of [1, 2, 3]) {
+      const line = await prisma.fieldSalesOrderLine.create({
+        data: { orderId, itemId, productName: "Query Item Extra", qty, unitPrice: 10000, lineTotal: qty * 10000 },
+      });
+      extra.push({ orderLineId: line.id, qty });
+    }
+    const created = await createDeliveryShipment({
+      orderId,
+      method: "EXPEDITION",
+      lines: extra,
+      packedById: userId,
+    });
+    const detail = await getDeliveryShipment(created.shipmentId);
+    const ids = detail!.lines.map((l) => l.id);
+    expect(ids).toHaveLength(3);
+    expect(ids).toEqual([...ids].sort());
+  });
+
   it("returns null for a missing shipment", async () => {
     const detail = await getDeliveryShipment("does-not-exist");
     expect(detail).toBeNull();
@@ -82,11 +104,11 @@ describe("shipment-queries", () => {
   it("does not list an EXPEDITION shipment for its carriedById, even when IN_TRANSIT", async () => {
     await updateShipmentTracking({
       shipmentId,
-      carriedById: userId,
       resiNumber: "RESI-TEST",
       invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
       dueDate: new Date("2026-09-20T00:00:00.000Z"),
     });
+    await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { carriedById: userId } });
     /* shipmentId from this describe's beforeEach is still PACKED (never shipped in this
        describe) — ship it here so it qualifies for the IN_TRANSIT filter. */
     await shipDeliveryShipment({ shipmentId, shippedById: userId });
@@ -111,9 +133,10 @@ describe("shipment-queries", () => {
         lines: [{ orderLineId: line.id, qty }],
         packedById: userId,
       });
+      /* Direct write: the seeded users here hold no `deliveries:pod`, so the writer would refuse them. */
+      await prisma.deliveryShipment.update({ where: { id: created.shipmentId }, data: { carriedById: carrierId } });
       await updateShipmentTracking({
         shipmentId: created.shipmentId,
-        carriedById: carrierId,
         invoiceDate: new Date("2026-09-10T00:00:00.000Z"),
         dueDate: new Date("2026-09-20T00:00:00.000Z"),
       });

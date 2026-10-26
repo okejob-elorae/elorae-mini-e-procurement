@@ -16,6 +16,11 @@ export type DeliveryShipmentErrorCode =
   /** SALESMAN_CARRY ship transition with no carriedById set — symmetric with MISSING_RESI. */
   | "MISSING_CARRIER"
   /**
+   * `updateShipmentTracking` was given a `carriedById` that names no user, or a user who is not an
+   * eligible carrier (a non-system role holding both `deliveries:pod` and `pwa:access`).
+   */
+  | "INVALID_CARRIER"
+  /**
    * A PUTUS SALESMAN_CARRY shipment reaches either the ship transition or completion with
    * invoiceDate/dueDate still unset on the shipment row — the admin never entered them at
    * pack/ship time.
