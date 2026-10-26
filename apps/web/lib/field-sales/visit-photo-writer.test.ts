@@ -8,12 +8,12 @@ function fakeTx(opts: Opts) {
   const tx = {
     $queryRaw: async () => { calls.push("lock"); return [{ id: "v1" }]; },
     visitPhoto: {
-      findUnique: async () => opts.existing ?? null,
+      findUnique: async () => { calls.push("findUnique"); return opts.existing ?? null; },
       count: async () => { calls.push("count"); return opts.count ?? 0; },
       create: async ({ data }: { data: { url: string } }) => { created = { id: "new-id", url: data.url }; return created; },
     },
     storeVisit: {
-      findFirst: async () => (opts.owned ? { id: "v1" } : null),
+      findFirst: async () => { calls.push("findFirst"); return opts.owned ? { id: "v1" } : null; },
     },
   };
   return { tx, calls, getCreated: () => created };
@@ -36,10 +36,10 @@ describe("attachVisitPhoto", () => {
     const r = await attachVisitPhoto(tx as never, base);
     expect(r).toEqual({ id: "new-id", url: "https://r2/x.jpg" });
   });
-  it("locks the visit row before counting, so concurrent uploads serialise", async () => {
+  it("takes the visit row lock as the transaction's first statement, before any read", async () => {
     const { tx, calls } = fakeTx({ existing: null, owned: true });
     await attachVisitPhoto(tx as never, base);
-    expect(calls).toEqual(["lock", "count"]);
+    expect(calls).toEqual(["lock", "findUnique", "findFirst", "count"]);
   });
   it("refuses the photo past the per-visit cap, never creates", async () => {
     const { tx, getCreated } = fakeTx({ existing: null, owned: true, count: MAX_PHOTOS_PER_VISIT });

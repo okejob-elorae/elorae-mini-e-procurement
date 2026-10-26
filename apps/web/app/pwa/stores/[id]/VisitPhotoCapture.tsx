@@ -22,7 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { compressImage } from "@/lib/pwa/photo/compress";
 import { enqueuePhoto, deletePendingPhoto, listPendingPhotosForVisit, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
-import { MAX_PHOTOS_PER_VISIT } from "@/lib/field-sales/visit-photo-writer";
+import { MAX_PHOTOS_PER_VISIT } from "@/lib/field-sales/visit-photo-cap";
 import { PHOTO_CAP_REACHED_ERROR } from "@/lib/pwa/offline/photo-classify";
 import { flushPendingPhotos } from "@/lib/pwa/offline/photo-sync";
 import type { PendingPhoto } from "@/lib/pwa/offline/db";
