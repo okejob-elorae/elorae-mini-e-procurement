@@ -81,6 +81,16 @@ export async function getItemMovementsAction(input: GetItemMovementsInput): Prom
     throw new Error("INVALID_INCLUDE_UNREGISTERED_REF_TYPES");
   }
 
+  /*
+   * A non-empty bound that does not parse is refused, never dropped: an `undefined` bound is "no
+   * limit", so a typo'd date would widen the result to every row while the operator believes a
+   * range is applied.
+   */
+  const from = input.from ? parseDateOnly(input.from) : undefined;
+  if (input.from && from === undefined) throw new Error("INVALID_DATE");
+  const to = input.to ? parseDateOnlyEnd(input.to) : undefined;
+  if (input.to && to === undefined) throw new Error("INVALID_DATE");
+
   const card = await getItemMovementCard({
     itemId: input.itemId,
     variantSku: input.variantSku,
@@ -90,8 +100,8 @@ export async function getItemMovementsAction(input: GetItemMovementsInput): Prom
      * into (or out of) the filter — same class of bug the aging report's landmine entry
      * names for daysOverdue.
      */
-    from: input.from ? parseDateOnly(input.from) : undefined,
-    to: input.to ? parseDateOnlyEnd(input.to) : undefined,
+    from,
+    to,
     locationTypes: input.locationTypes,
     refTypes: input.refTypes,
     includeUnregisteredRefTypes: input.includeUnregisteredRefTypes,
