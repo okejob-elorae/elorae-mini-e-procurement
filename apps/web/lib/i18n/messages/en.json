@@ -1240,6 +1240,13 @@
     }
   },
   "workOrders": {
+    "export": {
+      "button": "Export Excel",
+      "exporting": "Exporting...",
+      "failed": "Could not export the work order. Try again.",
+      "forbidden": "You do not have permission to export work orders.",
+      "notFound": "Work order not found."
+    },
     "draft": "Draft",
     "issued": "Issued",
     "inProduction": "In Production",

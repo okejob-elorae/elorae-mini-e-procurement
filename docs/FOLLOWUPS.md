@@ -233,6 +233,8 @@ Roadmap slices (not debt) live in `docs/EPIC-STATUS.md` + the GitHub board, NOT 
 
 ### Production — work orders
 - [ ] The work order ratio rows show main-warehouse stock per variant SKU (`getFinishedGoodVariantStock`, `VariantRatioRows`). If ratios move from per-size to per-colour (a separate client request), the stock column must aggregate to the same grouping, or the planner reads a per-size figure beside a per-colour percentage.
+- [ ] The work order read actions (`getWorkOrderById`, `getWorkOrderRollAllocationStatus`, `getMaterialPlan`, `getReconciliation`, `getMaterialIssueForPrint`) check no permission, and `getWorkOrderById` returns the full supplier row, bank fields included, to the client. Gate them and trim the supplier selection to what the page renders.
+- [ ] The work order Excel export layout is Elorae's default. Revisit it if the vendor sends their own format.
 
 ### Inventory — Opname, Reconciliation & Stock UI
 - [x] NULL-variant `InventoryValue` lookup in opname drift/adjustment (`opname-approve.ts`) — PR #158.
