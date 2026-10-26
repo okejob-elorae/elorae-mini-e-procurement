@@ -1190,7 +1190,7 @@ d("supplier payment journal (test bed only)", () => {
     tracked.grnIds.push(grn.id);
 
     const altAccount = await prisma.chartAccount.create({
-      data: { code: `9${token}9`, name: "AP alt (test)", type: "LIABILITAS", depth: 1, isActive: true },
+      data: { code: `9${token}-ALT`, name: "AP alt (test)", type: "LIABILITAS", depth: 1, isActive: true },
     });
 
     try {
@@ -1372,7 +1372,7 @@ d("supplier payment journal (test bed only)", () => {
     tracked.grnIds.push(grnB.id);
 
     const altAccount = await prisma.chartAccount.create({
-      data: { code: `9${token}7`, name: "AP alt split (test)", type: "LIABILITAS", depth: 1, isActive: true },
+      data: { code: `9${token}-ALT-SPLIT`, name: "AP alt split (test)", type: "LIABILITAS", depth: 1, isActive: true },
     });
 
     try {
@@ -1421,7 +1421,7 @@ d("supplier payment journal (test bed only)", () => {
     tracked.grnIds.push(grn.id);
 
     const altAccount = await prisma.chartAccount.create({
-      data: { code: `9${token}6`, name: "AP alt reversal (test)", type: "LIABILITAS", depth: 1, isActive: true },
+      data: { code: `9${token}-ALT-REV`, name: "AP alt reversal (test)", type: "LIABILITAS", depth: 1, isActive: true },
     });
 
     try {

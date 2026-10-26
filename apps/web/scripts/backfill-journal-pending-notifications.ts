@@ -1,5 +1,5 @@
 /**
- * One-shot: give the existing unread JOURNAL_PENDING backlog a bell entry.
+ * One-shot: give the existing JOURNAL_PENDING backlog a bell entry.
  *
  * Those alerts stay actionable indefinitely — the document genuinely still has no journal and
  * someone must press the retry button — unlike the approval and store-change categories, whose
@@ -11,6 +11,13 @@
  * And it dedups on the AdminNotification row id rather than anything in its metadata, because
  * the JOURNAL_PENDING writers do not agree on a metadata shape — some write `docId`, the sales
  * sweep writes `orderId`.
+ *
+ * No `readAt` filter: nothing ever sets `AdminNotification.readAt` (the bell tracks read state on
+ * NotificationQueue), so filtering on it matched every row anyway. Re-runs stay safe through the
+ * per-user dedup below, not through that column.
+ *
+ * Run it in a quiet window: it inserts one row per notification per recipient, and the bell
+ * lists only the newest 50, so a large backlog evicts real notifications from view.
  *
  * Dry-run by default:
  *   pnpm exec tsx scripts/backfill-journal-pending-notifications.ts
@@ -27,16 +34,10 @@ const PERMISSION = "journals:manage";
 
 function assertApplyAllowed(url: string): void {
   if (/:3308(\/|$)/.test(url)) return;
-  if (/:(3306|3307)(\/|$)/.test(url)) {
-    if (!confirm) {
-      throw new Error("Refusing write: prod-tunnel URL. Pass --confirm-prod-writes (and --apply).");
-    }
-    console.warn("WARNING: writing against prod-tunnel DATABASE_URL.");
-    return;
-  }
   if (!confirm) {
-    throw new Error("Refusing write: not local testbed. Pass --confirm-prod-writes.");
+    throw new Error("Refusing write: DATABASE_URL is not the :3308 testbed. Pass --apply --confirm-prod-writes.");
   }
+  console.warn("WARNING: writing against a non-testbed DATABASE_URL (--confirm-prod-writes given).");
 }
 
 async function main() {
@@ -48,11 +49,11 @@ async function main() {
 
   try {
     const pending = await prisma.adminNotification.findMany({
-      where: { category: CATEGORY, readAt: null },
+      where: { category: CATEGORY },
       orderBy: { createdAt: "asc" },
       select: { id: true, title: true, message: true, metadata: true, createdAt: true },
     });
-    console.log(`\nUnread ${CATEGORY}: ${pending.length}`);
+    console.log(`\n${CATEGORY} notifications: ${pending.length}`);
     if (pending.length === 0) return;
 
     const permission = await prisma.permission.findUnique({ where: { code: PERMISSION } });
@@ -103,6 +104,7 @@ async function main() {
     }
 
     assertApplyAllowed(url);
+    console.warn("WARNING: run this in a quiet window - a large backlog pushes real notifications out of the bell's newest 50.");
 
     let created = 0;
     for (const row of toCreate) {

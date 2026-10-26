@@ -63,8 +63,8 @@ const EPSILON = 1e-6;
 /**
  * The reasons a real submit attempt can plausibly hit get their own copy. Everything else
  * `submitStoreSettlementAction` can return falls back to `errGeneric` — this is a `Partial`
- * map, not the exhaustive `Record<SettlementErrorCode, …>` this codebase's landmine index warns
- * about, so a code with no entry here fails safe onto the fallback instead of failing a build.
+ * map, not the exhaustive `Record<SettlementErrorCode, …>` `docs/landmines/finance-ar.md` warns
+ * about (the `SettlementErrorCode` entry), so a code with no entry here fails safe onto the fallback instead of failing a build.
  */
 const REASON_KEY: Partial<Record<SettlementActionReason, string>> = {
   UNAUTHENTICATED: "errUnauthenticated",
@@ -268,7 +268,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
    * This preview MUST run through `computeSettlementTotals` — the exact pure function
    * `submitSettlement` recomputes server-side from its own trusted figures — never its own
    * arithmetic. A screen with independent math here recreates the preview-vs-writer mismatch
-   * this codebase's landmine index already names twice.
+   * `docs/landmines/finance-ar.md` already names twice (the settlement admin-fee/preview entry).
    */
   const invoiceAmountValues = selectedInvoiceRows.map((inv) => parseAmount(invoiceAmountInputs[inv.receivableId] ?? ""));
   const deductionInputsForCalc: SettlementDeductionInput[] = rows.map((row) => {
