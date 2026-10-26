@@ -468,6 +468,21 @@ export async function getStoreSentItems(storeId: string): Promise<StoreSentItemR
 }
 
 /**
+ * One page of `getStoreSentItems`, with the full row count. The figures come from the same
+ * aggregation, so a page can never disagree with the unpaged list; only the slice is cut. An
+ * out-of-range `page` is clamped to the last one and the page actually served is returned.
+ */
+export async function getStoreSentItemsPage(
+  storeId: string,
+  paging: { page: number; pageSize: number },
+): Promise<{ rows: StoreSentItemRow[]; total: number; page: number }> {
+  const all = await getStoreSentItems(storeId);
+  const lastPage = Math.max(1, Math.ceil(all.length / paging.pageSize));
+  const page = Math.min(Math.max(1, paging.page), lastPage);
+  return { rows: all.slice((page - 1) * paging.pageSize, page * paging.pageSize), total: all.length, page };
+}
+
+/**
  * Items this store has had on any non-rejected konsi order line that is not fully cancelled —
  * the "already sent" set behind the never-sent suggestions and the approve writer's ALREADY_SENT
  * check. A line closed with nothing delivered (`cancelledQty >= qty`) never reached the store, so

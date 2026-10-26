@@ -5,6 +5,7 @@ import {
   buildStoreNpwpWhere,
   createStore,
   listStores,
+  listVisitsForStorePage,
   parseStoreLocationFilter,
   parseStoreNpwpFilter,
   updateStore,
@@ -786,5 +787,60 @@ d("listStores NPWP filter (test bed only)", () => {
     await updateStore(id, fields("TRIM", { npwp: " \t " }));
     row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(id) }, select: { npwp: true } });
     expect(row.npwp).toBeNull();
+  });
+});
+
+d("listVisitsForStorePage (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let storeId = "";
+  let userId = "";
+
+  beforeEach(async () => {
+    storeId = "";
+    userId = "";
+    const store = await prisma.store.create({ data: { code: `VP-${token}`, name: "Visit page store", address: "x", termsType: "PUTUS", isActive: true } });
+    storeId = store.id;
+    const user = await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } });
+    userId = user.id;
+    /* Five visits, one hour apart, the newest (index 4) checked in last. */
+    for (let i = 0; i < 5; i++) {
+      await prisma.storeVisit.create({
+        data: { storeId, userId, checkinLat: 0, checkinLng: 0, checkinAt: new Date(Date.UTC(2026, 0, 1, i)), checkoutAt: new Date(Date.UTC(2026, 0, 1, i, 30)) },
+      });
+    }
+  });
+
+  afterEach(async () => {
+    await prisma.storeVisit.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
+  });
+
+  it("returns the total and latest check-in of every visit, whatever the page", async () => {
+    const res = await listVisitsForStorePage(storeId, { page: 2, pageSize: 2 });
+    expect(res.total).toBe(5);
+    expect(res.latestCheckinAt?.toISOString()).toBe(new Date(Date.UTC(2026, 0, 1, 4)).toISOString());
+  });
+
+  it("serves page 2 as the third and fourth newest visits", async () => {
+    const res = await listVisitsForStorePage(storeId, { page: 2, pageSize: 2 });
+    expect(res.page).toBe(2);
+    expect(res.rows.map((r) => r.checkinAt.getUTCHours())).toEqual([2, 1]);
+  });
+
+  it("serves a short last page", async () => {
+    const res = await listVisitsForStorePage(storeId, { page: 3, pageSize: 2 });
+    expect(res.rows.map((r) => r.checkinAt.getUTCHours())).toEqual([0]);
+  });
+
+  it("clamps an out-of-range page to the last one", async () => {
+    const res = await listVisitsForStorePage(storeId, { page: 99, pageSize: 2 });
+    expect(res.page).toBe(3);
+    expect(res.rows).toHaveLength(1);
+  });
+
+  it("reports a store with no visits as an empty first page", async () => {
+    await prisma.storeVisit.deleteMany({ where: { storeId: seededId(storeId) } });
+    const res = await listVisitsForStorePage(storeId, { page: 1, pageSize: 2 });
+    expect(res).toMatchObject({ rows: [], total: 0, page: 1, latestCheckinAt: null });
   });
 });

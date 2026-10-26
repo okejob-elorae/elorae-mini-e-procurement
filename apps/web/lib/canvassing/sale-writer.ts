@@ -9,7 +9,7 @@ import { variantDetailForSku } from "@/lib/items/variants";
 export type VanSaleLineInput = { itemId: string; variantSku: string | null; qty: number };
 export type RecordVanSaleResult =
   | { ok: true; saleId: string; docNo: string; changeAmount: number }
-  | { ok: false; code: "EMPTY" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" }
+  | { ok: false; code: "EMPTY" | "STORE_NOT_FOUND" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" }
   | { ok: false; code: "INSUFFICIENT_VAN_STOCK"; shortLines: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> };
 
 function mergeLines(lines: VanSaleLineInput[]): VanSaleLineInput[] {
@@ -54,6 +54,7 @@ export async function recordVanSale(input: {
     let priceDiscount: number | null = null;
     if (input.storeId) {
       const storeRow = await tx.store.findUnique({ where: { id: input.storeId }, select: { priceDiscountPercent: true } });
+      if (!storeRow) return { ok: false, code: "STORE_NOT_FOUND" };
       priceDiscount = storeRow?.priceDiscountPercent == null ? null : Number(storeRow.priceDiscountPercent);
     }
 

@@ -453,14 +453,10 @@ export async function getActiveVisit(userId: string) {
   };
 }
 
-export async function listVisitsForStore(storeId: string, limit: number) {
-  const rows = await prisma.storeVisit.findMany({
-    where: { storeId },
-    include: { user: { select: { name: true, email: true } } },
-    orderBy: { checkinAt: "desc" },
-    take: limit,
-  });
-  return rows.map(r => ({
+type VisitRow = Prisma.StoreVisitGetPayload<{ include: { user: { select: { name: true; email: true } } } }>;
+
+function mapVisitRow(r: VisitRow) {
+  return {
     id: r.id,
     checkinAt: r.checkinAt,
     checkoutAt: r.checkoutAt,
@@ -472,7 +468,38 @@ export async function listVisitsForStore(storeId: string, limit: number) {
     checkinOutOfRadius: r.checkinOutOfRadius,
     checkinDistanceMeters: r.checkinDistanceMeters,
     user: r.user,
-  }));
+  };
+}
+
+/** The latest `limit` visits only. A caller that needs a page plus the total uses `listVisitsForStorePage`. */
+export async function listVisitsForStore(storeId: string, limit: number) {
+  const rows = await prisma.storeVisit.findMany({
+    where: { storeId },
+    include: { user: { select: { name: true, email: true } } },
+    orderBy: { checkinAt: "desc" },
+    take: limit,
+  });
+  return rows.map(mapVisitRow);
+}
+
+/**
+ * One page of a store's visits, newest first. `total` and `latestCheckinAt` cover EVERY visit of
+ * the store, not just the page, so the detail screen's stats stay right on page 2. An out-of-range
+ * `page` is clamped to the last one and the page actually served is returned.
+ */
+export async function listVisitsForStorePage(storeId: string, paging: { page: number; pageSize: number }) {
+  const agg = await prisma.storeVisit.aggregate({ where: { storeId }, _count: { _all: true }, _max: { checkinAt: true } });
+  const total = agg._count._all;
+  const lastPage = Math.max(1, Math.ceil(total / paging.pageSize));
+  const page = Math.min(Math.max(1, paging.page), lastPage);
+  const rows = await prisma.storeVisit.findMany({
+    where: { storeId },
+    include: { user: { select: { name: true, email: true } } },
+    orderBy: [{ checkinAt: "desc" }, { id: "desc" }],
+    skip: (page - 1) * paging.pageSize,
+    take: paging.pageSize,
+  });
+  return { rows: rows.map(mapVisitRow), total, page, latestCheckinAt: agg._max.checkinAt };
 }
 
 export async function listRecentVisitsForUser(userId: string, limit: number) {

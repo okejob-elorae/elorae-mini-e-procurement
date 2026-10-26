@@ -11,17 +11,18 @@ if (DB_URL.includes(":3307") || DB_URL.includes("api.elorae.cloud")) {
   );
 }
 
-// Mock auth() to return a stable test session — buildSmartRequestAction never reads
-// session.user.id itself, it only gates on a session existing.
+// Mock auth() to return a session for the seeded salesman — the build step resolves the
+// salesman's visit from session.user.id.
+const session = vi.hoisted(() => ({ userId: "TEST_USER_ID" }));
 vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({
-    user: { id: "TEST_USER_ID", email: "test@example.com", permissions: [] },
+    user: { id: session.userId, email: "test@example.com", permissions: [] },
   })),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-import { buildSmartRequestAction } from "./actions";
+import { buildSmartRequestAction, submitSmartRequestOrder } from "./actions";
 
 const PACK_RATIO_KEY = "putus.packRatio";
 
@@ -51,9 +52,14 @@ const suiteName = hasPackRatio
 d(suiteName, () => {
   const tag = `SMARTREQ-${Math.random().toString(36).slice(2, 10)}`;
   let uomId = ""; let itemId = ""; let categoryId = ""; let storeId = ""; let plainStoreId = "";
+  let noVisitStoreId = ""; let konsiStoreId = ""; let foreignVisitId = "";
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; categoryId = ""; storeId = ""; plainStoreId = "";
+    noVisitStoreId = ""; konsiStoreId = ""; foreignVisitId = "";
+
+    const salesman = await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } });
+    session.userId = salesman.id;
 
     const category = await prisma.itemCategory.create({ data: { name: `Cat ${tag}` } });
     categoryId = category.id;
@@ -84,14 +90,29 @@ d(suiteName, () => {
       data: { code: `${tag}-PLAIN`, name: "Toko Smart Request Biasa", address: "Jl. Test", termsType: "PUTUS", isActive: true },
     });
     plainStoreId = plainStore.id;
+
+    const noVisitStore = await prisma.store.create({
+      data: { code: `${tag}-NOVIS`, name: "Toko Tanpa Kunjungan", address: "Jl. Test", termsType: "PUTUS", isActive: true },
+    });
+    noVisitStoreId = noVisitStore.id;
+
+    const konsiStore = await prisma.store.create({
+      data: { code: `${tag}-KONSI`, name: "Toko Konsi", address: "Jl. Test", termsType: "KONSI", isActive: true },
+    });
+    konsiStoreId = konsiStore.id;
+
+    for (const id of [storeId, plainStoreId, konsiStoreId]) {
+      await prisma.storeVisit.create({ data: { storeId: id, userId: salesman.id, checkinLat: 0, checkinLng: 0 } });
+    }
   });
 
   afterEach(async () => {
+    await prisma.storeVisit.deleteMany({ where: { storeId: { in: [storeId, plainStoreId, noVisitStoreId, konsiStoreId].map(seededId) } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(categoryId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
-    await prisma.store.deleteMany({ where: { id: { in: [seededId(storeId), seededId(plainStoreId)] } } });
+    await prisma.store.deleteMany({ where: { id: { in: [storeId, plainStoreId, noVisitStoreId, konsiStoreId].map(seededId) } } });
   });
 
   it("prices the smart-request preview line off the store's priceDiscountPercent", async () => {
@@ -110,5 +131,31 @@ d(suiteName, () => {
     const line = res.lines.find((l) => l.itemId === itemId);
     expect(line).toBeDefined();
     expect(line!.unitPrice).toBe(5000);
+  });
+
+  it("fails fast with NO_ACTIVE_VISIT when the salesman has no open visit at the store", async () => {
+    const res = await buildSmartRequestAction({ storeId: noVisitStoreId, categories: [{ categoryId, packs: 1 }] });
+    expect(res).toEqual({ ok: false, code: "NO_ACTIVE_VISIT" });
+  });
+
+  it("fails with NO_ACTIVE_VISIT for a visit that belongs to another user", async () => {
+    const other = await prisma.user.findFirstOrThrow({ where: { email: { not: "salesman@elorae.com" } } });
+    const foreign = await prisma.storeVisit.create({ data: { storeId: noVisitStoreId, userId: other.id, checkinLat: 0, checkinLng: 0 } });
+    foreignVisitId = foreign.id;
+    const res = await buildSmartRequestAction({ storeId: noVisitStoreId, visitId: foreignVisitId, categories: [{ categoryId, packs: 1 }] });
+    expect(res).toEqual({ ok: false, code: "NO_ACTIVE_VISIT" });
+  });
+
+  it("rejects a KONSI store on build, even with an open visit", async () => {
+    const res = await buildSmartRequestAction({ storeId: konsiStoreId, categories: [{ categoryId, packs: 1 }] });
+    expect(res).toEqual({ ok: false, code: "KONSI_NOT_SUPPORTED" });
+  });
+
+  it("rejects a KONSI store on submit before touching the order writer", async () => {
+    const res = await submitSmartRequestOrder({
+      storeId: konsiStoreId,
+      lines: [{ itemId, variantSku: "", productName: "T", qty: 1, unitPrice: 5000 }],
+    });
+    expect(res).toEqual({ ok: false, code: "KONSI_NOT_SUPPORTED" });
   });
 });

@@ -10,6 +10,7 @@ import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { NoActiveVisitError, MinQtyViolationError, InvalidOrderTransitionError, InsufficientStockError, InvalidAddedLineError, InvalidFinalPriceError, CreditLimitExceededError, ItemUnavailableError } from "./errors";
 import { checkFinalPrices } from "./final-prices";
+import { findOrderVisit } from "./visit";
 import { sentItemIds } from "./queries";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
 import { isStockableVariantKey } from "@/lib/items/variants";
@@ -53,22 +54,9 @@ export async function createFieldSalesOrder(input: {
       if (existing) return { orderId: existing.id, orderNo: existing.orderNo, oversell: [] as OversellAlert[], creditHold: existing.creditHoldAtCreate };
     }
 
-    let visitId: string;
-    if (input.visitId) {
-      const v = await tx.storeVisit.findFirst({
-        where: { id: input.visitId, storeId: input.storeId, userId: input.salesmanId },
-        select: { id: true },
-      });
-      if (!v) throw new NoActiveVisitError(input.storeId, input.salesmanId);
-      visitId = v.id;
-    } else {
-      const active = await tx.storeVisit.findFirst({
-        where: { storeId: input.storeId, userId: input.salesmanId, checkoutAt: null },
-        select: { id: true },
-      });
-      if (!active) throw new NoActiveVisitError(input.storeId, input.salesmanId);
-      visitId = active.id;
-    }
+    const visit = await findOrderVisit(tx, input);
+    if (!visit) throw new NoActiveVisitError(input.storeId, input.salesmanId);
+    const visitId = visit.id;
 
     /* Same predicate as the konsi approve path's added lines. */
     const lineItemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));

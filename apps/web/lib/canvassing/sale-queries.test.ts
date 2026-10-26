@@ -33,20 +33,28 @@ d("getSellableVanStock (test bed only)", () => {
   });
 
   it("prices a discounted store's stock off its priceDiscountPercent", async () => {
-    const rows = await getSellableVanStock(salesmanId, storeId);
-    const row = rows.find((r) => r.itemId === itemId);
+    const res = await getSellableVanStock(salesmanId, storeId);
+    if (!res.ok) throw new Error("expected ok");
+    const row = res.rows.find((r) => r.itemId === itemId);
     expect(row?.price).toBe(4000); // 5000 * (1 - 20/100)
   });
 
   it("prices at list for a walk-in with no storeId", async () => {
-    const rows = await getSellableVanStock(salesmanId, null);
-    const row = rows.find((r) => r.itemId === itemId);
+    const res = await getSellableVanStock(salesmanId, null);
+    if (!res.ok) throw new Error("expected ok");
+    const row = res.rows.find((r) => r.itemId === itemId);
     expect(row?.price).toBe(5000);
   });
 
   it("prices at list when storeId is omitted entirely", async () => {
-    const rows = await getSellableVanStock(salesmanId);
-    const row = rows.find((r) => r.itemId === itemId);
+    const res = await getSellableVanStock(salesmanId);
+    if (!res.ok) throw new Error("expected ok");
+    const row = res.rows.find((r) => r.itemId === itemId);
     expect(row?.price).toBe(5000);
+  });
+
+  it("returns STORE_NOT_FOUND for a store id that does not exist", async () => {
+    const res = await getSellableVanStock(salesmanId, `${tag}-missing`);
+    expect(res).toEqual({ ok: false, code: "STORE_NOT_FOUND" });
   });
 });

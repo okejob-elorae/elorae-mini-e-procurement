@@ -96,6 +96,14 @@ d("recordVanSale (test bed only)", () => {
     expect(Number(van!.qty)).toBe(15);                 // 20 - 5
   });
 
+  it("returns STORE_NOT_FOUND for an unknown store and writes nothing", async () => {
+    const before = await prisma.vanStock.findFirst({ where: { userId: salesmanId, itemId } });
+    const res = await recordVanSale({ salesmanId, storeId: `${tag}-missing`, lines: [line(2)], amountPaid: 999999 });
+    expect(res).toEqual({ ok: false, code: "STORE_NOT_FOUND" });
+    const after = await prisma.vanStock.findFirst({ where: { userId: salesmanId, itemId } });
+    expect(Number(after!.qty)).toBe(Number(before!.qty));
+  });
+
   it("persists the store's discounted, rounded unitPrice for a store sale; list price for a walk-in", async () => {
     const store = await prisma.store.create({
       data: { code: `${tag}-S`, name: "Disc Store", address: "x", termsType: "PUTUS", priceDiscountPercent: 15 },

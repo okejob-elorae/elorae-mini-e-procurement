@@ -5,6 +5,7 @@ import { lineCostTotal } from "./van-journal-values";
 import { findPostableJournalDocIds } from "./journal-pending";
 
 export type SellableVanRow = { itemId: string; sku: string; productName: string; variantSku: string | null; variantLabel: string | null; qtyOnVan: number; price: number | null };
+export type SellableVanStockResult = { ok: true; rows: SellableVanRow[] } | { ok: false; code: "STORE_NOT_FOUND" };
 export type VanSaleListRow = { id: string; docNo: string; salesmanLabel: string; buyerLabel: string; total: number; createdAtIso: string };
 export type VanSaleDetail = {
   id: string; docNo: string; salesmanLabel: string; storeName: string | null; buyerName: string | null; buyerPhone: string | null;
@@ -22,7 +23,7 @@ export type VanSaleDetail = {
  * derives change off this row's `price`; a preview that ignores the store's discount overstates
  * the total and the change actually handed back, which is real cash, not just a display bug.
  */
-export async function getSellableVanStock(salesmanId: string, storeId?: string | null): Promise<SellableVanRow[]> {
+export async function getSellableVanStock(salesmanId: string, storeId?: string | null): Promise<SellableVanStockResult> {
   /**
    * Van sale price = PUTUS = item sellingPrice, even at a KONSI store (the store markup only prices the
    * KONSI branch, which van sales never take), but priceDiscountPercent DOES apply — mirrors
@@ -31,14 +32,15 @@ export async function getSellableVanStock(salesmanId: string, storeId?: string |
   let priceDiscountPercent: number | null = null;
   if (storeId) {
     const store = await prisma.store.findUnique({ where: { id: storeId }, select: { priceDiscountPercent: true } });
-    priceDiscountPercent = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
+    if (!store) return { ok: false, code: "STORE_NOT_FOUND" };
+    priceDiscountPercent = store.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
   }
   const rows = await prisma.vanStock.findMany({
     where: { userId: salesmanId, qty: { gt: 0 } },
     include: { item: { select: { sku: true, nameId: true, sellingPrice: true, variants: true } } },
     orderBy: { item: { nameId: "asc" } },
   });
-  return rows.map((r) => {
+  const sellable = rows.map((r) => {
     const sp = r.item.sellingPrice === null ? null : Number(r.item.sellingPrice);
     const { price } = computeStorePrice({ sellingPrice: sp, termsType: "PUTUS", markupPercent: null, priceDiscountPercent });
     return {
@@ -47,6 +49,7 @@ export async function getSellableVanStock(salesmanId: string, storeId?: string |
       qtyOnVan: Number(r.qty), price,
     };
   });
+  return { ok: true, rows: sellable };
 }
 
 export async function listVanSales(

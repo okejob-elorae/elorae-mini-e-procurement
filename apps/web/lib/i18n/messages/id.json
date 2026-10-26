@@ -3381,7 +3381,8 @@
       "errorUnauthorized": "Sesi berakhir. Masuk lagi.",
       "errorEmpty": "Tidak ada item.",
       "errorMinQty": "Jumlah di bawah minimum.",
-      "errorItemUnavailable": "Ada produk di pesanan ini yang sudah tidak dijual. Hapus produknya lalu kirim ulang."
+      "errorItemUnavailable": "Ada produk di pesanan ini yang sudah tidak dijual. Hapus produknya lalu kirim ulang.",
+      "errorKonsiNotSupported": "Pesanan Cepat tidak tersedia untuk toko konsinyasi. Gunakan katalog."
     },
     "notifications": {
       "title": "Notifikasi",
@@ -4887,6 +4888,7 @@
     "submitting": "Memproses…",
     "successToast": "Penjualan tercatat ({docNo})",
     "errEmpty": "Tambahkan setidaknya satu item.",
+    "errStoreNotFound": "Toko tidak ditemukan lagi. Pilih pembeli lain.",
     "errNoPrice": "Satu atau lebih item belum memiliki harga.",
     "errInsufficientPayment": "Uang diterima tidak mencukupi total.",
     "errInsufficientStock": "Stok mobil tidak cukup untuk satu atau lebih baris.",

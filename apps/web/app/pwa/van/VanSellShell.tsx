@@ -88,7 +88,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
   // reprice for the new key lands, independent of whether `repricing` has already flipped back
   // to false (e.g. after a failed fetch).
   const [pricedForKey, setPricedForKey] = useState("");
-  const [repriceError, setRepriceError] = useState<"UNAUTHORIZED" | "GENERIC" | null>(null);
+  const [repriceError, setRepriceError] = useState<"UNAUTHORIZED" | "STORE_NOT_FOUND" | "GENERIC" | null>(null);
   const [repriceNonce, setRepriceNonce] = useState(0);
   useEffect(() => {
     if (skipFirstReprice.current) {
@@ -231,10 +231,13 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
   // One-line reason surfaced directly above the submit button — the Alert above is off-screen
   // once the item list scrolls, but the sticky cash bar (and its disabled submit) is always
   // visible, so the explanation has to live there too.
+  const repriceErrorText = repriceError === "UNAUTHORIZED"
+    ? t("errUnauthorized")
+    : repriceError === "STORE_NOT_FOUND"
+      ? t("errStoreNotFound")
+      : t("repriceFailed");
   const submitBlockedReason = repriceError
-    ? repriceError === "UNAUTHORIZED"
-      ? t("errUnauthorized")
-      : t("repriceFailed")
+    ? repriceErrorText
     : pricingStale || repricing
       ? t("updatingPrices")
       : null;
@@ -264,16 +267,14 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
         toast.error(t("errInsufficientStock"));
         return;
       }
-      const msg =
-        res.reason === "NO_PRICE"
-          ? t("errNoPrice")
-          : res.reason === "INSUFFICIENT_PAYMENT"
-            ? t("errInsufficientPayment")
-            : res.reason === "UNAUTHORIZED"
-              ? t("errUnauthorized")
-              : res.reason === "VALIDATION"
-                ? t("errValidation")
-                : t("errEmpty");
+      const msgByReason: Record<string, string> = {
+        STORE_NOT_FOUND: t("errStoreNotFound"),
+        NO_PRICE: t("errNoPrice"),
+        INSUFFICIENT_PAYMENT: t("errInsufficientPayment"),
+        UNAUTHORIZED: t("errUnauthorized"),
+        VALIDATION: t("errValidation"),
+      };
+      const msg = msgByReason[res.reason] ?? t("errEmpty");
       toast.error(msg);
     });
   }
@@ -392,7 +393,7 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
         {repriceError && (
           <Alert variant="destructive">
             <AlertDescription className="flex items-center justify-between gap-2">
-              <span>{repriceError === "UNAUTHORIZED" ? t("errUnauthorized") : t("repriceFailed")}</span>
+              <span>{repriceErrorText}</span>
               <Button type="button" size="sm" variant="outline" onClick={retryReprice} disabled={repricing}>
                 {t("retry")}
               </Button>

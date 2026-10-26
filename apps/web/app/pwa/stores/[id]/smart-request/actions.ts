@@ -7,6 +7,7 @@ import { computeStorePrice } from "@elorae/db/pricing";
 import { auth } from "@/lib/auth";
 import { createFieldSalesOrder } from "@/lib/field-sales/writer";
 import { NoActiveVisitError, MinQtyViolationError, ItemUnavailableError } from "@/lib/field-sales/errors";
+import { findOrderVisit } from "@/lib/field-sales/visit";
 import { getPackRatio } from "@/app/actions/settings/pack-ratio";
 import { getSmartRequestHistory } from "@/lib/field-sales/queries";
 import { loadSmartRequestCandidates } from "@/lib/field-sales/smart-request/load-candidates";
@@ -26,10 +27,12 @@ export type SmartRequestLine = {
 export type SmartRequestDrop = { categoryId: string; itemId: string; sku: string; reason: string; detail?: string };
 export type BuildSmartRequestResult =
   | { ok: true; lines: SmartRequestLine[]; dropped: SmartRequestDrop[]; underfill: CategoryUnderfill[] }
-  | { ok: false; code: "UNAUTHORIZED" | "NO_RATIO" | "EMPTY" };
+  | { ok: false; code: "UNAUTHORIZED" | "NO_RATIO" | "EMPTY" | "NO_ACTIVE_VISIT" | "KONSI_NOT_SUPPORTED" };
+export type SubmitSmartRequestResult = SubmitResult | { ok: false; code: "KONSI_NOT_SUPPORTED" };
 
 const buildSchema = z.object({
   storeId: z.string().min(1),
+  visitId: z.string().optional(),
   categories: z.array(z.object({ categoryId: z.string().min(1), packs: z.number().int().positive() })).min(1),
 });
 
@@ -38,6 +41,13 @@ export async function buildSmartRequestAction(input: unknown): Promise<BuildSmar
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
   const parsed = buildSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "EMPTY" };
+
+  const store = await prisma.store.findUnique({ where: { id: parsed.data.storeId }, select: { termsType: true, markupPercent: true, priceDiscountPercent: true } });
+  if (store?.termsType === "KONSI") return { ok: false, code: "KONSI_NOT_SUPPORTED" };
+
+  /* Same visit check the submit writer enforces, so a missing or foreign visit fails before any planning work. */
+  const visit = await findOrderVisit(prisma, { storeId: parsed.data.storeId, salesmanId: session.user.id, visitId: parsed.data.visitId });
+  if (!visit) return { ok: false, code: "NO_ACTIVE_VISIT" };
 
   const ratio = await getPackRatio();
   if (ratio.length === 0) return { ok: false, code: "NO_RATIO" };
@@ -60,7 +70,6 @@ export async function buildSmartRequestAction(input: unknown): Promise<BuildSmar
     where: { id: { in: itemIds } },
     select: { id: true, nameId: true, sellingPrice: true, variants: true },
   });
-  const store = await prisma.store.findUnique({ where: { id: parsed.data.storeId }, select: { termsType: true, markupPercent: true, priceDiscountPercent: true } });
   const markup = store?.markupPercent == null ? null : Number(store.markupPercent);
   const priceDiscount = store?.priceDiscountPercent == null ? null : Number(store.priceDiscountPercent);
   const itemById = new Map(items.map((i) => [i.id, i]));
@@ -98,11 +107,13 @@ const submitSchema = z.object({
   idempotencyKey: z.string().optional(),
 });
 
-export async function submitSmartRequestOrder(input: unknown): Promise<SubmitResult> {
+export async function submitSmartRequestOrder(input: unknown): Promise<SubmitSmartRequestResult> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
   const parsed = submitSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "EMPTY" };
+  const store = await prisma.store.findUnique({ where: { id: parsed.data.storeId }, select: { termsType: true } });
+  if (store?.termsType === "KONSI") return { ok: false, code: "KONSI_NOT_SUPPORTED" };
   try {
     const { orderNo, creditHold } = await createFieldSalesOrder({
       storeId: parsed.data.storeId,

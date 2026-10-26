@@ -3381,7 +3381,8 @@
       "errorUnauthorized": "Session expired. Log in again.",
       "errorEmpty": "No items.",
       "errorMinQty": "Quantity below the minimum.",
-      "errorItemUnavailable": "An item in this order is no longer sold. Remove it and send again."
+      "errorItemUnavailable": "An item in this order is no longer sold. Remove it and send again.",
+      "errorKonsiNotSupported": "Quick Order isn't available for consignment stores. Use the catalog instead."
     },
     "notifications": {
       "title": "Notifications",
@@ -4887,6 +4888,7 @@
     "submitting": "Processing…",
     "successToast": "Sale recorded ({docNo})",
     "errEmpty": "Add at least one item.",
+    "errStoreNotFound": "That store no longer exists. Pick another buyer.",
     "errNoPrice": "One or more items don't have a price set.",
     "errInsufficientPayment": "Cash tendered does not cover the total.",
     "errInsufficientStock": "Not enough van stock for one or more lines.",

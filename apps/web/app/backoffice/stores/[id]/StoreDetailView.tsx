@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
@@ -36,6 +36,7 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Pagination } from "@/components/ui/pagination";
 import {
   Card,
   CardContent,
@@ -171,6 +172,8 @@ type Props = {
   visits: Visit[];
   orders: OrderRow[];
   sentItems: StoreSentItemRow[];
+  sentItemsPaging: { page: number; total: number; pageSize: number };
+  visitsPaging: { page: number; total: number; pageSize: number; latestCheckinAtIso: string | null };
   /** Only ever populated for a KONSI store — a PUTUS store never has a stock ledger to show. */
   stockCard: StockCardProps | null;
   /** Only ever populated for a KONSI store — same gate as `stockCard`. */
@@ -322,6 +325,8 @@ export function StoreDetailView({
   visits,
   orders,
   sentItems,
+  sentItemsPaging,
+  visitsPaging,
   stockCard,
   stocktakes,
   countSchedule,
@@ -359,8 +364,23 @@ export function StoreDetailView({
   const [raiseNote, setRaiseNote] = useState("");
   const [raising, startRaiseTransition] = useTransition();
 
-  const totalVisits = visits.length;
-  const lastVisit = visits[0];
+  const totalVisits = visitsPaging.total;
+  const lastVisitAtIso = visitsPaging.latestCheckinAtIso;
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [pagePending, startPageTransition] = useTransition();
+  const visitsTotalPages = Math.max(1, Math.ceil(visitsPaging.total / visitsPaging.pageSize));
+  const sentTotalPages = Math.max(1, Math.ceil(sentItemsPaging.total / sentItemsPaging.pageSize));
+
+  function goToPage(param: "visitsPage" | "sentPage", next: number): void {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next <= 1) params.delete(param);
+    else params.set(param, String(next));
+    const qs = params.toString();
+    startPageTransition(() => {
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    });
+  }
   const sentItemGroups = groupSentItemsByArticle(sentItems);
 
   function handleStartStocktake(): void {
@@ -656,7 +676,7 @@ export function StoreDetailView({
               <span className="font-semibold tabular-nums">{totalVisits}</span>
             </DetailField>
             <DetailField label={tDetail("stats.lastVisit")}>
-              {lastVisit ? formatDateTime(lastVisit.checkinAtIso) : tDetail("noVisits")}
+              {lastVisitAtIso ? formatDateTime(lastVisitAtIso) : tDetail("noVisits")}
             </DetailField>
             <DetailField label={tDetail("stats.terms")}>
               <span className="tabular-nums">
@@ -676,15 +696,15 @@ export function StoreDetailView({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {visits.length === 0 ? (
+          {visitsPaging.total === 0 ? (
             <div className="text-center py-8">
               <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">{tDetail("noVisits")}</p>
             </div>
           ) : (
-            <div className="overflow-auto max-h-96 rounded-md border">
+            <div className={cn("overflow-auto rounded-md border", pagePending && "opacity-60 transition-opacity")} aria-busy={pagePending}>
               <Table>
-                <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableHeader className="bg-background">
                   <TableRow>
                     <TableHead>{tDetail("visitTable.checkin")}</TableHead>
                     <TableHead>{tDetail("visitTable.checkout")}</TableHead>
@@ -751,6 +771,15 @@ export function StoreDetailView({
                 </TableBody>
               </Table>
             </div>
+          )}
+          {visitsPaging.total > 0 && (
+            <Pagination
+              page={visitsPaging.page}
+              totalPages={visitsTotalPages}
+              totalCount={visitsPaging.total}
+              pageSize={visitsPaging.pageSize}
+              onPageChange={(next) => goToPage("visitsPage", next)}
+            />
           )}
         </CardContent>
       </Card>
@@ -896,19 +925,19 @@ export function StoreDetailView({
           <CardTitle className="flex items-center gap-2 text-base">
             <Package className="h-4 w-4" />
             {tSentItems("cardTitle")}
-            <span className="text-sm font-normal text-muted-foreground ml-2">({sentItems.length})</span>
+            <span className="text-sm font-normal text-muted-foreground ml-2">({sentItemsPaging.total})</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {sentItems.length === 0 ? (
+          {sentItemsPaging.total === 0 ? (
             <div className="text-center py-8">
               <Package className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="text-sm text-muted-foreground">{tSentItems("empty")}</p>
             </div>
           ) : (
-            <div className="overflow-auto max-h-96 rounded-md border">
+            <div className={cn("overflow-auto rounded-md border", pagePending && "opacity-60 transition-opacity")} aria-busy={pagePending}>
               <Table>
-                <TableHeader className="sticky top-0 z-10 bg-background">
+                <TableHeader className="bg-background">
                   <TableRow>
                     <TableHead>{tSentItems("colArticle")}</TableHead>
                     <TableHead>{tSentItems("colSize")}</TableHead>
@@ -937,6 +966,15 @@ export function StoreDetailView({
                 </TableBody>
               </Table>
             </div>
+          )}
+          {sentItemsPaging.total > 0 && (
+            <Pagination
+              page={sentItemsPaging.page}
+              totalPages={sentTotalPages}
+              totalCount={sentItemsPaging.total}
+              pageSize={sentItemsPaging.pageSize}
+              onPageChange={(next) => goToPage("sentPage", next)}
+            />
           )}
         </CardContent>
       </Card>

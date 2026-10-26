@@ -119,10 +119,13 @@ export function SmartRequestShell({
       try {
         const res = await buildSmartRequestAction({
           storeId,
+          visitId,
           categories: Array.from(selected, ([categoryId, packs]) => ({ categoryId, packs })),
         });
         if (!res.ok) {
           if (res.code === "NO_RATIO") setBuildError("NO_RATIO");
+          else if (res.code === "NO_ACTIVE_VISIT") toast.error(t("errorNoActiveVisit"));
+          else if (res.code === "KONSI_NOT_SUPPORTED") toast.error(t("errorKonsiNotSupported"));
           else toast.error(t("buildError"));
           return;
         }
@@ -171,6 +174,7 @@ export function SmartRequestShell({
         else if (res.code === "UNAUTHORIZED") msg = t("errorUnauthorized");
         else if (res.code === "MIN_QTY") msg = t("errorMinQty");
         else if (res.code === "ITEM_UNAVAILABLE") msg = t("errorItemUnavailable");
+        else if (res.code === "KONSI_NOT_SUPPORTED") msg = t("errorKonsiNotSupported");
         else msg = t("errorEmpty");
         toast.error(msg);
       } catch {
@@ -347,6 +351,7 @@ export function SmartRequestShell({
             <div className="flex flex-col items-center gap-3 py-12 text-center">
               <PackageX className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">{t("emptyResult")}</p>
+              {underfill.length > 0 && <div className="w-full text-left">{renderDrops()}</div>}
               <Button type="button" onClick={() => setPhase("pick")}>
                 {t("retry")}
               </Button>
