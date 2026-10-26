@@ -381,7 +381,7 @@ export async function getStoreSentItems(storeId: string): Promise<StoreSentItemR
   const [deliveredPutus, deliveredKonsi] = await Promise.all([
     prisma.fieldSalesDeliveryLine.groupBy({
       by: ["itemId", "variantSku"],
-      where: { delivery: { order: { storeId } } },
+      where: { delivery: { order: { storeId, orderType: "PUTUS" } } },
       _sum: { qty: true },
     }),
     prisma.fieldSalesOrderLine.groupBy({

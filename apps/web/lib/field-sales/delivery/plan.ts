@@ -78,9 +78,11 @@ export function computeDueDate(invoiceDate: Date, paymentTempoDays: number): Dat
  * rounds to whole rupiah on its own.
  *
  * `lines` must carry EVERY line of the order, not only the ones in this delivery. A line that
- * finished in an earlier delivery can still hold rounding residue — three 1-unit deliveries of a
- * 3-unit line discounted 100 allocate round(100/3) = 33 each and strand 1 — and the closing
- * delivery is the last place that residue can go. Lines with `deliveredQty` 0 get no line discount
+ * finished in an earlier delivery can still hold rounding residue. The usual trigger is a
+ * fractional (PERCENT) discount on a two-delivery order: line A (qty 1, discount 33.33) ships whole
+ * on the first, non-closing delivery and takes round(33.33) = 33, while the closing delivery
+ * carries only line B, so 0.33 strands on A. The closing delivery is the last place that residue
+ * can go. Lines with `deliveredQty` 0 get no line discount
  * of their own; on the closing delivery their residue folds into the header `discountAmount`
  * instead, which is what keeps the sum of the deliveries' exact goods values equal to the order
  * total.

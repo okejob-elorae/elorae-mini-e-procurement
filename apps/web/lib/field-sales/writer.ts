@@ -613,8 +613,7 @@ export async function approveKonsiOrderInTx(
    * Approve only RESERVES konsi stock. It moves main → the store's virtual warehouse at
    * delivery-shipment completion (`completeDeliveryShipment`), one `KonsiTransfer` per
    * completed shipment, so a short or refused delivery never lands at the store. Never
-   * through `consumeFieldSalesOrder` (packages/db/src/reservation-writer.ts), which is an
-   * orphaned FIELD_SALES_CONSUME trap with no production caller. No SalesHistory for konsi.
+   * through a FIELD_SALES_CONSUME mover: konsi is a transfer, not a sale. No SalesHistory for konsi.
    */
   await tx.fieldSalesOrder.update({
     where: { id: order.id },

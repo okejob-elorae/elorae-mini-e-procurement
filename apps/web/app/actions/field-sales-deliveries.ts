@@ -111,8 +111,11 @@ export async function recordDeliveryAction(input: {
   if (typeof idempotencyKey !== "string" || idempotencyKey.trim() === "" || idempotencyKey.length > 64) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
-  if (!Array.isArray(lines) || lines.some((l) => typeof l.orderLineId !== "string" || !Number.isInteger(l.qty) || l.qty <= 0)) {
-    return { ok: false, reason: "OVER_DELIVER" };
+  if (
+    !Array.isArray(lines) ||
+    lines.some((l) => typeof l !== "object" || l === null || typeof l.orderLineId !== "string" || !Number.isInteger(l.qty) || l.qty <= 0)
+  ) {
+    return { ok: false, reason: "INVALID_REQUEST" };
   }
   const parsedInvoiceDate = parseCalendarDay(invoiceDate);
   const parsedDueDate = parseCalendarDay(dueDate);
@@ -400,7 +403,7 @@ export async function postFieldDeliveryJournalsAction(deliveryId: string): Promi
 export async function closeRemainderAction(orderId: string, reason: string): Promise<DeliveryActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
-  if (typeof reason !== "string" || reason.trim() === "") return { ok: false, reason: "INVALID_STATE" };
+  if (typeof reason !== "string" || reason.trim() === "") return { ok: false, reason: "INVALID_REQUEST" };
   try {
     await closeFieldSalesOrderRemainder({ orderId, closedById: g.userId, reason: reason.trim() });
   } catch (e) {

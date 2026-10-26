@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "./index";
 import {
   reserveFieldSalesOrder,
-  consumeFieldSalesOrder,
   consumeFieldSalesOrderPartial,
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
@@ -60,7 +59,11 @@ d("field-sales reservation fns (test bed only)", () => {
   it("consume decrements qtyOnHand + reservedQty and stamps FIELD_SALES_CONSUME", async () => {
     const lineId = `line-${sku}-2`;
     await reserveFieldSalesOrder(prisma, { orderNo: "PUTUS-T-2", lines: [{ fieldSalesLineId: lineId, itemId, variantSku, qty: 6 }] });
-    const res = await consumeFieldSalesOrder(prisma, { orderNo: "PUTUS-T-2", fieldSalesLineIds: [lineId] });
+    const res = await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS-T-2",
+      deliveryId: `dlv-${sku}`,
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku, qty: 6 }],
+    });
     expect(res.consumed).toBe(1);
     const inv = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku } } });
     expect(Number(inv!.qtyOnHand)).toBe(94);
@@ -126,7 +129,11 @@ d("field-sales reservation fns (test bed only)", () => {
       expect(Number(inv!.reservedQty)).toBe(6);
       expect(Number(inv!.qtyOnHand)).toBe(100);
 
-      const consumeRes = await consumeFieldSalesOrder(prisma, { orderNo: "PUTUS-T-NULL-1", fieldSalesLineIds: [lineId] });
+      const consumeRes = await consumeFieldSalesOrderPartial(prisma, {
+        orderNo: "PUTUS-T-NULL-1",
+        deliveryId: `dlv-${nullSku}`,
+        lines: [{ fieldSalesLineId: lineId, itemId: nullItemId, variantSku: "", qty: 6 }],
+      });
       expect(consumeRes.consumed).toBe(1);
       inv = await prisma.inventoryValue.findFirst({
         where: { itemId: nullItemId, OR: [{ variantSku: null }, { variantSku: "" }] },
@@ -363,25 +370,6 @@ d("field-sales reservations pinned to the row they reserved against (test bed on
     expect(rsv.inventoryValueId).toBe(nullRowId);
   });
 
-  it("consumeFieldSalesOrder acts on the reserved row even after an empty-string sibling is provisioned", async () => {
-    const lineId = `line-${sku}-b`;
-    await reserveFieldSalesOrder(prisma, {
-      orderNo: "PUTUS-T-PIN-B",
-      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
-    });
-    const emptyRow = await provisionEmptySibling();
-
-    const res = await consumeFieldSalesOrder(prisma, { orderNo: "PUTUS-T-PIN-B", fieldSalesLineIds: [lineId] });
-    expect(res.consumed).toBe(1);
-
-    const nullAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
-    const emptyAfter = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } });
-    expect(Number(nullAfter.qtyOnHand)).toBe(6);
-    expect(Number(nullAfter.reservedQty)).toBe(0);
-    expect(Number(emptyAfter.qtyOnHand)).toBe(0);
-    expect(Number(emptyAfter.reservedQty)).toBe(0);
-  });
-
   it("consumeFieldSalesOrderPartial acts on the reserved row even after an empty-string sibling is provisioned", async () => {
     const lineId = `line-${sku}-c`;
     await reserveFieldSalesOrder(prisma, {
@@ -413,7 +401,11 @@ d("field-sales reservations pinned to the row they reserved against (test bed on
     });
     await prisma.stockReservation.update({ where: { fieldSalesLineId: lineId }, data: { inventoryValueId: null } });
 
-    const res = await consumeFieldSalesOrder(prisma, { orderNo: "PUTUS-T-PIN-D", fieldSalesLineIds: [lineId] });
+    const res = await consumeFieldSalesOrderPartial(prisma, {
+      orderNo: "PUTUS-T-PIN-D",
+      deliveryId: `dlv-${sku}`,
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
     expect(res.consumed).toBe(1);
 
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });

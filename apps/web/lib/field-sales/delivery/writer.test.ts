@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "./writer";
+import { approveFieldSalesOrder } from "../writer";
 import { DeliveryError } from "../errors";
 import { deliveredGoodsValue } from "./undelivered-residual";
 import { postFieldDeliveryRevenueJournal } from "@/lib/finance/ar/delivery-journal";
@@ -227,6 +228,27 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     });
     const rows = await prisma.salesHistory.findMany({ where: { itemId: seededId(itemId) } });
     expect(rows).toHaveLength(2);
+  });
+
+  it("files SalesHistory at the owner's final price for an appealed line, not the price it was created at", async () => {
+    await prisma.fieldSalesOrderLine.update({
+      where: { id: lineAId },
+      data: { requestedUnitPrice: 700, appealReason: "nego" },
+    });
+    await prisma.fieldSalesOrder.update({ where: { id: orderId }, data: { status: "PENDING_APPROVAL" } });
+    await approveFieldSalesOrder({ orderId, approvedById: userId, finalPrices: [{ lineId: lineAId, finalUnitPrice: 800 }] });
+
+    const delivery = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    });
+
+    const row = await prisma.salesHistory.findFirstOrThrow({ where: { orderId: delivery.docNo } });
+    expect(Number(row.unitPrice)).toBe(800);
+    expect(Number(row.lineTotal)).toBe(1600);
   });
 
   it("stamps exactly the invoice and due dates it was given", async () => {

@@ -435,6 +435,15 @@ d("getStoreSentItems (test bed only)", () => {
     }
   });
 
+  it("ignores a delivery row hanging off a konsi order, so konsi counts only through its order lines", async () => {
+    const konsi = await seedOrder({ orderType: "KONSI", status: "APPROVED", lines: [{ variantSku: "M", qty: 4, deliveredQty: 3 }] });
+    await seedDelivery(konsi, [{ variantSku: "M", qty: 4 }]);
+
+    const rows = await getStoreSentItems(storeId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].totalQty).toBe(3);
+  });
+
   it("sums repeat deliveries of the same article+variant", async () => {
     const putus = await seedOrder({ orderType: "PUTUS", status: "APPROVED", lines: [{ variantSku: "M", qty: 3 }] });
     await seedDelivery(putus, [{ variantSku: "M", qty: 1 }]);
