@@ -202,7 +202,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Building a new caller on `completeDeliveryShipment`? It posts NO journals and throws TWO error classes with overlapping codes. → `docs/landmines/delivery-shipments.md`
 - Editing `completeDeliveryShipment`'s PUTUS tail? Keep the deterministic `shipment-<id>` key and the `IN_TRANSIT` CAS `updateMany` — they make a crash retryable. → `docs/landmines/delivery-shipments.md`
 - Retrying a field-sales delivery? A replayed key is COMPARE-AND-REFUSE (`REPLAY_MISMATCH`) — never rotate the key, never loosen the compare. → `docs/landmines/delivery-shipments.md`
-- Changing carrier/resi handling? `updateShipmentTracking` is decoupled from `shipDeliveryShipment` on purpose — editable while `PACKED`, frozen after. → `docs/landmines/delivery-shipments.md`
+- Changing carrier/resi handling? `updateShipmentTracking` is decoupled from `shipDeliveryShipment` on purpose — editable while `PACKED`; resi and dates frozen after, carrier only via `reassignShipmentCarrier`; the EXPEDITION ship CAS re-checks the resi. → `docs/landmines/delivery-shipments.md`
 - Gating a shipment control in the UI? Check the SAME permission the action enforces (`deliveries:ship` vs `deliveries:pod`), never the sibling. → `docs/landmines/delivery-shipments.md`
 - Calling `completeDeliveryShipment`? Name EVERY shipment line EXACTLY once (`LINE_MISMATCH`) — a duplicate invoices the sum, an omission nulls `deliveredQty`. → `docs/landmines/delivery-shipments.md`
 - Computing what is left to ship? Also subtract `plannedQty` on other PACKED/IN_TRANSIT shipments, or the second dies on `OVER_DELIVER`. → `docs/landmines/delivery-shipments.md`
@@ -214,7 +214,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Reading `evaluateCheckinRadius`'s `distanceMeters: null`? Check-in passes it, the POD gate refuses — never gate on `outOfRadius` alone. → `docs/landmines/delivery-shipments.md`
 - Hitting a shipment whose `Store` row is missing? That is `NOT_FOUND`, never `STORE_NOT_GEOCODED` — the FK on `FieldSalesOrder.storeId` makes it defensive; keep it. → `docs/landmines/delivery-shipments.md`
 - Setting `carriedById`? Every writer refuses a non-carrier via `isEligibleCarrier` (`INVALID_CARRIER`), the same predicate the combobox lists from — never write the column around it. → `docs/landmines/delivery-shipments.md`
-- Reassigning a shipment's carrier after it ships? Only via `reassignShipmentCarrier` (SALESMAN_CARRY, `IN_TRANSIT`, CAS on the old carrier, audited); the old carrier's queued completion then fails `NOT_CARRIER`. → `docs/landmines/delivery-shipments.md`
+- Reassigning a shipment's carrier after it ships? Only via `reassignShipmentCarrier` (SALESMAN_CARRY, `IN_TRANSIT`, CAS on the old carrier, audited); completion CASes bind the carrier, so the old carrier's queued completion fails `NOT_CARRIER`. → `docs/landmines/delivery-shipments.md`
 - Touching `SALESMAN_CARRY` completion, or a new `completeDeliveryShipment` caller? `carriedById` must EQUAL `deliveredById` (`NOT_CARRIER`); GPS is no substitute. → `docs/landmines/delivery-shipments.md`
 - Gating a backoffice control on `canPod` + `IN_TRANSIT` alone? Also check `method` — `SALESMAN_CARRY` completes only from the PWA. → `docs/landmines/delivery-shipments.md`
 - Adding a method-conditional guard to a shared handler? Check its NEIGHBOURS — an older unconditional guard still fires. → `docs/landmines/delivery-shipments.md`
