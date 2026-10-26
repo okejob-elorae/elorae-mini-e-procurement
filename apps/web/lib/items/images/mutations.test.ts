@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { auth } from "@/lib/auth";
 import { prisma } from "@elorae/db";
 import { deleteFromR2, keyFromUrl } from "@/lib/r2";
-import { enqueueProductPushOnImageChange } from "@/app/actions/jubelio-product-push";
+import { enqueueProductPushOnImageChange } from "@/lib/jubelio/product-push";
 import { replaceItemImagesAction } from "./mutations";
 
 // Provide an R2 host so validateNewUploadUrl can resolve
@@ -25,7 +25,7 @@ vi.mock("@/lib/r2", () => ({
   deleteFromR2: vi.fn().mockResolvedValue(undefined),
   keyFromUrl: vi.fn().mockReturnValue("items/i1/x.jpg"),
 }));
-vi.mock("@/app/actions/jubelio-product-push", () => ({
+vi.mock("@/lib/jubelio/product-push", () => ({
   enqueueProductPushOnImageChange: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

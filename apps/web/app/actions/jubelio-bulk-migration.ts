@@ -71,7 +71,7 @@ export async function getEligibleItems(): Promise<EligibleItem[]> {
   });
 }
 
-export async function enqueueBulkMigration(itemIds: string[]): Promise<{ enqueued: number }> {
+export async function enqueueBulkMigration(itemIds: string[]): Promise<{ enqueued: number; skipped: number }> {
   const session = await auth();
   if (!session) throw new Error("Unauthorized");
   requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
@@ -97,17 +97,35 @@ export async function enqueueBulkMigration(itemIds: string[]): Promise<{ enqueue
     throw new Error(`${invalid.length} item(s) not eligible (already mapped or wrong type)`);
   }
 
-  await prisma.jubelioOutbox.createMany({
-    data: itemIds.map((id) => ({
-      entityType: "product_push",
-      entityId: id,
-      payload: {},
-      enqueuedById: session.user.id,
-    })),
-  });
+  /* Same in-flight rule as the item page's "Buat di Jubelio" button: a push already PENDING or PROCESSING is not queued again. */
+  const inFlight = new Set(
+    (
+      await prisma.jubelioOutbox.findMany({
+        where: {
+          entityType: "product_push",
+          entityId: { in: itemIds },
+          status: { in: ["PENDING", "PROCESSING"] },
+        },
+        select: { entityId: true },
+      })
+    ).map((row) => row.entityId),
+  );
+  const toEnqueue = itemIds.filter((id) => !inFlight.has(id));
+  const skipped = itemIds.length - toEnqueue.length;
+
+  if (toEnqueue.length > 0) {
+    await prisma.jubelioOutbox.createMany({
+      data: toEnqueue.map((id) => ({
+        entityType: "product_push",
+        entityId: id,
+        payload: {},
+        enqueuedById: session.user.id,
+      })),
+    });
+  }
 
   revalidatePath("/backoffice/jubelio/migration");
-  return { enqueued: itemIds.length };
+  return { enqueued: toEnqueue.length, skipped };
 }
 
 export async function getMigrationSummary(): Promise<MigrationSummary> {

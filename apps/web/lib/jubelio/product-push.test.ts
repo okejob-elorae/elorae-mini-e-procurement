@@ -10,10 +10,9 @@ vi.mock("@elorae/db", () => ({
 vi.mock("@/lib/auth", () => ({ auth: vi.fn().mockResolvedValue({ user: { id: "u1" } }) }));
 vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/lib/items/jubelio-push-diff", () => ({ hasPushableChange: vi.fn().mockReturnValue(true) }));
-vi.mock("@/lib/items/jubelio-create-eligibility", () => ({ jubelioCreateEligibility: vi.fn() }));
 
 import { prisma } from "@elorae/db";
-import { enqueueProductPushOnImageChange, enqueueProductPushOnUpdate } from "./jubelio-product-push";
+import { enqueueProductPushOnImageChange, enqueueProductPushOnUpdate } from "./product-push";
 import type { PushableSnapshot } from "@/lib/items/jubelio-push-diff";
 
 const snapshot = {} as PushableSnapshot;

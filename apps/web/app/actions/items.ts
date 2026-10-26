@@ -35,7 +35,7 @@ import {
 import {
   enqueueProductPushOnCreate,
   enqueueProductPushOnUpdate,
-} from '@/app/actions/jubelio-product-push';
+} from '@/lib/jubelio/product-push';
 import {
   parseVariantBarcodeFormat,
   VARIANT_BARCODE_FORMAT_KEY,

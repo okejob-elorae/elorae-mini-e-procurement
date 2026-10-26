@@ -358,4 +358,33 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
     expect(Number(emptyAfter.qtyOnHand)).toBe(0);
     expect(Number(emptyAfter.reservedQty)).toBe(0);
   });
+
+  it("consumeOrder and releaseOrder leave a non-JUBELIO reservation sharing the salesorderId untouched", async () => {
+    const row = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 10, reservedQty: 4, avgCost: 1000, totalValue: 10000 },
+    });
+    const foreign = await prisma.stockReservation.create({
+      data: {
+        source: "FIELD_SALES",
+        salesorderId,
+        salesorderDetailId: detailB,
+        itemId,
+        variantSku: "",
+        qty: 4,
+        state: "RESERVED",
+        inventoryValueId: row.id,
+      },
+    });
+
+    const consumed = await consumeOrder(prisma, { salesorderId, salesorderNo: "TEST-JSRC" });
+    const released = await releaseOrder(prisma, { salesorderId });
+    expect(consumed.consumed).toBe(0);
+    expect(released.released).toBe(0);
+
+    const after = await prisma.stockReservation.findUniqueOrThrow({ where: { id: foreign.id } });
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.state).toBe("RESERVED");
+    expect(Number(inv.qtyOnHand)).toBe(10);
+    expect(Number(inv.reservedQty)).toBe(4);
+  });
 });

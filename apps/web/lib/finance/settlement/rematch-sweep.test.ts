@@ -11,7 +11,7 @@ vi.mock("./match", async (importOriginal) => {
   return { ...actual, matchSettlement: vi.fn(actual.matchSettlement) };
 });
 import { matchSettlement } from "./match";
-import { runSettlementRematchSweep } from "./rematch-sweep";
+import { EMPTY_BATCH_CUTOFF_MS, runSettlementRematchSweep } from "./rematch-sweep";
 
 const actualMatch = await vi.importActual<typeof import("./match")>("./match");
 const matchSpy = vi.mocked(matchSettlement);
@@ -532,6 +532,38 @@ d("runSettlementRematchSweep (test bed only)", () => {
       expect(after.status).toBe("PARSED");
     } finally {
       await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+    }
+  });
+
+  it("treats an empty batch seeded longer ago than the cutoff as finished, and a fresh one as still running", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const suffix = Math.random().toString(36).slice(2, 10);
+    const staleBatchId = `rematch-empty-stale-${suffix}`;
+    const freshBatchId = `rematch-empty-fresh-${suffix}`;
+    const now = new Date();
+
+    let staleId = "";
+    let freshId = "";
+    try {
+      staleId = await createSettlement(admin.id, {
+        resyncBatchId: staleBatchId,
+        resyncSeededAt: new Date(now.getTime() - EMPTY_BATCH_CUTOFF_MS - 1000),
+      });
+      freshId = await createSettlement(admin.id, {
+        resyncBatchId: freshBatchId,
+        resyncSeededAt: new Date(now.getTime() - EMPTY_BATCH_CUTOFF_MS + 60_000),
+      });
+
+      const result = await runSettlementRematchSweep({ settlementIds: [staleId, freshId], now });
+      expect(result).toEqual({ scanned: 2, rematched: 1, skippedReconciled: 0, stillRunning: 1 });
+
+      const staleAfter = await prisma.settlement.findUniqueOrThrow({ where: { id: staleId } });
+      expect(staleAfter.resyncRematchedAt).not.toBeNull();
+      const freshAfter = await prisma.settlement.findUniqueOrThrow({ where: { id: freshId } });
+      expect(freshAfter.resyncRematchedAt).toBeNull();
+    } finally {
+      await prisma.settlementLine.deleteMany({ where: { settlementId: { in: [seededId(staleId), seededId(freshId)] } } });
+      await prisma.settlement.deleteMany({ where: { id: { in: [seededId(staleId), seededId(freshId)] } } });
     }
   });
 

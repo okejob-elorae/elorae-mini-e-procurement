@@ -12,7 +12,7 @@ import {
   type ItemImportPreviewResult,
   type ItemImportValidatedResult,
 } from "@/lib/items/import/types";
-import { enqueueProductPushOnCreate } from "@/app/actions/jubelio-product-push";
+import { enqueueProductPushOnCreate } from "@/lib/jubelio/product-push";
 import { getActorName } from "@/lib/notifications/actor-name";
 import { getUsersWithPermission, sendNotificationToUsers } from "@/lib/notifications/recipients";
 
