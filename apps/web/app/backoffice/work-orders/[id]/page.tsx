@@ -58,6 +58,7 @@ import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
 import { WOStatus } from '@/lib/constants/enums';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
+import { WorkOrderExportButton } from "./WorkOrderExportButton";
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 
@@ -380,6 +381,9 @@ export default function WorkOrderDetailPage() {
                 <Button variant="outline">Receive FG</Button>
               </Link>
             </>
+          )}
+          {wo.status !== "CANCELLED" && (
+            <WorkOrderExportButton workOrderId={id} />
           )}
         </div>
       </div>

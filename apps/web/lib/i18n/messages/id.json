@@ -1240,6 +1240,14 @@
     }
   },
   "workOrders": {
+    "export": {
+      "button": "Ekspor Excel",
+      "exporting": "Mengekspor...",
+      "failed": "Gagal mengekspor work order. Coba lagi.",
+      "forbidden": "Anda tidak punya izin untuk mengekspor work order.",
+      "notFound": "Work order tidak ditemukan.",
+      "started": "Work order berhasil diekspor."
+    },
     "draft": "Draft",
     "issued": "Diterbitkan",
     "inProduction": "Dalam Produksi",
