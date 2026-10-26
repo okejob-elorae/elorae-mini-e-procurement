@@ -1,6 +1,7 @@
-import { prisma } from "@elorae/db";
+import { prisma, type Prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { isUniqueViolationOn } from "@/lib/db/unique-violation";
 import { roundCents } from "@elorae/db/pricing";
 import { PaymentError } from "./errors";
 import { sumPendingClaimsOnReceivable } from "./pending-claims";
@@ -59,6 +60,9 @@ const ROUNDING_RESIDUE_CEILING = 1;
 type PostPaymentInput = Omit<RecordPaymentInput, "method"> & {
   method: RecordPaymentInput["method"] | "ROUNDING_ADJUSTMENT";
 };
+
+/* Same attempt count as `withRetry`'s default. */
+const IDEMPOTENCY_RETRY_ATTEMPTS = 4;
 
 function isResidue(outstanding: number): boolean {
   return outstanding > 0 && outstanding < ROUNDING_RESIDUE_CEILING;
@@ -132,7 +136,7 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
     if (!(amount < ROUNDING_RESIDUE_CEILING)) throw new PaymentError("NOT_A_RESIDUE");
   }
 
-  return runSerializable(async (tx) => {
+  const run = async (tx: Prisma.TransactionClient): Promise<{ paymentId: string; docNo: string; replayed: boolean }> => {
     if (input.idempotencyKey) {
       const existing = await tx.payment.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
@@ -270,7 +274,23 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
     }
 
     return { paymentId: payment.id, docNo: payment.docNo, replayed: false };
-  });
+  };
+
+  /**
+   * Two requests with one idempotency key can both pass the `findUnique` above before either
+   * commits; the loser's create then fails on `Payment_idempotencyKey_key`, a P2002 that
+   * `runSerializable` does not retry. Retrying the whole callback makes the loser's next pass find
+   * the winner's row and return it as a replay. Bounded by the same attempt count as `withRetry`,
+   * and only for this index: any other unique violation is a real conflict.
+   */
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await runSerializable(run);
+    } catch (e) {
+      const keyConflict = !!input.idempotencyKey && isUniqueViolationOn(e, "idempotencyKey");
+      if (!keyConflict || attempt >= IDEMPOTENCY_RETRY_ATTEMPTS) throw e;
+    }
+  }
 }
 
 export type RecordRoundingAdjustmentInput = {

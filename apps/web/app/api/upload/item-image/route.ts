@@ -4,7 +4,8 @@ import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeyExt } from "@/lib/r2-key";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { validateMime, validateSize } from "@/lib/items/images/validators";
+import { MAX_BYTES, MAX_GALLERY_COUNT, validateMime, validateSize } from "@/lib/items/images/validators";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,10 @@ export async function POST(request: NextRequest) {
 
   const itemIdParam = new URL(request.url).searchParams.get("itemId");
   const itemId = isValidItemId(itemIdParam) ? itemIdParam : "_pending";
+
+  if (exceedsDeclaredLength(request, MAX_BYTES, MAX_GALLERY_COUNT)) {
+    return NextResponse.json({ error: "image_too_large", message: "Request too large: each image must be 5 MB or less." }, { status: 413 });
+  }
 
   let formData: FormData;
   try {

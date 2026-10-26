@@ -113,3 +113,30 @@ describe("withRetry", () => {
     expect(fn).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("shape detection without the Prisma class", () => {
+  it("retries a plain object with code P2034", () => {
+    expect(isRetryableTxError({ code: "P2034", message: "write conflict" })).toBe(true);
+  });
+
+  it("retries a plain object whose message names a deadlock", () => {
+    expect(isRetryableTxError({ code: "P2010", message: "Deadlock found; try restarting transaction" })).toBe(true);
+  });
+
+  it("never retries a plain P2028 whose elapsed ms contains 1205", () => {
+    expect(isRetryableTxError({ code: "P2028", message: EXPIRED_MESSAGE })).toBe(false);
+  });
+
+  it("does not retry a plain object with an unrelated code, a non-string code or no code", () => {
+    expect(isRetryableTxError({ code: "P2002", message: "Unique constraint failed" })).toBe(false);
+    expect(isRetryableTxError({ code: 1213, message: "deadlock" })).toBe(false);
+    expect(isRetryableTxError({ message: "deadlock" })).toBe(false);
+    expect(isRetryableTxError(null)).toBe(false);
+  });
+
+  it("detects an expired transaction on a plain P2028 and not an unable-to-start one", () => {
+    expect(isTransactionExpired({ code: "P2028", message: EXPIRED_MESSAGE })).toBe(true);
+    expect(isTransactionExpired({ code: "P2028", message: UNABLE_TO_START_MESSAGE })).toBe(false);
+    expect(isTransactionExpired({ code: "P2002", message: EXPIRED_MESSAGE })).toBe(false);
+  });
+});

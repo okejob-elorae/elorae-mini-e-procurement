@@ -2,8 +2,8 @@ import { isTrustedHost, getR2Host } from "./trusted-hosts";
 import type { ValidationResult } from "./types";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
-const MAX_BYTES = 5 * 1024 * 1024;
-const MAX_GALLERY_COUNT = 20;
+export const MAX_BYTES = 5 * 1024 * 1024;
+export const MAX_GALLERY_COUNT = 20;
 
 function fail(code: string, message: string): ValidationResult {
   return { ok: false, code, message };

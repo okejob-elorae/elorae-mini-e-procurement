@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, deleteFromR2, isConfigured } from "@/lib/r2";
 import { buildR2Key } from "@/lib/r2-key";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ export async function POST(req: NextRequest) {
   }
   if (!isConfigured()) return NextResponse.json({ error: "R2 not configured" }, { status: 503 });
 
+  if (exceedsDeclaredLength(req, MAX_FILE_SIZE)) {
+    return NextResponse.json({ error: "file exceeds 10MB" }, { status: 413 });
+  }
   const form = await req.formData();
   const file = form.get("file");
   const draftId = form.get("draftId");

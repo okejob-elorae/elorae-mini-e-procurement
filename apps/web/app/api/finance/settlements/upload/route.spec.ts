@@ -132,3 +132,33 @@ describe("POST /api/finance/settlements/upload dedupe", () => {
     expect(res.status).toBe(500);
   });
 });
+
+describe("POST /api/finance/settlements/upload size pre-check", () => {
+  function requestWithLength(length: number): Parameters<typeof POST>[0] {
+    return new Request("http://localhost/api/finance/settlements/upload", {
+      method: "POST",
+      headers: { "content-length": String(length) },
+      body: "x",
+    }) as unknown as Parameters<typeof POST>[0];
+  }
+
+  it("refuses an oversize declared body with 413 before parsing the multipart", async () => {
+    const formDataSpy = vi.spyOn(Request.prototype, "formData");
+
+    try {
+      const res = await POST(requestWithLength(10 * 1024 * 1024 + 64 * 1024 + 1));
+
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({ error: "File exceeds the 10 MB limit" });
+      expect(formDataSpy).not.toHaveBeenCalled();
+    } finally {
+      formDataSpy.mockRestore();
+    }
+  });
+
+  it("lets a max-size file plus multipart overhead through to the parser", async () => {
+    const res = await POST(requestWithLength(10 * 1024 * 1024 + 64 * 1024));
+
+    expect(res.status).not.toBe(413);
+  });
+});

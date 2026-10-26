@@ -7,9 +7,9 @@ export const PHOTO_CAP_REACHED_ERROR = "CAP_REACHED";
  * 401 is deliberately absent: an expired session is transient, so the photo waits for the
  * next flush after re-login. The proxy answers an unauthenticated `/pwa/api/*` call with a JSON
  * 401, and the upload fetches with `redirect: "manual"`, so a redirect surfaces as status 0 and
- * retries too. 409 is the server's per-visit cap refusal, which no retry can fix.
+ * retries too. 409 is the server's per-visit cap refusal and 413 an oversize body, neither of which a retry can fix.
  */
-const TERMINAL_STATUSES = new Set([400, 403, 404, 409]);
+const TERMINAL_STATUSES = new Set([400, 403, 404, 409, 413]);
 
 export function classifyPhotoUpload(status: number | "thrown"): PhotoSyncDecision {
   if (status === "thrown") return "retry";

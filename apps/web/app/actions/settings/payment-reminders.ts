@@ -35,10 +35,26 @@ export async function setPaymentReminderDays(
   if (!result.ok) return result;
 
   const value = result.days.join(",");
-  await prisma.systemSetting.upsert({
-    where: { key: PAYMENT_REMINDER_SETTING_KEY },
-    create: { key: PAYMENT_REMINDER_SETTING_KEY, value },
-    update: { value },
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.systemSetting.findUnique({
+      where: { key: PAYMENT_REMINDER_SETTING_KEY },
+      select: { value: true },
+    });
+    await tx.systemSetting.upsert({
+      where: { key: PAYMENT_REMINDER_SETTING_KEY },
+      create: { key: PAYMENT_REMINDER_SETTING_KEY, value },
+      update: { value },
+    });
+    await tx.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "PO_PAYMENT_REMINDER_DAYS_UPDATE",
+        entityType: "SystemSetting",
+        entityId: PAYMENT_REMINDER_SETTING_KEY,
+        changes: { before: { value: before?.value ?? null }, after: { value } },
+        reason: null,
+      },
+    });
   });
   revalidatePath("/backoffice/settings/purchasing");
   return result;

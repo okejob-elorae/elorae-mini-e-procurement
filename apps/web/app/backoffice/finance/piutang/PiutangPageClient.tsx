@@ -55,6 +55,7 @@ type Props = {
   storeOptions: { id: string; name: string }[];
   salesmen: { id: string; name: string }[];
   collectors: { id: string; name: string }[];
+  collectorFilterExtra: { id: string; name: string } | null;
   canManageCollections: boolean;
   storeAvailableCredit: number | null;
   storeId: string;
@@ -294,6 +295,14 @@ export function PiutangPageClient(props: Props) {
               options={[
                 { value: ALL_COLLECTORS, label: t("allCollectors") },
                 ...props.collectors.map((c) => ({ value: c.id, label: c.name })),
+                ...(props.collectorFilterExtra
+                  ? [
+                      {
+                        value: props.collectorFilterExtra.id,
+                        label: t("collectorIneligibleLabel", { name: props.collectorFilterExtra.name }),
+                      },
+                    ]
+                  : []),
               ]}
               value={props.collectorId || ALL_COLLECTORS}
               onValueChange={(v) => pushParams({ collectorId: v === ALL_COLLECTORS ? undefined : v })}

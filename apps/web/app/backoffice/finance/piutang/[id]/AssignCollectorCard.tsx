@@ -37,6 +37,12 @@ export function AssignCollectorCard({
   const [isPending, startTransition] = useTransition();
   const [selected, setSelected] = useState(collectorId ?? UNASSIGNED);
 
+  /**
+   * The current assignee may have lost eligibility since the assignment. They stay in the list so
+   * the picker shows who holds it, but disabled: the writer refuses them as a new target.
+   */
+  const currentIneligible = collectorId !== null && !collectors.some((c) => c.id === collectorId);
+
   const dirty = selected !== (collectorId ?? UNASSIGNED);
 
   function handleApply(): void {
@@ -74,6 +80,15 @@ export function AssignCollectorCard({
             <SearchableCombobox
               options={[
                 { value: UNASSIGNED, label: t("unassignedLabel") },
+                ...(currentIneligible
+                  ? [
+                      {
+                        value: collectorId ?? "",
+                        label: t("collectorIneligibleLabel", { name: collectorName ?? collectorId }),
+                        disabled: true,
+                      },
+                    ]
+                  : []),
                 ...collectors.map((c) => ({ value: c.id, label: c.name })),
               ]}
               value={selected}

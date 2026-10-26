@@ -1,15 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockAuth, mockFindUnique, mockUpsert, mockRevalidate } = vi.hoisted(() => ({
+const { mockAuth, mockFindUnique, mockUpsert, mockRevalidate, mockAuditCreate } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockFindUnique: vi.fn(),
   mockUpsert: vi.fn(),
   mockRevalidate: vi.fn(),
+  mockAuditCreate: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => ({
-  prisma: { systemSetting: { findUnique: mockFindUnique, upsert: mockUpsert } },
+  prisma: {
+    systemSetting: { findUnique: mockFindUnique, upsert: mockUpsert },
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        systemSetting: { findUnique: mockFindUnique, upsert: mockUpsert },
+        auditLog: { create: mockAuditCreate },
+      }),
+  },
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidate }));
 
@@ -19,6 +27,8 @@ describe("setPaymentReminderDays", () => {
   beforeEach(() => {
     mockAuth.mockReset();
     mockUpsert.mockReset();
+    mockFindUnique.mockReset();
+    mockAuditCreate.mockReset();
     mockRevalidate.mockReset();
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["purchase_orders:edit"] } });
   });
@@ -43,6 +53,7 @@ describe("setPaymentReminderDays", () => {
   });
 
   it("stores the normalised list and revalidates the page", async () => {
+    mockFindUnique.mockResolvedValue({ value: "-1,0" });
     const result = await setPaymentReminderDays(" 7, -7 ,0,-7");
     expect(result).toEqual({ ok: true, days: [-7, 0, 7] });
     expect(mockUpsert).toHaveBeenCalledWith({
@@ -51,6 +62,26 @@ describe("setPaymentReminderDays", () => {
       update: { value: "-7,0,7" },
     });
     expect(mockRevalidate).toHaveBeenCalledWith("/backoffice/settings/purchasing");
+    expect(mockAuditCreate).toHaveBeenCalledWith({
+      data: {
+        userId: "u1",
+        action: "PO_PAYMENT_REMINDER_DAYS_UPDATE",
+        entityType: "SystemSetting",
+        entityId: "po.paymentReminderDays",
+        changes: { before: { value: "-1,0" }, after: { value: "-7,0,7" } },
+        reason: null,
+      },
+    });
+  });
+
+  it("records a null before when no value was stored", async () => {
+    mockFindUnique.mockResolvedValue(null);
+    await setPaymentReminderDays("0");
+    expect(mockAuditCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ changes: { before: { value: null }, after: { value: "0" } } }),
+      }),
+    );
   });
 });
 

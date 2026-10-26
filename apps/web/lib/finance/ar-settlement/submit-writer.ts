@@ -169,11 +169,12 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
       /*
        * These two length checks run BEFORE the RETUR_OFFSET `continue` below and therefore apply
        * to every deduction type, RETUR_OFFSET included. The create block at the bottom of this
-       * function persists proof columns unconditionally (`proofR2Key ? urlFromKey(...) :
+       * function persisted proof columns unconditionally (`proofR2Key ? urlFromKey(...) :
        * deduction.proofUrl`), so a RETUR_OFFSET deduction — exempt from `MISSING_EVIDENCE` and
-       * often submitted with no `proofR2Key` at all — still writes whatever `proofUrl` the caller
-       * supplied directly into the same VARCHAR(191) column. Checking only inside the
-       * evidence-required branch left that column unguarded for exactly this row type.
+       * often submitted with no `proofR2Key` at all — wrote whatever `proofUrl` the caller
+       * supplied directly into the same VARCHAR(191) column. The create block now stores null
+       * proof columns for that row type, but the bound stays here: it rejects an oversize input
+       * with a named code rather than ignoring it silently.
        */
       /*
        * `typeof === "string"`, not `!== undefined` — a raw request is independently callable and
@@ -187,9 +188,10 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
         throw new SettlementError("INPUT_TOO_LARGE");
       }
       /*
-       * The EFFECTIVE url — what actually gets written below, the DERIVED url when a
-       * `proofR2Key` is present, otherwise the caller's own `proofUrl` verbatim — must
-       * independently clear the same VARCHAR(191) column. A key just under 191 can still yield a
+       * The EFFECTIVE url — what gets written below for PROGRAM and ADMIN_FEE rows (the DERIVED
+       * url when a `proofR2Key` is present, otherwise the caller's own `proofUrl` verbatim) —
+       * must independently clear the same VARCHAR(191) column. A RETUR_OFFSET row stores null
+       * proof columns, so this is a bound on input there, not on a written value. A key just under 191 can still yield a
        * derived url over it once `PUBLIC_URL + "/"` is prepended.
        */
       const effectiveProofUrl = deduction.proofR2Key ? urlFromKey(deduction.proofR2Key) : deduction.proofUrl;
@@ -397,16 +399,22 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
            * above, but the URL did not, and a raw caller could otherwise pair a validly-scoped key
            * with an arbitrary URL. The approval screen (and the BKM print route after it) would
            * then render the attacker's URL while the audited key points at real evidence.
+           *
+           * A RETUR_OFFSET row carries no evidence of its own (it is exempt from
+           * `MISSING_EVIDENCE`), so both proof columns are stored null whatever the caller sent.
            */
-          create: input.deductions.map((deduction) => ({
-            type: deduction.type,
-            amount: deduction.type === "ADMIN_FEE" ? totals.adminFee : roundCents(deduction.amount ?? 0),
-            percent: deduction.type === "ADMIN_FEE" ? deduction.percent : null,
-            fieldReturnId: deduction.type === "RETUR_OFFSET" ? deduction.fieldReturnId : null,
-            note: deduction.note,
-            proofUrl: deduction.proofR2Key ? urlFromKey(deduction.proofR2Key) : deduction.proofUrl,
-            proofR2Key: deduction.proofR2Key,
-          })),
+          create: input.deductions.map((deduction) => {
+            const isRetur = deduction.type === "RETUR_OFFSET";
+            return {
+              type: deduction.type,
+              amount: deduction.type === "ADMIN_FEE" ? totals.adminFee : roundCents(deduction.amount ?? 0),
+              percent: deduction.type === "ADMIN_FEE" ? deduction.percent : null,
+              fieldReturnId: deduction.type === "RETUR_OFFSET" ? deduction.fieldReturnId : null,
+              note: deduction.note,
+              proofUrl: isRetur ? null : deduction.proofR2Key ? urlFromKey(deduction.proofR2Key) : deduction.proofUrl,
+              proofR2Key: isRetur ? null : deduction.proofR2Key,
+            };
+          }),
         },
       },
       select: { id: true, docNo: true },

@@ -5,6 +5,7 @@ import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { prisma } from "@elorae/db";
 import { attachVisitPhoto, MAX_PHOTOS_PER_VISIT, VisitOwnershipError, VisitPhotoCapError } from "@/lib/field-sales/visit-photo-writer";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,9 @@ export async function POST(req: NextRequest) {
   if (pwaAccessGuard(session.user.permissions) !== "render") return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   if (!isConfigured()) return NextResponse.json({ error: "R2 not configured" }, { status: 503 });
 
+  if (exceedsDeclaredLength(req, MAX_FILE_SIZE)) {
+    return NextResponse.json({ error: "file exceeds 10MB" }, { status: 413 });
+  }
   const form = await req.formData();
   const file = form.get("file") as File | null;
   const visitId = form.get("visitId") as string | null;

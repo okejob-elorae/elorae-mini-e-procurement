@@ -4,6 +4,7 @@ import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeyExt } from "@/lib/r2-key";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,10 @@ export async function POST(request: NextRequest) {
 
   if (!isConfigured()) {
     return NextResponse.json({ error: "R2 storage is not configured" }, { status: 503 });
+  }
+
+  if (exceedsDeclaredLength(request, MAX_FILE_SIZE)) {
+    return NextResponse.json({ error: "File exceeds the 10 MB limit" }, { status: 413 });
   }
 
   let formData: FormData;

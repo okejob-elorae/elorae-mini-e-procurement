@@ -106,6 +106,7 @@ function messageForFailure(status: number, body: unknown, t: (key: string) => st
   }
   if (status === 401) return t("failUnauthorized");
   if (status === 403) return t("failForbidden");
+  if (status === 413) return t("failPhotoTooLarge");
   if (status === 503) return t("failUploadUnavailable");
   if (status === 502) return t("failUploadFailed");
   // A generic 5xx is a server-side failure, not something retaking the photo or re-filling

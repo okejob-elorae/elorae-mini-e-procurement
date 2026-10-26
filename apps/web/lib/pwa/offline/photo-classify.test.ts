@@ -3,8 +3,8 @@ import { classifyPhotoUpload } from "./photo-classify";
 
 describe("classifyPhotoUpload", () => {
   it("evicts on 2xx", () => { expect(classifyPhotoUpload(200)).toBe("evict"); });
-  it("terminal on 400/403/404 and the 409 cap refusal", () => {
-    for (const s of [400, 403, 404, 409]) expect(classifyPhotoUpload(s)).toBe("terminal");
+  it("terminal on 400/403/404, the 409 cap refusal and a 413 oversize body", () => {
+    for (const s of [400, 403, 404, 409, 413]) expect(classifyPhotoUpload(s)).toBe("terminal");
   });
   it("retries a 401 (expired session) instead of failing the photo", () => {
     expect(classifyPhotoUpload(401)).toBe("retry");

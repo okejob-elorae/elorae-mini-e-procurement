@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
 import { FieldReturnError } from "@/lib/field-sales/retur/errors";
 import { FIELD_RETURN_REASONS, type FieldReturnLineInput } from "@/lib/field-sales/retur/types";
@@ -46,6 +47,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   if (!isConfigured()) return NextResponse.json({ error: "R2 not configured" }, { status: 503 });
+
+  if (exceedsDeclaredLength(req, MAX_FILE_SIZE)) {
+    return NextResponse.json({ error: "file exceeds 10MB" }, { status: 413 });
+  }
 
   const form = await req.formData();
   const file = form.get("file") as File | null;

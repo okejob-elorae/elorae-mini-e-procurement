@@ -32,10 +32,26 @@ export async function setOverdueThresholds(
     return { ok: false, code: "INVALID" };
   }
 
-  await prisma.systemSetting.upsert({
-    where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
-    create: { key: OVERDUE_THRESHOLD_SETTING_KEY, value: trimmed },
-    update: { value: trimmed },
+  await prisma.$transaction(async (tx) => {
+    const before = await tx.systemSetting.findUnique({
+      where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
+      select: { value: true },
+    });
+    await tx.systemSetting.upsert({
+      where: { key: OVERDUE_THRESHOLD_SETTING_KEY },
+      create: { key: OVERDUE_THRESHOLD_SETTING_KEY, value: trimmed },
+      update: { value: trimmed },
+    });
+    await tx.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "AR_OVERDUE_THRESHOLDS_UPDATE",
+        entityType: "SystemSetting",
+        entityId: OVERDUE_THRESHOLD_SETTING_KEY,
+        changes: { before: { value: before?.value ?? null }, after: { value: trimmed } },
+        reason: null,
+      },
+    });
   });
   revalidatePath("/backoffice/settings/piutang");
   return { ok: true, thresholds: parseOverdueThresholds(trimmed) };

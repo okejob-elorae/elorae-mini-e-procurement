@@ -4,6 +4,7 @@ import { SalesChannel } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { executeSalesHistoryImport } from "@/lib/forecast/import-sales-history";
 import { loadReconciliationReport } from "@/lib/sales/load-reconciliation-report";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,13 @@ export async function POST(request: NextRequest) {
     }
 
     requirePermission(session.user.permissions, PERMISSIONS.FORECAST_MANAGE);
+
+    if (exceedsDeclaredLength(request, MAX_FILE_SIZE)) {
+      return NextResponse.json(
+        { success: false, error: "File exceeds the 10 MB limit" },
+        { status: 413 }
+      );
+    }
 
     const formData = await request.formData();
     const file = formData.get("file");
