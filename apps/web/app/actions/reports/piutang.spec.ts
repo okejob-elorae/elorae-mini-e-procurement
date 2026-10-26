@@ -32,4 +32,32 @@ describe("exportReceivablesReport empty guard", () => {
     expect(res).toMatchObject({ truncated: true });
     expect("empty" in res).toBe(false);
   });
+
+  it("writes a BOM and neutralises a formula-shaped store name in the CSV", async () => {
+    mockList.mockResolvedValue({
+      rows: [
+        {
+          storeName: "=HYPERLINK(\"x\")",
+          docNo: "INV-1",
+          invoiceDate: new Date("2026-10-01T00:00:00Z"),
+          dueDate: new Date("2026-10-15T00:00:00Z"),
+          daysOverdue: 3,
+          bucket: "DAYS_1_30",
+          originalAmount: 100,
+          paidAmount: 0,
+          outstandingAmount: 100,
+          status: "OPEN",
+          collectorName: null,
+          salesmanName: null,
+        },
+      ],
+      truncated: false,
+      totalRows: 1,
+    });
+    const res = await exportReceivablesReport({}, "csv");
+    const data = "data" in res && res.data ? res.data : "";
+    expect(data.startsWith("\uFEFF")).toBe(true);
+    expect(data).toContain(`"'=HYPERLINK(""x"")"`);
+    expect(data).toContain(`"3"`);
+  });
 });

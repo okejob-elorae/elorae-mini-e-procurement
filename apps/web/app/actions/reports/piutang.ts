@@ -6,6 +6,7 @@ import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import { listReceivablesForExport, type ReceivableFilters } from "@/lib/finance/ar/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
+import { toCsv } from "@/lib/reports/csv";
 
 export type ReceivableExportResult =
   | { empty: true; data?: never; base64?: never }
@@ -55,10 +56,7 @@ export async function exportReceivablesReport(
   const filename = `piutang-overdue-${Date.now()}`;
 
   if (format === "csv") {
-    const lines = rows.map((r) =>
-      CSV_HEADERS.map((h) => `"${String((r as Record<string, unknown>)[h]).replace(/"/g, '""')}"`).join(","),
-    );
-    const data = [CSV_HEADERS.join(","), ...lines].join("\n") + "\n";
+    const data = toCsv(CSV_HEADERS, rows);
     return { data, filename: `${filename}.csv`, truncated, totalRows };
   }
 
