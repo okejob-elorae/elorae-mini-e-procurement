@@ -188,7 +188,7 @@ export function BkmView({ settlement }: { settlement: SettlementPrintDetail }) {
   return (
     <div className="flex flex-col gap-3 p-4">
       <header className="-ml-2 print:hidden">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href="/pwa/pelunasan">
             <ArrowLeft className="h-4 w-4" />
             {t("back")}

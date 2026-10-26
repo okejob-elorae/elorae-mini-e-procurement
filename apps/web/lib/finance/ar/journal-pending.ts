@@ -73,3 +73,29 @@ export async function isArJournalRetryable(kind: ArJournalKind, docId: string): 
   const postable = await findPostableArJournalDocIds(kind, [docId]);
   return postable.has(docId);
 }
+
+const FIELD_DELIVERY_SOURCE_TYPE = {
+  field_delivery_revenue: "FIELD_DELIVERY_REVENUE",
+  field_delivery_cogs: "FIELD_DELIVERY_COGS",
+} as const;
+
+/**
+ * Whether the receivable detail page should still show the journal-pending banner for one delivery
+ * journal kind: flagged (the retry gate, unchanged) AND no journal posted for it.
+ *
+ * The flag alone cannot drive the banner. `JOURNAL_PENDING` rows are append-only, so after a retry
+ * that posts the journal the gate still reads "still pending", and the banner would never clear.
+ * The journal's own existence is the only signal that the retry landed. It is NEVER the gate on its
+ * own: a backfilled delivery has no journal either, and the flag is what proves a post was attempted.
+ */
+export async function isFieldDeliveryJournalStillPending(
+  kind: keyof typeof FIELD_DELIVERY_SOURCE_TYPE,
+  deliveryId: string,
+): Promise<boolean> {
+  if (!(await isArJournalRetryable(kind, deliveryId))) return false;
+  const posted = await prisma.journal.findFirst({
+    where: { sourceType: FIELD_DELIVERY_SOURCE_TYPE[kind], sourceId: deliveryId },
+    select: { id: true },
+  });
+  return posted === null;
+}

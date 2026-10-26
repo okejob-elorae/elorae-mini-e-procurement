@@ -46,7 +46,7 @@ export function NotaView({ sale }: { sale: SpgSaleDetail }) {
   return (
     <div className="flex flex-col gap-3 p-4">
       <header className="-ml-2 print:hidden">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href="/pwa/spg/sale">
             <ArrowLeft className="h-4 w-4" />
             Kembali

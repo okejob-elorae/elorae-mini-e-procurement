@@ -16,6 +16,18 @@ export type ArJournalKind =
   | "konsi_sell_through_shrinkage_void"
   | "konsi_sell_through_surplus_void";
 
+/**
+ * The kinds whose retry control is gated on a matching `JOURNAL_PENDING` row existing: the two
+ * delivery journals, the payment receipt and its void reversal. The konsi sell-through kinds are
+ * retried off the report's own state (the missing journal), so they never depend on the row.
+ */
+const FLAG_GATED_KINDS: ReadonlySet<ArJournalKind> = new Set<ArJournalKind>([
+  "field_delivery_revenue",
+  "field_delivery_cogs",
+  "ar_payment",
+  "ar_payment_void",
+]);
+
 const TITLE: Record<ArJournalKind, string> = {
   field_delivery_revenue: "Nota tagihan revenue journal not posted",
   field_delivery_cogs: "Nota tagihan COGS journal not posted",
@@ -164,13 +176,20 @@ async function notify(
   } catch (e) {
     /*
      * Best-effort: a notification failure must never fail the source operation, which has already
-     * committed. But swallowing it silently is total invisibility — the retry control is gated on a
-     * matching JOURNAL_PENDING row existing, so if THIS write also fails the document ends up with
-     * no journal, no notification and no retry button, permanently unpostable except by hand.
+     * committed. Swallowing it silently would be total invisibility for the flag-gated kinds (the
+     * delivery journals and the payment receipt and its void reversal): their retry control is gated
+     * on a matching JOURNAL_PENDING row existing, so if THIS write also fails the document ends up
+     * with no journal, no notification and no retry button, unpostable except by hand. The konsi
+     * sell-through kinds, their originals and void reversals alike, are retryable without the row,
+     * so for them the log is only a missed alert.
      */
     console.error(
-      `[postArJournalSafely] FAILED TO NOTIFY for ${kind} ${docId} — the journal did not post and the ` +
-        `JOURNAL_PENDING notification write also failed (${reason}). It needs a manual journal entry.`,
+      FLAG_GATED_KINDS.has(kind)
+        ? `[postArJournalSafely] FAILED TO NOTIFY for ${kind} ${docId} — the journal did not post and the ` +
+            `JOURNAL_PENDING notification write also failed (${reason}). It needs a manual journal entry.`
+        : `[postArJournalSafely] FAILED TO NOTIFY for ${kind} ${docId} — the journal did not post and the ` +
+            `JOURNAL_PENDING notification write also failed (${reason}). It is still retryable without ` +
+            `the flag, so no alert reached finance.`,
       e,
     );
   }

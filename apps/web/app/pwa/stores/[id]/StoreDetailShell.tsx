@@ -115,7 +115,7 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
   return (
     <div className="p-4 space-y-4">
       <header className="-ml-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href="/pwa/stores">
             <ArrowLeft className="h-4 w-4" />
             {tList("title")}

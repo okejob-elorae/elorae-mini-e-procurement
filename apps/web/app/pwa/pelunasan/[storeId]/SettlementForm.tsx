@@ -524,7 +524,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
   return (
     <div className="flex flex-col gap-4 p-4 pb-24">
       <header className="-ml-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href="/pwa/pelunasan">
             <ArrowLeft className="h-4 w-4" />
             {t("backToList")}

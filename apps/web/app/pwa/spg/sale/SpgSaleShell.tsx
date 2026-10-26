@@ -166,7 +166,7 @@ export function SpgSaleShell({ catalog, markupMissing }: { catalog: SpgCatalogRo
   return (
     <div className="flex flex-col gap-3 p-4">
       <header className="-ml-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href="/pwa">
             <ArrowLeft className="h-4 w-4" />
             Kembali

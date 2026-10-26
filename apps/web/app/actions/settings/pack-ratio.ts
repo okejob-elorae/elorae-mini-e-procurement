@@ -13,6 +13,14 @@ export async function getPackRatio(): Promise<PackRatioRow[]> {
   return parsePackRatio(row?.value ?? null);
 }
 
+export async function getPackRatioForSettings(): Promise<PackRatioRow[]> {
+  const session = await auth();
+  if (!session) throw new Error("Unauthorized");
+  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_PACK_RATIO_VIEW);
+
+  return getPackRatio();
+}
+
 export async function setPackRatio(
   rows: PackRatioRow[],
 ): Promise<{ ok: true } | { ok: false; code: "EMPTY" | "BAD_SIZE" | "DUP_SIZE" | "BAD_QTY" }> {

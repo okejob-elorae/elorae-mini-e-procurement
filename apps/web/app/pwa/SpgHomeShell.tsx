@@ -141,7 +141,7 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
 
       {activeVisit ? (
         <>
-          <Button asChild className="w-full py-3 text-lg font-medium">
+          <Button asChild size="lg" className="w-full py-3 text-lg font-medium">
             <Link href="/pwa/spg/sale">
               <ShoppingCart className="h-5 w-5" />
               Catat Penjualan
@@ -160,7 +160,7 @@ export function SpgHomeShell({ userName, store, activeVisit, autoCloseStoreName,
         </>
       ) : (
         <>
-          <Button disabled variant="secondary" className="w-full py-3 text-lg font-medium">
+          <Button disabled variant="secondary" size="lg" className="w-full py-3 text-lg font-medium">
             <ShoppingCart className="h-5 w-5" />
             Catat Penjualan (check-in dulu)
           </Button>

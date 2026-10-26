@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getReceivable, listAllocationCandidatesForStore, type AllocationCandidate } from "@/lib/finance/ar/queries";
-import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
+import { isFieldDeliveryJournalStillPending } from "@/lib/finance/ar/journal-pending";
 import { listCollectorCandidates } from "@/lib/finance/collections/queries";
 import { ReceivableDetailClient } from "./ReceivableDetailClient";
 
@@ -32,7 +32,9 @@ export default async function ReceivableDetailPage({ params }: PageProps) {
    * Every backfilled receivable has no journal by construction, so "no journal exists" is never
    * the gate — only an actual JOURNAL_PENDING notification for this delivery makes the retry
    * button render at all. Resolved here, server-side, and passed down as a plain boolean: the
-   * client never gets to decide this for itself.
+   * client never gets to decide this for itself. The flag rows are append-only, so a kind whose
+   * journal has since posted is dropped (`isFieldDeliveryJournalStillPending`), or the banner would
+   * outlive a successful retry.
    *
    * `field_delivery_revenue`/`field_delivery_cogs` are delivery-backed journal kinds only — a
    * SELL_THROUGH-sourced receivable has no delivery to retry a journal against, so it never gets a
@@ -41,8 +43,8 @@ export default async function ReceivableDetailPage({ params }: PageProps) {
    */
   const deliveryId = receivable.source.kind === "DELIVERY" ? receivable.source.deliveryId : null;
   const [revenueRetryable, cogsRetryable, allocationCandidates, collectorCandidates] = await Promise.all([
-    deliveryId ? isArJournalRetryable("field_delivery_revenue", deliveryId) : Promise.resolve(false),
-    deliveryId ? isArJournalRetryable("field_delivery_cogs", deliveryId) : Promise.resolve(false),
+    deliveryId ? isFieldDeliveryJournalStillPending("field_delivery_revenue", deliveryId) : Promise.resolve(false),
+    deliveryId ? isFieldDeliveryJournalStillPending("field_delivery_cogs", deliveryId) : Promise.resolve(false),
     canManagePayments ? listAllocationCandidatesForStore(receivable.storeId) : Promise.resolve<AllocationCandidate[]>([]),
     canManageCollections ? listCollectorCandidates() : Promise.resolve<{ id: string; name: string }[]>([]),
   ]);

@@ -691,7 +691,7 @@ export function StoreDetailView({
                     <TableHead>{tDetail("visitTable.duration")}</TableHead>
                     <TableHead>{tDetail("visitTable.user")}</TableHead>
                     <TableHead>{tDetail("visitTable.coords")}</TableHead>
-                    <TableHead>Foto</TableHead>
+                    <TableHead>{tDetail("photos.column")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -740,7 +740,7 @@ export function StoreDetailView({
                               setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })
                             }
                           >
-                            <Images className="h-4 w-4" /> {v.photos.length} foto
+                            <Images className="h-4 w-4" /> {tDetail("photos.count", { count: v.photos.length })}
                           </Button>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
@@ -1101,7 +1101,7 @@ export function StoreDetailView({
 
       <Dialog open={!!gallery} onOpenChange={(o) => !o && setGallery(null)}>
         <DialogContent className="max-w-2xl">
-          <DialogTitle>Foto Kunjungan{gallery ? ` — ${gallery.label}` : ""}</DialogTitle>
+          <DialogTitle>{tDetail("photos.title")}{gallery ? ` — ${gallery.label}` : ""}</DialogTitle>
           {gallery && (
             <div className="grid max-h-[70vh] grid-cols-2 gap-3 overflow-y-auto sm:grid-cols-3">
               {gallery.photos.map((p) => (
@@ -1110,7 +1110,7 @@ export function StoreDetailView({
                   type="button"
                   onClick={() => setLightbox({ url: p.url, caption: p.caption })}
                   className="space-y-1 text-left"
-                  aria-label={p.caption ?? "Foto kunjungan"}
+                  aria-label={p.caption ?? tDetail("photos.alt")}
                 >
                   <div className="aspect-square overflow-hidden rounded-md border bg-muted">
                     <img src={p.url} alt={p.caption ?? ""} className="h-full w-full object-cover" loading="lazy" />
@@ -1125,7 +1125,7 @@ export function StoreDetailView({
 
       <Dialog open={!!lightbox} onOpenChange={(o) => !o && setLightbox(null)}>
         <DialogContent className="max-w-lg">
-          <DialogTitle className="sr-only">Foto kunjungan</DialogTitle>
+          <DialogTitle className="sr-only">{tDetail("photos.alt")}</DialogTitle>
           {lightbox && (
             <div className="space-y-2">
               <img
