@@ -79,9 +79,8 @@ export async function runOverdueSweep(options?: {
   });
 
   /*
-   * Deliberately NO `take` and NO `createdAt` floor. Copying `alreadyFlagged`'s `take: 200` from
-   * the JOURNAL_PENDING path would be a bug here: that code dedups a daily-refiring flag, so an
-   * aged-out row costs at worst a duplicate. This IS the only record that a one-shot crossing
+   * Deliberately NO `take` and NO `createdAt` floor. A capped dedup read would be a bug here:
+   * a duplicate alert is cheap elsewhere, but this IS the only record that a one-shot crossing
    * already fired — a row falling outside a window would make the sweep re-announce it forever.
    * Volume is bounded by construction (roughly one row per receivable per threshold), and
    * `@@index([category, createdAt])` makes the read indexed even unfiltered.

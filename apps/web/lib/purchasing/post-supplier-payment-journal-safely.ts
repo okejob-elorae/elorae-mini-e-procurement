@@ -369,8 +369,9 @@ function messageFor(
  * is still an open follow-up). A new row is honest about when the new failure
  * happened.
  *
- * Shares `hasJournalPendingRow` with the other journal flaggers: it reads every
- * `JOURNAL_PENDING` row, read or unread, and the match runs in JS.
+ * Shares `hasJournalPendingRow` with the other journal flaggers, with `unreadOnly`: it reads every
+ * UNREAD `JOURNAL_PENDING` row, uncapped, and the match runs in JS. A read row no longer
+ * suppresses, so a new failure episode alerts again.
  */
 async function alreadyFlagged(
   direction: SupplierPaymentDirection,
@@ -379,6 +380,7 @@ async function alreadyFlagged(
 ): Promise<boolean> {
   return hasJournalPendingRow(
     (m) => m.docId === poId && m.kind === NOTIFICATION_KIND[direction] && m.reason === reason,
+    { unreadOnly: true },
   );
 }
 

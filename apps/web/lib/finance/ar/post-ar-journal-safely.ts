@@ -136,11 +136,12 @@ export async function postArJournalSafely(
  * properties — a repeat writes nothing, a new failure always writes — and accumulation stays
  * bounded at one row per distinct reason per document and kind.
  *
- * The read is `hasJournalPendingRow`'s: every `JOURNAL_PENDING` row, read or unread, matched in JS
- * because this MariaDB adapter's JSON-path filtering is unreliable.
+ * The read is `hasJournalPendingRow`'s with `unreadOnly`: every UNREAD `JOURNAL_PENDING` row, uncapped,
+ * matched in JS because this MariaDB adapter's JSON-path filtering is unreliable. A row an operator
+ * has read no longer suppresses, so a new failure with the same triple alerts again.
  */
 async function alreadyFlagged(kind: ArJournalKind, docId: string, reason: string): Promise<boolean> {
-  return hasJournalPendingRow((m) => m.docId === docId && m.kind === kind && m.reason === reason);
+  return hasJournalPendingRow((m) => m.docId === docId && m.kind === kind && m.reason === reason, { unreadOnly: true });
 }
 
 /**

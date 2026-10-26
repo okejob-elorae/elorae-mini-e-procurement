@@ -375,7 +375,7 @@ d("postPendingVanJournals (test bed only)", () => {
       const rows = await pendingRowsFor(recon.id, "van_reconcile");
       expect(rows).toHaveLength(1);
 
-      /* A read row is invisible to the unread dedup; the sweep must still see it. */
+      /* A read row is invisible to the poster's unread-only dedup; the sweep's read-or-unread flagged set must still see it. */
       await prisma.adminNotification.update({ where: { id: rows[0].id }, data: { readAt: new Date() } });
 
       const second = await postPendingVanJournals({ scope: { reconcile: [recon.id] }, now: settled() });

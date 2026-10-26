@@ -8,21 +8,38 @@ export type JournalPendingMetadata = {
   reason?: string;
 };
 
+export type JournalPendingReadOptions = {
+  /**
+   * True ignores rows an operator has already read, so a failure that recurs after the alert was
+   * opened files a fresh one. False (default) matches read and unread rows alike.
+   */
+  unreadOnly?: boolean;
+};
+
 /**
- * True when ANY `JOURNAL_PENDING` row, read or unread, matches. One uncapped read of the
- * indexed `category` column selecting only `metadata`, matched in JS: this MariaDB adapter's
- * JSON-path filtering is unreliable, so the match cannot live in the query. Neither a row cap
- * nor an unread filter is applied on purpose: a cap lets a matching row fall out of the window
- * once enough newer rows pile up, and an unread filter re-files a row the moment an operator
- * opens the bell, so a post that keeps failing would re-announce itself every tick.
+ * The `metadata` of every `JOURNAL_PENDING` row, in one uncapped read of the indexed `category`
+ * column. Matching happens in JS: this MariaDB adapter's JSON-path filtering is unreliable, so the
+ * match cannot live in the query. No row cap on purpose: a cap lets a matching row fall out of the
+ * window once enough newer rows pile up.
  */
-export async function hasJournalPendingRow(match: (metadata: JournalPendingMetadata) => boolean): Promise<boolean> {
+export async function listJournalPendingMetadata(
+  opts: JournalPendingReadOptions = {},
+): Promise<JournalPendingMetadata[]> {
   const rows = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING" },
+    where: opts.unreadOnly ? { category: "JOURNAL_PENDING", readAt: null } : { category: "JOURNAL_PENDING" },
     select: { metadata: true },
   });
-  return rows.some((row) => {
-    const metadata = row.metadata as JournalPendingMetadata | null;
-    return metadata != null && match(metadata);
-  });
+  return rows.map((row) => row.metadata as JournalPendingMetadata | null).filter((m): m is JournalPendingMetadata => m != null);
+}
+
+/**
+ * True when a `JOURNAL_PENDING` row matches. With `unreadOnly` an operator who has read the alert
+ * is re-alerted by the next failure with the same identity; without it a read row still suppresses,
+ * which is what a sweep needs so a post that keeps failing does not re-announce itself every tick.
+ */
+export async function hasJournalPendingRow(
+  match: (metadata: JournalPendingMetadata) => boolean,
+  opts: JournalPendingReadOptions = {},
+): Promise<boolean> {
+  return (await listJournalPendingMetadata(opts)).some(match);
 }

@@ -44,12 +44,12 @@ export async function postVanJournalSafely(
 }
 
 /**
- * Skips the write when any `JOURNAL_PENDING` row, read or unread, already exists
- * for the same document and kind. Shared with the other journal flaggers through
- * `hasJournalPendingRow`, which reads every row and matches in JS.
+ * Skips the write when an UNREAD `JOURNAL_PENDING` row already exists for the same document
+ * and kind. Shared with the other journal flaggers through `hasJournalPendingRow` with
+ * `unreadOnly`, which reads every unread row (uncapped) and matches in JS.
  */
 async function alreadyFlagged(kind: string, docId: string): Promise<boolean> {
-  return hasJournalPendingRow((m) => m.docId === docId && m.kind === `van_${kind}`);
+  return hasJournalPendingRow((m) => m.docId === docId && m.kind === `van_${kind}`, { unreadOnly: true });
 }
 
 /**

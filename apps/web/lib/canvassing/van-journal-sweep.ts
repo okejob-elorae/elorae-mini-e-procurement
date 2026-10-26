@@ -240,10 +240,11 @@ async function findCandidates(
  * A van document created before auto-posting existed has no journal either, and
  * posting it now would replay a one-sided entry (`journal-pending.ts`).
  *
- * Write rule: a `JOURNAL_PENDING` row is filed only for a document that has none
- * at all, read or unread. A failed post for an already-flagged document writes
- * nothing, so a post that keeps failing does not re-file a row every tick once
- * its row is read or ages out of `postVanJournalSafely`'s unread dedup window.
+ * Write rule: this sweep treats a document as flagged when ANY `JOURNAL_PENDING` row
+ * names it, read or unread, and retries a flagged document through the poster directly,
+ * which files nothing. So a post that keeps failing does not re-file a row every tick
+ * once an operator has read its row. `postVanJournalSafely`'s own dedup is unread-only
+ * and uncapped, so a failure at the moment of action alerts again after a read.
  *
  * Not gated on `finance.glCutoverDate`, consistent with every other van journal:
  * `van-journal.ts` never reads it.

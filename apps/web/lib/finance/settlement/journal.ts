@@ -276,7 +276,14 @@ export async function postSettlementJournal(
       where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: s.id } },
       select: { id: true },
     });
-    if (existing) return { ok: true as const, journalId: existing.id, created: false };
+    if (existing) {
+      /* A journal from an earlier post that died before its status write: repair the status here, under the lock. */
+      await tx.settlement.updateMany({
+        where: { id: s.id, status: { not: "RECONCILED" } },
+        data: { status: "RECONCILED" },
+      });
+      return { ok: true as const, journalId: existing.id, created: false };
+    }
     let bank: string, ar: string;
     const feeAccounts = new Map<MarketplaceFeeRole, string>();
     try {

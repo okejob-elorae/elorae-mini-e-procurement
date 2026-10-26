@@ -227,6 +227,23 @@ d("postJournal (test bed only)", () => {
       expect(r).toEqual({ journalId: "winner", created: false });
     });
 
+    it("rethrows the P2002 when the re-read still finds no journal", async () => {
+      await expect(postJournal(fakeClient("Journal_sourceType_sourceId_key", false), input())).rejects.toMatchObject({
+        code: "P2002",
+      });
+    });
+
+    it("detects the collision by shape, not by error class", async () => {
+      const client = fakeClient("Journal_sourceType_sourceId_key", true);
+      (client as unknown as { journal: { create: () => Promise<never> } }).journal.create = async () => {
+        throw Object.assign(new Error("Unique constraint failed"), {
+          code: "P2002",
+          meta: { driverAdapterError: { cause: { constraint: { index: "Journal_sourceType_sourceId_key" } } } },
+        });
+      };
+      expect(await postJournal(client, input())).toEqual({ journalId: "winner", created: false });
+    });
+
     it("still throws a P2002 on any other unique index", async () => {
       await expect(postJournal(fakeClient("Journal_other_key", true), input())).rejects.toMatchObject({ code: "P2002" });
     });
