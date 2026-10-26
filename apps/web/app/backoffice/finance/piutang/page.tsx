@@ -5,7 +5,7 @@ import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listReceivables } from "@/lib/finance/ar/queries";
 import { listStoreOptions } from "@/lib/stores/queries";
 import { listCanvassers } from "@/lib/canvassing/queries";
-import { listCollectorCandidates } from "@/lib/finance/collections/queries";
+import { listCollectorCandidates, getCollectorName } from "@/lib/finance/collections/queries";
 import { getStoreAvailableCredit } from "@/lib/finance/ar/retur-offset-queries";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { AGING_BUCKETS, type AgingBucket } from "@/lib/finance/ar/aging";
@@ -80,6 +80,8 @@ export default async function PiutangPage({ searchParams }: PageProps) {
     storeAvailableCredit: number;
   } | null = null;
 
+  let collectorFilterExtra: { id: string; name: string } | null = null;
+
   try {
     const [list, storeOptions, canvassers, collectorCandidates, storeAvailableCredit] =
       await Promise.all([
@@ -90,6 +92,16 @@ export default async function PiutangPage({ searchParams }: PageProps) {
         storeId ? getStoreAvailableCredit(storeId) : Promise.resolve(0),
       ]);
 
+    /**
+     * A filter on someone who is no longer an eligible collector would otherwise render as "All
+     * Collectors" while still filtering by them. Kept apart from `collectors`, which feeds the
+     * bulk-assign target list and must stay eligible-only.
+     */
+    const filterCollectorName =
+      collectorId && !collectorCandidates.some((c) => c.id === collectorId)
+        ? await getCollectorName(collectorId)
+        : null;
+    collectorFilterExtra = filterCollectorName ? { id: collectorId as string, name: filterCollectorName } : null;
     loaded = { list, storeOptions, canvassers, collectorCandidates, storeAvailableCredit };
   } catch (err) {
     /**
@@ -108,6 +120,7 @@ export default async function PiutangPage({ searchParams }: PageProps) {
       storeOptions={loaded?.storeOptions ?? []}
       salesmen={(loaded?.canvassers ?? []).map((c) => ({ id: c.id, name: c.name }))}
       collectors={loaded?.collectorCandidates ?? []}
+      collectorFilterExtra={collectorFilterExtra}
       canManageCollections={canManageCollections}
       storeAvailableCredit={loaded && storeId ? loaded.storeAvailableCredit : null}
       storeId={storeId ?? ""}

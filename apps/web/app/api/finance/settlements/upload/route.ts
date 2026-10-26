@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma, Prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 import { parseSettlement, isSupportedMarketplace } from "@/lib/finance/settlement/parser";
 import { persistSettlement } from "@/lib/finance/settlement/persist";
 import { matchSettlement } from "@/lib/finance/settlement/match";
@@ -31,6 +32,10 @@ export async function POST(request: NextRequest) {
     const perms = (session.user as { permissions?: string[] }).permissions ?? [];
     if (!hasPermission(perms, PERMISSIONS.SETTLEMENTS_MANAGE)) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
+    if (exceedsDeclaredLength(request, MAX_FILE_SIZE)) {
+      return NextResponse.json({ error: "File exceeds the 10 MB limit" }, { status: 413 });
     }
 
     let formData: FormData;

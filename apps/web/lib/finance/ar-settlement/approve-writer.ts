@@ -1,10 +1,11 @@
-import { prisma } from "@elorae/db";
+import { prisma, type SettlementDeductionType } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { applyReturnOffset } from "@/lib/finance/ar/retur-offset-writer";
 import { allocateOldestFirst, type AllocationInput, type AllocationOutput } from "./allocate";
 import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
+import type { SettlementDeductionTypeValue } from "./checks";
 import { SettlementError } from "./errors";
 import type { ApprovalNotice } from "./approval-notice";
 import { parseVarianceTolerance, VARIANCE_TOLERANCE_SETTING_KEY } from "./variance-tolerance";
@@ -53,6 +54,18 @@ export const DEDUCTION_TYPE_TO_PAYMENT_METHOD = {
   PROGRAM: "PROGRAM_DEDUCTION",
   ADMIN_FEE: "ADMIN_FEE",
 } as const satisfies Record<"RETUR_OFFSET" | "PROGRAM" | "ADMIN_FEE", string>;
+
+/**
+ * Compile-time pin: the hand-written `SettlementDeductionTypeValue` (client-safe, so it cannot
+ * import Prisma) and the map's keys must both stay identical to Prisma's `SettlementDeductionType`.
+ * A member added to the enum alone, or to one spelling alone, makes one of these `never` and
+ * fails the type-check instead of drifting silently.
+ */
+type SameMembers<A, B> = [A] extends [B] ? ([B] extends [A] ? true : never) : never;
+const SETTLEMENT_DEDUCTION_TYPE_IN_SYNC: SameMembers<SettlementDeductionTypeValue, SettlementDeductionType> = true;
+const DEDUCTION_MAP_COVERS_PRISMA: SameMembers<keyof typeof DEDUCTION_TYPE_TO_PAYMENT_METHOD, SettlementDeductionType> = true;
+void SETTLEMENT_DEDUCTION_TYPE_IN_SYNC;
+void DEDUCTION_MAP_COVERS_PRISMA;
 
 export type SettlementPaymentMethod = "CASH" | "RETUR_OFFSET" | "PROGRAM_DEDUCTION" | "ADMIN_FEE";
 

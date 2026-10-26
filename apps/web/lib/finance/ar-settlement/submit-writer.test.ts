@@ -549,6 +549,21 @@ d("submitSettlement (test bed only)", () => {
     expect(result.settlementId).toBeTruthy();
   });
 
+  it("stores null proof columns for a RETUR_OFFSET deduction whatever the caller sent", async () => {
+    const draftId = `returproof-${token}`;
+    const result = await submitSettlement({
+      ...baseInput, draftId,
+      deductions: [
+        { type: "RETUR_OFFSET", amount: 50, fieldReturnId: retId, proofUrl: "https://example.test/x.jpg", proofR2Key: `settlement-proofs/${draftId}/nota` },
+      ],
+    } as unknown as SubmitSettlementInput);
+    const rows = await prisma.storeSettlementDeduction.findMany({
+      where: { settlementId: result.settlementId },
+      select: { type: true, proofUrl: true, proofR2Key: true },
+    });
+    expect(rows).toEqual([{ type: "RETUR_OFFSET", proofUrl: null, proofR2Key: null }]);
+  });
+
   it("refuses reusing the identical proof key across multiple deductions", async () => {
     /*
      * The POD-proof landmine, verbatim: one uploaded photo satisfying every proof requirement at

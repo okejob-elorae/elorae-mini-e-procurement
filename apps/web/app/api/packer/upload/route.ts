@@ -4,6 +4,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { prisma } from "@elorae/db";
+import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 import { getFallbackSalesOrderId, findSalesOrderByTrackingNumber } from "@/lib/packer/queries";
 import {
   upsertPackingVideo,
@@ -25,6 +26,10 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (exceedsDeclaredLength(req, MAX_FILE_SIZE)) {
+    return NextResponse.json({ error: "file exceeds 100MB" }, { status: 413 });
   }
 
   const perms = session.user.permissions ?? [];

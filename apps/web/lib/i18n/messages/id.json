@@ -6193,6 +6193,7 @@
     "allCollectors": "Semua Kolektor",
     "collectorSearchPlaceholder": "Cari kolektor...",
     "collectorSearchEmpty": "Kolektor tidak ditemukan.",
+    "collectorIneligibleLabel": "{name} (tidak lagi memenuhi syarat)",
     "assignCollectorButton": "Tetapkan",
     "unassignedLabel": "Belum ditugaskan",
     "bulkAssignTitle": "Tetapkan Kolektor",

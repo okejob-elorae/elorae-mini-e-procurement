@@ -6193,6 +6193,7 @@
     "allCollectors": "All Collectors",
     "collectorSearchPlaceholder": "Search collector...",
     "collectorSearchEmpty": "No collector found.",
+    "collectorIneligibleLabel": "{name} (no longer eligible)",
     "assignCollectorButton": "Assign",
     "unassignedLabel": "Unassigned",
     "bulkAssignTitle": "Assign Collector",

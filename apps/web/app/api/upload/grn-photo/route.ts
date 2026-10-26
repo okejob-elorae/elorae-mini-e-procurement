@@ -3,10 +3,12 @@ import { randomUUID } from 'crypto';
 import { auth } from '@/lib/auth';
 import { uploadToR2, isConfigured } from '@/lib/r2';
 import { buildR2Key, isSafeR2KeyExt } from '@/lib/r2-key';
+import { exceedsDeclaredLength } from '@/lib/uploads/content-length';
 export const dynamic = 'force-dynamic';
 
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILES_PER_REQUEST = 20;
 const ALLOWED_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -69,6 +71,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'R2 storage is not configured' },
         { status: 503 }
+      );
+    }
+
+    if (exceedsDeclaredLength(request, MAX_FILE_SIZE, MAX_FILES_PER_REQUEST)) {
+      return NextResponse.json(
+        { error: 'File exceeds the 10 MB limit' },
+        { status: 413 }
       );
     }
 
