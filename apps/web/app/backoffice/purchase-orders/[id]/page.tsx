@@ -31,6 +31,7 @@ import { Loader2, ArrowLeft, Edit, CheckCircle, XCircle, Printer, AlertTriangle 
 import { buildPOPrintHtml } from '@/lib/print/po-html';
 import { variantDetailForSku } from '@/lib/items/variants';
 import { logPrint } from '@/app/actions/audit';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { POStatus } from '@/lib/constants/enums';
@@ -506,22 +507,7 @@ export default function PODetailPage() {
         termsFooter: 'Terms & conditions',
       },
     });
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-    iframe.setAttribute('title', 'Print PO');
-    document.body.appendChild(iframe);
-    const doc = iframe.contentWindow?.document;
-    if (doc) {
-      doc.open();
-      doc.write(html);
-      doc.close();
-      setTimeout(() => {
-        iframe.contentWindow?.print();
-      }, 350);
-    }
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 1000);
+    printHtmlInIframe(html, 'Print PO');
   };
 
   return (

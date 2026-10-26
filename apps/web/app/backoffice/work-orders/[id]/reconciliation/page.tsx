@@ -25,6 +25,8 @@ import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
 import { buildReconciliationPrintHtml } from '@/lib/print/reconciliation-html';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
+import { logPrintQuietly } from '@/lib/audit/log-print-quietly';
 
 type ReconLine = {
   itemId: string;
@@ -118,37 +120,8 @@ export default function WorkOrderReconciliationPage() {
       },
     });
 
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute(
-      'style',
-      'position:absolute;width:0;height:0;border:0;visibility:hidden;'
-    );
-    iframe.setAttribute('title', 'Print reconciliation');
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
-    if (!doc) {
-      toast.error('Unable to create print view.');
-      iframe.remove();
-      return;
-    }
-    doc.open();
-    doc.write(html);
-    doc.close();
-
-    const removeIframe = () => {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    };
-
-    // Delay so the iframe document is fully parsed and laid out before print
-    setTimeout(() => {
-      try {
-        iframe.contentWindow?.print();
-      } catch {
-        toast.error('Print failed.');
-      }
-      setTimeout(removeIframe, 500);
-    }, 350);
+    printHtmlInIframe(html, 'Print reconciliation');
+    logPrintQuietly('WorkOrderReconciliation', String(wo.id));
   };
 
   if (isLoading || !wo || !recon) {

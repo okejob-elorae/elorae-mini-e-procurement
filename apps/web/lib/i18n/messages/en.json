@@ -3638,7 +3638,14 @@
       "tagihanDialogFootnote": "Footnote (optional)",
       "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
       "tagihanDialogCancel": "Cancel",
-      "tagihanDialogPrint": "Print"
+      "tagihanDialogPrint": "Print",
+      "tagihanBookkeepingFailed": "The invoice is printing, but these parts of the print record failed to save: {parts}. Tell finance to check the faktur pajak.",
+      "tagihanBookkeepingFailedGeneric": "The invoice is printing, but the print record could not be saved. Tell finance to check the faktur pajak.",
+      "tagihanPart": {
+        "AUDIT": "audit log",
+        "STAMP": "printed stamp",
+        "NOTIFY": "finance notification"
+      }
     },
     "konsiShipments": {
       "title": "Consignment shipments",

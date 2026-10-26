@@ -56,6 +56,7 @@ import { hasPermission } from "@/lib/rbac";
 import { getInventorySnapshot, getStockAdjustments } from '@/app/actions/inventory';
 import { getInventoryValueSnapshot } from '@/app/actions/reports/inventory';
 import { buildInventoryReportPrintHtml } from '@/lib/print/inventory-report-html';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { StockHealthKpis } from '@/components/inventory/StockHealthKpis';
@@ -514,22 +515,7 @@ export function InventoryPageClient({
                   details: snap.details,
                   lowStockAlerts: snap.lowStockAlerts,
                 });
-                const iframe = document.createElement('iframe');
-                iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-                iframe.setAttribute('title', 'Print Inventory Report');
-                document.body.appendChild(iframe);
-                const doc = iframe.contentWindow?.document;
-                if (doc) {
-                  doc.open();
-                  doc.write(html);
-                  doc.close();
-                  setTimeout(() => {
-                    iframe.contentWindow?.print();
-                  }, 350);
-                }
-                setTimeout(() => {
-                  document.body.removeChild(iframe);
-                }, 1000);
+                printHtmlInIframe(html, 'Print Inventory Report');
               } catch {
                 toast.error('Failed to load inventory report for print');
               }

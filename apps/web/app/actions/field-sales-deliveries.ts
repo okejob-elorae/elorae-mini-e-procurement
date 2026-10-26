@@ -416,6 +416,21 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
 }
 
 /**
+ * The bookkeeping halves of a nota tagihan print that can fail independently: the audit row, the
+ * `notaPrintedAt` stamp (the CAS), and the finance notification (delivery lookup plus the
+ * `AdminNotification` row). The push fan-out is not a half: it is fire-and-forget and swallows
+ * its own errors, and the `AdminNotification` row it announces is the durable record.
+ */
+export type NotaTagihanPrintHalf = "AUDIT" | "STAMP" | "NOTIFY";
+
+export type NotaTagihanPrintResult = {
+  ok: boolean;
+  failed: NotaTagihanPrintHalf[];
+  /* Set when nothing ran at all: a bad id, no session or permission, or a failure outside the three halves. */
+  reason?: "INVALID_REQUEST" | "FORBIDDEN" | "UNEXPECTED";
+};
+
+/**
  * Stamps the first print of a nota tagihan and pings finance that a faktur pajak is now due.
  *
  * A missing or empty id returns before anything runs: Prisma drops an `undefined` filter term, so
@@ -431,55 +446,80 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
  * not a `tax_invoices:*` permission. Requiring faktur authority to print a nota would invert the
  * role separation this feature exists to create.
  *
- * The whole body is one try/catch returning void: the nota is already printed by the time this
- * runs, so a ping failure (or any other failure here) must never surface as a print failure.
+ * Never throws: the nota is already printing by the time this runs, so no failure here may
+ * surface as a print failure. It returns a `NotaTagihanPrintResult` instead, naming which halves
+ * failed, so the caller can warn the operator rather than let the bookkeeping fail silently. A
+ * failed audit does not stop the CAS or the notification, and a failed CAS skips the
+ * notification (it is only sent by the call that won the stamp).
  *
- * `logPrint` is wrapped in its OWN try/catch, separate from the outer one: it is the least
- * important write here, but it runs before the CAS, so an unguarded throw from it would abort
- * the whole function and leave `notaPrintedAt` null — vetoing both the stamp and the finance
- * notification because the audit trail hiccuped. Left in its current position (before the CAS)
- * on purpose, so a reprint still gets its own audit row; moving it after the early return would
- * silently stop reprints being audited at all.
+ * `logPrint` is wrapped in its OWN try/catch, separate from the CAS: it is the least important
+ * write here, but it runs before the CAS, so an unguarded throw from it would abort the whole
+ * function and leave `notaPrintedAt` null — vetoing both the stamp and the finance notification
+ * because the audit trail hiccuped. Left in its current position (before the CAS) on purpose, so
+ * a reprint still gets its own audit row; moving it after the early return would silently stop
+ * reprints being audited at all.
  */
-export async function recordNotaTagihanPrinted(deliveryId: string): Promise<void> {
-  if (typeof deliveryId !== "string" || deliveryId === "") return;
+export async function recordNotaTagihanPrinted(deliveryId: string): Promise<NotaTagihanPrintResult> {
+  if (typeof deliveryId !== "string" || deliveryId === "") {
+    return { ok: false, failed: [], reason: "INVALID_REQUEST" };
+  }
+  const failed: NotaTagihanPrintHalf[] = [];
   try {
     const session = await auth();
-    if (!session?.user?.id) return;
-    if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_VIEW)) return;
+    if (!session?.user?.id) return { ok: false, failed: [], reason: "FORBIDDEN" };
+    if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_VIEW)) {
+      return { ok: false, failed: [], reason: "FORBIDDEN" };
+    }
 
     try {
       await logPrint("FieldSalesDeliveryNotaTagihan", deliveryId);
     } catch (err) {
+      failed.push("AUDIT");
       console.error("[nota-tagihan-print] failed to write the print audit row", err);
     }
 
-    const swapped = await prisma.taxInvoice.updateMany({
-      where: { deliveryId, notaPrintedAt: null },
-      data: { notaPrintedAt: new Date(), notaPrintedById: session.user.id },
-    });
-    if (swapped.count !== 1) return;
+    let swapped: { count: number };
+    try {
+      swapped = await prisma.taxInvoice.updateMany({
+        where: { deliveryId, notaPrintedAt: null },
+        data: { notaPrintedAt: new Date(), notaPrintedById: session.user.id },
+      });
+    } catch (err) {
+      failed.push("STAMP");
+      console.error("[nota-tagihan-print] failed to stamp notaPrintedAt", err);
+      return { ok: false, failed };
+    }
+    if (swapped.count !== 1) return { ok: failed.length === 0, failed };
 
-    const delivery = await prisma.fieldSalesDelivery.findUnique({
-      where: { id: deliveryId },
-      select: { docNo: true, order: { select: { store: { select: { name: true } } } } },
-    });
-    if (!delivery) return;
+    try {
+      const delivery = await prisma.fieldSalesDelivery.findUnique({
+        where: { id: deliveryId },
+        select: { docNo: true, order: { select: { store: { select: { name: true } } } } },
+      });
+      if (!delivery) {
+        failed.push("NOTIFY");
+        return { ok: false, failed };
+      }
 
-    const storeName = delivery.order.store.name;
-    const notification = await prisma.adminNotification.create({
-      data: {
-        category: "TAX_INVOICE_PENDING",
-        severity: "INFO",
-        title: `Nota ${delivery.docNo} sudah di-print`,
-        message: `Nota ${delivery.docNo} untuk toko ${storeName} sudah di-print. Pastikan buat faktur pajak.`,
-        metadata: { deliveryId, docNo: delivery.docNo, storeName },
-      },
-    });
+      const storeName = delivery.order.store.name;
+      const notification = await prisma.adminNotification.create({
+        data: {
+          category: "TAX_INVOICE_PENDING",
+          severity: "INFO",
+          title: `Nota ${delivery.docNo} sudah di-print`,
+          message: `Nota ${delivery.docNo} untuk toko ${storeName} sudah di-print. Pastikan buat faktur pajak.`,
+          metadata: { deliveryId, docNo: delivery.docNo, storeName },
+        },
+      });
 
-    void fanOutAdminNotification(notification);
+      void fanOutAdminNotification(notification);
+    } catch (err) {
+      failed.push("NOTIFY");
+      console.error("[nota-tagihan-print] failed to notify finance", err);
+    }
+    return { ok: failed.length === 0, failed };
   } catch (err) {
-    /* Best-effort: the nota is already printed by the time this runs, so a ping must never fail a print. */
     console.error("[nota-tagihan-print] failed to record print", err);
+    return { ok: false, failed, reason: "UNEXPECTED" };
   }
 }

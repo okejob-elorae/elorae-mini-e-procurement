@@ -58,7 +58,8 @@ import {
   recordNotaTagihanPrinted,
   updateDeliveryDatesAction,
 } from "@/app/actions/field-sales-deliveries";
-import { logPrint } from "@/app/actions/audit";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
+import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
 import { promoNameForDeliveryLine } from "@/lib/field-sales/delivery-nota-promos";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
@@ -109,24 +110,6 @@ function formatDay(date: Date, locale: string): string {
 
 function totalQty(delivery: FieldSalesDeliverySummary): number {
   return delivery.lines.reduce((sum, line) => sum + line.qty, 0);
-}
-
-/**
- * Hidden-iframe print mechanism for this card's nota prints — one of the hand-rolled copies
- * `docs/FOLLOWUPS.md` logs for repointing onto the shared `printHtmlInIframe`, which the order
- * detail page's konsi Surat Keluar prints already use.
- */
-function printHtml(html: string, title: string) {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
-  iframe.setAttribute("title", title);
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (doc) {
-    doc.open(); doc.write(html); doc.close();
-    setTimeout(() => iframe.contentWindow?.print(), 350);
-  }
-  setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
 export function DeliveriesCard({
@@ -194,8 +177,8 @@ export function DeliveriesCard({
     return lines.find((line) => line.id === orderLineId)?.variantLabel ?? null;
   }
 
-  async function handlePrintGudang(delivery: FieldSalesDeliverySummary): Promise<void> {
-    await logPrint("FieldSalesDeliveryNotaGudang", delivery.id);
+  function handlePrintGudang(delivery: FieldSalesDeliverySummary): void {
+    logPrintQuietly("FieldSalesDeliveryNotaGudang", delivery.id);
     const html = buildNotaGudangPrintHtml({
       docNo: delivery.docNo,
       orderNo,
@@ -225,7 +208,7 @@ export function DeliveriesCard({
         issuedBy: t("print.issuedBy"),
       },
     });
-    printHtml(html, t("print.notaGudang"));
+    printHtmlInIframe(html, t("print.notaGudang"));
   }
 
   function openTagihanDialog(deliveryId: string): void {
@@ -235,18 +218,16 @@ export function DeliveriesCard({
   }
 
   /**
-   * `recordNotaTagihanPrinted` now awaits four round trips (auth, audit write, the CAS, the
-   * delivery lookup, the notification create) where this used to await one `logPrint` call.
-   * Routed through `startTransition` — the same pattern `callClose`/`callUpdateDates` already
-   * use below — so the print button can be disabled on `isPending` and a second click in that
-   * window can't fire a second audit row and a second print iframe. The CAS already stops
-   * finance being told twice; this stops the OPERATOR seeing two print dialogs.
+   * The preview opens first and the bookkeeping (`recordNotaTagihanPrinted`: audit, stamp,
+   * finance notification) runs after, so the operator never waits on its round trips for the
+   * print. Routed through `startTransition` so the confirm button stays disabled on `isPending`
+   * and a second click can't fire a second print iframe or a second audit row. A failed half
+   * surfaces as a warning toast; it never blocks or undoes the print.
    */
   function callPrintTagihan(): void {
     const delivery = deliveries.find((d) => d.id === tagihanTargetId);
     if (!delivery) return;
     startTransition(async () => {
-      await recordNotaTagihanPrinted(delivery.id);
       const html = buildNotaTagihanPrintHtml({
         docNo: delivery.docNo,
         orderNo,
@@ -291,7 +272,20 @@ export function DeliveriesCard({
           issuedBy: t("print.issuedBy"),
         },
       });
-      printHtml(html, t("print.notaTagihan"));
+      printHtmlInIframe(html, t("print.notaTagihan"));
+      try {
+        const result = await recordNotaTagihanPrinted(delivery.id);
+        if (!result.ok) {
+          const parts = result.failed.map((half) => t(`print.tagihanPart.${half}`));
+          toast.warning(
+            parts.length > 0
+              ? t("print.tagihanBookkeepingFailed", { parts: parts.join(", ") })
+              : t("print.tagihanBookkeepingFailedGeneric"),
+          );
+        }
+      } catch {
+        toast.warning(t("print.tagihanBookkeepingFailedGeneric"));
+      }
       setTagihanDialogOpen(false);
     });
   }
@@ -553,7 +547,7 @@ export function DeliveriesCard({
             </DialogClose>
             <Button disabled={isPending} onClick={callPrintTagihan}>
               <Printer className="h-4 w-4 mr-2" />
-              {t("print.tagihanDialogPrint")}
+              {isPending ? t("delivery.submitting") : t("print.tagihanDialogPrint")}
             </Button>
           </DialogFooter>
         </DialogContent>

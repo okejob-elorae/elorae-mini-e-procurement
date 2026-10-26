@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
+import { logPrintQuietly } from '@/lib/audit/log-print-quietly';
 
 type ReconLine = {
   itemId: string;
@@ -57,6 +58,7 @@ export default function PrintReconciliationPage() {
     // cleanup so it still runs under React Strict Mode (which runs effect twice and
     // would otherwise cancel the first timeout before it fires).
     const t = setTimeout(() => {
+      logPrintQuietly('WorkOrderReconciliation', id);
       window.print();
     }, 400);
     return () => {
