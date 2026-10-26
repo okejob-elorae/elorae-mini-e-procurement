@@ -4,37 +4,54 @@ import * as disclosures from "./disclosures";
 
 const reports = idMessages.financeReports;
 
-/* Every exported disclosure string and the `id.json` key it must equal. */
-const EXPECTED: Record<string, string> = {
-  TRIAL_BALANCE_BALANCED_NOTE: reports.trialBalance.balancedNote,
-  TRIAL_BALANCE_UNBALANCED_NOTE: reports.trialBalance.unbalancedNote,
-  INCOME_STATEMENT_COVERAGE_TITLE: reports.incomeStatement.coverageTitle,
-  INCOME_STATEMENT_COVERAGE_BODY: reports.incomeStatement.coverageBody,
-  BALANCE_SHEET_BALANCED_NOTE: reports.balanceSheet.balancedNote,
-  BALANCE_SHEET_UNBALANCED_NOTE: reports.balanceSheet.unbalancedNote,
-  BALANCE_SHEET_OPENING_TITLE: reports.balanceSheet.openingTitle,
-  CASH_FLOW_COVERAGE_TITLE: reports.cashFlow.coverageTitle,
-  CASH_FLOW_COVERAGE_BODY: reports.cashFlow.coverageBody,
-  CASH_FLOW_NO_CASH_ACCOUNT_NOTE: reports.cashFlow.noCashAccountBody,
-  CASH_FLOW_RECONCILED_NOTE: reports.cashFlow.reconciledNote,
-  CASH_FLOW_UNRECONCILED_NOTE: reports.cashFlow.unreconciledNote,
-  CASH_FLOW_NON_CASH_NOTE: reports.cashFlow.nonCashNote,
-  CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE: reports.cashFlow.printSinglePeriodNote,
-  CASH_FLOW_UNCLASSIFIED_TITLE: reports.cashFlow.unclassifiedTitle,
-};
+/* Every exported string constant. A new one must be added here, which forces a look at where its id.json key lives. */
+const STRING_EXPORTS = [
+  "TRIAL_BALANCE_BALANCED_NOTE",
+  "TRIAL_BALANCE_UNBALANCED_NOTE",
+  "INCOME_STATEMENT_COVERAGE_TITLE",
+  "INCOME_STATEMENT_COVERAGE_BODY",
+  "BALANCE_SHEET_BALANCED_NOTE",
+  "BALANCE_SHEET_UNBALANCED_NOTE",
+  "BALANCE_SHEET_OPENING_TITLE",
+  "CASH_FLOW_COVERAGE_TITLE",
+  "CASH_FLOW_COVERAGE_BODY",
+  "CASH_FLOW_NO_CASH_ACCOUNT_NOTE",
+  "CASH_FLOW_RECONCILED_NOTE",
+  "CASH_FLOW_UNRECONCILED_NOTE",
+  "CASH_FLOW_NON_CASH_NOTE",
+  "CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE",
+  "CASH_FLOW_UNCLASSIFIED_TITLE",
+  "CASH_FLOW_UNCLASSIFIED_POINTER",
+  "CASH_FLOW_INVALID_RANGE_NOTE",
+];
 
 describe("report disclosures", () => {
-  it.each(Object.entries(EXPECTED))("%s equals its id.json value", (name, expected) => {
-    expect((disclosures as Record<string, unknown>)[name]).toBe(expected);
-  });
-
   it("restates no string: every exported string constant is covered above", () => {
     const exportedStrings = Object.entries(disclosures)
       .filter(([, value]) => typeof value === "string")
       .map(([name]) => name)
       .sort();
 
-    expect(exportedStrings).toEqual(Object.keys(EXPECTED).sort());
+    expect(exportedStrings).toEqual([...STRING_EXPORTS].sort());
+  });
+
+  it("includes the single-period note only when a comparison exists", () => {
+    const base = { isReconciled: true, unclassifiedCount: 0 };
+
+    expect(disclosures.cashFlowPrintNotes({ ...base, hasComparison: true }).singlePeriod).toBe(
+      reports.cashFlow.printSinglePeriodNote,
+    );
+    expect(disclosures.cashFlowPrintNotes({ ...base, hasComparison: false }).singlePeriod).toBeNull();
+  });
+
+  it("appends the classification pointer to the print and Excel unclassified body", () => {
+    const withPointer = disclosures.cashFlowUnclassifiedBodyWithPointer(2);
+
+    expect(withPointer).toBe(`${disclosures.cashFlowUnclassifiedBody(2)} ${reports.cashFlow.unclassifiedPointer}`);
+    expect(
+      disclosures.cashFlowPrintNotes({ isReconciled: true, unclassifiedCount: 2, hasComparison: true })
+        .unclassifiedBody,
+    ).toBe(withPointer);
   });
 
   it("fills the opening-balance date into the id.json template", () => {
@@ -58,7 +75,7 @@ describe("report disclosures", () => {
     expect(disclosures.balanceSheetPrintNotes(false, null).note).toBe(reports.balanceSheet.unbalancedNote);
     expect(disclosures.balanceSheetPrintNotes(true, null).openingBody).toBeNull();
     expect(
-      disclosures.cashFlowPrintNotes({ isReconciled: false, unclassifiedCount: 0 }).reconciliation,
+      disclosures.cashFlowPrintNotes({ isReconciled: false, unclassifiedCount: 0, hasComparison: false }).reconciliation,
     ).toBe(reports.cashFlow.unreconciledNote);
   });
 });

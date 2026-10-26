@@ -130,6 +130,23 @@ describe("buildIncomeStatement", () => {
     expect(is.pendapatan[0].subtotal).toBe(500);
   });
 
+  it("keeps a parent whose moving children net to zero, with zero hidden", () => {
+    const rows: BalanceRow[] = [
+      row("parent", "4000", "PENDAPATAN", 0, 0, { hasChildren: true }),
+      row("credit-child", "4100", "PENDAPATAN", 0, 500, { parentId: "parent", depth: 1 }),
+      row("debit-child", "4200", "PENDAPATAN", 500, 0, { parentId: "parent", depth: 1 }),
+    ];
+
+    const is = buildIncomeStatement(rows);
+
+    expect(is.pendapatan.map((n) => n.accountId)).toEqual(["parent"]);
+    expect(is.pendapatan[0].subtotal).toBe(0);
+    expect(is.pendapatan[0].children.map((n) => n.accountId)).toEqual([
+      "credit-child",
+      "debit-child",
+    ]);
+  });
+
   it("flags a period with nothing to show as empty, until zero accounts are requested", () => {
     const rows: BalanceRow[] = [row("rev", "4100", "PENDAPATAN", 0, 0)];
 

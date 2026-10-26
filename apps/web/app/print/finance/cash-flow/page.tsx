@@ -94,6 +94,16 @@ export default function PrintCashFlowPage() {
     );
   }
 
+  if (report.invalidRange) {
+    return (
+      <div className="print-statement mx-auto max-w-2xl text-center">
+        <h1 className="text-lg font-bold">Elorae</h1>
+        <h2 className="text-base font-semibold">Laporan Arus Kas</h2>
+        <p className="mt-4 text-sm">{report.notes.invalidRange}</p>
+      </div>
+    );
+  }
+
   if (!report.hasCashAccount) {
     return (
       <div className="print-statement mx-auto max-w-2xl text-center">
@@ -159,9 +169,11 @@ export default function PrintCashFlowPage() {
       <div className="mt-3 text-xs text-gray-700">
         <p>{report.notes.nonCash}</p>
       </div>
-      <div className="mt-3 text-xs text-gray-700">
-        <p>{report.notes.singlePeriod}</p>
-      </div>
+      {report.notes.singlePeriod && (
+        <div className="mt-3 text-xs text-gray-700">
+          <p>{report.notes.singlePeriod}</p>
+        </div>
+      )}
     </div>
   );
 }

@@ -50,12 +50,12 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   const cmp = report.comparison;
   const columns = cmp ? 4 : 2;
 
-  /* ISO date strings compare correctly as text; an open end defaults to today server-side. */
-  const invalidRange = Boolean(filters.from && filters.to && filters.to < filters.from);
+  /* Computed server-side, where an open end is defaulted to today in WIB. */
+  const invalidRange = report.invalidRange;
 
   /**
-   * Exports are withheld only when there is no cash account, because both the
-   * Excel and the print view refuse in that state anyway — offering a button
+   * Exports are withheld when there is no cash account or the range is
+   * reversed, because both the Excel and the print view refuse in those states anyway — offering a button
    * that produces a refusal note is worse than not offering it. An empty period
    * keeps them: exporting a quiet month is legitimate.
    */

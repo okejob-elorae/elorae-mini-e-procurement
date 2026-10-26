@@ -30,6 +30,7 @@ import {
   BALANCE_SHEET_UNBALANCED_NOTE,
   CASH_FLOW_COVERAGE_BODY,
   CASH_FLOW_COVERAGE_TITLE,
+  CASH_FLOW_INVALID_RANGE_NOTE,
   CASH_FLOW_NON_CASH_NOTE,
   CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
   CASH_FLOW_RECONCILED_NOTE,
@@ -42,7 +43,7 @@ import {
   balanceSheetOpeningBody,
   balanceSheetPrintNotes,
   cashFlowPrintNotes,
-  cashFlowUnclassifiedBody,
+  cashFlowUnclassifiedBodyWithPointer,
   formatOpeningDate,
   incomeStatementPrintNotes,
   trialBalancePrintNotes,
@@ -200,6 +201,8 @@ export type CashFlowReport = CashFlowStatement & {
   periodLabel: string;
   previousPeriodLabel: string | null;
   comparison: CashFlowComparison | null;
+  /* The effective range (open end defaulted to today in WIB) runs backwards. */
+  invalidRange: boolean;
 };
 
 /**
@@ -230,15 +233,20 @@ async function loadCashFlowReport(input: {
   const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   const sectionByAccountId = await getSectionByAccountId();
+  const invalidRange = from !== undefined && to < from;
 
-  /* Since-inception has no preceding window, so the comparison is withheld. */
-  if (!from) {
+  /*
+   * Since-inception has no preceding window, so the comparison is withheld; a
+   * reversed range has no meaningful window at all, so it is withheld there too.
+   */
+  if (!from || invalidRange) {
     const current = await buildCashFlowFor(from, to, sectionByAccountId);
     return {
       ...current,
       periodLabel: rangeLabel(from, to),
       previousPeriodLabel: null,
       comparison: null,
+      invalidRange,
     };
   }
 
@@ -253,6 +261,7 @@ async function loadCashFlowReport(input: {
     periodLabel: rangeLabel(from, to),
     previousPeriodLabel: rangeLabel(prev.from, prev.to),
     comparison: compareCashFlow(current, previous),
+    invalidRange,
   };
 }
 
@@ -267,6 +276,7 @@ export async function getCashFlowReport(input: {
     notes: cashFlowPrintNotes({
       isReconciled: report.isReconciled,
       unclassifiedCount: report.unclassified.length,
+      hasComparison: report.comparison !== null,
     }),
     preparedBy,
     printedAt: printedAtLabel(new Date()),
@@ -425,17 +435,17 @@ export async function exportCashFlowExcel(input: {
   const report = await loadCashFlowReport(input);
 
   /**
-   * Refuse rather than ship a zero statement, matching the screen and the print
-   * view. With no cash account every section computes to zero and
+   * Refuse rather than ship a zero statement (or one for a reversed range), matching
+   * the screen and the print view. With no cash account every section computes to zero and
    * `netChange === cashDelta === 0`, so the workbook would otherwise append the
    * reconciled note and assert that the computed change equals actual cash
    * movement — on a file that leaves the app and gets emailed to an accountant.
    */
-  if (!report.hasCashAccount) {
+  if (report.invalidRange || !report.hasCashAccount) {
     return toWorkbook(
       [
         ...headerRows("Laporan Arus Kas", report.periodLabel, preparedBy),
-        [CASH_FLOW_NO_CASH_ACCOUNT_NOTE],
+        [report.invalidRange ? CASH_FLOW_INVALID_RANGE_NOTE : CASH_FLOW_NO_CASH_ACCOUNT_NOTE],
       ],
       "Arus Kas",
       `arus-kas-${dateLabel(new Date())}.xlsx`,
@@ -484,7 +494,7 @@ export async function exportCashFlowExcel(input: {
     [report.isReconciled ? CASH_FLOW_RECONCILED_NOTE : CASH_FLOW_UNRECONCILED_NOTE],
     ...(report.unclassified.length
       ? [[CASH_FLOW_UNCLASSIFIED_TITLE] as Cell[],
-          [cashFlowUnclassifiedBody(report.unclassified.length)] as Cell[],
+          [cashFlowUnclassifiedBodyWithPointer(report.unclassified.length)] as Cell[],
         ]
       : []),
     [],

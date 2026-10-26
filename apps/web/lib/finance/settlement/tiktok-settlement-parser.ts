@@ -249,7 +249,7 @@ export function parseTiktokSettlement(buffer: Buffer): ParseSuccess | ParseFailu
   //   totalPendapatan   = totalDilepas + totalPengeluaran, DERIVED from the
   //                       journal balance identity the settlement journal
   //                       enforces (`journal.ts`: DR Bank=totalDilepas + DR
-  //                       Fee=totalPengeluaran, CR AR=totalPendapatan) — NOT
+  //                       Σ fee lines = totalPengeluaran, CR AR=totalPendapatan) — NOT
   //                       summed independently from the raw "Total Pendapatan"
   //                       column, so the journal balances by construction and
   //                       can never throw UNBALANCED. The raw column sum is

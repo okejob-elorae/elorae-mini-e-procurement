@@ -79,6 +79,16 @@ export function cashFlowUnclassifiedBody(count: number): string {
   return fill(reports.cashFlow.unclassifiedBody, { count });
 }
 
+/** Print and Excel only: the screen has a link to the classification page instead. */
+export const CASH_FLOW_UNCLASSIFIED_POINTER = reports.cashFlow.unclassifiedPointer;
+
+export const CASH_FLOW_INVALID_RANGE_NOTE = reports.cashFlow.invalidRange;
+
+/** The unclassified body with the pointer sentence appended, for artifacts that leave the app. */
+export function cashFlowUnclassifiedBodyWithPointer(count: number): string {
+  return `${cashFlowUnclassifiedBody(count)} ${CASH_FLOW_UNCLASSIFIED_POINTER}`;
+}
+
 export type TrialBalancePrintNotes = { note: string };
 
 export function trialBalancePrintNotes(isBalanced: boolean): TrialBalancePrintNotes {
@@ -115,27 +125,30 @@ export function balanceSheetPrintNotes(
 
 export type CashFlowPrintNotes = {
   noCashAccount: string;
+  invalidRange: string;
   reconciliation: string;
   unclassifiedTitle: string;
   unclassifiedBody: string;
   coverageTitle: string;
   coverageBody: string;
   nonCash: string;
-  singlePeriod: string;
+  singlePeriod: string | null;
 };
 
 export function cashFlowPrintNotes(input: {
   isReconciled: boolean;
   unclassifiedCount: number;
+  hasComparison: boolean;
 }): CashFlowPrintNotes {
   return {
     noCashAccount: CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
+    invalidRange: CASH_FLOW_INVALID_RANGE_NOTE,
     reconciliation: input.isReconciled ? CASH_FLOW_RECONCILED_NOTE : CASH_FLOW_UNRECONCILED_NOTE,
     unclassifiedTitle: CASH_FLOW_UNCLASSIFIED_TITLE,
-    unclassifiedBody: cashFlowUnclassifiedBody(input.unclassifiedCount),
+    unclassifiedBody: cashFlowUnclassifiedBodyWithPointer(input.unclassifiedCount),
     coverageTitle: CASH_FLOW_COVERAGE_TITLE,
     coverageBody: CASH_FLOW_COVERAGE_BODY,
     nonCash: CASH_FLOW_NON_CASH_NOTE,
-    singlePeriod: CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE,
+    singlePeriod: input.hasComparison ? CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE : null,
   };
 }

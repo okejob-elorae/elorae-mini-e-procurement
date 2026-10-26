@@ -146,9 +146,9 @@ d("cash flow account queries (test bed only)", () => {
 
       expect(sections.get(cashId)).toBe("KAS");
       expect(sections.get(inactiveId)).toBe("KAS");
-      expect(sections.has(parentId)).toBe(false);
-      expect(sections.has(plainId)).toBe(true);
-      expect(sections.has(otherId)).toBe(true);
+      expect(sections.get(parentId)).toBeUndefined();
+      expect(sections.get(plainId)).toBeNull();
+      expect(sections.get(otherId)).toBeNull();
     });
   });
 
