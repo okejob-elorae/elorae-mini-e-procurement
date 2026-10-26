@@ -45,3 +45,16 @@ export function resolveCreatePaymentTerms(
 ): number | null {
   return payloadTerms === undefined ? supplierTerms : payloadTerms;
 }
+
+/**
+ * The hand-entered due date to write on an edit. With terms the date is derived, so nothing is
+ * written here. Without terms, `null` (a cleared field) clears the column and `undefined` (a
+ * payload that omits the field) leaves it alone.
+ */
+export function resolveManualPaymentDueDate<T>(
+  effectiveTerms: number | null,
+  input: T | null | undefined
+): T | null | undefined {
+  if (effectiveTerms != null) return undefined;
+  return input;
+}
