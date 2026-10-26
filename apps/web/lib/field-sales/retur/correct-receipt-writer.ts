@@ -4,9 +4,9 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { FieldReturnError } from "./errors";
 import { auditReason } from "./audit-reason";
-import { assertCountShape, type ReceiveCount } from "./receive-writer";
+import { assertCountsShape, type ReceiveCount } from "./receive-writer";
 import { notifySalesmanOfMismatch, type SalesmanMismatchNoticeInput } from "./mismatch-notice";
-import { allDiscrepantLinesSettled, isSettled, lineVariance } from "./variance";
+import { allDiscrepantLinesSettled, isSettled, lineVariance, LATEST_RESOLUTION_ORDER } from "./variance";
 
 type CorrectableStatus = "PENDING_APPROVAL" | "MISMATCH_PENDING_RESOLUTION";
 
@@ -37,7 +37,7 @@ export async function correctFieldReturnReceipt(input: {
   reason: string;
   counts: ReceiveCount[];
 }): Promise<{ ok: true; status: CorrectableStatus }> {
-  for (const c of input.counts) assertCountShape(c);
+  await assertCountsShape(input.returnId, input.counts);
   const reason = auditReason(input.reason);
 
   let notification: AdminNotification | null = null;
@@ -68,7 +68,7 @@ export async function correctFieldReturnReceipt(input: {
             sellableQty: true,
             rejectedQty: true,
             resolutions: {
-              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              orderBy: LATEST_RESOLUTION_ORDER,
               take: 1,
               select: { createdAt: true },
             },
@@ -151,7 +151,7 @@ export async function correctFieldReturnReceipt(input: {
         qty: true,
         receivedQty: true,
         resolutions: {
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          orderBy: LATEST_RESOLUTION_ORDER,
           take: 1,
           select: { type: true },
         },

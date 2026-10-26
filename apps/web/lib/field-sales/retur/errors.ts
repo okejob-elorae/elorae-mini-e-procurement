@@ -24,7 +24,15 @@ export type FieldReturnErrorCode =
   | "MISSING_REASON";
 
 export class FieldReturnError extends Error {
-  constructor(public code: FieldReturnErrorCode) {
+  /**
+   * @param detail Optional human label for what the code is about (today: the product and
+   * variant of the line a `SPLIT_MISMATCH` names). Never part of `message`, so existing
+   * message-based assertions and logs are unchanged.
+   */
+  constructor(
+    public code: FieldReturnErrorCode,
+    public detail?: string,
+  ) {
     super(code);
     this.name = "FieldReturnError";
   }

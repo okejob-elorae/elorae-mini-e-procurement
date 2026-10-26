@@ -39,6 +39,8 @@ export async function createFieldReturn(input: {
   /* Defaults to FIELD, matching the schema's own default — a caller that omits `origin`
      entirely (every pre-existing caller) gets the exact same rules as before this feature. */
   const origin: "FIELD" | "ADMIN" = input.origin ?? "FIELD";
+  /* A value outside the union (a cast, a JS caller) would skip the FIELD-only checks below and be written as-is. */
+  if (origin !== "FIELD" && origin !== "ADMIN") throw new FieldReturnError("BAD_LINE_SHAPE");
 
   if (input.lines.length === 0) throw new FieldReturnError("NO_LINES");
   for (const l of input.lines) {

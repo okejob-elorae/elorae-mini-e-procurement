@@ -89,7 +89,9 @@ type FieldReturnFailureCode = Exclude<FieldReturnActionResult, { ok: true }>["co
  * failure code maps to its own message so a missing translation renders raw rather than
  * silently falling back.
  */
-export function fieldReturnErrorKey(code: FieldReturnFailureCode): string {
+export function fieldReturnErrorKey(code: FieldReturnFailureCode, detail?: string): string {
+  /* A split refusal that names its line has its own string — the plain one has no `{detail}` slot. */
+  if (code === "SPLIT_MISMATCH" && detail) return "err.SPLIT_MISMATCH_LINE";
   return `err.${code}`;
 }
 
@@ -192,7 +194,7 @@ export function ReceiveForm({ returnId, lines, mode = "receive", initialCounts, 
           router.refresh();
           return;
         }
-        toast.error(t(fieldReturnErrorKey(result.code)));
+        toast.error(t(fieldReturnErrorKey(result.code, result.detail), { detail: result.detail ?? "" }));
       } catch {
         setConfirmOpen(false);
         toast.error(t(fieldReturnErrorKey("ERROR")));

@@ -184,6 +184,15 @@ d("createFieldReturn (test bed only)", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("refuses an origin outside FIELD/ADMIN instead of skipping the FIELD-only checks, and creates nothing", async () => {
+    await expect(createFieldReturn({
+      storeId, raisedById: userId, origin: "BOGUS" as never,
+      lines: [{ itemId, variantSku: "", qty: 1, reason: "UNSOLD" }],
+    })).rejects.toMatchObject({ code: "BAD_LINE_SHAPE" });
+    const rows = await prisma.fieldReturn.findMany({ where: { storeId: seededId(storeId) } });
+    expect(rows).toHaveLength(0);
+  });
+
   it("refuses an empty itemId and creates nothing", async () => {
     await expect(createFieldReturn({
       storeId, raisedById: userId, transport: "SELF_CARRY",

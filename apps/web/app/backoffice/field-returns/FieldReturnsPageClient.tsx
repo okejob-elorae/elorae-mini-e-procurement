@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Search, Undo2 } from "lucide-react";
 import type { FieldReturnOrigin, FieldReturnRow, FieldReturnStatus } from "@/lib/field-sales/retur/queries";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDateTimeJakarta } from "@/lib/date-only";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -48,11 +48,23 @@ type Props = {
   q: string;
   origin: FieldReturnOrigin | "";
   creditFilter: "AVAILABLE" | "APPLIED" | "";
+  /** A single `FieldReturnStatus`, `"ACTIVE"` (everything but CANCELLED), or `""` for no filter. */
+  status: string;
   page: number;
   pageSize: number;
 };
 
 const CREDIT_FILTER_ALL = "__all__";
+const STATUS_FILTER_ALL = "__all__";
+const STATUS_FILTER_ACTIVE = "ACTIVE";
+const STATUS_FILTER_RECORD: Record<FieldReturnStatus, true> = {
+  PENDING_WAREHOUSE_RECEIVING: true,
+  MISMATCH_PENDING_RESOLUTION: true,
+  PENDING_APPROVAL: true,
+  APPROVED: true,
+  CANCELLED: true,
+};
+const STATUS_FILTER_OPTIONS = Object.keys(STATUS_FILTER_RECORD) as FieldReturnStatus[];
 
 const ORIGIN_BADGE_VARIANT: Record<FieldReturnOrigin, "secondary" | "outline"> = {
   FIELD: "secondary",
@@ -122,7 +134,7 @@ export function FieldReturnsPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("search")}</label>
             <div className="relative">
@@ -148,6 +160,26 @@ export function FieldReturnsPageClient(props: Props) {
                 <SelectItem value={ORIGIN_FILTER_ALL}>{t("originFilterAll")}</SelectItem>
                 <SelectItem value="FIELD">{t("origin.FIELD")}</SelectItem>
                 <SelectItem value="ADMIN">{t("origin.ADMIN")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("statusFilterLabel")}</label>
+            <Select
+              value={props.status || STATUS_FILTER_ALL}
+              onValueChange={(v) => pushParam("status", v === STATUS_FILTER_ALL ? undefined : v)}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={STATUS_FILTER_ALL}>{t("statusFilterAll")}</SelectItem>
+                <SelectItem value={STATUS_FILTER_ACTIVE}>{t("statusFilterActive")}</SelectItem>
+                {STATUS_FILTER_OPTIONS.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {t(`status.${s}`)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -186,7 +218,7 @@ export function FieldReturnsPageClient(props: Props) {
           {props.rows.length === 0 ? (
             <div className="text-center py-12">
               <Undo2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">{props.q || props.origin ? t("emptyFiltered") : t("empty")}</p>
+              <p className="text-muted-foreground">{props.q || props.origin || props.status || props.creditFilter ? t("emptyFiltered") : t("empty")}</p>
             </div>
           ) : (
             <>
@@ -231,7 +263,7 @@ export function FieldReturnsPageClient(props: Props) {
                           <TableCell>
                             <Badge variant={ORIGIN_BADGE_VARIANT[r.origin]}>{t(`origin.${r.origin}`)}</Badge>
                           </TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDateOnlyJakarta(r.createdAt)}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDateTimeJakarta(r.createdAt)}</TableCell>
                           <TableCell>
                             {r.transport ? t(`transport.${r.transport}`) : <span className="text-muted-foreground">—</span>}
                           </TableCell>
@@ -277,16 +309,16 @@ export function FieldReturnsPageClient(props: Props) {
                   </TableBody>
                 </Table>
               </div>
-              <Pager
-                page={props.page}
-                pageSize={props.pageSize}
-                total={props.total}
-                onPageChange={(p) => pushParams({ page: String(p) })}
-                onPageSizeChange={(size) => pushParams({ pageSize: String(size), page: undefined })}
-                className="mt-4"
-              />
             </>
           )}
+          <Pager
+            page={props.page}
+            pageSize={props.pageSize}
+            total={props.total}
+            onPageChange={(p) => pushParams({ page: String(p) })}
+            onPageSizeChange={(size) => pushParams({ pageSize: String(size), page: undefined })}
+            className="mt-4"
+          />
         </CardContent>
       </Card>
     </div>

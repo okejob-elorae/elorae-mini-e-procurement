@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDateOnly, parseDateOnlyEnd } from "./date-only";
+import { formatDateTimeJakarta, parseDateOnly, parseDateOnlyEnd } from "./date-only";
 
 // Assert the resolved UTC instant (timezone-independent) so this passes on a UTC server
 // AND a WIB dev machine. WIB = +07:00, so 2026-06-30 WIB spans 2026-06-29T17:00Z .. 2026-06-30T16:59:59.999Z.
@@ -18,5 +18,12 @@ describe("parseDateOnly / parseDateOnlyEnd (WIB-anchored)", () => {
     expect(parseDateOnly("")).toBeUndefined();
     expect(parseDateOnly("  ")).toBeUndefined();
     expect(parseDateOnlyEnd("not-a-date")).toBeUndefined();
+  });
+});
+
+describe("formatDateTimeJakarta", () => {
+  it("renders the WIB date and 24h time, rolling the date over at WIB midnight", () => {
+    expect(formatDateTimeJakarta(new Date("2026-06-29T17:05:00.000Z"))).toBe("2026-06-30 00:05");
+    expect(formatDateTimeJakarta(new Date("2026-06-30T06:30:00.000Z"))).toBe("2026-06-30 13:30");
   });
 });

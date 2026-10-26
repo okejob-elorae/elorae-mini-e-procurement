@@ -26,6 +26,8 @@ export type FieldReturnActionResult =
   | { ok: true }
   | {
       ok: false;
+      /** Human label for what the code names — set only on `SPLIT_MISMATCH` (the offending line). */
+      detail?: string;
       code:
         | "FORBIDDEN"
         | "FORBIDDEN_WRITEOFF"
@@ -105,7 +107,10 @@ const ERROR_CODE_MAP: Record<FieldReturnErrorCode, Exclude<FieldReturnActionResu
  * one's codes are too wide for that action's own narrower `RaiseAdminReturnActionResult` type.
  */
 function toResult(e: unknown): Exclude<FieldReturnActionResult, { ok: true }> {
-  if (e instanceof FieldReturnError) return { ok: false, code: ERROR_CODE_MAP[e.code] };
+  if (e instanceof FieldReturnError) {
+    const code = ERROR_CODE_MAP[e.code];
+    return e.detail ? { ok: false, code, detail: e.detail } : { ok: false, code };
+  }
   return { ok: false, code: "ERROR" };
 }
 
@@ -173,6 +178,12 @@ function isValidRaiseAdminReturnInput(
   if (typeof input !== "object" || input === null) return false;
   const i = input as Record<string, unknown>;
   if (typeof i.storeId !== "string" || i.storeId === "") return false;
+  /*
+   * `origin` is not an input of this action (it is forced to ADMIN below), but every "use server"
+   * export is callable with any payload: a value outside the union is refused here, before the
+   * writer, instead of being ignored or — for a writer that trusts it — treated as ADMIN.
+   */
+  if (i.origin !== undefined && i.origin !== "FIELD" && i.origin !== "ADMIN") return false;
   if (i.note !== undefined && i.note !== null && typeof i.note !== "string") return false;
   if (!Array.isArray(i.lines) || i.lines.length === 0) return false;
   return i.lines.every(isValidRaiseAdminReturnLine);

@@ -1,6 +1,6 @@
 import { prisma, Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
-import { lineVariance, creditedQtyForLine } from "./variance";
+import { lineVariance, creditedQtyForLine, LATEST_RESOLUTION_ORDER } from "./variance";
 import { listPriceCandidates, listPriceCandidatesForKeys, priceCandidateKey, type PriceCandidate } from "./pricing";
 import { classifyPriceCandidates } from "./pricing-rules";
 
@@ -64,6 +64,13 @@ export async function listFieldReturns(params: {
    * could ever have reached APPLIED in the first place.
    */
   creditFilter?: "AVAILABLE" | "APPLIED";
+  /**
+   * A selection, not a flag: `undefined` means no status filter, while `[]` is a real selection
+   * that matches nothing — never collapse one into the other.
+   */
+  statuses?: FieldReturnStatus[];
+  /** Statuses to hide; composes with `statuses`. Unlike enumerating the rest, a new status stays visible. */
+  excludeStatuses?: FieldReturnStatus[];
   page: number;
   perPage: number;
 }): Promise<{ rows: FieldReturnRow[]; total: number }> {
@@ -71,6 +78,16 @@ export async function listFieldReturns(params: {
   const where: Prisma.FieldReturnWhereInput = {
     ...(q ? { OR: [{ docNo: { contains: q } }, { store: { name: { contains: q } } }] } : {}),
     ...(params.origin ? { origin: params.origin } : {}),
+    /* Under AND, not a spread: the AVAILABLE credit arm below sets its own `status`, and a
+       second `status` key would silently overwrite this one. */
+    ...(params.statuses !== undefined || params.excludeStatuses !== undefined
+      ? {
+          AND: [
+            ...(params.statuses !== undefined ? [{ status: { in: params.statuses } }] : []),
+            ...(params.excludeStatuses !== undefined ? [{ status: { notIn: params.excludeStatuses } }] : []),
+          ],
+        }
+      : {}),
     ...(params.creditFilter === "AVAILABLE"
       ? { status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE" }
       : params.creditFilter === "APPLIED"
@@ -166,6 +183,13 @@ async function countLinesNeedingPrice(
   return counts;
 }
 
+/**
+ * What the detail page ships per line. The UI reads only the latest entry (`[0]`) for state and
+ * lists the rest as history, so this bounds the payload of a line that was corrected many times.
+ * Writers never read through this: they run their own `take: 1` / full reads.
+ */
+export const RESOLUTION_HISTORY_LIMIT = 10;
+
 export type FieldReturnResolutionDetail = {
   id: string;
   type: string;
@@ -209,8 +233,13 @@ export type FieldReturnLineDetail = {
   rejectedQty: number | null;
   /** `lineVariance(qty, receivedQty)` — 0 until received, then received minus claimed. */
   variance: number;
-  /** Ordered `createdAt desc, id desc` — index 0 is the effective (latest) resolution. */
+  /**
+   * Ordered `createdAt desc, id desc` — index 0 is the effective (latest) resolution. Capped at
+   * `RESOLUTION_HISTORY_LIMIT` entries; `resolutionTotal` is the real count, so a longer history
+   * is announced rather than silently cut.
+   */
   resolutions: FieldReturnResolutionDetail[];
+  resolutionTotal: number;
   creditedQty: number | null;
   unitPrice: number | null;
   lineValue: number | null;
@@ -318,8 +347,10 @@ export async function getFieldReturnById(
           priceDeliveryLineId: true,
           priceNote: true,
           item: { select: { sku: true, nameId: true } },
+          _count: { select: { resolutions: true } },
           resolutions: {
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            orderBy: LATEST_RESOLUTION_ORDER,
+            take: RESOLUTION_HISTORY_LIMIT,
             select: { id: true, type: true, qty: true, note: true, createdAt: true, createdById: true },
           },
         },
@@ -448,6 +479,7 @@ export async function getFieldReturnById(
           createdAt: res.createdAt,
           createdByLabel: labelFor(res.createdById),
         })),
+        resolutionTotal: l._count.resolutions,
         creditedQty: l.creditedQty,
         unitPrice: l.unitPrice === null ? null : l.unitPrice.toNumber(),
         lineValue: l.lineValue === null ? null : l.lineValue.toNumber(),
@@ -510,7 +542,7 @@ export async function previewKonsiReturStockImpact(returnId: string): Promise<Ko
           receivedQty: true,
           item: { select: { nameId: true } },
           resolutions: {
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            orderBy: LATEST_RESOLUTION_ORDER,
             take: 1,
             select: { type: true },
           },

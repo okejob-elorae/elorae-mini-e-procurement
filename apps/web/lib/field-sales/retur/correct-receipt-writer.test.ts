@@ -193,6 +193,22 @@ d("correctFieldReturnReceipt (test bed only)", () => {
     ).rejects.toMatchObject({ code: "MISSING_LINE" });
   });
 
+  it("names the offending line in a SPLIT_MISMATCH, like receiving does", async () => {
+    await receiveFieldReturn({ returnId, receivedById: adminId, counts: counts([3, 3, 0]) });
+
+    await expect(
+      correctFieldReturnReceipt({
+        returnId,
+        correctedById: adminId,
+        reason: "salah ketik",
+        counts: counts([3, 3, 0], [2, 1, 0]),
+      }),
+    ).rejects.toMatchObject({
+      code: "SPLIT_MISMATCH",
+      detail: expect.stringContaining("Koreksi item B"),
+    });
+  });
+
   it("moves a clean retur into resolution when corrected to a short count, and records before/after", async () => {
     await receiveFieldReturn({ returnId, receivedById: adminId, counts: counts([3, 3, 0]) });
     expect(await mismatchNotificationsFor([returnId])).toHaveLength(0);

@@ -13,7 +13,7 @@ import type {
   KonsiReturStockImpactLine,
 } from "@/lib/field-sales/retur/queries";
 import { isSettled } from "@/lib/field-sales/retur/variance";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDateOnlyJakarta, formatDateTimeJakarta } from "@/lib/date-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -146,6 +146,8 @@ export function FieldReturnDetailClient({
   const [approveOpen, setApproveOpen] = useState(false);
   const [offsetSheetOpen, setOffsetSheetOpen] = useState(false);
   const [correctOpen, setCorrectOpen] = useState(false);
+  /* One pending flag across approve and resolve: approving against a read a resolution is still changing would act on stale state. */
+  const [resolving, setResolving] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, startCancelTransition] = useTransition();
@@ -287,7 +289,7 @@ export function FieldReturnDetailClient({
           )}
           {showApprove && (
             /* Disabled while a correction is open: approving would freeze the counts being edited. */
-            <Button className="h-10" disabled={isPending || correctOpen} onClick={openApproveDialog}>
+            <Button className="h-10" disabled={isPending || correctOpen || resolving} onClick={openApproveDialog}>
               <CheckCircle2 className="h-4 w-4" />
               {tReceiving("approveButton")}
             </Button>
@@ -299,7 +301,7 @@ export function FieldReturnDetailClient({
         <h2 className="font-semibold">{t("detail.summaryTitle")}</h2>
         <Field label={t("detail.store")} value={r.storeName} />
         <Field label={t("detail.raisedBy")} value={r.raisedByLabel} />
-        <Field label={t("detail.raisedAt")} value={formatDateOnlyJakarta(r.createdAt)} />
+        <Field label={t("detail.raisedAt")} value={formatDateTimeJakarta(r.createdAt)} />
         {/* ADMIN-origin, not yet shipped — hidden rather than rendered with an empty value. */}
         {r.transport && (
           <>
@@ -397,6 +399,8 @@ export function FieldReturnDetailClient({
           lines={r.lines}
           canManage={canManage}
           canWriteOff={canWriteOff}
+          busy={isPending}
+          onPendingChange={setResolving}
         />
       )}
 
