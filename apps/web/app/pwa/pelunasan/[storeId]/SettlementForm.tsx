@@ -62,9 +62,10 @@ const EPSILON = 1e-6;
 
 /**
  * The reasons a real submit attempt can plausibly hit get their own copy. Everything else
- * `submitStoreSettlementAction` can return falls back to `errGeneric` — this is a `Partial`
- * map, not the exhaustive `Record<SettlementErrorCode, …>` `docs/landmines/finance-ar.md` warns
- * about (the `SettlementErrorCode` entry), so a code with no entry here fails safe onto the fallback instead of failing a build.
+ * `submitStoreSettlementAction` can return falls back to `errGeneric` — a `Partial` map, in line
+ * with the settlement path's deliberate lack of any exhaustive `Record<SettlementErrorCode, …>`
+ * (the `SettlementErrorCode` entry in `docs/landmines/finance-ar.md`): a code with no entry here
+ * shows the generic copy rather than failing a build, so a new code needs its copy added by hand.
  */
 const REASON_KEY: Partial<Record<SettlementActionReason, string>> = {
   UNAUTHENTICATED: "errUnauthenticated",
@@ -268,7 +269,8 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
    * This preview MUST run through `computeSettlementTotals` — the exact pure function
    * `submitSettlement` recomputes server-side from its own trusted figures — never its own
    * arithmetic. A screen with independent math here recreates the preview-vs-writer mismatch
-   * `docs/landmines/finance-ar.md` already names twice (the settlement admin-fee/preview entry).
+   * `docs/landmines/field-sales.md` already names twice (the van/SPG total and preview entries;
+   * `docs/landmines/finance-ar.md`'s settlement admin-fee/preview entry points there).
    */
   const invoiceAmountValues = selectedInvoiceRows.map((inv) => parseAmount(invoiceAmountInputs[inv.receivableId] ?? ""));
   const deductionInputsForCalc: SettlementDeductionInput[] = rows.map((row) => {

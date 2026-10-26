@@ -5,7 +5,12 @@ vi.mock("@/lib/firebase/admin", () => ({ messaging: { send: vi.fn() } }));
 
 import { getUsersWithPermission } from "./recipients";
 
-describe("getUsersWithPermission with a missing Permission row", () => {
+/* It mints an `isSystem` role (the code-granted wildcard), so never on the prod tunnel. */
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
+d("getUsersWithPermission with a missing Permission row", () => {
   let token = "";
   let systemRoleId = "";
   let plainRoleId = "";
