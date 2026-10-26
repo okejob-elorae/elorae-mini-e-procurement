@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
+  AUTO_OPEN_NOTE_PREFIX,
+  autoOpenNoteMonthKey,
   countMomentOf,
   countStatusFor,
   countWindowFor,
@@ -286,5 +288,20 @@ describe("countStatusFor", () => {
       });
       expect(status("2026-09-14T03:00:00.000Z", null, DUE_15, new Date(sepOpen.getTime() - 1)).status).toBe("DUE");
     });
+  });
+});
+
+describe("autoOpenNoteMonthKey", () => {
+  it("reads the month back from every month label the sweep can write", () => {
+    for (let month = 1; month <= 12; month++) {
+      const key = `2026-${String(month).padStart(2, "0")}`;
+      expect(autoOpenNoteMonthKey(`${AUTO_OPEN_NOTE_PREFIX}${formatCountMonth(key, "id")}`)).toBe(key);
+    }
+  });
+
+  it("returns null for a note that is not the sweep's wording", () => {
+    expect(autoOpenNoteMonthKey("Hitung ulang rak depan")).toBeNull();
+    expect(autoOpenNoteMonthKey(`${AUTO_OPEN_NOTE_PREFIX}Bulan Depan`)).toBeNull();
+    expect(autoOpenNoteMonthKey(`${AUTO_OPEN_NOTE_PREFIX}Smarch 2026`)).toBeNull();
   });
 });

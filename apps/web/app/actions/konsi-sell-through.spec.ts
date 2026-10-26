@@ -7,10 +7,11 @@ import { createSellThrough, resolveSellThroughLine } from "@/lib/konsi-sell-thro
 import { createSellThroughFixtures } from "@/lib/konsi-sell-through/test-fixtures";
 import { getSellThrough } from "@/lib/konsi-sell-through/queries";
 
-const { mockAuth, mockFanOut, mockLogPrint, postOverride } = vi.hoisted(() => ({
+const { mockAuth, mockFanOut, mockLogPrint, mockPostSafely, postOverride } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockFanOut: vi.fn(),
   mockLogPrint: vi.fn(),
+  mockPostSafely: vi.fn(),
   postOverride: { current: null as (() => Promise<never>) | null },
 }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -23,8 +24,10 @@ vi.mock("@/lib/finance/ar/post-ar-journal-safely", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/finance/ar/post-ar-journal-safely")>();
   return {
     ...actual,
-    postArJournalSafely: (...args: Parameters<typeof actual.postArJournalSafely>) =>
-      postOverride.current ? postOverride.current() : actual.postArJournalSafely(...args),
+    postArJournalSafely: (...args: Parameters<typeof actual.postArJournalSafely>) => {
+      mockPostSafely(...args);
+      return postOverride.current ? postOverride.current() : actual.postArJournalSafely(...args);
+    },
   };
 });
 
@@ -62,6 +65,7 @@ d("konsi sell-through actions (test bed only)", () => {
 
   beforeEach(async () => {
     reportIds = [];
+    mockPostSafely.mockClear();
     mappingSnapshot = undefined;
     arId = "";
     salesRevenueId = "";
@@ -192,6 +196,8 @@ d("konsi sell-through actions (test bed only)", () => {
     const doc = await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } });
     expect(doc).toMatchObject({ status: "APPROVED", baseline: true });
     expect(await journalTypesFor(id)).toEqual([]);
+    /* The action never reached a poster: an empty journal list alone would also pass if a poster ran and refused a baseline with NOTHING_TO_POST. */
+    expect(mockPostSafely).not.toHaveBeenCalled();
   }, SLOW);
 
   it("refuses malformed input with INVALID_REQUEST and leaves the report untouched", async () => {
@@ -439,6 +445,15 @@ d("konsi sell-through actions (test bed only)", () => {
   it("refuses a nota for a baseline report", async () => {
     const id = await billingDraft();
     await approveSellThroughAction({ id, mode: "BASELINE", reason: "Billed outside the ERP." });
+
+    await expect(getSellThroughNotaAction(id)).resolves.toEqual({ ok: false, reason: "INVALID_STATE" });
+  }, SLOW);
+
+  it("refuses a nota for a baseline report even when it carries a positive total", async () => {
+    const id = await billingDraft();
+    await approveSellThroughAction({ id, mode: "BASELINE", reason: "Billed outside the ERP." });
+    /* Forces the arm the test above cannot isolate: a positive total must not rescue a baseline. */
+    await prisma.konsiSellThrough.update({ where: { id: seededId(id) }, data: { total: 180000 } });
 
     await expect(getSellThroughNotaAction(id)).resolves.toEqual({ ok: false, reason: "INVALID_STATE" });
   }, SLOW);

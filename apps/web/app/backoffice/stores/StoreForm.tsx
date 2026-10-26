@@ -555,7 +555,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                 />
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground self-end pb-2">{t("priceDiscountPercentKonsiNotice")}</p>
+              <p className="text-sm text-muted-foreground self-end pb-2">{t("priceDiscountPercentKonsiNotice")}</p>
             )}
             {form.termsType === "KONSI" && (
               <div className="space-y-1.5">

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { listStoreOptions } from "@/lib/stores/queries";
+import { listActiveStoreOptions } from "@/lib/stores/queries";
 import { NewStoreTransferForm } from "./NewStoreTransferForm";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export default async function NewStoreTransferPage() {
     redirect("/backoffice/store-transfers");
   }
 
-  const storeOptions = await listStoreOptions();
+  const storeOptions = await listActiveStoreOptions();
 
   return <NewStoreTransferForm storeOptions={storeOptions} />;
 }

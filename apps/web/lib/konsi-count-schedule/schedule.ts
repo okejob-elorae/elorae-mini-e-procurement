@@ -107,6 +107,28 @@ export function formatCountMonth(monthKey: string, locale: string): string {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, month - 1, 1)));
 }
 
+/* The stored note prefix the sweep writes on a count it opens; the month label follows it. Display code reads it back through `autoOpenNoteMonthKey`. */
+export const AUTO_OPEN_NOTE_PREFIX = "Dibuka otomatis untuk perhitungan bulanan ";
+
+/**
+ * The `YYYY-MM` month a sweep-written auto-open note names, or null for any other note. The
+ * count row stores no target month of its own and `countedAt` is the sweep's instant, which falls
+ * outside the target month for an overdue or early-window count, so the note's own label is the
+ * only place the target month lives. Anything that is not exactly the sweep's wording returns
+ * null so the caller shows the stored text unchanged.
+ */
+export function autoOpenNoteMonthKey(note: string): string | null {
+  if (!note.startsWith(AUTO_OPEN_NOTE_PREFIX)) return null;
+  const label = note.slice(AUTO_OPEN_NOTE_PREFIX.length).trim();
+  const year = Number(label.slice(-4));
+  if (!Number.isInteger(year)) return null;
+  for (let month = 1; month <= 12; month++) {
+    const key = `${year}-${String(month).padStart(2, "0")}`;
+    if (formatCountMonth(key, "id") === label) return key;
+  }
+  return null;
+}
+
 /* A due instant as its WIB calendar day in `locale`, e.g. "30 September 2026". */
 export function formatCountDueDate(dueAt: Date, locale: string): string {
   return new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jakarta" }).format(dueAt);

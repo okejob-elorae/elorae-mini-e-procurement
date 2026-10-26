@@ -4150,6 +4150,7 @@
         }
       },
       "createdBySystem": "System",
+      "autoOpenedNote": "Opened automatically for the {month} count",
       "returInFlight": {
         "title": "Returns in transit at the count",
         "body": "Return {docNos} took goods off this store's shelf before the count and had not been settled when the count was taken. A shortfall on the lines marked below may be those returned units rather than shrinkage.",
@@ -4216,7 +4217,7 @@
       "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",
       "DUPLICATE_LINE": "That item and variant is already on this document.",
-      "TRANSFER_PENDING": "Store transfer {detail} moved goods this count includes before the count was taken, and is still pending. Approve it first, then approve this count. If the transfer is wrong, cancel it and raise it again with the right items and move time.",
+      "TRANSFER_PENDING": "Store transfer {detail} moved goods this count includes before the count was taken, and is still pending. Either approve the transfer first and then this count, or cancel it and raise it again with the right items and move time.",
       "RETUR_PENDING": "Return {detail} took goods this count includes off the shelf before the count, and has not been settled yet. Receive and approve it first (or cancel it if it was never sent), then approve this count.",
       "NO_ASSIGNED_STORE": "You are not assigned to a store.",
       "NO_ACTIVE_VISIT": "You must be checked in at your store first.",
@@ -4683,6 +4684,7 @@
       "ITEM_NOT_FOUND": "One of the items on this document no longer exists.",
       "BAD_VARIANT": "{detail} is not a variant this item stocks, and the source store holds none of it. Reload and pick the item again.",
       "STORE_NOT_FOUND": "That store no longer exists. Refresh and pick another.",
+      "STORE_INACTIVE": "{detail} is inactive. Reactivate it or pick another store.",
       "MOVED_AT_IN_FUTURE": "The time the goods moved cannot be in the future.",
       "COUNTED_SINCE_MOVE": "Stocktake {detail} counted items on this transfer after the goods moved, so the move already stands in that count as a shortfall at one store and a surplus at the other. Approving would record it twice. Cancel this transfer, then raise a new one for any items that count did not include — or with the real move time, if the goods actually moved after that count.",
       "INVALID_REQUEST": "The submitted data was invalid. Reload the page and try again.",

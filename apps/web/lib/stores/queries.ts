@@ -330,6 +330,11 @@ export async function listStoreOptions(): Promise<{ id: string; name: string }[]
   return prisma.store.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
 }
 
+/* Same shape as `listStoreOptions`, active stores only — for pickers that raise NEW documents. */
+export async function listActiveStoreOptions(): Promise<{ id: string; name: string }[]> {
+  return prisma.store.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+}
+
 export async function listActiveStoresForPwa() {
   const rows = await prisma.store.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
   return rows.map(serializeStore);

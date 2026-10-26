@@ -59,8 +59,10 @@ export async function createStoreTransfer(input: {
      * correct on its own even if that ordering ever changes.
      */
     const storeIds = Array.from(new Set([input.fromStoreId, input.toStoreId]));
-    const storeCount = await tx.store.count({ where: { id: { in: storeIds } } });
-    if (storeCount !== storeIds.length) throw new StoreTransferError("STORE_NOT_FOUND");
+    const stores = await tx.store.findMany({ where: { id: { in: storeIds } }, select: { id: true, name: true, isActive: true } });
+    if (stores.length !== storeIds.length) throw new StoreTransferError("STORE_NOT_FOUND");
+    const inactive = stores.filter((s) => !s.isActive);
+    if (inactive.length > 0) throw new StoreTransferError("STORE_INACTIVE", inactive.map((s) => s.name).join(", "));
 
     const itemIds = Array.from(new Set(input.lines.map((l) => l.itemId)));
     const items = await tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, sku: true, nameId: true, variants: true } });
@@ -140,7 +142,8 @@ export async function createStoreTransfer(input: {
  * existed) on or after `movedAt`. That count already recorded the move as a shortfall at one store
  * and a surplus at the other, and moving the stock now would record it twice. A count that left
  * those keys uncounted, or never had them, did not see the move and does not refuse. The only way
- * out is to cancel the transfer; the move then stands in the count. The check runs after the CAS —
+ * out is to cancel the transfer and, for any items that count did not include, raise a new one
+ * (or the same one with the real move time); the cancelled move then stands in the count. The check runs after the CAS —
  * so a repeat approval still reports `INVALID_STATE` — and before any stock moves, and it throws,
  * which rolls the CAS back with it.
  *

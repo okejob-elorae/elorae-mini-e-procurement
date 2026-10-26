@@ -4150,6 +4150,7 @@
         }
       },
       "createdBySystem": "Sistem",
+      "autoOpenedNote": "Dibuka otomatis untuk perhitungan bulanan {month}",
       "returInFlight": {
         "title": "Retur dalam perjalanan saat perhitungan",
         "body": "Retur {docNos} mengambil barang dari rak toko ini sebelum perhitungan dan belum selesai saat perhitungan dilakukan. Selisih kurang pada baris yang ditandai di bawah bisa jadi barang retur tersebut, bukan susut.",
@@ -4216,7 +4217,7 @@
       "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",
       "DUPLICATE_LINE": "Barang dan varian ini sudah ada pada dokumen ini.",
-      "TRANSFER_PENDING": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan ini sebelum perhitungan dilakukan, dan masih menunggu persetujuan. Setujui transfer tersebut terlebih dahulu, lalu setujui perhitungan ini. Jika transfernya keliru, batalkan lalu buat ulang dengan barang dan waktu pemindahan yang benar.",
+      "TRANSFER_PENDING": "Transfer toko {detail} memindahkan barang yang dihitung di perhitungan ini sebelum perhitungan dilakukan, dan masih menunggu persetujuan. Setujui transfer tersebut terlebih dahulu lalu setujui perhitungan ini, atau batalkan transfer tersebut dan buat ulang dengan barang dan waktu pemindahan yang benar.",
       "RETUR_PENDING": "Retur {detail} mengambil barang yang dihitung di perhitungan ini dari rak sebelum perhitungan dilakukan, dan belum selesai. Terima dan setujui retur tersebut terlebih dahulu (atau batalkan jika barangnya tidak pernah dikirim), lalu setujui perhitungan ini.",
       "NO_ASSIGNED_STORE": "Anda tidak ditugaskan ke toko manapun.",
       "NO_ACTIVE_VISIT": "Anda harus check-in di toko Anda terlebih dahulu.",
@@ -4683,6 +4684,7 @@
       "ITEM_NOT_FOUND": "Salah satu barang pada dokumen ini sudah tidak ada.",
       "BAD_VARIANT": "{detail} bukan varian yang distok untuk barang ini, dan toko asal tidak memilikinya. Muat ulang lalu pilih barangnya lagi.",
       "STORE_NOT_FOUND": "Toko itu sudah tidak ada. Muat ulang dan pilih yang lain.",
+      "STORE_INACTIVE": "Toko {detail} tidak aktif. Aktifkan kembali atau pilih toko lain.",
       "MOVED_AT_IN_FUTURE": "Waktu barang dipindahkan tidak boleh di masa mendatang.",
       "COUNTED_SINCE_MOVE": "Perhitungan stok {detail} menghitung barang pada transfer ini setelah barang dipindahkan, sehingga perpindahan ini sudah tercatat di perhitungan tersebut sebagai kekurangan di satu toko dan kelebihan di toko lainnya. Menyetujui akan mencatatnya dua kali. Batalkan transfer ini, lalu buat transfer baru untuk barang yang tidak termasuk dalam perhitungan tersebut — atau dengan waktu pemindahan yang sebenarnya, jika barang ternyata dipindahkan setelah perhitungan itu.",
       "INVALID_REQUEST": "Data yang dikirim tidak valid. Muat ulang halaman dan coba lagi.",

@@ -7,6 +7,7 @@ export type StoreTransferErrorCode =
   | "ITEM_NOT_FOUND"
   | "BAD_VARIANT"
   | "STORE_NOT_FOUND"
+  | "STORE_INACTIVE"
   | "MOVED_AT_IN_FUTURE"
   | "COUNTED_SINCE_MOVE";
 

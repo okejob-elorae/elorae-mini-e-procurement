@@ -5,7 +5,7 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { capNotificationText } from "@/lib/notifications/text";
 import { sendNotificationToUsers, type NotificationUser } from "@/lib/notifications/recipients";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
-import { KONSI_COUNT_SYSTEM_ACTOR, countWindowFor, formatCountDueDate, formatCountMonth, type CountSchedule } from "./schedule";
+import { AUTO_OPEN_NOTE_PREFIX, KONSI_COUNT_SYSTEM_ACTOR, countWindowFor, formatCountDueDate, formatCountMonth, type CountSchedule } from "./schedule";
 import { getStoreCountState, readCountSchedule } from "./queries";
 import { KONSI_COUNT_DUE, KONSI_COUNT_OVERDUE } from "./categories";
 
@@ -159,7 +159,7 @@ export async function runKonsiCountSweep(input?: {
               storeId: store.id,
               createdById: spgs.length === 1 ? spgs[0].id : KONSI_COUNT_SYSTEM_ACTOR,
               countedAt: now,
-              note: `Dibuka otomatis untuk perhitungan bulanan ${monthLabel}`,
+              note: `${AUTO_OPEN_NOTE_PREFIX}${monthLabel}`,
             });
             openedHere = true;
             result.opened++;
