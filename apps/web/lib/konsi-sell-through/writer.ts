@@ -1,5 +1,6 @@
 import { prisma, Prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { isUniqueViolationOn } from "@/lib/db/unique-violation";
 import { generateDocNumber } from "@/lib/docNumber";
 import { pendingTransfersOverCountedKeys } from "@/lib/stores/transfer/pending";
 import {
@@ -40,16 +41,6 @@ const DERIVED_FIGURES = [
 ] as const;
 
 const lineKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
-
-/**
- * The mariadb adapter reports a unique violation's constraint as the INDEX NAME
- * (`KonsiSellThrough_chainKey_key`) rather than the column, and where it lands in `meta` varies,
- * so the column name is searched for across the message and the whole meta blob.
- */
-function isUniqueViolationOn(e: unknown, column: string): boolean {
-  if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== "P2002") return false;
-  return `${e.message} ${JSON.stringify(e.meta ?? {})}`.includes(column);
-}
 
 /* The retur statuses in which goods have left the store's shelf without StoreStock having dropped yet. */
 const RETUR_IN_FLIGHT_STATUSES = ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL"] as const;
