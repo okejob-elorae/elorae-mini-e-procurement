@@ -268,7 +268,8 @@ export function StocktakeDetailClient({
   }, [addItemOpen, addItemQuery]);
 
   const isOpenStatus = OPEN_STATUSES.has(stocktake.status);
-  const autoOpenMonthKey = stocktake.createdByIsSystem && stocktake.note ? autoOpenNoteMonthKey(stocktake.note) : null;
+  /* Not gated on `createdByIsSystem`: a sweep-opened count at a store with one assigned SPG names that SPG as creator. */
+  const autoOpenMonthKey = stocktake.note ? autoOpenNoteMonthKey(stocktake.note) : null;
   const noteText = autoOpenMonthKey ? tDetail("autoOpenedNote", { month: formatCountMonth(autoOpenMonthKey, locale) }) : stocktake.note;
   const canEdit = canManage && isOpenStatus;
   const canApprove = canManage && isOpenStatus;

@@ -143,9 +143,9 @@ export async function createStoreTransfer(input: {
  * and a surplus at the other, and moving the stock now would record it twice. A count that left
  * those keys uncounted, or never had them, did not see the move and does not refuse. The only way
  * out is to cancel the transfer and, for any items that count did not include, raise a new one
- * (or the same one with the real move time); the cancelled move then stands in the count. The check runs after the CAS —
- * so a repeat approval still reports `INVALID_STATE` — and before any stock moves, and it throws,
- * which rolls the CAS back with it.
+ * (or the same one with the real move time); the cancelled move then stands in the count. The
+ * check runs after the CAS — so a repeat approval still reports `INVALID_STATE` — and before any
+ * stock moves, and it throws, which rolls the CAS back with it.
  *
  * Cost basis: BOTH `moveStoreStock` calls use `sourceAvgCost` — the source store's `avgCost` read
  * fresh from `StoreStock`, INSIDE this transaction, at approve time — never `line.unitCost` (the

@@ -122,9 +122,10 @@ function journalAmounts(doc: InvoicedReport): Record<SellThroughJournalKind, num
 }
 
 /*
- * An amount is owed only when it is at least a cent: every kind is built non-negative (quantities
- * are clamped at zero in `derive.ts`, prices and costs are non-negative), so a negative figure is a
- * corrupt row, never a credit. It must read as nothing to post, because the posters put the value
+ * An amount is owed only when it is at least a cent: every kind is non-negative by construction
+ * (shelf-count and reduce quantities are clamped at zero in `derive.ts`; the SPG_POS billed figure
+ * comes only from sale decrements on an append-only ledger; prices and costs are non-negative), so a
+ * negative figure is a corrupt row, never a credit. It must read as nothing to post, because the posters put the value
  * straight into a debit and a credit and a negative one would build a reversed or unbalanced entry.
  */
 const isPostable = (value: number): boolean => value >= 0.01;
