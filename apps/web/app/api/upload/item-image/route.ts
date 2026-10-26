@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   const itemId = isValidItemId(itemIdParam) ? itemIdParam : "_pending";
 
   if (exceedsDeclaredLength(request, MAX_BYTES, MAX_GALLERY_COUNT)) {
-    return NextResponse.json({ error: "image_too_large", message: "Image exceeds 5 MB limit." }, { status: 413 });
+    return NextResponse.json({ error: "image_too_large", message: "Request too large: each image must be 5 MB or less." }, { status: 413 });
   }
 
   let formData: FormData;

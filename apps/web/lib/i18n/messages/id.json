@@ -3513,6 +3513,7 @@
       "failUnauthorized": "Sesi berakhir. Masuk lagi.",
       "failForbidden": "Tidak punya akses untuk fitur ini.",
       "failUploadUnavailable": "Layanan unggah foto belum tersedia. Coba lagi nanti.",
+      "failPhotoTooLarge": "Foto nota terlalu besar (maks. 10 MB). Ambil ulang foto dengan resolusi lebih kecil.",
       "failUploadFailed": "Gagal mengunggah foto. Periksa koneksi lalu coba lagi.",
       "failServer": "Server sedang bermasalah. Coba lagi beberapa saat lagi.",
       "failInvalidData": "Data retur tidak valid. Ambil ulang foto lalu coba lagi.",

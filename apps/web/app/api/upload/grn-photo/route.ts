@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-const MAX_FILES_PER_REQUEST = 20;
+const PRECHECK_MAX_FILES = 20;
 const ALLOWED_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -74,9 +74,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (exceedsDeclaredLength(request, MAX_FILE_SIZE, MAX_FILES_PER_REQUEST)) {
+    if (exceedsDeclaredLength(request, MAX_FILE_SIZE, PRECHECK_MAX_FILES)) {
       return NextResponse.json(
-        { error: 'File exceeds the 10 MB limit' },
+        { error: 'Request too large: each file must be 10 MB or less' },
         { status: 413 }
       );
     }

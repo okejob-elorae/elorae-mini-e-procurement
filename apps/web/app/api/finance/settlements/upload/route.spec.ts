@@ -145,12 +145,15 @@ describe("POST /api/finance/settlements/upload size pre-check", () => {
   it("refuses an oversize declared body with 413 before parsing the multipart", async () => {
     const formDataSpy = vi.spyOn(Request.prototype, "formData");
 
-    const res = await POST(requestWithLength(10 * 1024 * 1024 + 64 * 1024 + 1));
+    try {
+      const res = await POST(requestWithLength(10 * 1024 * 1024 + 64 * 1024 + 1));
 
-    expect(res.status).toBe(413);
-    expect(await res.json()).toEqual({ error: "File exceeds the 10 MB limit" });
-    expect(formDataSpy).not.toHaveBeenCalled();
-    formDataSpy.mockRestore();
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({ error: "File exceeds the 10 MB limit" });
+      expect(formDataSpy).not.toHaveBeenCalled();
+    } finally {
+      formDataSpy.mockRestore();
+    }
   });
 
   it("lets a max-size file plus multipart overhead through to the parser", async () => {

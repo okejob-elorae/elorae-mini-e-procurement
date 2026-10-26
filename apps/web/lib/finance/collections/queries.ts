@@ -174,9 +174,15 @@ export async function listCollectorCandidates(): Promise<Array<{ id: string; nam
 /**
  * The name of a user already holding a collector assignment, whether or not they are still an
  * eligible candidate — a filter on `Receivable.collectorId` must be able to show who it names even
- * after the role changed. `null` for an unknown id.
+ * after the role changed. `null` for an unknown id AND for a user who has never been a collector on
+ * a receivable, so an arbitrary `?collectorId=` cannot be used to read a user's name or email.
  */
 export async function getCollectorName(userId: string): Promise<string | null> {
+  const assigned = await prisma.receivable.findFirst({
+    where: { collectorId: userId },
+    select: { id: true },
+  });
+  if (!assigned) return null;
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { name: true, email: true },

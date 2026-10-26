@@ -188,9 +188,10 @@ export async function submitSettlement(input: SubmitSettlementInput): Promise<Su
         throw new SettlementError("INPUT_TOO_LARGE");
       }
       /*
-       * The EFFECTIVE url — what actually gets written below, the DERIVED url when a
-       * `proofR2Key` is present, otherwise the caller's own `proofUrl` verbatim — must
-       * independently clear the same VARCHAR(191) column. A key just under 191 can still yield a
+       * The EFFECTIVE url — what gets written below for PROGRAM and ADMIN_FEE rows (the DERIVED
+       * url when a `proofR2Key` is present, otherwise the caller's own `proofUrl` verbatim) —
+       * must independently clear the same VARCHAR(191) column. A RETUR_OFFSET row stores null
+       * proof columns, so this is a bound on input there, not on a written value. A key just under 191 can still yield a
        * derived url over it once `PUBLIC_URL + "/"` is prepended.
        */
       const effectiveProofUrl = deduction.proofR2Key ? urlFromKey(deduction.proofR2Key) : deduction.proofUrl;

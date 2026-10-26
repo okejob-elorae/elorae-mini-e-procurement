@@ -522,11 +522,11 @@ d("submitSettlement (test bed only)", () => {
   it("refuses a RETUR_OFFSET deduction with a proofUrl over the VARCHAR(191) column limit", async () => {
     /*
      * The two length checks used to sit AFTER the loop's `if (type === "RETUR_OFFSET") continue`,
-     * so this exact deduction skipped both entirely. The create block persists proof columns for
-     * every deduction type (`proofR2Key ? urlFromKey(...) : deduction.proofUrl`), and a
-     * RETUR_OFFSET deduction with no `proofR2Key` writes the caller's own `proofUrl` verbatim --
-     * without the hoist this would sail past every guard and die at insert with a MySQL 1406
-     * data-truncation error instead of this named, cheap-to-reject code.
+     * so this exact deduction skipped both entirely. The create block used to persist proof
+     * columns for every deduction type, so a RETUR_OFFSET deduction with no `proofR2Key` wrote
+     * the caller's own `proofUrl` verbatim and would have died at insert with a MySQL 1406
+     * data-truncation error. It now stores null proof columns for RETUR_OFFSET, but the bound
+     * stays so an oversize input gets this named, cheap-to-reject code.
      */
     await expect(submitSettlement({
       ...baseInput, draftId: `returproof-${token}`,
