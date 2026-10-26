@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { formatDateOnlyJakarta, parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
-import { isOverdue, type AgingBucket } from "@/lib/finance/ar/aging";
+import { isOverdueDisplay, type AgingBucket } from "@/lib/finance/ar/aging";
 import type { ReceivableRow } from "@/lib/finance/ar/queries";
 import { bulkAssignStoreAction, type CollectionActionReason } from "@/app/actions/collections";
 import { AgingSummary } from "./AgingSummary";
@@ -383,8 +383,8 @@ export function PiutangPageClient(props: Props) {
                       </TableHeader>
                       <TableBody>
                         {props.rows.map((row) => {
-                          const overdue = isOverdue(row.dueDate, props.asOf);
                           const status = row.status as ReceivableStatusValue;
+                          const overdue = isOverdueDisplay(status, row.daysOverdue);
                           return (
                             <TableRow
                               key={row.id}
@@ -412,7 +412,9 @@ export function PiutangPageClient(props: Props) {
                                     {row.daysOverdue}
                                   </span>
                                 ) : (
-                                  <span className="text-muted-foreground">{t("notYetDue")}</span>
+                                  <span className="text-muted-foreground">
+                                    {status === "OUTSTANDING" || status === "PARTIAL" ? t("notYetDue") : "—"}
+                                  </span>
                                 )}
                               </TableCell>
                               <TableCell className="text-right whitespace-nowrap tabular-nums">

@@ -28,6 +28,7 @@ vi.mock("@/lib/finance/ar/payment-writer", async (importOriginal) => {
   };
 });
 
+
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
@@ -718,6 +719,35 @@ d("approveSettlement (test bed only)", () => {
     expect(Number(receivable!.outstandingAmount)).toBe(0);
   });
 
+  it("returns the approval notice only on the call that flips", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [evidencedDeduction("PROGRAM", 200)],
+      actualAmount: 800,
+      expectedAmount: 800,
+    });
+
+    const first = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(first.notice).toMatchObject({ id: settlementId, storeId, salesmanId });
+
+    const second = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(second.alreadyApproved).toBe(true);
+    expect(second.notice).toBeUndefined();
+  });
+
+  it("refuses an over-tender with OVER_TENDER, so no notice is ever returned", async () => {
+    /* An over-tender refuses whatever the variance tolerance is configured to. */
+    const refused = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [evidencedDeduction("PROGRAM", 1000)],
+      actualAmount: 1000,
+      expectedAmount: 0,
+    });
+    await expect(approveSettlement({ settlementId: refused, approvedById: approverId })).rejects.toMatchObject({
+      code: "OVER_TENDER",
+    });
+  });
+
   it("draws the retur through applyReturnOffset keyed on the deduction row id", async () => {
     const settlementId = await createSettlement({
       invoices: [{ receivableId: recA, amount: 1000 }],
@@ -858,6 +888,34 @@ d("approveSettlement (test bed only)", () => {
       where: { entityType: "StoreSettlement", entityId: settlementId, action: "SETTLEMENT_APPROVE" },
     });
     expect(audits).toHaveLength(1);
+  });
+
+  it("replays an APPROVED settlement whose retur deduction lacks a fieldReturnId", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [{ type: "RETUR_OFFSET", amount: 300 }],
+      actualAmount: 700,
+      expectedAmount: 700,
+      status: "APPROVED",
+    });
+
+    const replay = await approveSettlement({ settlementId, approvedById: approverId });
+
+    expect(replay).toEqual({ ok: true, paymentIds: [], alreadyApproved: true });
+    expect(await paymentsForStore()).toHaveLength(0);
+  });
+
+  it("still refuses a PENDING settlement whose retur deduction lacks a fieldReturnId", async () => {
+    const settlementId = await createSettlement({
+      invoices: [{ receivableId: recA, amount: 1000 }],
+      deductions: [{ type: "RETUR_OFFSET", amount: 300 }],
+      actualAmount: 700,
+      expectedAmount: 700,
+    });
+
+    await expect(approveSettlement({ settlementId, approvedById: approverId })).rejects.toMatchObject({
+      code: "MISSING_FIELD_RETURN_ID",
+    });
   });
 
   it("refuses a settlement that is not PENDING", async () => {

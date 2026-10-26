@@ -145,6 +145,9 @@ export function FieldReturnDetailClient({
   const [previewPending, startPreviewTransition] = useTransition();
   const [approveOpen, setApproveOpen] = useState(false);
   const [offsetSheetOpen, setOffsetSheetOpen] = useState(false);
+  /* A zero-value retur, or one already drawn down, has nothing left to offset: no live Offset control. */
+  const remainingValue = r.remainingValue;
+  const hasOffsetCredit = r.offsetStatus === "AVAILABLE" && remainingValue !== null && remainingValue > 0;
   const [correctOpen, setCorrectOpen] = useState(false);
   /* One pending flag across approve and resolve: approving against a read a resolution is still changing would act on stale state. */
   const [resolving, setResolving] = useState(false);
@@ -555,10 +558,13 @@ export function FieldReturnDetailClient({
                     </div>
                   </div>
                 )}
-                {r.offsetStatus === "AVAILABLE" && r.remainingValue !== null && (
+                {!hasOffsetCredit && r.offsetPayments.length === 0 && (
+                  <p className="text-sm text-muted-foreground">{t("credit.noCreditToApply")}</p>
+                )}
+                {hasOffsetCredit && (
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-2xl font-bold tabular-nums">{formatMoney2(r.remainingValue)}</p>
+                      <p className="text-2xl font-bold tabular-nums">{formatMoney2(remainingValue)}</p>
                       <p className="text-xs text-muted-foreground">{t("credit.availableBody")}</p>
                     </div>
                     {canOffsetPayments && (
@@ -701,12 +707,12 @@ export function FieldReturnDetailClient({
         </AlertDialogContent>
       </AlertDialog>
 
-      {canOffsetPayments && r.offsetStatus === "AVAILABLE" && r.remainingValue !== null && (
+      {canOffsetPayments && hasOffsetCredit && (
         <OffsetToPiutangSheet
           open={offsetSheetOpen}
           onOpenChange={setOffsetSheetOpen}
           returnId={r.id}
-          remainingValue={r.remainingValue}
+          remainingValue={remainingValue}
           candidates={allocationCandidates}
           suggestedAllocations={suggestedAllocations}
           onApplied={() => {

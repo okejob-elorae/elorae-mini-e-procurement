@@ -6,6 +6,8 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { capNotificationText } from "@/lib/notifications/text";
 
+const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" });
+
 /** Oldest-due-first, so a large historical backlog drains in the order that matters most. */
 const MAX_ANNOUNCEMENTS_PER_RUN = 200;
 
@@ -128,6 +130,7 @@ export async function runOverdueSweep(options?: {
 
     const docNo = resolveReceivableSource(r).docNo;
     const outstandingAmount = Number(r.outstandingAmount);
+    const outstandingText = rupiah.format(outstandingAmount);
     /* `AdminNotification.title` is VARCHAR(191); a long store name would otherwise fail this crossing on every run. */
     const title = capNotificationText(
       collectorName
@@ -135,12 +138,12 @@ export async function runOverdueSweep(options?: {
         : `Piutang jatuh tempo ${days} hari (belum ada penagih) — ${r.store.name}`,
     );
     const message =
-      `Nota ${docNo} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.` +
+      `Nota ${docNo} sebesar ${outstandingText} sudah lewat ${days} hari dari jatuh tempo.` +
       (collectorName ? ` Ditugaskan ke ${collectorName}.` : " Belum ada penagih yang ditugaskan.");
 
     const collectorPayload = {
       title: `Piutang jatuh tempo ${days} hari`,
-      body: `Nota ${docNo} di ${r.store.name} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.`,
+      body: `Nota ${docNo} di ${r.store.name} sebesar ${outstandingText} sudah lewat ${days} hari dari jatuh tempo.`,
       data: { receivableId: r.id, thresholdDays: String(tStar), daysOverdue: String(days) },
     };
 

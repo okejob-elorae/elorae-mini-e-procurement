@@ -158,7 +158,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Deciding whether a store has counted this month? Use `countStatusFor`: WIB months (+7h, never `getMonth()`), credit by `countMomentOf` of an APPROVED full count, never `countedAt`. → `docs/landmines/konsi-count-schedule.md`
 - Calling `runKonsiCountSweep` from a spec? Pass `storeIds` (omitted sweeps the shared bed; `[]` sweeps nothing — never collapse it to `undefined`) and inject `schedule`/`now`. → `docs/landmines/konsi-count-schedule.md`
 - Adding a stocktake approve path, or touching `approveAction`? Call `autoCreateSellThroughAfterCount` AFTER the commit, best-effort — never inside `approveStoreStocktake`'s transaction. → `docs/landmines/konsi-count-schedule.md`
-- Adding a konsi count or report notification? A new category needs a `CATEGORY_PERMISSION` entry (else it reaches nobody) AND a `getNotificationHref` case; keep metadata flat. → `docs/landmines/konsi-count-schedule.md`
+- Adding a konsi count or report notification? A new category needs a `CATEGORY_PERMISSION` entry (else it reaches nobody) AND a `NOTIFICATION_TYPES` entry plus its `getNotificationHref` case; keep metadata flat. → `docs/landmines/konsi-count-schedule.md`
 - Reading `StoreStocktake.createdById`? It may be `KONSI_COUNT_SYSTEM_ACTOR`, no user — never a required `User` relation or `findUniqueOrThrow`; render via `createdByIsSystem`. → `docs/landmines/konsi-count-schedule.md`
 
 **Field sales — retur, konsi, nota, faktur**
@@ -249,7 +249,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Editing `approveFieldSalesOrder`'s PUTUS tail? Throw `CreditLimitExceededError`, never `return`; the finalPrices writes stay AFTER the gate. → `docs/landmines/finance-ar.md`
 - Reading `computeStoreCreditExposure`? Receivables + approved-undelivered residual (floored per order); receivables alone wave undelivered orders through. → `docs/landmines/finance-ar.md`
 - Gating a konsi order on the credit limit, or adding a konsi approve path? Exposure ONLY, never the order's value; the gate lives in `approveKonsiOrderInTx` so both paths hit it; an already-APPROVED replay stays ungated. → `docs/landmines/finance-ar.md`
-- Adding any `AdminNotification` category (collection, overdue, other)? Add it to `admin-fanout.ts`'s `CATEGORY_PERMISSION` or it reaches nobody, silently. → `docs/landmines/finance-ar.md`
+- Adding any `AdminNotification` category (collection, overdue, other)? Add it to `admin-fanout.ts`'s `CATEGORY_PERMISSION` or it reaches nobody, silently; a tappable type also needs `NOTIFICATION_TYPES` + a `getNotificationHref` case. → `docs/landmines/finance-ar.md`
 - Touching a `CollectionSubmission`? It moves no money — `outstandingAmount` waits for `verifyCollection`, and credit exposure ignores pending submissions. → `docs/landmines/finance-ar.md`
 - Writing `submitCollection`? Net BOTH pending claim kinds via `sumPendingClaimsOnReceivable` inside the tx, never raw `outstandingAmount`. → `docs/landmines/finance-ar.md`
 - Editing `verifyCollection`? Payment posts BEFORE the flip, keyed `collection-<submissionId>` — reorder or randomise and a `VERIFIED` submission strands unpaid. → `docs/landmines/finance-ar.md`
@@ -264,7 +264,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Touching `TaxInvoice.buyerNpwp`/`taxableAmount`/`ppnAmount`? Snapshots taken at `markTaxInvoiceCreated`, never live lookups of `Store.npwp`/`PPN_RATE_PERCENT`. → `docs/landmines/finance-ar.md`
 - Calling `markTaxInvoiceSentToStore`/`revertTaxInvoiceToCreated`? `data` is `{ reason }` only — another transition's block reassigns authorship or wipes filed values. → `docs/landmines/finance-ar.md`
 - Where is the faktur NPWP requirement enforced? In the writer, `markTaxInvoiceCreated`, never only the dialog. → `docs/landmines/finance-ar.md`
-- Adding a `TaxInvoiceStatus` member? Its hand-written spots aren't `Record`s — a miss fails silently; also two locale namespaces and an `ENUM` migration. → `docs/landmines/finance-ar.md`
+- Adding a `TaxInvoiceStatus` member? Its hand-written spots aren't `Record`s — a miss fails silently; also the `fakturPajakStatus` labels in both locales and an `ENUM` migration. → `docs/landmines/finance-ar.md`
 - Touching `lib/tax-invoices/status-display.ts`? Import-free on purpose (client bundle); sync its `TaxInvoiceStatusValue` union with `queries.ts` by hand. → `docs/landmines/finance-ar.md`
 - Which column is "the delivering salesman"? The resolver's `salesmanId`: `delivery.order.salesmanId`, NEVER `deliveredById`; a null report salesman owns nothing. → `docs/landmines/finance-ar.md`
 - Relying on `collections:amplop` in a test? No `Permission` row until hand-seeded; self-seed with `connectOrCreate`, never assert it exists. → `docs/landmines/finance-ar.md`

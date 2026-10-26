@@ -31,7 +31,7 @@ function daysAgoWib(days: number): Date {
 async function notificationsFor(receivableId: string) {
   const rows = await prisma.adminNotification.findMany({
     where: { category: "AR_OVERDUE" },
-    select: { id: true, metadata: true },
+    select: { id: true, metadata: true, message: true },
   });
   return rows.filter((r) => (r.metadata as { receivableId?: string } | null)?.receivableId === receivableId);
 }
@@ -107,6 +107,13 @@ d("runOverdueSweep (test bed only)", () => {
     expect(notifs).toHaveLength(1);
     const meta = notifs[0].metadata as { thresholdDays: number };
     expect(meta.thresholdDays).toBe(30);
+  });
+
+  it("keeps the outstanding amount a number in metadata and formats only the message", async () => {
+    await runOverdueSweep({ receivableIds: [receivableId] });
+    const [notif] = await notificationsFor(receivableId);
+    expect((notif.metadata as { outstandingAmount: unknown }).outstandingAmount).toBe(1000);
+    expect(notif.message).toMatch(/Rp\s?1\.000/);
   });
 
   it("a second sweep the same day announces nothing more", async () => {

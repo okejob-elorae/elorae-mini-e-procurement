@@ -115,7 +115,7 @@ async function notifySalesmanOfRejection(
  */
 export async function rejectSettlement(input: RejectSettlementInput): Promise<RejectSettlementResult> {
   const reason = input.reason.trim();
-  /*
+  /**
    * Same visible-content check as `approveSettlement`'s override reason, `rejectCollection` and
    * `voidPayment`: a reason made only of zero-width/format characters (Unicode `Cf`, e.g. U+200B)
    * or U+2800 BRAILLE PATTERN BLANK survives `.trim()` unchanged and would otherwise persist as a
@@ -180,7 +180,7 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
         reviewedAt: new Date(),
       },
     });
-    /*
+    /**
      * Zero rows matched means a concurrent call already moved this settlement off PENDING between
      * the read above and this CAS — refuse rather than report success for a status flip that
      * never happened.
@@ -220,7 +220,7 @@ export async function rejectSettlement(input: RejectSettlementInput): Promise<Re
         data: { settlementId: settlement.id, docNo: settlement.docNo, storeId: settlement.storeId },
       });
     } catch (e) {
-      /*
+      /**
        * Best-effort, mirroring `postArJournalSafely`'s own notification catch: the rejection
        * already committed, so a delivery failure here must never surface as a thrown error and
        * undo a state change that already happened.

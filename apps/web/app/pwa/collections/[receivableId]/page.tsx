@@ -2,7 +2,8 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { getReceivableForCollection } from "@/lib/finance/collections/queries";
+import { getReceivableCollectionAccess } from "@/lib/finance/collections/queries";
+import { NotAssignedCard } from "./NotAssignedCard";
 import { SubmitCollectionSheet } from "./SubmitCollectionSheet";
 
 export const dynamic = "force-dynamic";
@@ -15,13 +16,14 @@ export default async function CollectionDetailPage({ params }: { params: Promise
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.COLLECTIONS_COLLECT)) redirect("/pwa");
 
   /**
-   * `getReceivableForCollection` returns `null` both when the receivable doesn't exist AND
-   * when it isn't assigned to this collector — a collector can never even read a receivable
-   * that isn't theirs, and this route can't distinguish "not yours" from "doesn't exist"
-   * (same shape as a 404, not a 403). Never resolve the URL param without this ownership check.
+   * Ownership is checked before anything is read out of the receivable. A missing id is a 404; an
+   * id that exists but is assigned elsewhere gets a card with a way back to the queue and no
+   * receivable data at all. Never resolve the URL param without this ownership check.
    */
-  const receivable = await getReceivableForCollection(receivableId, session.user.id);
-  if (!receivable) notFound();
+  const access = await getReceivableCollectionAccess(receivableId, session.user.id);
+  if (access.status === "missing") notFound();
+  if (access.status === "not_assigned") return <NotAssignedCard />;
+  const receivable = access.receivable;
 
   return (
     <SubmitCollectionSheet

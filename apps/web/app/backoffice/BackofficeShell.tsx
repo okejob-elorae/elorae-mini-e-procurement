@@ -335,6 +335,11 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.COLLECTIONS_MANAGE,
       },
       {
+        labelKey: "navFinanceCollections",
+        href: "/backoffice/finance/collections",
+        permission: PERMISSIONS.COLLECTIONS_MANAGE,
+      },
+      {
         labelKey: 'supplierPayment',
         href: '/backoffice/supplier-payments',
         permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,

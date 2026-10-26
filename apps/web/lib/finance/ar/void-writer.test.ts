@@ -334,6 +334,17 @@ d("voidPayment (test bed only)", () => {
     });
     expect(Number(released?.appliedValue)).toBe(60000);
     expect(released?.offsetStatus).toBe("AVAILABLE");
+
+    /**
+     * The link survives as audit history: the voided draw keeps pointing at its retur, while the
+     * projection above already ignored the voided draw's amount.
+     */
+    const voided = await prisma.payment.findUniqueOrThrow({
+      where: { id: first.paymentId },
+      select: { status: true, fieldReturnId: true },
+    });
+    expect(voided.status).toBe("VOIDED");
+    expect(voided.fieldReturnId).toBe(returId);
   });
 
   it("leaves a payment with no retur behind it untouched", async () => {

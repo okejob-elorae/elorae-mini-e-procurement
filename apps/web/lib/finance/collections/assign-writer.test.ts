@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { assignCollector } from "./assign-writer";
 import { CollectionError } from "./errors";
+
+const notify = vi.hoisted(() => ({ send: vi.fn() }));
+vi.mock("@/lib/notifications/recipients", () => ({ sendNotificationToUsers: notify.send }));
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -23,6 +26,7 @@ d("assignCollector (test bed only)", () => {
   let settledReceivableId = "";
 
   beforeEach(async () => {
+    notify.send.mockReset();
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; adminId = ""; collectorRoleId = ""; collectorId = "";
     noPwaRoleId = ""; noPwaUserId = ""; ineligibleUserId = "";
@@ -166,5 +170,42 @@ d("assignCollector (test bed only)", () => {
   it("rejects an empty receivableIds list", async () => {
     await expect(assignCollector({ receivableIds: [], collectorId, assignedById: adminId }))
       .rejects.toBeInstanceOf(CollectionError);
+  });
+
+  it("notifies the collector once, naming the receivable, when one receivable is assigned", async () => {
+    await assignCollector({ receivableIds: [receivableId], collectorId, assignedById: adminId });
+    expect(notify.send).toHaveBeenCalledTimes(1);
+    const [users, payload] = notify.send.mock.calls[0];
+    expect(users).toEqual([expect.objectContaining({ id: collectorId })]);
+    expect(payload).toMatchObject({ type: "COLLECTOR_ASSIGNED", data: { receivableId, count: "1" } });
+  });
+
+  it("sends one notice for a batch, with the count and no receivable id", async () => {
+    await prisma.receivable.update({ where: { id: settledReceivableId }, data: { status: "OUTSTANDING", outstandingAmount: 500 } });
+    await assignCollector({ receivableIds: [receivableId, settledReceivableId], collectorId, assignedById: adminId });
+    expect(notify.send).toHaveBeenCalledTimes(1);
+    expect(notify.send.mock.calls[0][1]).toMatchObject({ type: "COLLECTOR_ASSIGNED", data: { count: "2" } });
+    expect(notify.send.mock.calls[0][1].data).not.toHaveProperty("receivableId");
+  });
+
+  it("does not notify on an unassign, a refusal, or a re-assignment that changes nothing", async () => {
+    await assignCollector({ receivableIds: [receivableId], collectorId, assignedById: adminId });
+    notify.send.mockClear();
+    await assignCollector({ receivableIds: [receivableId], collectorId, assignedById: adminId });
+    await assignCollector({ receivableIds: [receivableId], collectorId: null, assignedById: adminId });
+    await assignCollector({ receivableIds: [receivableId], collectorId: ineligibleUserId, assignedById: adminId }).catch(() => undefined);
+    expect(notify.send).not.toHaveBeenCalled();
+  });
+
+  it("still commits the assignment when the push throws", async () => {
+    notify.send.mockRejectedValueOnce(new Error("fcm down"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      await assignCollector({ receivableIds: [receivableId], collectorId, assignedById: adminId });
+    } finally {
+      spy.mockRestore();
+    }
+    const r = await prisma.receivable.findUnique({ where: { id: receivableId } });
+    expect(r!.collectorId).toBe(collectorId);
   });
 });

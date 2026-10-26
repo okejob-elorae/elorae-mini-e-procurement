@@ -6,6 +6,7 @@ import { applyReturnOffset } from "@/lib/finance/ar/retur-offset-writer";
 import { allocateOldestFirst, type AllocationInput, type AllocationOutput } from "./allocate";
 import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
 import { SettlementError } from "./errors";
+import type { ApprovalNotice } from "./approval-notice";
 import { parseVarianceTolerance, VARIANCE_TOLERANCE_SETTING_KEY } from "./variance-tolerance";
 
 export type ApproveSettlementInput = {
@@ -18,6 +19,12 @@ export type ApproveSettlementResult = {
   ok: true;
   paymentIds: string[];
   alreadyApproved?: true;
+  /**
+   * Present only on the call that flipped the settlement to `APPROVED`. The caller sends the push
+   * AFTER it has posted the journals, so a stalled send cannot strand approved payments without a
+   * journal or a `JOURNAL_PENDING` row.
+   */
+  notice?: ApprovalNotice;
 };
 
 /**
@@ -283,6 +290,9 @@ export async function computeComponentHeadroom(
  * Posts NO journals. `postArJournalSafely` runs in the action after this returns, so a throwing
  * journal builder degrades to a `JOURNAL_PENDING` flag instead of crashing a live approval.
  *
+ * Sends no push itself: the call that performed the flip returns a `notice` for the caller to send
+ * after the journals, and an `alreadyApproved` return never carries one.
+ *
  * Throws `SettlementError` for everything it refuses itself, and propagates `PaymentError`
  * unmodified from `recordPayment`/`applyReturnOffset` — two error classes with overlapping code
  * strings and different `instanceof`, so a caller mapping reasons must handle both.
@@ -296,6 +306,7 @@ export async function approveSettlement(
       id: true,
       docNo: true,
       storeId: true,
+      salesmanId: true,
       status: true,
       actualAmount: true,
       invoices: { select: { receivableId: true, amount: true } },
@@ -340,11 +351,16 @@ export async function approveSettlement(
   /**
    * Every component this settlement can own, in the order they post. The keys are needed even on
    * the already-approved replay path below, which reports the payments a prior run created rather
-   * than re-deriving anything.
+   * than re-deriving anything. An already-approved settlement skips a retur row without a
+   * `fieldReturnId` instead of throwing: no payment could ever have been keyed from it, so the
+   * replay has nothing to report for it.
    */
   const components: Component[] = [];
   for (const deduction of returDeductions) {
-    if (!deduction.fieldReturnId) throw new SettlementError("MISSING_FIELD_RETURN_ID");
+    if (!deduction.fieldReturnId) {
+      if (settlement.status === "APPROVED") continue;
+      throw new SettlementError("MISSING_FIELD_RETURN_ID");
+    }
     components.push({
       kind: "RETUR",
       method: DEDUCTION_TYPE_TO_PAYMENT_METHOD.RETUR_OFFSET,
@@ -429,7 +445,7 @@ export async function approveSettlement(
     select: { id: true, storeId: true, status: true },
   });
   const receivableById = new Map(receivables.map((receivable) => [receivable.id, receivable]));
-  /*
+  /**
    * Existence and ownership are unconditional. The COLLECTIBILITY check is not, and deliberately
    * runs later, once the headroom is known — see the `NOT_OUTSTANDING` block below.
    */
@@ -441,7 +457,7 @@ export async function approveSettlement(
 
   for (const deduction of deductions) {
     if (deduction.type === "RETUR_OFFSET") continue;
-    /*
+    /**
      * Evidence is a submit-time requirement for every non-retur deduction; a row that lost it
      * since — a botched correction, a raw call that created it another way — must not be approved
      * into a real expense posting with nothing behind it.
@@ -494,7 +510,7 @@ export async function approveSettlement(
   if (variance > EPSILON) throw new SettlementError("OVER_TENDER");
 
   const overrideReason = (input.overrideReason ?? "").trim();
-  /*
+  /**
    * Same visible-content check as `rejectCollection` and `voidPayment`: a reason made only of
    * zero-width/format characters (Unicode `Cf`, e.g. U+200B) or U+2800 BRAILLE PATTERN BLANK
    * survives `.trim()` unchanged and would otherwise persist as an audit trail that renders blank.
@@ -574,7 +590,7 @@ export async function approveSettlement(
     }
   }
 
-  /*
+  /**
    * Ordered AFTER the collectibility check on purpose: a receivable closed elsewhere leaves zero
    * headroom too, and reporting that as an allocation shortfall would point an operator at the
    * invoice selection instead of at the invoice someone else already settled.
@@ -709,7 +725,7 @@ export async function approveSettlement(
    * `alreadyApproved` branch above never reaches here, so there is no double-write to guard
    * against.
    */
-  return runSerializable<ApproveSettlementResult>(async (tx) => {
+  const result = await runSerializable<ApproveSettlementResult>(async (tx) => {
     /**
      * The loop above checked each component for `VOIDED` before it posted, in earlier
      * transactions, so a void landing after that check and before this flip would otherwise
@@ -738,7 +754,7 @@ export async function approveSettlement(
     });
 
     if (flipped.count === 0) {
-      /*
+      /**
        * Zero rows matched does not always mean "a concurrent approval already flipped this" —
        * `StoreSettlementStatus` also has REJECTED, and a concurrent reject between the read at the
        * top of this function and this CAS produces the same zero count. By now the components
@@ -803,4 +819,15 @@ export async function approveSettlement(
 
     return { ok: true, paymentIds };
   });
+
+  if (result.alreadyApproved) return result;
+  return {
+    ...result,
+    notice: {
+      id: settlement.id,
+      docNo: settlement.docNo,
+      storeId: settlement.storeId,
+      salesmanId: settlement.salesmanId,
+    },
+  };
 }

@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { submitSettlement } from "@/lib/finance/ar-settlement/submit-writer";
 import { approveSettlement, type ApproveSettlementResult } from "@/lib/finance/ar-settlement/approve-writer";
+import { notifySalesmanOfApproval } from "@/lib/finance/ar-settlement/approval-notice";
 import { rejectSettlement } from "@/lib/finance/ar-settlement/reject-writer";
 import { SettlementError, type SettlementErrorCode } from "@/lib/finance/ar-settlement/errors";
 import { PaymentError, type PaymentErrorCode } from "@/lib/finance/ar/errors";
@@ -273,6 +274,13 @@ export async function approveSettlementAction(input: unknown): Promise<ApproveSe
   for (const paymentId of result.paymentIds) {
     await postArJournalSafely("ar_payment", paymentId, () => postPaymentReceiptJournal(paymentId, g.userId));
   }
+
+  /*
+   * The push goes out after the journals so a stalled send cannot strand approved payments with
+   * no journal and no `JOURNAL_PENDING` row. `notifySalesmanOfApproval` swallows its own errors,
+   * and `result.notice` exists only on the call that performed the flip.
+   */
+  if (result.notice) await notifySalesmanOfApproval(result.notice);
 
   /*
    * `SETTLEMENT_APPROVE` is written inside `approveSettlement`'s own status-flip transaction, not

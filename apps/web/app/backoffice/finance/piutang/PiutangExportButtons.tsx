@@ -27,6 +27,10 @@ export function PiutangExportButtons({ filters }: Props) {
     setPending(format);
     try {
       const result = await exportReceivablesReport(filters, format);
+      if ("empty" in result) {
+        toast.info(t("empty"));
+        return;
+      }
       if (result.data !== undefined) {
         downloadBlob(new Blob([result.data], { type: "text/csv;charset=utf-8" }), result.filename);
       } else {
@@ -39,7 +43,7 @@ export function PiutangExportButtons({ filters }: Props) {
         );
       }
       if (result.truncated) {
-        toast.warning(t("truncated", { total: result.totalRows }));
+        toast.warning(t("truncated"));
       } else {
         toast.success(t("started"));
       }

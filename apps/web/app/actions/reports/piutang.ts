@@ -8,6 +8,7 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
 
 export type ReceivableExportResult =
+  | { empty: true; data?: never; base64?: never }
   | { data: string; filename: string; truncated: boolean; totalRows: number; base64?: never }
   | { base64: string; filename: string; truncated: boolean; totalRows: number; data?: never };
 
@@ -45,6 +46,11 @@ export async function exportReceivablesReport(
   requirePermission(session.user.permissions, PERMISSIONS.RECEIVABLES_VIEW);
 
   const { rows: exportRows, truncated, totalRows } = await listReceivablesForExport(filters);
+  /**
+   * Gate on the post-bucket-filter rows, not `totalRows`: a bucket filter matching nothing must not
+   * download a header-only file. A truncated set may hold matches past the cap, so it is never empty.
+   */
+  if (exportRows.length === 0 && !truncated) return { empty: true };
   const rows = toRows(exportRows);
   const filename = `piutang-overdue-${Date.now()}`;
 

@@ -505,7 +505,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         </Card>
         <div className="mt-4 flex flex-col gap-2">
           <Button asChild className="w-full" size="lg">
-            <Link href={`/pwa/bkm/${success.settlementId}`}>
+            <Link href={`/pwa/bkm/${success.settlementId}`} replace>
               <Printer className="h-4 w-4" />
               {tBkm("printBkm")}
             </Link>
@@ -997,14 +997,7 @@ export function SettlementForm({ storeId, storeName, invoices, offsettableReturn
         {!actualAmountValid && <p className="text-xs text-destructive">{t("actualAmountRequired")}</p>}
         {actualAmountValid && (
           <p
-            className={cn(
-              "text-xs",
-              Math.abs(variance) <= EPSILON
-                ? "text-muted-foreground"
-                : variance > 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : "text-destructive",
-            )}
+            className={cn("text-xs", Math.abs(variance) <= EPSILON ? "text-muted-foreground" : "text-destructive")}
           >
             {Math.abs(variance) <= EPSILON
               ? t("varianceZero")

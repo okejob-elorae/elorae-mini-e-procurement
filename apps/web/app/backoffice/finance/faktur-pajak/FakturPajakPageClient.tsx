@@ -76,6 +76,7 @@ export function FakturPajakPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("fakturPajak");
+  const tStatus = useTranslations("fakturPajakStatus");
   const tCommon = useTranslations("common");
   const [isNavPending, startNavTransition] = useTransition();
   const [isActionPending, startActionTransition] = useTransition();
@@ -245,19 +246,19 @@ export function FakturPajakPageClient(props: Props) {
                 {t("statusAll")} ({totalCount})
               </TabsTrigger>
               <TabsTrigger value="PENDING">
-                {t("statusPending")} ({props.counts.PENDING})
+                {tStatus("statusPending")} ({props.counts.PENDING})
               </TabsTrigger>
               <TabsTrigger value="CREATED">
-                {t("statusCreated")} ({props.counts.CREATED})
+                {tStatus("statusCreated")} ({props.counts.CREATED})
               </TabsTrigger>
               <TabsTrigger value="SENT_TO_STORE">
-                {t("statusSentToStore")} ({props.counts.SENT_TO_STORE})
+                {tStatus("statusSentToStore")} ({props.counts.SENT_TO_STORE})
               </TabsTrigger>
               <TabsTrigger value="NOT_REQUIRED">
-                {t("statusNotRequired")} ({props.counts.NOT_REQUIRED})
+                {tStatus("statusNotRequired")} ({props.counts.NOT_REQUIRED})
               </TabsTrigger>
               <TabsTrigger value="CANCELLED">
-                {t("statusCancelled")} ({props.counts.CANCELLED})
+                {tStatus("statusCancelled")} ({props.counts.CANCELLED})
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -343,7 +344,7 @@ export function FakturPajakPageClient(props: Props) {
                               </TableCell>
                               <TableCell>
                                 <Badge variant={STATUS_BADGE_VARIANT[status]}>
-                                  {t(STATUS_LABEL_KEY[status])}
+                                  {tStatus(STATUS_LABEL_KEY[status])}
                                 </Badge>
                                 {row.invoiceNo && (
                                   <div

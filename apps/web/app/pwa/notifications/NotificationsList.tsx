@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowLeft, Bell, ChevronRight, Loader2, WifiOff } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { getDateFnsLocale } from "@/lib/i18n/date-fns-locale";
 import { getNotificationHref } from "@/lib/notifications/navigation";
 import { EnablePushCard } from "./EnablePushCard";
 
@@ -26,6 +27,7 @@ type Props = { initialItems: NotificationItem[] };
 export function NotificationsList({ initialItems }: Props) {
   const t = useTranslations("pwa.notifications");
   const tNav = useTranslations("pwa.nav");
+  const dateLocale = getDateFnsLocale(useLocale());
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -40,6 +42,7 @@ export function NotificationsList({ initialItems }: Props) {
       if (!res.ok) throw new Error("failed");
       setActionError(null);
     } catch {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, readAt: null } : i)));
       setActionError(t("offlineError"));
     }
   }
@@ -128,7 +131,7 @@ export function NotificationsList({ initialItems }: Props) {
                     <p className="truncate font-medium">{item.title}</p>
                     <p className="line-clamp-2 text-sm text-muted-foreground">{item.body}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: dateLocale })}
                     </p>
                   </div>
                   <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />

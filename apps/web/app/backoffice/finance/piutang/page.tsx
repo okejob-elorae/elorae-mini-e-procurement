@@ -65,9 +65,10 @@ export default async function PiutangPage({ searchParams }: PageProps) {
   const page = Math.max(1, parseInt(sp.page ?? "1", 10) || 1);
   const pageSize = DEFAULT_PAGE_SIZE;
   /**
-   * Read once and threaded through both the query and the client, so the table's per-row
-   * `isOverdue` colouring is computed against the exact same instant the server used for
-   * `daysOverdue` and the aging buckets — never a fresh `new Date()` on the client.
+   * Read once and threaded through both the query and the client, so the export filters use the
+   * exact same instant the server used for `daysOverdue` and the aging buckets — never a fresh
+   * `new Date()` on the client. The table's per-row overdue colouring is `isOverdueDisplay` over the
+   * server-computed `daysOverdue`, not a client-side comparison against `asOf`.
    */
   const asOf = new Date();
 

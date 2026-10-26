@@ -181,13 +181,17 @@ export type CollectionReceivableDetail = {
   pendingSettlementClaimAmount: number;
 };
 
+export type CollectionAccess =
+  | { status: "ok"; receivable: CollectionReceivableDetail }
+  | { status: "not_assigned" }
+  | { status: "missing" };
+
 /**
- * Reads a single receivable scoped to a specific assigned collector. Returns `null` both when the
- * receivable does not exist AND when `collectorId` does not match the assignment, so a collector can
- * never even read a receivable that isn't theirs — the same shape as a 404, not a 403, so the caller
- * cannot distinguish "not yours" from "doesn't exist".
+ * Like `getReceivableForCollection`, but names the two refusals apart so a screen can show a way
+ * out when a receivable was reassigned. `not_assigned` carries NO receivable fields: the caller
+ * learns only that the id exists, never anything about another collector's receivable.
  */
-export async function getReceivableForCollection(receivableId: string, collectorId: string): Promise<CollectionReceivableDetail | null> {
+export async function getReceivableCollectionAccess(receivableId: string, collectorId: string): Promise<CollectionAccess> {
   const r = await prisma.receivable.findUnique({
     where: { id: receivableId },
     select: {
@@ -200,17 +204,32 @@ export async function getReceivableForCollection(receivableId: string, collector
       submissions: { where: { status: "PENDING" }, select: { amount: true } },
     },
   });
-  if (!r || r.collectorId !== collectorId) return null;
+  if (!r) return { status: "missing" };
+  if (r.collectorId !== collectorId) return { status: "not_assigned" };
 
   const settlementClaims = await getPendingSettlementInvoiceClaimsMap([r.id]);
 
   return {
-    receivableId: r.id,
-    storeName: r.store.name,
-    docNo: resolveReceivableSource(r).docNo,
-    outstandingAmount: Number(r.outstandingAmount),
-    dueDate: r.dueDate,
-    pendingSubmittedAmount: r.submissions.reduce((s, sub) => s + Number(sub.amount), 0),
-    pendingSettlementClaimAmount: settlementClaims.get(r.id) ?? 0,
+    status: "ok",
+    receivable: {
+      receivableId: r.id,
+      storeName: r.store.name,
+      docNo: resolveReceivableSource(r).docNo,
+      outstandingAmount: Number(r.outstandingAmount),
+      dueDate: r.dueDate,
+      pendingSubmittedAmount: r.submissions.reduce((s, sub) => s + Number(sub.amount), 0),
+      pendingSettlementClaimAmount: settlementClaims.get(r.id) ?? 0,
+    },
   };
+}
+
+/**
+ * Reads a single receivable scoped to a specific assigned collector. Returns `null` both when the
+ * receivable does not exist AND when `collectorId` does not match the assignment, so a collector can
+ * never even read a receivable that isn't theirs — the same shape as a 404, not a 403, so the caller
+ * cannot distinguish "not yours" from "doesn't exist".
+ */
+export async function getReceivableForCollection(receivableId: string, collectorId: string): Promise<CollectionReceivableDetail | null> {
+  const access = await getReceivableCollectionAccess(receivableId, collectorId);
+  return access.status === "ok" ? access.receivable : null;
 }

@@ -113,6 +113,7 @@
     "profileAccounts": "Profile Accounts",
     "navDeliveries": "Deliveries",
     "navFinanceStoreSettlements": "Store Settlements",
+    "navFinanceCollections": "Collection Verification",
     "navKonsiSellThrough": "Sell-Through Reports"
   },
   "notifications": {
@@ -3228,7 +3229,10 @@
       "errOverCollected": "Amount exceeds the outstanding balance left after pending collection submissions and pending settlements.",
       "errAlreadySettled": "This receivable is already paid or written off.",
       "errNotAssignedCollector": "This receivable is not assigned to you.",
-      "errGeneric": "Failed to submit the collection. Try again."
+      "errGeneric": "Failed to submit the collection. Try again.",
+      "notAssignedTitle": "This collection is no longer assigned to you",
+      "notAssignedMessage": "This receivable was reassigned to another collector or is no longer in your queue. Open your queue to see your current collections.",
+      "backToQueue": "Back to queue"
     },
     "amplop": {
       "homeCta": "Amplop Digital",
@@ -3299,7 +3303,7 @@
       "useExpectedButton": "Use expected amount",
       "actualAmountRequired": "Amount is required.",
       "varianceZero": "Matches the expected amount.",
-      "varianceOver": "{amount} more than expected.",
+      "varianceOver": "{amount} more than expected. Approval refuses an over-tender, so correct the amount before filing.",
       "varianceUnder": "{amount} less than expected.",
       "noteLabel": "Note (optional)",
       "submitButton": "Submit Settlement",
@@ -3865,6 +3869,7 @@
     "valuationIncomplete": "Not Fully Valued",
     "needsPrice": "{count} line(s) need a price",
     "originalValueHint": "of {total} original",
+    "fullyApplied": "Fully applied",
     "colCredit": "Credit",
     "creditFilterLabel": "Credit Status",
     "creditFilterAll": "All",
@@ -3899,6 +3904,7 @@
       "offsetSuccessToast": "Return value applied to payment.",
       "offsetAlreadyAppliedToast": "The earlier draw already went through — the amount you just entered was not applied.",
       "insufficientOutstanding": "This store's outstanding total ({total}) is less than the amount you're offsetting ({needed}) — it can't be offset until more invoices exist.",
+      "noCreditToApply": "No credit left to apply on this return.",
       "noCandidates": "This store has no outstanding receivables to apply this credit to.",
       "colDueDate": "Due Date",
       "colOutstanding": "Outstanding",
@@ -5774,8 +5780,7 @@
       "INVALID_REQUEST": "That request was not valid. Close this dialog and open it again.",
       "UNEXPECTED": "Something went wrong. Please try again.",
       "NO_ALLOCATIONS": "One of this settlement's payments has nothing to allocate against.",
-      "DUPLICATE_ALLOCATION": "One of this settlement's payments allocates to the same invoice twice.",
-      "ALREADY_APPLIED": "That retur credit has already been fully applied."
+      "DUPLICATE_ALLOCATION": "One of this settlement's payments allocates to the same invoice twice."
     }
   },
   "settlementBkm": {
@@ -5911,7 +5916,6 @@
       "DUPLICATE_ALLOCATION": "The same receivable was allocated more than once.",
       "RETURN_NOT_APPROVED": "This return isn't approved yet, so it has no frozen value to offset.",
       "NOT_VALUED": "This return's value is incomplete and can't be offset.",
-      "ALREADY_APPLIED": "This return's value has already been applied to a payment.",
       "INSUFFICIENT_OUTSTANDING": "This store doesn't have enough outstanding balance to absorb the return's full value.",
       "EXCEEDS_REMAINING": "This draw is larger than the value left on the retur.",
       "PAYMENT_VOIDED": "The prior offset for this return was voided. Reopen the offset sheet and try again.",
@@ -6053,11 +6057,6 @@
     "searchPlaceholder": "Search by nota number, store name, or invoice number...",
     "reset": "Reset",
     "statusAll": "All",
-    "statusPending": "Pending",
-    "statusCreated": "Created",
-    "statusSentToStore": "Sent to Store",
-    "statusNotRequired": "Not Required",
-    "statusCancelled": "Cancelled",
     "colDocNo": "Nota No.",
     "colStore": "Store",
     "colInvoiceDate": "Invoice Date",
@@ -6268,7 +6267,7 @@
       "proofUploadError": "Failed to upload the proof. Try again.",
       "proofNotUploadedHint": "Click Upload to attach this file.",
       "allocationTitle": "Allocate to Receivables",
-      "allocationEmpty": "This store has no other outstanding receivables.",
+      "allocationEmpty": "This store has no outstanding receivables to allocate to.",
       "colAllocation": "Allocation",
       "negativeAmount": "Amount cannot be negative.",
       "overAllocated": "Exceeds this receivable's outstanding balance.",
@@ -6288,7 +6287,8 @@
       "excel": "Export Excel",
       "started": "Export started",
       "failed": "Export failed",
-      "truncated": "Showing 10,000 of {total} rows — narrow the filters for the complete set"
+      "truncated": "Export capped at 10,000 rows; narrow the filters for the rest",
+      "empty": "Nothing to export for the current filters"
     },
     "storeAvailableCreditTitle": "Available Retur Credit",
     "storeAvailableCreditHint": "Approved returns not yet applied to any payment for this store.",

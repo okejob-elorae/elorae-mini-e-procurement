@@ -7,8 +7,9 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { formatDistanceToNow } from 'date-fns';
+import { getDateFnsLocale } from '@/lib/i18n/date-fns-locale';
 import { getNotificationHref } from '@/lib/notifications/navigation';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +39,7 @@ function NotificationInbox({
   onItemClick: (item: NotificationItem) => void;
   t: (key: string) => string;
 }) {
+  const dateLocale = getDateFnsLocale(useLocale());
   if (items.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center py-8 text-center text-sm text-muted-foreground">
@@ -65,7 +67,7 @@ function NotificationInbox({
                 <p className="font-medium text-foreground">{item.title}</p>
                 <p className="line-clamp-2 text-sm text-muted-foreground">{item.body}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                  {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true, locale: dateLocale })}
                 </p>
               </button>
             </li>

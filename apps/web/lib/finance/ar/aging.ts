@@ -62,3 +62,12 @@ export function agingBucket(dueDate: Date, asOf: Date): AgingBucket {
 export function isOverdue(dueDate: Date, asOf: Date): boolean {
   return daysOverdue(dueDate, asOf) > 0;
 }
+
+/**
+ * Whether a receivable should read as overdue on screen: only an open one can be. A `PAID`,
+ * `WRITTEN_OFF` or `VOIDED` receivable keeps its past `dueDate`, but there is nothing left to
+ * chase, so red styling and an overdue aging badge on it would be noise.
+ */
+export function isOverdueDisplay(status: string, days: number): boolean {
+  return (status === "OUTSTANDING" || status === "PARTIAL") && days > 0;
+}

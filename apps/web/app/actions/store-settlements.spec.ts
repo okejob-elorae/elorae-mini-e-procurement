@@ -15,6 +15,7 @@ const {
   mockPostArJournalSafely,
   mockPostPaymentReceiptJournal,
   mockRevalidatePath,
+  mockNotifySalesman,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
@@ -23,6 +24,7 @@ const {
   mockPostArJournalSafely: vi.fn(),
   mockPostPaymentReceiptJournal: vi.fn(),
   mockRevalidatePath: vi.fn(),
+  mockNotifySalesman: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -34,6 +36,7 @@ vi.mock("@/lib/finance/ar-settlement/approve-writer", () => ({ approveSettlement
 vi.mock("@/lib/finance/ar-settlement/reject-writer", () => ({ rejectSettlement: mockRejectSettlement }));
 vi.mock("@/lib/finance/ar/post-ar-journal-safely", () => ({ postArJournalSafely: mockPostArJournalSafely }));
 vi.mock("@/lib/finance/ar/payment-journal", () => ({ postPaymentReceiptJournal: mockPostPaymentReceiptJournal }));
+vi.mock("@/lib/finance/ar-settlement/approval-notice", () => ({ notifySalesmanOfApproval: mockNotifySalesman }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
 
 import { SettlementError } from "@/lib/finance/ar-settlement/errors";
@@ -49,6 +52,8 @@ describe("store-settlements approve/reject actions (unit — writers mocked)", (
     mockPostArJournalSafely.mockReset();
     mockPostPaymentReceiptJournal.mockReset();
     mockRevalidatePath.mockReset();
+    mockNotifySalesman.mockReset();
+    mockNotifySalesman.mockResolvedValue(undefined);
 
     mockAuth.mockResolvedValue({ user: { id: "admin-1", permissions: ["collections:manage"] } });
     mockHasPermission.mockReturnValue(true);
@@ -99,6 +104,28 @@ describe("store-settlements approve/reject actions (unit — writers mocked)", (
     const res = await approveSettlementAction({ settlementId: "s1" });
     expect(res).toEqual({ ok: true, paymentIds, alreadyApproved: true });
     expect(mockPostArJournalSafely).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends the approval push after every journal, and only when the writer returned a notice", async () => {
+    const notice = { id: "s1", docNo: "PEL/1", storeId: "st1", salesmanId: "u1" };
+    const order: string[] = [];
+    mockPostArJournalSafely.mockImplementation(async () => {
+      order.push("journal");
+      return { ok: true, journalId: "j1", created: true };
+    });
+    mockNotifySalesman.mockImplementation(async () => {
+      order.push("push");
+    });
+    mockApproveSettlement.mockResolvedValue({ ok: true, paymentIds: ["p1", "p2"], notice });
+    const res = await approveSettlementAction({ settlementId: "s1" });
+    expect(res).toEqual({ ok: true, paymentIds: ["p1", "p2"], alreadyApproved: undefined });
+    expect(order).toEqual(["journal", "journal", "push"]);
+    expect(mockNotifySalesman).toHaveBeenCalledWith(notice);
+
+    mockNotifySalesman.mockClear();
+    mockApproveSettlement.mockResolvedValue({ ok: true, paymentIds: ["p1"], alreadyApproved: true });
+    await approveSettlementAction({ settlementId: "s1" });
+    expect(mockNotifySalesman).not.toHaveBeenCalled();
   });
 
   it("maps a SettlementError via instanceof, not a Record lookup", async () => {
