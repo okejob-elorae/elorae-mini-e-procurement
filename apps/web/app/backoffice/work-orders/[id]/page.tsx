@@ -56,6 +56,8 @@ import {
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
+import { logPrintQuietly } from '@/lib/audit/log-print-quietly';
 import { WOStatus } from '@/lib/constants/enums';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
 import { WorkOrderExportButton } from "./WorkOrderExportButton";
@@ -223,30 +225,7 @@ export default function WorkOrderDetailPage() {
         totalCost: 'Total cost',
       },
     });
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-    iframe.setAttribute('title', 'Print Nota ke CMT');
-    document.body.appendChild(iframe);
-    const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
-    if (!doc) {
-      toast.error(tToasts('failedToLoadIssueForPrint'));
-      iframe.remove();
-      return;
-    }
-    doc.open();
-    doc.write(html);
-    doc.close();
-    const removeIframe = () => {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    };
-    setTimeout(() => {
-      try {
-        iframe.contentWindow?.print();
-      } catch {
-        toast.error(tToasts('failedToLoadIssueForPrint'));
-      }
-      setTimeout(removeIframe, 500);
-    }, 350);
+    printHtmlInIframe(html, 'Print Nota ke CMT', { errorMessage: tToasts('failedToLoadIssueForPrint') });
   };
 
   const handleSaveHpp = async () => {
@@ -533,6 +512,7 @@ export default function WorkOrderDetailPage() {
               onClick={() => {
                 const win = window.open('', '_blank', 'width=800,height=600');
                 if (!win) return;
+                logPrintQuietly('WorkOrderRollNota', String(wo.id));
                 win.document.write(`
                   <html><head><title>Nota Kain per Roll - ${wo.docNumber}</title></head><body>
                   <h2>Nota Kain per Roll</h2>

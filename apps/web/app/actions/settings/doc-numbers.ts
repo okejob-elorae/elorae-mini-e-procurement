@@ -1,11 +1,11 @@
-'use server';
+"use server";
 
-import { revalidatePath } from 'next/cache';
-import { prisma } from '@elorae/db';
-import type { DocNumberConfig, DocType } from '@elorae/db';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
-import { auth } from '@/lib/auth';
-import { notifyDocNumberAltered } from '@/app/actions/notifications';
+import { revalidatePath } from "next/cache";
+import { prisma } from "@elorae/db";
+import type { DocNumberConfig, DocType } from "@elorae/db";
+import { requirePermission, PERMISSIONS } from "@/lib/rbac";
+import { auth } from "@/lib/auth";
+import { notifyDocNumberAltered } from "@/app/actions/notifications";
 import { getActorName } from "@/lib/notifications/actor-name";
 import {
   findPrefixConflict,
@@ -28,30 +28,30 @@ export type DocNumberConfigRow = {
 
 const DEFAULT_CONFIGS: Record<
   DocType,
-  { prefix: string; resetPeriod: 'YEARLY' | 'MONTHLY'; padding: number }
+  { prefix: string; resetPeriod: "YEARLY" | "MONTHLY"; padding: number }
 > = {
-  PO: { prefix: 'PO/', resetPeriod: 'YEARLY', padding: 4 },
-  GRN: { prefix: 'GRN/', resetPeriod: 'MONTHLY', padding: 4 },
-  WO: { prefix: 'WO/', resetPeriod: 'YEARLY', padding: 4 },
-  ADJ: { prefix: 'ADJ/', resetPeriod: 'MONTHLY', padding: 4 },
-  RET: { prefix: 'RET/', resetPeriod: 'MONTHLY', padding: 4 },
-  ISSUE: { prefix: 'ISS/', resetPeriod: 'MONTHLY', padding: 4 },
-  RECEIPT: { prefix: 'RCPT/', resetPeriod: 'MONTHLY', padding: 4 },
-  OPN: { prefix: 'OPN/', resetPeriod: 'MONTHLY', padding: 4 },
-  PUTUS: { prefix: 'PUTUS/', resetPeriod: 'YEARLY', padding: 4 },
-  KONSI: { prefix: 'KONSI/', resetPeriod: 'YEARLY', padding: 4 },
-  VANLOAD: { prefix: 'VLOAD/', resetPeriod: 'YEARLY', padding: 4 },
-  VANSALE: { prefix: 'VSALE/', resetPeriod: 'YEARLY', padding: 4 },
-  VANRECON: { prefix: 'VRCN/', resetPeriod: 'YEARLY', padding: 4 },
-  SPGSALE: { prefix: 'SPG/', resetPeriod: 'YEARLY', padding: 4 },
-  DELIVERY: { prefix: 'DLV/', resetPeriod: 'MONTHLY', padding: 4 },
-  FIELDRET: { prefix: 'FRET/', resetPeriod: 'MONTHLY', padding: 4 },
-  KONSITRF: { prefix: 'KTRF/', resetPeriod: 'YEARLY', padding: 4 },
-  STOCKTAKE: { prefix: 'STK/', resetPeriod: 'MONTHLY', padding: 4 },
-  PAYMENT: { prefix: 'KWT/', resetPeriod: 'MONTHLY', padding: 4 },
-  BKM: { prefix: 'BKM/', resetPeriod: 'YEARLY', padding: 4 },
-  STORETRF: { prefix: 'STRF/', resetPeriod: 'YEARLY', padding: 4 },
-  SELLTHRU: { prefix: 'SLT/', resetPeriod: 'YEARLY', padding: 4 },
+  PO: { prefix: "PO/", resetPeriod: "YEARLY", padding: 4 },
+  GRN: { prefix: "GRN/", resetPeriod: "MONTHLY", padding: 4 },
+  WO: { prefix: "WO/", resetPeriod: "YEARLY", padding: 4 },
+  ADJ: { prefix: "ADJ/", resetPeriod: "MONTHLY", padding: 4 },
+  RET: { prefix: "RET/", resetPeriod: "MONTHLY", padding: 4 },
+  ISSUE: { prefix: "ISS/", resetPeriod: "MONTHLY", padding: 4 },
+  RECEIPT: { prefix: "RCPT/", resetPeriod: "MONTHLY", padding: 4 },
+  OPN: { prefix: "OPN/", resetPeriod: "MONTHLY", padding: 4 },
+  PUTUS: { prefix: "PUTUS/", resetPeriod: "YEARLY", padding: 4 },
+  KONSI: { prefix: "KONSI/", resetPeriod: "YEARLY", padding: 4 },
+  VANLOAD: { prefix: "VLOAD/", resetPeriod: "YEARLY", padding: 4 },
+  VANSALE: { prefix: "VSALE/", resetPeriod: "YEARLY", padding: 4 },
+  VANRECON: { prefix: "VRCN/", resetPeriod: "YEARLY", padding: 4 },
+  SPGSALE: { prefix: "SPG/", resetPeriod: "YEARLY", padding: 4 },
+  DELIVERY: { prefix: "DLV/", resetPeriod: "MONTHLY", padding: 4 },
+  FIELDRET: { prefix: "FRET/", resetPeriod: "MONTHLY", padding: 4 },
+  KONSITRF: { prefix: "KTRF/", resetPeriod: "YEARLY", padding: 4 },
+  STOCKTAKE: { prefix: "STK/", resetPeriod: "MONTHLY", padding: 4 },
+  PAYMENT: { prefix: "KWT/", resetPeriod: "MONTHLY", padding: 4 },
+  BKM: { prefix: "BKM/", resetPeriod: "YEARLY", padding: 4 },
+  STORETRF: { prefix: "STRF/", resetPeriod: "YEARLY", padding: 4 },
+  SELLTHRU: { prefix: "SLT/", resetPeriod: "YEARLY", padding: 4 },
 };
 
 /* Compile-time pin: a Prisma `DocType` member missing from the settings grouping is a type error here. */

@@ -39,6 +39,7 @@ import {
   completeReturn
 } from '@/app/actions/vendor-returns';
 import { logPrint } from '@/app/actions/audit';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { buildVendorReturnPrintHtml } from '@/lib/print/vendor-return-html';
 
 export default function VendorReturnDetailPage() {
@@ -132,22 +133,7 @@ export default function VendorReturnDetailPage() {
         value: 'Value',
       },
     });
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-    iframe.setAttribute('title', t('printNotaRetur'));
-    document.body.appendChild(iframe);
-    const doc = iframe.contentWindow?.document;
-    if (doc) {
-      doc.open();
-      doc.write(html);
-      doc.close();
-      setTimeout(() => {
-        iframe.contentWindow?.print();
-      }, 350);
-    }
-    setTimeout(() => {
-      document.body.removeChild(iframe);
-    }, 500);
+    printHtmlInIframe(html, t('printNotaRetur'));
   };
 
   const handleCompleteSubmit = async (e: React.FormEvent) => {

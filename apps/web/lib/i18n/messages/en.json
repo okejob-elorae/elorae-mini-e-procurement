@@ -254,6 +254,7 @@
       "empty": "No sizes yet. Add at least one.",
       "save": "Save",
       "loadError": "Failed to load pack ratio.",
+      "retry": "Retry",
       "errEmpty": "Add at least one size.",
       "errBadSize": "Size name cannot be empty.",
       "errDupSize": "Sizes cannot repeat.",
@@ -2856,6 +2857,12 @@
         "lastVisit": "Last visit",
         "terms": "Business terms"
       },
+      "photos": {
+        "column": "Photos",
+        "count": "{count, plural, one {# photo} other {# photos}}",
+        "title": "Visit photos",
+        "alt": "Visit photo"
+      },
       "visitTable": {
         "checkin": "Check-in",
         "checkout": "Check-out",
@@ -3077,6 +3084,46 @@
       "ordersEmpty": "No orders yet"
     },
     "catalog": {
+      "back": "Back",
+      "subtitle": "Product catalog · {terms}",
+      "searchPlaceholder": "Search SKU or name",
+      "allCategories": "All",
+      "suggestNew": "Suggest new products",
+      "suggestAdded": "{count, plural, one {# new product added} other {# new products added}}",
+      "loading": "Loading catalog…",
+      "loadError": "Failed to load the catalog. Check your connection and try again.",
+      "noMatch": "No matching products.",
+      "isNew": "New",
+      "priceNotSet": "Price not set",
+      "checkInToOrder": "Check in to order",
+      "prevPage": "Previous page",
+      "nextPage": "Next page",
+      "backToCatalog": "Back to catalog",
+      "cartEmpty": "Cart is empty.",
+      "perPcs": "{price} / pcs",
+      "appealed": "Requested {price}/pcs",
+      "editAppeal": "Edit request",
+      "requestPrice": "Request price",
+      "noteLabel": "Note (optional)",
+      "notePlaceholder": "Write a note for this order…",
+      "total": "Total",
+      "review": "Review",
+      "cartItems": "{count, plural, one {# item} other {# items}}",
+      "cartSkus": "{count, plural, one {# SKU} other {# SKUs}}",
+      "offlineNotice": "Offline — orders are saved and sent automatically when you're back online",
+      "sending": "Sending…",
+      "send": "Send",
+      "minQtyBelow": "Quantity below the minimum: {items}.",
+      "minQtyItem": "{name} (min {min})",
+      "productFallback": "product",
+      "savedOffline": "Order saved — it will be sent automatically when you're online",
+      "sentCreditHold": "Order {orderNo} sent — the store is over its credit limit and awaits admin review.",
+      "sent": "Order {orderNo} sent",
+      "itemUnavailable": "Products no longer sold: {items}. Remove them from the cart and send again.",
+      "needCheckIn": "Check in first to place an order.",
+      "sessionExpired": "Session expired. Sign in again.",
+      "noItems": "No items.",
+      "sendFailed": "Failed to send the order. Try again.",
       "promoTag": "Promo",
       "promoOrderDiscount": "Order discount",
       "selectVariant": "Select variant",
@@ -3441,6 +3488,18 @@
       "pooledVariant": "No size (pooled stock)"
     },
     "visitPhoto": {
+      "close": "Close",
+      "shoot": "Take photo",
+      "captionPlaceholder": "Caption (optional)",
+      "retake": "Retake",
+      "save": "Save",
+      "title": "Visit photos",
+      "capReached": "Photo limit reached",
+      "take": "Take photo",
+      "cameraUnavailable": "Camera unavailable — using the device camera.",
+      "failed": "failed",
+      "waiting": "waiting",
+      "retry": "Retry",
       "delete": "Delete photo",
       "deleteTitle": "Delete this photo?",
       "deleteBody": "This photo could not be uploaded. Deleting it removes it from this device for good.",
@@ -3450,6 +3509,7 @@
     }
   },
   "fieldSalesOrders": {
+    "detailLoading": "Loading order…",
     "pageTitle": "Field Orders",
     "subtitle": "Putus orders & konsi transfers from field sales awaiting approval",
     "search": "Search by order number or store name",
@@ -3638,7 +3698,15 @@
       "tagihanDialogFootnote": "Footnote (optional)",
       "tagihanDialogFootnotePlaceholder": "e.g. Purchased items cannot be exchanged/returned",
       "tagihanDialogCancel": "Cancel",
-      "tagihanDialogPrint": "Print"
+      "tagihanDialogPrint": "Print",
+      "tagihanBookkeepingFailed": "The invoice is printing, but these parts of the print record failed to save: {parts}. Tell finance to check the faktur pajak.",
+      "tagihanBookkeepingFailedGeneric": "The invoice is printing, but the print record could not be saved. Tell finance to check the faktur pajak.",
+      "tagihanAuditOnlyFailed": "The invoice is printing, but the print was not recorded in the audit log.",
+      "tagihanPart": {
+        "AUDIT": "audit log",
+        "STAMP": "printed stamp",
+        "NOTIFY": "finance notification"
+      }
     },
     "konsiShipments": {
       "title": "Consignment shipments",
@@ -3953,6 +4021,8 @@
     }
   },
   "storeStocktakes": {
+    "loadingList": "Loading stocktakes…",
+    "loadingDetail": "Loading stocktake…",
     "pageTitle": "Store Stocktakes",
     "subtitle": "Physical counts of consignment stock held at stores",
     "search": "Search",
@@ -4231,6 +4301,8 @@
     }
   },
   "konsiSellThrough": {
+    "loadingList": "Loading sell-through reports…",
+    "loadingDetail": "Loading sell-through report…",
     "pageTitle": "Konsi Sell-Through Reports",
     "subtitle": "What each consignment store sold per counting period, verified against its counts.",
     "filterStore": "All stores",
@@ -4393,6 +4465,14 @@
       "retrying": "Retrying…",
       "retryDone": "All journals posted.",
       "retryStillPending": "{n, plural, one {# journal is} other {# journals are}} still pending — check Account Mapping, then retry.",
+      "bookkeepingFailed": "The nota is printing, but these parts of the print record failed to save: {parts}. Tell finance to check the faktur pajak.",
+      "bookkeepingAuditOnlyFailed": "The nota is printing, but the print was not recorded in the audit log.",
+      "bookkeepingFailedGeneric": "The nota is printing, but the print record could not be saved. Tell finance to check the faktur pajak.",
+      "bookkeepingPart": {
+        "AUDIT": "audit log",
+        "STAMP": "printed stamp",
+        "NOTIFY": "finance notification"
+      },
       "printNota": "Print Nota",
       "printing": "Preparing…",
       "baselineBadge": "Baseline",
@@ -4907,6 +4987,7 @@
     }
   },
   "spgCommission": {
+    "loading": "Loading SPG commission recap…",
     "pageTitle": "SPG Commission",
     "subtitle": "A flat rupiah per piece for each item category. Only SPG POS sales confirmed by an approved sell-through report count; a report voided after its month lands as a negative in the month of the void.",
     "prevMonth": "Previous month",

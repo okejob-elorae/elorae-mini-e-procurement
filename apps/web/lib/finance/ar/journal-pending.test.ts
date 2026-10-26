@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
-import { isArJournalRetryable, findPostableArJournalDocIds } from "./journal-pending";
+import { isArJournalRetryable, findPostableArJournalDocIds, isFieldDeliveryJournalStillPending } from "./journal-pending";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -49,6 +49,41 @@ d("journal-pending gating (test bed only)", () => {
     });
     notificationId = n.id;
     expect(await isArJournalRetryable("field_delivery_cogs", flaggedDoc)).toBe(false);
+  });
+
+  it("stops reporting a flagged delivery journal as pending once the journal exists", async () => {
+    const n = await prisma.adminNotification.create({
+      data: {
+        category: "JOURNAL_PENDING",
+        severity: "WARNING",
+        title: `test ${token}`,
+        message: "test",
+        metadata: { docId: flaggedDoc, kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE", role: "AR" },
+      },
+    });
+    notificationId = n.id;
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(true);
+
+    const journal = await prisma.journal.create({
+      data: {
+        date: new Date(),
+        description: `test ${token}`,
+        sourceType: "FIELD_DELIVERY_REVENUE",
+        sourceId: flaggedDoc,
+        postedById: "test-user",
+      },
+    });
+    try {
+      expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(false);
+      /* The flag still gates: the revenue journal posting says nothing about the cogs kind. */
+      expect(await isFieldDeliveryJournalStillPending("field_delivery_cogs", flaggedDoc)).toBe(false);
+    } finally {
+      await prisma.journal.delete({ where: { id: journal.id } });
+    }
+  });
+
+  it("never reports an unflagged delivery as pending just because it has no journal", async () => {
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", cleanDoc)).toBe(false);
   });
 
   /**

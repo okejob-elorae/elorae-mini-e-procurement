@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getCashFlowReport } from "@/app/actions/finance-reports";
 import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
 import {
@@ -74,6 +75,7 @@ export default function PrintCashFlowPage() {
      * releases the guard so a Strict Mode double-invocation still prints once.
      */
     const timer = setTimeout(() => {
+      logPrintQuietly("CashFlowStatement", report.periodLabel);
       window.print();
     }, 400);
     return () => {

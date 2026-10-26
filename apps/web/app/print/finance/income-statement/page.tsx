@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getIncomeStatementReport } from "@/app/actions/finance-reports";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import {
@@ -52,6 +53,7 @@ export default function PrintIncomeStatementPage() {
      * (first timer cancelled, second one fires).
      */
     const timer = setTimeout(() => {
+      logPrintQuietly("IncomeStatement", report.periodLabel);
       window.print();
     }, 400);
     return () => {

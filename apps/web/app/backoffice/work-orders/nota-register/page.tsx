@@ -44,6 +44,7 @@ import {
 } from '@/app/actions/production';
 import { buildMaterialIssuePrintHtml } from '@/lib/print/material-issue-html';
 import { logPrint } from '@/app/actions/audit';
+import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 
@@ -58,8 +59,7 @@ type RegisterRow = {
 };
 
 export default function NotaRegisterPage() {
-  const _t = useTranslations('toasts');
-  void _t;
+  const tToasts = useTranslations('toasts');
   const tNota = useTranslations('notaRegister');
   const tPlaceholders = useTranslations('placeholders');
   const [issues, setIssues] = useState<RegisterRow[]>([]);
@@ -155,30 +155,7 @@ export default function NotaRegisterPage() {
         totalCost: 'Total cost',
       },
     });
-    const iframe = document.createElement('iframe');
-    iframe.setAttribute('style', 'position:absolute;width:0;height:0;border:0;visibility:hidden;');
-    iframe.setAttribute('title', 'Print Nota ke CMT');
-    document.body.appendChild(iframe);
-    const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
-    if (!doc) {
-      toast.error('Failed to load for print');
-      iframe.remove();
-      return;
-    }
-    doc.open();
-    doc.write(html);
-    doc.close();
-    const removeIframe = () => {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    };
-    setTimeout(() => {
-      try {
-        iframe.contentWindow?.print();
-      } catch {
-        toast.error('Failed to load for print');
-      }
-      setTimeout(removeIframe, 500);
-    }, 350);
+    printHtmlInIframe(html, 'Print Nota ke CMT', { errorMessage: tToasts('failedToLoadForPrint') });
   };
 
   return (

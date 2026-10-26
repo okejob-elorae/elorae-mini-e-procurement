@@ -10,6 +10,7 @@ import { ArrowLeft, BookText, ClipboardCheck, Clock, ExternalLink, Package, Truc
 import type { VanStockRow, VanLoadRow, LoadableInventoryRow } from "@/lib/canvassing/queries";
 import type { VanReconcileRow, VanReconcileListRow } from "@/lib/canvassing/reconcile-queries";
 import { logPrint } from "@/app/actions/audit";
+import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
 import { getVanLoadPrintData } from "@/app/actions/van-load-print";
 import { postVanLoadJournalAction } from "@/app/actions/canvassing";
 import { buildVanLoadPrintHtml } from "@/lib/print/van-load-html";
@@ -51,19 +52,6 @@ function formatDateTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function printHtml(html: string, title: string) {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
-  iframe.setAttribute("title", title);
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (doc) {
-    doc.open(); doc.write(html); doc.close();
-    setTimeout(() => iframe.contentWindow?.print(), 350);
-  }
-  setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
 export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, itemOptions, loadableInventory, reconcileRows, reconciles }: Props) {
@@ -138,7 +126,7 @@ export function VanDetailClient({ canvasserId, canvasserName, vanStock, loads, i
         issuedBy: t("print.issuedBy"),
       },
     });
-    printHtml(html, t("print.vanLoadTitle"));
+    printHtmlInIframe(html, t("print.vanLoadTitle"));
   }
 
   return (

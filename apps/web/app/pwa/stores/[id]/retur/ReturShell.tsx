@@ -474,7 +474,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   return (
     <div className="flex flex-col gap-3 p-4">
       <header className="-ml-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href={`/pwa/stores/${storeId}`}>
             <ArrowLeft className="h-4 w-4" />
             Kembali

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getTrialBalanceReport } from "@/app/actions/finance-reports";
 import {
   TRIAL_BALANCE_BALANCED_NOTE,
@@ -40,6 +41,7 @@ export default function PrintTrialBalancePage() {
      * (first timer cancelled, second one fires).
      */
     const timer = setTimeout(() => {
+      logPrintQuietly("TrialBalanceStatement", report.periodLabel);
       window.print();
     }, 400);
     return () => {

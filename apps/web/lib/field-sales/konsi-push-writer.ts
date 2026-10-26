@@ -1,5 +1,6 @@
-import { prisma, Prisma } from "@elorae/db";
+import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { isUniqueViolationOn } from "@/lib/db/unique-violation";
 import { generateDocNumber } from "@/lib/docNumber";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { isStockableVariantKey } from "@/lib/items/variants";
@@ -21,16 +22,6 @@ export type CreateKonsiPushOrderInput = {
 };
 
 type PushResult = { orderId: string; orderNo: string };
-
-/**
- * The mariadb adapter reports a unique violation's constraint as the INDEX NAME
- * (`FieldSalesOrder_idempotencyKey_key`) rather than the column, and where it lands in `meta`
- * varies, so the column name is searched for across the message and the whole meta blob.
- */
-function isUniqueViolationOn(e: unknown, column: string): boolean {
-  if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== "P2002") return false;
-  return `${e.message} ${JSON.stringify(e.meta ?? {})}`.includes(column);
-}
 
 /**
  * A key already spent on another store, or on a salesman's own order, is never handed back as

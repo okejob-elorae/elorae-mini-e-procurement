@@ -623,6 +623,8 @@ model TaxInvoice {
   markedBy        User?               @relation("TaxInvoiceMarkedBy", fields: [markedById], references: [id])
 
   @@index([status])
+  @@index([markedById])
+  @@index([notaPrintedById])
 }
 
 model Receivable {

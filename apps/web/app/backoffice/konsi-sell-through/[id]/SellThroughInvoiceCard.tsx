@@ -97,10 +97,27 @@ export function SellThroughInvoiceCard({
           },
         });
         printHtmlInIframe(html, result.nota.docNo);
-        /* Best-effort stamp + finance ping; it never throws and must never hold up the print. */
-        void recordSellThroughNotaPrinted(report.id);
       } catch {
         toast.error(t("err.UNEXPECTED"));
+        return;
+      }
+      /* Bookkeeping runs after the print and never blocks or undoes it; a failed half only warns. */
+      try {
+        const result = await recordSellThroughNotaPrinted(report.id);
+        if (!result.ok) {
+          /* Only a failed stamp or notification can leave finance unaware of a faktur pajak. */
+          const financeAffected = result.failed.includes("STAMP") || result.failed.includes("NOTIFY");
+          if (result.failed.length === 0) {
+            toast.warning(tInvoice("bookkeepingFailedGeneric"));
+          } else if (!financeAffected) {
+            toast.warning(tInvoice("bookkeepingAuditOnlyFailed"));
+          } else {
+            const parts = result.failed.map((half) => tInvoice(`bookkeepingPart.${half}`));
+            toast.warning(tInvoice("bookkeepingFailed", { parts: parts.join(", ") }));
+          }
+        }
+      } catch {
+        toast.warning(tInvoice("bookkeepingFailedGeneric"));
       }
     });
   }

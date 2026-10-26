@@ -69,7 +69,7 @@ export function NotificationsList({ initialItems }: Props) {
   return (
     <div className="p-4 space-y-4">
       <header className="flex items-center gap-2 -ml-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href="/pwa">
             <ArrowLeft className="h-4 w-4" />
             {tNav("home")}

@@ -721,16 +721,58 @@ describe("recordNotaTagihanPrinted", () => {
     expect(mockLogAudit).toHaveBeenCalledTimes(1);
   });
 
-  it("never throws when the notification write fails", async () => {
+  it("reports ok with no failed halves on a clean first print", async () => {
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: true, failed: [] });
+  });
+
+  it("names NOTIFY and never throws when the notification write fails", async () => {
     mockUpdateMany.mockResolvedValue({ count: 1 });
     mockAdminNotificationCreate.mockRejectedValue(new Error("db down"));
-    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toBeUndefined();
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: false, failed: ["NOTIFY"] });
+  });
+
+  it("names AUDIT but still stamps and notifies when the audit write fails", async () => {
+    mockLogAudit.mockRejectedValue(new Error("audit down"));
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: false, failed: ["AUDIT"] });
+    expect(mockUpdateMany).toHaveBeenCalledTimes(1);
+    expect(mockAdminNotificationCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("names STAMP and skips the notification when the CAS throws", async () => {
+    mockUpdateMany.mockRejectedValue(new Error("db down"));
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: false, failed: ["STAMP"] });
+    expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
+    expect(mockFanOut).not.toHaveBeenCalled();
+  });
+
+  it("names NOTIFY when the delivery lookup returns null after winning the CAS", async () => {
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    mockFindDelivery.mockResolvedValue(null);
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({ ok: false, failed: ["NOTIFY"] });
+    expect(mockAdminNotificationCreate).not.toHaveBeenCalled();
+    expect(mockFanOut).not.toHaveBeenCalled();
+  });
+
+  it("returns UNEXPECTED, never throws, when auth() throws", async () => {
+    mockAuth.mockRejectedValue(new Error("auth down"));
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({
+      ok: false,
+      failed: [],
+      reason: "UNEXPECTED",
+    });
+    expect(mockUpdateMany).not.toHaveBeenCalled();
   });
 
   /* Prisma drops an `undefined` filter term, so without the guard the CAS would match every unprinted faktur. */
   it("does nothing at all for a missing or empty delivery id", async () => {
     mockUpdateMany.mockResolvedValue({ count: 1 });
-    await recordNotaTagihanPrinted(undefined as unknown as string);
+    await expect(recordNotaTagihanPrinted(undefined as unknown as string)).resolves.toEqual({
+      ok: false,
+      failed: [],
+      reason: "INVALID_REQUEST",
+    });
     await recordNotaTagihanPrinted("");
     expect(mockAuth).not.toHaveBeenCalled();
     expect(mockLogAudit).not.toHaveBeenCalled();
@@ -741,7 +783,11 @@ describe("recordNotaTagihanPrinted", () => {
   it("does nothing without the field_sales_orders:view permission", async () => {
     mockAuth.mockResolvedValue({ user: { id: userId, permissions: [] } });
     mockUpdateMany.mockResolvedValue({ count: 1 });
-    await recordNotaTagihanPrinted(deliveryId);
+    await expect(recordNotaTagihanPrinted(deliveryId)).resolves.toEqual({
+      ok: false,
+      failed: [],
+      reason: "FORBIDDEN",
+    });
     expect(mockLogAudit).not.toHaveBeenCalled();
     expect(mockUpdateMany).not.toHaveBeenCalled();
     expect(mockAdminNotificationCreate).not.toHaveBeenCalled();

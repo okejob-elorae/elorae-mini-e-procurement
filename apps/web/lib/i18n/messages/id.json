@@ -254,6 +254,7 @@
       "empty": "Belum ada ukuran. Tambahkan minimal satu.",
       "save": "Simpan",
       "loadError": "Gagal memuat rasio pack.",
+      "retry": "Coba lagi",
       "errEmpty": "Tambahkan minimal satu ukuran.",
       "errBadSize": "Nama ukuran tidak boleh kosong.",
       "errDupSize": "Ukuran tidak boleh sama.",
@@ -2856,6 +2857,12 @@
         "lastVisit": "Kunjungan terakhir",
         "terms": "Terms bisnis"
       },
+      "photos": {
+        "column": "Foto",
+        "count": "{count} foto",
+        "title": "Foto Kunjungan",
+        "alt": "Foto kunjungan"
+      },
       "visitTable": {
         "checkin": "Check-in",
         "checkout": "Check-out",
@@ -3077,6 +3084,46 @@
       "ordersEmpty": "Belum ada pesanan"
     },
     "catalog": {
+      "back": "Kembali",
+      "subtitle": "Katalog produk · {terms}",
+      "searchPlaceholder": "Cari SKU atau nama",
+      "allCategories": "Semua",
+      "suggestNew": "Sarankan produk baru",
+      "suggestAdded": "{count, plural, other {# produk baru ditambahkan}}",
+      "loading": "Memuat katalog…",
+      "loadError": "Gagal memuat katalog. Periksa koneksi lalu coba lagi.",
+      "noMatch": "Tidak ada produk cocok.",
+      "isNew": "Baru",
+      "priceNotSet": "Harga belum diset",
+      "checkInToOrder": "Check in untuk pesan",
+      "prevPage": "Halaman sebelumnya",
+      "nextPage": "Halaman berikutnya",
+      "backToCatalog": "Kembali ke katalog",
+      "cartEmpty": "Keranjang kosong.",
+      "perPcs": "{price} / pcs",
+      "appealed": "Diajukan {price}/pcs",
+      "editAppeal": "Ubah pengajuan",
+      "requestPrice": "Ajukan Harga",
+      "noteLabel": "Catatan (opsional)",
+      "notePlaceholder": "Tulis catatan untuk pesanan ini…",
+      "total": "Total",
+      "review": "Tinjau",
+      "cartItems": "{count} item",
+      "cartSkus": "{count, plural, other {# SKU}}",
+      "offlineNotice": "Offline — pesanan disimpan & dikirim otomatis saat online",
+      "sending": "Mengirim…",
+      "send": "Kirim",
+      "minQtyBelow": "Jumlah di bawah minimum: {items}.",
+      "minQtyItem": "{name} (min {min})",
+      "productFallback": "produk",
+      "savedOffline": "Pesanan disimpan — dikirim otomatis saat online",
+      "sentCreditHold": "Pesanan {orderNo} terkirim — toko melebihi limit kredit, menunggu review admin.",
+      "sent": "Pesanan {orderNo} terkirim",
+      "itemUnavailable": "Produk sudah tidak dijual: {items}. Hapus dari keranjang lalu kirim ulang.",
+      "needCheckIn": "Check in dulu untuk memesan.",
+      "sessionExpired": "Sesi berakhir. Masuk lagi.",
+      "noItems": "Tidak ada item.",
+      "sendFailed": "Gagal mengirim pesanan. Coba lagi.",
       "promoTag": "Promo",
       "promoOrderDiscount": "Diskon pesanan",
       "selectVariant": "Pilih varian",
@@ -3441,6 +3488,18 @@
       "pooledVariant": "Tanpa ukuran (stok gabungan)"
     },
     "visitPhoto": {
+      "close": "Tutup",
+      "shoot": "Ambil foto",
+      "captionPlaceholder": "Keterangan (opsional)",
+      "retake": "Ulangi",
+      "save": "Simpan",
+      "title": "Foto Kunjungan",
+      "capReached": "Batas foto tercapai",
+      "take": "Ambil Foto",
+      "cameraUnavailable": "Kamera tidak tersedia — pakai kamera perangkat.",
+      "failed": "gagal",
+      "waiting": "menunggu",
+      "retry": "Coba lagi",
       "delete": "Hapus foto",
       "deleteTitle": "Hapus foto ini?",
       "deleteBody": "Foto ini gagal diunggah. Jika dihapus, foto hilang permanen dari perangkat ini.",
@@ -3450,6 +3509,7 @@
     }
   },
   "fieldSalesOrders": {
+    "detailLoading": "Memuat pesanan…",
     "pageTitle": "Pesanan Lapangan",
     "subtitle": "Pesanan putus & transfer konsi dari tim sales lapangan yang menunggu persetujuan",
     "search": "Cari nomor pesanan atau nama toko",
@@ -3638,7 +3698,15 @@
       "tagihanDialogFootnote": "Catatan Kaki (opsional)",
       "tagihanDialogFootnotePlaceholder": "Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan",
       "tagihanDialogCancel": "Batal",
-      "tagihanDialogPrint": "Cetak"
+      "tagihanDialogPrint": "Cetak",
+      "tagihanBookkeepingFailed": "Nota sedang dicetak, tetapi bagian catatan cetak ini gagal tersimpan: {parts}. Beri tahu finance untuk memeriksa faktur pajak.",
+      "tagihanBookkeepingFailedGeneric": "Nota sedang dicetak, tetapi catatan cetak gagal tersimpan. Beri tahu finance untuk memeriksa faktur pajak.",
+      "tagihanAuditOnlyFailed": "Nota sedang dicetak, tetapi pencetakan ini tidak tercatat di log audit.",
+      "tagihanPart": {
+        "AUDIT": "log audit",
+        "STAMP": "stempel cetak",
+        "NOTIFY": "notifikasi finance"
+      }
     },
     "konsiShipments": {
       "title": "Pengiriman konsinyasi",
@@ -3953,6 +4021,8 @@
     }
   },
   "storeStocktakes": {
+    "loadingList": "Memuat stok opname…",
+    "loadingDetail": "Memuat stok opname…",
     "pageTitle": "Perhitungan Stok Toko",
     "subtitle": "Perhitungan fisik stok konsinyasi yang ada di toko",
     "search": "Cari",
@@ -4231,6 +4301,8 @@
     }
   },
   "konsiSellThrough": {
+    "loadingList": "Memuat laporan sell-through…",
+    "loadingDetail": "Memuat laporan sell-through…",
     "pageTitle": "Laporan Sell-Through Konsi",
     "subtitle": "Apa yang terjual di setiap toko konsinyasi per periode perhitungan, diverifikasi terhadap hasil hitungnya.",
     "filterStore": "Semua toko",
@@ -4393,6 +4465,14 @@
       "retrying": "Mencoba ulang…",
       "retryDone": "Semua jurnal berhasil diposting.",
       "retryStillPending": "{n, plural, other {# jurnal}} masih tertunda — periksa Pemetaan Akun, lalu coba lagi.",
+      "bookkeepingFailed": "Nota sedang dicetak, tetapi bagian catatan cetak ini gagal tersimpan: {parts}. Beri tahu finance untuk memeriksa faktur pajak.",
+      "bookkeepingAuditOnlyFailed": "Nota sedang dicetak, tetapi pencetakan ini tidak tercatat di log audit.",
+      "bookkeepingFailedGeneric": "Nota sedang dicetak, tetapi catatan cetak gagal tersimpan. Beri tahu finance untuk memeriksa faktur pajak.",
+      "bookkeepingPart": {
+        "AUDIT": "log audit",
+        "STAMP": "stempel cetak",
+        "NOTIFY": "notifikasi finance"
+      },
       "printNota": "Cetak Nota",
       "printing": "Menyiapkan…",
       "baselineBadge": "Baseline",
@@ -4907,6 +4987,7 @@
     }
   },
   "spgCommission": {
+    "loading": "Memuat rekap komisi SPG…",
     "pageTitle": "Komisi SPG",
     "subtitle": "Rupiah tetap per pcs untuk setiap kategori barang. Hanya penjualan POS SPG yang dikonfirmasi laporan sell-through yang disetujui yang dihitung; laporan yang dibatalkan setelah bulannya tercatat sebagai minus di bulan pembatalan.",
     "prevMonth": "Bulan sebelumnya",

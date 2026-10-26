@@ -145,7 +145,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
       void flushPendingPhotos().then((r) => { void refresh(); if (r.synced > 0) router.refresh(); });
       closeOverlay();
     } catch {
-      // leave the overlay open so the user can retry "Simpan"
+      /* Leave the overlay open so the user can retry the save button (`pwa.visitPhoto.save`). */
     } finally {
       setBusy(false);
     }
@@ -170,13 +170,13 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
             <>
               <video ref={videoRef} autoPlay playsInline muted className="min-h-0 w-full flex-1 object-cover" />
               <div className="flex items-center justify-between px-6 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-                <Button variant="secondary" size="icon" className="h-11 w-11 rounded-full" onClick={closeOverlay} aria-label="Tutup">
+                <Button variant="secondary" size="icon" className="h-11 w-11 rounded-full" onClick={closeOverlay} aria-label={t("close")}>
                   <X className="h-5 w-5" />
                 </Button>
                 <button
                   type="button"
                   onClick={shootFromVideo}
-                  aria-label="Ambil foto"
+                  aria-label={t("shoot")}
                   className="h-16 w-16 rounded-full border-4 border-white bg-white/30 transition active:scale-95"
                 />
                 <span className="h-11 w-11" aria-hidden />
@@ -193,16 +193,16 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
                 <Input
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
-                  placeholder="Keterangan (opsional)"
+                  placeholder={t("captionPlaceholder")}
                   disabled={busy}
                   className="border-white/20 bg-white/10 text-white placeholder:text-white/50"
                 />
                 <div className="flex gap-3">
                   <Button variant="secondary" className="flex-1 py-6 text-base" onClick={retake} disabled={busy}>
-                    <RotateCcw className="mr-2 h-5 w-5" /> Ulangi
+                    <RotateCcw className="mr-2 h-5 w-5" /> {t("retake")}
                   </Button>
                   <Button className="flex-1 py-6 text-base" onClick={() => void keep()} disabled={busy}>
-                    {busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Check className="mr-2 h-5 w-5" />} Simpan
+                    {busy ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Check className="mr-2 h-5 w-5" />} {t("save")}
                   </Button>
                 </div>
               </div>
@@ -216,12 +216,12 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   return (
     <Card className="flex-col gap-3 p-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">Foto Kunjungan</span>
+        <span className="text-sm font-medium">{t("title")}</span>
         <Badge variant="secondary">{total}/{MAX_PER_VISIT}</Badge>
       </div>
 
       <Button onClick={() => void openCam()} disabled={busy || atCap}>
-        <Camera className="mr-2 h-4 w-4" /> {atCap ? "Batas foto tercapai" : "Ambil Foto"}
+        <Camera className="mr-2 h-4 w-4" /> {atCap ? t("capReached") : t("take")}
       </Button>
 
       <input
@@ -236,7 +236,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
           if (f) { setCaptured({ blob: f, url: URL.createObjectURL(f) }); setMode("preview"); }
         }}
       />
-      {camError && <p className="text-xs text-muted-foreground">Kamera tidak tersedia — pakai kamera perangkat.</p>}
+      {camError && <p className="text-xs text-muted-foreground">{t("cameraUnavailable")}</p>}
 
       {total > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -249,14 +249,14 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
             <div key={p.localId} className="relative h-16 w-16 overflow-hidden rounded-md border bg-muted">
               <img src={blobUrls[p.localId]} alt={p.caption ?? ""} className="h-full w-full object-cover opacity-70" />
               <span className="absolute inset-x-0 bottom-0 bg-black/60 text-center text-[10px] text-white">
-                {p.syncState === "failed" ? "gagal" : "menunggu"}
+                {p.syncState === "failed" ? t("failed") : t("waiting")}
               </span>
               {p.syncState === "failed" && (
                 <button
                   type="button"
                   onClick={() => retryPendingPhoto(p.localId).then(() => flushPendingPhotos()).then((r) => { void refresh(); if (r.synced > 0) router.refresh(); })}
                   className="absolute right-0 top-0 bg-black/60 p-0.5"
-                  aria-label="Coba lagi"
+                  aria-label={t("retry")}
                 ><RefreshCw className="h-3 w-3 text-white" /></button>
               )}
               {p.syncState === "failed" && (

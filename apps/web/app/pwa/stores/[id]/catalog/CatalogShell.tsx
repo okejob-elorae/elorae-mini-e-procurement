@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cartCount, cartTotal, buildOrderLines, type CartLine } from "@/lib/field-sales/cart";
 import { enqueueOrder, newLocalId } from "@/lib/pwa/offline/queue";
+import { createDraftIdHolder } from "@/lib/pwa/offline/draft-id";
 import { submitFieldSalesOrder, previewFieldSalesPromos, type PromoPreviewResult } from "./actions";
 import { VariantSheet } from "./VariantSheet";
 import { AppealPriceSheet } from "./AppealPriceSheet";
@@ -73,6 +74,8 @@ export function CatalogShell({
   const cartBarRef = useRef<HTMLDivElement | null>(null);
   const [cartBarHeight, setCartBarHeight] = useState(0);
   const reviewBarRef = useRef<HTMLDivElement | null>(null);
+  const draftIdRef = useRef(createDraftIdHolder(newLocalId));
+  const submittingRef = useRef(false);
   const [reviewBarHeight, setReviewBarHeight] = useState(0);
 
   function setQty(it: CatalogItem, variantSku: string, variantLabel: string | null, qty: number) {
@@ -188,7 +191,12 @@ export function CatalogShell({
   }, [view, cartLines, isKonsi, storeId]);
 
   function onSubmit() {
-    const localId = newLocalId();
+    /* A second tap lands before `pending` re-renders the button disabled. */
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    const localId = draftIdRef.current.get(
+      JSON.stringify([storeId, visitId, note.trim(), buildOrderLines(cartLines)]),
+    );
     startTransition(async () => {
       try {
         if (!online) {
@@ -200,10 +208,10 @@ export function CatalogShell({
             const violations = Array.from(qtyByItem, ([itemId, qty]) => {
               const it = items.find((i) => i.itemId === itemId);
               const min = it?.minOrderQty ?? 0;
-              return qty < min ? `${it?.nameId ?? itemId} (min ${min})` : null;
+              return qty < min ? t("minQtyItem", { name: it?.nameId ?? itemId, min }) : null;
             }).filter((v): v is string => v !== null);
             if (violations.length > 0) {
-              toast.error(`Jumlah di bawah minimum: ${violations.join(", ")}.`);
+              toast.error(t("minQtyBelow", { items: violations.join(", ") }));
               return;
             }
           }
@@ -215,7 +223,8 @@ export function CatalogShell({
             note: note.trim() || undefined,
             lines: buildOrderLines(cartLines),
           });
-          toast.success("Pesanan disimpan — dikirim otomatis saat online");
+          toast.success(t("savedOffline"));
+          draftIdRef.current.reset();
           setCart(new Map());
           setNote("");
           // Offline: stay on the already-loaded catalog (a router.push to the dynamic
@@ -233,10 +242,11 @@ export function CatalogShell({
         });
         if (res.ok) {
           if (res.creditHold) {
-            toast.success(`Pesanan ${res.orderNo} terkirim — toko melebihi limit kredit, menunggu review admin.`);
+            toast.success(t("sentCreditHold", { orderNo: res.orderNo }));
           } else {
-            toast.success(`Pesanan ${res.orderNo} terkirim`);
+            toast.success(t("sent", { orderNo: res.orderNo }));
           }
+          draftIdRef.current.reset();
           setCart(new Map());
           router.push(`/pwa/stores/${storeId}`);
           return;
@@ -244,23 +254,25 @@ export function CatalogShell({
         let msg: string;
         if (res.code === "MIN_QTY") {
           const parts = res.violations.map((v) => {
-            const name = cartLines.find((l) => l.itemId === v.itemId)?.nameId ?? "produk";
-            return `${name} (min ${v.requiredMin})`;
+            const name = cartLines.find((l) => l.itemId === v.itemId)?.nameId ?? t("productFallback");
+            return t("minQtyItem", { name, min: v.requiredMin });
           });
-          msg = `Jumlah di bawah minimum: ${parts.join(", ")}.`;
+          msg = t("minQtyBelow", { items: parts.join(", ") });
         } else if (res.code === "ITEM_UNAVAILABLE") {
-          const names = res.itemIds.map((id) => cartLines.find((l) => l.itemId === id)?.nameId ?? "produk");
-          msg = `Produk sudah tidak dijual: ${names.join(", ")}. Hapus dari keranjang lalu kirim ulang.`;
+          const names = res.itemIds.map((id) => cartLines.find((l) => l.itemId === id)?.nameId ?? t("productFallback"));
+          msg = t("itemUnavailable", { items: names.join(", ") });
         } else if (res.code === "NO_ACTIVE_VISIT") {
-          msg = "Check in dulu untuk memesan.";
+          msg = t("needCheckIn");
         } else if (res.code === "UNAUTHORIZED") {
-          msg = "Sesi berakhir. Masuk lagi.";
+          msg = t("sessionExpired");
         } else {
-          msg = "Tidak ada item.";
+          msg = t("noItems");
         }
         toast.error(msg);
       } catch {
-        toast.error("Gagal mengirim pesanan. Coba lagi.");
+        toast.error(t("sendFailed"));
+      } finally {
+        submittingRef.current = false;
       }
     });
   }
@@ -312,23 +324,23 @@ export function CatalogShell({
   return (
     <div className="flex flex-col gap-3 p-4">
       <header className="-ml-2">
-        <Button asChild variant="ghost" size="sm">
+        <Button asChild variant="ghost" size="sm" className="h-10">
           <Link href={`/pwa/stores/${storeId}`}>
             <ArrowLeft className="h-4 w-4" />
-            Kembali
+            {t("back")}
           </Link>
         </Button>
       </header>
 
       <div>
         <h1 className="text-lg font-semibold">{storeName}</h1>
-        <p className="text-sm text-muted-foreground">Katalog produk · {termsType}</p>
+        <p className="text-sm text-muted-foreground">{t("subtitle", { terms: termsType })}</p>
       </div>
 
       {view === "catalog" && (
         <>
           <Input
-            placeholder="Cari SKU atau nama"
+            placeholder={t("searchPlaceholder")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -336,7 +348,7 @@ export function CatalogShell({
           {categories.length > 0 && (
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant={cat === null ? "default" : "outline"} onClick={() => setCat(null)}>
-                Semua
+                {t("allCategories")}
               </Button>
               {categories.map((c) => (
                 <Button
@@ -384,24 +396,24 @@ export function CatalogShell({
                       added += 1;
                     }
                   }
-                  if (added > 0) toast.success(`${added} produk baru ditambahkan`);
+                  if (added > 0) toast.success(t("suggestAdded", { count: added }));
                   return next;
                 })
               }
             >
               <Sparkles className="h-4 w-4" />
-              Sarankan produk baru
+              {t("suggestNew")}
             </Button>
           )}
 
-          {state === "loading" && <p className="text-sm text-muted-foreground">Memuat katalog…</p>}
+          {state === "loading" && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
           {state === "error" && (
             <p className="text-sm text-destructive">
-              Gagal memuat katalog. Periksa koneksi lalu coba lagi.
+              {t("loadError")}
             </p>
           )}
           {state === "ready" && filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground">Tidak ada produk cocok.</p>
+            <p className="text-sm text-muted-foreground">{t("noMatch")}</p>
           )}
 
           <div className="flex flex-col gap-2">
@@ -431,13 +443,13 @@ export function CatalogShell({
                     {isKonsi ? (
                       <div className="flex items-center gap-1.5">
                         <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
-                          {it.available > 0 ? `${it.available} tersedia` : "Habis"}
+                          {it.available > 0 ? t("variantAvailable", { available: it.available }) : t("variantOutOfStock")}
                         </Badge>
-                        {it.neverSent && <Badge variant="default">Baru</Badge>}
+                        {it.neverSent && <Badge variant="default">{t("isNew")}</Badge>}
                       </div>
                     ) : (
                       <Badge variant={it.available > 0 ? "secondary" : "destructive"}>
-                        {it.available > 0 ? `${it.available} tersedia` : "Habis"}
+                        {it.available > 0 ? t("variantAvailable", { available: it.available }) : t("variantOutOfStock")}
                       </Badge>
                     )}
                     {!isKonsi && (
@@ -451,7 +463,7 @@ export function CatalogShell({
                           </>
                         )}
                         {it.price == null && it.available > 0 && (
-                          <span className="text-xs italic text-muted-foreground">Harga belum diset</span>
+                          <span className="text-xs italic text-muted-foreground">{t("priceNotSet")}</span>
                         )}
                       </>
                     )}
@@ -468,7 +480,7 @@ export function CatalogShell({
                           size="icon-lg"
                           disabled={qty <= 0}
                           onClick={() => setQty(it, "", null, qty - 1)}
-                          aria-label={`Kurangi ${it.nameId}`}
+                          aria-label={t("variantDecrease", { label: it.nameId })}
                         >
                           <Minus className="h-4 w-4" />
                         </Button>
@@ -479,14 +491,14 @@ export function CatalogShell({
                           size="icon-lg"
                           disabled={qty >= it.available}
                           onClick={() => setQty(it, "", null, qty + 1)}
-                          aria-label={`Tambah ${it.nameId}`}
+                          aria-label={t("variantIncrease", { label: it.nameId })}
                         >
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
                     )}
                     {canOrder && !hasActiveVisit && (
-                      <span className="text-xs text-muted-foreground">Check in untuk pesan</span>
+                      <span className="text-xs text-muted-foreground">{t("checkInToOrder")}</span>
                     )}
                   </div>
                 </Card>
@@ -499,10 +511,10 @@ export function CatalogShell({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-10 w-10"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => p - 1)}
-                aria-label="Halaman sebelumnya"
+                aria-label={t("prevPage")}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -512,10 +524,10 @@ export function CatalogShell({
               <Button
                 variant="outline"
                 size="icon"
-                className="h-8 w-8"
+                className="h-10 w-10"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => p + 1)}
-                aria-label="Halaman berikutnya"
+                aria-label={t("nextPage")}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -529,17 +541,17 @@ export function CatalogShell({
       {view === "review" && (
         <>
           <div className="-ml-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setView("catalog")}>
+            <Button type="button" variant="ghost" size="sm" className="h-10" onClick={() => setView("catalog")}>
               <ArrowLeft className="h-4 w-4" />
-              Kembali ke katalog
+              {t("backToCatalog")}
             </Button>
           </div>
 
           {cartLines.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-12 text-center">
-              <p className="text-sm text-muted-foreground">Keranjang kosong.</p>
+              <p className="text-sm text-muted-foreground">{t("cartEmpty")}</p>
               <Button type="button" onClick={() => setView("catalog")}>
-                Kembali ke katalog
+                {t("backToCatalog")}
               </Button>
             </div>
           ) : (
@@ -575,12 +587,12 @@ export function CatalogShell({
                         <p className="truncate text-xs text-muted-foreground">{line.sku}</p>
                         {!isKonsi && (
                           <p className="text-xs text-muted-foreground tabular-nums">
-                            {rupiah(line.unitPrice)} / pcs
+                            {t("perPcs", { price: rupiah(line.unitPrice) })}
                           </p>
                         )}
                         {!isKonsi && line.requestedUnitPrice != null && (
                           <p className="truncate text-xs text-amber-600 dark:text-amber-500">
-                            Diajukan {rupiah(line.requestedUnitPrice)}/pcs
+                            {t("appealed", { price: rupiah(line.requestedUnitPrice) })}
                             {line.appealReason ? ` — ${line.appealReason}` : ""}
                           </p>
                         )}
@@ -592,7 +604,7 @@ export function CatalogShell({
                             variant="outline"
                             size="icon-lg"
                             onClick={() => setQty(it, line.variantSku, line.variantLabel, line.qty - 1)}
-                            aria-label={`Kurangi ${lineLabel}`}
+                            aria-label={t("variantDecrease", { label: lineLabel })}
                           >
                             <Minus className="h-4 w-4" />
                           </Button>
@@ -603,7 +615,7 @@ export function CatalogShell({
                             size="icon-lg"
                             disabled={line.qty >= line.available}
                             onClick={() => setQty(it, line.variantSku, line.variantLabel, line.qty + 1)}
-                            aria-label={`Tambah ${lineLabel}`}
+                            aria-label={t("variantIncrease", { label: lineLabel })}
                           >
                             <Plus className="h-4 w-4" />
                           </Button>
@@ -633,7 +645,7 @@ export function CatalogShell({
                             className="h-10 px-3 text-xs"
                             onClick={() => setAppealKey(variantKey(line.itemId, line.variantSku))}
                           >
-                            {line.requestedUnitPrice != null ? "Ubah pengajuan" : "Ajukan Harga"}
+                            {line.requestedUnitPrice != null ? t("editAppeal") : t("requestPrice")}
                           </Button>
                         )}
                       </div>
@@ -644,11 +656,11 @@ export function CatalogShell({
 
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="catatan" className="text-sm font-medium">
-                  Catatan (opsional)
+                  {t("noteLabel")}
                 </label>
                 <Textarea
                   id="catatan"
-                  placeholder="Tulis catatan untuk pesanan ini…"
+                  placeholder={t("notePlaceholder")}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
@@ -664,7 +676,7 @@ export function CatalogShell({
                     </div>
                   )}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Total</span>
+                    <span className="text-sm font-medium">{t("total")}</span>
                     <span className="text-base font-semibold tabular-nums">
                       {rupiah(preview ? preview.netTotal : cartTotal(cartLines))}
                     </span>
@@ -686,7 +698,7 @@ export function CatalogShell({
           {!online && (
             <p className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground">
               <WifiOff className="h-3.5 w-3.5 shrink-0" />
-              Offline — pesanan disimpan & dikirim otomatis saat online
+              {t("offlineNotice")}
             </p>
           )}
           <Button
@@ -699,10 +711,10 @@ export function CatalogShell({
             {pending ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Mengirim…
+                {t("sending")}
               </>
             ) : (
-              "Kirim"
+              t("send")
             )}
           </Button>
         </div>
@@ -716,15 +728,15 @@ export function CatalogShell({
           <div className="flex min-w-0 items-center justify-between gap-3">
             <p className="truncate text-sm font-medium">
               {isKonsi ? (
-                `${cartCount(cartLines)} item · ${cartLines.length} SKU`
+                `${t("cartItems", { count: cartCount(cartLines) })} · ${t("cartSkus", { count: cartLines.length })}`
               ) : (
                 <>
-                  {cartCount(cartLines)} item · <span className="tabular-nums">{rupiah(cartTotal(cartLines))}</span>
+                  {t("cartItems", { count: cartCount(cartLines) })} · <span className="tabular-nums">{rupiah(cartTotal(cartLines))}</span>
                 </>
               )}
             </p>
             <Button onClick={() => setView("review")}>
-              Tinjau
+              {t("review")}
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>

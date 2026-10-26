@@ -20,6 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { logPrint } from "@/app/actions/audit";
+import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
 import { postVanReconcileJournalAction } from "@/app/actions/van-reconcile";
 import { buildVanReconcilePrintHtml } from "@/lib/print/van-reconcile-html";
 import { hasPermission } from "@/lib/rbac";
@@ -36,19 +37,6 @@ function formatDateTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function printHtml(html: string, title: string) {
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("style", "position:absolute;width:0;height:0;border:0;visibility:hidden;");
-  iframe.setAttribute("title", title);
-  document.body.appendChild(iframe);
-  const doc = iframe.contentWindow?.document;
-  if (doc) {
-    doc.open(); doc.write(html); doc.close();
-    setTimeout(() => iframe.contentWindow?.print(), 350);
-  }
-  setTimeout(() => document.body.removeChild(iframe), 500);
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
@@ -141,7 +129,7 @@ export function ReconcileDetailClient({ reconcile }: Props) {
         issuedBy: t("print.issuedBy"),
       },
     });
-    printHtml(html, t("print.reconcileButton"));
+    printHtmlInIframe(html, t("print.reconcileButton"));
   };
 
   return (

@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
+import { logPrintQuietly } from '@/lib/audit/log-print-quietly';
 
 type ReconLine = {
   itemId: string;
@@ -53,15 +54,19 @@ export default function PrintReconciliationPage() {
   useEffect(() => {
     if (isLoading || !wo || !recon || printedRef.current) return;
     printedRef.current = true;
-    // Delay so the DOM is fully rendered before print. Do not clear this timeout in
-    // cleanup so it still runs under React Strict Mode (which runs effect twice and
-    // would otherwise cancel the first timeout before it fires).
+    /**
+     * Delay so the DOM is fully rendered before print. Cleanup DOES clear this timeout and resets
+     * `printedRef`, so under React Strict Mode (effect runs twice) the first timer is cancelled and
+     * the second run schedules the only one that fires. The audit row is written inside the timer
+     * for that reason: only the surviving timer logs, so the print is recorded once.
+     */
     const t = setTimeout(() => {
+      logPrintQuietly('WorkOrderReconciliation', id);
       window.print();
     }, 400);
     return () => {
       clearTimeout(t);
-      // If we were torn down before print ran (e.g. Strict Mode), allow print on next run
+      /* Torn down before the print ran (e.g. Strict Mode): allow it on the next run. */
       printedRef.current = false;
     };
   }, [isLoading, wo, recon]);

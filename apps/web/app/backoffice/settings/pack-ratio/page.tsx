@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { getPackRatio, setPackRatio } from "@/app/actions/settings/pack-ratio";
-import type { PackRatioRow } from "@elorae/db/pack-ratio";
+import { getPackRatioForSettings, setPackRatio } from "@/app/actions/settings/pack-ratio";
+import { validatePackRatio, type PackRatioRow, type ValidatePackRatioResult } from "@elorae/db/pack-ratio";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,9 +16,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Layers, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Layers, Loader2, Plus, RotateCw, Trash2 } from "lucide-react";
 
-type ValidationCode = "EMPTY" | "BAD_SIZE" | "DUP_SIZE" | "BAD_QTY";
+type ValidationCode = Extract<ValidatePackRatioResult, { ok: false }>["code"];
 
 const ERROR_MESSAGE_KEY: Record<ValidationCode, string> = {
   EMPTY: "errEmpty",
@@ -27,20 +27,6 @@ const ERROR_MESSAGE_KEY: Record<ValidationCode, string> = {
   BAD_QTY: "errBadQty",
 };
 
-function validateRows(rows: PackRatioRow[]): ValidationCode | null {
-  if (rows.length === 0) return "EMPTY";
-  const seen = new Set<string>();
-  for (const row of rows) {
-    const size = row.size.trim();
-    if (size === "") return "BAD_SIZE";
-    const key = size.toLowerCase();
-    if (seen.has(key)) return "DUP_SIZE";
-    seen.add(key);
-    if (!Number.isInteger(row.qty) || row.qty <= 0) return "BAD_QTY";
-  }
-  return null;
-}
-
 export default function PackRatioSettingsPage() {
   const t = useTranslations("settings.packRatio");
   const tToasts = useTranslations("toasts");
@@ -48,21 +34,30 @@ export default function PackRatioSettingsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<PackRatioRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  /* The editor renders only from a successful load: saving an empty form over the stored ratio would wipe it. */
+  const load = useCallback(() => {
+    setIsLoading(true);
+    setLoadFailed(false);
+    getPackRatioForSettings()
+      .then(setRows)
+      .catch(() => setLoadFailed(true))
+      .finally(() => setIsLoading(false));
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") {
       router.replace("/login");
       return;
     }
-    getPackRatio()
-      .then(setRows)
-      .catch(() => toast.error(t("loadError")))
-      .finally(() => setIsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- t from useTranslations
-  }, [status, router]);
+    if (status !== "authenticated") return;
+    load();
+  }, [status, router, load]);
 
-  const error = validateRows(rows);
+  const validation = validatePackRatio(rows);
+  const error = validation.ok ? null : validation.code;
 
   const handleAddSize = () => {
     setRows((prev) => [...prev, { size: "", qty: 1 }]);
@@ -107,6 +102,21 @@ export default function PackRatioSettingsPage() {
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <Card className="max-w-2xl">
+        <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+          <p className="text-sm text-muted-foreground">{t("loadError")}</p>
+          <Button type="button" variant="outline" className="h-10" onClick={load}>
+            <RotateCw className="h-4 w-4" />
+            {t("retry")}
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 

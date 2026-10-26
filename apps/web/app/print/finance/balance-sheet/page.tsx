@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
+import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getBalanceSheetReport } from "@/app/actions/finance-reports";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import {
@@ -50,6 +51,7 @@ export default function PrintBalanceSheetPage() {
      * (first timer cancelled, second one fires).
      */
     const timer = setTimeout(() => {
+      logPrintQuietly("BalanceSheetStatement", report.periodLabel);
       window.print();
     }, 400);
     return () => {
