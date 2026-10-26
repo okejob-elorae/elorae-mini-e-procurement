@@ -249,7 +249,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Editing `approveFieldSalesOrder`'s PUTUS tail? Throw `CreditLimitExceededError`, never `return`; the finalPrices writes stay AFTER the gate. → `docs/landmines/finance-ar.md`
 - Reading `computeStoreCreditExposure`? Receivables + approved-undelivered residual (floored per order); receivables alone wave undelivered orders through. → `docs/landmines/finance-ar.md`
 - Gating a konsi order on the credit limit, or adding a konsi approve path? Exposure ONLY, never the order's value; the gate lives in `approveKonsiOrderInTx` so both paths hit it; an already-APPROVED replay stays ungated. → `docs/landmines/finance-ar.md`
-- Adding any `AdminNotification` category (collection, overdue, other)? Add it to `admin-fanout.ts`'s `CATEGORY_PERMISSION` or it reaches nobody, silently. → `docs/landmines/finance-ar.md`
+- Adding any `AdminNotification` category (collection, overdue, other)? Add it to `admin-fanout.ts`'s `CATEGORY_PERMISSION` or it reaches nobody, silently; a tappable type also needs `NOTIFICATION_TYPES` + a `getNotificationHref` case. → `docs/landmines/finance-ar.md`
 - Touching a `CollectionSubmission`? It moves no money — `outstandingAmount` waits for `verifyCollection`, and credit exposure ignores pending submissions. → `docs/landmines/finance-ar.md`
 - Writing `submitCollection`? Net BOTH pending claim kinds via `sumPendingClaimsOnReceivable` inside the tx, never raw `outstandingAmount`. → `docs/landmines/finance-ar.md`
 - Editing `verifyCollection`? Payment posts BEFORE the flip, keyed `collection-<submissionId>` — reorder or randomise and a `VERIFIED` submission strands unpaid. → `docs/landmines/finance-ar.md`
