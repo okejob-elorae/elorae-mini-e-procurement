@@ -73,6 +73,12 @@ export async function proxy(request: NextRequest) {
 
   // Require authentication for protected routes
   if (!authed) {
+    /* A fetch() follows a 307 and would re-POST its body to /login, so the offline photo queue never saw the 401. */
+    if (pathname.startsWith("/pwa/api/")) {
+      const unauthenticated = NextResponse.json({ error: "UNAUTHENTICATED" }, { status: 401 });
+      if (token) clearSessionCookies(unauthenticated);
+      return unauthenticated;
+    }
     const loginUrl = new URL("/login", request.url);
     const response = NextResponse.redirect(loginUrl);
     if (token) clearSessionCookies(response);

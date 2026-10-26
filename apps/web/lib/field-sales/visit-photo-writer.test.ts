@@ -1,19 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { attachVisitPhoto, VisitOwnershipError } from "./visit-photo-writer";
+import { attachVisitPhoto, MAX_PHOTOS_PER_VISIT, VisitOwnershipError, VisitPhotoCapError } from "./visit-photo-writer";
 
-type Opts = { existing?: { id: string; url: string } | null; owned?: boolean };
+type Opts = { existing?: { id: string; url: string } | null; owned?: boolean; count?: number };
 function fakeTx(opts: Opts) {
   let created: unknown = null;
+  const calls: string[] = [];
   const tx = {
+    $queryRaw: async () => { calls.push("lock"); return [{ id: "v1" }]; },
     visitPhoto: {
-      findUnique: async () => opts.existing ?? null,
+      findUnique: async () => { calls.push("findUnique"); return opts.existing ?? null; },
+      count: async () => { calls.push("count"); return opts.count ?? 0; },
       create: async ({ data }: { data: { url: string } }) => { created = { id: "new-id", url: data.url }; return created; },
     },
     storeVisit: {
-      findFirst: async () => (opts.owned ? { id: "v1" } : null),
+      findFirst: async () => { calls.push("findFirst"); return opts.owned ? { id: "v1" } : null; },
     },
   };
-  return { tx, getCreated: () => created };
+  return { tx, calls, getCreated: () => created };
 }
 const base = { visitId: "v1", salesmanId: "s1", clientId: "c1", url: "https://r2/x.jpg", r2Key: "visit-photos/v1/c1.jpg", capturedAt: new Date(0) };
 
@@ -32,5 +35,23 @@ describe("attachVisitPhoto", () => {
     const { tx } = fakeTx({ existing: null, owned: true });
     const r = await attachVisitPhoto(tx as never, base);
     expect(r).toEqual({ id: "new-id", url: "https://r2/x.jpg" });
+  });
+  it("takes the visit row lock as the transaction's first statement, before any read", async () => {
+    const { tx, calls } = fakeTx({ existing: null, owned: true });
+    await attachVisitPhoto(tx as never, base);
+    expect(calls).toEqual(["lock", "findUnique", "findFirst", "count"]);
+  });
+  it("refuses the photo past the per-visit cap, never creates", async () => {
+    const { tx, getCreated } = fakeTx({ existing: null, owned: true, count: MAX_PHOTOS_PER_VISIT });
+    await expect(attachVisitPhoto(tx as never, base)).rejects.toBeInstanceOf(VisitPhotoCapError);
+    expect(getCreated()).toBeNull();
+  });
+  it("accepts the last photo under the cap", async () => {
+    const { tx } = fakeTx({ existing: null, owned: true, count: MAX_PHOTOS_PER_VISIT - 1 });
+    await expect(attachVisitPhoto(tx as never, base)).resolves.toEqual({ id: "new-id", url: "https://r2/x.jpg" });
+  });
+  it("still returns the existing row on replay when the visit is at the cap", async () => {
+    const { tx } = fakeTx({ existing: { id: "old", url: "https://r2/old.jpg" }, owned: true, count: MAX_PHOTOS_PER_VISIT });
+    await expect(attachVisitPhoto(tx as never, base)).resolves.toEqual({ id: "old", url: "https://r2/old.jpg" });
   });
 });

@@ -140,6 +140,12 @@ describe("shipment-queries", () => {
     expect(detail?.orderType).toBe("PUTUS");
   });
 
+  it("returns the store's payment tempo on getDeliveryShipment", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { paymentTempo: 30 } });
+    const detail = await getDeliveryShipment(shipmentId);
+    expect(detail?.storePaymentTempo).toBe(30);
+  });
+
   it("lists shipments for an order, newest first, with lines and productName", async () => {
     const extraLine = await prisma.fieldSalesOrderLine.create({
       data: { orderId, itemId, productName: "Query Item 2", qty: 3, unitPrice: 10000, lineTotal: 30000 },

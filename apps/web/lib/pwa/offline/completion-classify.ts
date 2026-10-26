@@ -9,9 +9,9 @@ export type CompletionSyncDecision = "evict" | "terminal" | "retry";
  * queue only ever completes SALESMAN_CARRY shipments, but it's listed anyway so adding a
  * future shared code to the writer doesn't silently fall through here.
  *
- * FORBIDDEN and UNEXPECTED are deliberately RETRY here, unlike every other classifier in
- * this codebase (classify.ts, photo-classify.ts) — those flows have a human watching who
- * can re-authenticate by hand. This queue runs unattended in the background; a session
+ * FORBIDDEN and UNEXPECTED are deliberately RETRY here, unlike classify.ts — that flow has a
+ * human watching who can re-authenticate by hand. (photo-classify.ts also retries a 401 now,
+ * but still treats a 403 as terminal.) This queue runs unattended in the background; a session
  * that expired mid-queue must wait for the salesman's next login and the next automatic
  * flush, not silently discard a completed delivery's evidence.
  */

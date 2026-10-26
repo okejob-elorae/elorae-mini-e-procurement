@@ -5,8 +5,8 @@ import { BELL_FLOOR_SETTING_KEY, parseBellFloor } from "./bell-floor";
 
 /**
  * A burst of ingests (the apps/api sweeper catching up) drains at this pace, oldest first. Kept
- * well under the bell's 50-row window (`/api/notifications` has no paging), so a single catch-up
- * run cannot push every other category out of a recipient's bell.
+ * well under the bell's 50-row page (`/api/notifications` pages older rows behind a cursor), so a
+ * single catch-up run cannot push every other category out of a recipient's first page.
  */
 const MAX_ANNOUNCEMENTS_PER_RUN = 20;
 

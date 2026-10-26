@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell } from 'lucide-react';
+import { Bell, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -27,16 +27,25 @@ export interface NotificationItem {
 
 interface NotificationsResponse {
   items: NotificationItem[];
+  nextCursor: string | null;
   unreadCount: number;
 }
 
 function NotificationInbox({
   items,
   onItemClick,
+  hasMore,
+  loadingMore,
+  loadMoreFailed,
+  onLoadMore,
   t,
 }: {
   items: NotificationItem[];
   onItemClick: (item: NotificationItem) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreFailed: boolean;
+  onLoadMore: () => void;
   t: (key: string) => string;
 }) {
   const dateLocale = getDateFnsLocale(useLocale());
@@ -74,6 +83,22 @@ function NotificationInbox({
           );
         })}
       </ul>
+      {hasMore && (
+        <div className="flex flex-col items-center gap-2 p-3">
+          {loadMoreFailed && (
+            <p className="text-xs text-destructive">{t("notifications.loadMoreError")}</p>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : t("notifications.loadMore")}
+          </Button>
+        </div>
+      )}
     </ScrollArea>
   );
 }
@@ -86,6 +111,8 @@ export function NotificationIcon() {
   const [loading, setLoading] = useState(false);
   const [sendTestLoading, setSendTestLoading] = useState(false);
   const [markAllLoading, setMarkAllLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreFailed, setLoadMoreFailed] = useState(false);
 
   const fetchNotifications = useCallback(async () => {
     setLoading(true);
@@ -94,11 +121,39 @@ export function NotificationIcon() {
       if (res.ok) {
         const json: NotificationsResponse = await res.json();
         setData(json);
+        setLoadMoreFailed(false);
       }
     } finally {
       setLoading(false);
     }
   }, []);
+
+  const handleLoadMore = async () => {
+    const cursor = data?.nextCursor;
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadMoreFailed(false);
+    try {
+      const res = await fetch(`/api/notifications?cursor=${encodeURIComponent(cursor)}`);
+      if (!res.ok) throw new Error("failed");
+      const json: NotificationsResponse = await res.json();
+      setData((prev) => {
+        if (!prev) return json;
+        /* A refetch landed mid-flight and reset page 1: appending would skip the rows between. */
+        if (prev.nextCursor !== cursor) return prev;
+        const known = new Set(prev.items.map((i) => i.id));
+        return {
+          items: [...prev.items, ...json.items.filter((i) => !known.has(i.id))],
+          nextCursor: json.nextCursor,
+          unreadCount: json.unreadCount,
+        };
+      });
+    } catch {
+      setLoadMoreFailed(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     fetchNotifications();
@@ -217,6 +272,10 @@ export function NotificationIcon() {
             <NotificationInbox
               items={data?.items ?? []}
               onItemClick={handleItemClick}
+              hasMore={Boolean(data?.nextCursor)}
+              loadingMore={loadingMore}
+              loadMoreFailed={loadMoreFailed}
+              onLoadMore={handleLoadMore}
               t={(key) => t(key)}
             />
           )}

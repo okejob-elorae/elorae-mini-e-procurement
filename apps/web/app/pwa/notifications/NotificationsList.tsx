@@ -22,27 +22,57 @@ type NotificationItem = {
   createdAt: string;
 };
 
-type Props = { initialItems: NotificationItem[] };
+type Props = {
+  initialItems: NotificationItem[];
+  initialNextCursor: string | null;
+  initialUnreadCount: number;
+};
 
-export function NotificationsList({ initialItems }: Props) {
+export function NotificationsList({ initialItems, initialNextCursor, initialUnreadCount }: Props) {
   const t = useTranslations("pwa.notifications");
   const tNav = useTranslations("pwa.nav");
   const dateLocale = getDateFnsLocale(useLocale());
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
+  const [nextCursor, setNextCursor] = useState(initialNextCursor);
+  const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const unreadCount = items.filter((i) => !i.readAt).length;
+  async function loadMore() {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    setLoadMoreError(false);
+    try {
+      const res = await fetch(`/api/notifications?cursor=${encodeURIComponent(nextCursor)}`);
+      if (!res.ok) throw new Error("failed");
+      const json: { items: NotificationItem[]; nextCursor: string | null; unreadCount: number } = await res.json();
+      setItems((prev) => {
+        const known = new Set(prev.map((i) => i.id));
+        return [...prev, ...json.items.filter((i) => !known.has(i.id))];
+      });
+      setNextCursor(json.nextCursor);
+      setUnreadCount(json.unreadCount);
+      setActionError(null);
+    } catch {
+      setLoadMoreError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   async function markRead(id: string) {
     setItems((prev) => prev.map((i) => (i.id === id ? { ...i, readAt: new Date().toISOString() } : i)));
+    setUnreadCount((n) => Math.max(0, n - 1));
     try {
       const res = await fetch(`/api/notifications/${id}/read`, { method: "PATCH" });
       if (!res.ok) throw new Error("failed");
       setActionError(null);
     } catch {
       setItems((prev) => prev.map((i) => (i.id === id ? { ...i, readAt: null } : i)));
+      setUnreadCount((n) => n + 1);
       setActionError(t("offlineError"));
     }
   }
@@ -55,14 +85,17 @@ export function NotificationsList({ initialItems }: Props) {
 
   async function handleMarkAllRead() {
     setMarkingAll(true);
-    const previous = items;
+    const previousUnread = unreadCount;
+    const markedIds = new Set(items.filter((i) => !i.readAt).map((i) => i.id));
+    setUnreadCount(0);
     setItems((prev) => prev.map((i) => ({ ...i, readAt: i.readAt ?? new Date().toISOString() })));
     try {
       const res = await fetch("/api/notifications/read-all", { method: "POST" });
       if (!res.ok) throw new Error("failed");
       setActionError(null);
     } catch {
-      setItems(previous);
+      setItems((prev) => prev.map((i) => (markedIds.has(i.id) ? { ...i, readAt: null } : i)));
+      setUnreadCount(previousUnread);
       setActionError(t("offlineError"));
     } finally {
       setMarkingAll(false);
@@ -139,6 +172,14 @@ export function NotificationsList({ initialItems }: Props) {
               </Card>
             </Link>
           ))}
+          {nextCursor && (
+            <div className="space-y-2">
+              {loadMoreError && <p className="text-center text-xs text-destructive">{t("loadMoreError")}</p>}
+              <Button variant="outline" className="h-11 w-full" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : t("loadMore")}
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>

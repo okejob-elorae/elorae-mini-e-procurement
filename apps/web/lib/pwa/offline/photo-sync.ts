@@ -1,6 +1,6 @@
 import { pwaDb } from "./db";
 import { deletePendingPhoto } from "./photo-queue";
-import { classifyPhotoUpload } from "./photo-classify";
+import { classifyPhotoUpload, PHOTO_CAP_REACHED_ERROR } from "./photo-classify";
 
 let running = false;
 
@@ -22,9 +22,10 @@ export async function flushPendingPhotos(): Promise<{ synced: number; failed: nu
         form.set("clientId", p.localId);
         form.set("capturedAt", String(p.capturedAt));
         if (p.caption) form.set("caption", p.caption);
-        const res = await fetch("/pwa/api/upload/visit-photo", { method: "POST", body: form });
+        const res = await fetch("/pwa/api/upload/visit-photo", { method: "POST", body: form, redirect: "manual" });
         decision = classifyPhotoUpload(res.status);
-        if (!res.ok) reason = `HTTP ${res.status}`;
+        if (res.status === 409) reason = PHOTO_CAP_REACHED_ERROR;
+        else if (!res.ok) reason = `HTTP ${res.status}`;
       } catch {
         decision = classifyPhotoUpload("thrown");
       }
