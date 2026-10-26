@@ -53,6 +53,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [loadAttempt, setLoadAttempt] = useState(0);
   const detailLoaded = loadState.status === "loaded";
+  const isExpedition = method === "EXPEDITION";
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -96,8 +97,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
       try {
         const result = await updateShipmentTrackingAction({
           shipmentId,
-          carrierName,
-          resiNumber,
+          carrierName: isExpedition ? carrierName : undefined,
+          resiNumber: isExpedition ? resiNumber : undefined,
           carriedById: carriedById || undefined,
           invoiceDate: invoiceDate || undefined,
           dueDate: dueDate || undefined,
@@ -116,9 +117,19 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
 
   function handleShip(): void {
     /* A konsi order raises no invoice, so it carries no nota dates — only the carrier is required. */
-    if (method === "SALESMAN_CARRY" && (!carriedById || (!isKonsi && (!invoiceDate || !dueDate)))) {
-      toast.error(t("err.MISSING_CARRIER"));
-      return;
+    if (method === "SALESMAN_CARRY") {
+      if (!carriedById) {
+        toast.error(t("err.MISSING_CARRIER"));
+        return;
+      }
+      if (!isKonsi && !invoiceDate) {
+        toast.error(t("invoiceDateRequired"));
+        return;
+      }
+      if (!isKonsi && !dueDate) {
+        toast.error(t("dueDateRequired"));
+        return;
+      }
     }
     /**
      * Fail fast on a reversed pair rather than letting the action refuse it, because this is the
@@ -134,7 +145,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
       toast.error(t("dueDateBeforeInvoice"));
       return;
     }
-    if (method === "EXPEDITION" && !resiNumber) {
+    if (isExpedition && !resiNumber) {
       toast.error(t("shipMissingResi"));
       return;
     }
@@ -142,8 +153,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
       try {
         const trackingResult = await updateShipmentTrackingAction({
           shipmentId,
-          carrierName,
-          resiNumber,
+          carrierName: isExpedition ? carrierName : undefined,
+          resiNumber: isExpedition ? resiNumber : undefined,
           carriedById: carriedById || undefined,
           invoiceDate: invoiceDate || undefined,
           dueDate: dueDate || undefined,
@@ -222,14 +233,18 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
         )}
         {detailLoaded && (
           <div className="space-y-4">
-            <div>
-              <Label htmlFor="carrierName">{t("carrierNameLabel")}</Label>
-              <Input id="carrierName" value={carrierName} onChange={(e) => setCarrierName(e.target.value)} />
-            </div>
-            <div>
-              <Label htmlFor="resiNumber">{t("resiNumberLabel")}</Label>
-              <Input id="resiNumber" value={resiNumber} onChange={(e) => setResiNumber(e.target.value)} />
-            </div>
+            {isExpedition && (
+              <>
+                <div>
+                  <Label htmlFor="carrierName">{t("carrierNameLabel")}</Label>
+                  <Input id="carrierName" value={carrierName} onChange={(e) => setCarrierName(e.target.value)} />
+                </div>
+                <div>
+                  <Label htmlFor="resiNumber">{t("resiNumberLabel")}</Label>
+                  <Input id="resiNumber" value={resiNumber} onChange={(e) => setResiNumber(e.target.value)} />
+                </div>
+              </>
+            )}
             {method === "SALESMAN_CARRY" && (
               <>
                 <div>
@@ -240,6 +255,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
                     value={carriedById}
                     onValueChange={setCarriedById}
                     placeholder={t("carriedByPlaceholder")}
+                    searchPlaceholder={t("carrierSearchPlaceholder")}
+                    emptyMessage={t("carrierSearchEmpty")}
                   />
                 </div>
                 {!isKonsi && (

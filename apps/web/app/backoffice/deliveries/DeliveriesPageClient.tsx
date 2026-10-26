@@ -15,7 +15,11 @@ import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Pagination } from "@/components/ui/pagination";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listShipmentsAction } from "@/app/actions/delivery-shipments";
-import { SHIPMENT_STATUS_BADGE, SHIPMENT_STATUS_LABEL_KEY } from "@/lib/delivery/shipment-status-display";
+import {
+  SHIPMENT_STATUS_BADGE,
+  SHIPMENT_STATUS_LABEL_KEY,
+  toShipmentStatusValue,
+} from "@/lib/delivery/shipment-status-display";
 import { ShipmentTrackingDialog } from "./ShipmentTrackingDialog";
 import { CompleteShipmentDialog } from "./CompleteShipmentDialog";
 
@@ -90,7 +94,7 @@ export function DeliveriesPageClient({
         setTotal(result.total);
         setPage(nextPage);
       } catch {
-        toast.error("Failed to load deliveries");
+        toast.error(t("loadListFailed"));
       }
     });
   }
@@ -190,7 +194,9 @@ export function DeliveriesPageClient({
         <CardContent>
           <div className={isPending ? "opacity-60 pointer-events-none" : ""}>
             {items.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">{t("empty")}</p>
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {hasFilters ? t("emptyFiltered") : t("empty")}
+              </p>
             ) : (
               <>
                 <Table>
@@ -225,8 +231,8 @@ export function DeliveriesPageClient({
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge className={SHIPMENT_STATUS_BADGE[item.status] ?? ""}>
-                            {t(SHIPMENT_STATUS_LABEL_KEY[item.status] ?? "statusPacked")}
+                          <Badge className={SHIPMENT_STATUS_BADGE[toShipmentStatusValue(item.status)]}>
+                            {t(SHIPMENT_STATUS_LABEL_KEY[toShipmentStatusValue(item.status)])}
                           </Badge>
                         </TableCell>
                         <TableCell>{item.resiNumber ?? "-"}</TableCell>

@@ -5,30 +5,13 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { completeDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { listMyDeliveries } from "@/lib/delivery/shipment-queries";
-import { DeliveryShipmentError } from "@/lib/delivery/errors";
+import { mapError, type ShipmentActionResult } from "@/lib/delivery/action-errors";
 import { DeliveryError } from "@/lib/field-sales/errors";
-import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
-import type { ShipmentActionResult, ShipmentActionReason } from "@/app/actions/delivery-shipments";
 
-/**
- * Identical body to `mapError` in `@/app/actions/delivery-shipments` — reimplemented here
- * rather than imported because that one is a plain sync helper inside a `"use server"` module,
- * which may only export async functions, so it is not exported. Keep both in sync by hand if
- * either `DeliveryShipmentError` or `DeliveryError` gains a new code.
- */
-function mapError(error: unknown): { ok: false; reason: ShipmentActionReason; replay?: SerializedReplay } {
-  if (error instanceof DeliveryShipmentError) return { ok: false, reason: error.code };
-  if (error instanceof DeliveryError) {
-    return error.replay
-      ? { ok: false, reason: error.code, replay: serializeReplay(error.replay) }
-      : { ok: false, reason: error.code };
-  }
-  console.error("[pwa/deliveries] unexpected failure", error);
-  return { ok: false, reason: "UNEXPECTED" };
-}
+const ERROR_TAG = "pwa/deliveries";
 
 /**
  * Same body as `postDeliveryJournals` in `@/app/actions/delivery-shipments`: both of a PUTUS
@@ -121,7 +104,7 @@ export async function completePodAction(input: {
        */
       await postDeliveryJournals(error.replay.deliveryId, session.user.id);
     }
-    return mapError(error);
+    return mapError(error, ERROR_TAG);
   }
 }
 
