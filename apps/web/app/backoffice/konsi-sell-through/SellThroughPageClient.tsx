@@ -1,11 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useMemo, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ClipboardList } from "lucide-react";
 import type { SellThroughListItem, SellThroughStatusValue } from "@/lib/konsi-sell-through/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { recapMonthOptions } from "@/lib/spg-commission/recap-display";
+import { formatYearMonth } from "@/app/backoffice/settings/spg-commission/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +31,9 @@ import { Pager } from "@/components/Pager";
 
 const ROUTE = "/backoffice/konsi-sell-through";
 const ALL_STORES = "__all__";
+const ALL_PERIODS = "__all__";
+/* Two years back, as on the SPG commission recap; an older month reached by URL joins the list. */
+const MONTH_OPTION_COUNT = 24;
 const STATUS_OPTIONS: SellThroughStatusValue[] = ["DRAFT", "APPROVED", "CANCELLED", "VOIDED"];
 
 const STATUS_BADGE_VARIANT: Record<SellThroughStatusValue, "secondary" | "destructive" | "default"> = {
@@ -50,6 +55,8 @@ type Props = {
   storeOptions: { id: string; name: string }[];
   storeId: string;
   status: SellThroughStatusValue | "";
+  periodMonth: string;
+  currentMonth: string;
   page: number;
   pageSize: number;
 };
@@ -58,6 +65,11 @@ export function SellThroughPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("konsiSellThrough");
+  const locale = useLocale();
+  const monthOptions = useMemo(
+    () => recapMonthOptions(props.currentMonth, props.periodMonth || props.currentMonth, MONTH_OPTION_COUNT),
+    [props.currentMonth, props.periodMonth],
+  );
   const [isPending, startTransition] = useTransition();
 
   function pushParams(updates: Record<string, string | undefined>): void {
@@ -86,7 +98,7 @@ export function SellThroughPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <label className="text-xs text-muted-foreground mb-1 block">{t("colStore")}</label>
             <SearchableCombobox
@@ -123,6 +135,26 @@ export function SellThroughPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filterPeriod")}</label>
+            <Select
+              value={props.periodMonth || ALL_PERIODS}
+              disabled={isPending}
+              onValueChange={(v) => pushParams({ period: v === ALL_PERIODS ? undefined : v, page: undefined })}
+            >
+              <SelectTrigger className="h-10 w-full" aria-label={t("filterPeriod")}>
+                <SelectValue placeholder={t("filterPeriod")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PERIODS}>{t("filterPeriodAll")}</SelectItem>
+                {monthOptions.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {formatYearMonth(option, locale)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex flex-col justify-end">
             <Button variant="outline" disabled={isPending} onClick={reset} className="h-10 w-full">
               {t("reset")}
@@ -143,7 +175,7 @@ export function SellThroughPageClient(props: Props) {
             <div className="text-center py-12">
               <ClipboardList className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <p className="text-muted-foreground">
-                {props.storeId || props.status ? t("emptyFiltered") : t("empty")}
+                {props.storeId || props.status || props.periodMonth ? t("emptyFiltered") : t("empty")}
               </p>
             </div>
           ) : (

@@ -7,6 +7,8 @@ import { SellThroughError, type SellThroughErrorCode } from "./errors";
 import { priceSellThroughLines } from "./pricing";
 import { sellThroughCostTotals, sellThroughJournalGaps } from "./journal";
 import { defaultSellThroughSalesmanId } from "./salesman-candidates";
+import { wibMonthStart } from "@/lib/forecast/marketplace-demand";
+import { isYearMonth } from "@/lib/spg-commission/month";
 
 export type SellThroughStatusValue = "DRAFT" | "APPROVED" | "CANCELLED" | "VOIDED";
 
@@ -25,6 +27,15 @@ export type SellThroughListItem = {
   baseline: boolean;
 };
 
+/** `[start, next month start)` of a `YYYY-MM` key in WIB, never the host timezone. */
+export function wibMonthRange(yearMonth: string): { gte: Date; lt: Date } {
+  const [year, month] = yearMonth.split("-").map(Number);
+  return {
+    gte: wibMonthStart(year, month),
+    lt: month === 12 ? wibMonthStart(year + 1, 1) : wibMonthStart(year, month + 1),
+  };
+}
+
 /**
  * `heldCount` only ever fires for a DRAFT SPG_POS report — `isLineHeld` is false by construction
  * for SHELF_COUNT (see `derive.ts`), an APPROVED report cannot hold a line, and a CANCELLED one's
@@ -37,12 +48,15 @@ export type SellThroughListItem = {
 export async function listSellThroughs(input: {
   storeId?: string;
   status?: SellThroughStatusValue;
+  /** WIB month as `YYYY-MM`; keeps the reports whose period ENDS inside it. */
+  periodMonth?: string;
   page: number;
   pageSize: number;
 }): Promise<{ items: SellThroughListItem[]; total: number }> {
   const where = {
     ...(input.storeId ? { storeId: input.storeId } : {}),
     ...(input.status ? { status: input.status } : {}),
+    ...(input.periodMonth && isYearMonth(input.periodMonth) ? { periodEnd: wibMonthRange(input.periodMonth) } : {}),
   };
 
   const [rows, total] = await Promise.all([

@@ -13,10 +13,13 @@ export default async function VanSellPage() {
   // prices at list (no storeId → no priceDiscountPercent). Once the salesman picks a store buyer
   // in the shell, it re-prices client-side via getVanStockForStoreAction (apps/web/app/actions/van-sale.ts)
   // to reflect that store's discount — the same discount recordVanSale will actually charge.
-  const [stock, stores] = await Promise.all([
+  const [stockResult, stores] = await Promise.all([
     getSellableVanStock(session.user.id),
     listActiveStoresForPwa(),
   ]);
+
+  /* No storeId was passed, so STORE_NOT_FOUND cannot occur here; the empty list is only the type's other arm. */
+  const stock = stockResult.ok ? stockResult.rows : [];
 
   return (
     <VanSellShell

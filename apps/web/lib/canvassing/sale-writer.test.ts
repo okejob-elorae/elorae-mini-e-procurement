@@ -25,8 +25,10 @@ d("recordVanSale (test bed only)", () => {
 
   afterEach(async () => {
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    /* Only the sales this spec's own item created: the real salesman's other walk-in sales share this bed. */
+    const ownSales = await prisma.vanSaleLine.findMany({ where: { itemId: seededId(itemId) }, select: { vanSaleId: true } });
     await prisma.vanSaleLine.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.vanSale.deleteMany({ where: { salesmanId: seededId(salesmanId), storeId: null } });
+    await prisma.vanSale.deleteMany({ where: { id: { in: ownSales.map((l) => seededId(l.vanSaleId)) } } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.vanStock.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -94,6 +96,14 @@ d("recordVanSale (test bed only)", () => {
     expect(Number(sale!.total)).toBe(25000);
     const van = await prisma.vanStock.findFirst({ where: { userId: salesmanId, itemId } });
     expect(Number(van!.qty)).toBe(15);                 // 20 - 5
+  });
+
+  it("returns STORE_NOT_FOUND for an unknown store and writes nothing", async () => {
+    const before = await prisma.vanStock.findFirst({ where: { userId: salesmanId, itemId } });
+    const res = await recordVanSale({ salesmanId, storeId: `${tag}-missing`, lines: [line(2)], amountPaid: 999999 });
+    expect(res).toEqual({ ok: false, code: "STORE_NOT_FOUND" });
+    const after = await prisma.vanStock.findFirst({ where: { userId: salesmanId, itemId } });
+    expect(Number(after!.qty)).toBe(Number(before!.qty));
   });
 
   it("persists the store's discounted, rounded unitPrice for a store sale; list price for a walk-in", async () => {

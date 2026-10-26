@@ -148,7 +148,8 @@ export function getNotificationHref(
       }
       return '/pwa/pelunasan';
     }
-    case "FIELD_SALES_ORDER_REJECTED": {
+    case "FIELD_SALES_ORDER_REJECTED":
+    case "KONSI_ORDER_PUSHED": {
       const storeId = data.storeId;
       if (typeof storeId === "string" && storeId !== "") {
         return `/pwa/stores/${storeId}`;

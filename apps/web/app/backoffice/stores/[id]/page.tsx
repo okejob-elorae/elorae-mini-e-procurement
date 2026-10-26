@@ -2,9 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { getStore, listVisitsForStore, listVisitPhotosForVisits } from "@/lib/stores/queries";
+import { getStore, listVisitsForStorePage, listVisitPhotosForVisits } from "@/lib/stores/queries";
 import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
-import { getStoreOrderSummary, getStoreSentItems } from "@/lib/field-sales/queries";
+import { getStoreOrderSummary, getStoreSentItemsPage } from "@/lib/field-sales/queries";
 import { getStoreStockCard } from "@/lib/inventory/store-stock-card";
 import { listStoreStocktakes } from "@/lib/stores/stocktake/queries";
 import { getStoreCountState, readCountSchedule } from "@/lib/konsi-count-schedule/queries";
@@ -15,15 +15,28 @@ import { getStorePiutangSummary, type StorePiutangSummary } from "@/lib/finance/
 import { StoreDetailView } from "./StoreDetailView";
 
 const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
+const DETAIL_CARD_PAGE_SIZE = 10;
 const OPEN_STOCKTAKE_STATUSES = new Set(["DRAFT", "PENDING_VERIFICATION"]);
 
-export default async function StoreDetailPage({ params }: { params: Promise<{ id: string }> }) {
+function parsePageParam(raw: string | string[] | undefined): number {
+  const n = Number(Array.isArray(raw) ? raw[0] : raw);
+  return Number.isInteger(n) && n >= 1 ? n : 1;
+}
+
+export default async function StoreDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ visitsPage?: string | string[]; sentPage?: string | string[] }>;
+}) {
   const session = await auth();
   if (!session) redirect("/login");
   const perms = session.user.permissions ?? [];
   if (!hasPermission(perms, PERMISSIONS.STORES_VIEW)) redirect("/backoffice");
 
   const { id } = await params;
+  const query = await searchParams;
   const store = await getStore(id);
   if (!store) notFound();
 
@@ -39,11 +52,12 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
     store.creditLimit !== null
       ? await computeStoreCreditExposure(prisma, store.id).then((e) => ({ exposure: e.total, headroom: store.creditLimit! - e.total }))
       : null;
-  const visits = await listVisitsForStore(store.id, 50);
+  const visitsPage = await listVisitsForStorePage(store.id, { page: parsePageParam(query.visitsPage), pageSize: DETAIL_CARD_PAGE_SIZE });
+  const visits = visitsPage.rows;
   const photosByVisit = await listVisitPhotosForVisits(visits.map((v) => v.id));
   const pending = await getPendingStoreChangeRequest(store.id);
   const orders = await getStoreOrderSummary(store.id);
-  const sentItems = await getStoreSentItems(store.id);
+  const sentItemsPage = await getStoreSentItemsPage(store.id, { page: parsePageParam(query.sentPage), pageSize: DETAIL_CARD_PAGE_SIZE });
   const stockCard = store.termsType === "KONSI" ? await getStoreStockCard(store.id) : null;
   const inTransitAdminReturn =
     store.termsType === "KONSI" ? await getInTransitAdminReturnQty(store.id) : { raisedQty: 0, receivedQty: 0 };
@@ -87,7 +101,8 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
       piutangAsOfIso={piutangAsOf.toISOString()}
       pendingChange={pending ? { requestId: pending.id, requestedByLabel: pending.requestedByLabel, proposed: pending.proposed, old: pending.old } : null}
       orders={orders}
-      sentItems={sentItems}
+      sentItems={sentItemsPage.rows}
+      sentItemsPaging={{ page: sentItemsPage.page, total: sentItemsPage.total, pageSize: DETAIL_CARD_PAGE_SIZE }}
       stockCard={
         stockCard
           ? {
@@ -141,6 +156,12 @@ export default async function StoreDetailPage({ params }: { params: Promise<{ id
             }
           : null
       }
+      visitsPaging={{
+        page: visitsPage.page,
+        total: visitsPage.total,
+        pageSize: DETAIL_CARD_PAGE_SIZE,
+        latestCheckinAtIso: visitsPage.latestCheckinAt ? visitsPage.latestCheckinAt.toISOString() : null,
+      }}
       visits={visits.map(v => ({
         id: v.id,
         checkinAtIso: v.checkinAt.toISOString(),

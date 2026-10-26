@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds, getStoreSentItems } from "./queries";
+import { serializeListItem, listFieldSalesOrders, getFieldSalesOrderById, sentItemIds, getStoreSentItems, getStoreSentItemsPage } from "./queries";
 import { createFieldSalesOrder } from "./writer";
 import { createDeliveryShipment } from "@/lib/delivery/shipment-writer";
 import { Prisma, prisma, seededId } from "@elorae/db";
@@ -452,6 +452,28 @@ d("getStoreSentItems (test bed only)", () => {
     const rows = await getStoreSentItems(storeId);
     expect(rows).toHaveLength(1);
     expect(rows[0].totalQty).toBe(3);
+  });
+
+  it("pages the sent items with the full total and clamps an out-of-range page", async () => {
+    await seedOrder({ orderType: "KONSI", status: "APPROVED", lines: [{ variantSku: "L", qty: 2, deliveredQty: 2 }, { variantSku: "M", qty: 3, deliveredQty: 3 }] });
+
+    const first = await getStoreSentItemsPage(storeId, { page: 1, pageSize: 1 });
+    expect(first.total).toBe(2);
+    expect(first.rows.map((r) => r.variantSku)).toEqual(["L"]);
+
+    const second = await getStoreSentItemsPage(storeId, { page: 2, pageSize: 1 });
+    expect(second.total).toBe(2);
+    expect(second.rows.map((r) => r.variantSku)).toEqual(["M"]);
+    expect(second.rows[0].totalQty).toBe(3);
+
+    const clamped = await getStoreSentItemsPage(storeId, { page: 9, pageSize: 1 });
+    expect(clamped.page).toBe(2);
+    expect(clamped.rows.map((r) => r.variantSku)).toEqual(["M"]);
+  });
+
+  it("reports an empty first page when nothing was sent", async () => {
+    const res = await getStoreSentItemsPage(storeId, { page: 1, pageSize: 10 });
+    expect(res).toEqual({ rows: [], total: 0, page: 1 });
   });
 
   it("returns empty array when the store has nothing delivered and no approved konsi", async () => {

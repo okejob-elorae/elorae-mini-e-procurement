@@ -19,6 +19,8 @@ const d = isProd ? describe.skip : describe;
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 /* Stubbed so no writer fan-out can queue push notifications on the shared dev DB. */
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
+const { mockSendNotification } = vi.hoisted(() => ({ mockSendNotification: vi.fn() }));
+vi.mock("@/lib/notifications/recipients", () => ({ sendNotificationToUsers: mockSendNotification }));
 
 /* Every case drives real serializable writers end to end, well past vitest's 5s default. */
 const SLOW = 60_000;
@@ -27,7 +29,10 @@ d("createKonsiPushOrder (test bed only)", () => {
   const fx = createSellThroughFixtures();
   const { state } = fx;
 
-  beforeEach(fx.beforeEach);
+  beforeEach(async () => {
+    await fx.beforeEach();
+    mockSendNotification.mockReset();
+  });
   afterEach(fx.afterEach);
 
   const push = async (overrides: Partial<Parameters<typeof createKonsiPushOrder>[0]> = {}) => {
@@ -151,6 +156,38 @@ d("createKonsiPushOrder (test bed only)", () => {
       expect(await prisma.fieldSalesOrder.count({ where: { idempotencyKey: key } })).toBe(1);
     }, SLOW);
   });
+
+  it("tells the salesman once, a replay of the same key notifies nobody again", async () => {
+    const key = crypto.randomUUID();
+    const first = await push({ idempotencyKey: key });
+    await push({ idempotencyKey: key });
+    expect(mockSendNotification).toHaveBeenCalledTimes(1);
+    const [users, payload] = mockSendNotification.mock.calls[0];
+    expect(users).toEqual([expect.objectContaining({ id: state.salesmanId })]);
+    expect(payload).toMatchObject({
+      type: "KONSI_ORDER_PUSHED",
+      data: { orderId: first.orderId, orderNo: first.orderNo, storeId: state.storeId },
+    });
+    expect(payload.title).toContain(first.orderNo);
+    expect(payload.body).toContain("1 produk, 3 unit");
+  }, SLOW);
+
+  it("a failed salesman notice does not fail the push", async () => {
+    mockSendNotification.mockRejectedValueOnce(new Error("queue down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await push();
+      const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(res.orderId) } });
+      expect(order.status).toBe("APPROVED");
+    } finally {
+      errSpy.mockRestore();
+    }
+  }, SLOW);
+
+  it("notifies nobody when the push is refused", async () => {
+    await expect(push({ lines: [] })).rejects.toMatchObject({ code: "NO_LINES" });
+    expect(mockSendNotification).not.toHaveBeenCalled();
+  }, SLOW);
 
   it("refuses KEY_CONFLICT for a key already used at another store", async () => {
     const key = crypto.randomUUID();

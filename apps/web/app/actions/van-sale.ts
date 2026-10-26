@@ -14,9 +14,11 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type RecordVanSaleActionResult =
   | { ok: true; saleId: string; docNo: string; changeAmount: number }
-  | { ok: false; reason: "UNAUTHORIZED" | "EMPTY" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" | "INSUFFICIENT_VAN_STOCK" | "VALIDATION"; shortLines?: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> };
+  | { ok: false; reason: "UNAUTHORIZED" | "EMPTY" | "STORE_NOT_FOUND" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" | "INSUFFICIENT_VAN_STOCK" | "VALIDATION"; shortLines?: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> };
 
-export type VanStockFetchResult = { ok: true; rows: SellableVanRow[] } | { ok: false; reason: "UNAUTHORIZED" };
+export type RecordVanSaleFailureReason = Extract<RecordVanSaleActionResult, { ok: false }>["reason"];
+
+export type VanStockFetchResult = { ok: true; rows: SellableVanRow[] } | { ok: false; reason: "UNAUTHORIZED" | "STORE_NOT_FOUND" };
 
 /**
  * Re-prices the van-sell shell's stock list for the buyer the salesman just picked (or cleared,
@@ -31,8 +33,9 @@ export type VanStockFetchResult = { ok: true; rows: SellableVanRow[] } | { ok: f
 export async function getVanStockForStoreAction(storeId: string | null): Promise<VanStockFetchResult> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, reason: "UNAUTHORIZED" };
-  const rows = await getSellableVanStock(session.user.id, storeId);
-  return { ok: true, rows };
+  const res = await getSellableVanStock(session.user.id, storeId);
+  if (!res.ok) return { ok: false, reason: res.code };
+  return { ok: true, rows: res.rows };
 }
 
 const schema = z.object({

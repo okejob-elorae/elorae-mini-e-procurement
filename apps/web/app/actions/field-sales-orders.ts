@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { approveFieldSalesOrder, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
+import { getItemAvailabilityBySku } from "@/lib/field-sales/queries";
 import { createKonsiPushOrder, type CreateKonsiPushOrderInput, type KonsiPushLine } from "@/lib/field-sales/konsi-push-writer";
 import {
   InvalidOrderTransitionError,
@@ -224,6 +225,24 @@ export async function createKonsiPushOrderAction(input: unknown): Promise<KonsiP
       };
     }
     console.error("[konsi-push] unexpected failure", e);
+    return { ok: false, reason: "UNEXPECTED" };
+  }
+}
+
+/**
+ * Warehouse availability per variant for ONE catalog item, so a product the admin adds on the push
+ * form carries the same figure as a pre-ticked suggestion. Same permission as the push itself.
+ */
+export async function getKonsiPushAvailabilityAction(
+  itemId: unknown,
+): Promise<{ ok: true; available: Record<string, number> } | { ok: false; reason: "FORBIDDEN" | "INVALID_REQUEST" | "UNEXPECTED" }> {
+  const g = await guard();
+  if ("ok" in g) return g;
+  if (!isNonEmptyString(itemId)) return { ok: false, reason: "INVALID_REQUEST" };
+  try {
+    return { ok: true, available: await getItemAvailabilityBySku(itemId) };
+  } catch (e) {
+    console.error("[konsi-push] availability lookup failed", e);
     return { ok: false, reason: "UNEXPECTED" };
   }
 }

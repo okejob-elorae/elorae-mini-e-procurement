@@ -25,7 +25,7 @@ vi.mock("@/lib/field-sales/writer", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
 import { InsufficientStockError, InvalidAddedLineError } from "@/lib/field-sales/errors";
-import { approveFieldSalesOrderAction, rejectFieldSalesOrderAction } from "./field-sales-orders";
+import { approveFieldSalesOrderAction, getKonsiPushAvailabilityAction, rejectFieldSalesOrderAction } from "./field-sales-orders";
 
 describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
   beforeEach(() => {
@@ -193,5 +193,28 @@ describe("rejectFieldSalesOrderAction (unit — writer mocked)", () => {
     mockReject.mockResolvedValue({ ok: true });
     expect(await rejectFieldSalesOrderAction("o1", "  stok habis  ")).toEqual({ ok: true });
     expect(mockReject).toHaveBeenCalledWith({ orderId: "o1", rejectedById: "user-1", reason: "stok habis" });
+  });
+});
+
+describe("getKonsiPushAvailabilityAction (unit — guard only)", () => {
+  beforeEach(() => {
+    mockAuth.mockReset();
+    mockHasPermission.mockReset();
+    mockAuth.mockResolvedValue({ user: { id: "user-1", permissions: ["field_sales_orders:approve"] } });
+  });
+
+  it("returns FORBIDDEN without the approve permission", async () => {
+    mockHasPermission.mockReturnValue(false);
+    expect(await getKonsiPushAvailabilityAction("item-1")).toEqual({ ok: false, reason: "FORBIDDEN" });
+  });
+
+  it("returns FORBIDDEN without a session", async () => {
+    mockAuth.mockResolvedValue(null);
+    expect(await getKonsiPushAvailabilityAction("item-1")).toEqual({ ok: false, reason: "FORBIDDEN" });
+  });
+
+  it.each([undefined, null, 42, "", "   ", {}])("returns INVALID_REQUEST for itemId %j", async (itemId) => {
+    mockHasPermission.mockReturnValue(true);
+    expect(await getKonsiPushAvailabilityAction(itemId)).toEqual({ ok: false, reason: "INVALID_REQUEST" });
   });
 });

@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { ArrowLeft, AlertTriangle, PackageX, PlusCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, AlertTriangle, PackageX, PlusCircle, Loader2, RefreshCw } from "lucide-react";
 import { getItems } from "@/app/actions/items";
+import { matchKey } from "@/lib/items/match-key";
 import { itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
-import { createKonsiPushOrderAction, type KonsiPushActionResult } from "@/app/actions/field-sales-orders";
+import { createKonsiPushOrderAction, getKonsiPushAvailabilityAction, type KonsiPushActionResult } from "@/app/actions/field-sales-orders";
 import type { KonsiAssortmentGapSuggestion, KonsiSuggestion } from "@/lib/field-sales/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,8 @@ type PushRow = {
   label: string;
   source: PushSource;
   available: number | null;
+  /* A catalog-added row's availability lookup; suggestion rows arrive with their figure, so theirs is "ready". */
+  availabilityState: "ready" | "loading" | "error";
   target: number | null;
   onHand: number | null;
   inTransit: number | null;
@@ -100,6 +103,7 @@ function buildInitialRows(gaps: KonsiAssortmentGapSuggestion[], neverSent: Konsi
       label: productLabel(g.sku, g.name, g.variantLabel),
       source: "GAP",
       available: g.available,
+      availabilityState: "ready",
       target: g.targetQty,
       onHand: g.onHandQty,
       inTransit: g.inTransitQty,
@@ -117,6 +121,7 @@ function buildInitialRows(gaps: KonsiAssortmentGapSuggestion[], neverSent: Konsi
       label: productLabel(s.sku, s.name, s.variantLabel),
       source: "NEVER_SENT",
       available: s.available,
+      availabilityState: "ready",
       target: null,
       onHand: null,
       inTransit: null,
@@ -259,6 +264,7 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
         label: productLabel(meta.sku, meta.name, meta.variantLabel),
         source: "ADDED",
         available: null,
+        availabilityState: "loading",
         target: null,
         onHand: null,
         inTransit: null,
@@ -269,6 +275,46 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
       return next;
     });
     setAddKey("");
+    void loadAddedAvailability(meta.itemId);
+  }
+
+  /**
+   * A catalog-added line starts with no figure and gets it from the server, the same per-variant
+   * availability the pre-ticked suggestions carry. Every row of the item is filled in one call,
+   * keyed by `matchKey` on both sides; a variant the lookup has no row for stays at "—" with no
+   * hint, never 0. A failed lookup shows "—" with a retry, which only withholds the hint.
+   */
+  async function loadAddedAvailability(itemId: string): Promise<void> {
+    const setState = (state: "loading" | "error"): void => {
+      setRows((prev) => {
+        const next = new Map(prev);
+        for (const [key, row] of prev) {
+          if (row.source === "ADDED" && row.itemId === itemId) next.set(key, { ...row, availabilityState: state });
+        }
+        return next;
+      });
+    };
+    setState("loading");
+    try {
+      const result = await getKonsiPushAvailabilityAction(itemId);
+      if (!result.ok) {
+        setState("error");
+        return;
+      }
+      setRows((prev) => {
+        const next = new Map(prev);
+        for (const [key, row] of prev) {
+          if (row.source !== "ADDED" || row.itemId !== itemId) continue;
+          const folded = matchKey(row.variantSku);
+          const found = Object.prototype.hasOwnProperty.call(result.available, folded);
+          next.set(key, { ...row, available: found ? result.available[folded] : null, availabilityState: "ready" });
+        }
+        return next;
+      });
+    } catch {
+      /* Display only: the writer is the authority on stock. */
+      setState("error");
+    }
   }
 
   function errorMessage(result: Extract<KonsiPushActionResult, { ok: false }>): string {
@@ -354,7 +400,27 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
             </TableCell>
           </>
         )}
-        <TableCell className="text-right tabular-nums">{row.available ?? "—"}</TableCell>
+        <TableCell className="text-right tabular-nums">
+          {row.availabilityState === "loading" ? (
+            <Loader2 className="ml-auto h-4 w-4 animate-spin text-muted-foreground" role="status" aria-label={t("availabilityLoading")} />
+          ) : row.availabilityState === "error" ? (
+            <span className="inline-flex items-center gap-1">
+              <span aria-hidden="true">—</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10"
+                aria-label={t("availabilityRetry")}
+                title={t("availabilityError")}
+                onClick={() => void loadAddedAvailability(row.itemId)}
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </span>
+          ) : (
+            (row.available ?? "—")
+          )}
+        </TableCell>
         <TableCell>
           <Input
             inputMode="numeric"

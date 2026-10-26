@@ -4,6 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { buildStocktakeLines, previousApprovedCountedAt } from "./queries";
 import { StoreStocktakeError } from "./errors";
+import { hasDuplicateAddedLine } from "./added-lines";
 import { pendingTransfersOverCountedKeys } from "@/lib/stores/transfer/pending";
 import { resolveLineCountMoment } from "./count-moment";
 import { bookedCountCents, stockMatchKey, sumMovementsSinceCountCents, type CountMomentLine } from "./booked";
@@ -259,13 +260,7 @@ export async function saveStocktakeCounts(input: {
        * catch below a fallback rather than the primary path, and catches a duplicate within the
        * same addedLines batch, which the constraint alone would only catch on the second insert.
        */
-      const existingKeys = new Set(st.lines.map((l) => `${l.itemId}::${l.variantSku}`));
-      const seenAddedKeys = new Set<string>();
-      for (const al of normalizedAdded) {
-        const key = `${al.itemId}::${al.variantSku}`;
-        if (existingKeys.has(key) || seenAddedKeys.has(key)) throw new StoreStocktakeError("DUPLICATE_LINE");
-        seenAddedKeys.add(key);
-      }
+      if (hasDuplicateAddedLine(st.lines, normalizedAdded)) throw new StoreStocktakeError("DUPLICATE_LINE");
 
       const addedItemIds = Array.from(new Set(normalizedAdded.map((al) => al.itemId)));
       const items = await tx.item.findMany({ where: { id: { in: addedItemIds } }, select: { id: true, nameId: true } });
