@@ -264,7 +264,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Touching `TaxInvoice.buyerNpwp`/`taxableAmount`/`ppnAmount`? Snapshots taken at `markTaxInvoiceCreated`, never live lookups of `Store.npwp`/`PPN_RATE_PERCENT`. → `docs/landmines/finance-ar.md`
 - Calling `markTaxInvoiceSentToStore`/`revertTaxInvoiceToCreated`? `data` is `{ reason }` only — another transition's block reassigns authorship or wipes filed values. → `docs/landmines/finance-ar.md`
 - Where is the faktur NPWP requirement enforced? In the writer, `markTaxInvoiceCreated`, never only the dialog. → `docs/landmines/finance-ar.md`
-- Adding a `TaxInvoiceStatus` member? Its hand-written spots aren't `Record`s — a miss fails silently; also two locale namespaces and an `ENUM` migration. → `docs/landmines/finance-ar.md`
+- Adding a `TaxInvoiceStatus` member? Its hand-written spots aren't `Record`s — a miss fails silently; also the `fakturPajakStatus` labels in both locales and an `ENUM` migration. → `docs/landmines/finance-ar.md`
 - Touching `lib/tax-invoices/status-display.ts`? Import-free on purpose (client bundle); sync its `TaxInvoiceStatusValue` union with `queries.ts` by hand. → `docs/landmines/finance-ar.md`
 - Which column is "the delivering salesman"? The resolver's `salesmanId`: `delivery.order.salesmanId`, NEVER `deliveredById`; a null report salesman owns nothing. → `docs/landmines/finance-ar.md`
 - Relying on `collections:amplop` in a test? No `Permission` row until hand-seeded; self-seed with `connectOrCreate`, never assert it exists. → `docs/landmines/finance-ar.md`
