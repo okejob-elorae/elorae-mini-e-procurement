@@ -3554,6 +3554,7 @@
       "docNo": "No. Kiriman",
       "date": "Tanggal Kirim",
       "dueDate": "Jatuh Tempo",
+      "invoiceDueDates": "Tagihan → jatuh tempo",
       "taxInvoiceStatus": "Status Faktur",
       "invoiceDate": "Tanggal nota",
       "tempoHint": "Tempo toko: {days} hari",

@@ -3554,6 +3554,7 @@
       "docNo": "Delivery No.",
       "date": "Delivered",
       "dueDate": "Due Date",
+      "invoiceDueDates": "Invoice → due",
       "taxInvoiceStatus": "Tax Invoice Status",
       "invoiceDate": "Invoice date",
       "tempoHint": "Store tempo: {days} days",
