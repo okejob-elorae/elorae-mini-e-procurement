@@ -138,7 +138,7 @@ scripts/verify.sh -F @elorae/web exec vitest run lib/items/variant-rows
 scripts/verify.sh -F @elorae/api exec jest --maxWorkers=2 outbox
 ```
 
-It reuses the host's `node_modules` (run `pnpm install` on the host first) and reaches the `:3308` test bed over host networking. It refuses to start if `apps/web/.env` points `DATABASE_URL` at the `:3307` prod tunnel. A run that outgrows the memory cap is killed (exit 137, or a V8 heap-limit abort) rather than pushing the machine into swap. Raise `VERIFY_MEMORY` and `VERIFY_HEAP_MB` to give it more; the script's header lists every knob.
+It reuses the host's `node_modules` (run `pnpm install` on the host first) and reaches the `:3308` test bed over host networking. It refuses to start if any of the repo's `.env` files points `DATABASE_URL` at the `:3307` prod tunnel. A run that outgrows the memory cap is killed (exit 137, or a V8 heap-limit abort) rather than pushing the machine into swap. Raise `VERIFY_MEMORY` and `VERIFY_HEAP_MB`, or run fewer test workers, to fix that; the script's header lists every knob. The disk caps apply only when the script can resolve the repo's disk, and it warns when it cannot.
 
 ## Production deploy — Hostinger VPS
 
