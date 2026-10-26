@@ -12,7 +12,6 @@ import {
   buildVariantGroups,
   buildVariantRows,
   listItemVariantGroups,
-  listItemVariantRows,
   type VariantRowInventory,
   type VariantRowItem,
 } from "./variant-rows";
@@ -129,63 +128,6 @@ describe("buildVariantRows", () => {
 
   it("ignores inventory rows of items outside the list", () => {
     expect(buildVariantRows([scarf], [inv("shirt", "KMJ-01-M", 9)], "")).toHaveLength(1);
-  });
-});
-
-describe("listItemVariantRows", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("filters items by type in the database, then pages the flattened rows", async () => {
-    vi.mocked(prisma.item.findMany).mockResolvedValue([
-      {
-        id: "shirt",
-        sku: "KMJ-01",
-        nameId: "Kemeja",
-        nameEn: "Shirt",
-        type: "FINISHED_GOOD",
-        variants: shirt.variants,
-        sellingPrice: { toNumber: () => 150000 },
-        uom: { code: "PCS" },
-      },
-      {
-        id: "scarf",
-        sku: "SYL-02",
-        nameId: "Syal",
-        nameEn: "Scarf",
-        type: "FINISHED_GOOD",
-        variants: null,
-        sellingPrice: null,
-        uom: { code: "PCS" },
-      },
-    ] as never);
-    vi.mocked(prisma.inventoryValue.findMany).mockResolvedValue([
-      { itemId: "shirt", variantSku: "KMJ-01-L", qtyOnHand: { toNumber: () => 5 }, reservedQty: 0, totalValue: 50 },
-    ] as never);
-
-    const result = await listItemVariantRows({ type: "FINISHED_GOOD" }, { page: 2, pageSize: 2 });
-
-    const itemArgs = vi.mocked(prisma.item.findMany).mock.calls[0][0] as { where: unknown };
-    expect(itemArgs.where).toEqual({ type: "FINISHED_GOOD" });
-    expect(prisma.inventoryValue.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { itemId: { in: ["shirt", "scarf"] } } }),
-    );
-    expect(result.totalCount).toBe(3);
-    expect(result.rows.map((r) => r.code)).toEqual(["SYL-02"]);
-  });
-
-  it("skips the inventory query when no item matches", async () => {
-    vi.mocked(prisma.item.findMany).mockResolvedValue([]);
-    expect(await listItemVariantRows({}, { page: 1, pageSize: 25 })).toEqual({ rows: [], totalCount: 0 });
-    expect(prisma.inventoryValue.findMany).not.toHaveBeenCalled();
-  });
-
-  it("does not push the search into the database, since variant SKUs live inside the variants JSON", async () => {
-    vi.mocked(prisma.item.findMany).mockResolvedValue([]);
-    await listItemVariantRows({ search: "KMJ-01-L" }, { page: 1, pageSize: 25 });
-    const itemArgs = vi.mocked(prisma.item.findMany).mock.calls[0][0] as { where: Record<string, unknown> };
-    expect(itemArgs.where.OR).toBeUndefined();
   });
 });
 

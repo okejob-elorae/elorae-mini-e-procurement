@@ -302,19 +302,3 @@ export async function listItemVariantGroups(
   const start = (opts.page - 1) * opts.pageSize;
   return { groups: groups.slice(start, start + opts.pageSize), totalCount: groups.length };
 }
-
-/**
- * Flattened variant rows, searched and paged in memory like `listItemVariantGroups`. Superseded
- * by the grouped listing; kept only until its last caller moves over.
- */
-export async function listItemVariantRows(
-  filters: ListItemsFilters,
-  opts: ListItemsOpts,
-): Promise<{ rows: ItemVariantListRow[]; totalCount: number }> {
-  const { items, inventory } = await loadVariantRowSources(filters);
-  if (items.length === 0) return { rows: [], totalCount: 0 };
-
-  const rows = buildVariantRows(items, inventory, filters.search ?? "");
-  const start = (opts.page - 1) * opts.pageSize;
-  return { rows: rows.slice(start, start + opts.pageSize), totalCount: rows.length };
-}

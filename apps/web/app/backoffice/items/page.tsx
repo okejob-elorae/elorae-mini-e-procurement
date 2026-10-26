@@ -5,7 +5,7 @@ import { listItems, getItemCounts } from '@/lib/items/queries';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { ItemType } from '@elorae/db';
 import { getPrimaryImagesBatch } from '@/lib/items/images/queries';
-import { listItemVariantRows } from '@/lib/items/variant-rows';
+import { listItemVariantGroups } from '@/lib/items/variant-rows';
 import { ItemsPageClient, type ItemsListView } from './ItemsPageClient';
 
 export const dynamic = 'force-dynamic';
@@ -43,15 +43,18 @@ export default async function ItemsPage({ searchParams }: PageProps) {
 
   if (view === 'variant') {
     const [variantResult, counts, itemTypeMasters] = await Promise.all([
-      listItemVariantRows(filters, { page, pageSize: DEFAULT_PAGE_SIZE }),
+      listItemVariantGroups(filters, { page, pageSize: DEFAULT_PAGE_SIZE }),
       getItemCounts(),
       getItemTypeMasters(),
     ]);
     const variantImageMap = await getPrimaryImagesBatch(
-      variantResult.rows.map((row) => ({
-        itemId: row.itemId,
-        variantSku: row.variantSku === '' ? null : row.variantSku,
-      })),
+      variantResult.groups.flatMap((group) => [
+        { itemId: group.itemId, variantSku: null },
+        ...group.rows.map((row) => ({
+          itemId: row.itemId,
+          variantSku: row.variantSku === '' ? null : row.variantSku,
+        })),
+      ]),
     );
 
     return (
@@ -66,7 +69,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
         pageSize={DEFAULT_PAGE_SIZE}
         primaryImages={Object.fromEntries(variantImageMap)}
         view={view}
-        variantRows={variantResult.rows}
+        variantGroups={variantResult.groups}
       />
     );
   }
@@ -97,7 +100,7 @@ export default async function ItemsPage({ searchParams }: PageProps) {
       pageSize={DEFAULT_PAGE_SIZE}
       primaryImages={primaryImages}
       view={view}
-      variantRows={[]}
+      variantGroups={[]}
     />
   );
 }

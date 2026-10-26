@@ -52,7 +52,7 @@ import type { ItemTypeMasterRow } from '@/app/actions/item-type-master';
 import { ItemType } from '@/lib/constants/enums';
 import { Pagination } from '@/components/ui/pagination';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { ItemVariantListRow } from '@/lib/items/variant-rows';
+import type { ItemVariantGroup } from '@/lib/items/variant-rows';
 import { ItemVariantsTable } from './ItemVariantsTable';
 
 export type ItemsListView = 'variant' | 'product';
@@ -114,7 +114,7 @@ type ItemsPageClientProps = {
   pageSize: number;
   primaryImages?: Record<string, string>;
   view: ItemsListView;
-  variantRows: ItemVariantListRow[];
+  variantGroups: ItemVariantGroup[];
 };
 
 export function ItemsPageClient({
@@ -128,7 +128,7 @@ export function ItemsPageClient({
   pageSize,
   primaryImages = {},
   view,
-  variantRows,
+  variantGroups,
 }: ItemsPageClientProps) {
   const locale = useLocale();
   const router = useRouter();
@@ -372,7 +372,7 @@ export function ItemsPageClient({
 
       {view === 'variant' ? (
         <ItemVariantsTable
-          rows={variantRows}
+          groups={variantGroups}
           totalCount={totalCount}
           page={page}
           pageSize={pageSize}
