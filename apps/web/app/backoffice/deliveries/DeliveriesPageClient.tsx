@@ -238,9 +238,9 @@ export function DeliveriesPageClient({
                         <TableCell>{item.resiNumber ?? "-"}</TableCell>
                         <TableCell className="text-right">
                           {/**
-                           * Both buttons are permission-gated, and on the permission the action
-                           * they open actually checks — tracking/ship/cancel are
-                           * `deliveries:ship`, completion is `deliveries:pod`. Either can be held
+                           * Every button is permission-gated, and on the permission the action
+                           * it opens actually checks — tracking/ship/cancel and "Change carrier"
+                           * are `deliveries:ship`, completion is `deliveries:pod`. Either can be held
                            * without the other, so an ungated button here is a button that 403s on
                            * submit with nothing explaining why.
                            *

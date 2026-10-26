@@ -115,6 +115,10 @@ const STUCK_REASON_PATTERN = /^[A-Z_]{1,64}$/;
  * is exactly one of the failures it must still report. The binding is to the shipment instead —
  * only its assigned carrier may raise the alert, and a shipment that is missing, not
  * SALESMAN_CARRY or someone else's resolves silently (the queue then stops re-reporting it).
+ * "Assigned carrier" includes a PREVIOUS one: after a reassign, that carrier's queued completion
+ * dies terminally with `NOT_CARRIER`, and the alert is how an admin learns evidence was captured
+ * for a delivery that has since moved, so a user named as `before.carriedById` on one of this
+ * shipment's reassign audit rows is accepted too.
  * The reason is an error code from the queue; anything else is recorded as `UNKNOWN` rather than
  * copied into an admin-facing message.
  */
@@ -129,7 +133,23 @@ export async function reportStuckDeliveryCompletionAction(
     where: { id: shipmentId },
     select: { docNo: true, method: true, carriedById: true },
   });
-  if (!shipment || shipment.method !== "SALESMAN_CARRY" || shipment.carriedById !== session.user.id) return;
+  if (!shipment || shipment.method !== "SALESMAN_CARRY") return;
+  if (shipment.carriedById !== session.user.id) {
+    /* The JSON column has no reliable path filter under the adapter, so match in code. */
+    const reassigns = await prisma.auditLog.findMany({
+      where: {
+        action: "DELIVERY_SHIPMENT_CARRIER_REASSIGNED",
+        entityType: "DeliveryShipment",
+        entityId: shipmentId,
+      },
+      select: { changes: true },
+    });
+    const wasCarrier = reassigns.some((row) => {
+      const changes = row.changes as { before?: { carriedById?: string | null } } | null;
+      return changes?.before?.carriedById === session.user.id;
+    });
+    if (!wasCarrier) return;
+  }
   const code = typeof reason === "string" && STUCK_REASON_PATTERN.test(reason) ? reason : "UNKNOWN";
   const recent = await prisma.adminNotification.findMany({
     where: { category: "DELIVERY_COMPLETION_STUCK", readAt: null },

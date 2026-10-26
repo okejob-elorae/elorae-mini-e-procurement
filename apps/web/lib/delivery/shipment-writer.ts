@@ -137,8 +137,8 @@ export async function updateShipmentTracking(input: {
   const result = await prisma.deliveryShipment.updateMany({
     where: { id: input.shipmentId, status: "PACKED" },
     data: {
-      ...(input.carrierName !== undefined ? { carrierName: input.carrierName } : {}),
-      ...(input.resiNumber !== undefined ? { resiNumber: input.resiNumber } : {}),
+      ...(input.carrierName !== undefined ? { carrierName: input.carrierName.trim() } : {}),
+      ...(input.resiNumber !== undefined ? { resiNumber: input.resiNumber.trim() } : {}),
       ...(input.carriedById !== undefined ? { carriedById: input.carriedById } : {}),
       ...(input.invoiceDate !== undefined ? { invoiceDate: input.invoiceDate } : {}),
       ...(input.dueDate !== undefined ? { dueDate: input.dueDate } : {}),
@@ -156,14 +156,20 @@ export async function updateShipmentTracking(input: {
  * and once the shipment is delivered or cancelled the carrier is history. EXPEDITION shipments
  * have no carrier to reassign.
  *
- * The compare-and-swap keys on the carrier read at the start of the transaction, so two
- * concurrent reassigns cannot both win: the loser's `updateMany` matches nothing, throws inside
- * the transaction and commits neither the column nor its audit row. The audit row is written with
- * `tx.auditLog.create`, not `logAudit`, which swallows its own errors.
+ * Two concurrent reassigns are last-writer-wins: under MariaDB SERIALIZABLE the loser usually
+ * deadlocks and `runSerializable` retries it against the new carrier, so both commit and leave two
+ * audit rows. The audit row is written with `tx.auditLog.create`, not `logAudit`, which swallows
+ * its own errors.
+ *
+ * A reassign is refused `INVALID_STATE` once a delivery is recorded under this shipment's key: the
+ * putus completion records the delivery before its CAS, so a crash in that window leaves a
+ * delivery that only the carrier who recorded it may finish.
  *
  * A completion the previous carrier queued offline now fails `NOT_CARRIER` and lands in their
- * stuck list. That is correct: it is no longer their delivery, and the identity check in
- * `completeDeliveryShipment` is what makes the reassignment bind.
+ * stuck list. That is correct: it is no longer their delivery. The identity check in
+ * `completeDeliveryShipment` reads outside any transaction, so both of its completion CASes also
+ * bind `carriedById` to the completing actor; a reassign committing after that read makes the old
+ * carrier's completion miss and throw instead of landing under the wrong carrier.
  */
 export async function reassignShipmentCarrier(input: {
   shipmentId: string;
@@ -185,6 +191,8 @@ export async function reassignShipmentCarrier(input: {
     if (shipment.carriedById === input.carriedById) {
       return { ok: true as const, orderId: shipment.orderId };
     }
+    const recorded = await findRecordedDelivery(tx, `shipment-${shipment.id}`, shipment.orderId);
+    if (recorded) throw new DeliveryShipmentError("INVALID_STATE");
     const result = await tx.deliveryShipment.updateMany({
       where: {
         id: shipment.id,
@@ -221,7 +229,7 @@ export async function shipDeliveryShipment(input: {
   });
   if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
   if (shipment.status !== "PACKED") throw new DeliveryShipmentError("INVALID_STATE");
-  if (shipment.method === "EXPEDITION" && !shipment.resiNumber) {
+  if (shipment.method === "EXPEDITION" && !shipment.resiNumber?.trim()) {
     throw new DeliveryShipmentError("MISSING_RESI");
   }
   if (shipment.method === "SALESMAN_CARRY" && !shipment.carriedById) {
@@ -575,7 +583,11 @@ export async function completeDeliveryShipment(input: {
      */
     await runSerializable(async (tx) => {
       const result = await tx.deliveryShipment.updateMany({
-        where: { id: input.shipmentId, status: "IN_TRANSIT" },
+        where: {
+          id: input.shipmentId,
+          status: "IN_TRANSIT",
+          ...(shipment.method === "SALESMAN_CARRY" ? { carriedById: input.deliveredById } : {}),
+        },
         data: completionData,
       });
       if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
@@ -710,7 +722,11 @@ export async function completeDeliveryShipment(input: {
       if (recorded) throw new DeliveryError("REPLAY_MISMATCH", [], recorded);
     }
     const result = await tx.deliveryShipment.updateMany({
-      where: { id: input.shipmentId, status: "IN_TRANSIT" },
+      where: {
+        id: input.shipmentId,
+        status: "IN_TRANSIT",
+        ...(shipment.method === "SALESMAN_CARRY" ? { carriedById: input.deliveredById } : {}),
+      },
       data: { ...completionData, ...(deliveryId ? { deliveryId } : {}) },
     });
     if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");

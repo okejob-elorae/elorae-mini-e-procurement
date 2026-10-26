@@ -730,8 +730,16 @@
     "resi": "No. Resi",
     "packedAt": "Dikemas Pada",
     "editTracking": "Ubah Pelacakan",
-    "editTrackingTitle": "Ekspedisi & Resi",
-    "editTrackingDescription": "Atur ekspedisi dan nomor resi, atau kirim pengiriman ini jika sudah siap.",
+    "editTrackingTitle": {
+      "expedition": "Ekspedisi & Resi",
+      "carry": "Pembawa & Tanggal Nota",
+      "reassign": "Ganti Pembawa"
+    },
+    "editTrackingDescription": {
+      "expedition": "Atur ekspedisi dan nomor resi, atau kirim pengiriman ini jika sudah siap.",
+      "carry": "Atur pembawa dan tanggal nota, atau kirim pengiriman ini jika sudah siap.",
+      "reassign": "Ubah siapa yang membawa pengiriman ini."
+    },
     "carrierNameLabel": "Nama ekspedisi",
     "resiNumberLabel": "Nomor resi",
     "save": "Simpan",

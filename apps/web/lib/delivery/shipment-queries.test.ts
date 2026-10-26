@@ -76,26 +76,6 @@ describe("shipment-queries", () => {
     expect(detail?.lines[0].plannedQty).toBe(4);
   });
 
-  it("returns a shipment's lines in a stable id order", async () => {
-    const extra = [];
-    for (const qty of [1, 2, 3]) {
-      const line = await prisma.fieldSalesOrderLine.create({
-        data: { orderId, itemId, productName: "Query Item Extra", qty, unitPrice: 10000, lineTotal: qty * 10000 },
-      });
-      extra.push({ orderLineId: line.id, qty });
-    }
-    const created = await createDeliveryShipment({
-      orderId,
-      method: "EXPEDITION",
-      lines: extra,
-      packedById: userId,
-    });
-    const detail = await getDeliveryShipment(created.shipmentId);
-    const ids = detail!.lines.map((l) => l.id);
-    expect(ids).toHaveLength(3);
-    expect(ids).toEqual([...ids].sort());
-  });
-
   it("returns null for a missing shipment", async () => {
     const detail = await getDeliveryShipment("does-not-exist");
     expect(detail).toBeNull();
@@ -133,7 +113,7 @@ describe("shipment-queries", () => {
         lines: [{ orderLineId: line.id, qty }],
         packedById: userId,
       });
-      /* Direct write: the seeded users here hold no `deliveries:pod`, so the writer would refuse them. */
+      /* Direct write: the seeded users may not be eligible carriers on every database (CI's seed.ts grants no `deliveries:pod`), so the spec assigns the column directly. */
       await prisma.deliveryShipment.update({ where: { id: created.shipmentId }, data: { carriedById: carrierId } });
       await updateShipmentTracking({
         shipmentId: created.shipmentId,

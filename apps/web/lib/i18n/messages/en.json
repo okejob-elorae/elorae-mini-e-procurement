@@ -730,8 +730,16 @@
     "resi": "Resi No.",
     "packedAt": "Packed At",
     "editTracking": "Edit Tracking",
-    "editTrackingTitle": "Carrier & Resi",
-    "editTrackingDescription": "Set the carrier and resi number, or ship this shipment once ready.",
+    "editTrackingTitle": {
+      "expedition": "Carrier & Resi",
+      "carry": "Carrier & Nota Dates",
+      "reassign": "Change Carrier"
+    },
+    "editTrackingDescription": {
+      "expedition": "Set the carrier and resi number, or ship this shipment once ready.",
+      "carry": "Set the carrier and nota dates, or ship this shipment once ready.",
+      "reassign": "Change who carries this shipment."
+    },
     "carrierNameLabel": "Carrier name",
     "resiNumberLabel": "Resi number",
     "save": "Save",

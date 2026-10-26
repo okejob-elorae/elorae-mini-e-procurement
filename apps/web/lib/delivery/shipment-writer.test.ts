@@ -12,10 +12,16 @@ import { DeliveryShipmentError } from "./errors";
 import { DeliveryError } from "@/lib/field-sales/errors";
 import { recordFieldSalesDelivery } from "@/lib/field-sales/delivery/writer";
 
+/* Writes live roles, users and audit rows — never run against the shared prod DB (port 3307 tunnel / VPS host). */
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
 /**
- * `connectOrCreate`, not a lookup: `deliveries:pod` is seeded nowhere in this repo, so a fresh
- * database has neither permission row. Same shape as `carrier-queries.test.ts`. Permission rows
- * are shared reference data and are never torn down here.
+ * `connectOrCreate`, not a lookup: a fresh CI database has no `deliveries:pod` row (only the
+ * hand-run `seed-deliveries-permissions.sql` grants it; `seed.ts` seeds `pwa:access` alone). Same
+ * shape as `carrier-queries.test.ts`. Permission rows are shared reference data and are never torn
+ * down here.
  */
 const podPermission = {
   connectOrCreate: {
@@ -49,14 +55,15 @@ async function seedCarrierUser(
 
 /**
  * Pins a carrier without going through `updateShipmentTracking`: the seeded salesman these specs
- * use as the completing actor holds no `deliveries:pod`, so the writer's eligibility check would
- * refuse him, yet completion requires the carrier to equal the actor.
+ * use as the completing actor may not be an eligible carrier on every database (CI's seed.ts
+ * grants no `deliveries:pod`), so the spec assigns the column directly; completion requires the
+ * carrier to equal the actor.
  */
 async function assignCarrier(shipmentId: string, carriedById: string): Promise<void> {
   await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { carriedById } });
 }
 
-describe("createDeliveryShipment", () => {
+d("createDeliveryShipment", () => {
   let storeId = "";
   let userId = "";
   let orderId = "";
@@ -170,7 +177,7 @@ describe("createDeliveryShipment", () => {
   });
 });
 
-describe("updateShipmentTracking + shipDeliveryShipment", () => {
+d("updateShipmentTracking + shipDeliveryShipment", () => {
   let storeId = "";
   let userId = "";
   let orderId = "";
@@ -270,6 +277,21 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
     const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
     expect(shipment?.carrierName).toBe("JNE");
     expect(shipment?.resiNumber).toBe("RESI-1");
+  });
+
+  it("trims carrier and resi on write, and reports MISSING_RESI for a whitespace-only resi", async () => {
+    await updateShipmentTracking({ shipmentId, carrierName: "  JNE ", resiNumber: "  RESI-T  " });
+    const trimmed = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(trimmed?.carrierName).toBe("JNE");
+    expect(trimmed?.resiNumber).toBe("RESI-T");
+
+    await updateShipmentTracking({ shipmentId, resiNumber: "   " });
+    const blank = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(blank?.resiNumber).toBe("");
+    await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { resiNumber: "  " } });
+    await expect(
+      shipDeliveryShipment({ shipmentId, shippedById: userId }),
+    ).rejects.toMatchObject({ code: "MISSING_RESI" });
   });
 
   it("refuses ship without a resi for EXPEDITION", async () => {
@@ -481,7 +503,7 @@ describe("updateShipmentTracking + shipDeliveryShipment", () => {
   });
 });
 
-describe("completeDeliveryShipment", () => {
+d("completeDeliveryShipment", () => {
   let storeId = "";
   let userId = "";
   let orderId = "";
@@ -1704,7 +1726,7 @@ describe("completeDeliveryShipment", () => {
   });
 });
 
-describe("cancelDeliveryShipment", () => {
+d("cancelDeliveryShipment", () => {
   let storeId = "";
   let userId = "";
   let orderId = "";
@@ -1836,7 +1858,7 @@ describe("cancelDeliveryShipment", () => {
   });
 });
 
-describe("reassignShipmentCarrier", () => {
+d("reassignShipmentCarrier", () => {
   let storeId = "";
   let userId = "";
   let orderId = "";
@@ -1844,6 +1866,7 @@ describe("reassignShipmentCarrier", () => {
   let itemId = "";
   let shipmentId = "";
   let shipmentLineId = "";
+  let recordedDeliveryId = "";
   let token = "";
   let carrierRoleId = "";
   let carrierUserId = "";
@@ -1858,6 +1881,7 @@ describe("reassignShipmentCarrier", () => {
     itemId = "";
     shipmentId = "";
     shipmentLineId = "";
+    recordedDeliveryId = "";
     carrierRoleId = "";
     carrierUserId = "";
     weakRoleId = "";
@@ -1903,6 +1927,17 @@ describe("reassignShipmentCarrier", () => {
   });
 
   afterEach(async () => {
+    await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+    if (recordedDeliveryId) {
+      await prisma.receivable.deleteMany({ where: { deliveryId: seededId(recordedDeliveryId) } });
+      await prisma.taxInvoice.deleteMany({ where: { deliveryId: seededId(recordedDeliveryId) } });
+      await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: seededId(recordedDeliveryId) } });
+      await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(recordedDeliveryId) } });
+    }
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.auditLog.deleteMany({
       where: { entityType: "DeliveryShipment", entityId: seededId(shipmentId) },
     });
@@ -2029,5 +2064,65 @@ describe("reassignShipmentCarrier", () => {
         lines: [{ shipmentLineId, deliveredQty: 4 }],
       }),
     ).rejects.toMatchObject({ code: "NOT_CARRIER" });
+  });
+
+  it("refuses a reassign once a delivery is recorded under the shipment's key", async () => {
+    await seedShipment("SALESMAN_CARRY", "IN_TRANSIT");
+    await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 4, reservedQty: 4, avgCost: 500, totalValue: 2000 },
+    });
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES", fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4, state: "RESERVED" },
+    });
+    const recorded = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      invoiceDate: new Date("2026-10-01T00:00:00.000+07:00"),
+      dueDate: new Date("2026-10-31T00:00:00.000+07:00"),
+      idempotencyKey: `shipment-${shipmentId}`,
+    });
+    recordedDeliveryId = recorded.deliveryId;
+
+    await expect(
+      reassignShipmentCarrier({ shipmentId, carriedById: carrierUserId, reassignedById: userId }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.carriedById).toBe(userId);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("refuses the old carrier's completion when a reassign lands between its read and its CAS", async () => {
+    await seedShipment("SALESMAN_CARRY", "IN_TRANSIT");
+    const original = prisma.deliveryShipment.findUnique.bind(prisma.deliveryShipment);
+    const spy = vi.spyOn(prisma.deliveryShipment, "findUnique");
+    spy.mockImplementation(original as unknown as typeof prisma.deliveryShipment.findUnique);
+    try {
+      /* The read still shows the old carrier; the reassign commits right after it. */
+      spy.mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
+        const row = await original(args);
+        await reassignShipmentCarrier({ shipmentId, carriedById: carrierUserId, reassignedById: userId });
+        return row;
+      }) as unknown as typeof prisma.deliveryShipment.findUnique);
+      await expect(
+        completeDeliveryShipment({
+          shipmentId,
+          deliveredById: userId,
+          proofPhotoUrl: "https://r2.example/proof.jpg",
+          proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+          gps: { lat: -6.2, lng: 106.8 },
+          signatureUrl: "https://r2.example/nota.jpg",
+          signatureR2Key: `delivery-pod-proofs/${shipmentId}/nota-x.jpg`,
+          signedByName: "Budi",
+          lines: [{ shipmentLineId, deliveredQty: 0 }],
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_STATE" });
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.deliveryShipment.findUnique);
+    }
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.status).toBe("IN_TRANSIT");
+    expect(shipment?.carriedById).toBe(carrierUserId);
+    expect(shipment?.deliveredById).toBeNull();
   });
 });

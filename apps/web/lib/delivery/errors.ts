@@ -16,8 +16,10 @@ export type DeliveryShipmentErrorCode =
   /** SALESMAN_CARRY ship transition with no carriedById set — symmetric with MISSING_RESI. */
   | "MISSING_CARRIER"
   /**
-   * `updateShipmentTracking` was given a `carriedById` that names no user, or a user who is not an
-   * eligible carrier (a non-system role holding both `deliveries:pod` and `pwa:access`).
+   * `updateShipmentTracking` or `reassignShipmentCarrier` was given a `carriedById` that names no
+   * user, or a user who is not an eligible carrier (a non-system role holding both `deliveries:pod`
+   * and `pwa:access`). `reassignShipmentCarrier` also refuses an empty id here, where
+   * `updateShipmentTracking` reads an empty string as "clear the carrier".
    */
   | "INVALID_CARRIER"
   /**

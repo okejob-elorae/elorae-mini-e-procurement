@@ -60,6 +60,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   const isExpedition = method === "EXPEDITION";
   /* IN_TRANSIT freezes everything but the carrier, which has its own action. */
   const isReassignOnly = status === "IN_TRANSIT" && method === "SALESMAN_CARRY";
+  /* Until the detail arrives `method` is empty, so the heading falls back to the expedition wording. */
+  const dialogMode = isReassignOnly ? "reassign" : method === "SALESMAN_CARRY" ? "carry" : "expedition";
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -227,8 +229,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t("editTrackingTitle")}</DialogTitle>
-          <DialogDescription>{t("editTrackingDescription")}</DialogDescription>
+          <DialogTitle>{t(`editTrackingTitle.${dialogMode}`)}</DialogTitle>
+          <DialogDescription>{t(`editTrackingDescription.${dialogMode}`)}</DialogDescription>
         </DialogHeader>
         {loadState.status === "loading" && (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
@@ -313,9 +315,11 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
           </div>
         )}
         <DialogFooter className="flex-wrap gap-2">
-          <Button variant="destructive" onClick={handleCancel} disabled={isPending || !detailLoaded}>
-            {t("cancel")}
-          </Button>
+          {!isReassignOnly && (
+            <Button variant="destructive" onClick={handleCancel} disabled={isPending || !detailLoaded}>
+              {t("cancel")}
+            </Button>
+          )}
           {isReassignOnly ? (
             <Button
               className="min-h-10"

@@ -127,7 +127,7 @@ d("completeDeliveryShipment konsi stock move (test bed only)", () => {
     if (method === "EXPEDITION") {
       await updateShipmentTracking({ shipmentId, carrierName: "JNE", resiNumber: `RESI-${token}` });
     } else {
-      /* Direct write: the seeded salesman holds no `deliveries:pod`, so the writer would refuse him as carrier. */
+      /* Direct write: the seeded salesman may not be an eligible carrier on every database (CI's seed.ts grants no `deliveries:pod`), so the spec assigns the column directly. */
       await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { carriedById: salesmanId } });
     }
     await shipDeliveryShipment({ shipmentId, shippedById: salesmanId });
