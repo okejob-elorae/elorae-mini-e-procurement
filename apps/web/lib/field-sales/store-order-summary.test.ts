@@ -75,11 +75,12 @@ d("getStoreOrderSummary (test bed only)", () => {
     });
   }
 
-  it("reports delivered total plus the open remainder for a partly delivered approved putus order", async () => {
+  it("reports the billed delivered total plus the open remainder for a partly delivered approved putus order", async () => {
     const order = await makeOrder(1, "APPROVED", "PUTUS", 1000);
-    await makeDelivery(order.id, 1, 400, 400);
+    await makeDelivery(order.id, 1, 400.4, 400);
     const [row] = await getStoreOrderSummary(storeId);
-    expect(row.total).toBe(1000);
+    /* Billed 400 + residual (1000 − exact goods 400.40 = 599.60) — not the raw order total of 1000. */
+    expect(row.total).toBeCloseTo(999.6, 2);
   });
 
   it("counts only what was delivered once the remainder is closed", async () => {

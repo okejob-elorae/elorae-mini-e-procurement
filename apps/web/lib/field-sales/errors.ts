@@ -110,7 +110,7 @@ export type DeliveryReplayDetail = {
 export class DeliveryError extends Error {
   constructor(
     readonly code: DeliveryErrorCode,
-    readonly shortLines: Array<{ orderLineId: string; requested: number; onHand: number }> = [],
+    readonly shortLines: Array<{ orderLineId: string; requested: number; onHand: number; available: number }> = [],
     readonly replay?: DeliveryReplayDetail,
   ) {
     super(`Delivery rejected: ${code}`);

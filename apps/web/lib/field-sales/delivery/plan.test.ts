@@ -6,6 +6,7 @@ import {
   nextDeliveryStatus,
   computeDueDate,
   allocateDeliveryDiscounts,
+  shortLineClampQty,
 } from "./plan";
 
 describe("outstandingQty", () => {
@@ -288,5 +289,20 @@ describe("allocateDeliveryDiscounts", () => {
       ],
     });
     expect(got.orderDiscountAmount).toBe(31); /* 30 order remainder + 1 stranded on line a */
+  });
+});
+
+describe("shortLineClampQty", () => {
+  it("clamps to what was left for the line, not the on-hand shared with earlier lines", () => {
+    expect(shortLineClampQty(5, 2)).toBe(2);
+  });
+
+  it("never exceeds what was requested", () => {
+    expect(shortLineClampQty(3, 8)).toBe(3);
+  });
+
+  it("floors fractions and never goes negative", () => {
+    expect(shortLineClampQty(5, 2.9)).toBe(2);
+    expect(shortLineClampQty(5, -1)).toBe(0);
   });
 });

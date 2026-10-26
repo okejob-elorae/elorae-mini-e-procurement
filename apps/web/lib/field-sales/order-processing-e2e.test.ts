@@ -272,7 +272,7 @@ d("order processing — end to end (opt-in)", () => {
     check("B-03", !r3a.ok && r3a.reason === "OVER_DELIVER" && !r3b.ok && r3b.reason === "OVER_DELIVER", "6 of 5 / 3+3 of 5 → OVER_DELIVER");
     const q = [0, -1, 1.5];
     const r4 = await Promise.all(q.map((qty) => recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() })));
-    check("B-04", r4.every((r) => !r.ok && r.reason === "OVER_DELIVER"), `0 / −1 / 1.5 → ${r4.map((r) => (r.ok ? "ok" : r.reason)).join(" / ")}`);
+    check("B-04", r4.every((r) => !r.ok && r.reason === "INVALID_REQUEST"), `0 / −1 / 1.5 → ${r4.map((r) => (r.ok ? "ok" : r.reason)).join(" / ")}`);
 
     // B-05 dates, B-06 keys
     const r5a = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 1 }], invoiceDate: DUE, dueDate: INV, idempotencyKey: randomUUID() });
@@ -359,7 +359,7 @@ d("order processing — end to end (opt-in)", () => {
     // B-11 close remainder refusals
     const r11a = await closeRemainderAction(o.orderId, "   ");
     const r11b = await closeRemainderAction(pending.orderId, "reason");
-    check("B-11 blank/not approved", !r11a.ok && !r11b.ok && r11b.reason === "INVALID_STATE", `blank → ${r11a.ok ? "ok" : r11a.reason}, rejected order → ${r11b.ok ? "ok" : r11b.reason}`);
+    check("B-11 blank/not approved", !r11a.ok && r11a.reason === "INVALID_REQUEST" && !r11b.ok && r11b.reason === "INVALID_STATE", `blank → ${r11a.ok ? "ok" : r11a.reason}, rejected order → ${r11b.ok ? "ok" : r11b.reason}`);
 
     // B-02 second delivery of line A remainder only, then B-10 close line B remainder
     const r2 = await recordDeliveryAction({ orderId: o.orderId, lines: [{ orderLineId: la.id, qty: 3 }, { orderLineId: lb.id, qty: 1 }], invoiceDate: INV, dueDate: DUE, idempotencyKey: randomUUID() });

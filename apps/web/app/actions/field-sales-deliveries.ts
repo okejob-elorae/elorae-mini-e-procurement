@@ -36,7 +36,7 @@ export type DeliveryActionResult =
         | "SHIPMENT_IN_FLIGHT"
         | "REPLAY_MISMATCH"
         | "RESERVATION_MISMATCH";
-      shortLines?: Array<{ orderLineId: string; requested: number; onHand: number }>;
+      shortLines?: Array<{ orderLineId: string; requested: number; onHand: number; available: number }>;
       replay?: SerializedReplay;
     };
 

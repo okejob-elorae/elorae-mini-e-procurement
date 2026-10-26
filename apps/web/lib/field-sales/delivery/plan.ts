@@ -121,3 +121,11 @@ export function allocateDeliveryDiscounts(input: DiscountAllocationInput): Disco
 
   return { lineDiscounts, orderDiscountAmount };
 }
+
+/**
+ * What a short line's input snaps to after INSUFFICIENT_STOCK: never above what was asked, never
+ * above what was left for this line once earlier lines on the same row took theirs.
+ */
+export function shortLineClampQty(requested: number, available: number): number {
+  return Math.max(0, Math.floor(Math.min(requested, available)));
+}

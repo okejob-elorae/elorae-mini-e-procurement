@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { computeDueDate, deliverableQty } from "@/lib/field-sales/delivery/plan";
+import { computeDueDate, deliverableQty, shortLineClampQty } from "@/lib/field-sales/delivery/plan";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import {
   recordDeliveryAction,
@@ -34,7 +34,7 @@ export type DeliverableLine = {
 
 type DeliveryFailure = Extract<DeliveryActionResult, { ok: false }>;
 
-type ShortLine = { requested: number; onHand: number };
+type ShortLine = { requested: number; onHand: number; available: number };
 
 type Props = {
   orderId: string;
@@ -155,17 +155,18 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
   const canSubmit = !isPending && payload.length > 0 && idempotencyKey !== "" && datesValid;
 
   /**
-   * A short line is snapped down to what the server just said is on hand, and the order is
+   * A short line is snapped down to what the server just said was left for it, and the order is
    * refreshed so the helper text stops contradicting the error. setQtyInputs is written
    * directly rather than through setQty, which would clear the inline error we just set.
    */
   function handleFailure(result: DeliveryFailure, session: number): void {
-    if (result.reason === "INSUFFICIENT_STOCK" && result.shortLines?.length) {
+    /* A save that outlived its session must not write into a reopened dialog. */
+    if (result.reason === "INSUFFICIENT_STOCK" && result.shortLines?.length && session === sessionRef.current) {
       const next: Record<string, ShortLine> = {};
       const clamped: Record<string, string> = {};
       for (const short of result.shortLines) {
-        next[short.orderLineId] = { requested: short.requested, onHand: short.onHand };
-        clamped[short.orderLineId] = String(Math.max(0, Math.floor(short.onHand)));
+        next[short.orderLineId] = { requested: short.requested, onHand: short.onHand, available: short.available };
+        clamped[short.orderLineId] = String(shortLineClampQty(short.requested, short.available));
       }
       setShortLines(next);
       setQtyInputs((prev) => ({ ...prev, ...clamped }));
@@ -240,7 +241,13 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
               const variantText = line.variantLabel ?? line.variantSku;
               const short = shortLines[line.id];
               const shortText = short
-                ? t("delivery.shortStock", { onHand: short.onHand, requested: short.requested })
+                ? short.available === short.onHand
+                  ? t("delivery.shortStock", { available: short.available, requested: short.requested })
+                  : t("delivery.shortStockShared", {
+                      available: short.available,
+                      onHand: short.onHand,
+                      requested: short.requested,
+                    })
                 : null;
               return (
                 <div key={line.id} className="rounded-md border p-3">

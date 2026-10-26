@@ -63,7 +63,8 @@ export async function issueKonsiTransfer(
     /**
      * Partial consume of the reservation approve created, folded into one guarded statement so a
      * concurrent completion cannot pass a stale read — the same idiom
-     * `consumeFieldSalesOrderPartial` uses. It runs BEFORE any balance write for this line, so an
+     * `consumeFieldSalesOrderPartial` uses, filtered to the konsi reservation source as that one
+     * is to its own. It runs BEFORE any balance write for this line, so an
      * over-draw, or a reservation that is not RESERVED at all (a konsi order approved before
      * stock moved at completion, whose reservation was consumed at approve), refuses with nothing
      * moved. `StockReservation` is not a balance table, so this raw statement needs no entry in
@@ -72,7 +73,7 @@ export async function issueKonsiTransfer(
     const reserved = await tx.$executeRaw`
       UPDATE StockReservation
       SET consumedQty = consumedQty + ${l.qty}
-      WHERE fieldSalesLineId = ${l.id} AND state = 'RESERVED' AND consumedQty + ${l.qty} <= qty
+      WHERE fieldSalesLineId = ${l.id} AND source = 'FIELD_SALES_KONSI' AND state = 'RESERVED' AND consumedQty + ${l.qty} <= qty
     `;
     if (reserved === 0) throw new KonsiTransferReservationMismatchError(l.id, 0);
 

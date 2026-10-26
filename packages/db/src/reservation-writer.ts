@@ -310,7 +310,10 @@ export type PartialConsumeShortLine = {
   itemId: string;
   variantSku: string;
   requested: number;
+  /* On-hand before this call moved anything. */
   onHand: number;
+  /* What was left for THIS line after earlier lines in the same call took from the same row. */
+  available: number;
 };
 
 export class PartialConsumeError extends Error {
@@ -397,6 +400,7 @@ export async function consumeFieldSalesOrderPartial(
           variantSku: p.line.variantSku,
           requested: qty,
           onHand: Number(current.qtyOnHand) + (takenByRow.get(p.invId) ?? 0),
+          available: Number(current.qtyOnHand),
         });
         continue;
       }

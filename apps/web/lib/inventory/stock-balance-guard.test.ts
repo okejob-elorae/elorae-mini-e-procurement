@@ -12,7 +12,7 @@ const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
  *
  * reservation-writer.ts is the one file exempt in FULL, and it takes BOTH of these reasons to
  * justify it. Its raw guarded UPDATE is a cross-process race guard that cannot be expressed as a
- * Prisma call at all. And its two plain Prisma qtyOnHand updates decrement reservedQty in the
+ * Prisma call at all. And its plain Prisma qtyOnHand update (in consumeOrder) decrements reservedQty in the
  * SAME statement, which no mover can express — splitting that pair strands stock reserved
  * against nothing, permanently. Both append to the ledger by hand instead.
  *

@@ -274,7 +274,7 @@ export async function recordFieldSalesDelivery(input: {
       if (e instanceof PartialConsumeError) {
         throw new DeliveryError(
           PARTIAL_CONSUME_CODE[e.code],
-          e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand })),
+          e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand, available: s.available })),
         );
       }
       throw e;
