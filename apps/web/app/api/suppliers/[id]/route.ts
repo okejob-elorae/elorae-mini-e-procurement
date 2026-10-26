@@ -4,23 +4,11 @@ export const dynamic = 'force-dynamic';
 import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
-import { encryptBankAccount, decryptBankAccount } from '@/lib/encryption';
+import { decryptBankAccount } from '@/lib/encryption';
+import { updateSupplier, supplierUpdateSchema } from '@/lib/suppliers/mutations';
 import { logBankAccountView } from '@/lib/audit';
 import { requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { verifyPin } from '@/lib/security/pin';
-const supplierSchema = z.object({
-  code: z.string().min(1).optional(),
-  name: z.string().min(1).optional(),
-  typeId: z.string().min(1).optional(),
-  address: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email().optional(),
-  bankName: z.string().optional(),
-  bankAccount: z.string().optional(),
-  bankAccountName: z.string().optional(),
-  isActive: z.boolean().optional(),
-});
-
 const decryptSchema = z.object({
   pin: z.string().min(4),
 });
@@ -81,34 +69,17 @@ export async function PUT(
     requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_EDIT);
 
     const body = await req.json();
-    const validated = supplierSchema.parse(body);
+    const validated = supplierUpdateSchema.parse(body);
 
-    const { bankAccount, code: codeInput, ...rest } = validated;
-
-    const data: Parameters<typeof prisma.supplier.update>[0]['data'] = {
-      ...rest,
-    };
-    if (codeInput?.trim()) {
-      const code = codeInput.trim();
-      const existing = await prisma.supplier.findFirst({
-        where: { code, id: { not: id } },
-      });
-      if (existing) {
-        return NextResponse.json(
-          { error: 'Supplier code already exists' },
-          { status: 400 }
-        );
+    let supplier;
+    try {
+      supplier = await updateSupplier(id, validated);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'Supplier code already exists') {
+        return NextResponse.json({ error: error.message }, { status: 400 });
       }
-      data.code = code;
+      throw error;
     }
-    if (bankAccount) {
-      data.bankAccountEnc = encryptBankAccount(bankAccount, 'DEFAULT_PIN');
-    }
-
-    const supplier = await prisma.supplier.update({
-      where: { id },
-      data,
-    });
 
     return NextResponse.json(supplier);
   } catch (error) {
