@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma } from "./index";
+import { Prisma } from "../generated/prisma/client";
 import { postJournal } from "./journal-writer";
 import { seededId } from "./spec-teardown";
 
@@ -168,5 +169,83 @@ d("postJournal (test bed only)", () => {
         ],
       }),
     ).rejects.toMatchObject({ code: "UNBALANCED" });
+  });
+
+  it("two concurrent posts for one source both succeed with one journal", async () => {
+    const src = { type: "TEST", id: `race-${Math.random().toString(36).slice(2)}` };
+    const post = () =>
+      postJournal(prisma, {
+        date: new Date(),
+        description: "race",
+        postedById: adminId,
+        source: src,
+        lines: [
+          { chartAccountId: aId, debit: 5, credit: 0 },
+          { chartAccountId: bId, debit: 0, credit: 5 },
+        ],
+      });
+    const [r1, r2] = await Promise.all([post(), post()]);
+    expect(r1.journalId).toBe(r2.journalId);
+    expect([r1.created, r2.created].filter(Boolean)).toHaveLength(1);
+  });
+
+  describe("a create that loses the source race", () => {
+    const lines = () => [
+      { chartAccountId: "a", debit: 5, credit: 0 },
+      { chartAccountId: "b", debit: 0, credit: 5 },
+    ];
+    const fakeClient = (target: string, existingAfterFail: boolean) => {
+      let reads = 0;
+      const tx = {
+        journal: {
+          findUnique: async () => (reads++ === 0 || !existingAfterFail ? null : { id: "winner" }),
+          create: async () => {
+            throw new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {
+              code: "P2002",
+              clientVersion: "test",
+              meta: { driverAdapterError: { cause: { constraint: { index: target } } } },
+            });
+          },
+        },
+        chartAccount: {
+          findMany: async (args: { where: { id?: unknown } }) =>
+            args.where.id ? [{ id: "a", isActive: true }, { id: "b", isActive: true }] : [],
+        },
+      };
+      return tx as unknown as Prisma.TransactionClient;
+    };
+    const input = () => ({
+      date: new Date(),
+      description: "x",
+      postedById: "u",
+      source: { type: "TEST", id: "s" },
+      lines: lines(),
+    });
+
+    it("returns the winner's journal as an idempotent success", async () => {
+      const r = await postJournal(fakeClient("Journal_sourceType_sourceId_key", true), input());
+      expect(r).toEqual({ journalId: "winner", created: false });
+    });
+
+    it("rethrows the P2002 when the re-read still finds no journal", async () => {
+      await expect(postJournal(fakeClient("Journal_sourceType_sourceId_key", false), input())).rejects.toMatchObject({
+        code: "P2002",
+      });
+    });
+
+    it("detects the collision by shape, not by error class", async () => {
+      const client = fakeClient("Journal_sourceType_sourceId_key", true);
+      (client as unknown as { journal: { create: () => Promise<never> } }).journal.create = async () => {
+        throw Object.assign(new Error("Unique constraint failed"), {
+          code: "P2002",
+          meta: { driverAdapterError: { cause: { constraint: { index: "Journal_sourceType_sourceId_key" } } } },
+        });
+      };
+      expect(await postJournal(client, input())).toEqual({ journalId: "winner", created: false });
+    });
+
+    it("still throws a P2002 on any other unique index", async () => {
+      await expect(postJournal(fakeClient("Journal_other_key", true), input())).rejects.toMatchObject({ code: "P2002" });
+    });
   });
 });

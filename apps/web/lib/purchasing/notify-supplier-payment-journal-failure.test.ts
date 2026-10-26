@@ -14,16 +14,14 @@ type FlaggedRow = { id: string; title: string; message: string; reason: string |
 
 /**
  * Unread `JOURNAL_PENDING` rows carrying this exact `docId`, read the same way
- * the dedup itself reads them (recent unread rows, matched in JS — this MariaDB
- * adapter's JSON-path filtering is unreliable). Scoped to one synthetic doc id
+ * the dedup itself reads them (every unread row, uncapped, matched in JS — this
+ * MariaDB adapter's JSON-path filtering is unreliable). Scoped to one synthetic doc id
  * the caller owns, never a global count, because this spec shares the dev DB
  * with real notification rows.
  */
 async function flaggedRowsFor(docId: string): Promise<FlaggedRow[]> {
   const recent = await prisma.adminNotification.findMany({
     where: { category: "JOURNAL_PENDING", readAt: null },
-    orderBy: { createdAt: "desc" },
-    take: 200,
     select: { id: true, title: true, message: true, metadata: true },
   });
   return recent

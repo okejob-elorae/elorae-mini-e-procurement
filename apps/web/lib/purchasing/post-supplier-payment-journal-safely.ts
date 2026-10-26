@@ -4,6 +4,7 @@ import { hasCurrentPaymentJournal } from "./supplier-payment-journal";
 import type { PostSupplierPaymentResult, PostSupplierPaymentReversalResult } from "./supplier-payment-journal";
 import type { SupplierPaymentDirection } from "./supplier-payment-journal-message";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { hasJournalPendingRow } from "@/lib/finance/journal-pending-dedup";
 
 /* Re-exported, not redeclared: the canonical definition lives in the client-safe
    message module so the toast mapper can take it without importing Prisma. */
@@ -347,7 +348,7 @@ function messageFor(
 }
 
 /**
- * Skips the write when an unread `JOURNAL_PENDING` already exists for the same
+ * Skips the write when a `JOURNAL_PENDING` row, read or unread, already exists for the same
  * PO, direction AND failure reason, so a toggle that keeps failing the same way
  * does not pile up duplicate rows.
  *
@@ -359,35 +360,28 @@ function messageFor(
  * `UNMAPPED_ROLE` row telling them to do what they just did. That is worse than
  * no dedup, because it actively misdirects. Matching on the reason keeps both
  * properties: the same failure repeated writes nothing, a different one always
- * writes. Accumulation stays bounded at one unread row per distinct reason per
+ * writes. Accumulation stays bounded at one row per distinct reason per
  * PO and direction.
  *
  * Chosen over updating the existing row in place because `AdminNotification` has
  * no `updatedAt` and a refreshed row would keep its original `createdAt` — it
  * would rank by the stale first-failure time in any feed reading these (the bell
- * is still an open follow-up), and it would age out of the recency window this
- * very dedup scans, at which point the dedup breaks anyway AND leaves the stale
- * row behind. A new row is honest about when the new failure happened.
+ * is still an open follow-up). A new row is honest about when the new failure
+ * happened.
  *
- * Mirrors `lib/canvassing/post-van-journal-safely.ts` on the read shape: this
- * MariaDB adapter's JSON-path filtering is unreliable, so recent unread rows are
- * fetched and matched in JS rather than filtered in the query.
+ * Shares `hasJournalPendingRow` with the other journal flaggers, with `unreadOnly`: it reads every
+ * UNREAD `JOURNAL_PENDING` row, uncapped, and the match runs in JS. A read row no longer
+ * suppresses, so a new failure episode alerts again.
  */
 async function alreadyFlagged(
   direction: SupplierPaymentDirection,
   poId: string,
   reason: string,
 ): Promise<boolean> {
-  const recent = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING", readAt: null },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: { metadata: true },
-  });
-  return recent.some((n) => {
-    const m = n.metadata as { docId?: string; kind?: string; reason?: string } | null;
-    return m?.docId === poId && m?.kind === NOTIFICATION_KIND[direction] && m?.reason === reason;
-  });
+  return hasJournalPendingRow(
+    (m) => m.docId === poId && m.kind === NOTIFICATION_KIND[direction] && m.reason === reason,
+    { unreadOnly: true },
+  );
 }
 
 async function notify(

@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "../generated/prisma/client";
+import type { Prisma, PrismaClient } from "../generated/prisma/client";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -14,6 +14,21 @@ export class JournalError extends Error {
     super(message ?? code);
     this.name = "JournalError";
   }
+}
+
+/**
+ * True only for a P2002 on the journal's `(sourceType, sourceId)` unique. Detected by shape, never
+ * `instanceof`: apps/web bundles the Prisma runtime into several server chunks, so an error thrown
+ * by one copy fails `instanceof` against another's class. The MariaDB driver
+ * adapter reports the index name (`Journal_sourceType_sourceId_key`) in
+ * `meta.driverAdapterError.cause.constraint` rather than `meta.target`, so the whole error is
+ * searched for both column names. A P2002 on any other index, or naming none, is not this one.
+ */
+function isSourceCollision(e: unknown): boolean {
+  const err = e as { code?: unknown; message?: unknown; meta?: unknown } | null;
+  if (err?.code !== "P2002") return false;
+  const text = `${String(err.message ?? "")} ${JSON.stringify(err.meta ?? {})}`;
+  return text.includes("sourceType") && text.includes("sourceId");
 }
 
 export type JournalLineInput = { chartAccountId: string; debit: number; credit: number; memo?: string };
@@ -86,5 +101,23 @@ export async function postJournal(
     return { journalId: j.id, created: true };
   };
 
-  return hasTx(client) ? client.$transaction(run) : run(client as Prisma.TransactionClient);
+  /*
+   * Two concurrent posts for one source both pass the existence read, and the loser's create dies
+   * on the unique. That is an idempotent success, not a failure: re-read the winner's row and
+   * return it. That success applies to the PrismaClient path: the loser's own transaction has
+   * already rolled back, so the re-read runs on a clean client and sees the winner. Inside a
+   * caller's transaction (REPEATABLE READ) the re-read on that same tx reads the earlier snapshot
+   * and will not see the winner, so `existing` is null and the P2002 is rethrown.
+   */
+  try {
+    return await (hasTx(client) ? client.$transaction(run) : run(client as Prisma.TransactionClient));
+  } catch (e) {
+    if (!input.source || !isSourceCollision(e)) throw e;
+    const existing = await client.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: input.source.type, sourceId: input.source.id } },
+      select: { id: true },
+    });
+    if (!existing) throw e;
+    return { journalId: existing.id, created: false };
+  }
 }

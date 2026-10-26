@@ -1,6 +1,7 @@
 import { prisma, JournalError, type AdminNotification } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { hasJournalPendingRow } from "@/lib/finance/journal-pending-dedup";
 
 export type ArJournalKind =
   | "field_delivery_revenue"
@@ -133,22 +134,14 @@ export async function postArJournalSafely(
  * surviving signal is the unread UNMAPPED_ROLE row telling them to do exactly what they just did.
  * That is worse than no dedup, because it actively misdirects. Matching on reason keeps both
  * properties — a repeat writes nothing, a new failure always writes — and accumulation stays
- * bounded at one unread row per distinct reason per document and kind.
+ * bounded at one row per distinct reason per document and kind.
  *
- * This MariaDB adapter's JSON-path filtering is unreliable, so recent unread rows are fetched by
- * the indexed `category` column and matched in JS rather than filtered in the query.
+ * The read is `hasJournalPendingRow`'s with `unreadOnly`: every UNREAD `JOURNAL_PENDING` row, uncapped,
+ * matched in JS because this MariaDB adapter's JSON-path filtering is unreliable. A row an operator
+ * has read no longer suppresses, so a new failure with the same triple alerts again.
  */
 async function alreadyFlagged(kind: ArJournalKind, docId: string, reason: string): Promise<boolean> {
-  const recent = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING", readAt: null },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: { metadata: true },
-  });
-  return recent.some((n) => {
-    const m = n.metadata as { docId?: string; kind?: string; reason?: string } | null;
-    return m?.docId === docId && m?.kind === kind && m?.reason === reason;
-  });
+  return hasJournalPendingRow((m) => m.docId === docId && m.kind === kind && m.reason === reason, { unreadOnly: true });
 }
 
 /**

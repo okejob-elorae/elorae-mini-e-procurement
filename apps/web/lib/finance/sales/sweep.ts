@@ -3,6 +3,7 @@ import { parseDateOnly, formatDateOnlyJakarta } from "@/lib/date-only";
 import { postSalesRevenueJournal, postSalesCogsJournal } from "./sales-journal";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { listJournalPendingMetadata } from "@/lib/finance/journal-pending-dedup";
 
 /** SystemSetting key holding the GL go-live day as a date-only `YYYY-MM-DD` string, read as WIB. */
 export const GL_CUTOVER_SETTING_KEY = "finance.glCutoverDate";
@@ -66,25 +67,30 @@ export function isSweepEligibleOrder(order: { status: string; fulfillmentStatus:
   );
 }
 
+/**
+ * `orderId|kind` of every `JOURNAL_PENDING` row, read or unread, read ONCE per sweep tick. Read-or-unread
+ * on purpose: an unread filter re-files a row the moment an operator opens the bell, so a post that keeps
+ * failing would re-announce itself every tick.
+ */
+async function loadFlaggedSet(): Promise<Set<string>> {
+  const flagged = new Set<string>();
+  for (const m of await listJournalPendingMetadata()) {
+    if (typeof m.orderId === "string" && typeof m.kind === "string") flagged.add(`${m.orderId}|${m.kind}`);
+  }
+  return flagged;
+}
+
 async function flag(
+  flagged: Set<string>,
   orderId: string,
   soNumber: string,
   kind: "revenue" | "cogs",
   res: Extract<GenerateAutoJournalResult, { ok: false }>,
 ): Promise<void> {
-  // Dedup: at most one unread JOURNAL_PENDING per (orderId, kind). MariaDB JSON-path
-  // filtering on this adapter is unreliable, so fetch recent unread rows and dedup in JS.
-  const recent = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING", readAt: null },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: { metadata: true },
-  });
-  const already = recent.some((n) => {
-    const m = n.metadata as { orderId?: string; kind?: string } | null;
-    return m?.orderId === orderId && m?.kind === kind;
-  });
-  if (already) return;
+  /* Dedup: file only when no JOURNAL_PENDING row of this kind exists for the order, read or unread. */
+  const key = `${orderId}|${kind}`;
+  if (flagged.has(key)) return;
+  flagged.add(key);
 
   const salesJournalPendingNotification = await prisma.adminNotification.create({
     data: {
@@ -164,6 +170,7 @@ export async function postPendingSalesJournals(
   let revenue = 0;
   let cogs = 0;
   let pending = 0;
+  const flagged = orders.length > 0 ? await loadFlaggedSet() : new Set<string>();
 
   for (const order of orders) {
     const poster = order.shippedById ?? systemPoster;
@@ -182,7 +189,7 @@ export async function postPendingSalesJournals(
           if (r.created) revenue += 1;
         } else if (r.code !== "NOTHING_TO_POST") {
           pending += 1;
-          await flag(order.id, order.salesorderNo, "revenue", r);
+          await flag(flagged, order.id, order.salesorderNo, "revenue", r);
         }
       }
 
@@ -192,7 +199,7 @@ export async function postPendingSalesJournals(
           if (c.created) cogs += 1;
         } else if (c.code !== "NOTHING_TO_POST") {
           pending += 1;
-          await flag(order.id, order.salesorderNo, "cogs", c);
+          await flag(flagged, order.id, order.salesorderNo, "cogs", c);
         }
       }
     } catch (e) {

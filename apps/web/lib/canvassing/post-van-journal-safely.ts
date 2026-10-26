@@ -1,6 +1,7 @@
 import { prisma, type AdminNotification } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { hasJournalPendingRow } from "@/lib/finance/journal-pending-dedup";
 
 /**
  * Where a `journals:manage` operator retries each van document kind once the
@@ -43,22 +44,12 @@ export async function postVanJournalSafely(
 }
 
 /**
- * Skips the write when an unread `JOURNAL_PENDING` already exists for the same
- * document and kind. Mirrors `lib/finance/sales/sweep.ts`'s dedup: this MariaDB
- * adapter's JSON-path filtering is unreliable, so recent unread rows are
- * fetched and deduped in JS rather than filtered in the query.
+ * Skips the write when an UNREAD `JOURNAL_PENDING` row already exists for the same document
+ * and kind. Shared with the other journal flaggers through `hasJournalPendingRow` with
+ * `unreadOnly`, which reads every unread row (uncapped) and matches in JS.
  */
 async function alreadyFlagged(kind: string, docId: string): Promise<boolean> {
-  const recent = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING", readAt: null },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: { metadata: true },
-  });
-  return recent.some((n) => {
-    const m = n.metadata as { docId?: string; kind?: string } | null;
-    return m?.docId === docId && m?.kind === `van_${kind}`;
-  });
+  return hasJournalPendingRow((m) => m.docId === docId && m.kind === `van_${kind}`, { unreadOnly: true });
 }
 
 /**

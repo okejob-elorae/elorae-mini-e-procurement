@@ -24,6 +24,16 @@ d("postPendingSalesJournals (test bed only)", () => {
       update: { value },
     });
 
+  /* Matched on the metadata's exact orderId in JS, never a message substring: `SO-12` would match `SO-123456`. */
+  const ownPendingIds = async (): Promise<string[]> => {
+    if (!orderId) return [];
+    const rows = await prisma.adminNotification.findMany({
+      where: { category: "JOURNAL_PENDING" },
+      select: { id: true, metadata: true },
+    });
+    return rows.filter((r) => (r.metadata as { orderId?: string } | null)?.orderId === orderId).map((r) => r.id);
+  };
+
   beforeEach(async () => {
     userId = "";
     orderId = "";
@@ -88,7 +98,10 @@ d("postPendingSalesJournals (test bed only)", () => {
         await prisma.journal.deleteMany({ where: { id: { in: ids.map(seededId) } } });
       }
     });
-    await step("notifications", () => prisma.adminNotification.deleteMany({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } }));
+    await step("notifications", async () => {
+      const ids = await ownPendingIds();
+      if (ids.length) await prisma.adminNotification.deleteMany({ where: { id: { in: ids.map(seededId) } } });
+    });
     await step("accounts", () => prisma.chartAccount.deleteMany({ where: { id: { in: acctIds.map(seededId) } } }));
     await step("items", () => prisma.salesOrderItem.deleteMany({ where: { salesOrderId: seededId(orderId) } }));
     await step("orders", () => prisma.salesOrder.deleteMany({ where: { id: seededId(orderId) } }));
@@ -113,9 +126,22 @@ d("postPendingSalesJournals (test bed only)", () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "AR" } });
     await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
     await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
-    const notifs = await prisma.adminNotification.count({ where: { category: "JOURNAL_PENDING", message: { contains: `SO-${token}` } } });
+    const notifs = (await ownPendingIds()).length;
     expect(notifs).toBe(1);
     expect(await prisma.journal.findUnique({ where: { sourceType_sourceId: { sourceType: "SALESORDER_REVENUE", sourceId: orderId } } })).toBeNull();
+  });
+
+  it("does not re-file once the operator has read the JOURNAL_PENDING row", async () => {
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "AR" } });
+    await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
+    const ownIds = await ownPendingIds();
+    await prisma.adminNotification.updateMany({
+      where: { id: { in: ownIds.map(seededId) } },
+      data: { readAt: new Date() },
+    });
+    await postPendingSalesJournals({ limit: 100, orderIds: [orderId] });
+    const notifs = (await ownPendingIds()).length;
+    expect(notifs).toBe(1);
   });
 
   it("an empty orderIds scope posts nothing instead of falling back to a global sweep", async () => {
