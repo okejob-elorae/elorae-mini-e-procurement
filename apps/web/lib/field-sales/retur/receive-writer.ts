@@ -1,4 +1,4 @@
-import { moveStoreStock, type AdminNotification } from "@elorae/db";
+import { moveStoreStock, prisma, type AdminNotification } from "@elorae/db";
 import type { StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -21,12 +21,43 @@ export function assertCountShape(c: ReceiveCount): void {
   if (c.sellableQty + c.rejectedQty !== c.receivedQty) throw new FieldReturnError("SPLIT_MISMATCH");
 }
 
+/**
+ * `assertCountShape` over every count, with a `SPLIT_MISMATCH` enriched by the offending line's
+ * product (and variant) so the operator is told WHICH line is wrong. The lookup is best-effort:
+ * a failed or empty read leaves the plain code, because the refusal itself must never be lost to
+ * a label it could not fetch. Runs before any transaction, like `assertCountShape` itself.
+ */
+export async function assertCountsShape(counts: ReceiveCount[]): Promise<void> {
+  for (const c of counts) {
+    try {
+      assertCountShape(c);
+    } catch (e) {
+      if (!(e instanceof FieldReturnError) || e.code !== "SPLIT_MISMATCH") throw e;
+      const label = await lineLabel(c.lineId);
+      throw label ? new FieldReturnError("SPLIT_MISMATCH", label) : e;
+    }
+  }
+}
+
+async function lineLabel(lineId: string): Promise<string | null> {
+  try {
+    const line = await prisma.fieldReturnLine.findUnique({
+      where: { id: lineId },
+      select: { variantSku: true, item: { select: { nameId: true } } },
+    });
+    if (!line) return null;
+    return line.variantSku ? `${line.item.nameId} (${line.variantSku})` : line.item.nameId;
+  } catch {
+    return null;
+  }
+}
+
 export async function receiveFieldReturn(input: {
   returnId: string;
   receivedById: string;
   counts: ReceiveCount[];
 }): Promise<{ ok: true; status: "PENDING_APPROVAL" | "MISMATCH_PENDING_RESOLUTION" }> {
-  for (const c of input.counts) assertCountShape(c);
+  await assertCountsShape(input.counts);
 
   let notification: AdminNotification | null = null;
   let salesmanNotice: (SalesmanMismatchNoticeInput & { raisedById: string }) | null = null;

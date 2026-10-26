@@ -283,9 +283,20 @@ d("receiveFieldReturn (test bed only)", () => {
         { lineId: lineAId, receivedQty: 3, sellableQty: 1, rejectedQty: 1 },
         { lineId: lineBId, receivedQty: 2, sellableQty: 2, rejectedQty: 0 },
       ],
-    })).rejects.toMatchObject({ code: "SPLIT_MISMATCH" });
+    })).rejects.toMatchObject({ code: "SPLIT_MISMATCH", detail: expect.stringContaining("Retur item A") });
     const a = await prisma.fieldReturnLine.findUniqueOrThrow({ where: { id: seededId(lineAId) } });
     expect(a.receivedQty).toBeNull();
+  });
+
+  it("names only the offending line in a SPLIT_MISMATCH, not its sibling", async () => {
+    await expect(receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: [
+        { lineId: lineAId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
+        { lineId: lineBId, receivedQty: 2, sellableQty: 1, rejectedQty: 0 },
+      ],
+    })).rejects.toMatchObject({ code: "SPLIT_MISMATCH", detail: expect.stringContaining("Retur item B") });
   });
 
   it("refuses a negative receivedQty with BAD_QTY and writes nothing", async () => {

@@ -70,3 +70,17 @@ export function formatDateOnlyJakarta(date: Date): string {
     day: '2-digit',
   }).format(date);
 }
+
+/**
+ * `formatDateOnlyJakarta` plus the WIB time of day (`YYYY-MM-DD HH:mm`, 24h), pinned to
+ * `Asia/Jakarta` for the same reason: the process timezone is UTC on prod.
+ */
+export function formatDateTimeJakarta(date: Date): string {
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Jakarta",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date);
+  return `${formatDateOnlyJakarta(date)} ${time}`;
+}

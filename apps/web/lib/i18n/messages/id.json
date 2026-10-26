@@ -3485,7 +3485,11 @@
       "queueChanged": "Ada data baru yang belum terkirim, jadi Anda belum keluar."
     },
     "retur": {
-      "pooledVariant": "Tanpa ukuran (stok gabungan)"
+      "pooledVariant": "Tanpa ukuran (stok gabungan)",
+      "loading": "Memuat formulir retur…",
+      "photoCompressFailed": "Foto gagal diproses. Ketuk Simpan untuk mencoba lagi, atau Ulangi.",
+      "missingNotaPhoto": "Foto nota belum ada. Ambil ulang fotonya, lalu coba lagi.",
+      "missingTransport": "Pilih cara pengiriman barang (dibawa sendiri atau ekspedisi), lalu coba lagi."
     },
     "visitPhoto": {
       "close": "Tutup",
@@ -3793,6 +3797,9 @@
     "colStatus": "Status",
     "empty": "Belum ada retur lapangan.",
     "emptyFiltered": "Tidak ada retur lapangan yang cocok dengan pencarian ini.",
+    "statusFilterLabel": "Status",
+    "statusFilterAll": "Semua Status",
+    "statusFilterActive": "Semua Kecuali Dibatalkan",
     "originFilterLabel": "Asal",
     "originFilterAll": "Semua Asal",
     "origin": {
@@ -3950,6 +3957,8 @@
     "resolutionStatusLabel": "Status Penyelesaian",
     "statusUnresolved": "Belum Diselesaikan",
     "historyTitle": "Riwayat Penyelesaian",
+    "historyTruncated": "Menampilkan {shown} entri terbaru dari {total}.",
+    "noteRequiredError": "Catatan wajib diisi untuk penyelesaian ini.",
     "noteLabel": "Catatan",
     "resolutionConfirmAction": "Catat Penyelesaian",
     "successResolved": "Penyelesaian berhasil dicatat.",
@@ -3977,6 +3986,7 @@
       "NOT_FOUND": "Retur atau baris retur tidak ditemukan.",
       "INVALID_STATE": "Retur ini sedang tidak dalam status yang tepat untuk tindakan ini.",
       "SPLIT_MISMATCH": "Jumlah bisa dijual dan ditolak harus sama dengan jumlah diterima.",
+      "SPLIT_MISMATCH_LINE": "Jumlah bisa dijual dan ditolak harus sama dengan jumlah diterima pada {detail}.",
       "UNKNOWN_LINE": "Ada baris pada penerimaan yang tidak dikenali pada retur ini.",
       "MISSING_LINE": "Ada baris pada retur ini yang belum diisi jumlah penerimaannya.",
       "DUPLICATE_LINE": "Ada baris yang dikirim lebih dari satu kali.",

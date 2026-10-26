@@ -1,6 +1,11 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { FieldReturnError } from "./errors";
-import { lineVariance, allDiscrepantLinesSettled, isValidResolutionDirection } from "./variance";
+import {
+  lineVariance,
+  allDiscrepantLinesSettled,
+  isValidResolutionDirection,
+  LATEST_RESOLUTION_ORDER,
+} from "./variance";
 
 type ResolutionType = "SALESMAN_BEARS" | "INVESTIGATE" | "WRITE_OFF" | "ACCEPT_SURPLUS";
 
@@ -73,7 +78,7 @@ export async function resolveFieldReturnLine(input: {
         qty: true,
         receivedQty: true,
         resolutions: {
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          orderBy: LATEST_RESOLUTION_ORDER,
           take: 1,
           select: { type: true },
         },

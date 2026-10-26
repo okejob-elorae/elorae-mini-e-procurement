@@ -3485,7 +3485,11 @@
       "queueChanged": "New unsynced items appeared, so you were not logged out."
     },
     "retur": {
-      "pooledVariant": "No size (pooled stock)"
+      "pooledVariant": "No size (pooled stock)",
+      "loading": "Loading return form…",
+      "photoCompressFailed": "Couldn't process the photo. Tap Save to try again, or Retake.",
+      "missingNotaPhoto": "The nota photo is missing. Retake the photo, then try again.",
+      "missingTransport": "Choose how the goods are sent (self-carry or expedition), then try again."
     },
     "visitPhoto": {
       "close": "Close",
@@ -3793,6 +3797,9 @@
     "colStatus": "Status",
     "empty": "No field returns yet.",
     "emptyFiltered": "No field returns match this search.",
+    "statusFilterLabel": "Status",
+    "statusFilterAll": "All Statuses",
+    "statusFilterActive": "All Except Cancelled",
     "originFilterLabel": "Origin",
     "originFilterAll": "All Origins",
     "origin": {
@@ -3950,6 +3957,8 @@
     "resolutionStatusLabel": "Resolution Status",
     "statusUnresolved": "Unresolved",
     "historyTitle": "Resolution History",
+    "historyTruncated": "Showing the latest {shown} of {total} entries.",
+    "noteRequiredError": "A note is required for this resolution.",
     "noteLabel": "Note",
     "resolutionConfirmAction": "Record Resolution",
     "successResolved": "Resolution recorded.",
@@ -3977,6 +3986,7 @@
       "NOT_FOUND": "The return or return line was not found.",
       "INVALID_STATE": "This return is not in the right status for this action.",
       "SPLIT_MISMATCH": "Sellable plus rejected must equal received.",
+      "SPLIT_MISMATCH_LINE": "Sellable plus rejected must equal received on {detail}.",
       "UNKNOWN_LINE": "A submitted line does not belong to this return.",
       "MISSING_LINE": "A line on this return has not been given a received count.",
       "DUPLICATE_LINE": "A line was submitted more than once.",

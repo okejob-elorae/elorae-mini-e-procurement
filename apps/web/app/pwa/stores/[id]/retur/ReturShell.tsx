@@ -71,7 +71,7 @@ const lineKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku
  * Every FieldReturnErrorCode gets its own sentence — a generic "gagal" for six distinct
  * causes is not acceptable per the task brief.
  */
-function messageForFailure(status: number, body: unknown): string {
+function messageForFailure(status: number, body: unknown, t: (key: string) => string): string {
   const code = (body as { code?: string } | null)?.code;
   const error = (body as { error?: string } | null)?.error;
   if (code) {
@@ -96,6 +96,10 @@ function messageForFailure(status: number, body: unknown): string {
         return "Nama ekspedisi wajib diisi untuk pengiriman ekspedisi.";
       case "MISSING_REASON_NOTE":
         return "Catatan wajib diisi untuk alasan Lainnya.";
+      case "MISSING_NOTA_PHOTO":
+        return t("missingNotaPhoto");
+      case "MISSING_TRANSPORT":
+        return t("missingTransport");
       default:
         return "Gagal menyimpan retur. Coba lagi.";
     }
@@ -130,6 +134,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   const [notaPhoto, setNotaPhoto] = useState<{ blob: Blob; url: string } | null>(null);
   const [camError, setCamError] = useState(false);
   const [compressing, setCompressing] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const openingCamRef = useRef(false);
@@ -195,6 +200,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
     stopCam();
     setLiveCaptured(null);
     setCamError(false);
+    setPhotoError(false);
     setCamMode("idle");
   }
 
@@ -236,6 +242,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   }
 
   function retake() {
+    setPhotoError(false);
     setLiveCaptured(null);
     if (streamRef.current) {
       setCamMode("live");
@@ -249,12 +256,14 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
   async function keepPhoto() {
     if (!liveCaptured) return;
     setCompressing(true);
+    setPhotoError(false);
     try {
       const compressed = await compressImage(liveCaptured.blob);
       setNotaPhoto({ blob: compressed, url: URL.createObjectURL(compressed) });
       closeCamOverlay();
     } catch {
-      // leave the overlay open so the salesman can retry "Simpan"
+      // leave the overlay open so the salesman can retry "Simpan" — and say why nothing happened
+      setPhotoError(true);
     } finally {
       setCompressing(false);
     }
@@ -374,7 +383,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
         setSubmitError("Retur kemungkinan sudah tersimpan tapi responsnya tidak lengkap. Hubungi admin untuk memastikan sebelum mengirim ulang.");
         return;
       }
-      setSubmitError(messageForFailure(res.status, body));
+      setSubmitError(messageForFailure(res.status, body, t));
     } catch {
       // A dropped connection/timeout does not tell us whether the server already committed
       // the retur and stored the photo — a 502 (upload failed, nothing written) is the only
@@ -427,6 +436,11 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
                 <div className="flex min-h-0 flex-1 items-center justify-center bg-black">
                   {liveCaptured && <img src={liveCaptured.url} alt="" className="max-h-full max-w-full object-contain" />}
                 </div>
+                {photoError && (
+                  <p role="alert" className="px-4 pt-3 text-center text-sm text-red-300">
+                    {t("photoCompressFailed")}
+                  </p>
+                )}
                 <div className="flex gap-3 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                   <Button variant="secondary" className="flex-1 py-6 text-base" onClick={retake} disabled={compressing}>
                     <RotateCcw className="mr-2 h-5 w-5" /> Ulangi
@@ -529,7 +543,7 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="shrink-0"
+                      className="h-10 shrink-0"
                       onClick={() => setExpandedItemId(expanded ? null : it.itemId)}
                     >
                       {variantUnits > 0 ? `${variantLines.length} varian · ${variantUnits} pcs` : "Pilih varian"}

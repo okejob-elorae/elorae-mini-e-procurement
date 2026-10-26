@@ -5,6 +5,7 @@ import {
   allDiscrepantLinesSettled,
   isValidResolutionDirection,
   creditedQtyForLine,
+  LATEST_RESOLUTION_ORDER,
 } from "./variance";
 
 describe("lineVariance", () => {
@@ -182,5 +183,11 @@ describe("creditedQtyForLine", () => {
   it("is driven by the resolution type, not by which number is larger", () => {
     expect(creditedQtyForLine({ qty: 10, receivedQty: 12, latestResolutionType: "SALESMAN_BEARS" })).toBeNull();
     expect(creditedQtyForLine({ qty: 12, receivedQty: 10, latestResolutionType: "ACCEPT_SURPLUS" })).toBeNull();
+  });
+});
+
+describe("LATEST_RESOLUTION_ORDER", () => {
+  it("orders newest first, with the id as the tie-break for equal timestamps", () => {
+    expect(LATEST_RESOLUTION_ORDER).toEqual([{ createdAt: "desc" }, { id: "desc" }]);
   });
 });

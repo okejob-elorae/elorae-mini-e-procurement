@@ -4,7 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { FieldReturnError } from "./errors";
-import { allDiscrepantLinesSettled, creditedQtyForLine } from "./variance";
+import { allDiscrepantLinesSettled, creditedQtyForLine, LATEST_RESOLUTION_ORDER } from "./variance";
 import { round2 } from "./pricing-rules";
 import { deliveryLineUnitPrice, resolveLinePrice } from "./pricing";
 
@@ -43,7 +43,7 @@ export async function approveFieldReturn(input: {
             priceDeliveryLineId: true,
             unitPrice: true,
             resolutions: {
-              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              orderBy: LATEST_RESOLUTION_ORDER,
               take: 1,
               select: { id: true, type: true },
             },

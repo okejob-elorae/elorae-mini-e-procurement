@@ -1,6 +1,7 @@
 import { runSerializable } from "@/lib/db/tx-retry";
 import { round2 } from "./pricing-rules";
 import { listPriceCandidates, resolveLinePrice } from "./pricing";
+import { LATEST_RESOLUTION_ORDER } from "./variance";
 
 export type PriceApprovedLineInput =
   | { lineId: string; deliveryLineId: string; userId: string }
@@ -58,7 +59,7 @@ export async function priceApprovedReturnLine(input: PriceApprovedLineInput): Pr
           priceDeliveryLineId: true,
           priceNote: true,
           resolutions: {
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            orderBy: LATEST_RESOLUTION_ORDER,
             take: 1,
             select: { id: true, type: true },
           },

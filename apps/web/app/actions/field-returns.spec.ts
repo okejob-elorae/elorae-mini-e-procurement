@@ -167,6 +167,16 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockReceive).not.toHaveBeenCalled();
     });
 
+    it("carries the offending line's label through on a SPLIT_MISMATCH", async () => {
+      mockHasPermission.mockReturnValue(true);
+      mockReceive.mockRejectedValue(new FieldReturnError("SPLIT_MISMATCH", "Kaos Polos (M)"));
+      const res = await receiveAction({
+        returnId: "r1",
+        counts: [{ lineId: "l1", receivedQty: 3, sellableQty: 1, rejectedQty: 1 }],
+      });
+      expect(res).toEqual({ ok: false, code: "SPLIT_MISMATCH", detail: "Kaos Polos (M)" });
+    });
+
     it("maps a writer SPLIT_MISMATCH onto its own code, not a neighbouring one", async () => {
       mockHasPermission.mockReturnValue(true);
       mockReceive.mockRejectedValue(new FieldReturnError("SPLIT_MISMATCH"));
@@ -758,20 +768,28 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
     });
 
     /*
-     * Bookkeeping never refuses to record physical reality because the ledger disagrees — the
-     * writer's own DB-backed spec (admin-origin.test.ts) pins that a receipt against an
-     * already-negative StoreStock row is accepted. This unit test proves the action layer adds
-     * no extra guard on top of that: it forwards to the writer and passes through whatever the
-     * writer decides, without itself second-guessing the store's stock state.
+     * The action adds no stock-state guard of its own: whether a raise against an already-negative
+     * StoreStock row is accepted is the writer's call, pinned DB-backed in admin-origin.test.ts. A
+     * mocked writer cannot prove that, so this only pins the forwarding — the writer's verdict,
+     * here a refusal, reaches the caller untouched rather than being second-guessed.
      */
-    it("succeeds for a raise against a store whose StoreStock row is already negative", async () => {
+    it("passes the writer's refusal through without adding a stock-state check of its own", async () => {
       mockHasPermission.mockReturnValue(true);
-      mockCreateFieldReturn.mockResolvedValue({ returnId: "ret-neg", docNo: "FIELDRET/2026/08/0003" });
+      mockCreateFieldReturn.mockRejectedValue(new FieldReturnError("STORE_NOT_FOUND"));
+      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
+      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
+      expect(mockCreateFieldReturn).toHaveBeenCalledTimes(1);
+    });
+
+    it("refuses an origin outside FIELD/ADMIN before calling the writer", async () => {
+      mockHasPermission.mockReturnValue(true);
       const res = await raiseAdminReturnAction({
-        storeId: "konsi-store-negative-stock",
-        lines: [{ itemId: "item-negative-stock", variantSku: "", qty: 5, reason: "UNSOLD" }],
-      });
-      expect(res).toEqual({ ok: true, returnId: "ret-neg", docNo: "FIELDRET/2026/08/0003" });
+        storeId: "store-1",
+        lines: oneLine,
+        origin: "BOGUS",
+      } as unknown as Parameters<typeof raiseAdminReturnAction>[0]);
+      expect(res).toEqual({ ok: false, code: "INVALID_REQUEST" });
+      expect(mockCreateFieldReturn).not.toHaveBeenCalled();
     });
   });
 

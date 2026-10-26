@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
@@ -48,6 +48,10 @@ type Props = {
   lines: FieldReturnLineDetail[];
   canManage: boolean;
   canWriteOff: boolean;
+  /** Another action on the page (approve) is in flight — the controls hold still until it settles. */
+  busy?: boolean;
+  /** Reports this card's own pending state upward, so the page can hold approve while a resolution lands. */
+  onPendingChange?: (pending: boolean) => void;
 };
 
 function VarianceBadge({ variance }: { variance: number }) {
@@ -76,7 +80,15 @@ function VarianceBadge({ variance }: { variance: number }) {
  * and canManage. Not for CANCELLED: a retur can only be cancelled before receipt, so it has no
  * counts to show.
  */
-export function ResolutionControls({ status, origin, lines, canManage, canWriteOff }: Props) {
+export function ResolutionControls({
+  status,
+  origin,
+  lines,
+  canManage,
+  canWriteOff,
+  busy = false,
+  onPendingChange,
+}: Props) {
   const t = useTranslations("fieldReturnReceiving");
   const tCommon = useTranslations("common");
   const locale = useLocale();
@@ -84,6 +96,10 @@ export function ResolutionControls({ status, origin, lines, canManage, canWriteO
   const [isPending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<{ lineId: string; type: ResolutionType } | null>(null);
   const [note, setNote] = useState("");
+
+  useEffect(() => {
+    onPendingChange?.(isPending);
+  }, [isPending, onPendingChange]);
 
   const actionable = canManage && (status === "MISMATCH_PENDING_RESOLUTION" || status === "PENDING_APPROVAL");
 
@@ -93,7 +109,8 @@ export function ResolutionControls({ status, origin, lines, canManage, canWriteO
   }
 
   const noteRequired = dialog !== null && NOTE_REQUIRED_TYPES.has(dialog.type);
-  const canConfirm = !isPending && (!noteRequired || note.trim() !== "");
+  const noteMissing = noteRequired && note.trim() === "";
+  const canConfirm = !isPending && !noteMissing;
 
   function confirm(): void {
     if (!dialog || !canConfirm) return;
@@ -111,7 +128,7 @@ export function ResolutionControls({ status, origin, lines, canManage, canWriteO
           router.refresh();
           return;
         }
-        toast.error(t(fieldReturnErrorKey(result.code)));
+        toast.error(t(fieldReturnErrorKey(result.code, result.detail)));
       } catch {
         toast.error(t(fieldReturnErrorKey("ERROR")));
       }
@@ -197,7 +214,7 @@ export function ResolutionControls({ status, origin, lines, canManage, canWriteO
                           key={type}
                           variant="outline"
                           className="h-10"
-                          disabled={isPending}
+                          disabled={isPending || busy}
                           onClick={() => openDialog(line.id, type)}
                         >
                           {t(`resolutionType.${type}`)}
@@ -209,6 +226,11 @@ export function ResolutionControls({ status, origin, lines, canManage, canWriteO
                   {line.resolutions.length > 0 && (
                     <div className="space-y-1.5 rounded-md border bg-muted/30 p-2">
                       <p className="text-xs font-medium text-muted-foreground">{t("historyTitle")}</p>
+                      {line.resolutionTotal > line.resolutions.length && (
+                        <p className="text-xs text-muted-foreground">
+                          {t("historyTruncated", { shown: line.resolutions.length, total: line.resolutionTotal })}
+                        </p>
+                      )}
                       {line.resolutions.map((res) => (
                         <div key={res.id} className="text-xs">
                           <div className="flex flex-wrap items-center gap-2">
@@ -249,8 +271,10 @@ export function ResolutionControls({ status, origin, lines, canManage, canWriteO
               value={note}
               onChange={(e) => setNote(e.target.value)}
               disabled={isPending}
+              aria-invalid={noteMissing}
               rows={3}
             />
+            {noteMissing && <p className="text-xs text-destructive">{t("noteRequiredError")}</p>}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>

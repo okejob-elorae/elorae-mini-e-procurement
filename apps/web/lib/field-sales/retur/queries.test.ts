@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { getFieldReturnById, getInTransitAdminReturnQty, listFieldReturns, previewKonsiReturStockImpact } from "./queries";
+import {
+  getFieldReturnById,
+  getInTransitAdminReturnQty,
+  listFieldReturns,
+  previewKonsiReturStockImpact,
+  RESOLUTION_HISTORY_LIMIT,
+} from "./queries";
 import { createFieldReturn } from "./writer";
 import { receiveFieldReturn } from "./receive-writer";
 
@@ -136,6 +142,7 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.fieldReturnResolution.deleteMany({ where: { lineId: seededId(lineId) } });
     await prisma.fieldReturnLine.deleteMany({ where: { returnId: seededId(returnId) } });
     await prisma.fieldReturn.deleteMany({ where: { id: seededId(returnId) } });
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { deliveryId: seededId(deliveryId) } });
@@ -170,6 +177,29 @@ d("getFieldReturnById — pricing fields (test bed only)", () => {
     expect(detail).not.toBeNull();
     const line = detail!.lines.find((l) => l.id === lineId)!;
     expect(line.priceCandidates).toBeUndefined();
+  });
+
+  it("caps a line's resolutions at the history limit, newest first, and reports the real total", async () => {
+    const total = RESOLUTION_HISTORY_LIMIT + 2;
+    for (let i = 0; i < total; i++) {
+      await prisma.fieldReturnResolution.create({
+        data: {
+          lineId,
+          type: "INVESTIGATE",
+          qty: 1,
+          note: `n${i}`,
+          createdById: userId,
+          createdAt: new Date(Date.UTC(2026, 7, 1, 0, 0, i)),
+        },
+      });
+    }
+    const detail = await getFieldReturnById(returnId, { canManage: true });
+    const line = detail!.lines.find((l) => l.id === lineId)!;
+    expect(line.resolutions).toHaveLength(RESOLUTION_HISTORY_LIMIT);
+    expect(line.resolutionTotal).toBe(total);
+    /* Index 0 is still the effective resolution: the newest of all, not the newest of the survivors by luck. */
+    expect(line.resolutions[0].note).toBe(`n${total - 1}`);
+    expect(line.resolutions[RESOLUTION_HISTORY_LIMIT - 1].note).toBe(`n${total - RESOLUTION_HISTORY_LIMIT}`);
   });
 
   it("reports priceState SET once an admin has chosen a price, not re-derived from candidates", async () => {
@@ -804,6 +834,51 @@ d("listFieldReturns — origin + credit filters (test bed only)", () => {
     const { rows, total } = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
     expect(total).toBe(2);
     expect(rows.map((r) => r.id).sort()).toEqual([adminReturnId, fieldReturnId].sort());
+  });
+
+  it("filters by status selection: a non-empty set keeps only those, an empty set matches nothing, undefined is no filter", async () => {
+    await prisma.fieldReturn.update({ where: { id: fieldReturnId }, data: { status: "CANCELLED" } });
+
+    const excludingCancelled = await listFieldReturns({
+      q: storeName,
+      statuses: ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL", "APPROVED"],
+      page: 1,
+      perPage: 50,
+    });
+    expect(excludingCancelled.rows.map((r) => r.id)).toEqual([adminReturnId]);
+    expect(excludingCancelled.total).toBe(1);
+
+    const onlyCancelled = await listFieldReturns({ q: storeName, statuses: ["CANCELLED"], page: 1, perPage: 50 });
+    expect(onlyCancelled.rows.map((r) => r.id)).toEqual([fieldReturnId]);
+
+    const empty = await listFieldReturns({ q: storeName, statuses: [], page: 1, perPage: 50 });
+    expect(empty.total).toBe(0);
+
+    const unfiltered = await listFieldReturns({ q: storeName, page: 1, perPage: 50 });
+    expect(unfiltered.total).toBe(2);
+  });
+
+  it("combines a status selection with the AVAILABLE credit filter instead of one overwriting the other", async () => {
+    await prisma.fieldReturn.update({
+      where: { id: adminReturnId },
+      data: { status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE", totalValue: 500 },
+    });
+    const none = await listFieldReturns({
+      q: storeName,
+      creditFilter: "AVAILABLE",
+      statuses: ["PENDING_APPROVAL"],
+      page: 1,
+      perPage: 50,
+    });
+    expect(none.total).toBe(0);
+    const some = await listFieldReturns({
+      q: storeName,
+      creditFilter: "AVAILABLE",
+      statuses: ["APPROVED"],
+      page: 1,
+      perPage: 50,
+    });
+    expect(some.rows.map((r) => r.id)).toEqual([adminReturnId]);
   });
 
   it(`filters creditFilter: "AVAILABLE" on all three offsettability conditions, not offsetStatus alone`, async () => {

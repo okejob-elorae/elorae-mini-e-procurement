@@ -146,6 +146,8 @@ export function FieldReturnDetailClient({
   const [approveOpen, setApproveOpen] = useState(false);
   const [offsetSheetOpen, setOffsetSheetOpen] = useState(false);
   const [correctOpen, setCorrectOpen] = useState(false);
+  /* One pending flag across approve and resolve: approving against a read a resolution is still changing would act on stale state. */
+  const [resolving, setResolving] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelling, startCancelTransition] = useTransition();
@@ -287,7 +289,7 @@ export function FieldReturnDetailClient({
           )}
           {showApprove && (
             /* Disabled while a correction is open: approving would freeze the counts being edited. */
-            <Button className="h-10" disabled={isPending || correctOpen} onClick={openApproveDialog}>
+            <Button className="h-10" disabled={isPending || correctOpen || resolving} onClick={openApproveDialog}>
               <CheckCircle2 className="h-4 w-4" />
               {tReceiving("approveButton")}
             </Button>
@@ -397,6 +399,8 @@ export function FieldReturnDetailClient({
           lines={r.lines}
           canManage={canManage}
           canWriteOff={canWriteOff}
+          busy={isPending}
+          onPendingChange={setResolving}
         />
       )}
 

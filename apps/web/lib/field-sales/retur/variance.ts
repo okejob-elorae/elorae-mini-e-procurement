@@ -5,6 +5,17 @@
  * into the browser bundle. Keep it that way: no imports, ever.
  */
 
+/**
+ * The one ordering that makes `resolutions[0]` the EFFECTIVE resolution: newest first, with the
+ * id as tie-break for two rows stamped in the same millisecond. Every reader of "the latest
+ * resolution" imports this, so a spelling can never drift from its siblings. Import-free like
+ * the rest of this file.
+ */
+export const LATEST_RESOLUTION_ORDER: Array<{ createdAt: "desc" } | { id: "desc" }> = [
+  { createdAt: "desc" },
+  { id: "desc" },
+];
+
 const SETTLING = new Set(["SALESMAN_BEARS", "WRITE_OFF", "ACCEPT_SURPLUS"]);
 
 /** Resolution types that settle a SHORTAGE line (variance < 0). INVESTIGATE settles neither direction, but is a valid pick on both. */
