@@ -3228,7 +3228,10 @@
       "errOverCollected": "Amount exceeds the outstanding balance left after pending collection submissions and pending settlements.",
       "errAlreadySettled": "This receivable is already paid or written off.",
       "errNotAssignedCollector": "This receivable is not assigned to you.",
-      "errGeneric": "Failed to submit the collection. Try again."
+      "errGeneric": "Failed to submit the collection. Try again.",
+      "notAssignedTitle": "This collection is no longer assigned to you",
+      "notAssignedMessage": "This receivable was reassigned to another collector or is no longer in your queue. Open your queue to see your current collections.",
+      "backToQueue": "Back to queue"
     },
     "amplop": {
       "homeCta": "Amplop Digital",

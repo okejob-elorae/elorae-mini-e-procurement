@@ -1,4 +1,61 @@
 /**
+ * Every notification type this module routes. Adding a member without a matching `case` below is
+ * a type error, because the `default` branch assigns the narrowed type to `never`. The types
+ * stored in `Notification.type` are a plain string column, so the guard narrows an arbitrary
+ * string before the switch and an unrecognised one has no destination.
+ */
+const NOTIFICATION_TYPES = [
+  "PO_OVERDUE",
+  "WO_OVERDUE",
+  "MATERIAL_ARRIVED",
+  "WO_COMPLETED",
+  "ACCESSORIES_PENDING_CMT",
+  "TEST",
+  "SUPPLIER_CREATED",
+  "SUPPLIER_APPROVED",
+  "ITEM_CREATED",
+  "PO_CREATED",
+  "PO_STATUS_UPDATED",
+  "PO_PAYMENT_TOGGLED",
+  "GRN_CREATED",
+  "STOCK_ADJUSTMENT_CREATED",
+  "WO_CREATED",
+  "WO_STATUS_UPDATED",
+  "WO_MATERIALS_ISSUED",
+  "VENDOR_RETURN_CREATED",
+  "VENDOR_RETURN_STATUS_UPDATED",
+  "DOC_NUMBER_ALTERED",
+  "TAX_INVOICE_PENDING",
+  "FIELD_RETURN_MISMATCH",
+  "AR_OVERDUE",
+  "PO_PAYMENT_DUE",
+  "SALES_RETURN_RECEIVED",
+  "FULFILLMENT_PUSH_STUCK",
+  "SETTLEMENT_REJECTED",
+  "SETTLEMENT_APPROVED",
+  "COLLECTOR_ASSIGNED",
+  "FIELD_SALES_ORDER_REJECTED",
+  "KONSI_ORDER_PUSHED",
+  "KONSI_COUNT_DUE",
+  "KONSI_COUNT_OVERDUE",
+  "KONSI_REPORT_READY",
+  "KONSI_REPORT_HELD",
+  "KONSI_REPORT_BLOCKED",
+  "PENDING_ORDER_APPROVAL",
+  "STORE_CHANGE_REQUEST",
+  "JOURNAL_PENDING",
+  "CREDIT_LIMIT_HOLD",
+  "COLLECTION_PENDING_VERIFICATION",
+  "DELIVERY_COMPLETION_STUCK",
+] as const;
+
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+function isNotificationType(type: string): type is NotificationType {
+  return (NOTIFICATION_TYPES as readonly string[]).includes(type);
+}
+
+/**
  * Maps notification type + data to navigation href for click-to-navigate.
  */
 export function getNotificationHref(
@@ -7,6 +64,7 @@ export function getNotificationHref(
   context: 'backoffice' | 'pwa' = 'backoffice',
 ): string | null {
   if (!data || typeof data !== 'object') return null;
+  if (!isNotificationType(type)) return null;
 
   switch (type) {
     case 'PO_OVERDUE': {
@@ -141,12 +199,20 @@ export function getNotificationHref(
       }
       return '/backoffice/sales-orders';
     }
-    case 'SETTLEMENT_REJECTED': {
+    case 'SETTLEMENT_REJECTED':
+    case 'SETTLEMENT_APPROVED': {
       const storeId = data.storeId;
       if (typeof storeId === 'string') {
         return `/pwa/pelunasan/${storeId}`;
       }
       return '/pwa/pelunasan';
+    }
+    case "COLLECTOR_ASSIGNED": {
+      const receivableId = data.receivableId;
+      if (typeof receivableId === "string" && receivableId !== "") {
+        return `/pwa/collections/${receivableId}`;
+      }
+      return "/pwa/collections";
     }
     case "FIELD_SALES_ORDER_REJECTED":
     case "KONSI_ORDER_PUSHED": {
@@ -200,8 +266,14 @@ export function getNotificationHref(
     }
     case "JOURNAL_PENDING":
       return getJournalPendingHref(data);
-    default:
+    case "CREDIT_LIMIT_HOLD":
+    case "COLLECTION_PENDING_VERIFICATION":
+    case "DELIVERY_COMPLETION_STUCK":
       return null;
+    default: {
+      const unrouted: never = type;
+      return unrouted;
+    }
   }
 }
 

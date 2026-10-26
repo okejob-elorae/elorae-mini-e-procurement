@@ -3228,7 +3228,10 @@
       "errOverCollected": "Jumlah melebihi sisa piutang setelah dikurangi setoran tertunda dan pelunasan yang menunggu.",
       "errAlreadySettled": "Piutang ini sudah lunas atau sudah dihapusbukukan.",
       "errNotAssignedCollector": "Piutang ini tidak ditugaskan kepada Anda.",
-      "errGeneric": "Gagal mengirim setoran. Coba lagi."
+      "errGeneric": "Gagal mengirim setoran. Coba lagi.",
+      "notAssignedTitle": "Tagihan ini sudah tidak ditugaskan kepada Anda",
+      "notAssignedMessage": "Piutang ini dialihkan ke penagih lain atau sudah tidak ada di antrean Anda. Buka antrean untuk melihat tagihan terbaru.",
+      "backToQueue": "Kembali ke antrean"
     },
     "amplop": {
       "homeCta": "Amplop Digital",

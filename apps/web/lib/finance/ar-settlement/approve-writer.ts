@@ -5,6 +5,7 @@ import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { applyReturnOffset } from "@/lib/finance/ar/retur-offset-writer";
 import { allocateOldestFirst, type AllocationInput, type AllocationOutput } from "./allocate";
 import { computeSettlementTotals, computeVariance, EPSILON } from "./calc";
+import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { SettlementError } from "./errors";
 import { parseVarianceTolerance, VARIANCE_TOLERANCE_SETTING_KEY } from "./variance-tolerance";
 
@@ -249,6 +250,36 @@ export async function computeComponentHeadroom(
 }
 
 /**
+ * Tells the salesman their settlement was approved. Runs only after the status flip committed and
+ * only for the call that performed it, so a replay never re-notifies. Best-effort: a failure here
+ * is logged and swallowed, because the approval already happened. No `VITEST` guard of its own,
+ * since `sendNotificationToUsers` carries one and a second would hide the call from a spec that
+ * stubs the helper.
+ */
+async function notifySalesmanOfApproval(settlement: {
+  id: string;
+  docNo: string;
+  storeId: string;
+  salesmanId: string;
+}): Promise<void> {
+  try {
+    const salesman = await prisma.user.findUnique({
+      where: { id: settlement.salesmanId },
+      select: { id: true, fcmToken: true },
+    });
+    if (!salesman) return;
+    await sendNotificationToUsers([salesman], {
+      type: "SETTLEMENT_APPROVED",
+      title: "Pelunasan disetujui",
+      body: `Pelunasan ${settlement.docNo} sudah disetujui`,
+      data: { settlementId: settlement.id, docNo: settlement.docNo, storeId: settlement.storeId },
+    });
+  } catch (e) {
+    console.error(`[approveSettlement] notification delivery failed for settlement ${settlement.id}`, e);
+  }
+}
+
+/**
  * Approves a submitted settlement: every non-zero component posts as a real `Payment` against the
  * settlement's own invoices, and only once all of them have committed does the document flip to
  * `APPROVED`.
@@ -283,6 +314,9 @@ export async function computeComponentHeadroom(
  * Posts NO journals. `postArJournalSafely` runs in the action after this returns, so a throwing
  * journal builder degrades to a `JOURNAL_PENDING` flag instead of crashing a live approval.
  *
+ * Notifies the salesman best-effort once the flip has committed, and only on the call that
+ * performed it: an `alreadyApproved` return never re-notifies.
+ *
  * Throws `SettlementError` for everything it refuses itself, and propagates `PaymentError`
  * unmodified from `recordPayment`/`applyReturnOffset` — two error classes with overlapping code
  * strings and different `instanceof`, so a caller mapping reasons must handle both.
@@ -296,6 +330,7 @@ export async function approveSettlement(
       id: true,
       docNo: true,
       storeId: true,
+      salesmanId: true,
       status: true,
       actualAmount: true,
       invoices: { select: { receivableId: true, amount: true } },
@@ -709,7 +744,7 @@ export async function approveSettlement(
    * `alreadyApproved` branch above never reaches here, so there is no double-write to guard
    * against.
    */
-  return runSerializable<ApproveSettlementResult>(async (tx) => {
+  const result = await runSerializable<ApproveSettlementResult>(async (tx) => {
     /**
      * The loop above checked each component for `VOIDED` before it posted, in earlier
      * transactions, so a void landing after that check and before this flip would otherwise
@@ -803,4 +838,7 @@ export async function approveSettlement(
 
     return { ok: true, paymentIds };
   });
+
+  if (!result.alreadyApproved) await notifySalesmanOfApproval(settlement);
+  return result;
 }

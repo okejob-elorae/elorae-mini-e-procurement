@@ -13,6 +13,26 @@ describe("getNotificationHref — field sales order rejection", () => {
   });
 });
 
+describe("getNotificationHref — collector assignment and settlement approval", () => {
+  it("opens the assigned receivable, else the queue, in the PWA", () => {
+    expect(getNotificationHref("COLLECTOR_ASSIGNED", { receivableId: "r1", count: "1" }, "pwa")).toBe("/pwa/collections/r1");
+    expect(getNotificationHref("COLLECTOR_ASSIGNED", { count: "3" }, "pwa")).toBe("/pwa/collections");
+    expect(getNotificationHref("COLLECTOR_ASSIGNED", { receivableId: "", count: "3" }, "pwa")).toBe("/pwa/collections");
+  });
+
+  it("opens the store's settlements for an approval, like a rejection", () => {
+    expect(getNotificationHref("SETTLEMENT_APPROVED", { settlementId: "s1", storeId: "st1" }, "pwa")).toBe("/pwa/pelunasan/st1");
+    expect(getNotificationHref("SETTLEMENT_APPROVED", {}, "pwa")).toBe("/pwa/pelunasan");
+  });
+});
+
+describe("getNotificationHref — types without a destination", () => {
+  it("returns null for a known type that has no screen and for an unrecognised type", () => {
+    expect(getNotificationHref("CREDIT_LIMIT_HOLD", { orderId: "o1" })).toBeNull();
+    expect(getNotificationHref("SOMETHING_NEW", { id: "x" })).toBeNull();
+  });
+});
+
 describe("getNotificationHref — field retur count mismatch", () => {
   it("opens the store in the PWA, for the salesman who raised the retur", () => {
     expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "s1", returnId: "r1" }, "pwa")).toBe("/pwa/stores/s1");

@@ -1,6 +1,35 @@
 import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { CollectionError } from "./errors";
+
+/**
+ * One push to the collector who just received work: a single receivable opens that receivable, a
+ * batch opens the queue. After the commit and best-effort, so a failed push never undoes the
+ * assignment. Only receivables that actually changed hands count, so re-assigning a collector to
+ * receivables they already hold sends nothing.
+ */
+async function notifyCollectorOfAssignment(collectorId: string, newlyAssignedIds: string[]): Promise<void> {
+  if (newlyAssignedIds.length === 0) return;
+  try {
+    const collector = await prisma.user.findUnique({
+      where: { id: collectorId },
+      select: { id: true, fcmToken: true },
+    });
+    if (!collector) return;
+    const single = newlyAssignedIds.length === 1;
+    await sendNotificationToUsers([collector], {
+      type: "COLLECTOR_ASSIGNED",
+      title: "Tagihan baru ditugaskan",
+      body: single
+        ? "1 piutang baru ditugaskan kepada Anda"
+        : `${newlyAssignedIds.length} piutang baru ditugaskan kepada Anda`,
+      data: single ? { receivableId: newlyAssignedIds[0], count: "1" } : { count: String(newlyAssignedIds.length) },
+    });
+  } catch (err) {
+    console.error(`[collections] collector assignment notice failed for ${collectorId}`, err);
+  }
+}
 
 export async function assignCollector(input: {
   receivableIds: string[];
@@ -12,7 +41,7 @@ export async function assignCollector(input: {
     throw new CollectionError("DUPLICATE_TARGETS");
   }
 
-  return runSerializable(async (tx) => {
+  const { assignedCount, newlyAssignedIds } = await runSerializable(async (tx) => {
     if (input.collectorId !== null) {
       /*
        * A `collections:collect` permission ROW is not enough — `pwaAccessGuard` (apps/web/lib/pwa/guard.ts)
@@ -67,6 +96,12 @@ export async function assignCollector(input: {
       },
     });
 
-    return { assignedCount: input.receivableIds.length };
+    return {
+      assignedCount: input.receivableIds.length,
+      newlyAssignedIds: receivables.filter((r) => r.collectorId !== input.collectorId).map((r) => r.id),
+    };
   });
+
+  if (input.collectorId !== null) await notifyCollectorOfAssignment(input.collectorId, newlyAssignedIds);
+  return { assignedCount };
 }

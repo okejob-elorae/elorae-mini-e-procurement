@@ -6,6 +6,8 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { capNotificationText } from "@/lib/notifications/text";
 
+const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR" });
+
 /** Oldest-due-first, so a large historical backlog drains in the order that matters most. */
 const MAX_ANNOUNCEMENTS_PER_RUN = 200;
 
@@ -127,7 +129,7 @@ export async function runOverdueSweep(options?: {
     if (!collectorId || !r.collector) unassigned++;
 
     const docNo = resolveReceivableSource(r).docNo;
-    const outstandingAmount = Number(r.outstandingAmount);
+    const outstandingAmount = rupiah.format(Number(r.outstandingAmount));
     /* `AdminNotification.title` is VARCHAR(191); a long store name would otherwise fail this crossing on every run. */
     const title = capNotificationText(
       collectorName
