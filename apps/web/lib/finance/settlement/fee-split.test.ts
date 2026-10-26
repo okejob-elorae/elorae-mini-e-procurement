@@ -71,4 +71,13 @@ describe("splitMarketplaceFees", () => {
       expect(Math.round(line.credit * 100)).toBe(line.credit * 100);
     }
   });
+
+  it("books the residual as a credit when itemized magnitudes exceed the total", () => {
+    /* The shape a mixed-sign settlement can reach once the caller has taken magnitudes. */
+    const lines = splitMarketplaceFees(totals({ admin: 1000, service: 500, commission: 300, processing: 200 }), 1500);
+
+    expect(lines).toContainEqual({ role: "MARKETPLACE_FEE_OTHER", debit: 0, credit: 500 });
+    const net = lines.reduce((sum, l) => sum + l.debit - l.credit, 0);
+    expect(net).toBe(1500);
+  });
 });

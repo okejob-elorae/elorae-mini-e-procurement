@@ -1,29 +1,46 @@
+import idMessages from "@/lib/i18n/messages/id.json";
+
 /**
  * Disclosures the on-screen reports show, restated for the artifacts that leave
- * the app — the Excel exports and the browser-print views. Those are what gets
+ * the app: the Excel exports and the browser-print views. Those are what gets
  * emailed to an accountant, so they must carry the same caveats as the screen.
  *
- * Indonesian only, and deliberately NOT wired through next-intl: the print
+ * There is ONE copy of every string: the `financeReports.*` keys in `id.json`.
+ * This module reads them directly instead of restating them, because the print
  * pages have no locale provider and the Excel sheets are generated server-side
- * outside a request locale. The wording mirrors the `financeReports.*` keys in
- * `id.json`; keep the two in step when either changes.
+ * outside a request locale, so next-intl is not available to them.
+ *
+ * Server-side only. `id.json` is the whole Indonesian catalogue (hundreds of
+ * KB), so a client component must never import this module by value — the print
+ * pages receive these strings in the `notes` field of their report payload,
+ * which the server actions build from the helpers below.
  */
 
-export const TRIAL_BALANCE_BALANCED_NOTE =
-  "Debit dan kredit seimbang. Setiap jurnal sudah divalidasi seimbang saat diposting, jadi kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.";
+const reports = idMessages.financeReports;
 
-export const TRIAL_BALANCE_UNBALANCED_NOTE =
-  "Debit dan kredit TIDAK seimbang. Ini menandakan data jurnal rusak — periksa buku besar.";
+/** Fills `{name}` placeholders. The disclosures use only plain placeholders, no plurals or selects. */
+function fill(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (match, key: string) =>
+    key in values ? String(values[key]) : match,
+  );
+}
 
-export const INCOME_STATEMENT_COVERAGE_TITLE = "Cakupan data";
+export const TRIAL_BALANCE_BALANCED_NOTE = reports.trialBalance.balancedNote;
 
-export const INCOME_STATEMENT_COVERAGE_BODY =
-  "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur penjualan marketplace, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, penjualan kanvas, penjualan lapangan (pengiriman putus dan laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting), dan jurnal manual. Pembayaran ke pemasok hanya menghasilkan jurnal neraca (utang usaha dan bank) sehingga tidak memengaruhi laba rugi. BELUM termasuk: penjualan SPG, yang tidak menghasilkan jurnal; dan retur lapangan (barang yang dikembalikan toko), yang tidak menghasilkan jurnal saat disetujui — pendapatannya baru berkurang ketika kreditnya dipotongkan ke tagihan, sedangkan HPP dan persediaan untuk barang yang kembali tidak pernah dijurnal.";
+export const TRIAL_BALANCE_UNBALANCED_NOTE = reports.trialBalance.unbalancedNote;
 
-export const BALANCE_SHEET_OPENING_TITLE = "Saldo awal belum dicatat";
+export const INCOME_STATEMENT_COVERAGE_TITLE = reports.incomeStatement.coverageTitle;
+
+export const INCOME_STATEMENT_COVERAGE_BODY = reports.incomeStatement.coverageBody;
+
+export const BALANCE_SHEET_BALANCED_NOTE = reports.balanceSheet.balancedNote;
+
+export const BALANCE_SHEET_UNBALANCED_NOTE = reports.balanceSheet.unbalancedNote;
+
+export const BALANCE_SHEET_OPENING_TITLE = reports.balanceSheet.openingTitle;
 
 export function balanceSheetOpeningBody(dateLabel: string): string {
-  return `Jurnal paling awal bertanggal ${dateLabel}. Posisi ini hanya mencakup jurnal sejak tanggal tersebut. Catat jurnal manual saldo awal (kas, piutang, persediaan, utang, ekuitas) bertanggal sebelum itu agar neraca mencerminkan posisi sebenarnya.`;
+  return fill(reports.balanceSheet.openingBody, { date: dateLabel });
 }
 
 /** Day-month-year label for the opening-balance warning, in the business timezone (WIB). */
@@ -36,10 +53,9 @@ export function formatOpeningDate(iso: string): string {
   }).format(new Date(iso));
 }
 
-export const CASH_FLOW_COVERAGE_TITLE = "Cakupan data";
+export const CASH_FLOW_COVERAGE_TITLE = reports.cashFlow.coverageTitle;
 
-export const CASH_FLOW_COVERAGE_BODY =
-  "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung, sehingga mencakup setiap jurnal yang diposting pada periode ini — termasuk penjualan lapangan, baik pengiriman putus maupun laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting. Penjualan SPG tidak menghasilkan jurnal dan BELUM termasuk.";
+export const CASH_FLOW_COVERAGE_BODY = reports.cashFlow.coverageBody;
 
 /**
  * Shown in place of the statement when no account is classified KAS. Without a
@@ -47,22 +63,79 @@ export const CASH_FLOW_COVERAGE_BODY =
  * statement reporting no cash movement — carrying the reconciled note, since
  * zero does equal zero. Refusing is the only honest output.
  */
-export const CASH_FLOW_NO_CASH_ACCOUNT_NOTE =
-  "Akun kas belum ditetapkan, sehingga laporan arus kas tidak dapat disusun. Petakan peran BANK atau CASH di Keuangan → Pemetaan Akun, atau tetapkan sebuah akun sebagai Kas di Klasifikasi Arus Kas.";
+export const CASH_FLOW_NO_CASH_ACCOUNT_NOTE = reports.cashFlow.noCashAccountBody;
 
-export const CASH_FLOW_RECONCILED_NOTE =
-  "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.";
+export const CASH_FLOW_RECONCILED_NOTE = reports.cashFlow.reconciledNote;
 
-export const CASH_FLOW_UNRECONCILED_NOTE =
-  "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.";
+export const CASH_FLOW_UNRECONCILED_NOTE = reports.cashFlow.unreconciledNote;
 
-export const CASH_FLOW_NON_CASH_NOTE =
-  "Subtotal tiap aktivitas dapat memuat transaksi investasi dan pendanaan non-kas; hanya perubahan kas bersih yang diukur terhadap saldo kas sebenarnya.";
+export const CASH_FLOW_NON_CASH_NOTE = reports.cashFlow.nonCashNote;
 
-export const CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE =
-  "Laporan cetak ini hanya memuat satu periode. Perbandingan dengan periode sebelumnya tersedia di layar dan di ekspor Excel.";
+export const CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE = reports.cashFlow.printSinglePeriodNote;
 
-export const CASH_FLOW_UNCLASSIFIED_TITLE = "Ada akun yang belum diklasifikasi";
+export const CASH_FLOW_UNCLASSIFIED_TITLE = reports.cashFlow.unclassifiedTitle;
 
-export const CASH_FLOW_UNCLASSIFIED_BODY =
-  "Sebagian akun belum ditetapkan masuk aktivitas operasional, investasi, atau pendanaan, sehingga ditampilkan terpisah. Total tetap benar. Tetapkan lewat Keuangan → Klasifikasi Arus Kas.";
+export function cashFlowUnclassifiedBody(count: number): string {
+  return fill(reports.cashFlow.unclassifiedBody, { count });
+}
+
+export type TrialBalancePrintNotes = { note: string };
+
+export function trialBalancePrintNotes(isBalanced: boolean): TrialBalancePrintNotes {
+  return { note: isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE };
+}
+
+export type IncomeStatementPrintNotes = { coverageTitle: string; coverageBody: string };
+
+export function incomeStatementPrintNotes(): IncomeStatementPrintNotes {
+  return {
+    coverageTitle: INCOME_STATEMENT_COVERAGE_TITLE,
+    coverageBody: INCOME_STATEMENT_COVERAGE_BODY,
+  };
+}
+
+export type BalanceSheetPrintNotes = {
+  note: string;
+  openingTitle: string;
+  openingBody: string | null;
+};
+
+export function balanceSheetPrintNotes(
+  isBalanced: boolean,
+  openingWarningDate: string | null,
+): BalanceSheetPrintNotes {
+  return {
+    note: isBalanced ? BALANCE_SHEET_BALANCED_NOTE : BALANCE_SHEET_UNBALANCED_NOTE,
+    openingTitle: BALANCE_SHEET_OPENING_TITLE,
+    openingBody: openingWarningDate
+      ? balanceSheetOpeningBody(formatOpeningDate(openingWarningDate))
+      : null,
+  };
+}
+
+export type CashFlowPrintNotes = {
+  noCashAccount: string;
+  reconciliation: string;
+  unclassifiedTitle: string;
+  unclassifiedBody: string;
+  coverageTitle: string;
+  coverageBody: string;
+  nonCash: string;
+  singlePeriod: string;
+};
+
+export function cashFlowPrintNotes(input: {
+  isReconciled: boolean;
+  unclassifiedCount: number;
+}): CashFlowPrintNotes {
+  return {
+    noCashAccount: CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
+    reconciliation: input.isReconciled ? CASH_FLOW_RECONCILED_NOTE : CASH_FLOW_UNRECONCILED_NOTE,
+    unclassifiedTitle: CASH_FLOW_UNCLASSIFIED_TITLE,
+    unclassifiedBody: cashFlowUnclassifiedBody(input.unclassifiedCount),
+    coverageTitle: CASH_FLOW_COVERAGE_TITLE,
+    coverageBody: CASH_FLOW_COVERAGE_BODY,
+    nonCash: CASH_FLOW_NON_CASH_NOTE,
+    singlePeriod: CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE,
+  };
+}

@@ -1,9 +1,12 @@
-export type MarketplaceFeeRole =
-  | "MARKETPLACE_FEE_ADMIN"
-  | "MARKETPLACE_FEE_SERVICE"
-  | "MARKETPLACE_FEE_COMMISSION"
-  | "MARKETPLACE_FEE_PROCESSING"
-  | "MARKETPLACE_FEE_OTHER";
+import type { PostingRole } from "@/lib/constants/journal-roles";
+
+/**
+ * Every per-category fee role. Derived from `PostingRole`, so a new
+ * `MARKETPLACE_FEE_*` role is a type error here until `splitMarketplaceFees`
+ * emits it. The legacy lumped `MARKETPLACE_FEE` role has no suffix and is not
+ * a member.
+ */
+export type MarketplaceFeeRole = Extract<PostingRole, `MARKETPLACE_FEE_${string}`>;
 
 export type FeeCategoryTotals = {
   admin: number;

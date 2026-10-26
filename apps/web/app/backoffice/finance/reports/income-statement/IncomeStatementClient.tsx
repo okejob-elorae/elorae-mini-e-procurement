@@ -7,6 +7,8 @@ import { Info, TrendingUp } from "lucide-react";
 import type { IncomeStatement } from "@/lib/finance/reports/income-statement";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ReportSection } from "../ReportSection";
@@ -15,7 +17,7 @@ import { exportIncomeStatementExcel } from "@/app/actions/finance-reports";
 
 type Props = {
   report: IncomeStatement;
-  filters: { from: string; to: string };
+  filters: { from: string; to: string; zero: boolean };
 };
 
 function formatRupiah(value: number): string {
@@ -49,13 +51,19 @@ export function IncomeStatementClient({ report, filters }: Props) {
           <p className="text-muted-foreground">{t("incomeStatement.subtitle")}</p>
         </div>
         <ReportExportButtons
-          onExcel={() => exportIncomeStatementExcel({ from: filters.from, to: filters.to })}
-          printHref={`/print/finance/income-statement?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}`}
+          onExcel={() =>
+            exportIncomeStatementExcel({
+              from: filters.from,
+              to: filters.to,
+              includeZero: filters.zero,
+            })
+          }
+          printHref={`/print/finance/income-statement?from=${encodeURIComponent(filters.from)}&to=${encodeURIComponent(filters.to)}&zero=${filters.zero ? "1" : "0"}`}
         />
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateFrom")}</label>
             <Input
@@ -71,6 +79,17 @@ export function IncomeStatementClient({ report, filters }: Props) {
               value={filters.to}
               onChange={(e) => pushParam("to", e.target.value || undefined)}
             />
+          </div>
+          <div className="flex items-end gap-2">
+            <Checkbox
+              id="showZero"
+              checked={filters.zero}
+              disabled={isPending}
+              onCheckedChange={(checked) => pushParam("zero", checked === true ? "1" : undefined)}
+            />
+            <Label htmlFor="showZero" className="text-sm font-normal cursor-pointer">
+              {t("filter.showZero")}
+            </Label>
           </div>
           <div className="flex items-end">
             <Button variant="outline" onClick={reset} disabled={isPending}>
@@ -88,47 +107,54 @@ export function IncomeStatementClient({ report, filters }: Props) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table className="min-w-[360px]">
-              <TableBody>
-                <ReportSection
-                  title={t("incomeStatement.sectionPendapatan")}
-                  nodes={report.pendapatan}
-                  total={report.totalPendapatan}
-                  totalLabel={t("incomeStatement.totalPendapatan")}
-                  emptyLabel={t("incomeStatement.sectionEmpty")}
-                />
-                <ReportSection
-                  title={t("incomeStatement.sectionHpp")}
-                  nodes={report.hpp}
-                  total={report.totalHpp}
-                  totalLabel={t("incomeStatement.totalHpp")}
-                  emptyLabel={t("incomeStatement.sectionEmpty")}
-                />
-                <TableRow className="border-t-2 font-bold">
-                  <TableCell>{t("incomeStatement.labaKotor")}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatRupiah(report.labaKotor)}
-                  </TableCell>
-                </TableRow>
-                <ReportSection
-                  title={t("incomeStatement.sectionBeban")}
-                  nodes={report.beban}
-                  total={report.totalBeban}
-                  totalLabel={t("incomeStatement.totalBeban")}
-                  emptyLabel={t("incomeStatement.sectionEmpty")}
-                />
-                <TableRow className="border-t-2 font-bold">
-                  <TableCell>{t("incomeStatement.labaBersih")}</TableCell>
-                  <TableCell
-                    className={`text-right tabular-nums ${report.labaBersih < 0 ? "text-destructive" : ""}`}
-                  >
-                    {formatRupiah(report.labaBersih)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
+          {report.isEmpty ? (
+            <div className="text-center py-12">
+              <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">{t("incomeStatement.empty")}</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[360px]">
+                <TableBody>
+                  <ReportSection
+                    title={t("incomeStatement.sectionPendapatan")}
+                    nodes={report.pendapatan}
+                    total={report.totalPendapatan}
+                    totalLabel={t("incomeStatement.totalPendapatan")}
+                    emptyLabel={t("incomeStatement.sectionEmpty")}
+                  />
+                  <ReportSection
+                    title={t("incomeStatement.sectionHpp")}
+                    nodes={report.hpp}
+                    total={report.totalHpp}
+                    totalLabel={t("incomeStatement.totalHpp")}
+                    emptyLabel={t("incomeStatement.sectionEmpty")}
+                  />
+                  <TableRow className="border-t-2 font-bold">
+                    <TableCell>{t("incomeStatement.labaKotor")}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatRupiah(report.labaKotor)}
+                    </TableCell>
+                  </TableRow>
+                  <ReportSection
+                    title={t("incomeStatement.sectionBeban")}
+                    nodes={report.beban}
+                    total={report.totalBeban}
+                    totalLabel={t("incomeStatement.totalBeban")}
+                    emptyLabel={t("incomeStatement.sectionEmpty")}
+                  />
+                  <TableRow className="border-t-2 font-bold">
+                    <TableCell>{t("incomeStatement.labaBersih")}</TableCell>
+                    <TableCell
+                      className={`text-right tabular-nums ${report.labaBersih < 0 ? "text-destructive" : ""}`}
+                    >
+                      {formatRupiah(report.labaBersih)}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          )}
 
           <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
             <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />

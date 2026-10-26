@@ -509,6 +509,54 @@ d("postSettlementJournal (test bed only)", () => {
     }
   });
 
+  it("posts the same lines when the summary total is positive but the per-line fee columns are negative", async () => {
+    /*
+     * Mixed-sign shape: `totalPengeluaran` stored positive (as a TikTok
+     * settlement stores it, `Σ |Total Biaya|`) beside Shopee-style negative
+     * per-line fee columns. `postSettlementJournal` takes `Math.abs()` of the
+     * summed columns and of the total independently, so the split never sees
+     * the sign mismatch: every itemized category is a debit, the residual is
+     * |total| minus the itemized magnitudes (a debit of 500 here), and nothing
+     * flips into a contra-expense credit. Identical journal to the all-negative
+     * case above.
+     */
+    const feeSplitSettlementId = await seedSettlementWithLines({
+      totalPendapatan: 10_000,
+      totalPengeluaran: 2_500,
+      totalDilepas: 7_500,
+      lines: [{ biayaAdministrasi: -1_000, biayaLayanan: -500, biayaKomisiAms: -300, biayaProsesPesanan: -200 }],
+    });
+
+    try {
+      const res = await postSettlementJournal(feeSplitSettlementId, adminId, prisma);
+
+      expect(res).toMatchObject({ ok: true });
+      const journal = await prisma.journal.findUniqueOrThrow({
+        where: { sourceType_sourceId: { sourceType: "SETTLEMENT", sourceId: feeSplitSettlementId } },
+        include: { lines: true },
+      });
+      expect(journal.lines).toHaveLength(7);
+      const totalDebit = journal.lines.reduce((sum, l) => sum + Number(l.debit), 0);
+      const totalCredit = journal.lines.reduce((sum, l) => sum + Number(l.credit), 0);
+      expect(totalDebit).toBe(totalCredit);
+      const feeLines = journal.lines.filter((l) =>
+        [feeAdminAccountId, feeServiceAccountId, feeCommissionAccountId, feeProcessingAccountId, feeOtherAccountId].includes(
+          l.chartAccountId,
+        ),
+      );
+      expect(feeLines).toHaveLength(5);
+      expect(feeLines.every((l) => Number(l.credit) === 0)).toBe(true);
+      const byAccount = new Map(journal.lines.map((l) => [l.chartAccountId, Number(l.debit)]));
+      expect(byAccount.get(feeAdminAccountId)).toBe(1_000);
+      expect(byAccount.get(feeServiceAccountId)).toBe(500);
+      expect(byAccount.get(feeCommissionAccountId)).toBe(300);
+      expect(byAccount.get(feeProcessingAccountId)).toBe(200);
+      expect(byAccount.get(feeOtherAccountId)).toBe(500);
+    } finally {
+      await teardownSettlementJournal(feeSplitSettlementId);
+    }
+  });
+
   it("posts a realistic Shopee-shaped breakdown scaled from the real income export", async () => {
     /*
      * Proportions taken from reference/finance/Income.sudah

@@ -4,10 +4,14 @@ import type { ParsedIncomeLine, ParsedSettlement, SettlementParseError } from ".
 /**
  * TikTok's "Total Biaya" column sign is unverified against the real export
  * (could be negative-as-deduction or positive-as-cost — samples seen so far
- * disagree). The settlement journal (`journal.ts`) posts `totalPengeluaran`
- * as a straight debit line, and `journal-writer.ts` throws `BAD_LINE` on any
- * negative debit — so every per-line fee is normalized with `Math.abs()`
- * before aggregation, guaranteeing a valid (non-negative) debit regardless of
+ * disagree). This parser zeroes all four per-category fee columns on every
+ * line, so TikTok's whole fee lands in the residual `MARKETPLACE_FEE_OTHER`
+ * line of the settlement journal: `splitMarketplaceFees` (`fee-split.ts`)
+ * computes that residual from `totalPengeluaran`, and `journal.ts` emits one
+ * fee line per nonzero category plus the residual, not a single fee debit.
+ * `journal-writer.ts` throws `BAD_LINE` on any negative debit, so every
+ * per-line fee is normalized with `Math.abs()` before aggregation, keeping
+ * `totalPengeluaran` non-negative and the residual a valid debit regardless of
  * which sign convention the real file turns out to use. Owner: validate the
  * actual sign against the real export and drop the abs() if it's already
  * consistently positive.
