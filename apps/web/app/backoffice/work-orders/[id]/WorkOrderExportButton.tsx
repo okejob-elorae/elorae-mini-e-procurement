@@ -18,6 +18,7 @@ export function WorkOrderExportButton({ workOrderId }: { workOrderId: string }) 
       const result = await exportWorkOrderXlsx(workOrderId);
       if (result.status === "ok") {
         downloadBase64File(result.base64, result.filename, XLSX_MIME);
+        toast.success(t("export.started"));
       } else if (result.status === "forbidden") {
         toast.error(t("export.forbidden"));
       } else {

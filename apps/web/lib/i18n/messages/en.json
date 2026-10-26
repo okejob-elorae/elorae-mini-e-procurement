@@ -1245,7 +1245,8 @@
       "exporting": "Exporting...",
       "failed": "Could not export the work order. Try again.",
       "forbidden": "You do not have permission to export work orders.",
-      "notFound": "Work order not found."
+      "notFound": "Work order not found.",
+      "started": "Work order exported."
     },
     "draft": "Draft",
     "issued": "Issued",
