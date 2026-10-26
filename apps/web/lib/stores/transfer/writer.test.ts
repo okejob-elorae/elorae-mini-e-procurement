@@ -143,6 +143,24 @@ d("store transfer writer (test bed only)", () => {
   });
 
   describe("createStoreTransfer", () => {
+    it("refuses an inactive source store, naming it, and writes nothing", async () => {
+      await prisma.store.update({ where: { id: storeAId }, data: { isActive: false } });
+      await expect(newTransfer(pastMove())).rejects.toMatchObject({ code: "STORE_INACTIVE", detail: "Test Transfer Store A" });
+      expect(await prisma.storeTransfer.count({ where: { fromStoreId: seededId(storeAId) } })).toBe(0);
+    });
+
+    it("refuses an inactive destination store, naming it, and writes nothing", async () => {
+      await prisma.store.update({ where: { id: storeBId }, data: { isActive: false } });
+      await expect(newTransfer(pastMove())).rejects.toMatchObject({ code: "STORE_INACTIVE", detail: "Test Transfer Store B" });
+      expect(await prisma.storeTransfer.count({ where: { toStoreId: seededId(storeBId) } })).toBe(0);
+    });
+
+    it("still reports a missing store as STORE_NOT_FOUND, not inactive", async () => {
+      await expect(
+        createStoreTransfer({ fromStoreId: storeAId, toStoreId: "missing-store-id", movedAt: pastMove(), createdById: userId, lines: [{ itemId, variantSku: "", qty: 1 }] }),
+      ).rejects.toMatchObject({ code: "STORE_NOT_FOUND" });
+    });
+
     it("stores the move instant it is given and moves no stock", async () => {
       const movedAt = pastMove();
       const { transferId } = await newTransfer(movedAt);

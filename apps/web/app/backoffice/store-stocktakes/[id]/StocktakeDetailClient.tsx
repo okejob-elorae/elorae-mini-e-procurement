@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -23,6 +23,7 @@ import type {
   StoreStocktakeStatusValue,
 } from "@/lib/stores/stocktake/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { autoOpenNoteMonthKey, formatCountMonth } from "@/lib/konsi-count-schedule/schedule";
 import type { StocktakeItemOption } from "@/lib/stores/stocktake/item-search";
 import {
   saveCountsAction,
@@ -212,6 +213,7 @@ export function StocktakeDetailClient({
 }) {
   const t = useTranslations("storeStocktakes");
   const tDetail = useTranslations("storeStocktakes.detail");
+  const locale = useLocale();
   const tFooter = useTranslations("storeStocktakes.footer");
   const tAddItem = useTranslations("storeStocktakes.addItem");
   const tApprove = useTranslations("storeStocktakes.approve");
@@ -266,6 +268,9 @@ export function StocktakeDetailClient({
   }, [addItemOpen, addItemQuery]);
 
   const isOpenStatus = OPEN_STATUSES.has(stocktake.status);
+  /* Not gated on `createdByIsSystem`: a sweep-opened count at a store with one assigned SPG names that SPG as creator. */
+  const autoOpenMonthKey = stocktake.note ? autoOpenNoteMonthKey(stocktake.note) : null;
+  const noteText = autoOpenMonthKey ? tDetail("autoOpenedNote", { month: formatCountMonth(autoOpenMonthKey, locale) }) : stocktake.note;
   const canEdit = canManage && isOpenStatus;
   const canApprove = canManage && isOpenStatus;
   const canCancel = canManage && isOpenStatus;
@@ -579,7 +584,7 @@ export function StocktakeDetailClient({
         )}
         {stocktake.note && (
           <p className="text-sm text-muted-foreground">
-            {tDetail("note")}: {stocktake.note}
+            {tDetail("note")}: {noteText}
           </p>
         )}
       </Card>

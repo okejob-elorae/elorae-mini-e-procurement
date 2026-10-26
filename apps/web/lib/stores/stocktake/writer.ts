@@ -426,6 +426,8 @@ export async function saveStocktakeCounts(input: {
  * A transfer whose goods moved on or before the DOCUMENT's count moment, which is still PENDING
  * and moves an item::variant this count counted, refuses the approval instead
  * (`TRANSFER_PENDING`), because once this count is approved the transfer can never be approved.
+ * The way out is to approve the transfer first, or to cancel it and raise it again with the right
+ * items and move time — cancelling alone loses the move.
  * That refusal deliberately keeps the document moment rather than any line's: it must agree with
  * `approveStoreTransfer`'s `COUNTED_SINCE_MOVE`, which reads the document stamp. It still runs for
  * a count whose `countFinishedAt` is null — falling back to this approval's own instant, the same

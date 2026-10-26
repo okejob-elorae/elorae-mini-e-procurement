@@ -273,6 +273,20 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(await sellThroughJournalGaps(id)).toEqual([]);
   }, SLOW);
 
+  it("a negative amount is never owed: no gap and NOTHING_TO_POST, not a reversed entry", async () => {
+    await setMethod("SHELF_COUNT");
+    await transferIn(6);
+    const stocktakeId = await count(2, { cause: "UNRECORDED_SALE", reason: "sold off the shelf" });
+    const { id } = await createSellThrough({ closingStocktakeId: stocktakeId, createdById: state.userId });
+    reportIds.push(id);
+    await fx.approve(id);
+    await prisma.konsiSellThrough.update({ where: { id: seededId(id) }, data: { total: -50000 } });
+
+    expect(await sellThroughJournalGaps(id)).toEqual(["konsi_sell_through_cogs"]);
+    await expect(postSellThroughRevenueJournal(id, state.userId)).resolves.toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await prisma.journal.count({ where: { sourceType: "KONSI_SELLTHRU_REVENUE", sourceId: id } })).toBe(0);
+  }, SLOW);
+
   it("re-posting is idempotent: the second call returns created: false and writes no second journal", async () => {
     await setMethod("SHELF_COUNT");
     await transferIn(6);
