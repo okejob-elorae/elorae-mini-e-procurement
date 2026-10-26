@@ -20,6 +20,7 @@ import {
 import {
   getShipmentAction,
   updateShipmentTrackingAction,
+  reassignShipmentCarrierAction,
   shipShipmentAction,
   cancelShipmentAction,
 } from "@/app/actions/delivery-shipments";
@@ -46,6 +47,9 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   const [resiNumber, setResiNumber] = useState("");
   const [method, setMethod] = useState("");
   const [carriedById, setCarriedById] = useState("");
+  /* The carrier on the row as loaded: the "Change carrier" button stays disabled until the selection differs. */
+  const [savedCarriedById, setSavedCarriedById] = useState("");
+  const [status, setStatus] = useState("");
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
@@ -54,6 +58,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
   const [loadAttempt, setLoadAttempt] = useState(0);
   const detailLoaded = loadState.status === "loaded";
   const isExpedition = method === "EXPEDITION";
+  /* IN_TRANSIT freezes everything but the carrier, which has its own action. */
+  const isReassignOnly = status === "IN_TRANSIT" && method === "SALESMAN_CARRY";
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
@@ -72,6 +78,8 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
         setResiNumber(detail.resiNumber ?? "");
         setMethod(detail.method ?? "");
         setCarriedById(detail.carriedById ?? "");
+        setSavedCarriedById(detail.carriedById ?? "");
+        setStatus(detail.status ?? "");
         setInvoiceDate(detail.invoiceDate ? formatDateOnlyJakarta(detail.invoiceDate) : "");
         setDueDate(detail.dueDate ? formatDateOnlyJakarta(detail.dueDate) : "");
         setIsKonsi(detail.orderType === "KONSI");
@@ -177,6 +185,27 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
     });
   }
 
+  function handleReassign(): void {
+    if (!carriedById) {
+      toast.error(t("err.MISSING_CARRIER"));
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const result = await reassignShipmentCarrierAction({ shipmentId, carriedById });
+        if (!result.ok) {
+          toast.error(t(`err.${result.reason}` as any));
+          return;
+        }
+        toast.success(t("changeCarrierSuccess"));
+        onOpenChange(false);
+        onDone();
+      } catch {
+        toast.error(t("err.UNEXPECTED"));
+      }
+    });
+  }
+
   function handleCancel(): void {
     if (!confirm(t("cancelConfirm"))) return;
     startTransition(async () => {
@@ -258,8 +287,11 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
                     searchPlaceholder={t("carrierSearchPlaceholder")}
                     emptyMessage={t("carrierSearchEmpty")}
                   />
+                  {isReassignOnly && (
+                    <p className="mt-2 text-xs text-muted-foreground">{t("changeCarrierHint")}</p>
+                  )}
                 </div>
-                {!isKonsi && (
+                {!isKonsi && !isReassignOnly && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
@@ -284,12 +316,25 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
           <Button variant="destructive" onClick={handleCancel} disabled={isPending || !detailLoaded}>
             {t("cancel")}
           </Button>
-          <Button variant="outline" onClick={handleSave} disabled={isPending || !detailLoaded}>
-            {t("save")}
-          </Button>
-          <Button onClick={handleShip} disabled={isPending || !detailLoaded}>
-            {t("ship")}
-          </Button>
+          {isReassignOnly ? (
+            <Button
+              className="min-h-10"
+              onClick={handleReassign}
+              disabled={isPending || !detailLoaded || !carriedById || carriedById === savedCarriedById}
+            >
+              {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t("changeCarrier")}
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={handleSave} disabled={isPending || !detailLoaded}>
+                {t("save")}
+              </Button>
+              <Button onClick={handleShip} disabled={isPending || !detailLoaded}>
+                {t("ship")}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

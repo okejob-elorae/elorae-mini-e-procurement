@@ -781,6 +781,9 @@
     "carrierSearchEmpty": "Salesman tidak ditemukan.",
     "carriedByLabel": "Dibawa oleh",
     "carriedByPlaceholder": "Pilih salesman",
+    "changeCarrier": "Ganti pembawa",
+    "changeCarrierSuccess": "Pembawa diganti.",
+    "changeCarrierHint": "Penyelesaian yang sudah diantrekan pembawa sebelumnya untuk pengiriman ini akan ditolak.",
     "invoiceDateLabel": "Tanggal invoice",
     "dueDateLabel2": "Tanggal jatuh tempo",
     "detail": {

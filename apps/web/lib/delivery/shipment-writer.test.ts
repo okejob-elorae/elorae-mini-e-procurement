@@ -3,6 +3,7 @@ import { prisma, seededId } from "@elorae/db";
 import {
   createDeliveryShipment,
   updateShipmentTracking,
+  reassignShipmentCarrier,
   shipDeliveryShipment,
   completeDeliveryShipment,
   cancelDeliveryShipment,
@@ -1832,5 +1833,201 @@ describe("cancelDeliveryShipment", () => {
     await expect(
       cancelDeliveryShipment({ shipmentId, cancelledById: userId }),
     ).rejects.toMatchObject({ code: "INVALID_STATE" });
+  });
+});
+
+describe("reassignShipmentCarrier", () => {
+  let storeId = "";
+  let userId = "";
+  let orderId = "";
+  let lineId = "";
+  let itemId = "";
+  let shipmentId = "";
+  let shipmentLineId = "";
+  let token = "";
+  let carrierRoleId = "";
+  let carrierUserId = "";
+  let weakRoleId = "";
+  let weakUserId = "";
+
+  beforeEach(async () => {
+    storeId = "";
+    userId = "";
+    orderId = "";
+    lineId = "";
+    itemId = "";
+    shipmentId = "";
+    shipmentLineId = "";
+    carrierRoleId = "";
+    carrierUserId = "";
+    weakRoleId = "";
+    weakUserId = "";
+    token = Math.random().toString(36).slice(2, 10);
+
+    const store = await prisma.store.create({
+      data: {
+        code: `TEST-DSW-R-${token}`,
+        name: "Test Store R",
+        address: "x",
+        termsType: "PUTUS",
+        lat: -6.2,
+        lng: 106.8,
+      },
+    });
+    storeId = store.id;
+    const salesman = await prisma.user.findFirst({ where: { email: "salesman@elorae.com" } });
+    userId = salesman!.id;
+    const uom = await prisma.uOM.findFirst({ where: { code: "PCS" } });
+    const item = await prisma.item.create({
+      data: { sku: `SKUR-${Date.now()}`, nameId: "Test Item R", nameEn: "Test Item R", type: "FINISHED_GOOD", uomId: uom!.id, sellingPrice: 10000 },
+    });
+    itemId = item.id;
+    const order = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `FSOR-${Date.now()}`,
+        storeId,
+        salesmanId: userId,
+        status: "APPROVED",
+        subtotal: 100000,
+        total: 100000,
+        lines: { create: [{ itemId, productName: "Test Item R", qty: 10, unitPrice: 10000, lineTotal: 100000 }] },
+      },
+      include: { lines: true },
+    });
+    orderId = order.id;
+    lineId = order.lines[0].id;
+
+    const carrier = await seedCarrierUser(token, [podPermission, pwaPermission]);
+    carrierRoleId = carrier.roleId;
+    carrierUserId = carrier.userId;
+  });
+
+  afterEach(async () => {
+    await prisma.auditLog.deleteMany({
+      where: { entityType: "DeliveryShipment", entityId: seededId(shipmentId) },
+    });
+    await prisma.deliveryShipmentLine.deleteMany({ where: { shipmentId: seededId(shipmentId) } });
+    await prisma.deliveryShipment.deleteMany({ where: { id: seededId(shipmentId) } });
+    await prisma.fieldSalesOrderLine.delete({ where: { id: seededId(lineId) } });
+    await prisma.fieldSalesOrder.delete({ where: { id: seededId(orderId) } });
+    await prisma.item.delete({ where: { id: seededId(itemId) } });
+    await prisma.store.delete({ where: { id: seededId(storeId) } });
+    await prisma.user.deleteMany({ where: { id: { in: [carrierUserId, weakUserId].map(seededId) } } });
+    await prisma.roleDefinition.deleteMany({ where: { id: { in: [carrierRoleId, weakRoleId].map(seededId) } } });
+  });
+
+  async function seedShipment(
+    method: "EXPEDITION" | "SALESMAN_CARRY",
+    status: "PACKED" | "IN_TRANSIT",
+  ): Promise<void> {
+    const created = await createDeliveryShipment({
+      orderId,
+      method,
+      lines: [{ orderLineId: lineId, qty: 4 }],
+      packedById: userId,
+    });
+    shipmentId = created.shipmentId;
+    const lines = await prisma.deliveryShipmentLine.findMany({ where: { shipmentId } });
+    shipmentLineId = lines[0].id;
+    const dates = {
+      invoiceDate: new Date("2026-10-01T00:00:00.000+07:00"),
+      dueDate: new Date("2026-10-31T00:00:00.000+07:00"),
+    };
+    await prisma.deliveryShipment.update({
+      where: { id: shipmentId },
+      data: {
+        status,
+        ...(method === "SALESMAN_CARRY" ? { carriedById: userId, ...dates } : { resiNumber: "RESI-R" }),
+      },
+    });
+  }
+
+  async function auditRows() {
+    return prisma.auditLog.findMany({
+      where: { entityType: "DeliveryShipment", entityId: shipmentId, action: "DELIVERY_SHIPMENT_CARRIER_REASSIGNED" },
+    });
+  }
+
+  it("moves an in-transit salesman-carry shipment to the new carrier and audits it once", async () => {
+    await seedShipment("SALESMAN_CARRY", "IN_TRANSIT");
+    const result = await reassignShipmentCarrier({
+      shipmentId,
+      carriedById: carrierUserId,
+      reassignedById: userId,
+    });
+    expect(result).toEqual({ ok: true, orderId });
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.carriedById).toBe(carrierUserId);
+    const rows = await auditRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].userId).toBe(userId);
+    expect(rows[0].changes).toEqual({
+      before: { carriedById: userId },
+      after: { carriedById: carrierUserId },
+    });
+  });
+
+  it("returns ok without writing or auditing when the carrier is unchanged", async () => {
+    await seedShipment("SALESMAN_CARRY", "IN_TRANSIT");
+    await prisma.deliveryShipment.update({ where: { id: shipmentId }, data: { carriedById: carrierUserId } });
+    const result = await reassignShipmentCarrier({
+      shipmentId,
+      carriedById: carrierUserId,
+      reassignedById: userId,
+    });
+    expect(result.ok).toBe(true);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("refuses a PACKED shipment", async () => {
+    await seedShipment("SALESMAN_CARRY", "PACKED");
+    await expect(
+      reassignShipmentCarrier({ shipmentId, carriedById: carrierUserId, reassignedById: userId }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("refuses an in-transit EXPEDITION shipment", async () => {
+    await seedShipment("EXPEDITION", "IN_TRANSIT");
+    await expect(
+      reassignShipmentCarrier({ shipmentId, carriedById: carrierUserId, reassignedById: userId }),
+    ).rejects.toMatchObject({ code: "INVALID_STATE" });
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("returns NOT_FOUND for a missing shipment", async () => {
+    await expect(
+      reassignShipmentCarrier({ shipmentId: "does-not-exist", carriedById: carrierUserId, reassignedById: userId }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("refuses a nonexistent, empty or ineligible carrier and leaves the column alone", async () => {
+    await seedShipment("SALESMAN_CARRY", "IN_TRANSIT");
+    const weak = await seedCarrierUser(token, [pwaPermission]);
+    weakRoleId = weak.roleId;
+    weakUserId = weak.userId;
+    for (const carriedById of ["does-not-exist", "", weakUserId]) {
+      await expect(
+        reassignShipmentCarrier({ shipmentId, carriedById, reassignedById: userId }),
+      ).rejects.toMatchObject({ code: "INVALID_CARRIER" });
+    }
+    const shipment = await prisma.deliveryShipment.findUnique({ where: { id: shipmentId } });
+    expect(shipment?.carriedById).toBe(userId);
+    expect(await auditRows()).toHaveLength(0);
+  });
+
+  it("makes completion by the previous carrier fail NOT_CARRIER", async () => {
+    await seedShipment("SALESMAN_CARRY", "IN_TRANSIT");
+    await reassignShipmentCarrier({ shipmentId, carriedById: carrierUserId, reassignedById: userId });
+    await expect(
+      completeDeliveryShipment({
+        shipmentId,
+        deliveredById: userId,
+        proofPhotoUrl: "https://r2.example/proof.jpg",
+        proofPhotoR2Key: `delivery-pod-proofs/${shipmentId}/goods.jpg`,
+        gps: { lat: -6.2, lng: 106.8 },
+        lines: [{ shipmentLineId, deliveredQty: 4 }],
+      }),
+    ).rejects.toMatchObject({ code: "NOT_CARRIER" });
   });
 });

@@ -7,6 +7,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
   createDeliveryShipment,
   updateShipmentTracking,
+  reassignShipmentCarrier,
   shipDeliveryShipment,
   completeDeliveryShipment,
   cancelDeliveryShipment,
@@ -143,6 +144,28 @@ export async function updateShipmentTrackingAction(input: {
       dueDate: dueDate ?? undefined,
     });
     revalidatePath("/backoffice/deliveries");
+    return { ok: true };
+  } catch (error) {
+    return mapError(error, ERROR_TAG);
+  }
+}
+
+export async function reassignShipmentCarrierAction(input: {
+  shipmentId: string;
+  carriedById: string;
+}): Promise<ShipmentActionResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.DELIVERIES_SHIP)) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  try {
+    const result = await reassignShipmentCarrier({
+      shipmentId: input.shipmentId,
+      carriedById: input.carriedById,
+      reassignedById: session.user.id,
+    });
+    revalidatePath("/backoffice/deliveries");
+    revalidatePath(`/backoffice/field-sales-orders/${result.orderId}`);
     return { ok: true };
   } catch (error) {
     return mapError(error, ERROR_TAG);

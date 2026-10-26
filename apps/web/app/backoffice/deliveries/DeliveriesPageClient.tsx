@@ -257,6 +257,11 @@ export function DeliveriesPageClient({
                               {t("editTracking")}
                             </Button>
                           )}
+                          {canShip && item.status === "IN_TRANSIT" && item.method === "SALESMAN_CARRY" && (
+                            <Button size="sm" variant="outline" onClick={() => setTrackingShipmentId(item.id)}>
+                              {t("changeCarrier")}
+                            </Button>
+                          )}
                           {canPod && item.status === "IN_TRANSIT" && item.method === "EXPEDITION" && (
                             <Button size="sm" onClick={() => setCompletingShipmentId(item.id)}>
                               {t("complete")}

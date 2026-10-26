@@ -781,6 +781,9 @@
     "carrierSearchEmpty": "No salesman found.",
     "carriedByLabel": "Carried by",
     "carriedByPlaceholder": "Select salesman",
+    "changeCarrier": "Change carrier",
+    "changeCarrierSuccess": "Carrier changed.",
+    "changeCarrierHint": "The previous carrier's queued completion for this delivery will be refused.",
     "invoiceDateLabel": "Invoice date",
     "dueDateLabel2": "Due date",
     "detail": {

@@ -148,6 +148,69 @@ export async function updateShipmentTracking(input: {
   return { ok: true };
 }
 
+/**
+ * Moves an in-transit salesman-carry shipment to a different carrier — the escape hatch for a
+ * salesman who cannot make the run, which previously meant cancel-and-recreate.
+ *
+ * IN_TRANSIT only: while PACKED the carrier is already editable through `updateShipmentTracking`,
+ * and once the shipment is delivered or cancelled the carrier is history. EXPEDITION shipments
+ * have no carrier to reassign.
+ *
+ * The compare-and-swap keys on the carrier read at the start of the transaction, so two
+ * concurrent reassigns cannot both win: the loser's `updateMany` matches nothing, throws inside
+ * the transaction and commits neither the column nor its audit row. The audit row is written with
+ * `tx.auditLog.create`, not `logAudit`, which swallows its own errors.
+ *
+ * A completion the previous carrier queued offline now fails `NOT_CARRIER` and lands in their
+ * stuck list. That is correct: it is no longer their delivery, and the identity check in
+ * `completeDeliveryShipment` is what makes the reassignment bind.
+ */
+export async function reassignShipmentCarrier(input: {
+  shipmentId: string;
+  carriedById: string;
+  reassignedById: string;
+}): Promise<{ ok: true; orderId: string }> {
+  if (!input.carriedById || !(await isEligibleCarrier(prisma, input.carriedById))) {
+    throw new DeliveryShipmentError("INVALID_CARRIER");
+  }
+  return runSerializable(async (tx) => {
+    const shipment = await tx.deliveryShipment.findUnique({
+      where: { id: input.shipmentId },
+      select: { id: true, orderId: true, status: true, method: true, carriedById: true },
+    });
+    if (!shipment) throw new DeliveryShipmentError("NOT_FOUND");
+    if (shipment.method !== "SALESMAN_CARRY" || shipment.status !== "IN_TRANSIT") {
+      throw new DeliveryShipmentError("INVALID_STATE");
+    }
+    if (shipment.carriedById === input.carriedById) {
+      return { ok: true as const, orderId: shipment.orderId };
+    }
+    const result = await tx.deliveryShipment.updateMany({
+      where: {
+        id: shipment.id,
+        status: "IN_TRANSIT",
+        method: "SALESMAN_CARRY",
+        carriedById: shipment.carriedById,
+      },
+      data: { carriedById: input.carriedById },
+    });
+    if (result.count === 0) throw new DeliveryShipmentError("INVALID_STATE");
+    await tx.auditLog.create({
+      data: {
+        userId: input.reassignedById,
+        action: "DELIVERY_SHIPMENT_CARRIER_REASSIGNED",
+        entityType: "DeliveryShipment",
+        entityId: shipment.id,
+        changes: {
+          before: { carriedById: shipment.carriedById },
+          after: { carriedById: input.carriedById },
+        },
+      },
+    });
+    return { ok: true as const, orderId: shipment.orderId };
+  });
+}
+
 export async function shipDeliveryShipment(input: {
   shipmentId: string;
   shippedById: string;
