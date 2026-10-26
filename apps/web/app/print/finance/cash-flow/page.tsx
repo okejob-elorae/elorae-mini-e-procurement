@@ -6,15 +6,6 @@ import { Loader2 } from "lucide-react";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getCashFlowReport } from "@/app/actions/finance-reports";
 import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
-import {
-  CASH_FLOW_COVERAGE_BODY,
-  CASH_FLOW_COVERAGE_TITLE,
-  CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
-  CASH_FLOW_RECONCILED_NOTE,
-  CASH_FLOW_UNCLASSIFIED_BODY,
-  CASH_FLOW_UNCLASSIFIED_TITLE,
-  CASH_FLOW_UNRECONCILED_NOTE,
-} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
@@ -103,12 +94,22 @@ export default function PrintCashFlowPage() {
     );
   }
 
+  if (report.invalidRange) {
+    return (
+      <div className="print-statement mx-auto max-w-2xl text-center">
+        <h1 className="text-lg font-bold">Elorae</h1>
+        <h2 className="text-base font-semibold">Laporan Arus Kas</h2>
+        <p className="mt-4 text-sm">{report.notes.invalidRange}</p>
+      </div>
+    );
+  }
+
   if (!report.hasCashAccount) {
     return (
       <div className="print-statement mx-auto max-w-2xl text-center">
         <h1 className="text-lg font-bold">Elorae</h1>
         <h2 className="text-base font-semibold">Laporan Arus Kas</h2>
-        <p className="mt-4 text-sm">{CASH_FLOW_NO_CASH_ACCOUNT_NOTE}</p>
+        <p className="mt-4 text-sm">{report.notes.noCashAccount}</p>
       </div>
     );
   }
@@ -153,18 +154,26 @@ export default function PrintCashFlowPage() {
         </tbody>
       </table>
       <div className="mt-4 text-xs text-gray-700">
-        <p>{report.isReconciled ? CASH_FLOW_RECONCILED_NOTE : CASH_FLOW_UNRECONCILED_NOTE}</p>
+        <p>{report.notes.reconciliation}</p>
       </div>
       {report.unclassified.length > 0 && (
         <div className="mt-3 text-xs text-gray-700">
-          <p className="font-semibold">{CASH_FLOW_UNCLASSIFIED_TITLE}</p>
-          <p>{CASH_FLOW_UNCLASSIFIED_BODY}</p>
+          <p className="font-semibold">{report.notes.unclassifiedTitle}</p>
+          <p>{report.notes.unclassifiedBody}</p>
         </div>
       )}
       <div className="mt-3 text-xs text-gray-700">
-        <p className="font-semibold">{CASH_FLOW_COVERAGE_TITLE}</p>
-        <p>{CASH_FLOW_COVERAGE_BODY}</p>
+        <p className="font-semibold">{report.notes.coverageTitle}</p>
+        <p>{report.notes.coverageBody}</p>
       </div>
+      <div className="mt-3 text-xs text-gray-700">
+        <p>{report.notes.nonCash}</p>
+      </div>
+      {report.notes.singlePeriod && (
+        <div className="mt-3 text-xs text-gray-700">
+          <p>{report.notes.singlePeriod}</p>
+        </div>
+      )}
     </div>
   );
 }

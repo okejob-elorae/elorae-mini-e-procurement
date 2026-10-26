@@ -6,11 +6,6 @@ import { Loader2 } from "lucide-react";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getBalanceSheetReport } from "@/app/actions/finance-reports";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
-import {
-  BALANCE_SHEET_OPENING_TITLE,
-  balanceSheetOpeningBody,
-  formatOpeningDate,
-} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getBalanceSheetReport>>;
 
@@ -130,10 +125,11 @@ export default function PrintBalanceSheetPage() {
           </tr>
         </tbody>
       </table>
-      {report.openingWarningDate && (
-        <div className="mt-4 text-xs text-gray-700">
-          <p className="font-semibold">{BALANCE_SHEET_OPENING_TITLE}</p>
-          <p>{balanceSheetOpeningBody(formatOpeningDate(report.openingWarningDate))}</p>
+      <p className="mt-4 text-xs text-gray-700">{report.notes.note}</p>
+      {report.notes.openingBody && (
+        <div className="mt-3 text-xs text-gray-700">
+          <p className="font-semibold">{report.notes.openingTitle}</p>
+          <p>{report.notes.openingBody}</p>
         </div>
       )}
     </div>

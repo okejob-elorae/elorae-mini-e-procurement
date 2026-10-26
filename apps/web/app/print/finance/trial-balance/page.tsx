@@ -5,10 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getTrialBalanceReport } from "@/app/actions/finance-reports";
-import {
-  TRIAL_BALANCE_BALANCED_NOTE,
-  TRIAL_BALANCE_UNBALANCED_NOTE,
-} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getTrialBalanceReport>>;
 
@@ -108,9 +104,7 @@ export default function PrintTrialBalancePage() {
           </tr>
         </tbody>
       </table>
-      <p className="mt-4 text-xs text-gray-700">
-        {report.isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE}
-      </p>
+      <p className="mt-4 text-xs text-gray-700">{report.notes.note}</p>
     </div>
   );
 }

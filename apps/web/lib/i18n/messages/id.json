@@ -5334,6 +5334,7 @@
       "totalBeban": "Total Beban Operasional",
       "labaKotor": "Laba Kotor",
       "labaBersih": "Laba Bersih",
+      "empty": "Belum ada pendapatan, HPP, atau beban pada periode ini.",
       "sectionEmpty": "Belum ada akun bersaldo pada bagian ini.",
       "coverageTitle": "Cakupan data",
       "coverageBody": "Laporan ini hanya mencakup transaksi yang sudah menghasilkan jurnal: penjualan marketplace, retur penjualan marketplace, settlement, penerimaan barang (GRN), hasil produksi, penyesuaian stock opname, penjualan kanvas, penjualan lapangan (pengiriman putus dan laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting), dan jurnal manual. Pembayaran ke pemasok hanya menghasilkan jurnal neraca (utang usaha dan bank) sehingga tidak memengaruhi laba rugi. BELUM termasuk: penjualan SPG, yang tidak menghasilkan jurnal; dan retur lapangan (barang yang dikembalikan toko), yang tidak menghasilkan jurnal saat disetujui — pendapatannya baru berkurang ketika kreditnya dipotongkan ke tagihan, sedangkan HPP dan persediaan untuk barang yang kembali tidak pernah dijurnal."
@@ -5379,11 +5380,15 @@
       "noCashAccountCta": "Buka Pemetaan Akun",
       "unclassifiedTitle": "Ada akun yang belum diklasifikasi",
       "unclassifiedBody": "{count} akun belum ditetapkan masuk aktivitas operasional, investasi, atau pendanaan, sehingga ditampilkan terpisah. Total tetap benar.",
+      "unclassifiedPointer": "Tetapkan lewat Keuangan → Klasifikasi Arus Kas.",
       "unclassifiedCta": "Buka Klasifikasi Arus Kas",
       "reconciledNote": "Perubahan kas hasil perhitungan sama dengan pergerakan saldo kas sebenarnya. Karena setiap jurnal sudah divalidasi seimbang saat diposting, kesamaan ini memang diharapkan — pemeriksaan ini hanya mendeteksi data yang rusak.",
       "unreconciledNote": "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.",
       "coverageTitle": "Cakupan data",
       "coverageBody": "Laporan ini disusun dari jurnal buku besar dengan metode tidak langsung, sehingga mencakup setiap jurnal yang diposting pada periode ini — termasuk penjualan lapangan, baik pengiriman putus maupun laporan sell-through konsi yang sudah ditagihkan, setelah jurnalnya diposting. Penjualan SPG tidak menghasilkan jurnal dan BELUM termasuk.",
+      "nonCashNote": "Subtotal tiap aktivitas dapat memuat transaksi investasi dan pendanaan non-kas; hanya perubahan kas bersih yang diukur terhadap saldo kas sebenarnya.",
+      "printSinglePeriodNote": "Laporan cetak ini hanya memuat satu periode. Perbandingan dengan periode sebelumnya tersedia di layar dan di ekspor Excel.",
+      "invalidRange": "Tanggal akhir tidak boleh sebelum tanggal awal.",
       "colCurrent": "Periode ini",
       "colPrevious": "Periode sebelumnya",
       "colDelta": "Selisih",
@@ -5504,6 +5509,7 @@
       "NOT_FOUND": "Akun tidak ditemukan.",
       "NOT_CLASSIFIABLE": "Akun pendapatan, harga pokok, dan beban tidak diklasifikasi — sudah termasuk dalam laba bersih.",
       "INVALID_SECTION": "Klasifikasi tidak dikenal.",
+      "UNEXPECTED": "Klasifikasi gagal disimpan. Coba lagi.",
       "KAS_REQUIRES_ASET": "Hanya akun bertipe ASET yang dapat ditetapkan sebagai Kas dan Setara Kas. Menetapkan akun liabilitas atau ekuitas sebagai kas akan membuat laporan arus kas salah."
     }
   },

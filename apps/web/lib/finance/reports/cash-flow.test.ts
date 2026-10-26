@@ -51,7 +51,6 @@ describe("buildCashFlow", () => {
     expect(cf.netChange).toBe(1_000_000);
     expect(cf.kasAwal).toBe(500_000);
     expect(cf.kasAkhir).toBe(1_500_000);
-    expect(cf.kasAkhirActual).toBe(1_500_000);
     expect(cf.isReconciled).toBe(true);
   });
 
@@ -282,7 +281,6 @@ describe("buildCashFlow", () => {
     });
 
     expect(cf.netChange).toBe(0);
-    expect(cf.kasAkhirActual).toBe(5_000_000);
     expect(cf.isReconciled).toBe(true);
   });
 
@@ -307,7 +305,6 @@ describe("buildCashFlow", () => {
     });
 
     expect(cf.netChange).toBe(0);
-    expect(cf.kasAkhirActual).toBe(900_000);
     expect(cf.isReconciled).toBe(false);
   });
 });

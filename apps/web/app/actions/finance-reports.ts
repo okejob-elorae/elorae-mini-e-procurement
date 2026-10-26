@@ -25,12 +25,15 @@ import {
   getSectionByAccountId,
 } from "@/lib/finance/reports/cash-flow-queries";
 import {
+  BALANCE_SHEET_BALANCED_NOTE,
   BALANCE_SHEET_OPENING_TITLE,
+  BALANCE_SHEET_UNBALANCED_NOTE,
   CASH_FLOW_COVERAGE_BODY,
   CASH_FLOW_COVERAGE_TITLE,
+  CASH_FLOW_INVALID_RANGE_NOTE,
+  CASH_FLOW_NON_CASH_NOTE,
   CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
   CASH_FLOW_RECONCILED_NOTE,
-  CASH_FLOW_UNCLASSIFIED_BODY,
   CASH_FLOW_UNCLASSIFIED_TITLE,
   CASH_FLOW_UNRECONCILED_NOTE,
   INCOME_STATEMENT_COVERAGE_BODY,
@@ -38,7 +41,16 @@ import {
   TRIAL_BALANCE_BALANCED_NOTE,
   TRIAL_BALANCE_UNBALANCED_NOTE,
   balanceSheetOpeningBody,
+  balanceSheetPrintNotes,
+  cashFlowPrintNotes,
+  cashFlowUnclassifiedBodyWithPointer,
   formatOpeningDate,
+  incomeStatementPrintNotes,
+  trialBalancePrintNotes,
+  type BalanceSheetPrintNotes,
+  type CashFlowPrintNotes,
+  type IncomeStatementPrintNotes,
+  type TrialBalancePrintNotes,
 } from "@/lib/finance/reports/disclosures";
 
 const COMPANY_NAME = "Elorae";
@@ -99,11 +111,15 @@ async function loadTrialBalanceReport(input: {
 async function loadIncomeStatementReport(input: {
   from?: string;
   to?: string;
+  includeZero?: boolean;
 }): Promise<IncomeStatement & { periodLabel: string }> {
   const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   const balances = await getAccountBalances({ from, to });
-  return { ...buildIncomeStatement(balances), periodLabel: rangeLabel(from, to) };
+  return {
+    ...buildIncomeStatement(balances, { includeZero: input.includeZero ?? false }),
+    periodLabel: rangeLabel(from, to),
+  };
 }
 
 async function loadBalanceSheetReport(input: {
@@ -132,35 +148,61 @@ export async function getTrialBalanceReport(input: {
   from?: string;
   to?: string;
   includeZero?: boolean;
-}): Promise<TrialBalance & { periodLabel: string } & Attribution> {
+}): Promise<
+  TrialBalance & { periodLabel: string; notes: TrialBalancePrintNotes } & Attribution
+> {
   const preparedBy = await assertCanView();
   const report = await loadTrialBalanceReport(input);
-  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
+  return {
+    ...report,
+    notes: trialBalancePrintNotes(report.isBalanced),
+    preparedBy,
+    printedAt: printedAtLabel(new Date()),
+  };
 }
 
 export async function getIncomeStatementReport(input: {
   from?: string;
   to?: string;
-}): Promise<IncomeStatement & { periodLabel: string } & Attribution> {
+  includeZero?: boolean;
+}): Promise<
+  IncomeStatement & { periodLabel: string; notes: IncomeStatementPrintNotes } & Attribution
+> {
   const preparedBy = await assertCanView();
   const report = await loadIncomeStatementReport(input);
-  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
+  return {
+    ...report,
+    notes: incomeStatementPrintNotes(),
+    preparedBy,
+    printedAt: printedAtLabel(new Date()),
+  };
 }
 
 export async function getBalanceSheetReport(input: {
   asOf?: string;
 }): Promise<
-  BalanceSheet & { periodLabel: string; openingWarningDate: string | null } & Attribution
+  BalanceSheet & {
+    periodLabel: string;
+    openingWarningDate: string | null;
+    notes: BalanceSheetPrintNotes;
+  } & Attribution
 > {
   const preparedBy = await assertCanView();
   const report = await loadBalanceSheetReport(input);
-  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
+  return {
+    ...report,
+    notes: balanceSheetPrintNotes(report.isBalanced, report.openingWarningDate),
+    preparedBy,
+    printedAt: printedAtLabel(new Date()),
+  };
 }
 
 export type CashFlowReport = CashFlowStatement & {
   periodLabel: string;
   previousPeriodLabel: string | null;
   comparison: CashFlowComparison | null;
+  /* The effective range (open end defaulted to today in WIB) runs backwards. */
+  invalidRange: boolean;
 };
 
 /**
@@ -191,37 +233,54 @@ async function loadCashFlowReport(input: {
   const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   const sectionByAccountId = await getSectionByAccountId();
+  const invalidRange = from !== undefined && to < from;
 
-  const current = await buildCashFlowFor(from, to, sectionByAccountId);
-
-  /* Since-inception has no preceding window, so the comparison is withheld. */
-  if (!from) {
+  /*
+   * Since-inception has no preceding window, so the comparison is withheld; a
+   * reversed range has no meaningful window at all, so it is withheld there too.
+   */
+  if (!from || invalidRange) {
+    const current = await buildCashFlowFor(from, to, sectionByAccountId);
     return {
       ...current,
       periodLabel: rangeLabel(from, to),
       previousPeriodLabel: null,
       comparison: null,
+      invalidRange,
     };
   }
 
   const prev = previousPeriod(from, to);
-  const previous = await buildCashFlowFor(prev.from, prev.to, sectionByAccountId);
+  const [current, previous] = await Promise.all([
+    buildCashFlowFor(from, to, sectionByAccountId),
+    buildCashFlowFor(prev.from, prev.to, sectionByAccountId),
+  ]);
 
   return {
     ...current,
     periodLabel: rangeLabel(from, to),
     previousPeriodLabel: rangeLabel(prev.from, prev.to),
     comparison: compareCashFlow(current, previous),
+    invalidRange,
   };
 }
 
 export async function getCashFlowReport(input: {
   from?: string;
   to?: string;
-}): Promise<CashFlowReport & Attribution> {
+}): Promise<CashFlowReport & { notes: CashFlowPrintNotes } & Attribution> {
   const preparedBy = await assertCanView();
   const report = await loadCashFlowReport(input);
-  return { ...report, preparedBy, printedAt: printedAtLabel(new Date()) };
+  return {
+    ...report,
+    notes: cashFlowPrintNotes({
+      isReconciled: report.isReconciled,
+      unclassifiedCount: report.unclassified.length,
+      hasComparison: report.comparison !== null,
+    }),
+    preparedBy,
+    printedAt: printedAtLabel(new Date()),
+  };
 }
 
 type Cell = string | number;
@@ -276,6 +335,7 @@ export async function exportTrialBalanceExcel(input: {
 export async function exportIncomeStatementExcel(input: {
   from?: string;
   to?: string;
+  includeZero?: boolean;
 }): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadIncomeStatementReport(input);
@@ -322,6 +382,8 @@ export async function exportBalanceSheetExcel(input: {
     ["Total Ekuitas", report.totalEkuitas],
     ["Laba (Rugi) Belum Ditutup", report.unclosedEarnings],
     ["Total Liabilitas dan Ekuitas", report.totalLiabilitasEkuitas],
+    [],
+    [report.isBalanced ? BALANCE_SHEET_BALANCED_NOTE : BALANCE_SHEET_UNBALANCED_NOTE],
     ...(report.openingWarningDate
       ? [
           [] as Cell[],
@@ -373,17 +435,17 @@ export async function exportCashFlowExcel(input: {
   const report = await loadCashFlowReport(input);
 
   /**
-   * Refuse rather than ship a zero statement, matching the screen and the print
-   * view. With no cash account every section computes to zero and
+   * Refuse rather than ship a zero statement (or one for a reversed range), matching
+   * the screen and the print view. With no cash account every section computes to zero and
    * `netChange === cashDelta === 0`, so the workbook would otherwise append the
    * reconciled note and assert that the computed change equals actual cash
    * movement — on a file that leaves the app and gets emailed to an accountant.
    */
-  if (!report.hasCashAccount) {
+  if (report.invalidRange || !report.hasCashAccount) {
     return toWorkbook(
       [
         ...headerRows("Laporan Arus Kas", report.periodLabel, preparedBy),
-        [CASH_FLOW_NO_CASH_ACCOUNT_NOTE],
+        [report.invalidRange ? CASH_FLOW_INVALID_RANGE_NOTE : CASH_FLOW_NO_CASH_ACCOUNT_NOTE],
       ],
       "Arus Kas",
       `arus-kas-${dateLabel(new Date())}.xlsx`,
@@ -431,11 +493,14 @@ export async function exportCashFlowExcel(input: {
     [],
     [report.isReconciled ? CASH_FLOW_RECONCILED_NOTE : CASH_FLOW_UNRECONCILED_NOTE],
     ...(report.unclassified.length
-      ? [[CASH_FLOW_UNCLASSIFIED_TITLE] as Cell[], [CASH_FLOW_UNCLASSIFIED_BODY] as Cell[]]
+      ? [[CASH_FLOW_UNCLASSIFIED_TITLE] as Cell[],
+          [cashFlowUnclassifiedBodyWithPointer(report.unclassified.length)] as Cell[],
+        ]
       : []),
     [],
     [CASH_FLOW_COVERAGE_TITLE],
     [CASH_FLOW_COVERAGE_BODY],
+    [CASH_FLOW_NON_CASH_NOTE],
   ];
 
   return toWorkbook(rows, "Arus Kas", `arus-kas-${dateLabel(new Date())}.xlsx`);

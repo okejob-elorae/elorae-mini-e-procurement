@@ -97,4 +97,61 @@ describe("buildIncomeStatement", () => {
     expect(is.beban[0].subtotal).toBe(350_000);
     expect(is.totalBeban).toBe(350_000);
   });
+
+  it("hides accounts with no movement by default without moving any total", () => {
+    const rows: BalanceRow[] = [
+      row("rev", "4100", "PENDAPATAN", 0, 10_000_000),
+      row("rev-idle", "4200", "PENDAPATAN", 0, 0),
+      row("cogs-idle", "5100", "HPP", 0, 0),
+    ];
+
+    const hidden = buildIncomeStatement(rows);
+    const shown = buildIncomeStatement(rows, { includeZero: true });
+
+    expect(hidden.pendapatan.map((n) => n.accountId)).toEqual(["rev"]);
+    expect(hidden.hpp).toEqual([]);
+    expect(shown.pendapatan.map((n) => n.accountId)).toEqual(["rev", "rev-idle"]);
+    expect(shown.hpp.map((n) => n.accountId)).toEqual(["cogs-idle"]);
+    expect(hidden.totalPendapatan).toBe(shown.totalPendapatan);
+    expect(hidden.labaBersih).toBe(shown.labaBersih);
+  });
+
+  it("keeps an idle parent that groups a moving child", () => {
+    const rows: BalanceRow[] = [
+      row("parent", "4000", "PENDAPATAN", 0, 0, { hasChildren: true }),
+      row("child", "4100", "PENDAPATAN", 0, 500, { parentId: "parent", depth: 1 }),
+      row("idle-child", "4200", "PENDAPATAN", 0, 0, { parentId: "parent", depth: 1 }),
+    ];
+
+    const is = buildIncomeStatement(rows);
+
+    expect(is.pendapatan.map((n) => n.accountId)).toEqual(["parent"]);
+    expect(is.pendapatan[0].children.map((n) => n.accountId)).toEqual(["child"]);
+    expect(is.pendapatan[0].subtotal).toBe(500);
+  });
+
+  it("keeps a parent whose moving children net to zero, with zero hidden", () => {
+    const rows: BalanceRow[] = [
+      row("parent", "4000", "PENDAPATAN", 0, 0, { hasChildren: true }),
+      row("credit-child", "4100", "PENDAPATAN", 0, 500, { parentId: "parent", depth: 1 }),
+      row("debit-child", "4200", "PENDAPATAN", 500, 0, { parentId: "parent", depth: 1 }),
+    ];
+
+    const is = buildIncomeStatement(rows);
+
+    expect(is.pendapatan.map((n) => n.accountId)).toEqual(["parent"]);
+    expect(is.pendapatan[0].subtotal).toBe(0);
+    expect(is.pendapatan[0].children.map((n) => n.accountId)).toEqual([
+      "credit-child",
+      "debit-child",
+    ]);
+  });
+
+  it("flags a period with nothing to show as empty, until zero accounts are requested", () => {
+    const rows: BalanceRow[] = [row("rev", "4100", "PENDAPATAN", 0, 0)];
+
+    expect(buildIncomeStatement(rows).isEmpty).toBe(true);
+    expect(buildIncomeStatement(rows, { includeZero: true }).isEmpty).toBe(false);
+    expect(buildIncomeStatement([row("rev", "4100", "PENDAPATAN", 0, 1)]).isEmpty).toBe(false);
+  });
 });

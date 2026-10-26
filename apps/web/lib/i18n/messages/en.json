@@ -5334,6 +5334,7 @@
       "totalBeban": "Total Operating Expenses",
       "labaKotor": "Gross Profit",
       "labaBersih": "Net Profit",
+      "empty": "No revenue, cost of goods sold or expense in this period.",
       "sectionEmpty": "No accounts with a balance in this section yet.",
       "coverageTitle": "Data coverage",
       "coverageBody": "This report covers only transactions that produce journals: marketplace sales, marketplace sales returns, settlements, goods receipts (GRN), finished-goods receipts, stock opname adjustments, van sales, field sales (putus deliveries and invoiced konsi sell-through reports, once their journals post), and manual journals. Supplier payments only post a balance-sheet journal (accounts payable and bank), so they do not affect profit and loss. NOT yet included: SPG sales, which post no journal; and field returns (goods returned by a store), which post no journal at approval — their revenue reverses only when the credit is offset against an invoice, and the cost of goods sold and inventory for the returned goods are never journaled."
@@ -5379,11 +5380,15 @@
       "noCashAccountCta": "Open Account Mapping",
       "unclassifiedTitle": "Some accounts are unclassified",
       "unclassifiedBody": "{count} accounts have not been assigned to operating, investing, or financing activities, so they are shown separately. Totals remain correct.",
+      "unclassifiedPointer": "Assign them under Finance → Cash Flow Classification.",
       "unclassifiedCta": "Open Cash Flow Classification",
       "reconciledNote": "The computed change in cash equals the actual movement in cash balances. Every journal is validated as balanced when posted, so this agreement is expected — this check only detects corrupt data.",
       "unreconciledNote": "The computed change in cash does NOT equal the actual movement in cash balances. This indicates corrupt journal data — check the general ledger.",
       "coverageTitle": "Data coverage",
       "coverageBody": "This report is built from general-ledger journals using the indirect method, so it covers every journal posted in the period — field sales included, both putus deliveries and invoiced konsi sell-through reports, once their journals post. SPG sales post no journal and are NOT yet included.",
+      "nonCashNote": "Section subtotals may include non-cash investing and financing transactions; only the net change in cash is measured against actual cash balances.",
+      "printSinglePeriodNote": "This printed report covers a single period. The comparison with the previous period is available on screen and in the Excel export.",
+      "invalidRange": "The end date cannot be before the start date.",
       "colCurrent": "This period",
       "colPrevious": "Previous period",
       "colDelta": "Change",
@@ -5503,6 +5508,7 @@
       "FORBIDDEN": "You do not have permission to change the classification.",
       "NOT_FOUND": "Account not found.",
       "NOT_CLASSIFIABLE": "Revenue, cost of goods, and expense accounts are not classified — they are already inside net profit.",
+      "UNEXPECTED": "Could not save the classification. Please try again.",
       "INVALID_SECTION": "Unknown classification.",
       "KAS_REQUIRES_ASET": "Only ASET accounts can be marked as Cash and Cash Equivalents. Marking a liability or equity account as cash would make the cash flow statement wrong."
     }

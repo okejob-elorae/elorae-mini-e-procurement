@@ -9,7 +9,7 @@ import { IncomeStatementClient } from "./IncomeStatementClient";
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams: Promise<{ from?: string; to?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; zero?: string }>;
 };
 
 export default async function IncomeStatementPage({ searchParams }: PageProps) {
@@ -25,10 +25,15 @@ export default async function IncomeStatementPage({ searchParams }: PageProps) {
   const to = parseDateOnlyEnd(sp.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(sp.from ?? "");
 
+  const includeZero = sp.zero === "1";
+
   const balances = await getAccountBalances({ from, to });
-  const report = buildIncomeStatement(balances);
+  const report = buildIncomeStatement(balances, { includeZero });
 
   return (
-    <IncomeStatementClient report={report} filters={{ from: sp.from ?? "", to: sp.to ?? "" }} />
+    <IncomeStatementClient
+      report={report}
+      filters={{ from: sp.from ?? "", to: sp.to ?? "", zero: includeZero }}
+    />
   );
 }

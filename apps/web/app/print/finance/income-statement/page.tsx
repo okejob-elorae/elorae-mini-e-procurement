@@ -6,10 +6,6 @@ import { Loader2 } from "lucide-react";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getIncomeStatementReport } from "@/app/actions/finance-reports";
 import type { RollupNode } from "@/lib/finance/reports/rollup";
-import {
-  INCOME_STATEMENT_COVERAGE_BODY,
-  INCOME_STATEMENT_COVERAGE_TITLE,
-} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getIncomeStatementReport>>;
 
@@ -38,6 +34,7 @@ export default function PrintIncomeStatementPage() {
     getIncomeStatementReport({
       from: sp.get("from") ?? undefined,
       to: sp.get("to") ?? undefined,
+      includeZero: sp.get("zero") === "1",
     })
       .then(setReport)
       .catch(() => setReport("error"));
@@ -133,8 +130,8 @@ export default function PrintIncomeStatementPage() {
         </tbody>
       </table>
       <div className="mt-4 text-xs text-gray-700">
-        <p className="font-semibold">{INCOME_STATEMENT_COVERAGE_TITLE}</p>
-        <p>{INCOME_STATEMENT_COVERAGE_BODY}</p>
+        <p className="font-semibold">{report.notes.coverageTitle}</p>
+        <p>{report.notes.coverageBody}</p>
       </div>
     </div>
   );

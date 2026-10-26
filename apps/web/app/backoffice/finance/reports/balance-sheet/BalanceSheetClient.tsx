@@ -109,7 +109,7 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[360px]">
               <TableBody>
                 <ReportSection
                   title={t("balanceSheet.sectionAset")}

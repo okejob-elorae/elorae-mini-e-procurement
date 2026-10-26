@@ -368,6 +368,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Auto-sizing an iframe to its content? Measure `contentDocument.body`, NEVER `documentElement` (floored at the viewport); poll `readyState`, capped. → `docs/landmines/print-documents.md`
 - "Harmonising" the BKM onto whole-rupiah `idr`? Don't — `settlement-bkm-html.ts` is 2dp because its figures carry sen; change all of a document's money or none. → `docs/landmines/print-documents.md`
 - Adding a backoffice print trigger? Use `print-html-in-iframe.ts`, never hand-roll; audit via `logPrintQuietly`, never `await` before `window.open`. → `docs/landmines/print-documents.md`
+- Adding a finance statement note for print/Excel? Text lives once in `id.json`, read by server-only `disclosures.ts`; print pages get `report.notes` from the action, never import it. → `docs/landmines/print-documents.md`
 
 **Pick-pack-ship**
 

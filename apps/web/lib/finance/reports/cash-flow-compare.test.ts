@@ -16,7 +16,6 @@ function statement(over: Partial<CashFlowStatement>): CashFlowStatement {
     netChange: 0,
     kasAwal: 0,
     kasAkhir: 0,
-    kasAkhirActual: 0,
     isReconciled: true,
     hasCashAccount: true,
     hasMovement: true,
