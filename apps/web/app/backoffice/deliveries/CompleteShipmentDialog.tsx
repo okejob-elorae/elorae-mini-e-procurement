@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { computeDueDate } from "@/lib/field-sales/delivery/plan";
 import { parseDateOnlyInput } from "@/app/backoffice/field-sales-orders/[id]/DeliveryFormDialog";
 import {
   getShipmentAction,
@@ -46,6 +47,8 @@ type LoadState = { status: "loading" } | { status: "loaded" } | { status: "error
 
 export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone }: Props) {
   const t = useTranslations("deliveryShipments");
+  /* The tempo copy is generic and already lives under the order delivery dialog; reused, not duplicated. */
+  const tOrders = useTranslations("fieldSalesOrders");
   const [lines, setLines] = useState<Line[]>([]);
   const [qtyInputs, setQtyInputs] = useState<Record<string, string>>({});
   const [proofPhotoUrl, setProofPhotoUrl] = useState("");
@@ -53,6 +56,7 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
   const [invoiceDate, setInvoiceDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [isKonsi, setIsKonsi] = useState(false);
+  const [paymentTempo, setPaymentTempo] = useState(0);
   /* Gates the whole form, and with it the konsi-or-putus block: until the detail arrives, `isKonsi` is a default, not a fact. */
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -93,6 +97,7 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
         setLines(nextLines);
         setQtyInputs(Object.fromEntries(nextLines.map((l) => [l.id, String(l.plannedQty)])));
         setIsKonsi(detail.orderType === "KONSI");
+        setPaymentTempo(detail.storePaymentTempo);
         setLoadState({ status: "loaded" });
       })
       .catch(() => {
@@ -139,6 +144,15 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
     parsedInvoice !== null && parsedDue !== null && parsedDue.getTime() >= parsedInvoice.getTime();
   const canSubmit =
     detailLoaded && !isPending && !uploading && !!proofPhotoUrl && lines.length > 0 && (isKonsi || datesValid);
+
+  /**
+   * Fills the due date from the store's tempo on demand. The server never derives it, so this is
+   * a shortcut for the common case, not a default; the field still starts empty.
+   */
+  function applyTempo(): void {
+    if (!parsedInvoice) return;
+    setDueDate(formatDateOnlyJakarta(computeDueDate(parsedInvoice, paymentTempo)));
+  }
 
   function handleSubmit(): void {
     /* Submit is disabled until `canSubmit`; the hints beside each control say what is missing. */
@@ -308,6 +322,23 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
                     disabled={isPending}
                     onChange={(e) => setDueDate(e.target.value)}
                   />
+                  {paymentTempo > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      <span className="text-xs text-muted-foreground">
+                        {tOrders("delivery.tempoHint", { days: paymentTempo })}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-10"
+                        disabled={isPending || parsedInvoice === null}
+                        onClick={applyTempo}
+                      >
+                        {tOrders("delivery.applyTempo")}
+                      </Button>
+                    </div>
+                  )}
                   {parsedDue === null && <p className="text-xs text-muted-foreground">{t("dueDateRequired")}</p>}
                   {parsedDue !== null && parsedInvoice !== null && !datesValid && (
                     <p className="text-xs text-destructive">{t("dueDateBeforeInvoice")}</p>

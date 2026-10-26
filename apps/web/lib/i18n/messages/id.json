@@ -122,7 +122,9 @@
     "sendTest": "Kirim notifikasi uji",
     "testTitle": "Notifikasi uji",
     "testBody": "Ini adalah notifikasi uji dari aplikasi.",
-    "markAllRead": "Tandai semua dibaca"
+    "markAllRead": "Tandai semua dibaca",
+    "loadMore": "Muat lebih banyak",
+    "loadMoreError": "Gagal memuat notifikasi lainnya"
   },
   "supplier": {
     "title": "Pemasok",
@@ -3394,6 +3396,8 @@
       "markAllRead": "Tandai semua dibaca",
       "empty": "Belum ada notifikasi",
       "offlineError": "Gagal terhubung — periksa koneksi internet dan coba lagi",
+      "loadMore": "Muat lebih banyak",
+      "loadMoreError": "Gagal memuat lagi — periksa koneksi Anda lalu coba lagi",
       "push": {
         "title": "Aktifkan notifikasi push",
         "body": "Dapatkan pemberitahuan di HP ini soal retur, tagihan, dan tugas baru, walau aplikasi sedang ditutup.",

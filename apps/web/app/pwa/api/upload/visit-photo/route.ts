@@ -4,12 +4,16 @@ import { pwaAccessGuard } from "@/lib/pwa/guard";
 import { uploadToR2, isConfigured } from "@/lib/r2";
 import { buildR2Key, isSafeR2KeySegment } from "@/lib/r2-key";
 import { prisma } from "@elorae/db";
-import { attachVisitPhoto, VisitOwnershipError } from "@/lib/field-sales/visit-photo-writer";
+import { attachVisitPhoto, MAX_PHOTOS_PER_VISIT, VisitOwnershipError, VisitPhotoCapError } from "@/lib/field-sales/visit-photo-writer";
 
 export const dynamic = "force-dynamic";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
+function photoCapResponse() {
+  return NextResponse.json({ error: "visit photo cap reached", code: "PHOTO_CAP_REACHED" }, { status: 409 });
+}
 
 export async function POST(req: NextRequest) {
   const session = await auth();
@@ -40,6 +44,10 @@ export async function POST(req: NextRequest) {
     const owned = await prisma.storeVisit.findFirst({ where: { id: visitId, userId: session.user.id }, select: { id: true } });
     if (!owned) return NextResponse.json({ error: "visit not found" }, { status: 404 });
 
+    /* Checked before the R2 write so a refused upload leaves no orphaned object. */
+    const existingCount = await prisma.visitPhoto.count({ where: { visitId } });
+    if (existingCount >= MAX_PHOTOS_PER_VISIT) return photoCapResponse();
+
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
     const key = buildR2Key("visit-photos", [visitId, clientId], ext);
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -49,6 +57,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(photo);
   } catch (e) {
     if (e instanceof VisitOwnershipError) return NextResponse.json({ error: "visit not found" }, { status: 404 });
+    if (e instanceof VisitPhotoCapError) return photoCapResponse();
     console.error("visit-photo upload error:", e);
     return NextResponse.json({ error: "upload failed" }, { status: 500 });
   }

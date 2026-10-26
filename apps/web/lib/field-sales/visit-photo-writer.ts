@@ -1,5 +1,14 @@
 import type { Prisma } from "@elorae/db";
 
+export const MAX_PHOTOS_PER_VISIT = 20;
+
+export class VisitPhotoCapError extends Error {
+  constructor(visitId: string) {
+    super(`Visit ${visitId} already holds ${MAX_PHOTOS_PER_VISIT} photos`);
+    this.name = "VisitPhotoCapError";
+  }
+}
+
 export class VisitOwnershipError extends Error {
   constructor(visitId: string) {
     super(`Visit ${visitId} not found for this salesman`);
@@ -16,6 +25,9 @@ export async function attachVisitPhoto(
 
   const visit = await tx.storeVisit.findFirst({ where: { id: input.visitId, userId: input.salesmanId }, select: { id: true } });
   if (!visit) throw new VisitOwnershipError(input.visitId);
+
+  const count = await tx.visitPhoto.count({ where: { visitId: input.visitId } });
+  if (count >= MAX_PHOTOS_PER_VISIT) throw new VisitPhotoCapError(input.visitId);
 
   return tx.visitPhoto.create({
     data: {
