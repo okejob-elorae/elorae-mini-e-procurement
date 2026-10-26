@@ -3,8 +3,8 @@ import { esc, fmtDocDate, printCssBase, printPagePortrait } from "@/lib/print/pr
 /**
  * Money on the BKM renders at TWO DECIMALS. It was copied in at whole rupiah from
  * `field-sales-nota-tagihan-html.ts` and that was wrong here — and the "family convention" it
- * was following turns out to be the minority spelling anyway: with this one converted, three
- * builders in the directory still hold a `Math.round` rupiah formatter, and every other one
+ * was following turns out to be the minority spelling anyway: with this one converted, two
+ * builders in the directory (van-sale and spg-sale) still hold a `Math.round` rupiah formatter, and every other one
  * goes through `print-theme.ts`'s `money()`, which is already 2dp.
  *
  * Every figure on this document carries sen: the receivables behind it are `Decimal(15,2)` and

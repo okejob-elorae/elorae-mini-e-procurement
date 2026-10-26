@@ -46,7 +46,11 @@ export async function exportReceivablesReport(
   requirePermission(session.user.permissions, PERMISSIONS.RECEIVABLES_VIEW);
 
   const { rows: exportRows, truncated, totalRows } = await listReceivablesForExport(filters);
-  if (totalRows === 0) return { empty: true };
+  /**
+   * Gate on the post-bucket-filter rows, not `totalRows`: a bucket filter matching nothing must not
+   * download a header-only file. A truncated set may hold matches past the cap, so it is never empty.
+   */
+  if (exportRows.length === 0 && !truncated) return { empty: true };
   const rows = toRows(exportRows);
   const filename = `piutang-overdue-${Date.now()}`;
 

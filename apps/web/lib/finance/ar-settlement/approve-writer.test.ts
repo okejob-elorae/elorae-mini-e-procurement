@@ -28,8 +28,6 @@ vi.mock("@/lib/finance/ar/payment-writer", async (importOriginal) => {
   };
 });
 
-const notify = vi.hoisted(() => ({ send: vi.fn() }));
-vi.mock("@/lib/notifications/recipients", () => ({ sendNotificationToUsers: notify.send }));
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -191,7 +189,6 @@ d("approveSettlement (test bed only)", () => {
   }
 
   beforeEach(async () => {
-    notify.send.mockReset();
     token = Math.random().toString(36).slice(2, 10);
     storeId = ""; storeOtherId = "";
     salesmanId = ""; approverId = "";
@@ -722,7 +719,7 @@ d("approveSettlement (test bed only)", () => {
     expect(Number(receivable!.outstandingAmount)).toBe(0);
   });
 
-  it("notifies the salesman once on the call that approves, and never on a replay", async () => {
+  it("returns the approval notice only on the call that flips", async () => {
     const settlementId = await createSettlement({
       invoices: [{ receivableId: recA, amount: 1000 }],
       deductions: [evidencedDeduction("PROGRAM", 200)],
@@ -730,42 +727,25 @@ d("approveSettlement (test bed only)", () => {
       expectedAmount: 800,
     });
 
-    await approveSettlement({ settlementId, approvedById: approverId });
-    expect(notify.send).toHaveBeenCalledTimes(1);
-    const [users, payload] = notify.send.mock.calls[0];
-    expect(users).toEqual([expect.objectContaining({ id: salesmanId })]);
-    expect(payload).toMatchObject({ type: "SETTLEMENT_APPROVED", data: { settlementId, storeId } });
+    const first = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(first.notice).toMatchObject({ id: settlementId, storeId, salesmanId });
 
-    await approveSettlement({ settlementId, approvedById: approverId });
-    expect(notify.send).toHaveBeenCalledTimes(1);
+    const second = await approveSettlement({ settlementId, approvedById: approverId });
+    expect(second.alreadyApproved).toBe(true);
+    expect(second.notice).toBeUndefined();
   });
 
-  it("does not notify when the approval is refused, and still approves when the push throws", async () => {
+  it("refuses an over-tender with OVER_TENDER, so no notice is ever returned", async () => {
+    /* An over-tender refuses whatever the variance tolerance is configured to. */
     const refused = await createSettlement({
       invoices: [{ receivableId: recA, amount: 1000 }],
-      deductions: [],
-      actualAmount: 900,
-      expectedAmount: 1000,
-    });
-    await expect(approveSettlement({ settlementId: refused, approvedById: approverId })).rejects.toBeInstanceOf(Error);
-    expect(notify.send).not.toHaveBeenCalled();
-
-    notify.send.mockRejectedValueOnce(new Error("fcm down"));
-    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const ok = await createSettlement({
-      invoices: [{ receivableId: recA, amount: 1000 }],
-      deductions: [],
+      deductions: [evidencedDeduction("PROGRAM", 1000)],
       actualAmount: 1000,
-      expectedAmount: 1000,
+      expectedAmount: 0,
     });
-    try {
-      const result = await approveSettlement({ settlementId: ok, approvedById: approverId });
-      expect(result.alreadyApproved).toBeUndefined();
-    } finally {
-      spy.mockRestore();
-    }
-    const row = await prisma.storeSettlement.findUnique({ where: { id: ok } });
-    expect(row!.status).toBe("APPROVED");
+    await expect(approveSettlement({ settlementId: refused, approvedById: approverId })).rejects.toMatchObject({
+      code: "OVER_TENDER",
+    });
   });
 
   it("draws the retur through applyReturnOffset keyed on the deduction row id", async () => {

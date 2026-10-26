@@ -3904,6 +3904,7 @@
       "offsetSuccessToast": "Return value applied to payment.",
       "offsetAlreadyAppliedToast": "The earlier draw already went through — the amount you just entered was not applied.",
       "insufficientOutstanding": "This store's outstanding total ({total}) is less than the amount you're offsetting ({needed}) — it can't be offset until more invoices exist.",
+      "noCreditToApply": "No credit left to apply on this return.",
       "noCandidates": "This store has no outstanding receivables to apply this credit to.",
       "colDueDate": "Due Date",
       "colOutstanding": "Outstanding",

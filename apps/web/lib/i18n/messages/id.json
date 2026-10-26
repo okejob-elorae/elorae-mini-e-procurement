@@ -3904,6 +3904,7 @@
       "offsetSuccessToast": "Nilai retur diterapkan ke pembayaran.",
       "offsetAlreadyAppliedToast": "Penarikan sebelumnya sudah berhasil diterapkan — jumlah yang baru saja Anda masukkan tidak diterapkan.",
       "insufficientOutstanding": "Total piutang toko ini ({total}) lebih kecil dari jumlah yang ingin dioffset ({needed}) — belum bisa dioffset sampai ada faktur lain.",
+      "noCreditToApply": "Tidak ada kredit tersisa untuk diterapkan pada retur ini.",
       "noCandidates": "Toko ini tidak punya piutang yang bisa dikenakan kredit ini.",
       "colDueDate": "Jatuh Tempo",
       "colOutstanding": "Piutang",

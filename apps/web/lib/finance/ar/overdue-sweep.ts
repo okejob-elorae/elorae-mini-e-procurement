@@ -129,7 +129,8 @@ export async function runOverdueSweep(options?: {
     if (!collectorId || !r.collector) unassigned++;
 
     const docNo = resolveReceivableSource(r).docNo;
-    const outstandingAmount = rupiah.format(Number(r.outstandingAmount));
+    const outstandingAmount = Number(r.outstandingAmount);
+    const outstandingText = rupiah.format(outstandingAmount);
     /* `AdminNotification.title` is VARCHAR(191); a long store name would otherwise fail this crossing on every run. */
     const title = capNotificationText(
       collectorName
@@ -137,12 +138,12 @@ export async function runOverdueSweep(options?: {
         : `Piutang jatuh tempo ${days} hari (belum ada penagih) — ${r.store.name}`,
     );
     const message =
-      `Nota ${docNo} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.` +
+      `Nota ${docNo} sebesar ${outstandingText} sudah lewat ${days} hari dari jatuh tempo.` +
       (collectorName ? ` Ditugaskan ke ${collectorName}.` : " Belum ada penagih yang ditugaskan.");
 
     const collectorPayload = {
       title: `Piutang jatuh tempo ${days} hari`,
-      body: `Nota ${docNo} di ${r.store.name} sebesar ${outstandingAmount} sudah lewat ${days} hari dari jatuh tempo.`,
+      body: `Nota ${docNo} di ${r.store.name} sebesar ${outstandingText} sudah lewat ${days} hari dari jatuh tempo.`,
       data: { receivableId: r.id, thresholdDays: String(tStar), daysOverdue: String(days) },
     };
 

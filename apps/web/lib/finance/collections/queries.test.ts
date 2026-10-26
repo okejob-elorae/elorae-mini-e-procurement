@@ -3,6 +3,7 @@ import { prisma, seededId } from "@elorae/db";
 import { submitCollection } from "./submit-writer";
 import {
   listCollectionQueue,
+  getReceivableCollectionAccess,
   getReceivableForCollection,
   listPendingCollections,
   getCollectionSubmission,
@@ -133,6 +134,30 @@ d("listCollectionQueue (test bed only)", () => {
     expect(result).not.toBeNull();
     expect(result!.receivableId).toBe(receivableAId);
     expect(result!.outstandingAmount).toBe(1000);
+  });
+
+  it("getReceivableCollectionAccess returns ok with the receivable for the assigned collector", async () => {
+    const access = await getReceivableCollectionAccess(receivableAId, collectorId);
+    expect(access.status).toBe("ok");
+    if (access.status === "ok") {
+      expect(access.receivable.receivableId).toBe(receivableAId);
+      expect(access.receivable.docNo).toBe(`TEST-CQ-DLVA-${token}`);
+    }
+  });
+
+  it("getReceivableCollectionAccess returns not_assigned, with no receivable fields, for another collector", async () => {
+    const otherCollector = await prisma.user.create({ data: { email: `cq-access-other-${token}@test.local`, name: "other", role: "ADMIN" } });
+    try {
+      const access = await getReceivableCollectionAccess(receivableAId, otherCollector.id);
+      expect(access).toEqual({ status: "not_assigned" });
+    } finally {
+      await prisma.user.delete({ where: { id: otherCollector.id } });
+    }
+  });
+
+  it("getReceivableCollectionAccess returns missing for an unknown receivable id", async () => {
+    const access = await getReceivableCollectionAccess(`missing-${token}`, collectorId);
+    expect(access).toEqual({ status: "missing" });
   });
 });
 
