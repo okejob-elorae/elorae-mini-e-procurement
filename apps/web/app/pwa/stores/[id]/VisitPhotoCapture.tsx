@@ -22,10 +22,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { compressImage } from "@/lib/pwa/photo/compress";
 import { enqueuePhoto, deletePendingPhoto, listPendingPhotosForVisit, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
+import { MAX_PHOTOS_PER_VISIT } from "@/lib/field-sales/visit-photo-writer";
+import { PHOTO_CAP_REACHED_ERROR } from "@/lib/pwa/offline/photo-classify";
 import { flushPendingPhotos } from "@/lib/pwa/offline/photo-sync";
 import type { PendingPhoto } from "@/lib/pwa/offline/db";
-
-const MAX_PER_VISIT = 20;
 
 type SyncedPhoto = { id: string; url: string; caption: string | null; capturedAtIso: string };
 type Mode = "idle" | "live" | "preview";
@@ -48,7 +48,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const t = useTranslations("pwa.visitPhoto");
 
   const total = synced.length + pending.length;
-  const atCap = total >= MAX_PER_VISIT;
+  const atCap = total >= MAX_PHOTOS_PER_VISIT;
 
   const refresh = () => listPendingPhotosForVisit(visitId).then(setPending);
   useEffect(() => { void refresh(); }, [visitId]);
@@ -217,7 +217,7 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
     <Card className="flex-col gap-3 p-4">
       <div className="flex items-center justify-between">
         <span className="text-sm font-medium">{t("title")}</span>
-        <Badge variant="secondary">{total}/{MAX_PER_VISIT}</Badge>
+        <Badge variant="secondary">{total}/{MAX_PHOTOS_PER_VISIT}</Badge>
       </div>
 
       <Button onClick={() => void openCam()} disabled={busy || atCap}>
@@ -249,9 +249,9 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
             <div key={p.localId} className="relative h-16 w-16 overflow-hidden rounded-md border bg-muted">
               <img src={blobUrls[p.localId]} alt={p.caption ?? ""} className="h-full w-full object-cover opacity-70" />
               <span className="absolute inset-x-0 bottom-0 bg-black/60 text-center text-[10px] text-white">
-                {p.syncState === "failed" ? t("failed") : t("waiting")}
+                {p.syncState === "failed" ? (p.error === PHOTO_CAP_REACHED_ERROR ? t("capReached") : t("failed")) : t("waiting")}
               </span>
-              {p.syncState === "failed" && (
+              {p.syncState === "failed" && p.error !== PHOTO_CAP_REACHED_ERROR && (
                 <button
                   type="button"
                   onClick={() => retryPendingPhoto(p.localId).then(() => flushPendingPhotos()).then((r) => { void refresh(); if (r.synced > 0) router.refresh(); })}

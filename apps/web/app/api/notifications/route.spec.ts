@@ -4,6 +4,8 @@ type Row = { id: string; userId: string; createdAt: Date };
 
 const store: { rows: Row[] } = { rows: [] };
 
+type OrderBy = Array<Partial<Record<keyof Row, "asc" | "desc">>>;
+
 type Where = {
   userId: string;
   readAt?: null;
@@ -22,13 +24,27 @@ function matches(row: Row, where: Where): boolean {
   });
 }
 
+/* Honours each orderBy key and direction in turn, so dropping the id tie-break changes the order. */
+function compareBy(orderBy: OrderBy, a: Row, b: Row): number {
+  for (const term of orderBy) {
+    for (const [key, direction] of Object.entries(term) as Array<[keyof Row, "asc" | "desc"]>) {
+      const left = a[key] instanceof Date ? (a[key] as Date).getTime() : (a[key] as string);
+      const right = b[key] instanceof Date ? (b[key] as Date).getTime() : (b[key] as string);
+      if (left === right) continue;
+      const order = left < right ? -1 : 1;
+      return direction === "asc" ? order : -order;
+    }
+  }
+  return 0;
+}
+
 vi.mock("@elorae/db", () => ({
   prisma: {
     notificationQueue: {
-      findMany: vi.fn(async (args: { where: Where; take: number }) =>
+      findMany: vi.fn(async (args: { where: Where; orderBy: OrderBy; take: number }) =>
         store.rows
           .filter((r) => matches(r, args.where))
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1))
+          .sort((a, b) => compareBy(args.orderBy, a, b))
           .slice(0, args.take),
       ),
       count: vi.fn(async () => 0),
@@ -88,6 +104,7 @@ describe("GET /api/notifications", () => {
     let cursor: string | undefined;
     let pages = 0;
     for (;;) {
+      expect(pages).toBeLessThan(10);
       const { json } = await readPage(cursor);
       seen.push(...json.items.map((i: { id: string }) => i.id));
       pages += 1;

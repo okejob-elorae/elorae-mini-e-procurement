@@ -26,6 +26,9 @@ export async function attachVisitPhoto(
   const visit = await tx.storeVisit.findFirst({ where: { id: input.visitId, userId: input.salesmanId }, select: { id: true } });
   if (!visit) throw new VisitOwnershipError(input.visitId);
 
+  /* Serialises concurrent uploads on the visit row so two at 19 cannot both pass the count below. */
+  await tx.$queryRaw`SELECT \`id\` FROM \`StoreVisit\` WHERE \`id\` = ${input.visitId} FOR UPDATE`;
+
   const count = await tx.visitPhoto.count({ where: { visitId: input.visitId } });
   if (count >= MAX_PHOTOS_PER_VISIT) throw new VisitPhotoCapError(input.visitId);
 

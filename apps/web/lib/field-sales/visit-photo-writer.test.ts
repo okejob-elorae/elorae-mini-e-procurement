@@ -4,17 +4,19 @@ import { attachVisitPhoto, MAX_PHOTOS_PER_VISIT, VisitOwnershipError, VisitPhoto
 type Opts = { existing?: { id: string; url: string } | null; owned?: boolean; count?: number };
 function fakeTx(opts: Opts) {
   let created: unknown = null;
+  const calls: string[] = [];
   const tx = {
+    $queryRaw: async () => { calls.push("lock"); return [{ id: "v1" }]; },
     visitPhoto: {
       findUnique: async () => opts.existing ?? null,
-      count: async () => opts.count ?? 0,
+      count: async () => { calls.push("count"); return opts.count ?? 0; },
       create: async ({ data }: { data: { url: string } }) => { created = { id: "new-id", url: data.url }; return created; },
     },
     storeVisit: {
       findFirst: async () => (opts.owned ? { id: "v1" } : null),
     },
   };
-  return { tx, getCreated: () => created };
+  return { tx, calls, getCreated: () => created };
 }
 const base = { visitId: "v1", salesmanId: "s1", clientId: "c1", url: "https://r2/x.jpg", r2Key: "visit-photos/v1/c1.jpg", capturedAt: new Date(0) };
 
@@ -33,6 +35,11 @@ describe("attachVisitPhoto", () => {
     const { tx } = fakeTx({ existing: null, owned: true });
     const r = await attachVisitPhoto(tx as never, base);
     expect(r).toEqual({ id: "new-id", url: "https://r2/x.jpg" });
+  });
+  it("locks the visit row before counting, so concurrent uploads serialise", async () => {
+    const { tx, calls } = fakeTx({ existing: null, owned: true });
+    await attachVisitPhoto(tx as never, base);
+    expect(calls).toEqual(["lock", "count"]);
   });
   it("refuses the photo past the per-visit cap, never creates", async () => {
     const { tx, getCreated } = fakeTx({ existing: null, owned: true, count: MAX_PHOTOS_PER_VISIT });

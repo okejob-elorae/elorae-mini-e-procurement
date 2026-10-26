@@ -35,6 +35,7 @@ export function NotificationsList({ initialItems, initialNextCursor, initialUnre
   const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState(false);
   const [markingAll, setMarkingAll] = useState(false);
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [unreadCount, setUnreadCount] = useState(initialUnreadCount);
@@ -43,6 +44,7 @@ export function NotificationsList({ initialItems, initialNextCursor, initialUnre
   async function loadMore() {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
+    setLoadMoreError(false);
     try {
       const res = await fetch(`/api/notifications?cursor=${encodeURIComponent(nextCursor)}`);
       if (!res.ok) throw new Error("failed");
@@ -55,7 +57,7 @@ export function NotificationsList({ initialItems, initialNextCursor, initialUnre
       setUnreadCount(json.unreadCount);
       setActionError(null);
     } catch {
-      setActionError(t("loadMoreError"));
+      setLoadMoreError(true);
     } finally {
       setLoadingMore(false);
     }
@@ -83,8 +85,8 @@ export function NotificationsList({ initialItems, initialNextCursor, initialUnre
 
   async function handleMarkAllRead() {
     setMarkingAll(true);
-    const previous = items;
     const previousUnread = unreadCount;
+    const markedIds = new Set(items.filter((i) => !i.readAt).map((i) => i.id));
     setUnreadCount(0);
     setItems((prev) => prev.map((i) => ({ ...i, readAt: i.readAt ?? new Date().toISOString() })));
     try {
@@ -92,7 +94,7 @@ export function NotificationsList({ initialItems, initialNextCursor, initialUnre
       if (!res.ok) throw new Error("failed");
       setActionError(null);
     } catch {
-      setItems(previous);
+      setItems((prev) => prev.map((i) => (markedIds.has(i.id) ? { ...i, readAt: null } : i)));
       setUnreadCount(previousUnread);
       setActionError(t("offlineError"));
     } finally {
@@ -171,9 +173,12 @@ export function NotificationsList({ initialItems, initialNextCursor, initialUnre
             </Link>
           ))}
           {nextCursor && (
-            <Button variant="outline" className="h-11 w-full" onClick={loadMore} disabled={loadingMore}>
-              {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : t("loadMore")}
-            </Button>
+            <div className="space-y-2">
+              {loadMoreError && <p className="text-center text-xs text-destructive">{t("loadMoreError")}</p>}
+              <Button variant="outline" className="h-11 w-full" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? <Loader2 className="h-4 w-4 animate-spin" /> : t("loadMore")}
+              </Button>
+            </div>
           )}
         </div>
       )}

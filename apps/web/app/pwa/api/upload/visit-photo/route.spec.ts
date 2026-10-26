@@ -46,6 +46,7 @@ describe("POST /pwa/api/upload/visit-photo cap", () => {
     db.visitPhoto.count.mockResolvedValue(MAX_PHOTOS_PER_VISIT);
     const res = await POST(upload());
     expect(res.status).toBe(409);
+    expect(db.visitPhoto.count).toHaveBeenCalledWith({ where: { visitId: "visit1" } });
     expect(await res.json()).toMatchObject({ code: "PHOTO_CAP_REACHED" });
     expect(uploadToR2).not.toHaveBeenCalled();
   });

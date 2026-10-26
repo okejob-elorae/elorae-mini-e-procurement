@@ -9,6 +9,9 @@ describe("classifyPhotoUpload", () => {
   it("retries a 401 (expired session) instead of failing the photo", () => {
     expect(classifyPhotoUpload(401)).toBe("retry");
   });
+  it("retries status 0, the opaque response a manual redirect yields", () => {
+    expect(classifyPhotoUpload(0)).toBe("retry");
+  });
   it("retries on 5xx / 503 / 429 / thrown", () => {
     for (const s of [500, 502, 503, 429]) expect(classifyPhotoUpload(s)).toBe("retry");
     expect(classifyPhotoUpload("thrown")).toBe("retry");

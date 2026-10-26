@@ -139,6 +139,8 @@ export function NotificationIcon() {
       const json: NotificationsResponse = await res.json();
       setData((prev) => {
         if (!prev) return json;
+        /* A refetch landed mid-flight and reset page 1: appending would skip the rows between. */
+        if (prev.nextCursor !== cursor) return prev;
         const known = new Set(prev.items.map((i) => i.id));
         return {
           items: [...prev.items, ...json.items.filter((i) => !known.has(i.id))],
