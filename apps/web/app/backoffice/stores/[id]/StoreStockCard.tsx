@@ -69,9 +69,9 @@ function formatDateTime(iso: string): string {
 
 /**
  * Badge color per registry member — exhaustive over EVERY StockLedgerRefType member, even
- * though only KonsiTransfer, FieldReturn, SpgSale, StoreStocktake and now StoreTransfer can ever
- * appear on a card scoped to `locationType: "STORE"` (see AGENTS.md's "StoreStock has FIVE
- * writers" landmine entry — StoreTransfer is the sixth, writing both legs of the move). A member
+ * though only a handful of refTypes (KonsiTransfer, FieldReturn, SpgSale, StoreStocktake,
+ * StoreTransfer) are known to appear on a card scoped to `locationType: "STORE"` (see
+ * `docs/landmines/stock.md` — never trust a count of `StoreStock` writers, grep the movers). A member
  * added to the registry later fails to compile here until it is placed, the same guard
  * `LEDGER_REF_MESSAGE_KEY` applies to copy. Every refType that cannot reach this card stays
  * "secondary" — there is no direction to signal for it here.

@@ -306,7 +306,7 @@ export async function approveStoreTransfer(input: {
  * plain `prisma.$transaction`, which COMMITS on a normal return, so a `return { error }` after
  * this `updateMany` would commit the cancel while reporting failure (the same trap
  * `updateDeliveryDatesAction` and `approveSettlement`'s re-validation guards are named for in
- * this repo's landmine index).
+ * `docs/landmines/finance-ar.md`, which covers both).
  *
  * `StoreTransfer` carries no `cancelledById`/`cancelledAt` columns — unlike `StoreStocktake`,
  * which has both plus a `cancelReason` — and reusing `approvedById`/`approvedAt` for a cancel

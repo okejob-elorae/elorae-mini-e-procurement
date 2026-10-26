@@ -37,7 +37,7 @@ vi.mock("@/lib/purchasing/supplier-payment-journal", async (importOriginal) => {
 vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: async () => "Test Finance User",
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifyPOCreated: async () => {},
   notifyPOStatusUpdated: async () => {},
   notifyPOPaymentToggled: async () => {},

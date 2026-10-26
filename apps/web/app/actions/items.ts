@@ -6,7 +6,7 @@ import { auth } from '@/lib/auth';
 import { apiFetch } from '@/lib/internal-api';
 import { generateSKU as generateSKUFromLib } from '@/lib/sku-generator';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
-import { notifyItemCreated } from '@/app/actions/notifications';
+import { notifyItemCreated } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
 import {
   getConsumptionRules as getConsumptionRulesFromLib,

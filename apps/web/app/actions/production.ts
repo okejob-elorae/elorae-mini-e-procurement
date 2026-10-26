@@ -15,7 +15,7 @@ import { MaterialPlanBlockedError } from '@/lib/production/scoped-bom';
 import { rollShortfalls, rollsForItem, withRollItemIds, type RollEntry } from '@/lib/production/roll-allocation';
 import { reconcileWorkOrder } from '@/lib/production/reconciliation';
 import { calculateMovingAverage } from '@/lib/inventory/costing';
-import { notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/app/actions/notifications';
+import { notifyWOCreated, notifyWOStatusUpdated, notifyWOMaterialsIssued, notifyWOCompleted } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
 import { getPpnRatePercent } from '@/app/actions/settings/ppn';
 import { auth } from '@/lib/auth';

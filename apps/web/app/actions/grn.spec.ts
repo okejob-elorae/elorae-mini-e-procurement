@@ -42,7 +42,7 @@ vi.mock("@/lib/inventory/costing", () => ({
 vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifyGRNCreated: vi.fn(),
   notifyMaterialArrivedForPo: vi.fn(),
 }));
@@ -71,7 +71,7 @@ import {
 } from "./grn";
 import { calculateMovingAverage, findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { getActorName } from "@/lib/notifications/actor-name";
-import { notifyMaterialArrivedForPo } from "@/app/actions/notifications";
+import { notifyMaterialArrivedForPo } from "@/lib/notifications/events";
 import { logAudit } from "@/lib/audit";
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 

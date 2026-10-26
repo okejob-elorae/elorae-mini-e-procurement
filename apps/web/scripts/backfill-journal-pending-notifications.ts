@@ -1,9 +1,11 @@
 /**
- * One-shot: give the existing unread JOURNAL_PENDING backlog a bell entry.
+ * One-shot: give the existing JOURNAL_PENDING backlog a bell entry.
  *
- * Those alerts stay actionable indefinitely — the document genuinely still has no journal and
- * someone must press the retry button — unlike the approval and store-change categories, whose
- * underlying request may long since have been resolved.
+ * Those alerts are meant to stay actionable — someone must press the retry button — unlike the
+ * approval and store-change categories, whose underlying request may long since have been
+ * resolved. Nothing clears a JOURNAL_PENDING row once its journal posts, though, so the backlog
+ * can include alerts whose document has since been journaled; the dry run's counts are the place
+ * to judge that before applying.
  *
  * Two deliberate differences from the live fan-out. It writes NotificationQueue rows directly
  * rather than calling `sendNotificationToUsers`, because replaying week-old alerts as phone
@@ -11,6 +13,15 @@
  * And it dedups on the AdminNotification row id rather than anything in its metadata, because
  * the JOURNAL_PENDING writers do not agree on a metadata shape — some write `docId`, the sales
  * sweep writes `orderId`.
+ *
+ * No `readAt` filter: nothing ever sets `AdminNotification.readAt` (the bell tracks read state on
+ * NotificationQueue), so filtering on it matched every row anyway. Re-runs stay safe through the
+ * per-user dedup below, not through that column.
+ *
+ * Run it in a quiet window: the backlog read and the already-delivered read are not
+ * point-in-time with each other, so a live fan-out writing between them can produce a duplicate
+ * bell row. Separately, backfilled rows are stamped now and the bell lists only the newest 50,
+ * so a large backlog pushes real notifications out of view whenever it runs.
  *
  * Dry-run by default:
  *   pnpm exec tsx scripts/backfill-journal-pending-notifications.ts
@@ -27,16 +38,10 @@ const PERMISSION = "journals:manage";
 
 function assertApplyAllowed(url: string): void {
   if (/:3308(\/|$)/.test(url)) return;
-  if (/:(3306|3307)(\/|$)/.test(url)) {
-    if (!confirm) {
-      throw new Error("Refusing write: prod-tunnel URL. Pass --confirm-prod-writes (and --apply).");
-    }
-    console.warn("WARNING: writing against prod-tunnel DATABASE_URL.");
-    return;
-  }
   if (!confirm) {
-    throw new Error("Refusing write: not local testbed. Pass --confirm-prod-writes.");
+    throw new Error("Refusing write: DATABASE_URL is not the :3308 testbed. Pass --apply --confirm-prod-writes.");
   }
+  console.warn("WARNING: writing against a non-testbed DATABASE_URL (--confirm-prod-writes given).");
 }
 
 async function main() {
@@ -48,11 +53,11 @@ async function main() {
 
   try {
     const pending = await prisma.adminNotification.findMany({
-      where: { category: CATEGORY, readAt: null },
+      where: { category: CATEGORY },
       orderBy: { createdAt: "asc" },
       select: { id: true, title: true, message: true, metadata: true, createdAt: true },
     });
-    console.log(`\nUnread ${CATEGORY}: ${pending.length}`);
+    console.log(`\n${CATEGORY} notifications: ${pending.length}`);
     if (pending.length === 0) return;
 
     const permission = await prisma.permission.findUnique({ where: { code: PERMISSION } });
@@ -103,6 +108,7 @@ async function main() {
     }
 
     assertApplyAllowed(url);
+    console.warn("WARNING: run this in a quiet window - a live fan-out between the two reads can duplicate a bell row, and a large backlog pushes real notifications out of the bell's newest 50.");
 
     let created = 0;
     for (const row of toCreate) {

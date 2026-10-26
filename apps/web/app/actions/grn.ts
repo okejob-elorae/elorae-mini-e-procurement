@@ -6,7 +6,7 @@ import { prisma } from '@elorae/db';
 import type { StockLedgerRefType } from '@elorae/db';
 import { calculateMovingAverage, reverseMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
-import { notifyGRNCreated, notifyMaterialArrivedForPo } from '@/app/actions/notifications';
+import { notifyGRNCreated, notifyMaterialArrivedForPo } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
 import { logAudit } from '@/lib/audit';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';

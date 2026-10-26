@@ -21,7 +21,7 @@ vi.mock("@/lib/docNumber", () => ({
 vi.mock("@/lib/production/planning", () => ({ generateMaterialPlan: vi.fn() }));
 vi.mock("@/lib/production/reconciliation", () => ({ reconcileWorkOrder: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn(async () => "Test") }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifyWOCreated: vi.fn(async () => {}),
   notifyWOStatusUpdated: vi.fn(async () => {}),
   notifyWOMaterialsIssued: vi.fn(async () => {}),

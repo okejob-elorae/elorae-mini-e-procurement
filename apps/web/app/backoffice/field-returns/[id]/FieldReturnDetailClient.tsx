@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -160,6 +160,8 @@ export function FieldReturnDetailClient({
     | { status: "loaded"; rows: KonsiReturStockImpactLine[] }
     | { status: "error" }
   >({ status: "idle" });
+  /* Id of the newest preview request; a response that is no longer the latest must not set state. */
+  const stockImpactRequestRef = useRef(0);
 
   const outstanding = outstandingLineCount(r.lines);
   const showReceiveForm = canManage && r.status === "PENDING_WAREHOUSE_RECEIVING";
@@ -208,11 +210,15 @@ export function FieldReturnDetailClient({
   function openApproveDialog(): void {
     setApproveOpen(true);
     setStockImpact({ status: "loading" });
+    stockImpactRequestRef.current += 1;
+    const requestId = stockImpactRequestRef.current;
     startPreviewTransition(async () => {
       try {
         const result = await previewKonsiReturStockImpactAction(r.id);
+        if (requestId !== stockImpactRequestRef.current) return;
         setStockImpact(result.ok ? { status: "loaded", rows: result.rows } : { status: "error" });
       } catch {
+        if (requestId !== stockImpactRequestRef.current) return;
         setStockImpact({ status: "error" });
       }
     });

@@ -13,7 +13,7 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifySupplierCreated: vi.fn(),
   notifySupplierApproved: vi.fn(),
 }));

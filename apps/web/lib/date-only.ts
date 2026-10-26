@@ -40,6 +40,12 @@ export function endOfTodayJakarta(): Date {
   return parseDateOnlyEnd(formatDateOnlyJakarta(new Date())) ?? new Date();
 }
 
+/**
+ * Formats in the BROWSER's own zone on purpose — never pin it to WIB. Every caller is a client
+ * component (the date pickers, the ETA hint), and a day picked in the calendar arrives as a
+ * browser-local midnight: pinned to Jakarta, a user in WITA or WIT (UTC+8/+9) would see the day
+ * before the one they picked. Server-rendered dates go through `formatDateOnlyJakarta` instead.
+ */
 export function toDisplayDate(date: Date): string {
   return date.toLocaleDateString('id-ID', {
     day: 'numeric',

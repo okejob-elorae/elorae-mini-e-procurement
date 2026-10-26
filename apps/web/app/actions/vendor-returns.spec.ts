@@ -39,7 +39,7 @@ vi.mock("@/app/actions/hpp", () => ({ getEffectiveHPPForItem: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn().mockResolvedValue("actor"),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifyVendorReturnCreated: vi.fn(),
   notifyVendorReturnStatusUpdated: vi.fn(),
 }));

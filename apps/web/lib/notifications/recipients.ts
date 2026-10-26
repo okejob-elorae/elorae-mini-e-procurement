@@ -1,10 +1,10 @@
 /**
  * Delivery helpers for the per-user notification bell and FCM push.
  *
- * These deliberately live outside `app/actions/notifications.ts`: that file is `'use server'`,
- * so every export is a registered server action, and these two would be callable endpoints
- * taking arbitrary recipients and an arbitrary title and body. They are internal helpers with
- * no user-facing entry point, so they belong in `lib/`.
+ * These deliberately live in `lib/`, never in a `'use server'` module: every export of one is
+ * a registered server action, and these two would be callable endpoints taking arbitrary
+ * recipients and an arbitrary title and body. They are internal helpers with no user-facing
+ * entry point.
  */
 
 import { prisma, type Prisma } from '@elorae/db';

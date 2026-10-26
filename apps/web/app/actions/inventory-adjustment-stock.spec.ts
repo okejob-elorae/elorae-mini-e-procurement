@@ -16,7 +16,7 @@ vi.mock("@/lib/security/pin", () => ({
   verifyPin: vi.fn(async (id: string) => ({ success: true, userId: id })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({ notifyStockAdjustmentCreated: vi.fn() }));
+vi.mock("@/lib/notifications/events", () => ({ notifyStockAdjustmentCreated: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn(async () => "Test") }));
 
 import { createStockAdjustment } from "./inventory";

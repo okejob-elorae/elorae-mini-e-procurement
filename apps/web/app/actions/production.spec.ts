@@ -35,7 +35,7 @@ vi.mock("@/lib/production/reconciliation", () => ({ reconcileWorkOrder: vi.fn() 
 vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(),
 }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/events", () => ({
   notifyWOCreated: vi.fn(),
   notifyWOStatusUpdated: vi.fn(),
   notifyWOMaterialsIssued: vi.fn(),

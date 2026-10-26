@@ -18,6 +18,7 @@ d("findVariantSkuCollisions (test bed only)", () => {
     uomId = "";
     itemAId = "";
     itemBId = "";
+    itemBSku = "";
     const uom = await prisma.uOM.create({
       data: { code: `TEST-VSC-UOM-${token}`, nameId: "pcs", nameEn: "pcs" },
     });

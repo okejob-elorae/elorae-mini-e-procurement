@@ -625,6 +625,11 @@ d("listStores location filter (test bed only)", () => {
 
   beforeEach(async () => {
     createdIds.length = 0;
+    noCoordsId = "";
+    halfCoordsId = "";
+    defaultRadiusId = "";
+    customRadiusId = "";
+    customNoCoordsId = "";
     const seed = async (suffix: string, over: Partial<StoreFields>) => {
       const created = await createStore(fields(suffix, over));
       createdIds.push(created.id);

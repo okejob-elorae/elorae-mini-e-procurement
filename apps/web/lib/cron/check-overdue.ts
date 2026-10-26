@@ -2,7 +2,7 @@ import {
   checkAndSendOverdueNotifications,
   checkAndSendWoOverdueNotifications,
   checkAndSendAccessoriesPendingCMTNotifications,
-} from "@/app/actions/notifications";
+} from "@/lib/notifications/events";
 
 export async function runCheckOverdue(): Promise<void> {
   const [overdue, woOverdue, accessories] = await Promise.all([
