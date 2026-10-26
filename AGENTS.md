@@ -158,7 +158,7 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 - Deciding whether a store has counted this month? Use `countStatusFor`: WIB months (+7h, never `getMonth()`), credit by `countMomentOf` of an APPROVED full count, never `countedAt`. → `docs/landmines/konsi-count-schedule.md`
 - Calling `runKonsiCountSweep` from a spec? Pass `storeIds` (omitted sweeps the shared bed; `[]` sweeps nothing — never collapse it to `undefined`) and inject `schedule`/`now`. → `docs/landmines/konsi-count-schedule.md`
 - Adding a stocktake approve path, or touching `approveAction`? Call `autoCreateSellThroughAfterCount` AFTER the commit, best-effort — never inside `approveStoreStocktake`'s transaction. → `docs/landmines/konsi-count-schedule.md`
-- Adding a konsi count or report notification? A new category needs a `CATEGORY_PERMISSION` entry (else it reaches nobody) AND a `getNotificationHref` case; keep metadata flat. → `docs/landmines/konsi-count-schedule.md`
+- Adding a konsi count or report notification? A new category needs a `CATEGORY_PERMISSION` entry (else it reaches nobody) AND a `NOTIFICATION_TYPES` entry plus its `getNotificationHref` case; keep metadata flat. → `docs/landmines/konsi-count-schedule.md`
 - Reading `StoreStocktake.createdById`? It may be `KONSI_COUNT_SYSTEM_ACTOR`, no user — never a required `User` relation or `findUniqueOrThrow`; render via `createdByIsSystem`. → `docs/landmines/konsi-count-schedule.md`
 
 **Field sales — retur, konsi, nota, faktur**
