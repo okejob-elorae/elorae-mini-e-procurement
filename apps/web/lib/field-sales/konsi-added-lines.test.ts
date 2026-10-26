@@ -176,6 +176,20 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: allItemIds() } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: allItemIds() } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: allItemIds() } } });
+    /**
+     * Creating an order writes an AdminNotification inside its transaction (the fan-out mock only
+     * suppresses the push), with no FK back to the order. JSON path filtering is unreliable on this
+     * adapter, so match orderId in JS against this spec's own seeded ids.
+     */
+    const ownOrderIds = allOrderIds();
+    const candidateNotifs = await prisma.adminNotification.findMany({
+      where: { category: { in: ["PENDING_ORDER_APPROVAL", "CREDIT_LIMIT_HOLD"] } },
+      select: { id: true, metadata: true },
+    });
+    const leakedNotifIds = candidateNotifs
+      .filter((n) => ownOrderIds.includes((n.metadata as { orderId?: string } | null)?.orderId ?? ""))
+      .map((n) => n.id);
+    if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds.map(seededId) } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds() } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: allOrderIds() } } });
     await prisma.storeVisit.deleteMany({ where: { id: { in: [seededId(visitId), seededId(putusVisitId)] } } });

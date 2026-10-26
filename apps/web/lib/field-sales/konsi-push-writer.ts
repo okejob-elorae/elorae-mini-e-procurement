@@ -1,9 +1,10 @@
 import { prisma } from "@elorae/db";
-import { runSerializable } from "@/lib/db/tx-retry";
+import { isTransactionExpired, runSerializable } from "@/lib/db/tx-retry";
 import { isUniqueViolationOn } from "@/lib/db/unique-violation";
 import { generateDocNumber } from "@/lib/docNumber";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { isStockableVariantKey } from "@/lib/items/variants";
+import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { isSellThroughSalesmanCandidate } from "@/lib/konsi-sell-through/salesman-candidates";
 import { approveKonsiOrderInTx } from "./writer";
 import { KonsiPushError } from "./errors";
@@ -22,6 +23,39 @@ export type CreateKonsiPushOrderInput = {
 };
 
 type PushResult = { orderId: string; orderNo: string };
+
+/**
+ * One push reserves and prices every line inside a single serializable transaction, which the
+ * 5s interactive default cannot cover on a store with many lines; `maxWait` is how long it may
+ * queue for a connection.
+ */
+const PUSH_TX_OPTIONS = { timeout: 30_000, maxWait: 10_000 } as const;
+
+/**
+ * Tells the salesman the push names as the order's owner that stock is on its way. After the commit
+ * and best-effort: the order already stands, so a failed push must never surface as a failed push
+ * order. Only the call that created the order sends it; a replay returns the recorded order silently.
+ */
+async function notifySalesmanOfPush(input: CreateKonsiPushOrderInput, result: PushResult): Promise<void> {
+  try {
+    const [salesman, store] = await Promise.all([
+      prisma.user.findUnique({ where: { id: input.salesmanId }, select: { id: true, fcmToken: true } }),
+      prisma.store.findUnique({ where: { id: input.storeId }, select: { name: true } }),
+    ]);
+    if (!salesman) return;
+    const { lines } = input;
+    const units = lines.reduce((sum, l) => sum + l.qty, 0);
+    const storeName = store?.name ?? "";
+    await sendNotificationToUsers([salesman], {
+      type: "KONSI_ORDER_PUSHED",
+      title: `Konsinyasi ${result.orderNo} dikirim`,
+      body: `Admin mengirim stok konsinyasi ke ${storeName}: ${lines.length} produk, ${units} unit`,
+      data: { orderId: result.orderId, orderNo: result.orderNo, storeId: input.storeId },
+    });
+  } catch (err) {
+    console.error(`[field-sales] konsi push notice failed for ${result.orderNo}`, err);
+  }
+}
 
 /**
  * A key already spent on another store, or on a salesman's own order, is never handed back as
@@ -76,15 +110,20 @@ type ExistingPush = {
  * returns the order it created, while a changed one is refused with `REPLAY_MISMATCH`. Two
  * concurrent submissions of one key both return the order the first one committed: the loser's
  * unique violation is caught outside the transaction and answered with the winner.
+ *
+ * The transaction runs under an explicit 30s timeout; one that still expires (P2028) is refused as
+ * `TRANSACTION_TIMEOUT`, having rolled back whole. Only the call that created the order tells the
+ * salesman, after the commit and best-effort — a replay or a lost race notifies nobody.
  */
 export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Promise<PushResult> {
+  let result: PushResult & { created: boolean };
   try {
-    return await runSerializable(async (tx) => {
+    result = await runSerializable(async (tx) => {
       const existing = await tx.fieldSalesOrder.findUnique({
         where: { idempotencyKey: input.idempotencyKey },
         select: EXISTING_SELECT,
       });
-      if (existing) return replayOrConflict(existing, input);
+      if (existing) return { ...replayOrConflict(existing, input), created: false };
 
       const store = await tx.store.findUnique({ where: { id: input.storeId }, select: { termsType: true, isActive: true } });
       if (!store) throw new KonsiPushError("NOT_FOUND");
@@ -154,9 +193,10 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
         creditOverrideReason: input.creditOverrideReason,
       });
 
-      return { orderId: order.id, orderNo };
-    });
+      return { orderId: order.id, orderNo, created: true };
+    }, PUSH_TX_OPTIONS);
   } catch (e) {
+    if (isTransactionExpired(e)) throw new KonsiPushError("TRANSACTION_TIMEOUT");
     if (!isUniqueViolationOn(e, "idempotencyKey")) throw e;
     const winner = await prisma.fieldSalesOrder.findUnique({
       where: { idempotencyKey: input.idempotencyKey },
@@ -165,4 +205,7 @@ export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Pr
     if (!winner) throw e;
     return replayOrConflict(winner, input);
   }
+  const pushed = { orderId: result.orderId, orderNo: result.orderNo };
+  if (result.created) await notifySalesmanOfPush(input, pushed);
+  return pushed;
 }

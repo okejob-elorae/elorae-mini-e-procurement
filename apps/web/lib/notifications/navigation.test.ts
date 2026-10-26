@@ -6,6 +6,11 @@ describe("getNotificationHref — field sales order rejection", () => {
     expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", { orderId: "o1", storeId: "s1" }, "pwa")).toBe("/pwa/stores/s1");
     expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", {}, "pwa")).toBe("/pwa/stores");
   });
+
+  it("opens the store an admin pushed konsi stock to, in the PWA", () => {
+    expect(getNotificationHref("KONSI_ORDER_PUSHED", { orderId: "o1", storeId: "s1" }, "pwa")).toBe("/pwa/stores/s1");
+    expect(getNotificationHref("KONSI_ORDER_PUSHED", {}, "pwa")).toBe("/pwa/stores");
+  });
 });
 
 describe("getNotificationHref — field retur count mismatch", () => {

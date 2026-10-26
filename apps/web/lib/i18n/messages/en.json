@@ -4321,6 +4321,7 @@
       "NO_INVENTORY": "{product} can't be sent: it has no warehouse stock record for that variant.",
       "KEY_CONFLICT": "This submission clashed with another. Reload the page and try again.",
       "REPLAY_MISMATCH": "An earlier attempt already created order {orderNo} with a different salesman, products or quantities. Open that order to check it, or reload this page to send a new push.",
+      "TRANSACTION_TIMEOUT": "This push is too large to finish in one go and nothing was sent. Push fewer products at once, in two or more batches.",
       "INSUFFICIENT_STOCK": "Not enough stock at the warehouse for: {products}.",
       "CREDIT_LIMIT_EXCEEDED": "Store is over its credit limit (exposure {exposure}, limit {limit}). Provide a reason to override.",
       "CREDIT_OVERRIDE_FORBIDDEN": "You do not have permission to override the credit limit.",

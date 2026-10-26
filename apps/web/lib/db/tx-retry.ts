@@ -25,7 +25,14 @@ export async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promi
   throw lastErr; // unreachable, satisfies types
 }
 
+export type SerializableOptions = { timeout?: number; maxWait?: number };
+
+// Prisma's interactive-transaction expiry (the default is 5s): the transaction was rolled back because it ran past its timeout.
+export function isTransactionExpired(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2028";
+}
+
 // Serializable transaction with automatic retry on deadlock/serialization failures.
-export function runSerializable<T>(cb: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
-  return withRetry(() => prisma.$transaction(cb, SERIALIZABLE));
+export function runSerializable<T>(cb: (tx: Prisma.TransactionClient) => Promise<T>, options?: SerializableOptions): Promise<T> {
+  return withRetry(() => prisma.$transaction(cb, { ...SERIALIZABLE, ...options }));
 }

@@ -160,7 +160,8 @@ export type KonsiPushErrorCode =
   | "UNKNOWN_ITEM"
   | "NO_INVENTORY"
   | "KEY_CONFLICT"
-  | "REPLAY_MISMATCH";
+  | "REPLAY_MISMATCH"
+  | "TRANSACTION_TIMEOUT";
 
 export class KonsiPushError extends Error {
   constructor(

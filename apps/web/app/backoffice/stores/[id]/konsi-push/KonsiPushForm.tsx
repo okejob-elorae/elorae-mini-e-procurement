@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { ArrowLeft, AlertTriangle, PackageX, PlusCircle, Loader2 } from "lucide-react";
 import { getItems } from "@/app/actions/items";
 import { itemHasSkuVariants, parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
-import { createKonsiPushOrderAction, type KonsiPushActionResult } from "@/app/actions/field-sales-orders";
+import { createKonsiPushOrderAction, getKonsiPushAvailabilityAction, type KonsiPushActionResult } from "@/app/actions/field-sales-orders";
 import type { KonsiAssortmentGapSuggestion, KonsiSuggestion } from "@/lib/field-sales/queries";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -269,6 +269,31 @@ export function KonsiPushForm({ store, gaps, neverSent, gapsFailed, neverSentFai
       return next;
     });
     setAddKey("");
+    void loadAddedAvailability(meta.itemId);
+  }
+
+  /**
+   * A catalog-added line starts with no figure and gets it from the server, the same per-variant
+   * availability the pre-ticked suggestions carry. Every row of the item is filled in one call;
+   * a failed lookup leaves the figure at "—", which only withholds the hint.
+   */
+  async function loadAddedAvailability(itemId: string): Promise<void> {
+    try {
+      const result = await getKonsiPushAvailabilityAction(itemId);
+      if (!result.ok) return;
+      setRows((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [key, row] of prev) {
+          if (row.source !== "ADDED" || row.itemId !== itemId) continue;
+          next.set(key, { ...row, available: result.available[row.variantSku] ?? 0 });
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+    } catch {
+      /* Display only: the writer is the authority on stock. */
+    }
   }
 
   function errorMessage(result: Extract<KonsiPushActionResult, { ok: false }>): string {

@@ -531,12 +531,8 @@ export type KonsiSuggestion = {
  * the strictly stronger, more actionable claim, so the gap heading wins and this list suppresses
  * the row rather than rendering the same SKU twice under two different urgency framings.
  */
-export async function listStoreNeverSentSuggestions(
-  storeId: string,
-  opts?: { excludeItemIds?: string[] },
-): Promise<KonsiSuggestion[]> {
-  const sent = await sentItemIds(storeId);
-  const exclude = new Set<string>([...sent, ...(opts?.excludeItemIds ?? [])]);
+export async function listStoreNeverSentSuggestions(storeId: string): Promise<KonsiSuggestion[]> {
+  const exclude = await sentItemIds(storeId);
 
   /**
    * Raw store gaps, not the order-scoped `listKonsiAssortmentGaps` output: an item already
@@ -613,15 +609,36 @@ export async function listStoreNeverSentSuggestions(
   return rows.sort((a, b) => a.sku.localeCompare(b.sku) || a.variantSku.localeCompare(b.variantSku));
 }
 
-/* Scopes `listStoreNeverSentSuggestions` to one order's own store and lines. */
+/**
+ * What the warehouse can still reserve for each variant of ONE item, keyed by normalised
+ * `variantSku` (`""` for a variantless item). Same figure the suggestion lists carry — `qtyOnHand
+ * − reservedQty` per `InventoryValue` row, the MINIMUM where a `null` and an `""` row collide —
+ * but not filtered to positive, so a sold-out variant reads 0 rather than going missing. A key
+ * with no row at all is absent.
+ */
+export async function getItemAvailabilityBySku(itemId: string): Promise<Record<string, number>> {
+  const rows = await prisma.inventoryValue.findMany({
+    where: { itemId },
+    select: { variantSku: true, qtyOnHand: true, reservedQty: true, totalValue: true },
+  });
+  const bySku: Record<string, number> = {};
+  for (const iv of rows) {
+    const variantSku = iv.variantSku ?? "";
+    const available = aggregateInventoryValues([iv])!.available;
+    bySku[variantSku] = variantSku in bySku ? Math.min(bySku[variantSku], available) : available;
+  }
+  return bySku;
+}
+
+/* Scopes `listStoreNeverSentSuggestions` to one order's own store. */
 export async function listKonsiSuggestions(orderId: string): Promise<KonsiSuggestion[]> {
   const order = await prisma.fieldSalesOrder.findUnique({
     where: { id: orderId },
-    select: { storeId: true, orderType: true, lines: { select: { itemId: true } } },
+    select: { storeId: true, orderType: true },
   });
   if (!order || order.orderType !== "KONSI") return [];
 
-  return listStoreNeverSentSuggestions(order.storeId, { excludeItemIds: order.lines.map((l) => l.itemId) });
+  return listStoreNeverSentSuggestions(order.storeId);
 }
 
 export type KonsiAssortmentGapSuggestion = {
