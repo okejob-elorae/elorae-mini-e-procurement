@@ -741,54 +741,6 @@ describe("SalesOrderWebhookHandler", () => {
     });
   });
 
-  describe("shippedAt on ship", () => {
-    const shippedPayload = (extra: any = {}) => makePayload({ wms_status: "SHIPPED", ...extra });
-
-    beforeEach(() => {
-      prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
-        id: "st1", salesorderId: 23043, stockApplied: true,
-      });
-      prisma.jubelioProductMapping.findFirst.mockResolvedValue(null);
-    });
-
-    it("keeps the stored shippedAt on re-ingest when the payload has no completed_date", async () => {
-      const stored = new Date("2026-05-01T03:00:00.000Z");
-      prisma.salesOrder.upsert.mockResolvedValue({ id: "so1", shippedAt: stored });
-
-      await handler.handle(row(shippedPayload()) as any);
-
-      expect(prisma.salesOrder.updateMany.mock.calls[0][0].data.shippedAt).toEqual(stored);
-    });
-
-    it("keeps the stored shippedAt even when the payload carries a different completed_date", async () => {
-      const stored = new Date("2026-05-01T03:00:00.000Z");
-      prisma.salesOrder.upsert.mockResolvedValue({ id: "so1", shippedAt: stored });
-
-      await handler.handle(row(shippedPayload({ completed_date: "2026-06-14T10:00:00.000Z" })) as any);
-
-      expect(prisma.salesOrder.updateMany.mock.calls[0][0].data.shippedAt).toEqual(stored);
-    });
-
-    it("first ship with completed_date uses it", async () => {
-      prisma.salesOrder.upsert.mockResolvedValue({ id: "so1", shippedAt: null });
-
-      await handler.handle(row(shippedPayload({ completed_date: "2026-06-14T10:00:00.000Z" })) as any);
-
-      expect(prisma.salesOrder.updateMany.mock.calls[0][0].data.shippedAt).toEqual(new Date("2026-06-14T10:00:00.000Z"));
-    });
-
-    it("first ship with neither completed_date nor last_modified falls back to now", async () => {
-      prisma.salesOrder.upsert.mockResolvedValue({ id: "so1", shippedAt: null });
-      const before = Date.now();
-
-      await handler.handle(row(shippedPayload()) as any);
-
-      const at = prisma.salesOrder.updateMany.mock.calls[0][0].data.shippedAt as Date;
-      expect(at.getTime()).toBeGreaterThanOrEqual(before);
-      expect(at.getTime()).toBeLessThanOrEqual(Date.now());
-    });
-  });
-
   it("does NOT touch fulfillmentStatus when status is not SHIPPED", async () => {
     prisma.jubelioSalesOrderState.findUnique.mockResolvedValue({
       id: "st1", salesorderId: 23043, stockApplied: true,

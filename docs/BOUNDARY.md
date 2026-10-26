@@ -372,7 +372,7 @@ The writer helper enforces the state machine (PENDING → PICKED → PACKED → 
 
 **api forward-sync exception (added 2026-06-14):** `SalesOrderWebhookHandler.upsertSalesOrder` MAY advance `fulfillmentStatus → SHIPPED` and stamp `shippedAt` when the inbound Jubelio salesorder webhook reports the order shipped (`isShippedOrder` — any of `wms_status === "SHIPPED"`, `is_shipped === true` or `internal_status === "SHIPPED"` — or `marked_as_complete === true`, or `completed_date` present). The advancement is:
 
-- **Forward-only.** Guarded by `where: { fulfillmentStatus: { not: "SHIPPED" } }` — never overwrites an existing SHIPPED audit set by the writer helper (preserves `shippedById` + original `shippedAt`), and the `shippedAt` it writes keeps any value already stored on a not-yet-SHIPPED row (PR #481).
+- **Forward-only.** Guarded by `where: { fulfillmentStatus: { not: "SHIPPED" } }` — never overwrites an existing SHIPPED audit set by the writer helper (preserves `shippedById` + original `shippedAt`).
 - **No `shippedById` write.** When advanced via webhook, `shippedById` stays null (no user clicked Ship). UI distinguishes "Shipped at … by NAME" vs "Shipped at …" accordingly.
 - **No intermediate cascade.** `pickedAt`/`pickedById`/`packedAt`/`packedById` are NOT backfilled when the webhook arrives directly at SHIPPED — they stay whatever the web writer last set (likely null if the order shipped externally).
 - **Why:** prevents drift between Jubelio-reported `status = SHIPPED` and Elorae-internal `fulfillmentStatus = PENDING/PICKED/PACKED` when operators ship from Jubelio admin UI, the marketplace auto-ships, or any external WMS performs the action.
