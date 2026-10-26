@@ -2,6 +2,8 @@
 
 Status: **recorded 2026-06-24** · Reconciliation path: **B-Aggregate** (default)
 
+> **Dated snapshot, not current guidance.** Every measurement below was taken against the shared TiDB cluster this repo left on 2026-06-28 for self-hosted MariaDB. Keep it as the record of why reconciliation was built the way it was; re-measure before relying on any figure.
+
 This document captures Gate 1 (Jubelio sales data live) and Gate 2 (marketplace order ID spike) findings before shipping reconciliation features.
 
 ---

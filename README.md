@@ -113,10 +113,12 @@ Reaching prod is a deliberate act. The tunnel uses local port **3307** so it can
 
 ```bash
 # Persistent tunnel — leave running in the background.
-ssh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
+ssh -fNL 3307:127.0.0.1:3306 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes elorae@api.elorae.cloud
 # or with autossh for auto-reconnect:
-autossh -fNL 3307:127.0.0.1:3306 elorae@api.elorae.cloud
+autossh -fNL 3307:127.0.0.1:3306 -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes elorae@api.elorae.cloud
 ```
+
+The three `-o` flags matter: without them a tunnel whose connection to the VPS has gone quiet keeps its local listener open, and the only symptom is a Prisma `pool timeout ... active=0`, which reads like an app bug. With them the tunnel exits within ~90 s of going quiet and refuses to start if the forward fails.
 
 `apps/web/.env` carries `DATABASE_URL_PROD` (3307) as an inert bookmark — **no code reads it**. To actually target prod you must set `DATABASE_URL` yourself, or pass an explicit `SRC_DATABASE_URL`/`DEST_DATABASE_URL` to the scripts that clone prod data down. See `docs/local-db-testbed.md`.
 
