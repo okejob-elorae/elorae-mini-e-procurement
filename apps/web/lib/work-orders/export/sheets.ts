@@ -39,13 +39,14 @@ const DASH = "—";
 const NO_COLOR_KEY = "none";
 
 const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Draf",
+  DRAFT: "Draft",
   ISSUED: "Diterbitkan",
   IN_PRODUCTION: "Dalam Produksi",
-  PARTIAL: "Diterima Sebagian",
+  PARTIAL: "Sebagian",
   COMPLETED: "Selesai",
   CANCELLED: "Dibatalkan",
 };
+
 const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 function wibDate(date: Date | null): string {
