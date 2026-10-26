@@ -360,11 +360,16 @@ export class SalesOrderWebhookHandler implements WebhookEventHandler {
     // `where` guard prevents overwriting an existing SHIPPED audit (web's Ship
     // button already stamped shippedById/shippedAt). Idempotent on re-receive.
     if (jubelioReportsShipped) {
+      /*
+       * `order` is the row the upsert just returned, locked by this tx, so a stored `shippedAt`
+       * is never overwritten: a re-ingest (settlement resync, post-ship webhook) carrying no
+       * `completed_date` would otherwise move it to now and drag the GL cutover floor with it.
+       */
       await tx.salesOrder.updateMany({
         where: { id: order.id, fulfillmentStatus: { not: "SHIPPED" } },
         data: {
           fulfillmentStatus: "SHIPPED",
-          shippedAt: parseDate(p.completed_date) ?? parseDate(p.last_modified) ?? new Date(),
+          shippedAt: order.shippedAt ?? parseDate(p.completed_date) ?? parseDate(p.last_modified) ?? new Date(),
         },
       });
     }
