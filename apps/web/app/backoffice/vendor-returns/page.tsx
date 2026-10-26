@@ -16,6 +16,7 @@ import {
   Package,
   PlayCircle,
 } from 'lucide-react';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +66,7 @@ type VendorReturnRow = Extract<
 
 export default function VendorReturnsPage() {
   const { data: session } = useSession();
+  const canManage = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE);
   const [returns, setReturns] = useState<VendorReturnRow[]>([]);
   const [vendors, setVendors] = useState<SupplierOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -312,17 +314,19 @@ export default function VendorReturnsPage() {
                                         Edit
                                       </Link>
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      onClick={() => handleProcess(r.id)}
-                                      disabled={processingId === r.id}
-                                    >
-                                      {processingId === r.id ? (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <PlayCircle className="mr-2 h-4 w-4" />
-                                      )}
-                                      {processingId === r.id ? 'Processing...' : 'Process'}
-                                    </DropdownMenuItem>
+                                    {canManage && (
+                                      <DropdownMenuItem
+                                        onClick={() => handleProcess(r.id)}
+                                        disabled={processingId === r.id}
+                                      >
+                                        {processingId === r.id ? (
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <PlayCircle className="mr-2 h-4 w-4" />
+                                        )}
+                                        {processingId === r.id ? 'Processing...' : 'Process'}
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem
                                       className="text-destructive"
                                       onClick={() => handleDelete(r.id)}
