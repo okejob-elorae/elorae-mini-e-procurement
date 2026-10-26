@@ -145,7 +145,7 @@ auto-ship it. The inbound salesorder handler covers that with a **forward-only**
   that went through Elorae's Ship button keeps its `shippedById` audit and is not overwritten.
   Idempotent on webhook re-delivery.
 
-`shippedAt` falls back through `completed_date` → `last_modified` → now.
+`shippedAt` keeps a value already stored on the row (a re-ingest or settlement resync never moves it); only an order getting its first `shippedAt` falls back through `completed_date` → `last_modified` → now.
 
 Since Jubelio's `internal_status: "SHIPPED"` counts as shipped (`isShippedOrder`), the sync fires at Jubelio's
 ship, not at completion. An order packed in Elorae but not yet shipped there is advanced to `SHIPPED` by
