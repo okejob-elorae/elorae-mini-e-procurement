@@ -1636,6 +1636,8 @@
     "emptyRuns": "No reconciliation runs yet",
     "skipped": "Skipped: {reason}",
     "runComplete": "Run complete — {flagged} flagged",
+    "runCompleteWithFailures": "Run complete — {flagged} flagged, {failed} failed",
+    "failedCount": "{count} failed",
     "runFailed": "Run failed",
     "configSaved": "Configuration saved",
     "configSaveFailed": "Failed to save configuration",

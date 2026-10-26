@@ -1636,6 +1636,8 @@
     "emptyRuns": "Belum ada run rekonsiliasi",
     "skipped": "Dilewati: {reason}",
     "runComplete": "Run selesai — {flagged} diflag",
+    "runCompleteWithFailures": "Run selesai — {flagged} diflag, {failed} gagal",
+    "failedCount": "{count} gagal",
     "runFailed": "Run gagal",
     "configSaved": "Konfigurasi disimpan",
     "configSaveFailed": "Gagal menyimpan konfigurasi",

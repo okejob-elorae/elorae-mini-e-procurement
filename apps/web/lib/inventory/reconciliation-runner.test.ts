@@ -8,6 +8,7 @@ import { JUBELIO_STOCK_PUSH_ENABLED_KEY, prisma, seededId } from "@elorae/db";
 import { apiFetch } from "@/lib/internal-api";
 import {
   RECON_BULK_BATCH_MAX,
+  countFailedResultsByRun,
   resolveReconciliationItem,
   resolveReconciliationItems,
   runReconciliation,
@@ -375,6 +376,77 @@ d("resolveReconciliationItem MATCH_JUBELIO (test bed only)", () => {
 
     expect(res).toEqual({ success: false, reason: "STOCK_MOVED" });
     await expectNothingWritten(fx, 3);
+  });
+
+  it("REASSERT_ELORAE refuses ALREADY_RESOLVED and keeps the winner's mark when the row is resolved elsewhere mid-resolve", async () => {
+    await setPushSwitch(true);
+    const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+    (apiFetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, status: 200, data: {} });
+    /* Another resolve marks the row after this call's FLAGGED read, while it enqueues the push. */
+    const original = prisma.jubelioOutbox.create.bind(prisma.jubelioOutbox);
+    const spy = vi.spyOn(prisma.jubelioOutbox, "create").mockImplementation(original as unknown as typeof prisma.jubelioOutbox.create);
+    try {
+      spy.mockImplementationOnce((async (args: Parameters<typeof original>[0]) => {
+        await prisma.reconciliationResult.update({
+          where: { id: fx.resultId },
+          data: { action: "MANUALLY_RESOLVED", resolutionDirection: "MATCH_JUBELIO", resolvedById: "winner" },
+        });
+        return original(args);
+      }) as unknown as typeof prisma.jubelioOutbox.create);
+
+      const res = await resolveReconciliationItem({ resultId: fx.resultId, direction: "REASSERT_ELORAE", userId: "u1" });
+
+      expect(res).toEqual({ success: false, reason: "ALREADY_RESOLVED" });
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.jubelioOutbox.create);
+      await prisma.jubelioOutbox.deleteMany({ where: { entityId: seededId(fx.itemId) } });
+    }
+    const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
+    expect(result!.resolutionDirection).toBe("MATCH_JUBELIO");
+    expect(result!.resolvedById).toBe("winner");
+  });
+
+  it("REASSERT_ELORAE marks a FLAGGED row resolved and a second resolve is ALREADY_RESOLVED", async () => {
+    await setPushSwitch(true);
+    const fx = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+    (apiFetch as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ ok: true, status: 200, data: {} });
+    try {
+      const first = await resolveReconciliationItem({ resultId: fx.resultId, direction: "REASSERT_ELORAE", userId: "u1" });
+      const second = await resolveReconciliationItem({ resultId: fx.resultId, direction: "REASSERT_ELORAE", userId: "u2" });
+
+      expect(first).toEqual({ success: true });
+      expect(second).toEqual({ success: false, reason: "ALREADY_RESOLVED" });
+      const result = await prisma.reconciliationResult.findUnique({ where: { id: fx.resultId } });
+      expect(result!.action).toBe("MANUALLY_RESOLVED");
+      expect(result!.resolvedById).toBe("u1");
+    } finally {
+      await prisma.jubelioOutbox.deleteMany({ where: { entityId: seededId(fx.itemId) } });
+    }
+  });
+
+  it("countFailedResultsByRun counts only rows with an errorMessage, per run, omitting clean runs", async () => {
+    const a = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+    const b = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+    const clean = await seedFixture({ qtyOnHand: 10, eloraeQty: 10, jubelioQty: 6 });
+    await prisma.reconciliationResult.update({ where: { id: a.resultId }, data: { errorMessage: "boom" } });
+    const extra = await prisma.reconciliationResult.create({
+      data: {
+        runId: a.runId,
+        itemId: b.itemId,
+        itemName: "Extra",
+        eloraeQty: 1,
+        action: "FLAGGED",
+        errorMessage: "boom 2",
+      },
+    });
+    resultIds.push(extra.id);
+
+    const counts = await countFailedResultsByRun([a.runId, b.runId, clean.runId]);
+
+    expect(counts.get(a.runId)).toBe(2);
+    expect(counts.has(b.runId)).toBe(false);
+    expect(counts.has(clean.runId)).toBe(false);
+    expect((await countFailedResultsByRun([])).size).toBe(0);
   });
 
   it("refuses PUSH_DISABLED for REASSERT_ELORAE while the Jubelio push switch is off, writing and enqueuing nothing", async () => {
@@ -853,6 +925,8 @@ d("runReconciliation run behaviour (test bed only)", () => {
       expect(res.inSync).toBe(stored("IN_SYNC"));
       expect(res.autoCorrected).toBe(stored("AUTO_CORRECTED"));
       expect(res.flagged).toBe(stored("FLAGGED"));
+      expect(res.failed).toBe(results.filter((r) => r.errorMessage !== null).length);
+      expect(res.failed).toBe(1);
       expect(run!.totalScanned).toBe(3);
       expect(run!.inSync).toBe(1);
       expect(run!.flagged).toBe(2);

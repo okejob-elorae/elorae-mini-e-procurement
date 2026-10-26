@@ -34,6 +34,6 @@ import { UnhandledEventHandler } from "../handlers/unhandled.handler";
     ProductWebhookHandler,
     UnhandledEventHandler,
   ],
-  exports: [WebhookQueueService],
+  exports: [WebhookQueueService, SalesOrderWebhookHandler],
 })
 export class JubelioQueueModule {}
