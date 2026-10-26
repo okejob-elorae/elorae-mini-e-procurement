@@ -89,7 +89,7 @@ export function IncomeStatementClient({ report, filters }: Props) {
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[360px]">
               <TableBody>
                 <ReportSection
                   title={t("incomeStatement.sectionPendapatan")}

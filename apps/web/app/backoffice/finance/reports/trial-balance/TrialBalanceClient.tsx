@@ -123,7 +123,7 @@ export function TrialBalanceClient({ report, filters }: Props) {
           ) : (
             <>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[640px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>{t("trialBalance.colCode")}</TableHead>

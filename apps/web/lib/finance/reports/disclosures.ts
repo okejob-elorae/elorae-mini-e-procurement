@@ -56,6 +56,12 @@ export const CASH_FLOW_RECONCILED_NOTE =
 export const CASH_FLOW_UNRECONCILED_NOTE =
   "Perubahan kas hasil perhitungan TIDAK sama dengan pergerakan saldo kas sebenarnya. Ini menandakan data jurnal rusak — periksa buku besar.";
 
+export const CASH_FLOW_NON_CASH_NOTE =
+  "Subtotal tiap aktivitas dapat memuat transaksi investasi dan pendanaan non-kas; hanya perubahan kas bersih yang diukur terhadap saldo kas sebenarnya.";
+
+export const CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE =
+  "Laporan cetak ini hanya memuat satu periode. Perbandingan dengan periode sebelumnya tersedia di layar dan di ekspor Excel.";
+
 export const CASH_FLOW_UNCLASSIFIED_TITLE = "Ada akun yang belum diklasifikasi";
 
 export const CASH_FLOW_UNCLASSIFIED_BODY =

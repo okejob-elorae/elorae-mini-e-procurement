@@ -50,13 +50,16 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   const cmp = report.comparison;
   const columns = cmp ? 4 : 2;
 
+  /* ISO date strings compare correctly as text; an open end defaults to today server-side. */
+  const invalidRange = Boolean(filters.from && filters.to && filters.to < filters.from);
+
   /**
    * Exports are withheld only when there is no cash account, because both the
    * Excel and the print view refuse in that state anyway — offering a button
    * that produces a refusal note is worse than not offering it. An empty period
    * keeps them: exporting a quiet month is legitimate.
    */
-  const canExport = report.hasCashAccount;
+  const canExport = report.hasCashAccount && !invalidRange;
 
   function pushParam(key: string, value: string | undefined) {
     const params = new URLSearchParams(sp.toString());
@@ -192,7 +195,14 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
         </div>
       </Card>
 
-      {!report.hasCashAccount ? (
+      {invalidRange ? (
+        <Card>
+          <CardContent className="py-10 text-center" role="alert">
+            <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-destructive" />
+            <p className="font-medium text-destructive">{t("cashFlow.invalidRange")}</p>
+          </CardContent>
+        </Card>
+      ) : !report.hasCashAccount ? (
         <Card>
           <CardContent className="py-10 text-center">
             <p className="font-medium">{t("cashFlow.noCashAccountTitle")}</p>
@@ -210,8 +220,24 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
         </Card>
       ) : !report.hasMovement ? (
         <Card>
-          <CardContent className="py-10 text-center text-muted-foreground">
-            {t("cashFlow.empty")}
+          <CardContent className="space-y-6 py-10">
+            <p className="text-center text-muted-foreground">{t("cashFlow.empty")}</p>
+            <Table className="min-w-[360px]">
+              <TableBody>
+                <TableRow>
+                  <TableCell className="pl-6">{t("cashFlow.kasAwal")}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatRupiah(report.kasAwal)}
+                  </TableCell>
+                </TableRow>
+                <TableRow className="border-t-2 font-bold">
+                  <TableCell>{t("cashFlow.kasAkhir")}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatRupiah(report.kasAkhir)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       ) : (
@@ -250,7 +276,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className={cmp ? "min-w-[640px]" : "min-w-[360px]"}>
                   {cmp && (
                     <TableHeader>
                       <TableRow>
@@ -340,6 +366,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
                 <div>
                   <p className="font-medium">{t("cashFlow.coverageTitle")}</p>
                   <p className="text-muted-foreground">{t("cashFlow.coverageBody")}</p>
+                  <p className="mt-2 text-muted-foreground">{t("cashFlow.nonCashNote")}</p>
                 </div>
               </div>
             </CardContent>

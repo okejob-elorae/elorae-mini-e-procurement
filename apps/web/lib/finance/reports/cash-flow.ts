@@ -23,7 +23,6 @@ export type CashFlowStatement = {
   netChange: number;
   kasAwal: number;
   kasAkhir: number;
-  kasAkhirActual: number;
   isReconciled: boolean;
   hasCashAccount: boolean;
   hasMovement: boolean;
@@ -149,7 +148,6 @@ export function buildCashFlow(input: {
     netChange: netChangeCents / 100,
     kasAwal: input.kasAwal,
     kasAkhir: (kasAwalCents + netChangeCents) / 100,
-    kasAkhirActual: (kasAwalCents + cashDeltaCents) / 100,
     isReconciled: netChangeCents === cashDeltaCents,
     hasCashAccount,
     /* Distinguishes "no journals in this period" from "movements that net to zero". */

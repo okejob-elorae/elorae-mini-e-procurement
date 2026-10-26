@@ -28,6 +28,7 @@ import {
   BALANCE_SHEET_OPENING_TITLE,
   CASH_FLOW_COVERAGE_BODY,
   CASH_FLOW_COVERAGE_TITLE,
+  CASH_FLOW_NON_CASH_NOTE,
   CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
   CASH_FLOW_RECONCILED_NOTE,
   CASH_FLOW_UNCLASSIFIED_BODY,
@@ -192,10 +193,9 @@ async function loadCashFlowReport(input: {
   const from = parseDateOnly(input.from ?? "");
   const sectionByAccountId = await getSectionByAccountId();
 
-  const current = await buildCashFlowFor(from, to, sectionByAccountId);
-
   /* Since-inception has no preceding window, so the comparison is withheld. */
   if (!from) {
+    const current = await buildCashFlowFor(from, to, sectionByAccountId);
     return {
       ...current,
       periodLabel: rangeLabel(from, to),
@@ -205,7 +205,10 @@ async function loadCashFlowReport(input: {
   }
 
   const prev = previousPeriod(from, to);
-  const previous = await buildCashFlowFor(prev.from, prev.to, sectionByAccountId);
+  const [current, previous] = await Promise.all([
+    buildCashFlowFor(from, to, sectionByAccountId),
+    buildCashFlowFor(prev.from, prev.to, sectionByAccountId),
+  ]);
 
   return {
     ...current,
@@ -436,6 +439,7 @@ export async function exportCashFlowExcel(input: {
     [],
     [CASH_FLOW_COVERAGE_TITLE],
     [CASH_FLOW_COVERAGE_BODY],
+    [CASH_FLOW_NON_CASH_NOTE],
   ];
 
   return toWorkbook(rows, "Arus Kas", `arus-kas-${dateLabel(new Date())}.xlsx`);

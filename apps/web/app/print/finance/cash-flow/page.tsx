@@ -9,7 +9,9 @@ import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
 import {
   CASH_FLOW_COVERAGE_BODY,
   CASH_FLOW_COVERAGE_TITLE,
+  CASH_FLOW_NON_CASH_NOTE,
   CASH_FLOW_NO_CASH_ACCOUNT_NOTE,
+  CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE,
   CASH_FLOW_RECONCILED_NOTE,
   CASH_FLOW_UNCLASSIFIED_BODY,
   CASH_FLOW_UNCLASSIFIED_TITLE,
@@ -164,6 +166,12 @@ export default function PrintCashFlowPage() {
       <div className="mt-3 text-xs text-gray-700">
         <p className="font-semibold">{CASH_FLOW_COVERAGE_TITLE}</p>
         <p>{CASH_FLOW_COVERAGE_BODY}</p>
+      </div>
+      <div className="mt-3 text-xs text-gray-700">
+        <p>{CASH_FLOW_NON_CASH_NOTE}</p>
+      </div>
+      <div className="mt-3 text-xs text-gray-700">
+        <p>{CASH_FLOW_PRINT_SINGLE_PERIOD_NOTE}</p>
       </div>
     </div>
   );

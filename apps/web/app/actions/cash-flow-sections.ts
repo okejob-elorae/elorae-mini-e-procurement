@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@elorae/db";
+import { Prisma, prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import type { AccountType } from "@/lib/constants/enums";
@@ -20,13 +20,27 @@ type Result =
         | "NOT_FOUND"
         | "NOT_CLASSIFIABLE"
         | "INVALID_SECTION"
-        | "KAS_REQUIRES_ASET";
+        | "KAS_REQUIRES_ASET"
+        | "UNEXPECTED";
     };
 
 async function assertCanManage(): Promise<boolean> {
   const session = await auth();
   if (!session) return false;
   return hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE);
+}
+
+/**
+ * An account deleted between the lookup and the write surfaces as P2025 and is
+ * the same condition as a failed lookup; any other failure is infrastructure
+ * and gets a generic code, because a thrown error is digest-masked in
+ * production and would leave the operator staring at a dead control.
+ */
+function failureResult(error: unknown): Result {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+    return { ok: false, code: "NOT_FOUND" };
+  }
+  return { ok: false, code: "UNEXPECTED" };
 }
 
 /**
@@ -38,9 +52,16 @@ export async function setCashFlowSectionAction(
   accountId: string,
   section: CashFlowSection,
 ): Promise<Result> {
-  if (!(await assertCanManage())) return { ok: false, code: "FORBIDDEN" };
-  if (!CASH_FLOW_SECTIONS.includes(section)) return { ok: false, code: "INVALID_SECTION" };
+  try {
+    if (!(await assertCanManage())) return { ok: false, code: "FORBIDDEN" };
+    if (!CASH_FLOW_SECTIONS.includes(section)) return { ok: false, code: "INVALID_SECTION" };
+    return await writeSection(accountId, section);
+  } catch (error) {
+    return failureResult(error);
+  }
+}
 
+async function writeSection(accountId: string, section: CashFlowSection): Promise<Result> {
   const account = await prisma.chartAccount.findUnique({
     where: { id: accountId },
     select: { type: true },
@@ -79,18 +100,22 @@ export async function setCashFlowSectionAction(
 }
 
 export async function clearCashFlowSectionAction(accountId: string): Promise<Result> {
-  if (!(await assertCanManage())) return { ok: false, code: "FORBIDDEN" };
+  try {
+    if (!(await assertCanManage())) return { ok: false, code: "FORBIDDEN" };
 
-  const account = await prisma.chartAccount.findUnique({
-    where: { id: accountId },
-    select: { id: true },
-  });
-  if (!account) return { ok: false, code: "NOT_FOUND" };
+    const account = await prisma.chartAccount.findUnique({
+      where: { id: accountId },
+      select: { id: true },
+    });
+    if (!account) return { ok: false, code: "NOT_FOUND" };
 
-  await prisma.chartAccount.update({
-    where: { id: accountId },
-    data: { cashFlowSection: null },
-  });
-  revalidatePath("/backoffice/finance/cash-flow-sections");
-  return { ok: true };
+    await prisma.chartAccount.update({
+      where: { id: accountId },
+      data: { cashFlowSection: null },
+    });
+    revalidatePath("/backoffice/finance/cash-flow-sections");
+    return { ok: true };
+  } catch (error) {
+    return failureResult(error);
+  }
 }
