@@ -69,6 +69,8 @@ export async function listFieldReturns(params: {
    * that matches nothing — never collapse one into the other.
    */
   statuses?: FieldReturnStatus[];
+  /** Statuses to hide; composes with `statuses`. Unlike enumerating the rest, a new status stays visible. */
+  excludeStatuses?: FieldReturnStatus[];
   page: number;
   perPage: number;
 }): Promise<{ rows: FieldReturnRow[]; total: number }> {
@@ -78,7 +80,14 @@ export async function listFieldReturns(params: {
     ...(params.origin ? { origin: params.origin } : {}),
     /* Under AND, not a spread: the AVAILABLE credit arm below sets its own `status`, and a
        second `status` key would silently overwrite this one. */
-    ...(params.statuses !== undefined ? { AND: [{ status: { in: params.statuses } }] } : {}),
+    ...(params.statuses !== undefined || params.excludeStatuses !== undefined
+      ? {
+          AND: [
+            ...(params.statuses !== undefined ? [{ status: { in: params.statuses } }] : []),
+            ...(params.excludeStatuses !== undefined ? [{ status: { notIn: params.excludeStatuses } }] : []),
+          ],
+        }
+      : {}),
     ...(params.creditFilter === "AVAILABLE"
       ? { status: "APPROVED", valuationStatus: "VALUED", offsetStatus: "AVAILABLE" }
       : params.creditFilter === "APPLIED"

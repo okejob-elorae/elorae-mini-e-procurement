@@ -67,8 +67,8 @@ const PAGE_SIZE = 10;
 const lineKey = (itemId: string, variantSku: string) => `${itemId}::${variantSku}`;
 
 /**
- * Maps a failed /pwa/api/retur response to an Indonesian message a salesman can act on.
- * Every FieldReturnErrorCode gets its own sentence — a generic "gagal" for six distinct
+ * Maps a failed /pwa/api/retur response to a localized message a salesman can act on.
+ * Every FieldReturnErrorCode gets its own sentence — a generic "failed" for six distinct
  * causes is not acceptable per the task brief.
  */
 function messageForFailure(status: number, body: unknown, t: (key: string) => string): string {
@@ -77,42 +77,42 @@ function messageForFailure(status: number, body: unknown, t: (key: string) => st
   if (code) {
     switch (code) {
       case "NO_LINES":
-        return "Tambahkan minimal satu barang retur.";
+        return t("failNoLines");
       case "BAD_QTY":
-        return "Jumlah barang tidak valid. Periksa kembali.";
+        return t("failBadQty");
       case "BAD_LINE_SHAPE":
-        return "Data baris retur tidak terbaca. Muat ulang halaman lalu isi ulang barangnya.";
+        return t("failBadLineShape");
       case "ITEM_NOT_FOUND":
-        return "Ada barang yang tidak dikenali sistem. Muat ulang katalog lalu pilih ulang barangnya.";
+        return t("failItemNotFound");
       case "BAD_VARIANT":
-        return "Varian yang dipilih tidak bisa diretur untuk barang ini. Muat ulang katalog lalu pilih ulang barangnya.";
+        return t("failBadVariant");
       case "STORE_NOT_FOUND":
-        return "Toko tidak ditemukan atau sudah nonaktif.";
+        return t("failStoreNotFound");
       case "VISIT_NOT_OWNED":
-        return "Kunjungan tidak valid untuk akun ini. Coba check-in ulang.";
+        return t("failVisitNotOwned");
       case "MISSING_RESI":
-        return "Nomor resi wajib diisi untuk pengiriman ekspedisi.";
+        return t("failMissingResi");
       case "MISSING_EXPEDITION_NAME":
-        return "Nama ekspedisi wajib diisi untuk pengiriman ekspedisi.";
+        return t("failMissingExpeditionName");
       case "MISSING_REASON_NOTE":
-        return "Catatan wajib diisi untuk alasan Lainnya.";
+        return t("failMissingReasonNote");
       case "MISSING_NOTA_PHOTO":
         return t("missingNotaPhoto");
       case "MISSING_TRANSPORT":
         return t("missingTransport");
       default:
-        return "Gagal menyimpan retur. Coba lagi.";
+        return t("failGeneric");
     }
   }
-  if (status === 401) return "Sesi berakhir. Masuk lagi.";
-  if (status === 403) return "Tidak punya akses untuk fitur ini.";
-  if (status === 503) return "Layanan unggah foto belum tersedia. Coba lagi nanti.";
-  if (status === 502) return "Gagal mengunggah foto. Periksa koneksi lalu coba lagi.";
+  if (status === 401) return t("failUnauthorized");
+  if (status === 403) return t("failForbidden");
+  if (status === 503) return t("failUploadUnavailable");
+  if (status === 502) return t("failUploadFailed");
   // A generic 5xx is a server-side failure, not something retaking the photo or re-filling
   // the form fixes — do not blame the input.
-  if (status >= 500) return "Server sedang bermasalah. Coba lagi beberapa saat lagi.";
-  if (error) return "Data retur tidak valid. Ambil ulang foto lalu coba lagi.";
-  return "Gagal menyimpan retur. Coba lagi.";
+  if (status >= 500) return t("failServer");
+  if (error) return t("failInvalidData");
+  return t("failGeneric");
 }
 
 export function ReturShell({ storeId, storeName, visitId }: { storeId: string; storeName: string; visitId: string | null }) {
@@ -443,10 +443,10 @@ export function ReturShell({ storeId, storeName, visitId }: { storeId: string; s
                 )}
                 <div className="flex gap-3 px-4 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
                   <Button variant="secondary" className="flex-1 py-6 text-base" onClick={retake} disabled={compressing}>
-                    <RotateCcw className="mr-2 h-5 w-5" /> Ulangi
+                    <RotateCcw className="mr-2 h-5 w-5" /> {t("retakePhoto")}
                   </Button>
                   <Button className="flex-1 py-6 text-base" onClick={() => void keepPhoto()} disabled={compressing}>
-                    {compressing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Check className="mr-2 h-5 w-5" />} Simpan
+                    {compressing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Check className="mr-2 h-5 w-5" />} {t("savePhoto")}
                   </Button>
                 </div>
               </>

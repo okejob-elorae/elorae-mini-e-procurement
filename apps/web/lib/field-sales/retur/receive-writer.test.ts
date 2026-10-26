@@ -296,7 +296,42 @@ d("receiveFieldReturn (test bed only)", () => {
         { lineId: lineAId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
         { lineId: lineBId, receivedQty: 2, sellableQty: 1, rejectedQty: 0 },
       ],
-    })).rejects.toMatchObject({ code: "SPLIT_MISMATCH", detail: expect.stringContaining("Retur item B") });
+    })).rejects.toMatchObject({
+      code: "SPLIT_MISMATCH",
+      detail: expect.stringContaining("Retur item B"),
+    });
+    const err = await receiveFieldReturn({
+      returnId,
+      receivedById: adminId,
+      counts: [
+        { lineId: lineAId, receivedQty: 3, sellableQty: 3, rejectedQty: 0 },
+        { lineId: lineBId, receivedQty: 2, sellableQty: 1, rejectedQty: 0 },
+      ],
+    }).catch((e: unknown) => e);
+    expect((err as { detail?: string }).detail).not.toContain("Retur item A");
+  });
+
+  it("keeps the plain SPLIT_MISMATCH when the label lookup throws", async () => {
+    /* Delegate methods are served by Prisma's proxy, so pin the bound original back — mockRestore would leave it undefined. */
+    const original = prisma.fieldReturnLine.findFirst.bind(prisma.fieldReturnLine);
+    const spy = vi.spyOn(prisma.fieldReturnLine, "findFirst").mockImplementation(original as unknown as typeof prisma.fieldReturnLine.findFirst);
+    spy.mockImplementationOnce((() => {
+      throw new Error("label lookup down");
+    }) as unknown as typeof prisma.fieldReturnLine.findFirst);
+    try {
+      const err = await receiveFieldReturn({
+        returnId,
+        receivedById: adminId,
+        counts: [
+          { lineId: lineAId, receivedQty: 3, sellableQty: 1, rejectedQty: 0 },
+          { lineId: lineBId, receivedQty: 2, sellableQty: 2, rejectedQty: 0 },
+        ],
+      }).catch((e: unknown) => e);
+      expect(err).toMatchObject({ code: "SPLIT_MISMATCH" });
+      expect((err as { detail?: string }).detail).toBeUndefined();
+    } finally {
+      spy.mockImplementation(original as unknown as typeof prisma.fieldReturnLine.findFirst);
+    }
   });
 
   it("refuses a negative receivedQty with BAD_QTY and writes nothing", async () => {

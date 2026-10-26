@@ -13,7 +13,7 @@ import type {
   KonsiReturStockImpactLine,
 } from "@/lib/field-sales/retur/queries";
 import { isSettled } from "@/lib/field-sales/retur/variance";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDateOnlyJakarta, formatDateTimeJakarta } from "@/lib/date-only";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -301,7 +301,7 @@ export function FieldReturnDetailClient({
         <h2 className="font-semibold">{t("detail.summaryTitle")}</h2>
         <Field label={t("detail.store")} value={r.storeName} />
         <Field label={t("detail.raisedBy")} value={r.raisedByLabel} />
-        <Field label={t("detail.raisedAt")} value={formatDateOnlyJakarta(r.createdAt)} />
+        <Field label={t("detail.raisedAt")} value={formatDateTimeJakarta(r.createdAt)} />
         {/* ADMIN-origin, not yet shipped — hidden rather than rendered with an empty value. */}
         {r.transport && (
           <>

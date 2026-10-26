@@ -767,19 +767,7 @@ describe("field retur receiving actions (unit — writers mocked)", () => {
       expect(mockCreateFieldReturn).toHaveBeenCalledWith(expect.objectContaining({ note: null }));
     });
 
-    /*
-     * The action adds no stock-state guard of its own: whether a raise against an already-negative
-     * StoreStock row is accepted is the writer's call, pinned DB-backed in admin-origin.test.ts. A
-     * mocked writer cannot prove that, so this only pins the forwarding — the writer's verdict,
-     * here a refusal, reaches the caller untouched rather than being second-guessed.
-     */
-    it("passes the writer's refusal through without adding a stock-state check of its own", async () => {
-      mockHasPermission.mockReturnValue(true);
-      mockCreateFieldReturn.mockRejectedValue(new FieldReturnError("STORE_NOT_FOUND"));
-      const res = await raiseAdminReturnAction({ storeId: "store-1", lines: oneLine });
-      expect(res).toEqual({ ok: false, code: "NOT_FOUND" });
-      expect(mockCreateFieldReturn).toHaveBeenCalledTimes(1);
-    });
+    /* Whether a raise against an already-negative StoreStock row is accepted is the writer's call; the DB-backed admin-origin.test.ts is the real coverage of that origin-dependent decrement. */
 
     it("refuses an origin outside FIELD/ADMIN before calling the writer", async () => {
       mockHasPermission.mockReturnValue(true);

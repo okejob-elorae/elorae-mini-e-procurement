@@ -57,13 +57,14 @@ type Props = {
 const CREDIT_FILTER_ALL = "__all__";
 const STATUS_FILTER_ALL = "__all__";
 const STATUS_FILTER_ACTIVE = "ACTIVE";
-const STATUS_FILTER_OPTIONS: FieldReturnStatus[] = [
-  "PENDING_WAREHOUSE_RECEIVING",
-  "MISMATCH_PENDING_RESOLUTION",
-  "PENDING_APPROVAL",
-  "APPROVED",
-  "CANCELLED",
-];
+const STATUS_FILTER_RECORD: Record<FieldReturnStatus, true> = {
+  PENDING_WAREHOUSE_RECEIVING: true,
+  MISMATCH_PENDING_RESOLUTION: true,
+  PENDING_APPROVAL: true,
+  APPROVED: true,
+  CANCELLED: true,
+};
+const STATUS_FILTER_OPTIONS = Object.keys(STATUS_FILTER_RECORD) as FieldReturnStatus[];
 
 const ORIGIN_BADGE_VARIANT: Record<FieldReturnOrigin, "secondary" | "outline"> = {
   FIELD: "secondary",

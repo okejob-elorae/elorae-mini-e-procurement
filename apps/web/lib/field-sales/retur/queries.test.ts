@@ -836,12 +836,12 @@ d("listFieldReturns — origin + credit filters (test bed only)", () => {
     expect(rows.map((r) => r.id).sort()).toEqual([adminReturnId, fieldReturnId].sort());
   });
 
-  it("filters by status selection: a non-empty set keeps only those, an empty set matches nothing, undefined is no filter", async () => {
+  it("filters by status selection: a set keeps only those, excludeStatuses hides those, an empty set matches nothing, undefined is no filter", async () => {
     await prisma.fieldReturn.update({ where: { id: fieldReturnId }, data: { status: "CANCELLED" } });
 
     const excludingCancelled = await listFieldReturns({
       q: storeName,
-      statuses: ["PENDING_WAREHOUSE_RECEIVING", "MISMATCH_PENDING_RESOLUTION", "PENDING_APPROVAL", "APPROVED"],
+      excludeStatuses: ["CANCELLED"],
       page: 1,
       perPage: 50,
     });

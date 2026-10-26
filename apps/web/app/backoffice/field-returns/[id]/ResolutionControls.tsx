@@ -96,6 +96,7 @@ export function ResolutionControls({
   const [isPending, startTransition] = useTransition();
   const [dialog, setDialog] = useState<{ lineId: string; type: ResolutionType } | null>(null);
   const [note, setNote] = useState("");
+  const [noteTouched, setNoteTouched] = useState(false);
 
   useEffect(() => {
     onPendingChange?.(isPending);
@@ -105,11 +106,13 @@ export function ResolutionControls({
 
   function openDialog(lineId: string, type: ResolutionType): void {
     setNote("");
+    setNoteTouched(false);
     setDialog({ lineId, type });
   }
 
   const noteRequired = dialog !== null && NOTE_REQUIRED_TYPES.has(dialog.type);
   const noteMissing = noteRequired && note.trim() === "";
+  const showNoteError = noteMissing && noteTouched;
   const canConfirm = !isPending && !noteMissing;
 
   function confirm(): void {
@@ -128,7 +131,7 @@ export function ResolutionControls({
           router.refresh();
           return;
         }
-        toast.error(t(fieldReturnErrorKey(result.code, result.detail)));
+        toast.error(t(fieldReturnErrorKey(result.code, result.detail), { detail: result.detail ?? "" }));
       } catch {
         toast.error(t(fieldReturnErrorKey("ERROR")));
       }
@@ -269,12 +272,16 @@ export function ResolutionControls({
             <Textarea
               id="resolution-note"
               value={note}
-              onChange={(e) => setNote(e.target.value)}
+              onChange={(e) => {
+                setNote(e.target.value);
+                setNoteTouched(true);
+              }}
+              onBlur={() => setNoteTouched(true)}
               disabled={isPending}
-              aria-invalid={noteMissing}
+              aria-invalid={showNoteError}
               rows={3}
             />
-            {noteMissing && <p className="text-xs text-destructive">{t("noteRequiredError")}</p>}
+            {showNoteError && <p className="text-xs text-destructive">{t("noteRequiredError")}</p>}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{tCommon("cancel")}</AlertDialogCancel>

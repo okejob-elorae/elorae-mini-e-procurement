@@ -37,7 +37,7 @@ export async function correctFieldReturnReceipt(input: {
   reason: string;
   counts: ReceiveCount[];
 }): Promise<{ ok: true; status: CorrectableStatus }> {
-  await assertCountsShape(input.counts);
+  await assertCountsShape(input.returnId, input.counts);
   const reason = auditReason(input.reason);
 
   let notification: AdminNotification | null = null;

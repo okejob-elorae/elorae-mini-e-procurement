@@ -22,26 +22,21 @@ const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
 const ALLOWED_ORIGINS: ReadonlySet<string> = new Set(["FIELD", "ADMIN"]);
 const ALLOWED_CREDIT_FILTERS: ReadonlySet<string> = new Set(["AVAILABLE", "APPLIED"]);
 
-/* Every status except CANCELLED — the "hide cancelled" view; any other value is a single status. */
+/* The "hide cancelled" view (every status except CANCELLED); any other value is a single status. */
 const OPEN_STATUS_FILTER = "ACTIVE";
-const ALLOWED_STATUSES: readonly FieldReturnStatus[] = [
-  "PENDING_WAREHOUSE_RECEIVING",
-  "MISMATCH_PENDING_RESOLUTION",
-  "PENDING_APPROVAL",
-  "APPROVED",
-  "CANCELLED",
-];
+const STATUS_RECORD: Record<FieldReturnStatus, true> = {
+  PENDING_WAREHOUSE_RECEIVING: true,
+  MISMATCH_PENDING_RESOLUTION: true,
+  PENDING_APPROVAL: true,
+  APPROVED: true,
+  CANCELLED: true,
+};
+const ALLOWED_STATUSES = Object.keys(STATUS_RECORD) as FieldReturnStatus[];
 
 function parseStatusFilter(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
   if (raw === OPEN_STATUS_FILTER || (ALLOWED_STATUSES as readonly string[]).includes(raw)) return raw;
   return undefined;
-}
-
-function statusesFor(filter: string | undefined): FieldReturnStatus[] | undefined {
-  if (filter === undefined) return undefined;
-  if (filter === OPEN_STATUS_FILTER) return ALLOWED_STATUSES.filter((s) => s !== "CANCELLED");
-  return [filter as FieldReturnStatus];
 }
 
 function parsePageSize(raw: string | undefined): number {
@@ -74,7 +69,11 @@ export default async function FieldReturnsPage({ searchParams }: PageProps) {
     q,
     origin,
     creditFilter,
-    statuses: statusesFor(status),
+    ...(status === OPEN_STATUS_FILTER
+      ? { excludeStatuses: ["CANCELLED" as const] }
+      : status !== undefined
+        ? { statuses: [status as FieldReturnStatus] }
+        : {}),
     page,
     perPage: pageSize,
   });
