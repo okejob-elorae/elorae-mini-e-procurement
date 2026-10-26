@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { Prisma } from "@elorae/db";
-import { withRetry, isRetryableTxError } from "./tx-retry";
+import { withRetry, isRetryableTxError, isTransactionExpired } from "./tx-retry";
 
 function deadlockError(code = "P2010"): Prisma.PrismaClientKnownRequestError {
   return new Prisma.PrismaClientKnownRequestError("Deadlock found when trying to get lock; try restarting transaction", {
@@ -35,6 +35,40 @@ describe("isRetryableTxError", () => {
 
   it("returns false for an unrelated Prisma code with no deadlock text", () => {
     expect(isRetryableTxError(unrelatedKnownRequestError())).toBe(false);
+  });
+});
+
+function p2028(message: string): Prisma.PrismaClientKnownRequestError {
+  return new Prisma.PrismaClientKnownRequestError(message, { code: "P2028", clientVersion: "test" });
+}
+
+const EXPIRED_MESSAGE =
+  "Transaction API error: Transaction already closed: A commit cannot be executed on an expired transaction. The timeout for this transaction was 30000 ms, however 31205 ms passed since the start of the transaction.";
+const UNABLE_TO_START_MESSAGE =
+  "Transaction API error: Unable to start a transaction in the given time.";
+
+describe("isRetryableTxError on P2028", () => {
+  it("never retries a P2028 whose elapsed ms contains 1205", () => {
+    expect(isRetryableTxError(p2028(EXPIRED_MESSAGE))).toBe(false);
+  });
+
+  it("never retries a P2028 whose elapsed ms contains 1213", () => {
+    expect(isRetryableTxError(p2028("expired transaction, 51213 ms passed since the start"))).toBe(false);
+  });
+});
+
+describe("isTransactionExpired", () => {
+  it("is true for the expired-transaction P2028", () => {
+    expect(isTransactionExpired(p2028(EXPIRED_MESSAGE))).toBe(true);
+  });
+
+  it("is false for the unable-to-start P2028", () => {
+    expect(isTransactionExpired(p2028(UNABLE_TO_START_MESSAGE))).toBe(false);
+  });
+
+  it("is false for another Prisma code and for a plain Error", () => {
+    expect(isTransactionExpired(unrelatedKnownRequestError())).toBe(false);
+    expect(isTransactionExpired(new Error("boom"))).toBe(false);
   });
 });
 

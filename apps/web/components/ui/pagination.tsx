@@ -14,6 +14,8 @@ export interface PaginationProps {
   totalCount?: number;
   /** Optional: page size for summary (used with totalCount) */
   pageSize?: number;
+  /** Optional: disables both buttons, e.g. while a page load is pending */
+  disabled?: boolean;
 }
 
 export function Pagination({
@@ -22,6 +24,7 @@ export function Pagination({
   onPageChange,
   totalCount,
   pageSize,
+  disabled = false,
 }: PaginationProps) {
   const start = totalCount != null && pageSize != null ? (page - 1) * pageSize + 1 : null;
   const end =
@@ -44,7 +47,7 @@ export function Pagination({
           variant="outline"
           size="sm"
           onClick={() => onPageChange(page - 1)}
-          disabled={page <= 1}
+          disabled={disabled || page <= 1}
           aria-label="Previous page"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -54,7 +57,7 @@ export function Pagination({
           variant="outline"
           size="sm"
           onClick={() => onPageChange(page + 1)}
-          disabled={page >= totalPages}
+          disabled={disabled || page >= totalPages}
           aria-label="Next page"
         >
           Next

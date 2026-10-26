@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { isYearMonth } from "@/lib/spg-commission/month";
+import { isYearMonth, wibYearMonth } from "@/lib/spg-commission/month";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { DEFAULT_PAGE_SIZE } from "@/lib/constants/pagination";
 import { listSellThroughs, type SellThroughStatusValue } from "@/lib/konsi-sell-through/queries";
@@ -59,6 +59,7 @@ export default async function KonsiSellThroughPage({ searchParams }: PageProps) 
       storeId={storeId ?? ""}
       status={status ?? ""}
       periodMonth={periodMonth ?? ""}
+      currentMonth={wibYearMonth(new Date())}
       page={page}
       pageSize={pageSize}
     />

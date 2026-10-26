@@ -52,11 +52,9 @@ const suiteName = hasPackRatio
 d(suiteName, () => {
   const tag = `SMARTREQ-${Math.random().toString(36).slice(2, 10)}`;
   let uomId = ""; let itemId = ""; let categoryId = ""; let storeId = ""; let plainStoreId = "";
-  let noVisitStoreId = ""; let konsiStoreId = ""; let foreignVisitId = "";
 
   beforeEach(async () => {
     uomId = ""; itemId = ""; categoryId = ""; storeId = ""; plainStoreId = "";
-    noVisitStoreId = ""; konsiStoreId = ""; foreignVisitId = "";
 
     const salesman = await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } });
     session.userId = salesman.id;
@@ -91,28 +89,18 @@ d(suiteName, () => {
     });
     plainStoreId = plainStore.id;
 
-    const noVisitStore = await prisma.store.create({
-      data: { code: `${tag}-NOVIS`, name: "Toko Tanpa Kunjungan", address: "Jl. Test", termsType: "PUTUS", isActive: true },
-    });
-    noVisitStoreId = noVisitStore.id;
-
-    const konsiStore = await prisma.store.create({
-      data: { code: `${tag}-KONSI`, name: "Toko Konsi", address: "Jl. Test", termsType: "KONSI", isActive: true },
-    });
-    konsiStoreId = konsiStore.id;
-
-    for (const id of [storeId, plainStoreId, konsiStoreId]) {
+    for (const id of [storeId, plainStoreId]) {
       await prisma.storeVisit.create({ data: { storeId: id, userId: salesman.id, checkinLat: 0, checkinLng: 0 } });
     }
   });
 
   afterEach(async () => {
-    await prisma.storeVisit.deleteMany({ where: { storeId: { in: [storeId, plainStoreId, noVisitStoreId, konsiStoreId].map(seededId) } } });
+    await prisma.storeVisit.deleteMany({ where: { storeId: { in: [storeId, plainStoreId].map(seededId) } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(categoryId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
-    await prisma.store.deleteMany({ where: { id: { in: [storeId, plainStoreId, noVisitStoreId, konsiStoreId].map(seededId) } } });
+    await prisma.store.deleteMany({ where: { id: { in: [storeId, plainStoreId].map(seededId) } } });
   });
 
   it("prices the smart-request preview line off the store's priceDiscountPercent", async () => {
@@ -131,6 +119,44 @@ d(suiteName, () => {
     const line = res.lines.find((l) => l.itemId === itemId);
     expect(line).toBeDefined();
     expect(line!.unitPrice).toBe(5000);
+  });
+});
+
+/*
+ * The refusal guards sit ahead of the pack-ratio read, so they need no ratio, item or stock — only
+ * stores and visits. Their own suite, gated on the prod guard alone, so a bed with no pack ratio
+ * (CI's seeded database) still runs them.
+ */
+const isProd = DB_URL.includes(":3307") || DB_URL.includes("api.elorae.cloud");
+const g = isProd ? describe.skip : describe;
+
+g("smart-request guards (test bed only)", () => {
+  const tag = `SMARTGUARD-${Math.random().toString(36).slice(2, 10)}`;
+  const categoryId = "guard-category-not-read";
+  let noVisitStoreId = ""; let konsiStoreId = ""; let foreignVisitId = "";
+
+  beforeEach(async () => {
+    noVisitStoreId = ""; konsiStoreId = ""; foreignVisitId = "";
+
+    const salesman = await prisma.user.findFirstOrThrow({ where: { email: "salesman@elorae.com" } });
+    session.userId = salesman.id;
+
+    const noVisitStore = await prisma.store.create({
+      data: { code: `${tag}-NOVIS`, name: "Toko Tanpa Kunjungan", address: "Jl. Test", termsType: "PUTUS", isActive: true },
+    });
+    noVisitStoreId = noVisitStore.id;
+
+    const konsiStore = await prisma.store.create({
+      data: { code: `${tag}-KONSI`, name: "Toko Konsi", address: "Jl. Test", termsType: "KONSI", isActive: true },
+    });
+    konsiStoreId = konsiStore.id;
+
+    await prisma.storeVisit.create({ data: { storeId: konsiStoreId, userId: salesman.id, checkinLat: 0, checkinLng: 0 } });
+  });
+
+  afterEach(async () => {
+    await prisma.storeVisit.deleteMany({ where: { storeId: { in: [noVisitStoreId, konsiStoreId].map(seededId) } } });
+    await prisma.store.deleteMany({ where: { id: { in: [noVisitStoreId, konsiStoreId].map(seededId) } } });
   });
 
   it("fails fast with NO_ACTIVE_VISIT when the salesman has no open visit at the store", async () => {
@@ -154,7 +180,7 @@ d(suiteName, () => {
   it("rejects a KONSI store on submit before touching the order writer", async () => {
     const res = await submitSmartRequestOrder({
       storeId: konsiStoreId,
-      lines: [{ itemId, variantSku: "", productName: "T", qty: 1, unitPrice: 5000 }],
+      lines: [{ itemId: "guard-item-not-read", variantSku: "", productName: "T", qty: 1, unitPrice: 5000 }],
     });
     expect(res).toEqual({ ok: false, code: "KONSI_NOT_SUPPORTED" });
   });

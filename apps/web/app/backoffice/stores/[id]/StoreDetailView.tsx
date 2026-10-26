@@ -368,7 +368,8 @@ export function StoreDetailView({
   const lastVisitAtIso = visitsPaging.latestCheckinAtIso;
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [pagePending, startPageTransition] = useTransition();
+  const [visitsPending, startVisitsTransition] = useTransition();
+  const [sentPending, startSentTransition] = useTransition();
   const visitsTotalPages = Math.max(1, Math.ceil(visitsPaging.total / visitsPaging.pageSize));
   const sentTotalPages = Math.max(1, Math.ceil(sentItemsPaging.total / sentItemsPaging.pageSize));
 
@@ -377,6 +378,7 @@ export function StoreDetailView({
     if (next <= 1) params.delete(param);
     else params.set(param, String(next));
     const qs = params.toString();
+    const startPageTransition = param === "visitsPage" ? startVisitsTransition : startSentTransition;
     startPageTransition(() => {
       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     });
@@ -702,7 +704,7 @@ export function StoreDetailView({
               <p className="text-sm text-muted-foreground">{tDetail("noVisits")}</p>
             </div>
           ) : (
-            <div className={cn("overflow-auto rounded-md border", pagePending && "opacity-60 transition-opacity")} aria-busy={pagePending}>
+            <div className={cn("overflow-auto rounded-md border", visitsPending && "opacity-60 transition-opacity")} aria-busy={visitsPending}>
               <Table>
                 <TableHeader className="bg-background">
                   <TableRow>
@@ -779,6 +781,7 @@ export function StoreDetailView({
               totalCount={visitsPaging.total}
               pageSize={visitsPaging.pageSize}
               onPageChange={(next) => goToPage("visitsPage", next)}
+              disabled={visitsPending}
             />
           )}
         </CardContent>
@@ -935,7 +938,7 @@ export function StoreDetailView({
               <p className="text-sm text-muted-foreground">{tSentItems("empty")}</p>
             </div>
           ) : (
-            <div className={cn("overflow-auto rounded-md border", pagePending && "opacity-60 transition-opacity")} aria-busy={pagePending}>
+            <div className={cn("overflow-auto rounded-md border", sentPending && "opacity-60 transition-opacity")} aria-busy={sentPending}>
               <Table>
                 <TableHeader className="bg-background">
                   <TableRow>
@@ -974,6 +977,7 @@ export function StoreDetailView({
               totalCount={sentItemsPaging.total}
               pageSize={sentItemsPaging.pageSize}
               onPageChange={(next) => goToPage("sentPage", next)}
+              disabled={sentPending}
             />
           )}
         </CardContent>

@@ -1,13 +1,14 @@
 "use client";
 
-import { useTransition } from "react";
+import { useMemo, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { ClipboardList } from "lucide-react";
 import type { SellThroughListItem, SellThroughStatusValue } from "@/lib/konsi-sell-through/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { recapMonthOptions } from "@/lib/spg-commission/recap-display";
+import { formatYearMonth } from "@/app/backoffice/settings/spg-commission/format";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
@@ -30,6 +31,9 @@ import { Pager } from "@/components/Pager";
 
 const ROUTE = "/backoffice/konsi-sell-through";
 const ALL_STORES = "__all__";
+const ALL_PERIODS = "__all__";
+/* Two years back, as on the SPG commission recap; an older month reached by URL joins the list. */
+const MONTH_OPTION_COUNT = 24;
 const STATUS_OPTIONS: SellThroughStatusValue[] = ["DRAFT", "APPROVED", "CANCELLED", "VOIDED"];
 
 const STATUS_BADGE_VARIANT: Record<SellThroughStatusValue, "secondary" | "destructive" | "default"> = {
@@ -52,6 +56,7 @@ type Props = {
   storeId: string;
   status: SellThroughStatusValue | "";
   periodMonth: string;
+  currentMonth: string;
   page: number;
   pageSize: number;
 };
@@ -60,6 +65,11 @@ export function SellThroughPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("konsiSellThrough");
+  const locale = useLocale();
+  const monthOptions = useMemo(
+    () => recapMonthOptions(props.currentMonth, props.periodMonth || props.currentMonth, MONTH_OPTION_COUNT),
+    [props.currentMonth, props.periodMonth],
+  );
   const [isPending, startTransition] = useTransition();
 
   function pushParams(updates: Record<string, string | undefined>): void {
@@ -127,14 +137,23 @@ export function SellThroughPageClient(props: Props) {
           </div>
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">{t("filterPeriod")}</label>
-            <Input
-              type="month"
-              value={props.periodMonth}
+            <Select
+              value={props.periodMonth || ALL_PERIODS}
               disabled={isPending}
-              onChange={(e) => pushParams({ period: e.target.value || undefined, page: undefined })}
-              className="h-10 w-full"
-              aria-label={t("filterPeriod")}
-            />
+              onValueChange={(v) => pushParams({ period: v === ALL_PERIODS ? undefined : v, page: undefined })}
+            >
+              <SelectTrigger className="h-10 w-full" aria-label={t("filterPeriod")}>
+                <SelectValue placeholder={t("filterPeriod")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PERIODS}>{t("filterPeriodAll")}</SelectItem>
+                {monthOptions.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {formatYearMonth(option, locale)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-col justify-end">
             <Button variant="outline" disabled={isPending} onClick={reset} className="h-10 w-full">

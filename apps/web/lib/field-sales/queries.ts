@@ -1,5 +1,6 @@
 import { prisma, Prisma, resolveReservedInventory } from "@elorae/db";
 import { aggregateInventoryValues } from "@/lib/items/queries";
+import { matchKey } from "@/lib/items/match-key";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { listAssortmentGaps } from "@/lib/stores/assortment/queries";
 import { outstandingQty } from "./delivery/plan";
@@ -625,11 +626,13 @@ export async function listStoreNeverSentSuggestions(storeId: string): Promise<Ko
 }
 
 /**
- * What the warehouse can still reserve for each variant of ONE item, keyed by normalised
- * `variantSku` (`""` for a variantless item). Same figure the suggestion lists carry — `qtyOnHand
- * − reservedQty` per `InventoryValue` row, the MINIMUM where a `null` and an `""` row collide —
- * but not filtered to positive, so a sold-out variant reads 0 rather than going missing. A key
- * with no row at all is absent.
+ * What the warehouse can still reserve for each variant of ONE item, keyed by `matchKey` of the
+ * `variantSku` (`""` for a variantless item; trimmed and lower-cased, so a caller looks a variant up
+ * with `matchKey` of ITS spelling and never compares raw strings). The folded key is for lookup
+ * only, never written. Same figure the suggestion lists carry — `qtyOnHand − reservedQty` per
+ * `InventoryValue` row, the MINIMUM where a `null` and an `""` row collide — but not filtered to
+ * positive, so a sold-out variant reads 0 rather than going missing. A key with no row at all is
+ * absent, and the caller reads that as "unknown", never as 0.
  */
 export async function getItemAvailabilityBySku(itemId: string): Promise<Record<string, number>> {
   const rows = await prisma.inventoryValue.findMany({
@@ -638,9 +641,9 @@ export async function getItemAvailabilityBySku(itemId: string): Promise<Record<s
   });
   const bySku: Record<string, number> = {};
   for (const iv of rows) {
-    const variantSku = iv.variantSku ?? "";
+    const key = matchKey(iv.variantSku);
     const available = aggregateInventoryValues([iv])!.available;
-    bySku[variantSku] = variantSku in bySku ? Math.min(bySku[variantSku], available) : available;
+    bySku[key] = Object.prototype.hasOwnProperty.call(bySku, key) ? Math.min(bySku[key], available) : available;
   }
   return bySku;
 }

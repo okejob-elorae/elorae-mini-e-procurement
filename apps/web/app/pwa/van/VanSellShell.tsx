@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
-import { recordVanSaleAction, getVanStockForStoreAction } from "@/app/actions/van-sale";
+import { recordVanSaleAction, getVanStockForStoreAction, type RecordVanSaleFailureReason } from "@/app/actions/van-sale";
 import { roundToWholeRupiah, roundCents } from "@elorae/db/pricing";
 import { VanVariantSheet, type VanStockRow, type VanGroup } from "./VanVariantSheet";
 
@@ -267,15 +267,17 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
         toast.error(t("errInsufficientStock"));
         return;
       }
-      const msgByReason: Record<string, string> = {
+      /* Exhaustive over the failure reasons: a new one is a compile error here, never a silent "Add at least one item". */
+      const msgByReason: Record<RecordVanSaleFailureReason, string> = {
+        EMPTY: t("errEmpty"),
+        INSUFFICIENT_VAN_STOCK: t("errInsufficientStock"),
         STORE_NOT_FOUND: t("errStoreNotFound"),
         NO_PRICE: t("errNoPrice"),
         INSUFFICIENT_PAYMENT: t("errInsufficientPayment"),
         UNAUTHORIZED: t("errUnauthorized"),
         VALIDATION: t("errValidation"),
       };
-      const msg = msgByReason[res.reason] ?? t("errEmpty");
-      toast.error(msg);
+      toast.error(msgByReason[res.reason]);
     });
   }
 
@@ -394,9 +396,12 @@ export function VanSellShell({ stock: initialStock, stores }: { stock: VanStockR
           <Alert variant="destructive">
             <AlertDescription className="flex items-center justify-between gap-2">
               <span>{repriceErrorText}</span>
-              <Button type="button" size="sm" variant="outline" onClick={retryReprice} disabled={repricing}>
-                {t("retry")}
-              </Button>
+              {/* A missing store cannot be fixed by retrying; the copy already says to pick another buyer. */}
+              {repriceError !== "STORE_NOT_FOUND" && (
+                <Button type="button" size="sm" variant="outline" onClick={retryReprice} disabled={repricing}>
+                  {t("retry")}
+                </Button>
+              )}
             </AlertDescription>
           </Alert>
         )}

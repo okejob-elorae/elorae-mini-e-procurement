@@ -181,13 +181,16 @@ d("approveFieldSalesOrder — konsi added lines (test bed only)", () => {
      * suppresses the push), with no FK back to the order. JSON path filtering is unreliable on this
      * adapter, so match orderId in JS against this spec's own seeded ids.
      */
-    const ownOrderIds = allOrderIds();
+    const ownOrderIds = allOrderIds().filter(Boolean);
     const candidateNotifs = await prisma.adminNotification.findMany({
       where: { category: { in: ["PENDING_ORDER_APPROVAL", "CREDIT_LIMIT_HOLD"] } },
       select: { id: true, metadata: true },
     });
     const leakedNotifIds = candidateNotifs
-      .filter((n) => ownOrderIds.includes((n.metadata as { orderId?: string } | null)?.orderId ?? ""))
+      .filter((n) => {
+        const notifOrderId = (n.metadata as { orderId?: string } | null)?.orderId;
+        return !!notifOrderId && ownOrderIds.includes(notifOrderId);
+      })
       .map((n) => n.id);
     if (leakedNotifIds.length > 0) await prisma.adminNotification.deleteMany({ where: { id: { in: leakedNotifIds.map(seededId) } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: allOrderIds() } } });

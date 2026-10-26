@@ -16,6 +16,8 @@ export type RecordVanSaleActionResult =
   | { ok: true; saleId: string; docNo: string; changeAmount: number }
   | { ok: false; reason: "UNAUTHORIZED" | "EMPTY" | "STORE_NOT_FOUND" | "NO_PRICE" | "INSUFFICIENT_PAYMENT" | "INSUFFICIENT_VAN_STOCK" | "VALIDATION"; shortLines?: Array<{ itemId: string; variantSku: string | null; requested: number; available: number }> };
 
+export type RecordVanSaleFailureReason = Extract<RecordVanSaleActionResult, { ok: false }>["reason"];
+
 export type VanStockFetchResult = { ok: true; rows: SellableVanRow[] } | { ok: false; reason: "UNAUTHORIZED" | "STORE_NOT_FOUND" };
 
 /**

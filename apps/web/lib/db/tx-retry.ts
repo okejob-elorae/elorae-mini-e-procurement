@@ -6,6 +6,8 @@ const SERIALIZABLE = { isolationLevel: Prisma.TransactionIsolationLevel.Serializ
 export function isRetryableTxError(e: unknown): boolean {
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2034") return true; // transaction write conflict / deadlock (serialization)
+    /* A P2028 message carries elapsed milliseconds ("... 31205 ms ..."), which the "1205"/"1213" substring checks would read as a MySQL error code. */
+    if (e.code === "P2028") return false;
     const msg = `${e.message} ${JSON.stringify(e.meta ?? {})}`.toLowerCase();
     return msg.includes("deadlock") || msg.includes("1213") || msg.includes("lock wait timeout") || msg.includes("1205") || msg.includes("try restarting transaction");
   }
@@ -27,9 +29,15 @@ export async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promi
 
 export type SerializableOptions = { timeout?: number; maxWait?: number };
 
-// Prisma's interactive-transaction expiry (the default is 5s): the transaction was rolled back because it ran past its timeout.
+/*
+ * Prisma raises P2028 for two different failures: the transaction ran past its timeout and was rolled back
+ * ("Transaction already closed: A commit cannot be executed on an expired transaction ..."), or it could not
+ * even start within `maxWait` ("Unable to start a transaction in the given time", pool starvation).
+ * Only the first is an expiry; the second never ran anything.
+ */
 export function isTransactionExpired(e: unknown): boolean {
-  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2028";
+  if (!(e instanceof Prisma.PrismaClientKnownRequestError) || e.code !== "P2028") return false;
+  return !/unable to start a transaction/i.test(e.message);
 }
 
 // Serializable transaction with automatic retry on deadlock/serialization failures.

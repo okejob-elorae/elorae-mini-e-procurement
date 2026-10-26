@@ -111,9 +111,11 @@ type ExistingPush = {
  * concurrent submissions of one key both return the order the first one committed: the loser's
  * unique violation is caught outside the transaction and answered with the winner.
  *
- * The transaction runs under an explicit 30s timeout; one that still expires (P2028) is refused as
- * `TRANSACTION_TIMEOUT`, having rolled back whole. Only the call that created the order tells the
- * salesman, after the commit and best-effort — a replay or a lost race notifies nobody.
+ * The transaction runs under an explicit 30s timeout; one that expires (P2028 "expired transaction") is
+ * refused as `TRANSACTION_TIMEOUT`, having rolled back whole. A P2028 "unable to start" (a `maxWait`
+ * breach under pool starvation) never ran anything and is not an expiry, so it surfaces as the generic
+ * failure. Only the call that created the order tells the salesman, after the commit and best-effort — a
+ * replay or a lost race notifies nobody.
  */
 export async function createKonsiPushOrder(input: CreateKonsiPushOrderInput): Promise<PushResult> {
   let result: PushResult & { created: boolean };
