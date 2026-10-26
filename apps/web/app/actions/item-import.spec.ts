@@ -80,8 +80,8 @@ describe("commitItemImport", () => {
   it("queues one Jubelio push per created item without direct enqueue when asked", async () => {
     await commitItemImport(rows, { pushToJubelio: true });
     expect(vi.mocked(enqueueProductPushOnCreate).mock.calls).toEqual([
-      ["i1", { directEnqueue: false }],
-      ["i2", { directEnqueue: false }],
+      ["i1", "u1", { directEnqueue: false }],
+      ["i2", "u1", { directEnqueue: false }],
     ]);
   });
 

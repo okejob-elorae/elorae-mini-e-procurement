@@ -567,6 +567,24 @@ d("runSettlementRematchSweep (test bed only)", () => {
     }
   });
 
+  it("keeps an empty batch with no seed time running instead of throwing", async () => {
+    const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
+    const batchId = `rematch-empty-noseed-${Math.random().toString(36).slice(2, 10)}`;
+
+    let settlementId = "";
+    try {
+      settlementId = await createSettlement(admin.id, { resyncBatchId: batchId, resyncSeededAt: null });
+
+      const result = await runSettlementRematchSweep({ settlementIds: [settlementId], now: new Date() });
+      expect(result).toEqual({ scanned: 1, rematched: 0, skippedReconciled: 0, stillRunning: 1 });
+
+      const after = await prisma.settlement.findUniqueOrThrow({ where: { id: settlementId } });
+      expect(after.resyncRematchedAt).toBeNull();
+    } finally {
+      await prisma.settlement.deleteMany({ where: { id: seededId(settlementId) } });
+    }
+  });
+
   it("re-reads the status: a settlement reconciled after the scan is stamped, not rematched", async () => {
     const admin = await prisma.user.findFirstOrThrow({ where: { email: "admin@elorae.com" } });
     const suffix = Math.random().toString(36).slice(2, 10);

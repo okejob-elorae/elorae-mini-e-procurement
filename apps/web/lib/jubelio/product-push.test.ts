@@ -7,7 +7,6 @@ vi.mock("@elorae/db", () => ({
     jubelioOutbox: { create: vi.fn() },
   },
 }));
-vi.mock("@/lib/auth", () => ({ auth: vi.fn().mockResolvedValue({ user: { id: "u1" } }) }));
 vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn().mockResolvedValue({}) }));
 vi.mock("@/lib/items/jubelio-push-diff", () => ({ hasPushableChange: vi.fn().mockReturnValue(true) }));
 
@@ -23,8 +22,8 @@ beforeEach(() => {
 });
 
 describe.each([
-  ["enqueueProductPushOnUpdate", () => enqueueProductPushOnUpdate("i1", snapshot, snapshot)],
-  ["enqueueProductPushOnImageChange", () => enqueueProductPushOnImageChange("i1")],
+  ["enqueueProductPushOnUpdate", () => enqueueProductPushOnUpdate("i1", snapshot, snapshot, "u1")],
+  ["enqueueProductPushOnImageChange", () => enqueueProductPushOnImageChange("i1", "u1")],
 ])("%s", (_name, run) => {
   it("does not create an unmapped ERP finished good in Jubelio as a side effect of an edit", async () => {
     vi.mocked(prisma.item.findUnique).mockResolvedValue({ id: "i1", type: "FINISHED_GOOD" } as never);
@@ -38,7 +37,7 @@ describe.each([
     vi.mocked(prisma.jubelioProductMapping.count).mockResolvedValue(1 as never);
     await run();
     expect(prisma.jubelioOutbox.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ entityType: "product_push", entityId: "i1" }) }),
+      expect.objectContaining({ data: expect.objectContaining({ entityType: "product_push", entityId: "i1", enqueuedById: "u1" }) }),
     );
   });
 

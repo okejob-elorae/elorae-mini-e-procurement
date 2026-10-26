@@ -19,6 +19,6 @@ export async function createItemInJubelio(
   if (typeof itemId !== "string") return { ok: false, reason: "not_found" };
   const eligibility = await jubelioCreateEligibility(itemId);
   if (eligibility !== "eligible") return { ok: false, reason: eligibility };
-  await enqueueProductPushOnCreate(itemId);
+  await enqueueProductPushOnCreate(itemId, session.user.id);
   return { ok: true };
 }

@@ -253,6 +253,7 @@ export type SettlementDetail = {
   missingEscrowCount: number;
   resyncBatchId: string | null;
   resyncRematchedAt: string | null;
+  resyncSeededAt: string | null;
 };
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
@@ -272,6 +273,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       createdAt: true,
       resyncBatchId: true,
       resyncRematchedAt: true,
+      resyncSeededAt: true,
       lines: {
         select: {
           id: true,
@@ -409,5 +411,6 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     missingEscrowCount,
     resyncBatchId: row.resyncBatchId,
     resyncRematchedAt: row.resyncRematchedAt === null ? null : row.resyncRematchedAt.toISOString(),
+    resyncSeededAt: row.resyncSeededAt === null ? null : row.resyncSeededAt.toISOString(),
   };
 }

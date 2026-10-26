@@ -120,8 +120,8 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
   let uomId = "";
   const sku = `TEST-JNULL-${Math.random().toString(36).slice(2, 10)}`;
   /**
-   * Random NEGATIVE ids: Jubelio ids are positive, so consumeOrder/releaseOrder, which select every
-   * RESERVED reservation for the order id and stamp cogs by detail id, can never reach a real dev-bed order.
+   * Random NEGATIVE ids: Jubelio ids are positive, so consumeOrder/releaseOrder, which select only
+   * JUBELIO-sourced RESERVED reservations for the order id and stamp cogs by detail id, can never reach a real dev-bed order.
    */
   const salesorderId = -(Math.floor(Math.random() * 1_000_000_000) + 1);
   const detailA = salesorderId - 1;

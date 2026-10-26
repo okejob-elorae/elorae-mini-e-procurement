@@ -69,7 +69,7 @@ export async function commitItemImport(rawRows: unknown, options: unknown): Prom
   if (pushToJubelio) {
     for (const item of created) {
       try {
-        await enqueueProductPushOnCreate(item.id, { directEnqueue: false });
+        await enqueueProductPushOnCreate(item.id, user.id, { directEnqueue: false });
       } catch (e) {
         jubelioFailed += 1;
         console.error("[item-import] jubelio enqueue failed", item.id, e);

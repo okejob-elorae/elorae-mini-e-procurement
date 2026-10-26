@@ -77,7 +77,7 @@ export async function createItem(data: ItemFormData) {
     )
     .catch(() => {});
 
-  enqueueProductPushOnCreate(item.id).catch(() => {});
+  enqueueProductPushOnCreate(item.id, session.user.id).catch(() => {});
 
   revalidatePath('/backoffice/items');
   return serialized;
@@ -150,7 +150,7 @@ export async function updateItem(id: string, data: ItemFormData) {
       userId: session.user.id,
     }).catch(() => {});
   } else {
-    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after).catch(() => {});
+    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
   }
 
   revalidatePath('/backoffice/items');

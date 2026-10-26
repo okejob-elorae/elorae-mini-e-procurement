@@ -38,7 +38,8 @@ describe("parseTiktokSettlement (synthetic workbook)", () => {
 
   it("falls back to today's UTC date for both period bounds when no cell is date-typed", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(new Date(Date.UTC(2026, 9, 27, 3, 0, 0)));
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 27, 20, 0, 0)));
+    /* 20:00 UTC is already 03:00 on the 28th in WIB, so only the UTC date passes. */
     const buf = buildWorkbook([
       DETAIL_HEADER,
       ["584771788142839379", 18000, 20000, -2000, 0, "584771788142839379", "TikTok Shop", "2026-06-03"],

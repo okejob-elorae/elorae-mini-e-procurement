@@ -1,10 +1,10 @@
 import { prisma } from "@elorae/db";
 import { matchSettlement } from "./match";
+import { EMPTY_BATCH_CUTOFF_MS, isEmptyBatchStale } from "./empty-batch";
 
 const IN_FLIGHT = ["PENDING", "RESOLVING", "FETCHING"] as const;
 
-/* How long a stamped batch may stay empty before the sweep stops waiting for rows to appear. */
-export const EMPTY_BATCH_CUTOFF_MS = 10 * 60 * 1000;
+export { EMPTY_BATCH_CUTOFF_MS };
 
 export type RematchSweepResult = {
   scanned: number;
@@ -60,8 +60,7 @@ export async function runSettlementRematchSweep(
       prisma.jubelioSalesOrderResync.count({ where: { batchId } }),
       prisma.jubelioSalesOrderResync.count({ where: { batchId, status: { in: [...IN_FLIGHT] } } }),
     ]);
-    const emptyAndStale =
-      total === 0 && s.resyncSeededAt !== null && now.getTime() - s.resyncSeededAt.getTime() >= EMPTY_BATCH_CUTOFF_MS;
+    const emptyAndStale = isEmptyBatchStale(total, s.resyncSeededAt?.getTime() ?? null, now.getTime());
     if ((total === 0 && !emptyAndStale) || inFlight > 0) {
       stillRunning += 1;
       continue;
