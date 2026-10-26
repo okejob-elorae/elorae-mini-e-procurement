@@ -20,6 +20,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { SettlementDetail, SettlementDetailLine } from "@/lib/finance/settlement/queries";
+import { isEmptyBatchStale } from "@/lib/finance/settlement/empty-batch";
 import { matchSettlementAction, postSettlementJournalAction } from "@/app/actions/settlements";
 import {
   getResyncSummary,
@@ -70,6 +71,8 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const [resyncBatchId, setResyncBatchId] = useState<string | null>(
     canManage && settlement.resyncRematchedAt === null ? settlement.resyncBatchId : null,
   );
+  const [resyncSeededAtIso, setResyncSeededAtIso] = useState<string | null>(settlement.resyncSeededAt);
+  const [resyncEmptyStale, setResyncEmptyStale] = useState(false);
   const [resyncSummary, setResyncSummary] = useState<ResyncSummary | null>(null);
   const [resyncPollError, setResyncPollError] = useState(false);
   const [rematchStatus, setRematchStatus] = useState<RematchStatus>("pending");
@@ -147,7 +150,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
   const resyncInFlight = resyncSummary
     ? resyncSummary.pending + resyncSummary.resolving + resyncSummary.fetching
     : 0;
-  const resyncTerminal = resyncSummary !== null && resyncSummary.total > 0 && resyncInFlight === 0;
+  const resyncTerminal = resyncSummary !== null && resyncInFlight === 0 && (resyncSummary.total > 0 || resyncEmptyStale);
   const resyncDoneCount = resyncSummary
     ? resyncSummary.done + resyncSummary.notFound + resyncSummary.dead + resyncSummary.skipped
     : 0;
@@ -172,7 +175,14 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
       setResyncPollError(false);
       setResyncSummary(res);
       const inFlight = res.pending + res.resolving + res.fetching;
-      if (inFlight === 0 && timer) {
+      /* An empty batch is finished only once it is as old as the sweep's cutoff; until then keep polling. */
+      const emptyStale = isEmptyBatchStale(
+        res.total,
+        resyncSeededAtIso === null ? null : new Date(resyncSeededAtIso).getTime(),
+        Date.now(),
+      );
+      setResyncEmptyStale(emptyStale);
+      if (inFlight === 0 && (res.total > 0 || emptyStale) && timer) {
         clearInterval(timer);
       }
     }
@@ -184,7 +194,7 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
       cancelled = true;
       if (timer) clearInterval(timer);
     };
-  }, [resyncBatchId]);
+  }, [resyncBatchId, resyncSeededAtIso]);
 
   /**
    * Once the resync batch itself is terminal, the sweep still has to run and stamp
@@ -215,6 +225,8 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         rematchHandledRef.current = false;
         setRematchStatus("pending");
         setResyncSummary(null);
+        setResyncEmptyStale(false);
+        setResyncSeededAtIso(res.seededAtIso);
         if (res.rematchedAtIso === null) {
           setResyncBatchId(res.batchId);
         } else {
@@ -259,6 +271,8 @@ export function SettlementDetailClient({ settlement, canManage }: Props) {
         if (result.ok) {
           toast.success(t("resyncToastSuccess", { seeded: String(result.seeded) }));
           setResyncSummary(null);
+          setResyncEmptyStale(false);
+          setResyncSeededAtIso(new Date().toISOString());
           setResyncPollError(false);
           setRematchStatus("pending");
           rematchHandledRef.current = false;

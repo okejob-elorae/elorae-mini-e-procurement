@@ -1,7 +1,10 @@
 import { prisma } from "@elorae/db";
 import { matchSettlement } from "./match";
+import { EMPTY_BATCH_CUTOFF_MS, isEmptyBatchStale } from "./empty-batch";
 
 const IN_FLIGHT = ["PENDING", "RESOLVING", "FETCHING"] as const;
+
+export { EMPTY_BATCH_CUTOFF_MS };
 
 export type RematchSweepResult = {
   scanned: number;
@@ -29,15 +32,16 @@ export type RematchSweepResult = {
  * optional-array landmine).
  */
 export async function runSettlementRematchSweep(
-  opts: { settlementIds?: string[] } = {},
+  opts: { settlementIds?: string[]; now?: Date } = {},
 ): Promise<RematchSweepResult> {
+  const now = opts.now ?? new Date();
   const pending = await prisma.settlement.findMany({
     where: {
       resyncBatchId: { not: null },
       resyncRematchedAt: null,
       ...(opts.settlementIds !== undefined ? { id: { in: opts.settlementIds } } : {}),
     },
-    select: { id: true, resyncBatchId: true },
+    select: { id: true, resyncBatchId: true, resyncSeededAt: true },
   });
 
   let rematched = 0;
@@ -46,15 +50,18 @@ export async function runSettlementRematchSweep(
   for (const s of pending) {
     const batchId = s.resyncBatchId as string;
     /**
-     * `total === 0` counts as still running on purpose. The api writes every row before it returns
-     * the batch and the stamp lands only after that, so a stamped batch has rows today; with none,
-     * "finished with nothing fetched" and "not visible yet" look the same, and this declines to guess.
+     * An empty batch counts as still running only while it is fresh. The api writes every row before
+     * it returns the batch and the stamp lands only after that, so a stamped batch has rows today;
+     * with none, "finished with nothing fetched" and "not visible yet" look the same, so the sweep
+     * waits `EMPTY_BATCH_CUTOFF_MS` from `resyncSeededAt` and then treats it as finished, instead of
+     * leaving the settlement on "Fetching…" forever. A batch with no seed time is never stale.
      */
     const [total, inFlight] = await Promise.all([
       prisma.jubelioSalesOrderResync.count({ where: { batchId } }),
       prisma.jubelioSalesOrderResync.count({ where: { batchId, status: { in: [...IN_FLIGHT] } } }),
     ]);
-    if (total === 0 || inFlight > 0) {
+    const emptyAndStale = isEmptyBatchStale(total, s.resyncSeededAt?.getTime() ?? null, now.getTime());
+    if ((total === 0 && !emptyAndStale) || inFlight > 0) {
       stillRunning += 1;
       continue;
     }

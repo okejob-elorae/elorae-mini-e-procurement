@@ -112,7 +112,7 @@ describe("consumeOrder", () => {
     const r = await consumeOrder(tx, { salesorderId: 100, salesorderNo: "SO-100" });
     expect(r.consumed).toBe(1);
     expect(tx.stockReservation.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { salesorderDetailId: 5, state: "RESERVED" }, data: expect.objectContaining({ state: "CONSUMED" }) }),
+      expect.objectContaining({ where: { source: "JUBELIO", salesorderDetailId: 5, state: "RESERVED" }, data: expect.objectContaining({ state: "CONSUMED" }) }),
     );
     expect(tx.stockAdjustment.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ source: "FULFILLMENT_CONSUME", newQty: 7, qtyChange: -3 }) }),

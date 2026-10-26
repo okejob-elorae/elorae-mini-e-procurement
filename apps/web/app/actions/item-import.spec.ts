@@ -7,7 +7,7 @@ vi.mock("@/lib/items/import/writer", async () => {
   class ItemImportSkuTakenError extends Error {}
   return { createItemsFromImport: vi.fn(), ItemImportSkuTakenError };
 });
-vi.mock("@/app/actions/jubelio-product-push", () => ({ enqueueProductPushOnCreate: vi.fn() }));
+vi.mock("@/lib/jubelio/product-push", () => ({ enqueueProductPushOnCreate: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn().mockResolvedValue("Admin") }));
 vi.mock("@/lib/notifications/recipients", () => ({
   getUsersWithPermission: vi.fn().mockResolvedValue([]),
@@ -17,7 +17,7 @@ vi.mock("@/lib/notifications/recipients", () => ({
 import { auth } from "@/lib/auth";
 import { loadItemImportLookups } from "@/lib/items/import/lookups";
 import { createItemsFromImport, ItemImportSkuTakenError } from "@/lib/items/import/writer";
-import { enqueueProductPushOnCreate } from "@/app/actions/jubelio-product-push";
+import { enqueueProductPushOnCreate } from "@/lib/jubelio/product-push";
 import { commitItemImport, previewItemImport } from "./item-import";
 
 const lookups = (existing: string[] = []) => ({
@@ -80,8 +80,8 @@ describe("commitItemImport", () => {
   it("queues one Jubelio push per created item without direct enqueue when asked", async () => {
     await commitItemImport(rows, { pushToJubelio: true });
     expect(vi.mocked(enqueueProductPushOnCreate).mock.calls).toEqual([
-      ["i1", { directEnqueue: false }],
-      ["i2", { directEnqueue: false }],
+      ["i1", "u1", { directEnqueue: false }],
+      ["i2", "u1", { directEnqueue: false }],
     ]);
   });
 

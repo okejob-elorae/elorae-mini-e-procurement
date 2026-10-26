@@ -86,7 +86,6 @@ export type SettlementDetailLine = {
   biayaLayanan: number;
   biayaKomisiAms: number;
   biayaProsesPesanan: number;
-  raw: Record<string, unknown>;
   jubelioNet: number | null;
   netDelta: number | null;
   matches: boolean;
@@ -254,6 +253,7 @@ export type SettlementDetail = {
   missingEscrowCount: number;
   resyncBatchId: string | null;
   resyncRematchedAt: string | null;
+  resyncSeededAt: string | null;
 };
 
 export async function getSettlementById(id: string): Promise<SettlementDetail | null> {
@@ -273,6 +273,7 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       createdAt: true,
       resyncBatchId: true,
       resyncRematchedAt: true,
+      resyncSeededAt: true,
       lines: {
         select: {
           id: true,
@@ -288,7 +289,6 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
           biayaLayanan: true,
           biayaKomisiAms: true,
           biayaProsesPesanan: true,
-          raw: true,
         },
       },
     },
@@ -359,7 +359,6 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
       biayaLayanan: toNum(l.biayaLayanan),
       biayaKomisiAms: toNum(l.biayaKomisiAms),
       biayaProsesPesanan: toNum(l.biayaProsesPesanan),
-      raw: l.raw as Record<string, unknown>,
       jubelioFees: deriveJubelioFees(feeBreakdown, canceled),
       jubelioComposition: l.matchedSalesOrderId
         ? (compositionByOrderId.get(l.matchedSalesOrderId) ?? null)
@@ -412,5 +411,6 @@ export async function getSettlementById(id: string): Promise<SettlementDetail | 
     missingEscrowCount,
     resyncBatchId: row.resyncBatchId,
     resyncRematchedAt: row.resyncRematchedAt === null ? null : row.resyncRematchedAt.toISOString(),
+    resyncSeededAt: row.resyncSeededAt === null ? null : row.resyncSeededAt.toISOString(),
   };
 }

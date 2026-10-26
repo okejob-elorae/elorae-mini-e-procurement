@@ -119,6 +119,7 @@ describe("jubelio-salesorder-resync server actions", () => {
       (prisma.settlement.findUnique as any).mockResolvedValue({
         resyncBatchId: "batch-1",
         resyncRematchedAt: new Date("2026-09-27T04:00:00.000Z"),
+        resyncSeededAt: new Date("2026-09-27T03:00:00.000Z"),
         status: "MATCHED",
       });
 
@@ -127,13 +128,14 @@ describe("jubelio-salesorder-resync server actions", () => {
       expect(prisma.settlement.findUnique).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: "s1" },
-          select: { resyncBatchId: true, resyncRematchedAt: true, status: true },
+          select: { resyncBatchId: true, resyncRematchedAt: true, resyncSeededAt: true, status: true },
         }),
       );
       expect(result).toEqual({
         ok: true,
         batchId: "batch-1",
         rematchedAtIso: "2026-09-27T04:00:00.000Z",
+        seededAtIso: "2026-09-27T03:00:00.000Z",
         status: "MATCHED",
       });
     });

@@ -316,4 +316,22 @@ describe("buildCreateProductRequest — images", () => {
     });
     expect(withoutVariantImages.use_single_image_set).toBe(true);
   });
+
+  it("use_single_image_set stays on when the only variant images belong to a variant the item no longer has", () => {
+    const body = buildCreateProductRequest({
+      item: item({ variants: [{ sku: "SKU-1-RED" }] }),
+      defaults: { ...defaults, useSingleImageSet: true },
+      categoryJubelioId: 454,
+      mappings: [
+        { id: "m1", jubelioItemGroupId: 100, jubelioItemId: 1001, jubelioItemCode: "SKU-1-RED", erpVariantSku: "SKU-1-RED" },
+        { id: "m2", jubelioItemGroupId: 100, jubelioItemId: 1002, jubelioItemCode: "SKU-1-BLU", erpVariantSku: "SKU-1-BLU" },
+      ],
+      images: [
+        imageSlice({ id: "img_1", variantSku: null, url: "https://cdn.example.com/main.jpg", sortOrder: 0 }),
+        imageSlice({ id: "img_2", variantSku: "SKU-1-BLU", url: "https://cdn.example.com/blu.jpg", sortOrder: 0 }),
+      ],
+    });
+    expect(body.variation_images).toEqual([]);
+    expect(body.use_single_image_set).toBe(true);
+  });
 });

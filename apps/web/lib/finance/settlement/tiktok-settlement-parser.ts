@@ -68,8 +68,10 @@ function dateToYmd(d: Date): string {
  * explicit period range, so the settlement period is derived by scanning
  * every cell of the per-order data rows for JS `Date` values (the workbook
  * is read with `cellDates: true`) and taking the min/max found. This is a
- * heuristic pending validation against the real export — if the export
- * carries no date-typed column at all, both bounds fall back to "today".
+ * heuristic pending validation against the real export. If the export
+ * carries no date-typed cell at all, both bounds deliberately fall back to
+ * today's UTC date (the upload day, not a settlement date) rather than
+ * failing the parse; a text-formatted date column lands here too.
  */
 function derivePeriodRange(dataRows: unknown[][]): { from: string; to: string } {
   let min: Date | undefined;

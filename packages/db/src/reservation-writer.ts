@@ -126,13 +126,13 @@ export async function consumeOrder(
 ): Promise<ConsumeOrderResult> {
   const run = async (tx: Prisma.TransactionClient): Promise<ConsumeOrderResult> => {
     const rows = await tx.stockReservation.findMany({
-      where: { salesorderId: input.salesorderId, state: "RESERVED" },
+      where: { source: "JUBELIO", salesorderId: input.salesorderId, state: "RESERVED" },
     });
     let consumed = 0;
 
     for (const row of rows) {
       const upd = await tx.stockReservation.updateMany({
-        where: { salesorderDetailId: row.salesorderDetailId, state: "RESERVED" },
+        where: { source: "JUBELIO", salesorderDetailId: row.salesorderDetailId, state: "RESERVED" },
         data: { state: "CONSUMED", resolvedAt: new Date() },
       });
       if (upd.count === 0) continue; // lost the race — another trigger consumed it
@@ -221,13 +221,13 @@ export async function releaseOrder(
 ): Promise<ReleaseOrderResult> {
   const run = async (tx: Prisma.TransactionClient): Promise<ReleaseOrderResult> => {
     const rows = await tx.stockReservation.findMany({
-      where: { salesorderId: input.salesorderId, state: "RESERVED" },
+      where: { source: "JUBELIO", salesorderId: input.salesorderId, state: "RESERVED" },
     });
     let released = 0;
 
     for (const row of rows) {
       const upd = await tx.stockReservation.updateMany({
-        where: { salesorderDetailId: row.salesorderDetailId, state: "RESERVED" },
+        where: { source: "JUBELIO", salesorderDetailId: row.salesorderDetailId, state: "RESERVED" },
         data: { state: "RELEASED", resolvedAt: new Date() },
       });
       if (upd.count === 0) continue;

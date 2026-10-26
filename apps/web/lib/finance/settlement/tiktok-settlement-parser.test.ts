@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import * as XLSX from "xlsx";
 import { parseTiktokSettlement } from "./tiktok-settlement-parser";
 
@@ -32,6 +32,26 @@ function buildWorkbook(detailRows: unknown[][], includeLaporan = false): Buffer 
 }
 
 describe("parseTiktokSettlement (synthetic workbook)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("falls back to today's UTC date for both period bounds when no cell is date-typed", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(Date.UTC(2026, 9, 27, 20, 0, 0)));
+    /* 20:00 UTC is already 03:00 on the 28th in WIB, so only the UTC date passes. */
+    const buf = buildWorkbook([
+      DETAIL_HEADER,
+      ["584771788142839379", 18000, 20000, -2000, 0, "584771788142839379", "TikTok Shop", "2026-06-03"],
+    ]);
+
+    const res = parseTiktokSettlement(buf);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.data.periodFrom).toBe("2026-10-27");
+    expect(res.data.periodTo).toBe("2026-10-27");
+  });
+
   it("parses per-order lines from Detail pesanan and derives aggregated totals", () => {
     const buf = buildWorkbook([
       DETAIL_HEADER,

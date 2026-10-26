@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { enqueueProductPushOnImageChange } from "@/app/actions/jubelio-product-push";
+import { enqueueProductPushOnImageChange } from "@/lib/jubelio/product-push";
 import { deleteFromR2, keyFromUrl } from "@/lib/r2";
 import { isR2KeyInFolder, isSafeR2KeySegment } from "@/lib/r2-key";
 import {
@@ -21,14 +21,16 @@ import type {
   ReplaceImagesActionResult,
 } from "./types";
 
-async function requireManage(): Promise<{ ok: true } | ReplaceImagesActionResult> {
+async function requireManage(): Promise<
+  { denied: ReplaceImagesActionResult; userId?: undefined } | { denied: null; userId: string | null }
+> {
   const session = await auth();
-  if (!session) return { ok: false, code: "forbidden", message: "Unauthorized." };
+  if (!session) return { denied: { ok: false, code: "forbidden", message: "Unauthorized." } };
   const perms = (session.user as { permissions?: string[] }).permissions ?? [];
   if (!hasPermission(perms, PERMISSIONS.ITEMS_MANAGE)) {
-    return { ok: false, code: "forbidden", message: "Permission denied." };
+    return { denied: { ok: false, code: "forbidden", message: "Permission denied." } };
   }
-  return { ok: true };
+  return { denied: null, userId: session.user?.id ?? null };
 }
 
 /**
@@ -61,7 +63,7 @@ export async function replaceItemImagesAction(
   submitted: ItemImageSubmission[],
 ): Promise<ReplaceImagesActionResult> {
   const gate = await requireManage();
-  if (!gate.ok) return gate as ReplaceImagesActionResult;
+  if (gate.denied) return gate.denied;
 
   const item = await prisma.item.findUnique({
     where: { id: itemId },
@@ -166,7 +168,7 @@ export async function replaceItemImagesAction(
 
   const totalChanges = diff.inserts.length + diff.updates.length + diff.deletes.length;
   if (totalChanges > 0) {
-    void enqueueProductPushOnImageChange(itemId);
+    void enqueueProductPushOnImageChange(itemId, gate.userId);
   }
 
   revalidatePath(`/backoffice/items/${itemId}`);

@@ -4,7 +4,7 @@ vi.mock("@elorae/db", () => ({
   prisma: {
     item: { findMany: vi.fn() },
     jubelioCategoryMapping: { findMany: vi.fn() },
-    jubelioOutbox: { createMany: vi.fn(), groupBy: vi.fn() },
+    jubelioOutbox: { createMany: vi.fn(), groupBy: vi.fn(), findMany: vi.fn() },
   },
 }));
 
@@ -103,6 +103,7 @@ describe("jubelio-bulk-migration server actions", () => {
 
     it("creates one outbox row per eligible itemId", async () => {
       (auth as any).mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+      (prisma.jubelioOutbox.findMany as any).mockResolvedValue([]);
       (prisma.item.findMany as any).mockResolvedValue([{ id: "i1" }, { id: "i2" }]);
       (prisma.jubelioCategoryMapping.findMany as any).mockResolvedValue([]);
       (prisma.jubelioOutbox.createMany as any).mockResolvedValue({ count: 2 });
@@ -115,7 +116,41 @@ describe("jubelio-bulk-migration server actions", () => {
           { entityType: "product_push", entityId: "i2", payload: {}, enqueuedById: "u1" },
         ],
       });
-      expect(result).toEqual({ enqueued: 2 });
+      expect(result).toEqual({ enqueued: 2, skipped: 0 });
+    });
+
+    it("skips an item that already has a PENDING or PROCESSING product push and reports the count", async () => {
+      (auth as any).mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+      (prisma.item.findMany as any).mockResolvedValue([{ id: "i1" }, { id: "i2" }]);
+      (prisma.jubelioOutbox.findMany as any).mockResolvedValue([{ entityId: "i1" }]);
+      (prisma.jubelioOutbox.createMany as any).mockResolvedValue({ count: 1 });
+
+      const result = await enqueueBulkMigration(["i1", "i2"]);
+
+      expect(prisma.jubelioOutbox.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            entityType: "product_push",
+            entityId: { in: ["i1", "i2"] },
+            status: { in: ["PENDING", "PROCESSING"] },
+          },
+        }),
+      );
+      expect(prisma.jubelioOutbox.createMany).toHaveBeenCalledWith({
+        data: [{ entityType: "product_push", entityId: "i2", payload: {}, enqueuedById: "u1" }],
+      });
+      expect(result).toEqual({ enqueued: 1, skipped: 1 });
+    });
+
+    it("writes nothing when every selected item is already in flight", async () => {
+      (auth as any).mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+      (prisma.item.findMany as any).mockResolvedValue([{ id: "i1" }]);
+      (prisma.jubelioOutbox.findMany as any).mockResolvedValue([{ entityId: "i1" }]);
+
+      const result = await enqueueBulkMigration(["i1"]);
+
+      expect(prisma.jubelioOutbox.createMany).not.toHaveBeenCalled();
+      expect(result).toEqual({ enqueued: 0, skipped: 1 });
     });
   });
 

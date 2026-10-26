@@ -203,12 +203,12 @@ export function buildCreateProductRequest(opts: {
     ? item.variants!.map((v) => ({ sku: v.sku, barcode: v.barcode }))
     : [{ sku: item.sku }];
 
-  const imageResult = buildJubelioImages(
-    opts.images ?? [],
-    mappings,
-    new Set(hasVariants ? desiredVariants.map((v) => v.sku) : []),
+  const currentVariantSkus = new Set(hasVariants ? desiredVariants.map((v) => v.sku) : []);
+  const imageResult = buildJubelioImages(opts.images ?? [], mappings, currentVariantSkus);
+  /* Only an image of a CURRENT variant counts: a dropped variant's leftover image would otherwise turn the single image set off with an empty variation_images. */
+  const hasVariantImages = (opts.images ?? []).some(
+    (i) => i.variantSku !== null && currentVariantSkus.has(i.variantSku),
   );
-  const hasVariantImages = (opts.images ?? []).some((i) => i.variantSku !== null);
 
   const product_skus: ProductSkuEntry[] = desiredVariants.map((v) => {
     const mappingKey = hasVariants ? v.sku : "";

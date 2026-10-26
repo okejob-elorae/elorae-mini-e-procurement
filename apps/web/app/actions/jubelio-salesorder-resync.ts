@@ -64,7 +64,13 @@ export async function getResyncSummary(batchId: string): Promise<ResyncSummaryRe
 }
 
 export type SettlementResyncStateResult =
-  | { ok: true; rematchedAtIso: string | null; batchId: string | null; status: string | null }
+  | {
+      ok: true;
+      rematchedAtIso: string | null;
+      batchId: string | null;
+      seededAtIso: string | null;
+      status: string | null;
+    }
   | { ok: false; code: "FORBIDDEN" };
 
 /**
@@ -83,13 +89,14 @@ export async function getSettlementResyncState(settlementId: string): Promise<Se
 
   const row = await prisma.settlement.findUnique({
     where: { id: settlementId },
-    select: { resyncBatchId: true, resyncRematchedAt: true, status: true },
+    select: { resyncBatchId: true, resyncRematchedAt: true, resyncSeededAt: true, status: true },
   });
 
   return {
     ok: true,
     rematchedAtIso: row?.resyncRematchedAt?.toISOString() ?? null,
     batchId: row?.resyncBatchId ?? null,
+    seededAtIso: row?.resyncSeededAt?.toISOString() ?? null,
     status: row?.status ?? null,
   };
 }

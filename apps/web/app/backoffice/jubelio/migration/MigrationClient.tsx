@@ -72,7 +72,8 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
       try {
         const ids = Array.from(selected);
         const result = await enqueueBulkMigration(ids);
-        toast.success(`Queued ${result.enqueued} item(s). Worker drains over ~5 min.`);
+        const skippedNote = result.skipped > 0 ? ` ${result.skipped} already queued, skipped.` : "";
+        toast.success(`Queued ${result.enqueued} item(s).${skippedNote} Worker drains over ~5 min.`);
         setItems((prev) => prev.filter((it) => !selected.has(it.id)));
         setSelected(new Set());
         setConfirmOpen(false);

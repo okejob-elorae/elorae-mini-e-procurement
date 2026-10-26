@@ -120,8 +120,8 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
   let uomId = "";
   const sku = `TEST-JNULL-${Math.random().toString(36).slice(2, 10)}`;
   /**
-   * Random NEGATIVE ids: Jubelio ids are positive, so consumeOrder/releaseOrder, which select every
-   * RESERVED reservation for the order id and stamp cogs by detail id, can never reach a real dev-bed order.
+   * Random NEGATIVE ids: Jubelio ids are positive, so consumeOrder/releaseOrder, which select only
+   * JUBELIO-sourced RESERVED reservations for the order id and stamp cogs by detail id, can never reach a real dev-bed order.
    */
   const salesorderId = -(Math.floor(Math.random() * 1_000_000_000) + 1);
   const detailA = salesorderId - 1;
@@ -357,5 +357,34 @@ d("Jubelio reservation on variantless rows spelled null (test bed only)", () => 
     expect(Number(nullAfter.reservedQty)).toBe(0);
     expect(Number(emptyAfter.qtyOnHand)).toBe(0);
     expect(Number(emptyAfter.reservedQty)).toBe(0);
+  });
+
+  it("consumeOrder and releaseOrder leave a non-JUBELIO reservation sharing the salesorderId untouched", async () => {
+    const row = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 10, reservedQty: 4, avgCost: 1000, totalValue: 10000 },
+    });
+    const foreign = await prisma.stockReservation.create({
+      data: {
+        source: "FIELD_SALES",
+        salesorderId,
+        salesorderDetailId: detailB,
+        itemId,
+        variantSku: "",
+        qty: 4,
+        state: "RESERVED",
+        inventoryValueId: row.id,
+      },
+    });
+
+    const consumed = await consumeOrder(prisma, { salesorderId, salesorderNo: "TEST-JSRC" });
+    const released = await releaseOrder(prisma, { salesorderId });
+    expect(consumed.consumed).toBe(0);
+    expect(released.released).toBe(0);
+
+    const after = await prisma.stockReservation.findUniqueOrThrow({ where: { id: foreign.id } });
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.state).toBe("RESERVED");
+    expect(Number(inv.qtyOnHand)).toBe(10);
+    expect(Number(inv.reservedQty)).toBe(4);
   });
 });
