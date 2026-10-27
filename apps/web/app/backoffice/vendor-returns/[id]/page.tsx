@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { ArrowLeft, Loader2, Printer, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +47,7 @@ export default function VendorReturnDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
+  const canManage = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE);
   const t = useTranslations('vendorReturn');
   const id = typeof params.id === 'string' ? params.id : '';
   const printRef = useRef<HTMLDivElement>(null);
@@ -247,12 +249,12 @@ export default function VendorReturnDetailPage() {
               <Printer className="mr-2 h-4 w-4" />
               Print Nota Retur
             </Button>
-            {ret.status === 'DRAFT' && (
+            {canManage && ret.status === 'DRAFT' && (
               <Button onClick={handleProcess} disabled={isProcessing}>
                 {isProcessing ? 'Processing...' : 'Process Return'}
               </Button>
             )}
-            {ret.status === 'PROCESSED' && (
+            {canManage && ret.status === 'PROCESSED' && (
               <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
                 <DialogTrigger asChild>
                   <Button>

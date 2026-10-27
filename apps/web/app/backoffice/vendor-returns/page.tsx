@@ -16,6 +16,7 @@ import {
   Package,
   PlayCircle,
 } from 'lucide-react';
+import { hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -65,6 +66,8 @@ type VendorReturnRow = Extract<
 
 export default function VendorReturnsPage() {
   const { data: session } = useSession();
+  const canManage = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  const canCreate = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_CREATE);
   const [returns, setReturns] = useState<VendorReturnRow[]>([]);
   const [vendors, setVendors] = useState<SupplierOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -165,12 +168,14 @@ export default function VendorReturnsPage() {
             Manage returns to vendors and track stock impact
           </p>
         </div>
-        <Link href="/backoffice/vendor-returns/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Return
-          </Button>
-        </Link>
+        {canCreate && (
+          <Link href="/backoffice/vendor-returns/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Return
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Filters */}
@@ -304,7 +309,7 @@ export default function VendorReturnsPage() {
                                     View
                                   </Link>
                                 </DropdownMenuItem>
-                                {r.status === 'DRAFT' && (
+                                {r.status === 'DRAFT' && canManage && (
                                   <>
                                     <DropdownMenuItem asChild>
                                       <Link href={`/backoffice/vendor-returns/${r.id}/edit`}>

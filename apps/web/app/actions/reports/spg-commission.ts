@@ -6,12 +6,11 @@ import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import { getCommissionRecap, type CommissionRecap } from "@/lib/spg-commission/queries";
 import { isYearMonth } from "@/lib/spg-commission/month";
 import { storeLabel } from "@/lib/spg-commission/recap-display";
+import { toCsv, type CsvCell } from "@/lib/reports/csv";
 
 export type SpgCommissionExportResult =
   | { data: string; filename: string; base64?: never }
   | { base64: string; filename: string; data?: never };
-
-type Cell = string | number | null;
 
 const UNCATEGORIZED = "Tanpa Kategori";
 
@@ -19,7 +18,7 @@ const SUMMARY_HEADERS = ["SPG", "Toko", "Pcs", "Komisi Diperoleh", "Komisi Dibat
 
 const DETAIL_HEADERS = ["Bulan", "SPG", "Toko", "No. Laporan", "Kategori", "Jenis", "Pcs", "Tarif per Pcs", "Jumlah"];
 
-function summaryRows(recap: CommissionRecap): Array<Record<string, Cell>> {
+function summaryRows(recap: CommissionRecap): Array<Record<string, CsvCell>> {
   return recap.rows.map((r) => ({
     SPG: recap.spgNames[r.salesmanId] ?? r.salesmanId,
     Toko: storeLabel(r.storeIds, recap.storeNames),
@@ -30,7 +29,7 @@ function summaryRows(recap: CommissionRecap): Array<Record<string, Cell>> {
   }));
 }
 
-function detailRows(recap: CommissionRecap): Array<Record<string, Cell>> {
+function detailRows(recap: CommissionRecap): Array<Record<string, CsvCell>> {
   const spgName = (id: string) => recap.spgNames[id] ?? id;
   const docNo = (id: string) => recap.reportDocNos[id] ?? id;
   /* Grouped per SPG for the payroll reader; the sort is stable, so each SPG keeps the recap's report order. */
@@ -46,28 +45,6 @@ function detailRows(recap: CommissionRecap): Array<Record<string, Cell>> {
     "Tarif per Pcs": e.ratePerPiece,
     Jumlah: e.amount,
   }));
-}
-
-/* Excel's UTF-8 signature: without it, Excel on Windows reads the file as ANSI and garbles non-ASCII names. */
-const UTF8_BOM = "﻿";
-
-/* A text cell opening with one of these is run by a spreadsheet as a formula. */
-const FORMULA_TRIGGER = /^[=+\-@\t\r]/;
-
-/**
- * Every cell quoted with embedded quotes doubled; an empty cell stays empty rather than printing
- * "null". A TEXT cell that would open as a formula gets a leading `'`, which a spreadsheet shows as
- * text. Numbers never do: a negative amount starts with `-` and must stay a number.
- */
-function toCsv(headers: string[], rows: Array<Record<string, Cell>>): string {
-  const text = (value: Cell) => {
-    if (value === null) return "";
-    if (typeof value === "number") return String(value);
-    return FORMULA_TRIGGER.test(value) ? `'${value}` : value;
-  };
-  const quote = (value: Cell) => `"${text(value).replace(/"/g, `""`)}"`;
-  const lines = rows.map((r) => headers.map((h) => quote(r[h] ?? null)).join(","));
-  return `${UTF8_BOM}${[headers.join(","), ...lines].join("\n")}\n`;
 }
 
 /**

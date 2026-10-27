@@ -11,6 +11,7 @@ import {
   type GrnRollImportTargetLine,
   type ImportedRoll,
 } from "./types";
+import { hasAtMostTwoDecimals } from "../decimals";
 
 const MAX_LINE_TOTAL_CENTS = 9_999_999_999;
 const MAX_VALUE_CENTS = Math.round(GRN_ROLL_MAX_VALUE * 100);
@@ -103,7 +104,7 @@ export function validateGrnRollImport(
         push("TOO_LARGE", "panjang");
       } else {
         cents = Math.round(n * 100);
-        if (Math.abs(n * 100 - cents) > 1e-6) push("TOO_MANY_DECIMALS", "panjang");
+        if (!hasAtMostTwoDecimals(n)) push("TOO_MANY_DECIMALS", "panjang");
         else length = cents / 100;
       }
     }

@@ -38,6 +38,8 @@ import { parseItemVariants, variantSelectOptions } from '@/lib/items/variants';
 import { useTranslations } from "next-intl";
 import { GRNRollImportDialog, type GrnRollImportApplyOutcome } from "@/components/grn/GRNRollImportDialog";
 import { buildRollPayload } from "@/lib/grn/roll-import/payload";
+import { hasAtMostTwoDecimals } from "@/lib/grn/decimals";
+import { GRN_MAX_PHOTOS, GRN_NOTES_MAX } from "@/lib/grn/schema";
 import type { GrnRollImportTargetLine, ImportedRoll } from "@/lib/grn/roll-import/types";
 import {
   Select,
@@ -441,8 +443,12 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    setPhotoFiles((prev) => [...prev, ...files]);
     e.target.value = '';
+    if (photoFiles.length + files.length > GRN_MAX_PHOTOS) {
+      toast.error(t("photoLimit", { max: GRN_MAX_PHOTOS }));
+      return;
+    }
+    setPhotoFiles((prev) => [...prev, ...files]);
   };
 
   const removePhoto = (index: number) => {
@@ -468,6 +474,13 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
     if (!supplierId) nextErrors.supplierId = 'Select a supplier';
     const validLines = lines.filter((l) => l.itemId && l.qty > 0 && l.unitCost >= 0);
     if (validLines.length === 0) nextErrors.lines = 'Add at least one item with qty and cost';
+    const hasTypedRollDecimals = validLines.some(
+      (l) =>
+        l.itemType === 'FABRIC' &&
+        !l.importedRolls &&
+        parseRollValuesToLengths(l.rollValues ?? []).some((n) => !hasAtMostTwoDecimals(n))
+    );
+    if (hasTypedRollDecimals) nextErrors.lines = t("typedTooManyDecimals");
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
       toast.error('Please fix the errors below');
@@ -910,6 +923,7 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              maxLength={GRN_NOTES_MAX}
               placeholder="Optional notes"
               rows={2}
             />

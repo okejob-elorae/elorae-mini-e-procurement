@@ -1,0 +1,1 @@
+ALTER TABLE `GRN` MODIFY `photoUrls` TEXT NULL;

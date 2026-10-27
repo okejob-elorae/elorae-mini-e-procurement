@@ -6,6 +6,7 @@ import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import { listReceivablesForExport, type ReceivableFilters } from "@/lib/finance/ar/queries";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { AGING_BUCKET_LABELS } from "@/lib/finance/ar/aging";
+import { toCsv } from "@/lib/reports/csv";
 
 export type ReceivableExportResult =
   | { empty: true; data?: never; base64?: never }
@@ -25,9 +26,7 @@ function toRows(rows: Awaited<ReturnType<typeof listReceivablesForExport>>["rows
     Outstanding: r.outstandingAmount,
     Status: r.status,
     Kolektor: r.collectorName ?? "Belum ditugaskan",
-    /* Null only for a SELL_THROUGH row with no salesman assigned yet — `String(null)` would print
-     * the literal text "null" into the CSV cell, so it needs the same explicit fallback the DELIVERY
-     * rows never needed. */
+    /* Null only for a SELL_THROUGH row with no salesman assigned yet; the dash tells it apart from a blank export cell. */
     Salesman: r.salesmanName ?? "—",
   }));
 }
@@ -55,10 +54,7 @@ export async function exportReceivablesReport(
   const filename = `piutang-overdue-${Date.now()}`;
 
   if (format === "csv") {
-    const lines = rows.map((r) =>
-      CSV_HEADERS.map((h) => `"${String((r as Record<string, unknown>)[h]).replace(/"/g, '""')}"`).join(","),
-    );
-    const data = [CSV_HEADERS.join(","), ...lines].join("\n") + "\n";
+    const data = toCsv(CSV_HEADERS, rows);
     return { data, filename: `${filename}.csv`, truncated, totalRows };
   }
 

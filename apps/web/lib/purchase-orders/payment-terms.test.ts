@@ -5,6 +5,7 @@ import {
   parsePaymentTermsDays,
   paymentTermsDaysField,
   resolveCreatePaymentTerms,
+  resolveManualPaymentDueDate,
 } from "./payment-terms";
 
 describe("paymentTermsDaysField", () => {
@@ -76,5 +77,26 @@ describe("resolveCreatePaymentTerms", () => {
   it("keeps an explicit payload value, null included", () => {
     expect(resolveCreatePaymentTerms(14, 30)).toBe(14);
     expect(resolveCreatePaymentTerms(null, 30)).toBeNull();
+  });
+});
+
+describe("resolveManualPaymentDueDate", () => {
+  const date = new Date("2026-11-01T00:00:00.000Z");
+
+  it("writes nothing when terms derive the date", () => {
+    expect(resolveManualPaymentDueDate(30, date)).toBeUndefined();
+    expect(resolveManualPaymentDueDate(0, null)).toBeUndefined();
+  });
+
+  it("clears the column on null when there are no terms", () => {
+    expect(resolveManualPaymentDueDate(null, null)).toBeNull();
+  });
+
+  it("leaves the column alone when the field is omitted", () => {
+    expect(resolveManualPaymentDueDate(null, undefined)).toBeUndefined();
+  });
+
+  it("writes a hand-entered date when there are no terms", () => {
+    expect(resolveManualPaymentDueDate(null, date)).toBe(date);
   });
 });

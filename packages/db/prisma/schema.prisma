@@ -1514,7 +1514,7 @@ model GRN {
   receivedBy    String
   totalAmount   Decimal   @db.Decimal(15,2)
   notes         String?
-  photoUrls     String?
+  photoUrls     String? @db.Text
   items         Json      
   requiresOwnerApproval Boolean @default(false)
   ownerApprovedAt DateTime?

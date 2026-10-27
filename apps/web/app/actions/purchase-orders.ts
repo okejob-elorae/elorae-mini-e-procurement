@@ -17,7 +17,7 @@ import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/muta
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
-import { parsePaymentTermsDays } from "@/lib/purchase-orders/payment-terms";
+import { parsePaymentTermsDays, resolveManualPaymentDueDate } from "@/lib/purchase-orders/payment-terms";
 import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
 import { setPurchaseOrderPaymentTerms, type SetPaymentTermsCode } from "@/lib/purchase-orders/set-payment-terms";
 import {
@@ -207,7 +207,7 @@ export async function updatePO(
         supplierId: data.supplierId,
         etaDate: leadTimePatch.etaDate !== undefined ? leadTimePatch.etaDate : data.etaDate,
         ...termsPatch,
-        paymentDueDate: effectiveTerms == null ? data.paymentDueDate ?? undefined : undefined,
+        paymentDueDate: resolveManualPaymentDueDate(effectiveTerms, data.paymentDueDate),
         notes: data.notes,
         terms: data.terms,
         totalAmount: totalAmount.toNumber(),
