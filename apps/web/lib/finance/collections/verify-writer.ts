@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { CollectionError } from "./errors";
+import { collectionProofUrl } from "./proof-url";
 
 /**
  * The only place a collection's money moves. Payment first, submission flip second — the
@@ -29,7 +30,7 @@ export async function verifyCollection(input: {
 }): Promise<{ ok: true; paymentId: string; alreadyVerified?: true }> {
   const submission = await prisma.collectionSubmission.findUnique({
     where: { id: input.submissionId },
-    select: { id: true, status: true, receivableId: true, amount: true, method: true, paidAt: true, proofUrl: true, proofR2Key: true, paymentId: true },
+    select: { id: true, status: true, receivableId: true, amount: true, method: true, paidAt: true, proofR2Key: true, paymentId: true },
   });
   if (!submission) throw new CollectionError("NOT_FOUND");
   if (submission.status === "VERIFIED") {
@@ -52,6 +53,8 @@ export async function verifyCollection(input: {
   const method = submission.method;
   if (method === "ROUNDING_ADJUSTMENT") throw new CollectionError("INVALID_METHOD");
 
+  const proofUrl = collectionProofUrl(submission);
+
   // recordPayment itself refuses ALREADY_SETTLED / OVER_ALLOCATED / WRONG_STORE — this call
   // inherits every guard the backoffice payment sheet has. A throw here propagates unmodified
   // and the submission is left untouched at PENDING — still rejectable, nothing half-applied.
@@ -62,8 +65,8 @@ export async function verifyCollection(input: {
     amount: Number(submission.amount),
     recordedById: input.verifiedById,
     allocations: [{ receivableId: submission.receivableId, amount: Number(submission.amount) }],
-    proofUrl: submission.proofUrl ?? undefined,
-    proofR2Key: submission.proofR2Key ?? undefined,
+    proofUrl: proofUrl ?? undefined,
+    proofR2Key: proofUrl ? (submission.proofR2Key ?? undefined) : undefined,
     idempotencyKey: `collection-${submission.id}`,
   });
 

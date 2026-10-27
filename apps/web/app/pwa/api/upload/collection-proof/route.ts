@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { uploadToR2, isConfigured } from "@/lib/r2";
@@ -10,6 +11,13 @@ export const dynamic = "force-dynamic";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+/**
+ * Authorization is against the receivable, not just the permission: any `collections:collect`
+ * holder could otherwise write objects under any receivable's proof prefix. A receivable that is
+ * missing or assigned to another collector returns the SAME 404 body, so one that is not yours is
+ * indistinguishable from one that does not exist. `submitCollection` still enforces
+ * `NOT_ASSIGNED_COLLECTOR` and the key binding for the submission itself.
+ */
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,6 +39,14 @@ export async function POST(req: NextRequest) {
   if (!isSafeR2KeySegment(clientId)) return NextResponse.json({ error: "invalid clientId" }, { status: 400 });
   if (!ALLOWED_TYPES.has(file.type)) return NextResponse.json({ error: `type ${file.type} not allowed` }, { status: 400 });
   if (file.size > MAX_FILE_SIZE) return NextResponse.json({ error: "file exceeds 10MB" }, { status: 400 });
+
+  const receivable = await prisma.receivable.findUnique({
+    where: { id: receivableId },
+    select: { collectorId: true },
+  });
+  if (!receivable || receivable.collectorId !== session.user.id) {
+    return NextResponse.json({ error: "NOT_FOUND" }, { status: 404 });
+  }
 
   try {
     const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";

@@ -233,7 +233,7 @@ export async function updateOperationError(
 ): Promise<void> {
   await offlineDB.pendingOperations.update(id, {
     error,
-    retries: (await offlineDB.pendingOperations.get(id))?.retries || 0 + 1,
+    retries: ((await offlineDB.pendingOperations.get(id))?.retries ?? 0) + 1,
   });
 }
 

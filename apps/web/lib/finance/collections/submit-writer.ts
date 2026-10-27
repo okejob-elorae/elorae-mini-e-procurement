@@ -3,6 +3,8 @@ import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sumPendingClaimsOnReceivable } from "@/lib/finance/ar/pending-claims";
+import { urlFromKey } from "@/lib/r2";
+import { isR2KeyInFolder, isSafeR2KeySegment } from "@/lib/r2-key";
 import { CollectionError } from "./errors";
 
 export type SubmitCollectionInput = {
@@ -18,6 +20,8 @@ export type SubmitCollectionInput = {
 };
 
 const EPSILON = 1e-6;
+/* `proofUrl` is a bare `String?`, i.e. VARCHAR(191); the derived URL is longer than its key. */
+const MAX_PROOF_URL_LENGTH = 191;
 
 /**
  * Records a collector's claim to have collected against a receivable. Moves no money — that
@@ -38,6 +42,25 @@ export async function submitCollection(input: SubmitCollectionInput): Promise<{ 
 
   const amount = roundCents(input.amount);
   if (!(amount > 0)) throw new CollectionError("INVALID_AMOUNT");
+
+  /**
+   * A proof key must sit directly under this receivable's own folder, so a raw caller cannot
+   * attach another receivable's object, and the receivable id itself must be a safe segment so the
+   * folder cannot be shaped by the caller. The stored URL is derived from the key and the caller's
+   * `proofUrl` is never read: a valid key paired with an arbitrary URL would otherwise render the
+   * attacker's URL to the verifier. A caller-supplied URL with no key is dropped the same way.
+   */
+  const proofKey: unknown = input.proofR2Key;
+  let proofR2Key: string | null = null;
+  if (proofKey !== undefined && proofKey !== null) {
+    if (!isSafeR2KeySegment(input.receivableId)) throw new CollectionError("INVALID_PROOF");
+    if (!isR2KeyInFolder(proofKey, `collection-proofs/${input.receivableId}`)) {
+      throw new CollectionError("INVALID_PROOF");
+    }
+    proofR2Key = proofKey;
+  }
+  const proofUrl = proofR2Key ? urlFromKey(proofR2Key) : null;
+  if (proofUrl !== null && proofUrl.length > MAX_PROOF_URL_LENGTH) throw new CollectionError("INVALID_PROOF");
 
   let notification: AdminNotification | undefined;
   const result = await runSerializable(async (tx) => {
@@ -86,8 +109,8 @@ export async function submitCollection(input: SubmitCollectionInput): Promise<{ 
         method: input.method,
         paidAt: input.paidAt,
         note: input.note,
-        proofUrl: input.proofUrl,
-        proofR2Key: input.proofR2Key,
+        proofUrl,
+        proofR2Key,
         idempotencyKey: input.idempotencyKey ?? null,
       },
       select: { id: true },

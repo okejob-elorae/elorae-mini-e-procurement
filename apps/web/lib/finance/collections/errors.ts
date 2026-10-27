@@ -9,7 +9,8 @@ export type CollectionErrorCode =
   | "NOT_FOUND"
   | "NOT_PENDING"
   | "MISSING_REASON"
-  | "INVALID_METHOD";
+  | "INVALID_METHOD"
+  | "INVALID_PROOF";
 
 export class CollectionError extends Error {
   code: CollectionErrorCode;
