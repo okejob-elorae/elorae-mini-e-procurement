@@ -1,5 +1,5 @@
 import { Decimal } from "decimal.js";
-import { prisma } from "@elorae/db";
+import { prisma, type Prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { poSchema } from "@/lib/validations";
 import { assertLinesVariantSkusMatchItemDefinitions } from "@/lib/items/validate-variant-lines";
@@ -37,12 +37,13 @@ function parseDate(val: Date | string | null | undefined): Date | undefined {
 export async function createPurchaseOrder(
   data: POFormData,
   userId: string,
-  options?: { applyLeadTime?: boolean }
+  options?: { applyLeadTime?: boolean; tx?: Prisma.TransactionClient }
 ) {
   const validated = poSchema.parse(data);
   const applyLeadTime = options?.applyLeadTime !== false;
 
-  return prisma.$transaction(async (tx) => {
+  // `tx` lets a caller (Request Item → PO) create the PO inside its own transaction.
+  const run = async (tx: Prisma.TransactionClient) => {
     await assertLinesVariantSkusMatchItemDefinitions(tx.item, validated.items);
 
     const docNumber = await generateDocNumber("PO", tx);
@@ -117,7 +118,8 @@ export async function createPurchaseOrder(
     await recomputePaymentDueDate(tx, created.id);
 
     return created;
-  });
+  };
+  return options?.tx ? run(options.tx) : prisma.$transaction(run);
 }
 
 /** Offline sync — lead-time columns stay null (no chain load offline). */

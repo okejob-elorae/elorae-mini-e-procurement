@@ -32,6 +32,7 @@ import {
 import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { formatDateOnlyJakarta } from '@/lib/date-only';
+import { getWoShortages, formatShortages, type WoShortage } from '@/lib/item-requests/shortage';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { toReceiptRefusal, type ReceiptRefusal } from "@/lib/inventory/receipt-refusal";
@@ -329,19 +330,10 @@ export async function createWorkOrder(
     skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
   });
   assertRollsInPlan(data.rollBreakdown, materialPlan);
-
-  if (!options?.skipStockCheck) {
-    const shortages = materialPlan.filter((m) => m.shortage.gt(0));
-    if (shortages.length > 0) {
-      const msg = shortages
-        .map(
-          (s) =>
-            `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
-        )
-        .join(', ');
-      throw new Error(`Stok tidak mencukupi: ${msg}`);
-    }
-  }
+  // A short WO is saved as DRAFT; `issueWorkOrder` refuses it until stock covers the BOM.
+  // `skipStockCheck` (planning callers) is kept for their signature and no longer changes anything.
+  void options;
+  const shortageCount = materialPlan.filter((m) => m.shortage.gt(0)).length;
 
   async function runCreateTx(docNumber: string) {
     return prisma.$transaction(async (tx) => {
@@ -450,7 +442,7 @@ export async function createWorkOrder(
   getActorName(userId)
     .then((triggeredByName) => notifyWOCreated(result.id, result.docNumber, triggeredByName))
     .catch(() => {});
-  return result;
+  return { ...result, shortageCount };
 }
 
 /** Update a work order. Only allowed when status is DRAFT. */
@@ -475,17 +467,6 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
     skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
   });
   assertRollsInPlan(data.rollBreakdown, materialPlan);
-
-  const shortages = materialPlan.filter((m) => m.shortage.gt(0));
-  if (shortages.length > 0) {
-    const msg = shortages
-      .map(
-        (s) =>
-          `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
-      )
-      .join(', ');
-    throw new Error(`Stok tidak mencukupi: ${msg}`);
-  }
 
   await prisma.$transaction(async (tx) => {
     const updateData: Record<string, unknown> = {
@@ -597,6 +578,12 @@ export async function issueWorkOrder(id: string, userId: string) {
   if (!wo) throw new Error('Work Order not found');
   if (wo.status !== 'DRAFT') throw new Error('Work Order already issued');
 
+  // Live check, not a stored flag: the WO unlocks by itself once receipts cover the BOM.
+  const shortages = await getWoShortages(wo);
+  if (shortages.length > 0) {
+    throw new Error(`Stok belum cukup untuk issue: ${formatShortages(shortages)}`);
+  }
+
   const lt = await resolveWoLeadTimeFields(
     prisma,
     wo.vendorId,
@@ -625,6 +612,32 @@ export async function issueWorkOrder(id: string, userId: string) {
   
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${id}`);
+}
+
+/** BOM shortages blocking a DRAFT WO from being issued, and its open Request Item if any. */
+export async function getWorkOrderShortages(woId: string): Promise<{
+  shortages: WoShortage[];
+  openRequest: { id: string; docNumber: string } | null;
+}> {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_VIEW);
+
+  const wo = await prisma.workOrder.findUnique({
+    where: { id: woId },
+    select: { status: true, finishedGoodId: true, plannedQty: true, outputMode: true, skuBreakdown: true },
+  });
+  if (!wo || wo.status !== 'DRAFT') return { shortages: [], openRequest: null };
+
+  const [shortages, openRequest] = await Promise.all([
+    getWoShortages(wo),
+    prisma.itemRequest.findFirst({
+      where: { sourceWoId: woId, status: 'OPEN' },
+      select: { id: true, docNumber: true },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
+  return { shortages, openRequest };
 }
 
 const issueSchema = z.object({

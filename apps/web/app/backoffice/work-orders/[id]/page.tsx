@@ -15,6 +15,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { createItemRequestFromWo } from '@/app/actions/item-requests';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -50,6 +52,7 @@ import {
   issueWorkOrder,
   cancelWorkOrder,
   completeWorkOrder,
+  getWorkOrderShortages,
   getMaterialIssueForPrint,
   updateWOHppAdjustments,
   getAdditionalMaterialsPreview,
@@ -107,6 +110,36 @@ export default function WorkOrderDetailPage() {
   const [additionalSubmitLoading, setAdditionalSubmitLoading] = useState(false);
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
   const canManageWO = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE);
+  const canCreateRequest = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.ITEM_REQUESTS_MANAGE);
+  const tIR = useTranslations('itemRequests');
+  const [shortageInfo, setShortageInfo] = useState<Awaited<ReturnType<typeof getWorkOrderShortages>> | null>(null);
+  const [requestBusy, setRequestBusy] = useState(false);
+  const woStatus = wo?.status;
+
+  useEffect(() => {
+    if (woStatus !== 'DRAFT') return;
+    getWorkOrderShortages(id)
+      .then(setShortageInfo)
+      .catch(() => setShortageInfo(null));
+  }, [id, woStatus]);
+
+  const handleCreateRequest = async () => {
+    if (!session?.user?.id) return;
+    setRequestBusy(true);
+    try {
+      const res = await createItemRequestFromWo(id, session.user.id);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(tIR('woRequestCreated', { docNumber: res.docNumber }));
+      setShortageInfo(await getWorkOrderShortages(id));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : tIR('actionFailed'));
+    } finally {
+      setRequestBusy(false);
+    }
+  };
   const [completeOpen, setCompleteOpen] = useState(false);
   const [completeReason, setCompleteReason] = useState('');
   const [completeLoading, setCompleteLoading] = useState(false);
@@ -353,7 +386,13 @@ export default function WorkOrderDetailPage() {
             </span>
           )}
           {wo.status === 'DRAFT' && (
-            <Button onClick={handleIssue}>Issue</Button>
+            <Button
+              onClick={handleIssue}
+              disabled={!shortageInfo || shortageInfo.shortages.length > 0}
+              title={shortageInfo && shortageInfo.shortages.length > 0 ? tIR('woIssueBlocked') : undefined}
+            >
+              Issue
+            </Button>
           )}
           {(wo.status === 'DRAFT' || wo.status === 'ISSUED') && (
             <Button variant="destructive" onClick={handleCancel}>
@@ -390,6 +429,35 @@ export default function WorkOrderDetailPage() {
           )}
         </div>
       </div>
+
+      {wo.status === 'DRAFT' && shortageInfo && shortageInfo.shortages.length > 0 && (
+        <Alert variant="destructive">
+          <AlertTitle>{tIR('woShortageTitle')}</AlertTitle>
+          <AlertDescription>
+            <p>{tIR('woShortageBody')}</p>
+            <ul className="mt-2 list-disc pl-5">
+              {shortageInfo.shortages.map((s) => (
+                <li key={s.itemId}>
+                  {s.itemName}: -{s.shortage.toLocaleString()} {s.uomCode}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-3">
+              {shortageInfo.openRequest ? (
+                <Link href={`/backoffice/item-requests/${shortageInfo.openRequest.id}`}>
+                  <Button variant="outline" size="sm">
+                    {tIR('woViewRequest', { docNumber: shortageInfo.openRequest.docNumber })}
+                  </Button>
+                </Link>
+              ) : canCreateRequest ? (
+                <Button size="sm" onClick={handleCreateRequest} disabled={requestBusy}>
+                  {tIR('woCreateRequest')}
+                </Button>
+              ) : null}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {Array.isArray((wo as { chainSnapshot?: unknown }).chainSnapshot) &&
         ((wo as { chainSnapshot: unknown[] }).chainSnapshot?.length ?? 0) > 0 &&

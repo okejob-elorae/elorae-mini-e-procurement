@@ -112,6 +112,7 @@ model User {
   packingVideosUpdated  PackingVideo[] @relation("PackingVideoUpdatedBy")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  itemRequestsCreated ItemRequest[] @relation("ItemRequestCreatedBy")
   @@index([roleId])
   @@index([themePantoneTcx])
   @@index([assignedStoreId])
@@ -284,6 +285,7 @@ model UOM {
   fromConversions UOMConversion[] @relation("FromConversions")
   toConversions   UOMConversion[] @relation("ToConversions")
   createdAt       DateTime        @default(now())
+  itemRequestLines ItemRequestLine[]
 }
 
 model UOMConversion {
@@ -1338,6 +1340,7 @@ model Item {
   assortmentLines  StoreAssortmentLine[]
   storeTransferLines StoreTransferLine[]
   sellThroughLines KonsiSellThroughLine[]
+  itemRequestLines ItemRequestLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -1445,6 +1448,7 @@ model PurchaseOrder {
   actualLeadDays          Int?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+  itemRequestLines ItemRequestLine[]
   @@index([supplierId])
   @@index([createdById])
   @@index([status])
@@ -1766,6 +1770,7 @@ model WorkOrder {
   steps           WorkOrderStep[]
   planStages      PlanStage[] @relation("PlanStageWorkOrder")
   planCmtAllocations PlanCmtAllocation[]
+  itemRequests    ItemRequest[]
   @@index([poId])
   @@index([vendorId])
   @@index([finishedGoodId])
@@ -2612,6 +2617,7 @@ enum DocType {
   BKM
   STORETRF
   SELLTHRU
+  ITEMREQ
 }
 
 enum OpnameScope {
@@ -3324,4 +3330,59 @@ model StockLedgerEntry {
   @@index([locationType, locationId, createdAt], map: "StockLedgerEntry_location_time_idx")
   @@index([itemId, createdAt])
   @@index([refType, refId])
+}
+
+/// A material request (Request Item): what production is short of, raised from a WO's BOM shortage
+/// or by hand, and turned into purchase orders line by line. Header status is derived from lines.
+model ItemRequest {
+  id          String            @id @default(cuid())
+  docNumber   String            @unique
+  status      ItemRequestStatus @default(OPEN)
+  sourceWoId  String?
+  sourceWo    WorkOrder?        @relation(fields: [sourceWoId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  neededBy    DateTime?
+  notes       String?           @db.Text
+  createdById String
+  createdBy   User              @relation("ItemRequestCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  lines       ItemRequestLine[]
+
+  @@index([status, createdAt])
+  @@index([sourceWoId])
+}
+
+model ItemRequestLine {
+  id         String                @id @default(cuid())
+  requestId  String
+  request    ItemRequest           @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       Item                  @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  /// "" = parent / any variant, same convention as StockLedgerEntry.
+  variantSku String                @default("")
+  qty        Decimal               @db.Decimal(10, 2)
+  uomId      String
+  uom        UOM                   @relation(fields: [uomId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  status     ItemRequestLineStatus @default(OPEN)
+  poId       String?
+  po         PurchaseOrder?        @relation(fields: [poId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  poItemId   String?               @unique
+  createdAt  DateTime              @default(now())
+
+  @@index([requestId])
+  @@index([status])
+  @@index([itemId])
+  @@index([poId])
+}
+
+enum ItemRequestStatus {
+  OPEN
+  CONVERTED
+  CANCELLED
+}
+
+enum ItemRequestLineStatus {
+  OPEN
+  CONVERTED
+  CANCELLED
 }

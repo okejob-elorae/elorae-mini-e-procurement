@@ -144,6 +144,11 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
       },
       {
+        labelKey: 'navItemRequests',
+        href: '/backoffice/item-requests',
+        permission: PERMISSIONS.ITEM_REQUESTS_VIEW,
+      },
+      {
         labelKey: 'vendorReturns',
         href: '/backoffice/vendor-returns',
         permission: PERMISSIONS.VENDOR_RETURNS_VIEW,

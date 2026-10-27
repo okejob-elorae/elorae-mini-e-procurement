@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Decimal } from "decimal.js";
 
 const {
   mockAuth,
@@ -304,5 +305,32 @@ describe("receiveFG on a work order closed short", () => {
     // The row lock is the transaction's first statement, ahead of the doc-number read.
     const { generateDocNumber } = await import("@/lib/docNumber");
     expect(lockRow.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(generateDocNumber).mock.invocationCallOrder[0]);
+  });
+});
+
+describe("issueWorkOrder stock guard", () => {
+  const draftWo = { id: "wo1", docNumber: "WO-1", status: "DRAFT", vendorId: "v1", finishedGoodId: "fg1", plannedQty: "10", outputMode: "GENERIC", skuBreakdown: null };
+  const planLine = (shortage: number) => ({ itemId: "m1", itemName: "Kain", uomId: "u1", uomCode: "MTR", shortage: new Decimal(shortage) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    mockWoFindUnique.mockResolvedValue(draftWo);
+  });
+
+  it("refuses to issue while the BOM is short and never reaches the lead-time step", async () => {
+    const { generateMaterialPlan } = await import("@/lib/production/planning");
+    vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(12.001)] as never);
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("Stok belum cukup untuk issue: Kain (kurang 12.01 MTR)");
+    const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
+    expect(resolveWoLeadTimeFields).not.toHaveBeenCalled();
+  });
+
+  it("gets past the guard once stock covers every line", async () => {
+    const { generateMaterialPlan } = await import("@/lib/production/planning");
+    vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(0)] as never);
+    const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
+    vi.mocked(resolveWoLeadTimeFields).mockRejectedValue(new Error("STOP_AFTER_GUARD"));
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("STOP_AFTER_GUARD");
   });
 });
