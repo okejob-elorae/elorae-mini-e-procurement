@@ -61,9 +61,7 @@ describe("deleteSupplierAction", () => {
     mockVerifyPin.mockResolvedValue({ success: false, messageKey: "invalidPin" });
     const result = await deleteSupplierAction("s1", "000000");
     expect(result).toMatchObject({ success: false, reason: "PIN", messageKey: "invalidPin" });
-    expect(mockVerifyPin).toHaveBeenCalledWith("u1", "000000", "DELETE_SUPPLIER", {
-      fallbackEmail: "u1@example.com",
-    });
+    expect(mockVerifyPin).toHaveBeenCalledWith("u1", "000000", "DELETE_SUPPLIER");
     expect(mockDeleteSupplier).not.toHaveBeenCalled();
   });
 

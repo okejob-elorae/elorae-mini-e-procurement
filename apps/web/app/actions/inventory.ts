@@ -50,11 +50,8 @@ export async function createStockAdjustment(
   
   adjustmentSchema.parse(data);
 
-  // Use server session for PIN verification; fallback to lookup by email if session id not in DB (e.g. stale JWT)
-  const pinResult = await verifyPin(session.user.id, userPin, 'STOCK_ADJUSTMENT', {
-    ipAddress,
-    fallbackEmail: session.user.email ?? undefined,
-  });
+  /* Use server session for PIN verification. */
+  const pinResult = await verifyPin(session.user.id, userPin, "STOCK_ADJUSTMENT", { ipAddress });
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }

@@ -115,9 +115,8 @@ export async function POST(
     // Verify PIN
     const ip = req.headers.get('x-forwarded-for') || 'unknown';
     const userAgent = req.headers.get('user-agent') || 'unknown';
-    const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
+    const pinResult = await verifyPin(session.user.id, pin, "VIEW_BANK_ACCOUNT", {
       ipAddress: ip,
-      fallbackEmail: session.user.email,
     });
 
     if (!pinResult.success) {

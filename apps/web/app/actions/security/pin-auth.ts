@@ -35,9 +35,7 @@ export async function setupPin(
       return { success: false, messageKey: 'enterCurrentPin' };
     }
     /* Through verifyPin, so a wrong current PIN spends the same attempt window as every other PIN gate. */
-    const check = await verifyPin(userId, currentPin, "CHANGE_PIN", {
-      fallbackEmail: session.user.email,
-    });
+    const check = await verifyPin(userId, currentPin, "CHANGE_PIN");
     if (!check.success) {
       if (check.messageKey === "pinIncorrect") {
         return { success: false, messageKey: "currentPinIncorrect" };

@@ -63,7 +63,7 @@ describe("POST /api/suppliers/[id]", () => {
       "u1",
       "0000",
       "VIEW_BANK_ACCOUNT",
-      expect.objectContaining({ fallbackEmail: "u1@example.com" })
+      expect.objectContaining({ ipAddress: expect.any(String) })
     );
     expect(mockFindUnique).not.toHaveBeenCalled();
     expect(mockDecrypt).not.toHaveBeenCalled();

@@ -60,9 +60,7 @@ describe("pin-auth self-service actions", () => {
       mockVerifyPin.mockResolvedValue({ success: false, messageKey: "pinIncorrect" });
       const r = await setupPin("5678", "0000");
       expect(r).toEqual({ success: false, messageKey: "currentPinIncorrect" });
-      expect(mockVerifyPin).toHaveBeenCalledWith("u1", "0000", "CHANGE_PIN", {
-        fallbackEmail: "u1@x.test",
-      });
+      expect(mockVerifyPin).toHaveBeenCalledWith("u1", "0000", "CHANGE_PIN");
       expect(mockCompare).not.toHaveBeenCalled();
       expect(mockUserUpdate).not.toHaveBeenCalled();
     });

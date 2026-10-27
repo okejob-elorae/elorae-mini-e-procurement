@@ -127,9 +127,7 @@ export async function deleteSupplierAction(
 ): Promise<DeleteSupplierActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
-  const pinResult = await verifyPin(session.user.id, pin, 'DELETE_SUPPLIER', {
-    fallbackEmail: session.user.email,
-  });
+  const pinResult = await verifyPin(session.user.id, pin, "DELETE_SUPPLIER");
   if (!pinResult.success) {
     return {
       success: false,
