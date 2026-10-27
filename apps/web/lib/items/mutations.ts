@@ -403,6 +403,7 @@ export async function countItemDeleteBlockers(id: string): Promise<number> {
     vanReconcileLineCount,
     spgSaleLineCount,
     konsiSellThroughLineCount,
+    itemRequestLineCount,
   ] = await Promise.all([
     /*
      * Two counts guard two different failures, not the same one twice. `StockMovement` writes
@@ -448,6 +449,8 @@ export async function countItemDeleteBlockers(id: string): Promise<number> {
     prisma.vanReconcileLine.count({ where: { itemId: id } }),
     prisma.spgSaleLine.count({ where: { itemId: id } }),
     prisma.konsiSellThroughLine.count({ where: { itemId: id } }),
+    // Real FK (`ON DELETE RESTRICT`), as for the field-sales lines above.
+    prisma.itemRequestLine.count({ where: { itemId: id } }),
   ]);
 
   return (
@@ -475,7 +478,8 @@ export async function countItemDeleteBlockers(id: string): Promise<number> {
     vanSaleLineCount +
     vanReconcileLineCount +
     spgSaleLineCount +
-    konsiSellThroughLineCount
+    konsiSellThroughLineCount +
+    itemRequestLineCount
   );
 }
 

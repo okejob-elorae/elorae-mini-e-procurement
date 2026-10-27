@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Decimal } from "decimal.js";
 
 const {
   mockAuth,
@@ -304,5 +305,57 @@ describe("receiveFG on a work order closed short", () => {
     // The row lock is the transaction's first statement, ahead of the doc-number read.
     const { generateDocNumber } = await import("@/lib/docNumber");
     expect(lockRow.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(generateDocNumber).mock.invocationCallOrder[0]);
+  });
+});
+
+describe("issueWorkOrder stock guard", () => {
+  const draftWo = { id: "wo1", docNumber: "WO-1", status: "DRAFT", vendorId: "v1", finishedGoodId: "fg1", plannedQty: "10", outputMode: "GENERIC", skuBreakdown: null };
+  const planLine = (shortage: number) => ({ itemId: "m1", itemName: "Kain", uomId: "u1", uomCode: "MTR", shortage: new Decimal(shortage) });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    mockWoFindUnique.mockResolvedValue(draftWo);
+  });
+
+  it("refuses to issue while the BOM is short and never reaches the lead-time step", async () => {
+    const { generateMaterialPlan } = await import("@/lib/production/planning");
+    vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(12.001)] as never);
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("Stok belum cukup untuk issue: Kain (kurang 12.01 MTR)");
+    const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
+    expect(resolveWoLeadTimeFields).not.toHaveBeenCalled();
+  });
+
+  it("gets past the guard once stock covers every line", async () => {
+    const { generateMaterialPlan } = await import("@/lib/production/planning");
+    vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(0)] as never);
+    const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
+    vi.mocked(resolveWoLeadTimeFields).mockRejectedValue(new Error("STOP_AFTER_GUARD"));
+    const tx = { $queryRaw: vi.fn(), workOrder: { findUnique: vi.fn().mockResolvedValue({ ...draftWo, vendorId: "v2" }) } };
+    mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(tx));
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("STOP_AFTER_GUARD");
+    // Lead time comes from the row re-read under the lock, not the first read.
+    expect(resolveWoLeadTimeFields).toHaveBeenCalledWith(tx, "v2", 10);
+  });
+
+  it("re-checks under the row lock and flips status only from DRAFT", async () => {
+    const { generateMaterialPlan } = await import("@/lib/production/planning");
+    // Covered at the first check, short again by the time the lock is held.
+    vi.mocked(generateMaterialPlan).mockResolvedValueOnce([planLine(0)] as never).mockResolvedValueOnce([planLine(3)] as never);
+    const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
+    vi.mocked(resolveWoLeadTimeFields).mockResolvedValue({} as never);
+    const lockRow = vi.fn();
+    const updateMany = vi.fn();
+    mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+      cb({ $queryRaw: lockRow, workOrder: { findUnique: vi.fn().mockResolvedValue(draftWo), updateMany } })
+    );
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("Stok belum cukup untuk issue: Kain (kurang 3.00 MTR)");
+    expect(lockRow).toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+
+    vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(0)] as never);
+    updateMany.mockResolvedValue({ count: 0 });
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("already issued");
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "wo1", status: "DRAFT" } }));
   });
 });

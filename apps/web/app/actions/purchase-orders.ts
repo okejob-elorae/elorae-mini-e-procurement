@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { Decimal } from 'decimal.js';
 import { prisma } from '@elorae/db';
+import { relinkPoItems, releaseLinesOfCancelledPo, unlinkPoItems } from '@/lib/item-requests/mutations';
 import { generateDocNumber } from '@/lib/docNumber';
 import { POStatus } from '@elorae/db';
 import { poSchema } from '@/lib/validations';
@@ -153,6 +154,7 @@ export async function updatePO(
       return sum.plus(new Decimal(item.qty).mul(item.price));
     }, new Decimal(0));
 
+    await unlinkPoItems(tx, id);
     await tx.pOItem.deleteMany({ where: { poId: id } });
 
     const remainingRecv = new Map(receivedByLine);
@@ -225,6 +227,7 @@ export async function updatePO(
         supplier: true,
       },
     });
+    await relinkPoItems(tx, id);
 
     if (existing?.status && existing.status !== 'DRAFT') {
       await tx.pOStatusHistory.create({
@@ -321,9 +324,14 @@ export async function changePOStatus(
   });
   if (!existing) throw new Error('PO not found');
 
-  const po = await prisma.purchaseOrder.update({
-    where: { id },
-    data: { status: newStatus }
+  const po = await prisma.$transaction(async (tx) => {
+    const updated = await tx.purchaseOrder.update({
+      where: { id },
+      data: { status: newStatus }
+    });
+    // A voided PO hands its Request Item lines back to purchasing.
+    if (newStatus === 'CANCELLED') await releaseLinesOfCancelledPo(tx, id);
+    return updated;
   });
   
   await prisma.pOStatusHistory.create({
@@ -391,6 +399,7 @@ export async function cancelPO(id: string, userId: string, reason?: string, pin?
         notes: reason || 'PO Cancelled'
       }
     });
+    await releaseLinesOfCancelledPo(tx, id);
   });
   
   revalidatePath('/backoffice/purchase-orders');

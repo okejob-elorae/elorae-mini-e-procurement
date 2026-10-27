@@ -28,6 +28,7 @@ const DEFAULT_CONFIGS: Record<
   BKM: { prefix: "BKM/", resetPeriod: "YEARLY", padding: 4 },
   STORETRF: { prefix: "STRF/", resetPeriod: "YEARLY", padding: 4 },
   SELLTHRU: { prefix: "SLT/", resetPeriod: "YEARLY", padding: 4 },
+  ITEMREQ: { prefix: "REQ/", resetPeriod: "MONTHLY", padding: 4 },
 };
 
 type ConfigRow = {

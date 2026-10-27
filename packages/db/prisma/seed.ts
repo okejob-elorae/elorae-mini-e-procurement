@@ -207,6 +207,9 @@ async function main() {
     { code: 'spg_sales:view', module: 'spg_sales', action: 'view', description: 'View SPG in-store sales register' },
     // SPG Commission (rates per item category)
     { code: 'spg_commission:manage', module: 'spg_commission', action: 'manage', description: 'Manage SPG commission rates per item category' },
+    // Request Item (material requests -> PO)
+    { code: 'item_requests:view', module: 'item_requests', action: 'view', description: 'View material requests' },
+    { code: 'item_requests:manage', module: 'item_requests', action: 'manage', description: 'Create, cancel and convert material requests to POs' },
     // Pack Ratio (global putus pack rules)
     { code: 'settings_pack_ratio:view', module: 'settings_pack_ratio', action: 'view', description: 'View global pack ratio' },
     { code: 'settings_pack_ratio:manage', module: 'settings_pack_ratio', action: 'manage', description: 'Manage global pack ratio' },
@@ -336,6 +339,7 @@ async function main() {
     'supplier_payments:view', 'supplier_payments:create', 'supplier_payments:edit',
     'vendor_returns:view', 'vendor_returns:create', 'vendor_returns:manage',
     'lead_time:view',
+    'item_requests:view', 'item_requests:manage',
   ];
   for (const code of purchaserPermissions) {
     const perm = permissionMap.get(code);
@@ -388,6 +392,7 @@ async function main() {
     'dashboard:view',
     'items:view', 'sales_orders:view', 'sales_orders:fulfill',
     'work_orders:view', 'work_orders:create', 'work_orders:manage',
+    'item_requests:view', 'item_requests:manage',
     'nota_register:view',
     'production_colors:view',
     'production_planning:view',

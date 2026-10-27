@@ -28,7 +28,8 @@ export type DocTypeValue =
   | "PAYMENT"
   | "BKM"
   | "STORETRF"
-  | "SELLTHRU";
+  | "SELLTHRU"
+  | "ITEMREQ";
 
 export type DocTypeGroup = "procurement" | "inventory" | "fieldSales" | "finance";
 
@@ -42,6 +43,7 @@ export const DOC_TYPE_GROUP: Record<DocTypeValue, DocTypeGroup> = {
   WO: "procurement",
   ISSUE: "procurement",
   RECEIPT: "procurement",
+  ITEMREQ: "procurement",
   ADJ: "inventory",
   OPN: "inventory",
   STOCKTAKE: "inventory",

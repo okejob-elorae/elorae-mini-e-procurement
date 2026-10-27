@@ -500,7 +500,6 @@ export default function EditWorkOrderPage() {
     finishedGoodId &&
     consumptionResult &&
     plannedNum > 0 &&
-    !hasShortage &&
     rollValid &&
     skuVariantValid &&
     !noVariantsForSku &&
@@ -816,7 +815,7 @@ export default function EditWorkOrderPage() {
             <CardHeader>
               <CardTitle>Material Plan</CardTitle>
               <CardDescription>
-                Required materials from BOM. Creation is blocked if any shortage.
+                Required materials from BOM. If stock is short, the WO is saved as DRAFT and cannot be issued until stock covers it.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -943,7 +942,7 @@ export default function EditWorkOrderPage() {
                       )}
                       {hasShortage && (
                         <p className="text-sm text-destructive">
-                          Stok tidak mencukupi. Tambah stok atau kurangi qty rencana.
+                          Stok kurang. WO tetap bisa disimpan sebagai DRAFT; buat Request Item dari halaman WO, lalu Issue setelah stok cukup.
                         </p>
                       )}
 

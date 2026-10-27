@@ -32,6 +32,8 @@ import {
 import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { formatDateOnlyJakarta } from '@/lib/date-only';
+import { getWoShortages, formatShortages, type WoShortage } from '@/lib/item-requests/shortage';
+import { cancelOpenLinesForWo, getUncoveredShortages, syncRequestForWo } from '@/lib/item-requests/mutations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { toReceiptRefusal, type ReceiptRefusal } from "@/lib/inventory/receipt-refusal";
@@ -329,19 +331,10 @@ export async function createWorkOrder(
     skuBreakdown: data.outputMode === 'SKU' ? data.skuBreakdown : null,
   });
   assertRollsInPlan(data.rollBreakdown, materialPlan);
-
-  if (!options?.skipStockCheck) {
-    const shortages = materialPlan.filter((m) => m.shortage.gt(0));
-    if (shortages.length > 0) {
-      const msg = shortages
-        .map(
-          (s) =>
-            `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
-        )
-        .join(', ');
-      throw new Error(`Stok tidak mencukupi: ${msg}`);
-    }
-  }
+  // A short WO is saved as DRAFT; `issueWorkOrder` refuses it until stock covers the BOM.
+  // `skipStockCheck` (planning callers) is kept for their signature and no longer changes anything.
+  void options;
+  const shortageCount = materialPlan.filter((m) => m.shortage.gt(0)).length;
 
   async function runCreateTx(docNumber: string) {
     return prisma.$transaction(async (tx) => {
@@ -450,7 +443,7 @@ export async function createWorkOrder(
   getActorName(userId)
     .then((triggeredByName) => notifyWOCreated(result.id, result.docNumber, triggeredByName))
     .catch(() => {});
-  return result;
+  return { ...result, shortageCount };
 }
 
 /** Update a work order. Only allowed when status is DRAFT. */
@@ -476,18 +469,12 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
   });
   assertRollsInPlan(data.rollBreakdown, materialPlan);
 
-  const shortages = materialPlan.filter((m) => m.shortage.gt(0));
-  if (shortages.length > 0) {
-    const msg = shortages
-      .map(
-        (s) =>
-          `${s.itemName} (kurang ${s.shortage.toFixed(2)} ${s.uomCode})`
-      )
-      .join(', ');
-    throw new Error(`Stok tidak mencukupi: ${msg}`);
-  }
-
   await prisma.$transaction(async (tx) => {
+    // The lock Request Item conversion takes, so it cannot claim lines sized for the old plan
+    // between this edit and the request resize below.
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${woId} FOR UPDATE`;
+    const locked = await tx.workOrder.findUnique({ where: { id: woId }, select: { status: true } });
+    if (locked?.status !== 'DRAFT') throw new Error('Only draft work orders can be updated');
     const updateData: Record<string, unknown> = {
       vendorId: data.vendorId,
       finishedGoodId: data.finishedGoodId,
@@ -534,7 +521,9 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
         })),
       });
     }
-  });
+    // An OPEN Request Item was sized for the old plan; resize it so purchasing buys the new gap.
+    await syncRequestForWo(tx, woId);
+  }, { timeout: 20_000 });
 
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${woId}`);
@@ -597,24 +586,41 @@ export async function issueWorkOrder(id: string, userId: string) {
   if (!wo) throw new Error('Work Order not found');
   if (wo.status !== 'DRAFT') throw new Error('Work Order already issued');
 
-  const lt = await resolveWoLeadTimeFields(
-    prisma,
-    wo.vendorId,
-    Number(wo.plannedQty)
-  );
-  
-  await prisma.workOrder.update({
-    where: { id },
-    data: {
-      status: 'ISSUED',
-      issuedAt: new Date(),
-      ...(lt.chainSnapshot
-        ? {
-            chainSnapshot: lt.chainSnapshot,
-            chainTotalDays: lt.chainTotalDays,
-          }
-        : {}),
+  // Live check, not a stored flag: the WO unlocks by itself once receipts cover the BOM.
+  const shortages = await getWoShortages(wo);
+  if (shortages.length > 0) {
+    throw new Error(`Stok belum cukup untuk issue: ${formatShortages(shortages)}`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // Re-read under the WO row lock and flip status only from DRAFT: serializes a double click and
+    // a concurrent WO edit. The stock re-check reads committed on-hand without locking it, so it
+    // narrows but does not close the window for a stock move (no reservation on Issue).
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
+    const current = await tx.workOrder.findUnique({ where: { id } });
+    if (!current || current.status !== 'DRAFT') throw new Error('Work Order already issued');
+    const stillShort = await getWoShortages(current);
+    if (stillShort.length > 0) {
+      throw new Error(`Stok belum cukup untuk issue: ${formatShortages(stillShort)}`);
     }
+    // From the locked row, so a vendor or qty edit made meanwhile is what gets snapshotted.
+    const lt = await resolveWoLeadTimeFields(tx, current.vendorId, Number(current.plannedQty));
+    const flipped = await tx.workOrder.updateMany({
+      where: { id, status: 'DRAFT' },
+      data: {
+        status: 'ISSUED',
+        issuedAt: new Date(),
+        ...(lt.chainSnapshot
+          ? {
+              chainSnapshot: lt.chainSnapshot,
+              chainTotalDays: lt.chainTotalDays,
+            }
+          : {}),
+      }
+    });
+    if (flipped.count !== 1) throw new Error('Work Order already issued');
+    // Stock covers the BOM now, so nothing left on its Request Item needs buying.
+    await cancelOpenLinesForWo(tx, id);
   });
 
   getActorName(userId)
@@ -625,6 +631,54 @@ export async function issueWorkOrder(id: string, userId: string) {
   
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${id}`);
+}
+
+/**
+ * BOM shortages blocking a DRAFT WO from being issued, its Request Item (the OPEN one, else the
+ * latest live one), and what purchasing can do: `create` a request for a gap nothing covers, or
+ * `update` the OPEN request when its lines no longer match the gap (a stock move or PO change).
+ */
+export async function getWorkOrderShortages(woId: string): Promise<{
+  shortages: WoShortage[];
+  request: { id: string; docNumber: string; status: string } | null;
+  requestAction: 'create' | 'update' | null;
+}> {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_VIEW);
+
+  const wo = await prisma.workOrder.findUnique({
+    where: { id: woId },
+    select: { status: true, finishedGoodId: true, plannedQty: true, outputMode: true, skuBreakdown: true },
+  });
+  if (!wo || wo.status !== 'DRAFT') return { shortages: [], request: null, requestAction: null };
+
+  const [shortages, requests] = await Promise.all([
+    getWoShortages(wo),
+    prisma.itemRequest.findMany({
+      where: { sourceWoId: woId, status: { not: 'CANCELLED' } },
+      select: {
+        id: true,
+        docNumber: true,
+        status: true,
+        lines: { where: { status: { in: ['OPEN', 'CANCELLED'] } }, select: { itemId: true, qty: true, status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    }),
+  ]);
+  const uncovered = await getUncoveredShortages(prisma, woId, shortages);
+  const open = requests.find((r) => r.status === 'OPEN');
+  const shown = open ?? requests[0] ?? null;
+  const request = shown ? { id: shown.id, docNumber: shown.docNumber, status: shown.status } : null;
+  if (!open) return { shortages, request, requestAction: uncovered.length > 0 ? 'create' : null };
+
+  // Same rule as the sync: a material purchasing cancelled on this request is not wanted back.
+  const cancelled = new Set(open.lines.filter((l) => l.status === 'CANCELLED').map((l) => l.itemId));
+  const openLines = open.lines.filter((l) => l.status === 'OPEN');
+  const want = new Map(uncovered.filter((u) => !cancelled.has(u.itemId)).map((u) => [u.itemId, u.shortage]));
+  const inSync =
+    openLines.length === want.size && openLines.every((l) => want.get(l.itemId) === Number(l.qty));
+  return { shortages, request, requestAction: inSync ? null : 'update' };
 }
 
 const issueSchema = z.object({
@@ -1393,13 +1447,18 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
     throw new Error('Cannot cancel Work Order with FG receipts');
   }
   
-  await prisma.workOrder.update({
-    where: { id },
-    data: {
-      status: 'CANCELLED',
-      canceledAt: new Date(),
-      canceledReason: reason
-    }
+  await prisma.$transaction(async (tx) => {
+    // The lock Request Item conversion takes: a conversion in flight finishes before the cancel.
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
+    await tx.workOrder.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        canceledAt: new Date(),
+        canceledReason: reason
+      }
+    });
+    await cancelOpenLinesForWo(tx, id);
   });
 
   getActorName(userId)

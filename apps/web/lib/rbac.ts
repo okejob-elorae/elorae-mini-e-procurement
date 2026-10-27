@@ -113,6 +113,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/piutang': 'collections:manage',
   "/backoffice/settings/purchasing": "purchase_orders:edit",
   "/backoffice/settings/spg-commission": "spg_commission:manage",
+  "/backoffice/item-requests": "item_requests:view",
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -301,6 +302,9 @@ export const PERMISSIONS = {
   SPG_SALES_VIEW: "spg_sales:view",
   // SPG Commission (rates per item category)
   SPG_COMMISSION_MANAGE: "spg_commission:manage",
+  // Request Item (material requests -> PO)
+  ITEM_REQUESTS_VIEW: "item_requests:view",
+  ITEM_REQUESTS_MANAGE: "item_requests:manage",
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",
