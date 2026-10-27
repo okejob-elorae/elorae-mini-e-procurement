@@ -4,7 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sumPendingClaimsOnReceivable } from "@/lib/finance/ar/pending-claims";
 import { urlFromKey } from "@/lib/r2";
-import { isR2KeyInFolder } from "@/lib/r2-key";
+import { isR2KeyInFolder, isSafeR2KeySegment } from "@/lib/r2-key";
 import { CollectionError } from "./errors";
 
 export type SubmitCollectionInput = {
@@ -45,13 +45,15 @@ export async function submitCollection(input: SubmitCollectionInput): Promise<{ 
 
   /**
    * A proof key must sit directly under this receivable's own folder, so a raw caller cannot
-   * attach another receivable's object. The stored URL is derived from the key and the caller's
+   * attach another receivable's object, and the receivable id itself must be a safe segment so the
+   * folder cannot be shaped by the caller. The stored URL is derived from the key and the caller's
    * `proofUrl` is never read: a valid key paired with an arbitrary URL would otherwise render the
    * attacker's URL to the verifier. A caller-supplied URL with no key is dropped the same way.
    */
   const proofKey: unknown = input.proofR2Key;
   let proofR2Key: string | null = null;
   if (proofKey !== undefined && proofKey !== null) {
+    if (!isSafeR2KeySegment(input.receivableId)) throw new CollectionError("INVALID_PROOF");
     if (!isR2KeyInFolder(proofKey, `collection-proofs/${input.receivableId}`)) {
       throw new CollectionError("INVALID_PROOF");
     }

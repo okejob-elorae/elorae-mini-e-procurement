@@ -29,7 +29,7 @@ type ProofState =
   | { status: "idle"; file: File | null }
   | { status: "uploading"; file: File }
   | { status: "uploaded"; file: File; url: string; key: string }
-  | { status: "error"; file: File };
+  | { status: "error"; file: File; notAssigned?: boolean };
 
 /**
  * The reasons this task's brief names explicitly get their own copy. Every other reason
@@ -110,6 +110,11 @@ export function SubmitCollectionSheet({
       formData.append("receivableId", receivableId);
       formData.append("clientId", clientId);
       const res = await fetch("/pwa/api/upload/collection-proof", { method: "POST", body: formData });
+      if (res.status === 404) {
+        setProof({ status: "error", file, notAssigned: true });
+        toast.error(t("errNotAssignedCollector"));
+        return;
+      }
       if (!res.ok) throw new Error("upload failed");
       const data = (await res.json()) as { url: string; key: string };
       setProof({ status: "uploaded", file, url: data.url, key: data.key });
@@ -311,7 +316,9 @@ export function SubmitCollectionSheet({
         {proof.status === "uploaded" && (
           <p className="text-xs text-muted-foreground">{t("proofUploaded", { name: proof.file.name })}</p>
         )}
-        {proof.status === "error" && <p className="text-xs text-destructive">{t("proofUploadError")}</p>}
+        {proof.status === "error" && (
+          <p className="text-xs text-destructive">{t(proof.notAssigned ? "errNotAssignedCollector" : "proofUploadError")}</p>
+        )}
       </div>
 
       {submitError && <p className="text-sm text-destructive">{submitError}</p>}

@@ -214,6 +214,13 @@ d("submitCollection (test bed only)", () => {
     expect(row.proofUrl).toBeNull();
   });
 
+  it("refuses a proof key when the receivable id is not a safe segment, before any lookup", async () => {
+    const err = await submitAndCatch({ ...base(), receivableId: "x/../victim", proofR2Key: "collection-proofs/x/../victim/f.jpg" });
+    expect(err.code).toBe("INVALID_PROOF");
+    const subs = await prisma.collectionSubmission.findMany({ where: { collectorId: seededId(collectorId) } });
+    expect(subs).toHaveLength(0);
+  });
+
   it.each([
     ["another receivable's folder", () => `collection-proofs/other-receivable/client1.jpg`],
     ["a foreign prefix", () => `settlement-proofs/${receivableId}/client1.jpg`],

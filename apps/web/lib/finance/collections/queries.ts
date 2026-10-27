@@ -2,6 +2,7 @@ import { prisma, type Prisma } from "@elorae/db";
 import { daysOverdue, agingBucket, type AgingBucket } from "@/lib/finance/ar/aging";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 import { getPendingSettlementInvoiceClaimsMap } from "@/lib/finance/ar/queries";
+import { collectionProofUrl } from "./proof-url";
 
 export type CollectionQueueRow = {
   receivableId: string;
@@ -116,7 +117,7 @@ export async function getCollectionSubmission(id: string) {
       method: true,
       paidAt: true,
       note: true,
-      proofUrl: true,
+      proofR2Key: true,
       status: true,
       rejectReason: true,
       collector: { select: { name: true, email: true } },
@@ -138,7 +139,7 @@ export async function getCollectionSubmission(id: string) {
     method: s.method,
     paidAt: s.paidAt,
     note: s.note,
-    proofUrl: s.proofUrl,
+    proofUrl: collectionProofUrl(s),
     status: s.status,
     rejectReason: s.rejectReason,
     collectorName: s.collector.name ?? s.collector.email,
