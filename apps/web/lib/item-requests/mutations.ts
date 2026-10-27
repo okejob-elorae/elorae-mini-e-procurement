@@ -25,35 +25,40 @@ const INBOUND_PO_STATUSES = ["DRAFT", "SUBMITTED", "PARTIAL"] as const;
  */
 export async function getUncoveredShortages(db: Db, woId: string, shortages: WoShortage[]): Promise<WoShortage[]> {
   if (shortages.length === 0) return [];
-  const converted = await db.itemRequestLine.findMany({
+  const own = await db.itemRequestLine.findMany({
     where: { status: "CONVERTED", request: { sourceWoId: woId }, po: { status: { in: [...INBOUND_PO_STATUSES] } } },
-    select: { itemId: true, variantSku: true, qty: true, poId: true },
+    select: { poId: true },
   });
+  const poIds = [...new Set(own.map((l) => l.poId).filter((id): id is string => !!id))];
+  if (poIds.length === 0) return shortages;
+
   // Grouped per PO and SKU, not per linked item: a PO edit may merge, split or cut same-SKU lines.
   const key = (poId: string | null, itemId: string, variantSku: string | null) => `${poId}|${itemId}|${variantSku ?? ""}`;
-  const requested = new Map<string, { itemId: string; qty: number }>();
-  for (const l of converted) {
-    const k = key(l.poId, l.itemId, l.variantSku);
-    requested.set(k, { itemId: l.itemId, qty: (requested.get(k)?.qty ?? 0) + Number(l.qty) });
-  }
-  const poIds = [...new Set(converted.map((l) => l.poId).filter((id): id is string => !!id))];
   const stillComing = new Map<string, number>();
-  if (poIds.length > 0) {
-    const poItems = await db.pOItem.findMany({
-      where: { poId: { in: poIds } },
-      select: { poId: true, itemId: true, variantSku: true, qty: true, receivedQty: true },
-    });
-    // Received qty is already on hand, so it is in the live shortage; only the rest is still coming.
-    for (const i of poItems) {
-      const k = key(i.poId, i.itemId, i.variantSku);
-      stillComing.set(k, (stillComing.get(k) ?? 0) + Math.max(0, Number(i.qty) - Number(i.receivedQty)));
-    }
+  const poItems = await db.pOItem.findMany({
+    where: { poId: { in: poIds } },
+    select: { poId: true, itemId: true, variantSku: true, qty: true, receivedQty: true },
+  });
+  // Received qty is already on hand, so it is in the live shortage; only the rest is still coming.
+  for (const i of poItems) {
+    const k = key(i.poId, i.itemId, i.variantSku);
+    stillComing.set(k, (stillComing.get(k) ?? 0) + Math.max(0, Number(i.qty) - Number(i.receivedQty)));
   }
+
+  // One PO can carry several WOs' lines. Hand out what is still coming oldest line first, so a cut
+  // PO line is not counted in full by every WO on it.
+  const onPos = await db.itemRequestLine.findMany({
+    where: { status: "CONVERTED", poId: { in: poIds } },
+    select: { itemId: true, variantSku: true, qty: true, poId: true, request: { select: { sourceWoId: true } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
   const inbound = new Map<string, number>();
-  for (const [k, r] of requested) {
-    // This WO counts no more than it asked for, nor more than the PO still brings for that SKU.
-    const outstanding = Math.min(r.qty, stillComing.get(k) ?? 0);
-    inbound.set(r.itemId, (inbound.get(r.itemId) ?? 0) + outstanding);
+  for (const l of onPos) {
+    const k = key(l.poId, l.itemId, l.variantSku);
+    const left = stillComing.get(k) ?? 0;
+    const take = Math.min(Number(l.qty), left);
+    stillComing.set(k, left - take);
+    if (l.request.sourceWoId === woId) inbound.set(l.itemId, (inbound.get(l.itemId) ?? 0) + take);
   }
   return shortages
     .map((s) => ({ ...s, shortage: Math.round((s.shortage - (inbound.get(s.itemId) ?? 0)) * 100) / 100 }))
@@ -189,9 +194,12 @@ export async function createRequestFromWo(woId: string, userId: string) {
   });
 }
 
-/** After a WO edit: brings its OPEN request's lines in line with the new plan. No request, no-op. */
-export async function syncRequestForWo(woId: string) {
-  await prisma.$transaction((tx) => normalizeWoRequests(tx, woId));
+/**
+ * After a WO edit, in the edit's own transaction (WO row already locked): brings its OPEN request's
+ * lines in line with the new plan before a conversion can claim the old qtys. No request, no-op.
+ */
+export async function syncRequestForWo(tx: Prisma.TransactionClient, woId: string) {
+  await normalizeWoRequests(tx, woId);
 }
 
 /**

@@ -470,6 +470,11 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
   assertRollsInPlan(data.rollBreakdown, materialPlan);
 
   await prisma.$transaction(async (tx) => {
+    // The lock Request Item conversion takes, so it cannot claim lines sized for the old plan
+    // between this edit and the request resize below.
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${woId} FOR UPDATE`;
+    const locked = await tx.workOrder.findUnique({ where: { id: woId }, select: { status: true } });
+    if (locked?.status !== 'DRAFT') throw new Error('Only draft work orders can be updated');
     const updateData: Record<string, unknown> = {
       vendorId: data.vendorId,
       finishedGoodId: data.finishedGoodId,
@@ -516,9 +521,9 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
         })),
       });
     }
-  });
-  // An OPEN Request Item was sized for the old plan; resize it so purchasing buys the new gap.
-  await syncRequestForWo(woId);
+    // An OPEN Request Item was sized for the old plan; resize it so purchasing buys the new gap.
+    await syncRequestForWo(tx, woId);
+  }, { timeout: 20_000 });
 
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${woId}`);
@@ -588,8 +593,9 @@ export async function issueWorkOrder(id: string, userId: string) {
   }
 
   await prisma.$transaction(async (tx) => {
-    // Re-read under the WO row lock and flip status only from DRAFT, so a double click, a WO edit
-    // or a stock move since the check above cannot issue what the guard would now refuse.
+    // Re-read under the WO row lock and flip status only from DRAFT: serializes a double click and
+    // a concurrent WO edit. The stock re-check reads committed on-hand without locking it, so it
+    // narrows but does not close the window for a stock move (no reservation on Issue).
     await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
     const current = await tx.workOrder.findUnique({ where: { id } });
     if (!current || current.status !== 'DRAFT') throw new Error('Work Order already issued');

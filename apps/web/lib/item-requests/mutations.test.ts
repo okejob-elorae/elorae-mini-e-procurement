@@ -5,12 +5,14 @@ import {
   cancelRequestLines,
   convertLinesToPo,
   cancelOpenLinesForWo,
+  getUncoveredShortages,
   releaseLinesOfCancelledPo,
   relinkPoItems,
   syncRequestForWo,
   unlinkPoItems,
 } from "./mutations";
 import { deriveRequestStatus } from "./status";
+import { getWoShortages } from "./shortage";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -29,7 +31,7 @@ describe("deriveRequestStatus", () => {
 
 d("Request Item writers (test bed only)", () => {
   let tag = "";
-  const ids = { user: "", supplierType: "", supplier: "", uom: "", fg: "", fabric: "", button: "", wo: "" };
+  const ids = { user: "", supplierType: "", supplier: "", uom: "", fg: "", fabric: "", button: "", wo: "", wo2: "" };
 
   beforeEach(async () => {
     tag = `IRQ${Math.floor(Math.random() * 10_000_000)}`;
@@ -66,14 +68,15 @@ d("Request Item writers (test bed only)", () => {
       const poIds = ids.supplier
         ? (await prisma.purchaseOrder.findMany({ where: { supplierId: seededId(ids.supplier) }, select: { id: true } })).map((p) => p.id)
         : [];
-      await prisma.itemRequestLine.deleteMany({ where: { request: { sourceWoId: seededId(ids.wo) } } });
-      await prisma.itemRequest.deleteMany({ where: { sourceWoId: seededId(ids.wo) } });
+      const woIds = [ids.wo, ids.wo2].filter(Boolean);
+      await prisma.itemRequestLine.deleteMany({ where: { request: { sourceWoId: { in: woIds.map(seededId) } } } });
+      await prisma.itemRequest.deleteMany({ where: { sourceWoId: { in: woIds.map(seededId) } } });
       if (poIds.length > 0) {
         await prisma.pOStatusHistory.deleteMany({ where: { poId: { in: poIds.map(seededId) } } });
         await prisma.pOItem.deleteMany({ where: { poId: { in: poIds.map(seededId) } } });
         await prisma.purchaseOrder.deleteMany({ where: { id: { in: poIds.map(seededId) } } });
       }
-      await prisma.workOrder.deleteMany({ where: { id: seededId(ids.wo) } });
+      await prisma.workOrder.deleteMany({ where: { id: { in: woIds.map(seededId) } } });
     }
     if (ids.fg) await prisma.consumptionRule.deleteMany({ where: { finishedGoodId: seededId(ids.fg) } });
     const itemIds = [ids.fg, ids.fabric, ids.button].filter(Boolean);
@@ -221,17 +224,43 @@ d("Request Item writers (test bed only)", () => {
     const fabric = (await linesOf(req.id)).find((l) => l.itemId === ids.fabric)!;
     await cancelRequestLines([fabric.id]);
     await prisma.workOrder.update({ where: { id: ids.wo }, data: { plannedQty: 20 } });
-    await syncRequestForWo(ids.wo);
+    await prisma.$transaction((tx) => syncRequestForWo(tx, ids.wo));
     expect((await linesOf(req.id)).map((l) => [l.itemId, Number(l.qty), l.status])).toEqual([
       [ids.fabric, 15, "CANCELLED"],
       [ids.button, 80, "OPEN"],
     ]);
   });
 
+  it("shares a cut PO line between the WOs on it instead of counting it once per WO", async () => {
+    ids.wo2 = (
+      await prisma.workOrder.create({
+        data: { docNumber: `WO2-${tag}`, vendorId: ids.supplier, finishedGoodId: ids.fg, plannedQty: 10, consumptionPlan: [], createdById: ids.user },
+      })
+    ).id;
+    const r1 = await createRequestFromWo(ids.wo, ids.user);
+    const r2 = await createRequestFromWo(ids.wo2, ids.user);
+    const fabricLines = await prisma.itemRequestLine.findMany({ where: { requestId: { in: [r1.id, r2.id] }, itemId: ids.fabric } });
+    const po = await convertLinesToPo({ lineIds: fabricLines.map((l) => l.id), supplierId: ids.supplier, prices: {} }, ids.user);
+    // Two 15 m lines merged and cut to 20 m: the older request keeps 15, the newer gets the last 5.
+    await prisma.$transaction(async (tx) => {
+      await unlinkPoItems(tx, po.id);
+      await tx.pOItem.deleteMany({ where: { poId: po.id } });
+      await tx.pOItem.create({ data: { poId: po.id, itemId: ids.fabric, qty: 20, price: 0, uomId: ids.uom } });
+      await relinkPoItems(tx, po.id);
+    });
+    const fabricGap = async (woId: string) => {
+      const wo = await prisma.workOrder.findUniqueOrThrow({ where: { id: woId } });
+      const gap = await getUncoveredShortages(prisma, woId, await getWoShortages(wo));
+      return gap.find((g) => g.itemId === ids.fabric)?.shortage ?? 0;
+    };
+    expect(await fabricGap(ids.wo)).toBe(0);
+    expect(await fabricGap(ids.wo2)).toBe(10);
+  });
+
   it("resizes the OPEN request's lines when the WO plan changes", async () => {
     const req = await createRequestFromWo(ids.wo, ids.user);
     await prisma.workOrder.update({ where: { id: ids.wo }, data: { plannedQty: 20 } });
-    await syncRequestForWo(ids.wo);
+    await prisma.$transaction((tx) => syncRequestForWo(tx, ids.wo));
     expect((await linesOf(req.id)).map((l) => [l.itemId, Number(l.qty), l.status])).toEqual([
       [ids.fabric, 30, "OPEN"],
       [ids.button, 80, "OPEN"],

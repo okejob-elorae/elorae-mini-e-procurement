@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -117,12 +117,19 @@ export default function WorkOrderDetailPage() {
   const [requestBusy, setRequestBusy] = useState(false);
   const woStatus = wo?.status;
 
-  useEffect(() => {
-    if (woStatus !== 'DRAFT') return;
+  const refreshShortages = useCallback(() => {
     getWorkOrderShortages(id)
       .then(setShortageInfo)
       .catch(() => setShortageInfo(null));
-  }, [id, woStatus]);
+  }, [id]);
+
+  // Re-checked when the tab regains focus: a GRN posted elsewhere unlocks Issue without a reload.
+  useEffect(() => {
+    if (woStatus !== 'DRAFT') return;
+    refreshShortages();
+    window.addEventListener('focus', refreshShortages);
+    return () => window.removeEventListener('focus', refreshShortages);
+  }, [woStatus, refreshShortages]);
 
   const handleCreateRequest = async () => {
     if (!session?.user?.id) return;
@@ -211,6 +218,7 @@ export default function WorkOrderDetailPage() {
       setWO(updated);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : tToasts('failedToIssue'));
+      refreshShortages();
     }
   };
 
