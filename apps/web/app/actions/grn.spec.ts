@@ -250,11 +250,11 @@ describe("payment due date wiring", () => {
       pOItem: {
         findFirst: vi.fn().mockResolvedValue({ id: "pi1", receivedQty: 5 }),
         update: vi.fn().mockResolvedValue({}),
-        findMany: vi.fn().mockResolvedValue([{ qty: 5, receivedQty: 4 }]),
+        findMany: vi.fn().mockResolvedValue([{ id: "pi1", qty: 5, receivedQty: 4 }]),
       },
       purchaseOrder: { update: vi.fn().mockResolvedValue({}) },
       pOStatusHistory: { create: vi.fn().mockResolvedValue({}) },
-      vendorBillLine: { count: vi.fn().mockResolvedValue(0) },
+      vendorBillLine: { groupBy: vi.fn().mockResolvedValue([]) },
     };
     mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
 
@@ -271,10 +271,10 @@ describe("payment due date wiring", () => {
       mockRecompute.mock.invocationCallOrder[0]
     );
 
-    // A live vendor bill on the PO blocks the decline before any stock is reversed.
-    tx.vendorBillLine.count.mockResolvedValue(1);
+    // Refused only when live bills would charge for more than stays received (4 here).
+    tx.vendorBillLine.groupBy.mockResolvedValue([{ poItemId: "pi1", _sum: { qty: 5 } }]);
     vi.mocked(tx.gRN.update).mockClear();
-    await expect(declineGRNByOwner("g1", "u1")).rejects.toThrow("already billed through Vendor Billing");
+    await expect(declineGRNByOwner("g1", "u1")).rejects.toThrow("vendor bills already charge for more");
     expect(tx.gRN.update).not.toHaveBeenCalled();
   });
 

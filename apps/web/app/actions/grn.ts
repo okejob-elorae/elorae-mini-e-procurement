@@ -24,6 +24,7 @@ import { ReceiptLineError } from "@/lib/inventory/receipt-errors";
 import { grnSchema } from "@/lib/grn/schema";
 import { fabricRollCode } from "@/lib/grn/roll-code";
 import { overReceiveBy, sumRollLengths } from "@/lib/grn/over-receive";
+import { billedQtyByPoItem } from "@/lib/vendor-billing/billable";
 
 export type GRNFormData = z.infer<typeof grnSchema>;
 
@@ -710,15 +711,6 @@ export async function declineGRNByOwner(id: string, userId: string) {
     if (grn.ownerDeclinedAt != null) {
       throw new Error('This GRN was already declined');
     }
-    // A live vendor bill on this PO matched the received qty this decline would take back.
-    if (grn.poId) {
-      const billed = await tx.vendorBillLine.count({
-        where: { poItem: { poId: grn.poId }, bill: { status: { not: 'VOID' } } },
-      });
-      if (billed > 0) {
-        throw new Error('Cannot decline: this PO is already billed through Vendor Billing. Void the bill first.');
-      }
-    }
 
     const lines = parseGrnStoredLines(grn.items);
     let reversedLines = 0;
@@ -802,6 +794,11 @@ export async function declineGRNByOwner(id: string, userId: string) {
       }
 
       const poItems = await tx.pOItem.findMany({ where: { poId: grn.poId } });
+      // Received qty may not drop below what live vendor bills already charged for.
+      const billed = await billedQtyByPoItem(tx, poItems.map((p) => p.id));
+      if (poItems.some((p) => Number(p.receivedQty) < (billed.get(p.id) ?? 0) - 0.005)) {
+        throw new Error('Cannot decline: vendor bills already charge for more than would stay received. Void those bills first.');
+      }
       const allFullyReceived = poItems.every((poItem) =>
         new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
       );

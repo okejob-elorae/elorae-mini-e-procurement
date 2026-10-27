@@ -122,7 +122,9 @@ export async function updatePO(
     );
 
   const po = await prisma.$transaction(async (tx) => {
-    // The items are rebuilt below, which would orphan the lines of a vendor bill on them.
+    // The items are rebuilt below, which would orphan the lines of a vendor bill on them. The PO
+    // row lock is the one createVendorBill takes, so a bill cannot commit between check and rebuild.
+    await tx.$queryRaw`SELECT \`id\` FROM \`PurchaseOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
     const billed = await tx.vendorBillLine.count({ where: { poItem: { poId: id }, bill: { status: { not: 'VOID' } } } });
     if (billed > 0) {
       throw new Error('PO ini sudah ditagih lewat Vendor Billing; batalkan tagihannya dulu sebelum mengubah PO.');

@@ -69,6 +69,11 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
       const poTerms: number[] = [];
 
       if (poLines.length > 0) {
+        // Lock each sourced PO (id order, no deadlock), the lock updatePO takes before rebuilding items.
+        const sourcePos = await tx.pOItem.findMany({ where: { id: { in: poLines.map((l) => l.sourceId) } }, select: { poId: true } });
+        for (const poId of [...new Set(sourcePos.map((p) => p.poId))].sort()) {
+          await tx.$queryRaw`SELECT \`id\` FROM \`PurchaseOrder\` WHERE \`id\` = ${poId} FOR UPDATE`;
+        }
         const items = await tx.pOItem.findMany({
           where: { id: { in: poLines.map((l) => l.sourceId) } },
           select: {
