@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { UTF8_BOM } from "@/lib/reports/csv";
 
 const { mockFindMany } = vi.hoisted(() => ({ mockFindMany: vi.fn() }));
 
@@ -32,13 +33,13 @@ describe("exportProcurementReport csv", () => {
     ]);
     const res = await exportProcurementReport(undefined, "csv");
     const data = "data" in res && res.data ? res.data : "";
-    expect(data.startsWith(`﻿${HEADER}\n`)).toBe(true);
+    expect(data.startsWith(`${UTF8_BOM}${HEADER}\n`)).toBe(true);
     expect(data).toContain(`"PO-1","'@evil","SUP1","SUBMITTED"`);
   });
 
   it("keeps the header row when there is nothing to export", async () => {
     mockFindMany.mockResolvedValue([]);
     const res = await exportProcurementReport(undefined, "csv");
-    expect("data" in res && res.data).toBe(`﻿${HEADER}\n`);
+    expect("data" in res && res.data).toBe(`${UTF8_BOM}${HEADER}\n`);
   });
 });

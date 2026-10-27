@@ -108,7 +108,9 @@ export async function exportVendorPerformanceReport(
       "Status",
       "Completion Time (days)",
     ];
-    return { data: toCsv(headers, data), filename: `vendor-performance-${Date.now()}.csv` };
+    /* The formula guard prefixes a leading "-", so the "-" placeholder exports as an em dash. */
+    const csvRows = data.map((r) => ({ ...r, "Finished Good": r["Finished Good"] === "-" ? "—" : r["Finished Good"] }));
+    return { data: toCsv(headers, csvRows), filename: `vendor-performance-${Date.now()}.csv` };
   }
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);

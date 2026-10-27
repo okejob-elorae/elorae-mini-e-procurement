@@ -231,8 +231,8 @@ export async function createItem(data: ItemFormData) {
   if (rest.type === 'FINISHED_GOOD') await assertColorsInMaster(normalizedVariants);
 
   const item = await prisma.$transaction(async (tx) => {
-    /* The parent SKU joins the check: one equal to another item's variant SKU shares its namespace. */
     const others = await loadOtherItemsForCollisions(tx);
+    /* The parent SKU joins the check: one equal to another item's variant SKU shares its namespace. */
     const createCollisions = findVariantSkuCollisions(others, {
       skus: [finalSku, ...normalizedVariants.map((v) => v.sku)],
     });
@@ -311,21 +311,21 @@ export async function updateItem(
   if (rest.type === 'FINISHED_GOOD') {
     await assertColorsInMaster(normalizedVariants, parseItemVariants(existing.variants));
   }
-  const others = await loadOtherItemsForCollisions(client, id);
-  const updateCollisions = findVariantSkuCollisions(others, {
-    skus: skusIntroducedByEdit(
-      parseItemVariants(existing.variants).map((v) => v.sku ?? ""),
-      normalizedVariants.map((v) => v.sku),
-    ),
-  });
-  if (updateCollisions.length > 0) throw new VariantSkuTakenError(updateCollisions);
-  const updateBarcodeCollisions = findVariantBarcodeCollisions(others, {
-    barcodes: skusIntroducedByEdit(
-      parseItemVariants(existing.variants).map((v) => v.barcode ?? ""),
-      normalizedVariants.map((v) => v.barcode ?? ""),
-    ),
-  });
-  if (updateBarcodeCollisions.length > 0) throw new VariantBarcodeTakenError(updateBarcodeCollisions);
+  const wantedSkus = skusIntroducedByEdit(
+    parseItemVariants(existing.variants).map((v) => v.sku ?? ""),
+    normalizedVariants.map((v) => v.sku),
+  );
+  const wantedBarcodes = skusIntroducedByEdit(
+    parseItemVariants(existing.variants).map((v) => v.barcode ?? ""),
+    normalizedVariants.map((v) => v.barcode ?? ""),
+  );
+  if (wantedSkus.length > 0 || wantedBarcodes.length > 0) {
+    const others = await loadOtherItemsForCollisions(client, id);
+    const updateCollisions = findVariantSkuCollisions(others, { skus: wantedSkus });
+    if (updateCollisions.length > 0) throw new VariantSkuTakenError(updateCollisions);
+    const updateBarcodeCollisions = findVariantBarcodeCollisions(others, { barcodes: wantedBarcodes });
+    if (updateBarcodeCollisions.length > 0) throw new VariantBarcodeTakenError(updateBarcodeCollisions);
+  }
 
   const item = await client.item.update({
     where: { id },

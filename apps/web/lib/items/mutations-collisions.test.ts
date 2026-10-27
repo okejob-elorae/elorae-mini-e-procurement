@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createItem, updateItem, type ItemFormData } from "./mutations";
+import { ColorsNotInMasterError, ItemSkuExistsError } from "./save-refusals";
 import { VariantBarcodeTakenError, VariantSkuTakenError } from "./variant-sku-collisions";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -103,5 +104,15 @@ d("createItem and updateItem refuse a cross-item SKU or barcode collision (test 
   it("updateItem saves a variant that collides with nothing", async () => {
     const saved = await edit([{ Warna: "Kuning", sku: `${skuC}-KUNING`, barcode: `x${barcode}` }]);
     expect(saved.item.id).toBe(editedId);
+  });
+
+  it("createItem refuses an SKU an existing item already has", async () => {
+    await expect(createItem(payload({ sku: skuC }))).rejects.toBeInstanceOf(ItemSkuExistsError);
+  });
+
+  it("createItem refuses a finished-good colour absent from the colour master", async () => {
+    await expect(
+      createItem(payload({ sku: `${skuB}-FG`, type: "FINISHED_GOOD", variants: [{ Warna: `Zz${token}`, Ukuran: "M" }] })),
+    ).rejects.toBeInstanceOf(ColorsNotInMasterError);
   });
 });
