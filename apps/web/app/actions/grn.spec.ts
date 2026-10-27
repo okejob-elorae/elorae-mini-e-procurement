@@ -22,7 +22,11 @@ const {
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => {
   const model = { findMany: mockFindMany, findUnique: mockFindUnique, count: mockCount };
+  class ConcurrentFirstReceiptError extends Error {}
+  class MainStockNegativeError extends Error {}
   return {
+    ConcurrentFirstReceiptError,
+    MainStockNegativeError,
     prisma: {
       gRN: model,
       fabricRoll: model,
@@ -268,6 +272,32 @@ describe("payment due date wiring", () => {
   });
 
   describe("createGRN", () => {
+    it("returns a typed refusal for a known receipt refusal instead of throwing", async () => {
+      const { ConcurrentFirstReceiptError } = await import("@elorae/db");
+      mockTransaction.mockRejectedValue(new ConcurrentFirstReceiptError("i1", null));
+      expect(await createGRN({ supplierId: "s1", items: [{ itemId: "i1", qty: 5, unitCost: 1 }] } as never, "u1")).toEqual({
+        success: false,
+        code: "CONCURRENT_FIRST_RECEIPT",
+      });
+    });
+
+    it("returns a typed refusal for an unknown item line", async () => {
+      const { ReceiptLineError } = await import("@/lib/inventory/receipt-errors");
+      mockTransaction.mockRejectedValue(new ReceiptLineError("ITEM_NOT_FOUND", "i9", "Item not found: i9"));
+      expect(await createGRN({ supplierId: "s1", items: [{ itemId: "i9", qty: 5, unitCost: 1 }] } as never, "u1")).toEqual({
+        success: false,
+        code: "ITEM_NOT_FOUND",
+        detail: "i9",
+      });
+    });
+
+    it("still throws an unknown error", async () => {
+      mockTransaction.mockRejectedValue(new Error("db exploded"));
+      await expect(
+        createGRN({ supplierId: "s1", items: [{ itemId: "i1", qty: 5, unitCost: 1 }] } as never, "u1")
+      ).rejects.toThrow("db exploded");
+    });
+
     function buildTx() {
       return {
         gRN: {
@@ -346,11 +376,12 @@ describe("payment due date wiring", () => {
       });
       mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
 
-      await createGRN(
+      const result = await createGRN(
         { supplierId: "s1", items: [{ itemId: "i1", qty: 5, unitCost: 1 }] } as never,
         "u1"
       );
 
+      expect(result.success).toBe(true);
       expect(mockRecompute).not.toHaveBeenCalled();
     });
   });

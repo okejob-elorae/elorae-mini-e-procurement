@@ -881,6 +881,14 @@
     "progressTarget": "Target",
     "progressActual": "Setoran"
   },
+  "receiptRefusal": {
+    "CONCURRENT_FIRST_RECEIPT": "Another receipt of this item was posted at the same moment, so this one's cost was calculated against stock that has since changed. Nothing was saved. Post it again.",
+    "MAIN_STOCK_NEGATIVE": "This would take an item's stock below zero. Nothing was saved.",
+    "ITEM_NOT_FOUND": "Item not found ({detail}). Nothing was saved.",
+    "VARIANT_REQUIRED": "Select a valid variant for item {detail}.",
+    "VARIANT_NOT_ALLOWED": "Item {detail} has no variants; clear the variant selection.",
+    "WORK_ORDER_NOT_FOUND": "Work order not found."
+  },
   "toasts": {
     "failedToLoadWorkOrder": "Failed to load work order",
     "workOrderIssued": "Work Order issued",
@@ -1087,6 +1095,10 @@
     "trackingNumber": "Resi / tracking number"
   },
   "items": {
+    "saveRefusal": {
+      "VARIANT_SKU_TAKEN": "Variant SKU {detail} is already used by another product.",
+      "VARIANT_BARCODE_TAKEN": "Barcode {detail} is already used by another product."
+    },
     "variantListTitle": "Variant List",
     "noVariantsMatch": "No variants match these filters.",
     "variantSku": "Variant SKU",

@@ -33,6 +33,8 @@ import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
+import { toReceiptRefusal, type ReceiptRefusal } from "@/lib/inventory/receipt-refusal";
+import { WorkOrderNotFoundError } from "@/lib/inventory/receipt-errors";
 
 // Prisma uses CUID, not UUID - accept non-empty string for IDs
 const idStr = z.string().min(1);
@@ -1103,7 +1105,21 @@ const receiptSchema = z
 
 export type ReceiptFormData = z.infer<typeof receiptSchema>;
 
-export async function receiveFG(data: ReceiptFormData, userId: string) {
+export type ReceiveFGResult =
+  | { success: true; id: string; docNumber: string }
+  | ReceiptRefusal;
+
+export async function receiveFG(data: ReceiptFormData, userId: string): Promise<ReceiveFGResult> {
+  try {
+    return { success: true, ...(await receiveFGInner(data, userId)) };
+  } catch (error) {
+    const refusal = toReceiptRefusal(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+}
+
+async function receiveFGInner(data: ReceiptFormData, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
@@ -1120,7 +1136,7 @@ export async function receiveFG(data: ReceiptFormData, userId: string) {
       include: { issues: true }
     });
 
-    if (!wo) throw new Error('Work Order not found');
+    if (!wo) throw new WorkOrderNotFoundError();
 
     const totalMaterialCost = wo.issues.reduce((sum, issue) => {
       return sum.plus(issue.totalCost.toString());

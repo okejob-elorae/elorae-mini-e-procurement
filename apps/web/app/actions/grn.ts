@@ -19,6 +19,8 @@ import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { docNumberPeriod } from "@/lib/doc-numbers/period";
 import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
+import { toReceiptRefusal, type ReceiptRefusal } from "@/lib/inventory/receipt-refusal";
+import { ReceiptLineError } from "@/lib/inventory/receipt-errors";
 import { grnSchema } from "@/lib/grn/schema";
 import { fabricRollCode } from "@/lib/grn/roll-code";
 import { overReceiveBy, sumRollLengths } from "@/lib/grn/over-receive";
@@ -53,7 +55,21 @@ function parseGrnStoredLines(raw: unknown): StoredGrnLine[] {
   return arr as StoredGrnLine[];
 }
 
-export async function createGRN(data: z.infer<typeof grnSchema>, userId: string) {
+export type CreateGRNResult =
+  | { success: true; grn: Awaited<ReturnType<typeof createGRNInner>> }
+  | ReceiptRefusal;
+
+export async function createGRN(data: z.infer<typeof grnSchema>, userId: string): Promise<CreateGRNResult> {
+  try {
+    return { success: true, grn: await createGRNInner(data, userId) };
+  } catch (error) {
+    const refusal = toReceiptRefusal(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+}
+
+async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
@@ -88,7 +104,7 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
           select: { type: true, uomId: true, overReceiveThreshold: true },
         });
         if (!itemRow) {
-          throw new Error(`Item not found: ${item.itemId}`);
+          throw new ReceiptLineError("ITEM_NOT_FOUND", item.itemId, `Item not found: ${item.itemId}`);
         }
         const isFabric = itemRow.type === 'FABRIC';
         const rolls = item.rolls ?? [];

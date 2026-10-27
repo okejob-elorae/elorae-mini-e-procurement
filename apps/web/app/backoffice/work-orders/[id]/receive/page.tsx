@@ -22,6 +22,7 @@ import { getWorkOrderById, receiveFG } from '@/app/actions/production';
 
 export default function WorkOrderReceivePage() {
   const t = useTranslations('toasts');
+  const tRefusal = useTranslations('receiptRefusal');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -102,7 +103,7 @@ export default function WorkOrderReceivePage() {
     }
     setIsSubmitting(true);
     try {
-      await receiveFG(
+      const result = await receiveFG(
         {
           woId: String(wo.id),
           qtyReceived: received,
@@ -122,6 +123,10 @@ export default function WorkOrderReceivePage() {
         },
         session.user.id
       );
+      if (!result.success) {
+        toast.error(tRefusal(result.code, { detail: result.detail ?? "" }));
+        return;
+      }
       toast.success(t('fgReceived'));
       router.replace(`/backoffice/work-orders/${id}`);
     } catch (err: unknown) {

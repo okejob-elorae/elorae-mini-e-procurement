@@ -50,15 +50,11 @@ export async function createStockAdjustment(
   
   adjustmentSchema.parse(data);
 
-  // Use server session for PIN verification; fallback to lookup by email if session id not in DB (e.g. stale JWT)
-  const pinResult = await verifyPin(session.user.id, userPin, 'STOCK_ADJUSTMENT', {
-    ipAddress,
-    fallbackEmail: session.user.email ?? undefined,
-  });
+  const pinResult = await verifyPin(session.user.id, userPin, "STOCK_ADJUSTMENT", { ipAddress });
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }
-  const effectiveUserId = pinResult.userId ?? session.user.id;
+  const actorId = session.user.id;
 
   const adjustmentResult = await prisma.$transaction(async (tx) => {
 
@@ -149,8 +145,8 @@ export async function createStockAdjustment(
         newQty: newQty.toNumber(),
         prevAvgCost: prevAvgCost.toNumber(),
         newAvgCost: prevAvgCost.toNumber(),
-        approvedById: effectiveUserId,
-        createdById: effectiveUserId
+        approvedById: actorId,
+        createdById: actorId
       }
     });
     
@@ -177,14 +173,14 @@ export async function createStockAdjustment(
       refType: "StockAdjustment" satisfies StockLedgerRefType,
       refId: adjustment.id,
       refDocNumber: adjustment.docNumber,
-      createdById: effectiveUserId,
+      createdById: actorId,
     });
 
     // Audit log (before = state at start of tx)
     const prevValue = prevQty.mul(prevAvgCost);
     await tx.auditLog.create({
       data: {
-        userId: effectiveUserId,
+        userId: actorId,
         action: 'STOCK_ADJUSTMENT',
         entityType: 'StockAdjustment',
         entityId: adjustment.id,
@@ -202,7 +198,7 @@ export async function createStockAdjustment(
     return adjustment;
   });
 
-  getActorName(effectiveUserId)
+  getActorName(actorId)
     .then((triggeredByName) =>
       notifyStockAdjustmentCreated(adjustmentResult.id, adjustmentResult.docNumber, triggeredByName)
     )

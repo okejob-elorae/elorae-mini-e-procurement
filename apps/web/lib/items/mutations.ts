@@ -6,6 +6,8 @@ import { parseItemVariants } from "@/lib/items/variants";
 import {
   findVariantSkuCollisions,
   skusIntroducedByEdit,
+  findVariantBarcodeCollisions,
+  VariantBarcodeTakenError,
   VariantSkuTakenError,
 } from "@/lib/items/variant-sku-collisions";
 
@@ -232,6 +234,10 @@ export async function createItem(data: ItemFormData) {
       skus: [finalSku, ...normalizedVariants.map((v) => v.sku)],
     });
     if (createCollisions.length > 0) throw new VariantSkuTakenError(createCollisions);
+    const createBarcodeCollisions = await findVariantBarcodeCollisions(tx, {
+      barcodes: normalizedVariants.map((v) => v.barcode ?? ""),
+    });
+    if (createBarcodeCollisions.length > 0) throw new VariantBarcodeTakenError(createBarcodeCollisions);
 
     const newItem = await tx.item.create({
       data: {
@@ -310,6 +316,14 @@ export async function updateItem(
     ),
   });
   if (updateCollisions.length > 0) throw new VariantSkuTakenError(updateCollisions);
+  const updateBarcodeCollisions = await findVariantBarcodeCollisions(client, {
+    excludeItemId: id,
+    barcodes: skusIntroducedByEdit(
+      parseItemVariants(existing.variants).map((v) => v.barcode ?? ""),
+      normalizedVariants.map((v) => v.barcode ?? ""),
+    ),
+  });
+  if (updateBarcodeCollisions.length > 0) throw new VariantBarcodeTakenError(updateBarcodeCollisions);
 
   const item = await client.item.update({
     where: { id },

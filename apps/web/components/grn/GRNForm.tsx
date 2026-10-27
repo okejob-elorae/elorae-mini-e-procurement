@@ -103,6 +103,7 @@ interface GRNFormProps {
 export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
   const { data: session } = useSession();
   const t = useTranslations("grnRollImport");
+  const tRefusal = useTranslations("receiptRefusal");
   const [poId, setPoId] = useState<string>('');
   const [supplierId, setSupplierId] = useState<string>('');
   const [lines, setLines] = useState<LineRow[]>([
@@ -577,7 +578,11 @@ export function GRNForm({ suppliers, onSuccess }: GRNFormProps) {
         notes: notes || undefined,
         photoUrls: urls.length > 0 ? urls : undefined,
       };
-      await createGRN(data, session.user.id);
+      const result = await createGRN(data, session.user.id);
+      if (!result.success) {
+        toast.error(tRefusal(result.code, { detail: result.detail ?? "" }));
+        return;
+      }
       toast.success('Goods receipt created');
       onSuccess?.();
     } catch (err: unknown) {
