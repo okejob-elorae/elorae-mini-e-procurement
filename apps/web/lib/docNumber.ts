@@ -29,6 +29,8 @@ const DEFAULT_CONFIGS: Record<
   STORETRF: { prefix: "STRF/", resetPeriod: "YEARLY", padding: 4 },
   SELLTHRU: { prefix: "SLT/", resetPeriod: "YEARLY", padding: 4 },
   ITEMREQ: { prefix: "REQ/", resetPeriod: "MONTHLY", padding: 4 },
+  VENDOR_BILL: { prefix: "BILL/", resetPeriod: "MONTHLY", padding: 4 },
+  VENDOR_PAYMENT: { prefix: "VPAY/", resetPeriod: "MONTHLY", padding: 4 },
 };
 
 type ConfigRow = {

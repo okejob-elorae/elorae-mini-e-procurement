@@ -32,6 +32,7 @@
     "errorOccurred": "An error occurred. Please try again."
   },
   "navigation": {
+    "navVendorBills": "Vendor Bills",
     "navItemRequests": "Item Requests",
     "purchasing": "Purchasing",
     "marketplaceSales": "Marketplace Sales",
@@ -402,6 +403,8 @@
       "WO": "Work Order",
       "ISSUE": "Material Issue",
       "ITEMREQ": "Item Request",
+      "VENDOR_BILL": "Vendor Bill",
+      "VENDOR_PAYMENT": "Vendor Bill Payment",
       "RECEIPT": "FG Receipt",
       "ADJ": "Stock Adjustment",
       "OPN": "Stock Opname",
@@ -1744,7 +1747,8 @@
     "markRefused": {
       "GRN_APPROVAL_PENDING": "The PO was NOT marked paid — nothing was saved and no journal was posted. One of its receipts is an over-receive still awaiting the owner's decision. Have the owner approve or decline that receipt on the Inventory page first, then mark the PO paid.",
       "GRN_JOURNALS_INCOMPLETE": "The PO was NOT marked paid — nothing was saved and no journal was posted. One of its receipts has no GRN journal yet, so its payable is not on the books. Use \"Post journal\" on that GRN's row on the Inventory page first (needs journals:manage), then mark the PO paid.",
-      "GRN_REVERSAL_MISSING": "The PO was NOT marked paid — nothing was saved and no journal was posted. A receipt the owner declined still has its GRN journal on the books with no reversal. Use \"Post reversal journal\" on the declined GRN's row on the Inventory page first (needs journals:manage), then mark the PO paid."
+      "GRN_REVERSAL_MISSING": "The PO was NOT marked paid — nothing was saved and no journal was posted. A receipt the owner declined still has its GRN journal on the books with no reversal. Use \"Post reversal journal\" on the declined GRN's row on the Inventory page first (needs journals:manage), then mark the PO paid.",
+      "BILLED_VIA_VENDOR_BILL": "The PO was NOT marked paid — nothing was saved and no journal was posted. This PO is already billed through Vendor Bills, so it is paid from the vendor bill instead. Use Vendor Bills for this PO."
     },
     "standingPayment": {
       "title": "A payment journal is standing for a PO that is not marked paid",
@@ -5488,7 +5492,8 @@
       "TAX": "Tax",
       "TRADE_PROGRAM_EXPENSE": "Trade Program Expense",
       "ADMIN_FEE_EXPENSE": "Admin Fee Expense",
-      "ROUNDING_EXPENSE": "Rounding Expense"
+      "ROUNDING_EXPENSE": "Rounding Expense",
+      "PRODUCTION_SERVICE_COST": "Production Service Cost (CMT)"
     },
     "desc": {
       "INVENTORY": "Asset account debited on stock-in and credited on stock-out.",
@@ -5510,7 +5515,8 @@
       "TAX": "Account for tax liabilities/expenses.",
       "TRADE_PROGRAM_EXPENSE": "Expense account for trade program deductions a store negotiates at settlement.",
       "ADMIN_FEE_EXPENSE": "Expense account for the admin fee a store deducts at settlement.",
-      "ROUNDING_EXPENSE": "Expense account for a sub-rupiah receivable residue written off as a rounding adjustment."
+      "ROUNDING_EXPENSE": "Expense account for a sub-rupiah receivable residue written off as a rounding adjustment.",
+      "PRODUCTION_SERVICE_COST": "Expense account debited when a vendor bill charges for a work order processing step (CMT, washing, printing); credited against payables."
     },
     "error": {
       "FORBIDDEN": "You do not have permission to change account mappings.",
@@ -6547,5 +6553,79 @@
     "woRequestUpdated": "{docNumber} updated",
     "woIssueBlocked": "Stock is not enough yet",
     "woSavedShort": "Saved as DRAFT: {count} material(s) short"
+  },
+  "vendorBills": {
+    "title": "Vendor Bills",
+    "subtitle": "Vendor invoices matched to received PO items and WO processing steps",
+    "newBill": "New bill",
+    "listTitle": "Bills",
+    "listSubtitle": "Filter by supplier, status or bill date",
+    "supplier": "Supplier",
+    "allSuppliers": "All suppliers",
+    "status": "Status",
+    "statusLabel": {
+      "ALL": "All",
+      "UNPAID": "Unpaid",
+      "PARTIAL": "Partly paid",
+      "PAID": "Paid",
+      "VOID": "Void"
+    },
+    "from": "From",
+    "to": "To",
+    "search": "Search",
+    "searchPlaceholder": "BILL or vendor invoice no.",
+    "load": "Load",
+    "loadFailed": "Failed to load",
+    "actionFailed": "Action failed",
+    "empty": "No bills.",
+    "colBill": "Bill",
+    "colVendorInvoice": "Vendor invoice",
+    "colDate": "Date",
+    "colDue": "Due",
+    "colTotal": "Total",
+    "colPaid": "Paid",
+    "back": "Back",
+    "newTitle": "New vendor bill",
+    "newSubtitle": "Pick a supplier, then tick the received PO items and WO steps this invoice covers",
+    "pickSupplier": "Pick a supplier",
+    "vendorInvoiceNo": "Vendor invoice no.",
+    "billDate": "Bill date",
+    "dueDate": "Due date",
+    "dueDateHint": "Empty: bill date plus the PO or supplier payment terms",
+    "notes": "Notes",
+    "poSourcesTitle": "Received PO items",
+    "poSourcesSubtitle": "Payables for these were booked at goods receipt, so they post no journal here",
+    "noPoSources": "Nothing received and unbilled for this supplier.",
+    "colItem": "Item",
+    "colReceived": "Received",
+    "colBilled": "Billed",
+    "colQty": "Bill qty",
+    "colPrice": "Price",
+    "colAmount": "Amount",
+    "poPaidNotBillable": "Marked paid via Supplier Payment, not billable",
+    "variance": "Differs from {ref}",
+    "woSourcesTitle": "WO processing steps",
+    "woSourcesSubtitle": "Posts Dr Production Service Cost / Cr Payables",
+    "noWoSources": "No unbilled WO steps for this supplier.",
+    "colStep": "Step",
+    "colStepQty": "Step qty",
+    "step": "Step",
+    "save": "Save bill",
+    "created": "{docNumber} saved",
+    "outstanding": "Outstanding",
+    "createdBy": "Created by",
+    "linesTitle": "Lines",
+    "colSource": "Source",
+    "paymentsTitle": "Payments",
+    "noPayments": "No payments yet.",
+    "journalsTitle": "Journals",
+    "noJournal": "No journal (PO lines only).",
+    "void": "Void",
+    "voidTitle": "Void this bill?",
+    "voidBody": "Its lines become billable again and any journal is reversed. A bill with payments cannot be voided.",
+    "voidReason": "Reason",
+    "voided": "{docNumber} voided",
+    "voidedOn": "Voided on {date}",
+    "linkedTitle": "Vendor bills"
   }
 }

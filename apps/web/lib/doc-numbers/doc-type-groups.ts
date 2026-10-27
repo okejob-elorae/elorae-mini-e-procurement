@@ -29,7 +29,9 @@ export type DocTypeValue =
   | "BKM"
   | "STORETRF"
   | "SELLTHRU"
-  | "ITEMREQ";
+  | "ITEMREQ"
+  | "VENDOR_BILL"
+  | "VENDOR_PAYMENT";
 
 export type DocTypeGroup = "procurement" | "inventory" | "fieldSales" | "finance";
 
@@ -44,6 +46,7 @@ export const DOC_TYPE_GROUP: Record<DocTypeValue, DocTypeGroup> = {
   ISSUE: "procurement",
   RECEIPT: "procurement",
   ITEMREQ: "procurement",
+  VENDOR_BILL: "procurement",
   ADJ: "inventory",
   OPN: "inventory",
   STOCKTAKE: "inventory",
@@ -60,6 +63,7 @@ export const DOC_TYPE_GROUP: Record<DocTypeValue, DocTypeGroup> = {
   SELLTHRU: "fieldSales",
   PAYMENT: "finance",
   BKM: "finance",
+  VENDOR_PAYMENT: "finance",
 };
 
 export function docTypesInGroup(group: DocTypeGroup): DocTypeValue[] {

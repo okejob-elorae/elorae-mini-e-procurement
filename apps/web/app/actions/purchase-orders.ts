@@ -122,6 +122,11 @@ export async function updatePO(
     );
 
   const po = await prisma.$transaction(async (tx) => {
+    // The items are rebuilt below, which would orphan the lines of a vendor bill on them.
+    const billed = await tx.vendorBillLine.count({ where: { poItem: { poId: id }, bill: { status: { not: 'VOID' } } } });
+    if (billed > 0) {
+      throw new Error('PO ini sudah ditagih lewat Vendor Billing; batalkan tagihannya dulu sebelum mengubah PO.');
+    }
     await assertLinesVariantSkusMatchItemDefinitions(tx.item, data.items);
 
     const oldItems = await tx.pOItem.findMany({
@@ -501,7 +506,7 @@ export async function getPOStats() {
  * from here rather than inferred by the caller from the button it pressed, so the
  * sentence describes the post that actually ran.
  */
-export type SetPOPaidAtRefusal = "STANDING_PAYMENT_JOURNAL" | ReceiptBlockedMarkCode;
+export type SetPOPaidAtRefusal = "STANDING_PAYMENT_JOURNAL" | "BILLED_VIA_VENDOR_BILL" | ReceiptBlockedMarkCode;
 
 export type SetPOPaidAtResult = {
   changed: boolean;
@@ -633,6 +638,18 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
        */
       if (paidAt != null && (await hasStandingPaymentJournalWhileUnpaid(poId, tx))) {
         return { changed: false, refusal: 'STANDING_PAYMENT_JOURNAL', failure: null };
+      }
+
+      /**
+       * A PO billed through Vendor Billing is paid from the bill, which debits AP itself; marking
+       * it paid here too would debit AP twice for the same receipt. Read in this transaction so a
+       * bill saved concurrently aborts one of the two. Mark only: unmark stays available.
+       */
+      if (
+        paidAt != null &&
+        (await tx.vendorBillLine.count({ where: { poItem: { poId }, bill: { status: { not: 'VOID' } } } })) > 0
+      ) {
+        return { changed: false, refusal: 'BILLED_VIA_VENDOR_BILL', failure: null };
       }
 
       const toggled = await tx.purchaseOrder.updateMany({

@@ -65,6 +65,7 @@ import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { logPrintQuietly } from '@/lib/audit/log-print-quietly';
 import { WOStatus } from '@/lib/constants/enums';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
+import { LinkedBillLines } from '@/components/vendor-billing/LinkedBillLines';
 import { WorkOrderExportButton } from "./WorkOrderExportButton";
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
@@ -723,6 +724,7 @@ export default function WorkOrderDetailPage() {
               </CardContent>
             </Card>
           )}
+          <LinkedBillLines woId={id} />
           <Card>
             <CardHeader>
               <CardTitle>Consumption Plan</CardTitle>

@@ -1,0 +1,176 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useTranslations } from "next-intl";
+import { Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { getVendorBills } from "@/app/actions/vendor-billing";
+import type { VendorBillRow } from "@/lib/vendor-billing/queries";
+import { BILL_STATUS_VARIANT } from "./status-variant";
+
+export function VendorBillsClient({ canManage }: { canManage: boolean }) {
+  const t = useTranslations("vendorBills");
+  const [status, setStatus] = useState("ALL");
+  const [supplierId, setSupplierId] = useState("");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [search, setSearch] = useState("");
+  const [suppliers, setSuppliers] = useState<Array<{ id: string; name: string; code: string }>>([]);
+  const [rows, setRows] = useState<VendorBillRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setRows(await getVendorBills({ supplierId, status: status === "ALL" ? undefined : status, from, to, search }));
+    } catch {
+      toast.error(t("loadFailed"));
+    } finally {
+      setLoading(false);
+    }
+  }, [supplierId, status, from, to, search, t]);
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on the select filters; text and dates apply on Load
+  }, [status, supplierId]);
+
+  useEffect(() => {
+    import("@/app/actions/suppliers")
+      .then(({ getSuppliersForSelect }) => getSuppliersForSelect({ sync: true }))
+      .then((data: unknown) => setSuppliers(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start gap-4">
+        <div>
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
+          <p className="text-muted-foreground">{t("subtitle")}</p>
+        </div>
+        {canManage && (
+          <Link href="/backoffice/vendor-bills/new" className="ml-auto">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              {t("newBill")}
+            </Button>
+          </Link>
+        )}
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("listTitle")}</CardTitle>
+          <CardDescription>{t("listSubtitle")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-2">
+              <Label>{t("supplier")}</Label>
+              <SearchableCombobox
+                options={[{ value: "", label: t("allSuppliers") }, ...suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` }))]}
+                value={supplierId}
+                onValueChange={setSupplierId}
+                placeholder={t("allSuppliers")}
+                triggerClassName="w-[240px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("status")}</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["ALL", "UNPAID", "PARTIAL", "PAID", "VOID"] as const).map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {t(`statusLabel.${s}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vb-from">{t("from")}</Label>
+              <Input id="vb-from" type="date" className="w-[160px]" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vb-to">{t("to")}</Label>
+              <Input id="vb-to" type="date" className="w-[160px]" value={to} onChange={(e) => setTo(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="vb-search">{t("search")}</Label>
+              <Input
+                id="vb-search"
+                className="w-[200px]"
+                value={search}
+                placeholder={t("searchPlaceholder")}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void load()}
+              />
+            </div>
+            <Button variant="outline" onClick={() => void load()} disabled={loading}>
+              {t("load")}
+            </Button>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-10">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : rows.length === 0 ? (
+            <p className="py-10 text-center text-muted-foreground">{t("empty")}</p>
+          ) : (
+            <div className="overflow-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("colBill")}</TableHead>
+                    <TableHead>{t("colVendorInvoice")}</TableHead>
+                    <TableHead>{t("supplier")}</TableHead>
+                    <TableHead>{t("colDate")}</TableHead>
+                    <TableHead>{t("colDue")}</TableHead>
+                    <TableHead className="text-right">{t("colTotal")}</TableHead>
+                    <TableHead className="text-right">{t("colPaid")}</TableHead>
+                    <TableHead>{t("status")}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">
+                        <Link className="hover:underline" href={`/backoffice/vendor-bills/${r.id}`}>
+                          {r.docNumber}
+                        </Link>
+                      </TableCell>
+                      <TableCell>{r.vendorInvoiceNo}</TableCell>
+                      <TableCell>{r.supplier.name}</TableCell>
+                      <TableCell>{new Date(r.billDate).toLocaleDateString("id-ID")}</TableCell>
+                      <TableCell>{r.dueDate ? new Date(r.dueDate).toLocaleDateString("id-ID") : "-"}</TableCell>
+                      <TableCell className="text-right">{formatIDR(r.total)}</TableCell>
+                      <TableCell className="text-right">{formatIDR(r.paidAmount)}</TableCell>
+                      <TableCell>
+                        <Badge variant={BILL_STATUS_VARIANT[r.status]}>{t(`statusLabel.${r.status}`)}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

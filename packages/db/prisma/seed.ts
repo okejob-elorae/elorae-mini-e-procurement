@@ -210,6 +210,9 @@ async function main() {
     // Request Item (material requests -> PO)
     { code: 'item_requests:view', module: 'item_requests', action: 'view', description: 'View material requests' },
     { code: 'item_requests:manage', module: 'item_requests', action: 'manage', description: 'Create, cancel and convert material requests to POs' },
+    // Vendor billing (vendor invoices against PO items and WO steps)
+    { code: 'vendor_bills:view', module: 'vendor_bills', action: 'view', description: 'View vendor bills' },
+    { code: 'vendor_bills:manage', module: 'vendor_bills', action: 'manage', description: 'Create and void vendor bills' },
     // Pack Ratio (global putus pack rules)
     { code: 'settings_pack_ratio:view', module: 'settings_pack_ratio', action: 'view', description: 'View global pack ratio' },
     { code: 'settings_pack_ratio:manage', module: 'settings_pack_ratio', action: 'manage', description: 'Manage global pack ratio' },
@@ -340,6 +343,7 @@ async function main() {
     'vendor_returns:view', 'vendor_returns:create', 'vendor_returns:manage',
     'lead_time:view',
     'item_requests:view', 'item_requests:manage',
+    'vendor_bills:view', 'vendor_bills:manage',
   ];
   for (const code of purchaserPermissions) {
     const perm = permissionMap.get(code);

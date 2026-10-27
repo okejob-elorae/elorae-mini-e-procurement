@@ -19,6 +19,7 @@ export const POSTING_ROLES = [
   "TRADE_PROGRAM_EXPENSE",
   "ADMIN_FEE_EXPENSE",
   "ROUNDING_EXPENSE",
+  "PRODUCTION_SERVICE_COST",
 ] as const;
 
 export type PostingRole = (typeof POSTING_ROLES)[number];

@@ -31,6 +31,8 @@ export const POSTING_ROLE_ACCOUNT_TYPES: Record<PostingRole, readonly AccountTyp
   TRADE_PROGRAM_EXPENSE: ["BEBAN"],
   ADMIN_FEE_EXPENSE: ["BEBAN"],
   ROUNDING_EXPENSE: ["BEBAN"],
+  // CMT / processing fees billed per WO step: a production cost, booked as HPP or as an expense.
+  PRODUCTION_SERVICE_COST: ["HPP", "BEBAN"],
 };
 
 export function isAccountTypeValidForRole(role: PostingRole, type: AccountType): boolean {
