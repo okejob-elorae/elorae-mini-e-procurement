@@ -179,6 +179,7 @@ describe("receiveFG refusals", () => {
 describe("completeWorkOrder (close short)", () => {
   const txWoFindUnique = vi.fn();
   const txWoUpdateMany = vi.fn();
+  const txQueryRaw = vi.fn();
   const partialWo = {
     docNumber: "WO-1",
     status: "PARTIAL",
@@ -192,7 +193,7 @@ describe("completeWorkOrder (close short)", () => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
     mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
-      cb({ workOrder: { findUnique: txWoFindUnique, updateMany: txWoUpdateMany } })
+      cb({ $queryRaw: txQueryRaw, workOrder: { findUnique: txWoFindUnique, updateMany: txWoUpdateMany } })
     );
     txWoFindUnique.mockResolvedValue(partialWo);
     txWoUpdateMany.mockResolvedValue({ count: 1 });
@@ -204,6 +205,7 @@ describe("completeWorkOrder (close short)", () => {
 
   it("completes a PARTIAL work order with receipts and keeps the reason in notes", async () => {
     await completeWorkOrder("wo1", "u1", "  CMT stopped sewing  ");
+    expect(txQueryRaw.mock.invocationCallOrder[0]).toBeLessThan(txWoFindUnique.mock.invocationCallOrder[0]);
     expect(txWoUpdateMany).toHaveBeenCalledWith({
       where: { id: "wo1", status: "PARTIAL" },
       data: expect.objectContaining({
@@ -263,8 +265,10 @@ describe("receiveFG on a work order closed short", () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
     const closedAt = new Date("2026-10-20T03:00:00Z");
     const woUpdate = vi.fn();
+    const lockRow = vi.fn();
     mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
       cb({
+        $queryRaw: lockRow,
         workOrder: {
           findUnique: vi.fn().mockResolvedValue({
             id: "wo1",
@@ -297,5 +301,8 @@ describe("receiveFG on a work order closed short", () => {
       where: { id: "wo1" },
       data: expect.objectContaining({ status: "COMPLETED", completedAt: closedAt }),
     });
+    // The row lock is the transaction's first statement, ahead of the doc-number read.
+    const { generateDocNumber } = await import("@/lib/docNumber");
+    expect(lockRow.mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(generateDocNumber).mock.invocationCallOrder[0]);
   });
 });

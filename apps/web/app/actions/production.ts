@@ -1129,6 +1129,9 @@ async function receiveFGInner(data: ReceiptFormData, userId: string) {
   receiptSchema.parse(data);
 
   const receiveResult = await prisma.$transaction(async (tx) => {
+    // First statement, before any plain read fixes the snapshot: serializes with
+    // completeWorkOrder so a close-short committing mid-receipt is seen, not overwritten.
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${data.woId} FOR UPDATE`;
     const docNumber = await generateDocNumber('RECEIPT', tx);
     const qtyAccepted = data.qtyReceived - (data.qtyRejected || 0);
     
@@ -1424,6 +1427,8 @@ export async function completeWorkOrder(id: string, userId: string, reason: stri
 
   const now = new Date();
   const wo = await prisma.$transaction(async (tx) => {
+    // Same row lock receiveFG takes first, so the two never decide status from stale reads.
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
     const current = await tx.workOrder.findUnique({
       where: { id },
       select: {
