@@ -3,6 +3,7 @@
 import { prisma } from '@elorae/db';
 import bcrypt from 'bcryptjs';
 import { auth } from '@/lib/auth';
+import { CHANGE_PASSWORD_ACTION, throttledCompare } from "@/lib/security/attempt-throttle";
 
 export type ChangePasswordResult =
   | { success: true }
@@ -38,8 +39,17 @@ export async function changePassword(
     return { success: false, messageKey: 'noPasswordSet' };
   }
 
-  const currentMatch = await bcrypt.compare(currentPassword, user.passwordHash);
-  if (!currentMatch) {
+  const passwordHash = user.passwordHash;
+  const outcome = await throttledCompare({
+    userId,
+    action: CHANGE_PASSWORD_ACTION,
+    kind: "password",
+    compare: () => bcrypt.compare(currentPassword, passwordHash),
+  });
+  if (outcome === "blocked") {
+    return { success: false, messageKey: "tooManyAttempts" };
+  }
+  if (outcome === "mismatch") {
     return { success: false, messageKey: 'currentPasswordIncorrect' };
   }
 
