@@ -42,6 +42,7 @@ const REASON_KEY: Partial<Record<CollectionActionReason, string>> = {
   OVER_COLLECTED: "errOverCollected",
   ALREADY_SETTLED: "errAlreadySettled",
   NOT_ASSIGNED_COLLECTOR: "errNotAssignedCollector",
+  INVALID_PROOF: "errInvalidProof",
 };
 
 function formatRupiah(value: number): string {

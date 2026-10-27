@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { submitCollection, type SubmitCollectionInput } from "./submit-writer";
+import { urlFromKey } from "@/lib/r2";
 import { CollectionError } from "./errors";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
@@ -194,6 +195,34 @@ d("submitCollection (test bed only)", () => {
   it("refuses RETUR_OFFSET even though the type system would normally block it", async () => {
     const err = await submitAndCatch({ ...base(), method: "RETUR_OFFSET" as unknown as "CASH" });
     expect(err.code).toBe("INVALID_METHOD");
+    const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
+    expect(subs).toHaveLength(0);
+  });
+  it("derives proofUrl from a key bound to this receivable and ignores the caller's URL", async () => {
+    const key = `collection-proofs/${receivableId}/client1.jpg`;
+    const { submissionId } = await submitCollection({ ...base(), proofR2Key: key, proofUrl: "https://evil.example/x.jpg" });
+    const row = await prisma.collectionSubmission.findUniqueOrThrow({ where: { id: submissionId } });
+    expect(row.proofR2Key).toBe(key);
+    expect(row.proofUrl).toBe(urlFromKey(key));
+    expect(row.proofUrl).not.toContain("evil.example");
+  });
+
+  it("drops a caller URL that arrives without a key", async () => {
+    const { submissionId } = await submitCollection({ ...base(), proofUrl: "https://evil.example/x.jpg" });
+    const row = await prisma.collectionSubmission.findUniqueOrThrow({ where: { id: submissionId } });
+    expect(row.proofR2Key).toBeNull();
+    expect(row.proofUrl).toBeNull();
+  });
+
+  it.each([
+    ["another receivable's folder", () => `collection-proofs/other-receivable/client1.jpg`],
+    ["a foreign prefix", () => `settlement-proofs/${receivableId}/client1.jpg`],
+    ["a traversal path", () => `collection-proofs/${receivableId}/../other/client1.jpg`],
+    ["a nested path", () => `collection-proofs/${receivableId}/a/client1.jpg`],
+    ["a non-string key", () => 42 as unknown as string],
+  ])("refuses a proof key in %s with INVALID_PROOF and writes nothing", async (_label, makeKey) => {
+    const err = await submitAndCatch({ ...base(), proofR2Key: makeKey() });
+    expect(err.code).toBe("INVALID_PROOF");
     const subs = await prisma.collectionSubmission.findMany({ where: { receivableId: seededId(receivableId) } });
     expect(subs).toHaveLength(0);
   });
