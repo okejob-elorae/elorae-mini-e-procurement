@@ -587,15 +587,9 @@ export async function issueWorkOrder(id: string, userId: string) {
     throw new Error(`Stok belum cukup untuk issue: ${formatShortages(shortages)}`);
   }
 
-  const lt = await resolveWoLeadTimeFields(
-    prisma,
-    wo.vendorId,
-    Number(wo.plannedQty)
-  );
-  
   await prisma.$transaction(async (tx) => {
-    // Re-check under the row lock and flip status only from DRAFT, so a double click or a stock
-    // move since the check above cannot issue a WO the guard would now refuse.
+    // Re-read under the WO row lock and flip status only from DRAFT, so a double click, a WO edit
+    // or a stock move since the check above cannot issue what the guard would now refuse.
     await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
     const current = await tx.workOrder.findUnique({ where: { id } });
     if (!current || current.status !== 'DRAFT') throw new Error('Work Order already issued');
@@ -603,6 +597,8 @@ export async function issueWorkOrder(id: string, userId: string) {
     if (stillShort.length > 0) {
       throw new Error(`Stok belum cukup untuk issue: ${formatShortages(stillShort)}`);
     }
+    // From the locked row, so a vendor or qty edit made meanwhile is what gets snapshotted.
+    const lt = await resolveWoLeadTimeFields(tx, current.vendorId, Number(current.plannedQty));
     const flipped = await tx.workOrder.updateMany({
       where: { id, status: 'DRAFT' },
       data: {
@@ -659,7 +655,7 @@ export async function getWorkOrderShortages(woId: string): Promise<{
         id: true,
         docNumber: true,
         status: true,
-        lines: { where: { status: 'OPEN' }, select: { itemId: true, qty: true } },
+        lines: { where: { status: { in: ['OPEN', 'CANCELLED'] } }, select: { itemId: true, qty: true, status: true } },
       },
       orderBy: { createdAt: 'desc' },
     }),
@@ -670,9 +666,12 @@ export async function getWorkOrderShortages(woId: string): Promise<{
   const request = shown ? { id: shown.id, docNumber: shown.docNumber, status: shown.status } : null;
   if (!open) return { shortages, request, requestAction: uncovered.length > 0 ? 'create' : null };
 
-  const want = new Map(uncovered.map((u) => [u.itemId, u.shortage]));
+  // Same rule as the sync: a material purchasing cancelled on this request is not wanted back.
+  const cancelled = new Set(open.lines.filter((l) => l.status === 'CANCELLED').map((l) => l.itemId));
+  const openLines = open.lines.filter((l) => l.status === 'OPEN');
+  const want = new Map(uncovered.filter((u) => !cancelled.has(u.itemId)).map((u) => [u.itemId, u.shortage]));
   const inSync =
-    open.lines.length === want.size && open.lines.every((l) => want.get(l.itemId) === Number(l.qty));
+    openLines.length === want.size && openLines.every((l) => want.get(l.itemId) === Number(l.qty));
   return { shortages, request, requestAction: inSync ? null : 'update' };
 }
 

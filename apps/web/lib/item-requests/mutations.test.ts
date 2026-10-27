@@ -216,6 +216,18 @@ d("Request Item writers (test bed only)", () => {
     expect(after.filter((l) => l.poItemId).length).toBe(1);
   });
 
+  it("does not bring back a line purchasing cancelled when the request is synced", async () => {
+    const req = await createRequestFromWo(ids.wo, ids.user);
+    const fabric = (await linesOf(req.id)).find((l) => l.itemId === ids.fabric)!;
+    await cancelRequestLines([fabric.id]);
+    await prisma.workOrder.update({ where: { id: ids.wo }, data: { plannedQty: 20 } });
+    await syncRequestForWo(ids.wo);
+    expect((await linesOf(req.id)).map((l) => [l.itemId, Number(l.qty), l.status])).toEqual([
+      [ids.fabric, 15, "CANCELLED"],
+      [ids.button, 80, "OPEN"],
+    ]);
+  });
+
   it("resizes the OPEN request's lines when the WO plan changes", async () => {
     const req = await createRequestFromWo(ids.wo, ids.user);
     await prisma.workOrder.update({ where: { id: ids.wo }, data: { plannedQty: 20 } });

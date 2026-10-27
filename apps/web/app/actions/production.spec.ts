@@ -331,7 +331,11 @@ describe("issueWorkOrder stock guard", () => {
     vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(0)] as never);
     const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
     vi.mocked(resolveWoLeadTimeFields).mockRejectedValue(new Error("STOP_AFTER_GUARD"));
+    const tx = { $queryRaw: vi.fn(), workOrder: { findUnique: vi.fn().mockResolvedValue({ ...draftWo, vendorId: "v2" }) } };
+    mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(tx));
     await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("STOP_AFTER_GUARD");
+    // Lead time comes from the row re-read under the lock, not the first read.
+    expect(resolveWoLeadTimeFields).toHaveBeenCalledWith(tx, "v2", 10);
   });
 
   it("re-checks under the row lock and flips status only from DRAFT", async () => {

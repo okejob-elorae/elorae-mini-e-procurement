@@ -60,24 +60,31 @@ export async function getUncoveredShortages(db: Db, woId: string, shortages: WoS
     .filter((s) => s.shortage > 0);
 }
 
-/** Makes an OPEN request's OPEN lines match the gap: resize, add, or cancel the ones no longer short. */
+/**
+ * Makes an OPEN request's OPEN lines match the gap: resize them, add lines for newly short
+ * materials, and delete the ones no longer short (OPEN lines carry no PO link, and deleting keeps
+ * CANCELLED meaning "purchasing cancelled it"). A material purchasing cancelled on this request is
+ * not added back.
+ */
 async function syncOpenLines(tx: Prisma.TransactionClient, requestId: string, gap: WoShortage[]) {
-  const open = await tx.itemRequestLine.findMany({
-    where: { requestId, status: "OPEN" },
-    select: { id: true, itemId: true, qty: true },
+  const lines = await tx.itemRequestLine.findMany({
+    where: { requestId, status: { in: ["OPEN", "CANCELLED"] } },
+    select: { id: true, itemId: true, qty: true, status: true },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   const byItem = new Map(gap.map((g) => [g.itemId, g]));
-  for (const line of open) {
+  const cancelled = new Set(lines.filter((l) => l.status === "CANCELLED").map((l) => l.itemId));
+  for (const line of lines.filter((l) => l.status === "OPEN")) {
     const g = byItem.get(line.itemId);
     if (!g) {
-      await tx.itemRequestLine.update({ where: { id: line.id }, data: { status: "CANCELLED" } });
+      await tx.itemRequestLine.delete({ where: { id: line.id } });
       continue;
     }
     byItem.delete(line.itemId);
     if (Number(line.qty) !== g.shortage) await tx.itemRequestLine.update({ where: { id: line.id }, data: { qty: g.shortage } });
   }
   for (const g of byItem.values()) {
+    if (cancelled.has(g.itemId)) continue;
     await tx.itemRequestLine.create({ data: { requestId, itemId: g.itemId, qty: g.shortage, uomId: g.uomId } });
   }
   await refreshHeaders(tx, [requestId]);
