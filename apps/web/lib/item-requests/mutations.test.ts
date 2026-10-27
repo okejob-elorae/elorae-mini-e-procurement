@@ -6,7 +6,9 @@ import {
   convertLinesToPo,
   cancelOpenLinesForWo,
   releaseLinesOfCancelledPo,
+  relinkPoItems,
   syncRequestForWo,
+  unlinkPoItems,
 } from "./mutations";
 import { deriveRequestStatus } from "./status";
 
@@ -154,6 +156,48 @@ d("Request Item writers (test bed only)", () => {
     const released = await linesOf(req.id);
     expect(released.every((l) => l.status === "OPEN" && l.poId === null && l.poItemId === null)).toBe(true);
     expect((await prisma.itemRequest.findUniqueOrThrow({ where: { id: req.id } })).status).toBe("OPEN");
+  });
+
+  it("keeps one OPEN request per WO when a voided PO hands its lines back", async () => {
+    const first = await createRequestFromWo(ids.wo, ids.user);
+    const po = await convertLinesToPo(
+      { lineIds: (await linesOf(first.id)).map((l) => l.id), supplierId: ids.supplier, prices: {} },
+      ids.user
+    );
+    // The plan doubles: the PO covers half, so a second request takes the rest.
+    await prisma.workOrder.update({ where: { id: ids.wo }, data: { plannedQty: 20 } });
+    const second = await createRequestFromWo(ids.wo, ids.user);
+    expect(second.created).toBe(true);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: "CANCELLED" } });
+      await releaseLinesOfCancelledPo(tx, po.id);
+    });
+
+    const open = await prisma.itemRequest.findMany({ where: { sourceWoId: ids.wo, status: "OPEN" } });
+    expect(open.map((r) => r.id)).toEqual([first.id]);
+    expect((await linesOf(first.id)).filter((l) => l.status === "OPEN").map((l) => [l.itemId, Number(l.qty)])).toEqual([
+      [ids.fabric, 30],
+      [ids.button, 80],
+    ]);
+  });
+
+  it("releases a converted line whose SKU a PO edit removed", async () => {
+    const req = await createRequestFromWo(ids.wo, ids.user);
+    const po = await convertLinesToPo(
+      { lineIds: (await linesOf(req.id)).map((l) => l.id), supplierId: ids.supplier, prices: {} },
+      ids.user
+    );
+    await prisma.$transaction(async (tx) => {
+      await unlinkPoItems(tx, po.id);
+      await tx.pOItem.deleteMany({ where: { poId: po.id, itemId: ids.button } });
+      await relinkPoItems(tx, po.id);
+    });
+    const lines = await linesOf(req.id);
+    expect(lines.map((l) => [l.itemId, l.status, l.poId])).toEqual([
+      [ids.fabric, "CONVERTED", po.id],
+      [ids.button, "OPEN", null],
+    ]);
   });
 
   it("resizes the OPEN request's lines when the WO plan changes", async () => {

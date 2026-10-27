@@ -6543,6 +6543,8 @@
     "woCreateRequest": "Create Item Request",
     "woViewRequest": "View {docNumber}",
     "woRequestCreated": "{docNumber} created",
+    "woUpdateRequest": "Update Item Request",
+    "woRequestUpdated": "{docNumber} updated",
     "woIssueBlocked": "Stock is not enough yet",
     "woSavedShort": "Saved as DRAFT: {count} material(s) short"
   }

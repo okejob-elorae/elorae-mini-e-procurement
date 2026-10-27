@@ -593,18 +593,30 @@ export async function issueWorkOrder(id: string, userId: string) {
     Number(wo.plannedQty)
   );
   
-  await prisma.workOrder.update({
-    where: { id },
-    data: {
-      status: 'ISSUED',
-      issuedAt: new Date(),
-      ...(lt.chainSnapshot
-        ? {
-            chainSnapshot: lt.chainSnapshot,
-            chainTotalDays: lt.chainTotalDays,
-          }
-        : {}),
+  await prisma.$transaction(async (tx) => {
+    // Re-check under the row lock and flip status only from DRAFT, so a double click or a stock
+    // move since the check above cannot issue a WO the guard would now refuse.
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
+    const current = await tx.workOrder.findUnique({ where: { id } });
+    if (!current || current.status !== 'DRAFT') throw new Error('Work Order already issued');
+    const stillShort = await getWoShortages(current);
+    if (stillShort.length > 0) {
+      throw new Error(`Stok belum cukup untuk issue: ${formatShortages(stillShort)}`);
     }
+    const flipped = await tx.workOrder.updateMany({
+      where: { id, status: 'DRAFT' },
+      data: {
+        status: 'ISSUED',
+        issuedAt: new Date(),
+        ...(lt.chainSnapshot
+          ? {
+              chainSnapshot: lt.chainSnapshot,
+              chainTotalDays: lt.chainTotalDays,
+            }
+          : {}),
+      }
+    });
+    if (flipped.count !== 1) throw new Error('Work Order already issued');
   });
 
   getActorName(userId)
@@ -618,13 +630,14 @@ export async function issueWorkOrder(id: string, userId: string) {
 }
 
 /**
- * BOM shortages blocking a DRAFT WO from being issued, its latest live Request Item, and how many
- * short materials are neither on that request nor already on order.
+ * BOM shortages blocking a DRAFT WO from being issued, its Request Item (the OPEN one, else the
+ * latest live one), and what purchasing can do: `create` a request for a gap nothing covers, or
+ * `update` the OPEN request when its lines no longer match the gap (a stock move or PO change).
  */
 export async function getWorkOrderShortages(woId: string): Promise<{
   shortages: WoShortage[];
   request: { id: string; docNumber: string; status: string } | null;
-  uncoveredCount: number;
+  requestAction: 'create' | 'update' | null;
 }> {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
@@ -634,18 +647,31 @@ export async function getWorkOrderShortages(woId: string): Promise<{
     where: { id: woId },
     select: { status: true, finishedGoodId: true, plannedQty: true, outputMode: true, skuBreakdown: true },
   });
-  if (!wo || wo.status !== 'DRAFT') return { shortages: [], request: null, uncoveredCount: 0 };
+  if (!wo || wo.status !== 'DRAFT') return { shortages: [], request: null, requestAction: null };
 
-  const [shortages, request] = await Promise.all([
+  const [shortages, requests] = await Promise.all([
     getWoShortages(wo),
-    prisma.itemRequest.findFirst({
+    prisma.itemRequest.findMany({
       where: { sourceWoId: woId, status: { not: 'CANCELLED' } },
-      select: { id: true, docNumber: true, status: true },
+      select: {
+        id: true,
+        docNumber: true,
+        status: true,
+        lines: { where: { status: 'OPEN' }, select: { itemId: true, qty: true } },
+      },
       orderBy: { createdAt: 'desc' },
     }),
   ]);
   const uncovered = await getUncoveredShortages(prisma, woId, shortages);
-  return { shortages, request, uncoveredCount: uncovered.length };
+  const open = requests.find((r) => r.status === 'OPEN');
+  const shown = open ?? requests[0] ?? null;
+  const request = shown ? { id: shown.id, docNumber: shown.docNumber, status: shown.status } : null;
+  if (!open) return { shortages, request, requestAction: uncovered.length > 0 ? 'create' : null };
+
+  const want = new Map(uncovered.map((u) => [u.itemId, u.shortage]));
+  const inSync =
+    open.lines.length === want.size && open.lines.every((l) => want.get(l.itemId) === Number(l.qty));
+  return { shortages, request, requestAction: inSync ? null : 'update' };
 }
 
 const issueSchema = z.object({
@@ -1415,6 +1441,8 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
   }
   
   await prisma.$transaction(async (tx) => {
+    // The lock Request Item conversion takes: a conversion in flight finishes before the cancel.
+    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
     await tx.workOrder.update({
       where: { id },
       data: {

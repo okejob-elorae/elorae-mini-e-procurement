@@ -6543,6 +6543,8 @@
     "woCreateRequest": "Buat Request Item",
     "woViewRequest": "Lihat {docNumber}",
     "woRequestCreated": "{docNumber} dibuat",
+    "woUpdateRequest": "Perbarui Request Item",
+    "woRequestUpdated": "{docNumber} diperbarui",
     "woIssueBlocked": "Stok belum cukup",
     "woSavedShort": "Disimpan sebagai DRAFT: {count} bahan kurang"
   }

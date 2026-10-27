@@ -133,7 +133,7 @@ export default function WorkOrderDetailPage() {
         toast.error(res.error);
         return;
       }
-      toast.success(tIR('woRequestCreated', { docNumber: res.docNumber }));
+      toast.success(tIR(res.created ? 'woRequestCreated' : 'woRequestUpdated', { docNumber: res.docNumber }));
       setShortageInfo(await getWorkOrderShortages(id));
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : tIR('actionFailed'));
@@ -451,10 +451,9 @@ export default function WorkOrderDetailPage() {
                   </Button>
                 </Link>
               )}
-              {/* An OPEN request follows WO edits on its own; a new one is only for a gap nothing covers yet. */}
-              {canCreateRequest && shortageInfo.uncoveredCount > 0 && shortageInfo.request?.status !== 'OPEN' && (
+              {canCreateRequest && shortageInfo.requestAction && (
                 <Button size="sm" onClick={handleCreateRequest} disabled={requestBusy}>
-                  {tIR('woCreateRequest')}
+                  {tIR(shortageInfo.requestAction === 'update' ? 'woUpdateRequest' : 'woCreateRequest')}
                 </Button>
               )}
             </div>

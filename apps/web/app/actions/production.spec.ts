@@ -333,4 +333,25 @@ describe("issueWorkOrder stock guard", () => {
     vi.mocked(resolveWoLeadTimeFields).mockRejectedValue(new Error("STOP_AFTER_GUARD"));
     await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("STOP_AFTER_GUARD");
   });
+
+  it("re-checks under the row lock and flips status only from DRAFT", async () => {
+    const { generateMaterialPlan } = await import("@/lib/production/planning");
+    // Covered at the first check, short again by the time the lock is held.
+    vi.mocked(generateMaterialPlan).mockResolvedValueOnce([planLine(0)] as never).mockResolvedValueOnce([planLine(3)] as never);
+    const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
+    vi.mocked(resolveWoLeadTimeFields).mockResolvedValue({} as never);
+    const lockRow = vi.fn();
+    const updateMany = vi.fn();
+    mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) =>
+      cb({ $queryRaw: lockRow, workOrder: { findUnique: vi.fn().mockResolvedValue(draftWo), updateMany } })
+    );
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("Stok belum cukup untuk issue: Kain (kurang 3.00 MTR)");
+    expect(lockRow).toHaveBeenCalled();
+    expect(updateMany).not.toHaveBeenCalled();
+
+    vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(0)] as never);
+    updateMany.mockResolvedValue({ count: 0 });
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("already issued");
+    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "wo1", status: "DRAFT" } }));
+  });
 });

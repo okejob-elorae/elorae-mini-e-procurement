@@ -32,14 +32,17 @@ export async function getUncoveredShortages(db: Db, woId: string, shortages: WoS
   const poItemIds = converted.map((l) => l.poItemId).filter((id): id is string => !!id);
   const received = new Map(
     (poItemIds.length > 0
-      ? await db.pOItem.findMany({ where: { id: { in: poItemIds } }, select: { id: true, receivedQty: true } })
+      ? await db.pOItem.findMany({ where: { id: { in: poItemIds } }, select: { id: true, qty: true, receivedQty: true } })
       : []
-    ).map((i) => [i.id, Number(i.receivedQty)])
+    ).map((i) => [i.id, { qty: Number(i.qty), received: Number(i.receivedQty) }])
   );
   const inbound = new Map<string, number>();
   for (const l of converted) {
-    // Received qty is already on hand, so it is in the live shortage; only the rest is still coming.
-    const outstanding = Math.max(0, Number(l.qty) - (l.poItemId ? received.get(l.poItemId) ?? 0 : 0));
+    // A PO edit may have cut the line, so it brings at most its own qty. Received qty is already
+    // on hand, so it is in the live shortage; only the rest is still coming.
+    const poItem = l.poItemId ? received.get(l.poItemId) : undefined;
+    const ordered = poItem ? Math.min(Number(l.qty), poItem.qty) : Number(l.qty);
+    const outstanding = Math.max(0, ordered - (poItem?.received ?? 0));
     inbound.set(l.itemId, (inbound.get(l.itemId) ?? 0) + outstanding);
   }
   return shortages
@@ -80,6 +83,56 @@ const woSelect = {
   targetDate: true,
 } as const;
 
+async function lockWo(tx: Prisma.TransactionClient, woId: string) {
+  await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${woId} FOR UPDATE`;
+}
+
+/**
+ * Keeps one OPEN request per DRAFT WO, sized to the uncovered gap: the oldest OPEN request is
+ * synced, and OPEN lines on any later one are cancelled so purchasing never sees the gap twice.
+ */
+async function normalizeWoRequests(tx: Prisma.TransactionClient, woId: string) {
+  await lockWo(tx, woId);
+  const wo = await tx.workOrder.findUnique({ where: { id: woId }, select: woSelect });
+  if (!wo || wo.status !== "DRAFT") return;
+  const open = await tx.itemRequest.findMany({
+    where: { sourceWoId: woId, status: "OPEN" },
+    select: { id: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  if (open.length === 0) return;
+  const [keeper, ...extra] = open;
+  if (extra.length > 0) {
+    const extraIds = extra.map((r) => r.id);
+    await tx.itemRequestLine.updateMany({ where: { requestId: { in: extraIds }, status: "OPEN" }, data: { status: "CANCELLED" } });
+    await refreshHeaders(tx, extraIds);
+  }
+  await syncOpenLines(tx, keeper.id, await getUncoveredShortages(tx, woId, await getWoShortages(wo)));
+}
+
+/**
+ * Puts CONVERTED lines whose PO no longer carries them back in the purchasing queue: OPEN for a
+ * DRAFT WO or a request without one, CANCELLED when the WO moved on. Then re-establishes one
+ * OPEN request per affected WO.
+ */
+async function releaseLines(tx: Prisma.TransactionClient, where: Prisma.ItemRequestLineWhereInput) {
+  const lines = await tx.itemRequestLine.findMany({
+    where: { ...where, status: "CONVERTED" },
+    select: { id: true, requestId: true, request: { select: { sourceWoId: true, sourceWo: { select: { status: true } } } } },
+  });
+  if (lines.length === 0) return;
+  for (const l of lines) {
+    const reopen = !l.request.sourceWoId || l.request.sourceWo?.status === "DRAFT";
+    await tx.itemRequestLine.update({
+      where: { id: l.id },
+      data: { status: reopen ? "OPEN" : "CANCELLED", poId: null, poItemId: null },
+    });
+  }
+  await refreshHeaders(tx, lines.map((l) => l.requestId));
+  const woIds = [...new Set(lines.map((l) => l.request.sourceWoId).filter((id): id is string => !!id))].sort();
+  for (const woId of woIds) await normalizeWoRequests(tx, woId);
+}
+
 /**
  * One request per DRAFT WO with a BOM shortage, a line per short material not already on order.
  * Idempotent: an OPEN request for the WO is brought up to date and returned instead of a second one.
@@ -87,7 +140,7 @@ const woSelect = {
 export async function createRequestFromWo(woId: string, userId: string) {
   return prisma.$transaction(async (tx) => {
     // Serializes a double click: the second caller sees the first one's request.
-    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${woId} FOR UPDATE`;
+    await lockWo(tx, woId);
     const wo = await tx.workOrder.findUnique({ where: { id: woId }, select: woSelect });
     if (!wo) throw new ItemRequestError("Work Order tidak ditemukan");
     if (wo.status !== "DRAFT") throw new ItemRequestError("Request Item hanya bisa dibuat dari WO berstatus DRAFT");
@@ -121,17 +174,13 @@ export async function createRequestFromWo(woId: string, userId: string) {
 
 /** After a WO edit: brings its OPEN request's lines in line with the new plan. No request, no-op. */
 export async function syncRequestForWo(woId: string) {
-  await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT \`id\` FROM \`WorkOrder\` WHERE \`id\` = ${woId} FOR UPDATE`;
-    const existing = await tx.itemRequest.findFirst({ where: { sourceWoId: woId, status: "OPEN" }, select: { id: true } });
-    if (!existing) return;
-    const wo = await tx.workOrder.findUnique({ where: { id: woId }, select: woSelect });
-    if (!wo || wo.status !== "DRAFT") return;
-    await syncOpenLines(tx, existing.id, await getUncoveredShortages(tx, woId, await getWoShortages(wo)));
-  });
+  await prisma.$transaction((tx) => normalizeWoRequests(tx, woId));
 }
 
-/** A cancelled WO needs nothing bought: its OPEN request lines are cancelled with it. */
+/**
+ * A cancelled WO needs nothing bought: its OPEN request lines are cancelled with it. Call after
+ * locking the WO row, the lock convert takes, so a conversion in flight finishes first.
+ */
 export async function cancelOpenLinesForWo(tx: Prisma.TransactionClient, woId: string) {
   const open = await tx.itemRequestLine.findMany({
     where: { status: "OPEN", request: { sourceWoId: woId } },
@@ -142,23 +191,9 @@ export async function cancelOpenLinesForWo(tx: Prisma.TransactionClient, woId: s
   await refreshHeaders(tx, open.map((l) => l.requestId));
 }
 
-/**
- * A voided PO returns its request lines to the purchasing queue (OPEN), unless their WO was
- * cancelled meanwhile. Callers only void POs with no receipts.
- */
+/** A voided PO returns its request lines to the purchasing queue. Callers only void POs with no receipts. */
 export async function releaseLinesOfCancelledPo(tx: Prisma.TransactionClient, poId: string) {
-  const lines = await tx.itemRequestLine.findMany({
-    where: { poId, status: "CONVERTED" },
-    select: { id: true, requestId: true, request: { select: { sourceWo: { select: { status: true } } } } },
-  });
-  if (lines.length === 0) return;
-  for (const l of lines) {
-    await tx.itemRequestLine.update({
-      where: { id: l.id },
-      data: { status: l.request.sourceWo?.status === "CANCELLED" ? "CANCELLED" : "OPEN", poId: null, poItemId: null },
-    });
-  }
-  await refreshHeaders(tx, lines.map((l) => l.requestId));
+  await releaseLines(tx, { poId });
 }
 
 /** `updatePO` replaces every PO item; call before it deletes them, so the unique link is free. */
@@ -166,7 +201,10 @@ export async function unlinkPoItems(tx: Prisma.TransactionClient, poId: string) 
   await tx.itemRequestLine.updateMany({ where: { poId }, data: { poItemId: null } });
 }
 
-/** After `updatePO` recreated the items: each linked line takes the first unused item of the same SKU. */
+/**
+ * After `updatePO` recreated the items: each linked line takes the first unused item of the same
+ * SKU. A line whose SKU the edit removed is released back to the purchasing queue.
+ */
 export async function relinkPoItems(tx: Prisma.TransactionClient, poId: string) {
   const lines = await tx.itemRequestLine.findMany({
     where: { poId },
@@ -175,11 +213,16 @@ export async function relinkPoItems(tx: Prisma.TransactionClient, poId: string) 
   });
   if (lines.length === 0) return;
   const unused = await tx.pOItem.findMany({ where: { poId }, select: { id: true, itemId: true, variantSku: true } });
+  const dropped: string[] = [];
   for (const line of lines) {
     const at = unused.findIndex((i) => i.itemId === line.itemId && (i.variantSku ?? "") === line.variantSku);
-    if (at < 0) continue;
+    if (at < 0) {
+      dropped.push(line.id);
+      continue;
+    }
     await tx.itemRequestLine.update({ where: { id: line.id }, data: { poItemId: unused.splice(at, 1)[0].id } });
   }
+  if (dropped.length > 0) await releaseLines(tx, { id: { in: dropped } });
 }
 
 export async function cancelRequestLines(lineIds: string[]) {
@@ -210,6 +253,15 @@ export async function convertLinesToPo(input: ConvertInput, userId: string) {
 
   return prisma.$transaction(
     async (tx) => {
+      // Lock the source WOs first (the lock cancelWorkOrder takes), in id order so two
+      // conversions cannot deadlock. A WO cancelled meanwhile has already cancelled its OPEN lines.
+      const sources = await tx.itemRequestLine.findMany({
+        where: { id: { in: lineIds } },
+        select: { request: { select: { sourceWoId: true } } },
+      });
+      const woIds = [...new Set(sources.map((l) => l.request.sourceWoId).filter((id): id is string => !!id))].sort();
+      for (const woId of woIds) await lockWo(tx, woId);
+
       // Claim first: a line another user converts or cancels meanwhile fails the count check.
       const claimed = await tx.itemRequestLine.updateMany({
         where: { id: { in: lineIds }, status: "OPEN" },
