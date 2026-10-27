@@ -84,11 +84,11 @@ describe("pin-auth self-service actions", () => {
   });
 
   describe("getPinAttempts", () => {
-    it("queries the session user's attempts", async () => {
+    it("queries the session user's PIN attempts, leaving out the password throttle's rows", async () => {
       mockAttemptFindMany.mockResolvedValue([]);
       await getPinAttempts(5);
       expect(mockAttemptFindMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { userId: "u1" }, take: 5 })
+        expect.objectContaining({ where: { userId: "u1", action: { not: "CHANGE_PASSWORD" } }, take: 5 })
       );
     });
 
