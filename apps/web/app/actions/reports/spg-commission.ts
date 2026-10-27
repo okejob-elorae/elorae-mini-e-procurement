@@ -6,13 +6,11 @@ import { requirePermission, PERMISSIONS } from "@/lib/rbac";
 import { getCommissionRecap, type CommissionRecap } from "@/lib/spg-commission/queries";
 import { isYearMonth } from "@/lib/spg-commission/month";
 import { storeLabel } from "@/lib/spg-commission/recap-display";
-import { toCsv } from "@/lib/reports/csv";
+import { toCsv, type CsvCell } from "@/lib/reports/csv";
 
 export type SpgCommissionExportResult =
   | { data: string; filename: string; base64?: never }
   | { base64: string; filename: string; data?: never };
-
-type Cell = string | number | null;
 
 const UNCATEGORIZED = "Tanpa Kategori";
 
@@ -20,7 +18,7 @@ const SUMMARY_HEADERS = ["SPG", "Toko", "Pcs", "Komisi Diperoleh", "Komisi Dibat
 
 const DETAIL_HEADERS = ["Bulan", "SPG", "Toko", "No. Laporan", "Kategori", "Jenis", "Pcs", "Tarif per Pcs", "Jumlah"];
 
-function summaryRows(recap: CommissionRecap): Array<Record<string, Cell>> {
+function summaryRows(recap: CommissionRecap): Array<Record<string, CsvCell>> {
   return recap.rows.map((r) => ({
     SPG: recap.spgNames[r.salesmanId] ?? r.salesmanId,
     Toko: storeLabel(r.storeIds, recap.storeNames),
@@ -31,7 +29,7 @@ function summaryRows(recap: CommissionRecap): Array<Record<string, Cell>> {
   }));
 }
 
-function detailRows(recap: CommissionRecap): Array<Record<string, Cell>> {
+function detailRows(recap: CommissionRecap): Array<Record<string, CsvCell>> {
   const spgName = (id: string) => recap.spgNames[id] ?? id;
   const docNo = (id: string) => recap.reportDocNos[id] ?? id;
   /* Grouped per SPG for the payroll reader; the sort is stable, so each SPG keeps the recap's report order. */

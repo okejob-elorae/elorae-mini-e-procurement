@@ -1,7 +1,7 @@
 export type CsvCell = string | number | null;
 
 /* Excel's UTF-8 signature: without it, Excel on Windows reads the file as ANSI and garbles non-ASCII names. */
-export const UTF8_BOM = "﻿";
+export const UTF8_BOM = "\uFEFF";
 
 /* A text cell opening with one of these is run by a spreadsheet as a formula. */
 const FORMULA_TRIGGER = /^[=+\-@\t\r]/;

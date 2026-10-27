@@ -67,6 +67,7 @@ type VendorReturnRow = Extract<
 export default function VendorReturnsPage() {
   const { data: session } = useSession();
   const canManage = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE);
+  const canCreate = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_CREATE);
   const [returns, setReturns] = useState<VendorReturnRow[]>([]);
   const [vendors, setVendors] = useState<SupplierOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -167,12 +168,14 @@ export default function VendorReturnsPage() {
             Manage returns to vendors and track stock impact
           </p>
         </div>
-        <Link href="/backoffice/vendor-returns/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Return
-          </Button>
-        </Link>
+        {canCreate && (
+          <Link href="/backoffice/vendor-returns/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Return
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Filters */}
@@ -306,7 +309,7 @@ export default function VendorReturnsPage() {
                                     View
                                   </Link>
                                 </DropdownMenuItem>
-                                {r.status === 'DRAFT' && (
+                                {r.status === 'DRAFT' && canManage && (
                                   <>
                                     <DropdownMenuItem asChild>
                                       <Link href={`/backoffice/vendor-returns/${r.id}/edit`}>
@@ -314,19 +317,17 @@ export default function VendorReturnsPage() {
                                         Edit
                                       </Link>
                                     </DropdownMenuItem>
-                                    {canManage && (
-                                      <DropdownMenuItem
-                                        onClick={() => handleProcess(r.id)}
-                                        disabled={processingId === r.id}
-                                      >
-                                        {processingId === r.id ? (
-                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                        ) : (
-                                          <PlayCircle className="mr-2 h-4 w-4" />
-                                        )}
-                                        {processingId === r.id ? 'Processing...' : 'Process'}
-                                      </DropdownMenuItem>
-                                    )}
+                                    <DropdownMenuItem
+                                      onClick={() => handleProcess(r.id)}
+                                      disabled={processingId === r.id}
+                                    >
+                                      {processingId === r.id ? (
+                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <PlayCircle className="mr-2 h-4 w-4" />
+                                      )}
+                                      {processingId === r.id ? 'Processing...' : 'Process'}
+                                    </DropdownMenuItem>
                                     <DropdownMenuItem
                                       className="text-destructive"
                                       onClick={() => handleDelete(r.id)}

@@ -26,9 +26,7 @@ function toRows(rows: Awaited<ReturnType<typeof listReceivablesForExport>>["rows
     Outstanding: r.outstandingAmount,
     Status: r.status,
     Kolektor: r.collectorName ?? "Belum ditugaskan",
-    /* Null only for a SELL_THROUGH row with no salesman assigned yet — `String(null)` would print
-     * the literal text "null" into the CSV cell, so it needs the same explicit fallback the DELIVERY
-     * rows never needed. */
+    /* Null only for a SELL_THROUGH row with no salesman assigned yet; the dash tells it apart from a blank export cell. */
     Salesman: r.salesmanName ?? "—",
   }));
 }
