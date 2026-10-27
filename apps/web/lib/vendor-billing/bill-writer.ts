@@ -3,7 +3,7 @@ import type { Prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
-import { billedQtyByPoItem, billedQtyByWoStep } from "./billable";
+import { billedQtyByPoItem, billedQtyByWoStep, PENDING_OWNER_DECISION } from "./billable";
 import { postVendorBillJournal, postVendorBillReversalJournal } from "./bill-journal";
 
 /** A refusal the user can act on; its message is shown as-is. */
@@ -40,13 +40,6 @@ function journalRefusal(res: Extract<GenerateAutoJournalResult, { ok: false }>):
   return new VendorBillError(`Jurnal tagihan gagal diposting (${res.code})`);
 }
 
-function isInvoiceNoClash(e: unknown): boolean {
-  if (typeof e !== "object" || e === null) return false;
-  const err = e as { code?: unknown; meta?: unknown; message?: unknown };
-  if (err.code !== "P2002") return false;
-  return `${JSON.stringify(err.meta ?? {})} ${String(err.message ?? "")}`.includes("vendorInvoiceNo");
-}
-
 const addDays = (d: Date, days: number) => new Date(d.getTime() + days * 86_400_000);
 
 /**
@@ -61,118 +54,132 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
   const poLines = data.lines.filter((l) => l.type === "PO_ITEM");
   const stepLines = data.lines.filter((l) => l.type === "WO_STEP");
 
-  try {
-    return await runSerializable(
-      async (tx) => {
-        const supplier = await tx.supplier.findUnique({ where: { id: data.supplierId }, select: { paymentTermsDays: true } });
-        if (!supplier) throw new VendorBillError("Supplier tidak ditemukan");
+  return runSerializable(
+    async (tx) => {
+      const supplier = await tx.supplier.findUnique({ where: { id: data.supplierId }, select: { paymentTermsDays: true } });
+      if (!supplier) throw new VendorBillError("Supplier tidak ditemukan");
+      // Unique among live bills only, so a voided bill's number can be entered again. The read
+      // joins this serializable transaction, so two saves of one number cannot both pass.
+      const clash = await tx.vendorBill.count({
+        where: { supplierId: data.supplierId, vendorInvoiceNo: data.vendorInvoiceNo, status: { not: "VOID" } },
+      });
+      if (clash > 0) throw new VendorBillError("Nomor invoice vendor sudah dipakai untuk supplier ini");
 
-        const lineRows: Prisma.VendorBillLineCreateWithoutBillInput[] = [];
-        const poTerms: number[] = [];
+      const lineRows: Prisma.VendorBillLineCreateWithoutBillInput[] = [];
+      const poTerms: number[] = [];
 
-        if (poLines.length > 0) {
-          const items = await tx.pOItem.findMany({
-            where: { id: { in: poLines.map((l) => l.sourceId) } },
-            select: {
-              id: true,
-              price: true,
-              receivedQty: true,
-              item: { select: { nameId: true } },
-              po: { select: { supplierId: true, status: true, paidAt: true, docNumber: true, paymentTermsDays: true } },
+      if (poLines.length > 0) {
+        const items = await tx.pOItem.findMany({
+          where: { id: { in: poLines.map((l) => l.sourceId) } },
+          select: {
+            id: true,
+            price: true,
+            receivedQty: true,
+            item: { select: { nameId: true } },
+            po: {
+              select: {
+                supplierId: true,
+                status: true,
+                paidAt: true,
+                docNumber: true,
+                paymentTermsDays: true,
+                grns: { where: PENDING_OWNER_DECISION, select: { id: true } },
+              },
             },
-          });
-          const byId = new Map(items.map((i) => [i.id, i]));
-          const billed = await billedQtyByPoItem(tx, items.map((i) => i.id));
-          for (const l of poLines) {
-            const it = byId.get(l.sourceId);
-            if (!it) throw new VendorBillError("Baris PO tidak ditemukan, muat ulang halaman");
-            const where = `${it.item.nameId} (${it.po.docNumber})`;
-            if (it.po.supplierId !== data.supplierId) throw new VendorBillError(`${where} bukan milik supplier ini`);
-            if (it.po.status === "CANCELLED") throw new VendorBillError(`${it.po.docNumber} sudah dibatalkan`);
-            if (it.po.paidAt != null) throw new VendorBillError(`${it.po.docNumber}: PO sudah ditandai lunas lewat Pembayaran Pemasok.`);
-            const remaining = round2(Number(it.receivedQty) - (billed.get(it.id) ?? 0));
-            if (l.qty > remaining + EPS) {
-              throw new VendorBillError(`Qty tagihan ${where} melebihi sisa yang diterima dan belum ditagih (${remaining})`);
-            }
-            if (it.po.paymentTermsDays != null) poTerms.push(it.po.paymentTermsDays);
-            lineRows.push({
-              type: "PO_ITEM",
-              poItem: { connect: { id: it.id } },
-              qty: l.qty,
-              price: l.price,
-              amount: round2(l.qty * l.price),
-              refPrice: Number(it.price),
-            });
-          }
-        }
-
-        if (stepLines.length > 0) {
-          const steps = await tx.workOrderStep.findMany({
-            where: { id: { in: stepLines.map((l) => l.sourceId) } },
-            select: {
-              id: true,
-              supplierId: true,
-              sequence: true,
-              stepName: true,
-              qty: true,
-              servicePrice: true,
-              wo: { select: { docNumber: true, status: true } },
-            },
-          });
-          const byId = new Map(steps.map((s) => [s.id, s]));
-          const billed = await billedQtyByWoStep(tx, steps.map((s) => s.id));
-          for (const l of stepLines) {
-            const st = byId.get(l.sourceId);
-            if (!st) throw new VendorBillError("Step WO tidak ditemukan, muat ulang halaman");
-            const where = `${st.wo.docNumber} step ${st.sequence}${st.stepName ? ` ${st.stepName}` : ""}`;
-            if (st.supplierId !== data.supplierId) throw new VendorBillError(`${where} bukan milik supplier ini`);
-            if (st.wo.status === "CANCELLED") throw new VendorBillError(`${st.wo.docNumber} sudah dibatalkan`);
-            const remaining = round2(Number(st.qty ?? 0) - (billed.get(st.id) ?? 0));
-            if (l.qty > remaining + EPS) {
-              throw new VendorBillError(`Qty tagihan ${where} melebihi sisa yang belum ditagih (${remaining})`);
-            }
-            lineRows.push({
-              type: "WO_STEP",
-              woStep: { connect: { id: st.id } },
-              qty: l.qty,
-              price: l.price,
-              amount: round2(l.qty * l.price),
-              refPrice: Number(st.servicePrice),
-            });
-          }
-        }
-
-        const terms = poTerms.length > 0 ? Math.max(...poTerms) : supplier.paymentTermsDays ?? 0;
-        const total = round2(lineRows.reduce((s, l) => s + Number(l.amount), 0));
-        const docNumber = await generateDocNumber("VENDOR_BILL", tx);
-        const bill = await tx.vendorBill.create({
-          data: {
-            docNumber,
-            supplierId: data.supplierId,
-            vendorInvoiceNo: data.vendorInvoiceNo,
-            billDate: data.billDate,
-            dueDate: data.dueDate ?? addDays(data.billDate, terms),
-            total,
-            status: total < EPS ? "PAID" : "UNPAID",
-            notes: data.notes || null,
-            createdById: userId,
-            lines: { create: lineRows },
           },
-          select: { id: true, docNumber: true },
         });
-
-        if (stepLines.length > 0) {
-          const res = await postVendorBillJournal(bill.id, userId, tx);
-          if (!res.ok && res.code !== "NOTHING_TO_POST") throw journalRefusal(res);
+        const byId = new Map(items.map((i) => [i.id, i]));
+        const billed = await billedQtyByPoItem(tx, items.map((i) => i.id));
+        for (const l of poLines) {
+          const it = byId.get(l.sourceId);
+          if (!it) throw new VendorBillError("Baris PO tidak ditemukan, muat ulang halaman");
+          const where = `${it.item.nameId} (${it.po.docNumber})`;
+          if (it.po.supplierId !== data.supplierId) throw new VendorBillError(`${where} bukan milik supplier ini`);
+          if (it.po.status === "CANCELLED") throw new VendorBillError(`${it.po.docNumber} sudah dibatalkan`);
+          if (it.po.paidAt != null) throw new VendorBillError(`${it.po.docNumber}: PO sudah ditandai lunas lewat Pembayaran Pemasok.`);
+          // A declined over-receive reverses its AP and received qty, which a PO line (no journal) cannot follow.
+          if (it.po.grns.length > 0) {
+            throw new VendorBillError(`${it.po.docNumber}: ada penerimaan lebih yang menunggu keputusan owner; tagih setelah disetujui atau ditolak.`);
+          }
+          const remaining = round2(Number(it.receivedQty) - (billed.get(it.id) ?? 0));
+          if (l.qty > remaining + EPS) {
+            throw new VendorBillError(`Qty tagihan ${where} melebihi sisa yang diterima dan belum ditagih (${remaining})`);
+          }
+          if (it.po.paymentTermsDays != null) poTerms.push(it.po.paymentTermsDays);
+          lineRows.push({
+            type: "PO_ITEM",
+            poItem: { connect: { id: it.id } },
+            qty: l.qty,
+            price: l.price,
+            amount: round2(l.qty * l.price),
+            refPrice: Number(it.price),
+          });
         }
-        return bill;
-      },
-      { timeout: 20_000 }
-    );
-  } catch (e) {
-    if (isInvoiceNoClash(e)) throw new VendorBillError("Nomor invoice vendor sudah dipakai untuk supplier ini");
-    throw e;
-  }
+      }
+
+      if (stepLines.length > 0) {
+        const steps = await tx.workOrderStep.findMany({
+          where: { id: { in: stepLines.map((l) => l.sourceId) } },
+          select: {
+            id: true,
+            supplierId: true,
+            sequence: true,
+            stepName: true,
+            qty: true,
+            servicePrice: true,
+            wo: { select: { docNumber: true, status: true } },
+          },
+        });
+        const byId = new Map(steps.map((s) => [s.id, s]));
+        const billed = await billedQtyByWoStep(tx, steps.map((s) => s.id));
+        for (const l of stepLines) {
+          const st = byId.get(l.sourceId);
+          if (!st) throw new VendorBillError("Step WO tidak ditemukan, muat ulang halaman");
+          const where = `${st.wo.docNumber} step ${st.sequence}${st.stepName ? ` ${st.stepName}` : ""}`;
+          if (st.supplierId !== data.supplierId) throw new VendorBillError(`${where} bukan milik supplier ini`);
+          if (st.wo.status === "CANCELLED") throw new VendorBillError(`${st.wo.docNumber} sudah dibatalkan`);
+          const remaining = round2(Number(st.qty ?? 0) - (billed.get(st.id) ?? 0));
+          if (l.qty > remaining + EPS) {
+            throw new VendorBillError(`Qty tagihan ${where} melebihi sisa yang belum ditagih (${remaining})`);
+          }
+          lineRows.push({
+            type: "WO_STEP",
+            woStep: { connect: { id: st.id } },
+            qty: l.qty,
+            price: l.price,
+            amount: round2(l.qty * l.price),
+            refPrice: Number(st.servicePrice),
+          });
+        }
+      }
+
+      const terms = poTerms.length > 0 ? Math.max(...poTerms) : supplier.paymentTermsDays ?? 0;
+      const total = round2(lineRows.reduce((s, l) => s + Number(l.amount), 0));
+      const docNumber = await generateDocNumber("VENDOR_BILL", tx);
+      const bill = await tx.vendorBill.create({
+        data: {
+          docNumber,
+          supplierId: data.supplierId,
+          vendorInvoiceNo: data.vendorInvoiceNo,
+          billDate: data.billDate,
+          dueDate: data.dueDate ?? addDays(data.billDate, terms),
+          total,
+          status: total < EPS ? "PAID" : "UNPAID",
+          notes: data.notes || null,
+          createdById: userId,
+          lines: { create: lineRows },
+        },
+        select: { id: true, docNumber: true },
+      });
+
+      if (stepLines.length > 0) {
+        const res = await postVendorBillJournal(bill.id, userId, tx);
+        if (!res.ok && res.code !== "NOTHING_TO_POST") throw journalRefusal(res);
+      }
+      return bill;
+    },
+    { timeout: 20_000 }
+  );
 }
 
 /** Voids a bill with no live payment allocation and reverses its journal if it had one. */

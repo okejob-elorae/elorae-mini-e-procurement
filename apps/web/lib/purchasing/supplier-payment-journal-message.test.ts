@@ -177,7 +177,8 @@ describe("supplier payment mark refusal messages", () => {
       for (const code of RECEIPT_BLOCKED) {
         expect(refused[code], `${locale}.supplierPayments.markRefused.${code}`).toBeTruthy();
       }
-      expect(Object.keys(refused).sort()).toEqual([...RECEIPT_BLOCKED].sort());
+      // Plus the Vendor Billing refusal, which is not a receipt-state code.
+      expect(Object.keys(refused).sort()).toEqual([...RECEIPT_BLOCKED, "BILLED_VIA_VENDOR_BILL"].sort());
     }
   });
 

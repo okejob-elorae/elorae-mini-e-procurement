@@ -710,6 +710,15 @@ export async function declineGRNByOwner(id: string, userId: string) {
     if (grn.ownerDeclinedAt != null) {
       throw new Error('This GRN was already declined');
     }
+    // A live vendor bill on this PO matched the received qty this decline would take back.
+    if (grn.poId) {
+      const billed = await tx.vendorBillLine.count({
+        where: { poItem: { poId: grn.poId }, bill: { status: { not: 'VOID' } } },
+      });
+      if (billed > 0) {
+        throw new Error('Cannot decline: this PO is already billed through Vendor Billing. Void the bill first.');
+      }
+    }
 
     const lines = parseGrnStoredLines(grn.items);
     let reversedLines = 0;

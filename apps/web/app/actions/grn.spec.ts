@@ -254,6 +254,7 @@ describe("payment due date wiring", () => {
       },
       purchaseOrder: { update: vi.fn().mockResolvedValue({}) },
       pOStatusHistory: { create: vi.fn().mockResolvedValue({}) },
+      vendorBillLine: { count: vi.fn().mockResolvedValue(0) },
     };
     mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
 
@@ -269,6 +270,12 @@ describe("payment due date wiring", () => {
     expect(tx.gRN.update.mock.invocationCallOrder[0]).toBeLessThan(
       mockRecompute.mock.invocationCallOrder[0]
     );
+
+    // A live vendor bill on the PO blocks the decline before any stock is reversed.
+    tx.vendorBillLine.count.mockResolvedValue(1);
+    vi.mocked(tx.gRN.update).mockClear();
+    await expect(declineGRNByOwner("g1", "u1")).rejects.toThrow("already billed through Vendor Billing");
+    expect(tx.gRN.update).not.toHaveBeenCalled();
   });
 
   describe("createGRN", () => {

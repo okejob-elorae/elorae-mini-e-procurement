@@ -29,7 +29,7 @@ CREATE TABLE `VendorBill` (
     UNIQUE INDEX `VendorBill_docNumber_key`(`docNumber`),
     INDEX `VendorBill_supplierId_status_idx`(`supplierId`, `status`),
     INDEX `VendorBill_billDate_idx`(`billDate`),
-    UNIQUE INDEX `VendorBill_supplierId_vendorInvoiceNo_key`(`supplierId`, `vendorInvoiceNo`),
+    INDEX `VendorBill_supplierId_vendorInvoiceNo_idx`(`supplierId`, `vendorInvoiceNo`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 

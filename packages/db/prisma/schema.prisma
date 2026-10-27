@@ -3421,7 +3421,8 @@ model VendorBill {
   lines           VendorBillLine[]
   allocations     VendorPaymentAllocation[]
 
-  @@unique([supplierId, vendorInvoiceNo])
+  /// Not unique: a voided bill frees its number. The bill writer enforces uniqueness among live bills.
+  @@index([supplierId, vendorInvoiceNo])
   @@index([supplierId, status])
   @@index([billDate])
 }

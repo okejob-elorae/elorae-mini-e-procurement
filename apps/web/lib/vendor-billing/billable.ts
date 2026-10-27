@@ -4,6 +4,9 @@ type Db = Prisma.TransactionClient | typeof prisma;
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** An over-receive GRN the owner has neither approved nor declined yet. */
+export const PENDING_OWNER_DECISION = { requiresOwnerApproval: true, ownerApprovedAt: null, ownerDeclinedAt: null } as const;
+
 export type BillablePoItem = {
   poItemId: string;
   poId: string;
@@ -66,7 +69,12 @@ export async function listBillableSources(
 ): Promise<{ poItems: BillablePoItem[]; woSteps: BillableWoStep[] }> {
   const [poItems, woSteps] = await Promise.all([
     db.pOItem.findMany({
-      where: { receivedQty: { gt: 0 }, po: { supplierId, status: { not: "CANCELLED" } } },
+      // A PO with an over-receive awaiting the owner is not billable until it is decided: a decline
+      // reverses its AP and received qty, which a PO bill line (no journal) cannot follow.
+      where: {
+        receivedQty: { gt: 0 },
+        po: { supplierId, status: { not: "CANCELLED" }, grns: { none: PENDING_OWNER_DECISION } },
+      },
       select: {
         id: true,
         variantSku: true,

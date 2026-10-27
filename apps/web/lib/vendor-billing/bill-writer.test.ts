@@ -178,6 +178,30 @@ d("Vendor bill writer (test bed only)", () => {
     ).rejects.toThrow("sudah dipakai");
   });
 
+  it("lets a voided bill's invoice number be entered again", async () => {
+    const first = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] }, ids.user);
+    await voidVendorBill(first.id, "salah harga", ids.user);
+    const again = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 44_000 }] }, ids.user);
+    expect(again.id).not.toBe(first.id);
+  });
+
+  it("hides and refuses PO lines while an over-receive awaits the owner", async () => {
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-${tag}`, supplierId: ids.supplier, poId: ids.po, receivedBy: ids.user, totalAmount: 0, items: [], requiresOwnerApproval: true },
+    });
+    try {
+      expect((await listBillableSources(ids.supplier)).poItems).toEqual([]);
+      await expect(
+        createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 1, price: 45_000 }] }, ids.user)
+      ).rejects.toThrow("menunggu keputusan owner");
+
+      await prisma.gRN.update({ where: { id: grn.id }, data: { ownerApprovedAt: new Date() } });
+      expect((await listBillableSources(ids.supplier)).poItems).toHaveLength(1);
+    } finally {
+      await prisma.gRN.deleteMany({ where: { id: seededId(grn.id) } });
+    }
+  });
+
   it("commits nothing when the service cost account is unmapped", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "PRODUCTION_SERVICE_COST" } });
     await expect(
