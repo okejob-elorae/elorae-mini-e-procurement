@@ -3,8 +3,10 @@ import { generateSKU } from '@/lib/sku-generator';
 import { unknownVariantColors, validateAndNormalizeVariants } from '@/lib/items/normalize-variants';
 import { loadColorIndex } from '@/lib/items/variant-colors';
 import { parseItemVariants } from "@/lib/items/variants";
+import { ColorsNotInMasterError, ItemSkuExistsError } from "@/lib/items/save-refusals";
 import {
   findVariantSkuCollisions,
+  loadOtherItemsForCollisions,
   skusIntroducedByEdit,
   findVariantBarcodeCollisions,
   VariantBarcodeTakenError,
@@ -203,7 +205,7 @@ async function assertColorsInMaster(
   if (variants.length === 0) return;
   const unknown = unknownVariantColors(variants, await loadColorIndex(), existing);
   if (unknown.length > 0) {
-    throw new Error(`Warna not in the colour master: ${unknown.join(', ')}. Add it first.`);
+    throw new ColorsNotInMasterError(unknown);
   }
 }
 
@@ -217,7 +219,7 @@ export async function createItem(data: ItemFormData) {
 
   const existing = await prisma.item.findUnique({ where: { sku: finalSku } });
   if (existing) {
-    throw new Error('SKU already exists');
+    throw new ItemSkuExistsError(finalSku);
   }
 
   const categoryCode = await resolveCategoryCode(rest.categoryId ?? null);
@@ -230,11 +232,12 @@ export async function createItem(data: ItemFormData) {
 
   const item = await prisma.$transaction(async (tx) => {
     /* The parent SKU joins the check: one equal to another item's variant SKU shares its namespace. */
-    const createCollisions = await findVariantSkuCollisions(tx, {
+    const others = await loadOtherItemsForCollisions(tx);
+    const createCollisions = findVariantSkuCollisions(others, {
       skus: [finalSku, ...normalizedVariants.map((v) => v.sku)],
     });
     if (createCollisions.length > 0) throw new VariantSkuTakenError(createCollisions);
-    const createBarcodeCollisions = await findVariantBarcodeCollisions(tx, {
+    const createBarcodeCollisions = findVariantBarcodeCollisions(others, {
       barcodes: normalizedVariants.map((v) => v.barcode ?? ""),
     });
     if (createBarcodeCollisions.length > 0) throw new VariantBarcodeTakenError(createBarcodeCollisions);
@@ -308,16 +311,15 @@ export async function updateItem(
   if (rest.type === 'FINISHED_GOOD') {
     await assertColorsInMaster(normalizedVariants, parseItemVariants(existing.variants));
   }
-  const updateCollisions = await findVariantSkuCollisions(client, {
-    excludeItemId: id,
+  const others = await loadOtherItemsForCollisions(client, id);
+  const updateCollisions = findVariantSkuCollisions(others, {
     skus: skusIntroducedByEdit(
       parseItemVariants(existing.variants).map((v) => v.sku ?? ""),
       normalizedVariants.map((v) => v.sku),
     ),
   });
   if (updateCollisions.length > 0) throw new VariantSkuTakenError(updateCollisions);
-  const updateBarcodeCollisions = await findVariantBarcodeCollisions(client, {
-    excludeItemId: id,
+  const updateBarcodeCollisions = findVariantBarcodeCollisions(others, {
     barcodes: skusIntroducedByEdit(
       parseItemVariants(existing.variants).map((v) => v.barcode ?? ""),
       normalizedVariants.map((v) => v.barcode ?? ""),

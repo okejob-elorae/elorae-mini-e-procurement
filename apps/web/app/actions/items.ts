@@ -37,6 +37,12 @@ import {
   VariantSkuTakenError,
 } from "@/lib/items/variant-sku-collisions";
 import {
+  ColorsNotInMasterError,
+  DuplicateVariantBarcodeError,
+  DuplicateVariantSkuError,
+  ItemSkuExistsError,
+} from "@/lib/items/save-refusals";
+import {
   enqueueProductPushOnCreate,
   enqueueProductPushOnUpdate,
 } from '@/lib/jubelio/product-push';
@@ -71,7 +77,13 @@ async function requireSession() {
 
 export type ItemSaveRefusal = {
   success: false;
-  code: "VARIANT_SKU_TAKEN" | "VARIANT_BARCODE_TAKEN";
+  code:
+    | "VARIANT_SKU_TAKEN"
+    | "VARIANT_BARCODE_TAKEN"
+    | "ITEM_SKU_EXISTS"
+    | "COLOR_NOT_IN_MASTER"
+    | "DUPLICATE_VARIANT_SKU"
+    | "DUPLICATE_VARIANT_BARCODE";
   detail: string;
 };
 
@@ -83,6 +95,18 @@ function toItemSaveRefusal(error: unknown): ItemSaveRefusal | null {
   }
   if (error instanceof VariantBarcodeTakenError) {
     return { success: false, code: "VARIANT_BARCODE_TAKEN", detail: error.barcodes.join(", ") };
+  }
+  if (error instanceof ItemSkuExistsError) {
+    return { success: false, code: "ITEM_SKU_EXISTS", detail: error.sku };
+  }
+  if (error instanceof ColorsNotInMasterError) {
+    return { success: false, code: "COLOR_NOT_IN_MASTER", detail: error.colors.join(", ") };
+  }
+  if (error instanceof DuplicateVariantSkuError) {
+    return { success: false, code: "DUPLICATE_VARIANT_SKU", detail: error.sku };
+  }
+  if (error instanceof DuplicateVariantBarcodeError) {
+    return { success: false, code: "DUPLICATE_VARIANT_BARCODE", detail: error.barcode };
   }
   return null;
 }

@@ -1097,7 +1097,11 @@
   "items": {
     "saveRefusal": {
       "VARIANT_SKU_TAKEN": "Variant SKU {detail} is already used by another product.",
-      "VARIANT_BARCODE_TAKEN": "Barcode {detail} is already used by another product."
+      "VARIANT_BARCODE_TAKEN": "Barcode {detail} is already used by another product.",
+      "ITEM_SKU_EXISTS": "SKU {detail} is already used by another product.",
+      "COLOR_NOT_IN_MASTER": "Colour {detail} is not in the colour master yet. Add it first.",
+      "DUPLICATE_VARIANT_SKU": "Variant SKU {detail} appears more than once on this product.",
+      "DUPLICATE_VARIANT_BARCODE": "Barcode {detail} appears more than once on this product."
     },
     "variantListTitle": "Variant List",
     "noVariantsMatch": "No variants match these filters.",

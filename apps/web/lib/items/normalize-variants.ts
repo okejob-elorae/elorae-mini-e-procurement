@@ -6,6 +6,7 @@ import {
   type ColorIndex,
 } from "@elorae/db/variant-axes";
 import { skuMatchKey } from "@/lib/items/sku-match-key";
+import { DuplicateVariantBarcodeError, DuplicateVariantSkuError } from "@/lib/items/save-refusals";
 
 export type VariantGenerationBase = "category" | "parent";
 
@@ -113,14 +114,14 @@ export function validateAndNormalizeVariants(
   for (const row of normalized) {
     const key = skuMatchKey(row.sku);
     if (seen.has(key)) {
-      throw new Error(`Duplicate variant SKU "${row.sku}"`);
+      throw new DuplicateVariantSkuError(row.sku);
     }
     seen.add(key);
     const barcode = ((row as Record<string, string>).barcode ?? "").trim();
     if (barcode) {
       const barcodeKey = skuMatchKey(barcode);
       if (seenBarcodes.has(barcodeKey)) {
-        throw new Error(`Duplicate variant barcode "${barcode}"`);
+        throw new DuplicateVariantBarcodeError(barcode);
       }
       seenBarcodes.add(barcodeKey);
     }
