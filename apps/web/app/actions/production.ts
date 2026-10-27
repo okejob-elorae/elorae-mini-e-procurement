@@ -617,6 +617,8 @@ export async function issueWorkOrder(id: string, userId: string) {
       }
     });
     if (flipped.count !== 1) throw new Error('Work Order already issued');
+    // Stock covers the BOM now, so nothing left on its Request Item needs buying.
+    await cancelOpenLinesForWo(tx, id);
   });
 
   getActorName(userId)

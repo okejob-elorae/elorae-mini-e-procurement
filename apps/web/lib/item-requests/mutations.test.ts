@@ -200,6 +200,22 @@ d("Request Item writers (test bed only)", () => {
     ]);
   });
 
+  it("keeps both lines on the PO when an edit merges two same-SKU items into one", async () => {
+    const req = await createRequestFromWo(ids.wo, ids.user);
+    const fabric = (await linesOf(req.id)).find((l) => l.itemId === ids.fabric)!;
+    const extra = await prisma.itemRequestLine.create({ data: { requestId: req.id, itemId: ids.fabric, qty: 5, uomId: ids.uom } });
+    const po = await convertLinesToPo({ lineIds: [fabric.id, extra.id], supplierId: ids.supplier, prices: {} }, ids.user);
+    await prisma.$transaction(async (tx) => {
+      await unlinkPoItems(tx, po.id);
+      await tx.pOItem.deleteMany({ where: { poId: po.id } });
+      await tx.pOItem.create({ data: { poId: po.id, itemId: ids.fabric, qty: 20, price: 0, uomId: ids.uom } });
+      await relinkPoItems(tx, po.id);
+    });
+    const after = await prisma.itemRequestLine.findMany({ where: { id: { in: [fabric.id, extra.id] } } });
+    expect(after.every((l) => l.status === "CONVERTED" && l.poId === po.id)).toBe(true);
+    expect(after.filter((l) => l.poItemId).length).toBe(1);
+  });
+
   it("resizes the OPEN request's lines when the WO plan changes", async () => {
     const req = await createRequestFromWo(ids.wo, ids.user);
     await prisma.workOrder.update({ where: { id: ids.wo }, data: { plannedQty: 20 } });
@@ -216,7 +232,7 @@ d("Request Item writers (test bed only)", () => {
     await prisma.workOrder.update({ where: { id: ids.wo }, data: { status: "CANCELLED" } });
     await expect(
       convertLinesToPo({ lineIds: [lines[0].id], supplierId: ids.supplier, prices: {} }, ids.user)
-    ).rejects.toThrow("sudah dibatalkan");
+    ).rejects.toThrow("tidak berstatus DRAFT");
 
     await prisma.$transaction((tx) => cancelOpenLinesForWo(tx, ids.wo));
     expect((await linesOf(req.id)).every((l) => l.status === "CANCELLED")).toBe(true);

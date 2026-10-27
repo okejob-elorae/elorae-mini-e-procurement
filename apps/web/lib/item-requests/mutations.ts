@@ -27,23 +27,33 @@ export async function getUncoveredShortages(db: Db, woId: string, shortages: WoS
   if (shortages.length === 0) return [];
   const converted = await db.itemRequestLine.findMany({
     where: { status: "CONVERTED", request: { sourceWoId: woId }, po: { status: { in: [...INBOUND_PO_STATUSES] } } },
-    select: { itemId: true, qty: true, poItemId: true },
+    select: { itemId: true, variantSku: true, qty: true, poId: true },
   });
-  const poItemIds = converted.map((l) => l.poItemId).filter((id): id is string => !!id);
-  const received = new Map(
-    (poItemIds.length > 0
-      ? await db.pOItem.findMany({ where: { id: { in: poItemIds } }, select: { id: true, qty: true, receivedQty: true } })
-      : []
-    ).map((i) => [i.id, { qty: Number(i.qty), received: Number(i.receivedQty) }])
-  );
-  const inbound = new Map<string, number>();
+  // Grouped per PO and SKU, not per linked item: a PO edit may merge, split or cut same-SKU lines.
+  const key = (poId: string | null, itemId: string, variantSku: string | null) => `${poId}|${itemId}|${variantSku ?? ""}`;
+  const requested = new Map<string, { itemId: string; qty: number }>();
   for (const l of converted) {
-    // A PO edit may have cut the line, so it brings at most its own qty. Received qty is already
-    // on hand, so it is in the live shortage; only the rest is still coming.
-    const poItem = l.poItemId ? received.get(l.poItemId) : undefined;
-    const ordered = poItem ? Math.min(Number(l.qty), poItem.qty) : Number(l.qty);
-    const outstanding = Math.max(0, ordered - (poItem?.received ?? 0));
-    inbound.set(l.itemId, (inbound.get(l.itemId) ?? 0) + outstanding);
+    const k = key(l.poId, l.itemId, l.variantSku);
+    requested.set(k, { itemId: l.itemId, qty: (requested.get(k)?.qty ?? 0) + Number(l.qty) });
+  }
+  const poIds = [...new Set(converted.map((l) => l.poId).filter((id): id is string => !!id))];
+  const stillComing = new Map<string, number>();
+  if (poIds.length > 0) {
+    const poItems = await db.pOItem.findMany({
+      where: { poId: { in: poIds } },
+      select: { poId: true, itemId: true, variantSku: true, qty: true, receivedQty: true },
+    });
+    // Received qty is already on hand, so it is in the live shortage; only the rest is still coming.
+    for (const i of poItems) {
+      const k = key(i.poId, i.itemId, i.variantSku);
+      stillComing.set(k, (stillComing.get(k) ?? 0) + Math.max(0, Number(i.qty) - Number(i.receivedQty)));
+    }
+  }
+  const inbound = new Map<string, number>();
+  for (const [k, r] of requested) {
+    // This WO counts no more than it asked for, nor more than the PO still brings for that SKU.
+    const outstanding = Math.min(r.qty, stillComing.get(k) ?? 0);
+    inbound.set(r.itemId, (inbound.get(r.itemId) ?? 0) + outstanding);
   }
   return shortages
     .map((s) => ({ ...s, shortage: Math.round((s.shortage - (inbound.get(s.itemId) ?? 0)) * 100) / 100 }))
@@ -203,7 +213,8 @@ export async function unlinkPoItems(tx: Prisma.TransactionClient, poId: string) 
 
 /**
  * After `updatePO` recreated the items: each linked line takes the first unused item of the same
- * SKU. A line whose SKU the edit removed is released back to the purchasing queue.
+ * SKU. A line whose SKU the edit removed from the PO is released back to the purchasing queue; one
+ * whose SKU is still there but merged into a sibling's item stays CONVERTED on the PO, unlinked.
  */
 export async function relinkPoItems(tx: Prisma.TransactionClient, poId: string) {
   const lines = await tx.itemRequestLine.findMany({
@@ -212,12 +223,15 @@ export async function relinkPoItems(tx: Prisma.TransactionClient, poId: string) 
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   if (lines.length === 0) return;
-  const unused = await tx.pOItem.findMany({ where: { poId }, select: { id: true, itemId: true, variantSku: true } });
+  const items = await tx.pOItem.findMany({ where: { poId }, select: { id: true, itemId: true, variantSku: true } });
+  const sameSku = (i: (typeof items)[number], line: (typeof lines)[number]) =>
+    i.itemId === line.itemId && (i.variantSku ?? "") === line.variantSku;
+  const unused = [...items];
   const dropped: string[] = [];
   for (const line of lines) {
-    const at = unused.findIndex((i) => i.itemId === line.itemId && (i.variantSku ?? "") === line.variantSku);
+    const at = unused.findIndex((i) => sameSku(i, line));
     if (at < 0) {
-      dropped.push(line.id);
+      if (!items.some((i) => sameSku(i, line))) dropped.push(line.id);
       continue;
     }
     await tx.itemRequestLine.update({ where: { id: line.id }, data: { poItemId: unused.splice(at, 1)[0].id } });
@@ -282,8 +296,9 @@ export async function convertLinesToPo(input: ConvertInput, userId: string) {
         },
         orderBy: { createdAt: "asc" },
       });
-      const deadWo = lines.find((l) => l.request.sourceWo?.status === "CANCELLED")?.request.sourceWo;
-      if (deadWo) throw new ItemRequestError(`${deadWo.docNumber} sudah dibatalkan, batalkan baris request-nya`);
+      // Same rule as createRequestFromWo: only a DRAFT WO is still waiting on material.
+      const movedOn = lines.find((l) => l.request.sourceWo && l.request.sourceWo.status !== "DRAFT")?.request.sourceWo;
+      if (movedOn) throw new ItemRequestError(`${movedOn.docNumber} sudah tidak berstatus DRAFT, batalkan baris request-nya`);
       const po = await createPurchaseOrder(
         {
           supplierId: input.supplierId,
