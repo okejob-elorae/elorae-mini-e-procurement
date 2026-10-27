@@ -1,6 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { findVariantBarcodeCollisions, findVariantSkuCollisions, skusIntroducedByEdit } from "./variant-sku-collisions";
+import {
+  findVariantBarcodeCollisions as findBarcodes,
+  findVariantSkuCollisions as findSkus,
+  loadOtherItemsForCollisions,
+  skusIntroducedByEdit,
+} from "./variant-sku-collisions";
+
+const findVariantSkuCollisions = async (_client: unknown, opts: { excludeItemId?: string; skus: string[] }) =>
+  findSkus(await loadOtherItemsForCollisions(prisma, opts.excludeItemId), opts);
+const findVariantBarcodeCollisions = async (_client: unknown, opts: { excludeItemId?: string; barcodes: string[] }) =>
+  findBarcodes(await loadOtherItemsForCollisions(prisma, opts.excludeItemId), opts);
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");

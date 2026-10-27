@@ -15,21 +15,30 @@ export class VariantBarcodeTakenError extends Error {
   }
 }
 
+export type OtherItemRow = { sku: string; variants: unknown };
+
+/**
+ * Every other item's SKU and variants, read once per save so the SKU and barcode finders share a
+ * single scan of Item.variants instead of one each.
+ */
+export async function loadOtherItemsForCollisions(
+  client: PrismaClient | Prisma.TransactionClient,
+  excludeItemId?: string,
+): Promise<OtherItemRow[]> {
+  return client.item.findMany({
+    where: excludeItemId ? { id: { not: excludeItemId } } : {},
+    select: { sku: true, variants: true },
+  });
+}
+
 /**
  * Variant SKUs live inside Item.variants JSON with no index, so the database cannot refuse a
  * duplicate across items. This is the application-side check the import already runs, applied to
  * the single-item path. Compares under skuMatchKey because the collation folds case and accents.
  */
-export async function findVariantSkuCollisions(
-  client: PrismaClient | Prisma.TransactionClient,
-  opts: { excludeItemId?: string; skus: string[] },
-): Promise<string[]> {
+export function findVariantSkuCollisions(others: OtherItemRow[], opts: { skus: string[] }): string[] {
   const wanted = opts.skus.filter((s) => s.trim() !== "");
   if (wanted.length === 0) return [];
-  const others = await client.item.findMany({
-    where: opts.excludeItemId ? { id: { not: opts.excludeItemId } } : {},
-    select: { sku: true, variants: true },
-  });
   const taken = new Set<string>();
   for (const item of others) {
     taken.add(skuMatchKey(item.sku));
@@ -46,16 +55,9 @@ export async function findVariantSkuCollisions(
  * The barcode twin of findVariantSkuCollisions: variant barcodes also live in Item.variants JSON
  * with no index. Compared under skuMatchKey, like the import's BARCODE_TAKEN check.
  */
-export async function findVariantBarcodeCollisions(
-  client: PrismaClient | Prisma.TransactionClient,
-  opts: { excludeItemId?: string; barcodes: string[] },
-): Promise<string[]> {
+export function findVariantBarcodeCollisions(others: OtherItemRow[], opts: { barcodes: string[] }): string[] {
   const wanted = opts.barcodes.filter((b) => b.trim() !== "");
   if (wanted.length === 0) return [];
-  const others = await client.item.findMany({
-    where: opts.excludeItemId ? { id: { not: opts.excludeItemId } } : {},
-    select: { variants: true },
-  });
   const taken = new Set<string>();
   for (const item of others) {
     const variants = Array.isArray(item.variants) ? item.variants : [];

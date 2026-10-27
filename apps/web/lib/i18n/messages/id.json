@@ -1097,7 +1097,11 @@
   "items": {
     "saveRefusal": {
       "VARIANT_SKU_TAKEN": "SKU varian {detail} sudah dipakai produk lain.",
-      "VARIANT_BARCODE_TAKEN": "Barcode {detail} sudah dipakai produk lain."
+      "VARIANT_BARCODE_TAKEN": "Barcode {detail} sudah dipakai produk lain.",
+      "ITEM_SKU_EXISTS": "SKU {detail} sudah dipakai produk lain.",
+      "COLOR_NOT_IN_MASTER": "Warna {detail} belum ada di master warna. Tambahkan dulu.",
+      "DUPLICATE_VARIANT_SKU": "SKU varian {detail} muncul lebih dari sekali di produk ini.",
+      "DUPLICATE_VARIANT_BARCODE": "Barcode {detail} muncul lebih dari sekali di produk ini."
     },
     "variantListTitle": "Daftar Varian",
     "noVariantsMatch": "Tidak ada varian yang cocok dengan filter ini.",

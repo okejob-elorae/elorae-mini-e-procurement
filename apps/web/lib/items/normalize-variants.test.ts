@@ -6,6 +6,7 @@ import {
   unknownVariantColors,
   validateAndNormalizeVariants,
 } from "./normalize-variants";
+import { DuplicateVariantBarcodeError, DuplicateVariantSkuError } from "./save-refusals";
 
 describe("validateAndNormalizeVariants", () => {
   const variants = [
@@ -41,6 +42,12 @@ describe("validateAndNormalizeVariants", () => {
     expect(() =>
       validateAndNormalizeVariants("A", [{ sku: "A-1", barcode: "X1" }, { sku: "A-2", barcode: "x1" }], {}),
     ).toThrow("Duplicate variant barcode");
+    expect(() =>
+      validateAndNormalizeVariants("A", [{ sku: "A-X" }, { sku: "A-x" }], {}),
+    ).toThrow(DuplicateVariantSkuError);
+    expect(() =>
+      validateAndNormalizeVariants("A", [{ sku: "A-1", barcode: "X1" }, { sku: "A-2", barcode: "x1" }], {}),
+    ).toThrow(DuplicateVariantBarcodeError);
   });
 
   it("refuses duplicate variant SKUs and barcodes that differ only by an accent, as the collation does", () => {

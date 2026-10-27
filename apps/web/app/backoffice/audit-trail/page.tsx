@@ -30,6 +30,7 @@ import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { toCsv } from "@/lib/reports/csv";
 
 type AuditLogRow = Awaited<ReturnType<typeof getAuditLogs>>['logs'][number];
 
@@ -57,19 +58,17 @@ function exportToCSV(logs: AuditLogRow[]): string {
     'Sensitive',
     'Reason',
   ];
-  const rows = logs.map((l) => [
-    l.createdAt instanceof Date ? l.createdAt.toISOString() : l.createdAt,
-    (l.user as { name?: string; email?: string })?.email ?? l.userId,
-    l.action,
-    l.entityType,
-    l.entityId,
-    l.ipAddress ?? '',
-    l.sensitiveDataAccessed ?? '',
-    l.reason ?? '',
-  ]);
-  const escape = (v: string) =>
-    /[,"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-  return [headers.join(','), ...rows.map((r) => r.map(String).map(escape).join(','))].join('\n');
+  const rows = logs.map((l) => ({
+    "Timestamp": l.createdAt instanceof Date ? l.createdAt.toISOString() : String(l.createdAt),
+    "User": (l.user as { name?: string; email?: string })?.email ?? l.userId,
+    "Action": l.action,
+    "Entity Type": l.entityType,
+    "Entity ID": l.entityId,
+    "IP": l.ipAddress ?? "",
+    "Sensitive": String(l.sensitiveDataAccessed ?? ""),
+    "Reason": l.reason ?? "",
+  }));
+  return toCsv(headers, rows);
 }
 
 export default function AuditTrailPage() {

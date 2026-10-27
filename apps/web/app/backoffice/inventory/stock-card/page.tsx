@@ -40,6 +40,7 @@ import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
    exact refType -> label lookup. */
 import { ledgerRefMessageKey } from '@/lib/inventory/ledger-ref-display';
 import { toast } from 'sonner';
+import { toCsv } from "@/lib/reports/csv";
 
 const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
   title: 'Kartu Stok',
@@ -204,19 +205,18 @@ export default function StockCardPage() {
       'Harga Satuan',
       'Nilai Persediaan',
     ];
-    const rows = data.movements.map((m) => [
-      format(new Date(m.date), 'yyyy-MM-dd HH:mm'),
-      m.docNumber,
-      describeRefType(m.refType),
-      m.in ?? '',
-      m.out ?? '',
-      m.balance,
-      m.unitCost ?? '',
+    const rows = data.movements.map((m) => ({
+      Tanggal: format(new Date(m.date), "yyyy-MM-dd HH:mm"),
+      Dokumen: m.docNumber,
+      Keterangan: describeRefType(m.refType),
+      Masuk: m.in ?? "",
+      Keluar: m.out ?? "",
+      Sisa: m.balance,
+      "Harga Satuan": m.unitCost ?? "",
       /* null (not recorded) exports as an empty cell, never a bare 0. */
-      m.balanceValue ?? '',
-    ]);
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+      "Nilai Persediaan": m.balanceValue ?? "",
+    }));
+    const blob = new Blob([toCsv(headers, rows)], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
