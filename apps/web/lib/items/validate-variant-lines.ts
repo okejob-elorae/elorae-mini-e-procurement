@@ -1,4 +1,5 @@
 import { parseItemVariants } from '@/lib/items/variants';
+import { ReceiptLineError } from "@/lib/inventory/receipt-errors";
 
 type ItemLookup = {
   findMany: (args: {
@@ -21,16 +22,20 @@ export async function assertLinesVariantSkusMatchItemDefinitions(
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const line of lines) {
     const row = byId.get(line.itemId);
-    if (!row) throw new Error(`Item not found: ${line.itemId}`);
+    if (!row) throw new ReceiptLineError("ITEM_NOT_FOUND", line.itemId, `Item not found: ${line.itemId}`);
     const variants = parseItemVariants(row.variants);
     const allowed = new Set(variants.map((v) => (v.sku ?? '').trim()).filter(Boolean));
     if (allowed.size > 0) {
       const v = line.variantSku?.trim();
       if (!v || !allowed.has(v)) {
-        throw new Error(`Select a valid variant for item ${row.sku}`);
+        throw new ReceiptLineError("VARIANT_REQUIRED", row.sku, `Select a valid variant for item ${row.sku}`);
       }
     } else if (line.variantSku?.trim()) {
-      throw new Error(`Item ${row.sku} has no variants; clear variant selection`);
+      throw new ReceiptLineError(
+        "VARIANT_NOT_ALLOWED",
+        row.sku,
+        `Item ${row.sku} has no variants; clear variant selection`,
+      );
     }
   }
 }

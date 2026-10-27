@@ -284,6 +284,7 @@ d("production stock movement (test bed only)", () => {
       });
 
       const receipt = await receiveFG({ woId, qtyReceived: 10, qtyRejected: 0 }, userId);
+      if (!receipt.success) throw new Error(`receipt refused: ${receipt.code}`);
 
       const rows = await prisma.inventoryValue.findMany({ where: { itemId: seededId(fgItemId) } });
       expect(rows).toHaveLength(1);

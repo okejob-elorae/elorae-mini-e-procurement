@@ -18,6 +18,8 @@ const {
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => ({
+  ConcurrentFirstReceiptError: class ConcurrentFirstReceiptError extends Error {},
+  MainStockNegativeError: class MainStockNegativeError extends Error {},
   moveMainStock: vi.fn(),
   recalcItemSellingPrice: vi.fn(),
   prisma: {
@@ -145,4 +147,30 @@ describe("production actor trust", () => {
       expect(mockWoFindUnique).not.toHaveBeenCalled();
     }
   );
+});
+
+describe("receiveFG refusals", () => {
+  const input = { woId: "wo1", qtyReceived: 5, qtyRejected: 0 };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+  });
+
+  it("returns a typed refusal for a stock-negative refusal instead of throwing", async () => {
+    const { MainStockNegativeError } = await import("@elorae/db");
+    mockTransaction.mockRejectedValue(new MainStockNegativeError("i1", -5, 2));
+    expect(await receiveFG(input, "u1")).toEqual({ success: false, code: "MAIN_STOCK_NEGATIVE" });
+  });
+
+  it("returns a typed refusal for a missing work order", async () => {
+    const { WorkOrderNotFoundError } = await import("@/lib/inventory/receipt-errors");
+    mockTransaction.mockRejectedValue(new WorkOrderNotFoundError());
+    expect(await receiveFG(input, "u1")).toEqual({ success: false, code: "WORK_ORDER_NOT_FOUND" });
+  });
+
+  it("still throws an unknown error", async () => {
+    mockTransaction.mockRejectedValue(new Error("db exploded"));
+    await expect(receiveFG(input, "u1")).rejects.toThrow("db exploded");
+  });
 });
