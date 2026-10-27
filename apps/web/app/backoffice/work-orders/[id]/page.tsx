@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
   CardContent,
@@ -48,6 +49,7 @@ import {
   getWorkOrderRollAllocationStatus,
   issueWorkOrder,
   cancelWorkOrder,
+  completeWorkOrder,
   getMaterialIssueForPrint,
   updateWOHppAdjustments,
   getAdditionalMaterialsPreview,
@@ -104,6 +106,10 @@ export default function WorkOrderDetailPage() {
   const [additionalPreviewLoading, setAdditionalPreviewLoading] = useState(false);
   const [additionalSubmitLoading, setAdditionalSubmitLoading] = useState(false);
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
+  const canManageWO = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE);
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [completeReason, setCompleteReason] = useState('');
+  const [completeLoading, setCompleteLoading] = useState(false);
   const [postingReceiptId, setPostingReceiptId] = useState<string | null>(null);
 
   async function handlePostReceiptJournal(receiptId: string) {
@@ -186,6 +192,23 @@ export default function WorkOrderDetailPage() {
     }
   };
 
+  const handleComplete = async () => {
+    if (!session?.user?.id || !wo || !completeReason.trim()) return;
+    setCompleteLoading(true);
+    try {
+      await completeWorkOrder(String(wo.id), session.user.id, completeReason);
+      toast.success(tToasts('workOrderCompleted'));
+      setCompleteOpen(false);
+      setCompleteReason('');
+      const updated = await getWorkOrderById(id);
+      setWO(updated);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : tToasts('failedToCompleteWO'));
+    } finally {
+      setCompleteLoading(false);
+    }
+  };
+
   const openPrintNota = (issueId: string) => {
     setPrintIssueId(issueId);
     setPrintData(null);
@@ -210,10 +233,9 @@ export default function WorkOrderDetailPage() {
       vendorName: printData.vendorName,
       issuedAt: printData.issuedAt,
       issueType: printData.issueType,
-      totalCost: printData.totalCost,
       lines: printData.lines,
       labels: {
-        title: 'Nota ke CMT',
+        title: 'Surat Jalan CMT',
         doc: 'Doc',
         wo: 'WO',
         vendor: 'Vendor',
@@ -222,10 +244,9 @@ export default function WorkOrderDetailPage() {
         item: 'Item',
         qty: 'Qty',
         uom: 'UOM',
-        totalCost: 'Total cost',
       },
     });
-    printHtmlInIframe(html, 'Print Nota ke CMT', { errorMessage: tToasts('failedToLoadIssueForPrint') });
+    printHtmlInIframe(html, 'Print Surat Jalan CMT', { errorMessage: tToasts('failedToLoadIssueForPrint') });
   };
 
   const handleSaveHpp = async () => {
@@ -359,6 +380,9 @@ export default function WorkOrderDetailPage() {
               <Link href={`/backoffice/work-orders/${id}/receive`}>
                 <Button variant="outline">Receive FG</Button>
               </Link>
+              {wo.status === 'PARTIAL' && canManageWO && (
+                <Button onClick={() => setCompleteOpen(true)}>{tWO('completeWO')}</Button>
+              )}
             </>
           )}
           {wo.status !== "CANCELLED" && (
@@ -810,7 +834,7 @@ export default function WorkOrderDetailPage() {
             }}
           />
           <DialogHeader>
-            <DialogTitle>Nota ke CMT</DialogTitle>
+            <DialogTitle>Surat Jalan CMT</DialogTitle>
           </DialogHeader>
           {printData ? (
             <div className="space-y-4">
@@ -839,7 +863,6 @@ export default function WorkOrderDetailPage() {
                   ))}
                 </TableBody>
               </Table>
-              <p className="font-semibold">Total cost: {Number(printData.totalCost ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
               <div className="flex gap-2 no-print">
                 <Button variant="outline" onClick={closePrintNota}>Close</Button>
                 <Button onClick={handlePrintNota}><Printer className="mr-2 h-4 w-4" />Print</Button>
@@ -848,6 +871,39 @@ export default function WorkOrderDetailPage() {
           ) : (
             <p className="text-muted-foreground">Loading...</p>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={completeOpen} onOpenChange={(open) => !open && !completeLoading && setCompleteOpen(false)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{tWO('completeWOTitle')}</DialogTitle>
+            <CardDescription>
+              {tWO('completeWODescription', {
+                actual: Number(wo.actualQty ?? 0).toLocaleString(),
+                planned: Number(wo.plannedQty ?? 0).toLocaleString(),
+              })}
+            </CardDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="complete-reason">{tWO('completeWOReason')}</Label>
+            <Textarea
+              id="complete-reason"
+              value={completeReason}
+              onChange={(e) => setCompleteReason(e.target.value)}
+              maxLength={500}
+              rows={3}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setCompleteOpen(false)} disabled={completeLoading}>
+              {tWO('completeWOBack')}
+            </Button>
+            <Button onClick={handleComplete} disabled={completeLoading || !completeReason.trim()}>
+              {completeLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {tWO('completeWO')}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

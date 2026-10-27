@@ -87,7 +87,7 @@
     "navStockMovements": "Pergerakan",
     "workOrders": "Perintah Kerja",
     "navWorkOrdersList": "Daftar Perintah Kerja",
-    "registerNotaCmt": "Register Nota CMT",
+    "registerNotaCmt": "Surat Jalan CMT",
     "production": "Produksi",
     "navProductionPlanning": "Plan Kerja",
     "navForecast": "Forecast & S&OP",
@@ -890,6 +890,8 @@
     "WORK_ORDER_NOT_FOUND": "Work order tidak ditemukan."
   },
   "toasts": {
+    "failedToCompleteWO": "Gagal menyelesaikan Work Order",
+    "workOrderCompleted": "Work Order diselesaikan",
     "failedToLoadWorkOrder": "Gagal memuat work order",
     "workOrderIssued": "Work order diterbitkan",
     "failedToIssue": "Gagal menerbitkan",
@@ -1282,6 +1284,11 @@
     }
   },
   "workOrders": {
+    "completeWOBack": "Kembali",
+    "completeWOReason": "Alasan (wajib)",
+    "completeWODescription": "CMT tidak akan mengirim sisanya. WO ditutup di {actual} dari {planned}. Stok dan jurnal tidak berubah.",
+    "completeWOTitle": "Selesaikan work order ini?",
+    "completeWO": "Selesaikan",
     "export": {
       "button": "Ekspor Excel",
       "exporting": "Mengekspor...",
@@ -1382,7 +1389,9 @@
     "cardDescription": "Tambah, edit, atau hapus tipe pemasok. Tipe yang masih dipakai tidak dapat dihapus."
   },
   "notaRegister": {
-    "pageSubtitle": "Daftar pengiriman material (nota) ke CMT",
+    "pageTitle": "Surat Jalan CMT",
+    "listTitle": "Daftar Surat Jalan",
+    "pageSubtitle": "Daftar surat jalan material ke CMT",
     "filterSubtitle": "Vendor (CMT), tanggal, dan tipe issue",
     "issuesCount": "{count} issue",
     "emptyHint": "Pilih filter dan klik Muat, atau belum ada data."

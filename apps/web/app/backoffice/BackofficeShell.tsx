@@ -6,7 +6,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard,
-  Building2,
   Package,
   FileText,
   Settings,
@@ -145,11 +144,6 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
       },
       {
-        labelKey: 'registerNotaCmt',
-        href: '/backoffice/work-orders/nota-register',
-        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
-      },
-      {
         labelKey: 'vendorReturns',
         href: '/backoffice/vendor-returns',
         permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
@@ -219,6 +213,11 @@ const navItems: NavItem[] = [
         labelKey: 'navWorkOrdersList',
         href: '/backoffice/work-orders',
         permission: PERMISSIONS.WORK_ORDERS_VIEW,
+      },
+      {
+        labelKey: 'registerNotaCmt',
+        href: '/backoffice/work-orders/nota-register',
+        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
       },
     ],
   },

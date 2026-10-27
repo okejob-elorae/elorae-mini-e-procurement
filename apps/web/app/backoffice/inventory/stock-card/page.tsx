@@ -505,6 +505,7 @@ export default function StockCardPage() {
                     <TableHead>Keterangan</TableHead>
                     <TableHead>Notes</TableHead>
                     <TableHead>Variant</TableHead>
+                    <TableHead>Satuan</TableHead>
                     <TableHead className="text-right text-green-600 dark:text-green-400">Masuk</TableHead>
                     <TableHead className="text-right text-red-600 dark:text-red-400">Keluar</TableHead>
                     <TableHead className="text-right">Sisa</TableHead>
@@ -521,6 +522,8 @@ export default function StockCardPage() {
                       {/* StockLedgerEntry has no notes column - always empty for a ledger row. */}
                       <TableCell>-</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
+                      {/* Ledger qty is in the item's base UOM, the same unit material issues use. */}
+                      <TableCell>{data.item?.uom?.code ?? '-'}</TableCell>
                       <TableCell className="text-right text-green-600 dark:text-green-400">
                         {m.in != null ? m.in.toLocaleString() : '-'}
                       </TableCell>
