@@ -112,7 +112,8 @@ export default function WorkOrderDetailPage() {
   const canManageWO = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.WORK_ORDERS_MANAGE);
   const canCreateRequest = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.ITEM_REQUESTS_MANAGE);
   const tIR = useTranslations('itemRequests');
-  const [shortageInfo, setShortageInfo] = useState<Awaited<ReturnType<typeof getWorkOrderShortages>> | null>(null);
+  // undefined while loading, null when the check failed (the server still refuses a short Issue).
+  const [shortageInfo, setShortageInfo] = useState<Awaited<ReturnType<typeof getWorkOrderShortages>> | null | undefined>(undefined);
   const [requestBusy, setRequestBusy] = useState(false);
   const woStatus = wo?.status;
 
@@ -388,7 +389,7 @@ export default function WorkOrderDetailPage() {
           {wo.status === 'DRAFT' && (
             <Button
               onClick={handleIssue}
-              disabled={!shortageInfo || shortageInfo.shortages.length > 0}
+              disabled={shortageInfo === undefined || (shortageInfo?.shortages.length ?? 0) > 0}
               title={shortageInfo && shortageInfo.shortages.length > 0 ? tIR('woIssueBlocked') : undefined}
             >
               Issue
@@ -442,18 +443,20 @@ export default function WorkOrderDetailPage() {
                 </li>
               ))}
             </ul>
-            <div className="mt-3">
-              {shortageInfo.openRequest ? (
-                <Link href={`/backoffice/item-requests/${shortageInfo.openRequest.id}`}>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {shortageInfo.request && (
+                <Link href={`/backoffice/item-requests/${shortageInfo.request.id}`}>
                   <Button variant="outline" size="sm">
-                    {tIR('woViewRequest', { docNumber: shortageInfo.openRequest.docNumber })}
+                    {tIR('woViewRequest', { docNumber: shortageInfo.request.docNumber })}
                   </Button>
                 </Link>
-              ) : canCreateRequest ? (
+              )}
+              {/* An OPEN request follows WO edits on its own; a new one is only for a gap nothing covers yet. */}
+              {canCreateRequest && shortageInfo.uncoveredCount > 0 && shortageInfo.request?.status !== 'OPEN' && (
                 <Button size="sm" onClick={handleCreateRequest} disabled={requestBusy}>
                   {tIR('woCreateRequest')}
                 </Button>
-              ) : null}
+              )}
             </div>
           </AlertDescription>
         </Alert>

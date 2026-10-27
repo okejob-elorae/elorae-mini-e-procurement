@@ -45,3 +45,22 @@ CREATE TABLE `ItemRequestLine` (
     INDEX `ItemRequestLine_poId_idx`(`poId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- Real foreign keys, which `relationMode = "prisma"` would otherwise leave out (see
+-- 20261021100000_field_sales_foreign_keys). ON DELETE matches the Prisma relations: CASCADE for a
+-- request's own lines, SET NULL for the PO item link (`updatePO` replaces PO items), RESTRICT for
+-- the rest. No app path deletes a WorkOrder, User, UOM or PurchaseOrder; `deleteItem` counts
+-- `ItemRequestLine`. Both tables are created empty above, so no orphan preflight is needed.
+
+-- AddForeignKey
+ALTER TABLE `ItemRequest`
+  ADD CONSTRAINT `ItemRequest_sourceWoId_fkey` FOREIGN KEY IF NOT EXISTS (`sourceWoId`) REFERENCES `WorkOrder`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `ItemRequest_createdById_fkey` FOREIGN KEY IF NOT EXISTS (`createdById`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `ItemRequestLine`
+  ADD CONSTRAINT `ItemRequestLine_requestId_fkey` FOREIGN KEY IF NOT EXISTS (`requestId`) REFERENCES `ItemRequest`(`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `ItemRequestLine_itemId_fkey` FOREIGN KEY IF NOT EXISTS (`itemId`) REFERENCES `Item`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `ItemRequestLine_uomId_fkey` FOREIGN KEY IF NOT EXISTS (`uomId`) REFERENCES `UOM`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `ItemRequestLine_poId_fkey` FOREIGN KEY IF NOT EXISTS (`poId`) REFERENCES `PurchaseOrder`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `ItemRequestLine_poItemId_fkey` FOREIGN KEY IF NOT EXISTS (`poItemId`) REFERENCES `POItem`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;

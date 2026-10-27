@@ -1471,6 +1471,7 @@ model POItem {
   uomId       String
   notes       String?
   createdAt   DateTime      @default(now())
+  requestLine ItemRequestLine?
   @@index([poId])
   @@index([itemId])
   @@index([poId, itemId, variantSku])
@@ -3367,6 +3368,7 @@ model ItemRequestLine {
   poId       String?
   po         PurchaseOrder?        @relation(fields: [poId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   poItemId   String?               @unique
+  poItem     POItem?               @relation(fields: [poItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   createdAt  DateTime              @default(now())
 
   @@index([requestId])

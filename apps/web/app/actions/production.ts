@@ -33,6 +33,7 @@ import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { formatDateOnlyJakarta } from '@/lib/date-only';
 import { getWoShortages, formatShortages, type WoShortage } from '@/lib/item-requests/shortage';
+import { cancelOpenLinesForWo, getUncoveredShortages, syncRequestForWo } from '@/lib/item-requests/mutations';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { toReceiptRefusal, type ReceiptRefusal } from "@/lib/inventory/receipt-refusal";
@@ -516,6 +517,8 @@ export async function updateWorkOrder(woId: string, data: WOFormData, _userId: s
       });
     }
   });
+  // An OPEN Request Item was sized for the old plan; resize it so purchasing buys the new gap.
+  await syncRequestForWo(woId);
 
   revalidatePath('/backoffice/work-orders');
   revalidatePath(`/backoffice/work-orders/${woId}`);
@@ -614,10 +617,14 @@ export async function issueWorkOrder(id: string, userId: string) {
   revalidatePath(`/backoffice/work-orders/${id}`);
 }
 
-/** BOM shortages blocking a DRAFT WO from being issued, and its open Request Item if any. */
+/**
+ * BOM shortages blocking a DRAFT WO from being issued, its latest live Request Item, and how many
+ * short materials are neither on that request nor already on order.
+ */
 export async function getWorkOrderShortages(woId: string): Promise<{
   shortages: WoShortage[];
-  openRequest: { id: string; docNumber: string } | null;
+  request: { id: string; docNumber: string; status: string } | null;
+  uncoveredCount: number;
 }> {
   const session = await auth();
   if (!session) throw new Error('Unauthorized');
@@ -627,17 +634,18 @@ export async function getWorkOrderShortages(woId: string): Promise<{
     where: { id: woId },
     select: { status: true, finishedGoodId: true, plannedQty: true, outputMode: true, skuBreakdown: true },
   });
-  if (!wo || wo.status !== 'DRAFT') return { shortages: [], openRequest: null };
+  if (!wo || wo.status !== 'DRAFT') return { shortages: [], request: null, uncoveredCount: 0 };
 
-  const [shortages, openRequest] = await Promise.all([
+  const [shortages, request] = await Promise.all([
     getWoShortages(wo),
     prisma.itemRequest.findFirst({
-      where: { sourceWoId: woId, status: 'OPEN' },
-      select: { id: true, docNumber: true },
+      where: { sourceWoId: woId, status: { not: 'CANCELLED' } },
+      select: { id: true, docNumber: true, status: true },
       orderBy: { createdAt: 'desc' },
     }),
   ]);
-  return { shortages, openRequest };
+  const uncovered = await getUncoveredShortages(prisma, woId, shortages);
+  return { shortages, request, uncoveredCount: uncovered.length };
 }
 
 const issueSchema = z.object({
@@ -1406,13 +1414,16 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
     throw new Error('Cannot cancel Work Order with FG receipts');
   }
   
-  await prisma.workOrder.update({
-    where: { id },
-    data: {
-      status: 'CANCELLED',
-      canceledAt: new Date(),
-      canceledReason: reason
-    }
+  await prisma.$transaction(async (tx) => {
+    await tx.workOrder.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
+        canceledAt: new Date(),
+        canceledReason: reason
+      }
+    });
+    await cancelOpenLinesForWo(tx, id);
   });
 
   getActorName(userId)

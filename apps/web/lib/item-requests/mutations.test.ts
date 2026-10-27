@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { createRequestFromWo, cancelRequestLines, convertLinesToPo } from "./mutations";
+import {
+  createRequestFromWo,
+  cancelRequestLines,
+  convertLinesToPo,
+  cancelOpenLinesForWo,
+  releaseLinesOfCancelledPo,
+  syncRequestForWo,
+} from "./mutations";
 import { deriveRequestStatus } from "./status";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -53,9 +60,10 @@ d("Request Item writers (test bed only)", () => {
   afterEach(async () => {
     // seededId refuses an unset id, so a failed fixture hook cannot turn these into whole-table deletes.
     if (ids.wo) {
-      const poIds = (await prisma.itemRequestLine.findMany({ where: { request: { sourceWoId: seededId(ids.wo) } }, select: { poId: true } }))
-        .map((l) => l.poId)
-        .filter((id): id is string => !!id);
+      // By supplier, not by line: a voided PO's lines no longer point at it.
+      const poIds = ids.supplier
+        ? (await prisma.purchaseOrder.findMany({ where: { supplierId: seededId(ids.supplier) }, select: { id: true } })).map((p) => p.id)
+        : [];
       await prisma.itemRequestLine.deleteMany({ where: { request: { sourceWoId: seededId(ids.wo) } } });
       await prisma.itemRequest.deleteMany({ where: { sourceWoId: seededId(ids.wo) } });
       if (poIds.length > 0) {
@@ -130,5 +138,44 @@ d("Request Item writers (test bed only)", () => {
     expect((await prisma.itemRequest.findUniqueOrThrow({ where: { id: req.id } })).status).toBe("CONVERTED");
 
     await expect(cancelRequestLines([button.id])).rejects.toThrow("sudah diproses");
+  });
+
+  it("does not request a gap already on a live PO, and requests it again once that PO is voided", async () => {
+    const req = await createRequestFromWo(ids.wo, ids.user);
+    const lines = await linesOf(req.id);
+    const po = await convertLinesToPo({ lineIds: lines.map((l) => l.id), supplierId: ids.supplier, prices: {} }, ids.user);
+
+    await expect(createRequestFromWo(ids.wo, ids.user)).rejects.toThrow("belum dipesan");
+
+    await prisma.$transaction(async (tx) => {
+      await tx.purchaseOrder.update({ where: { id: po.id }, data: { status: "CANCELLED" } });
+      await releaseLinesOfCancelledPo(tx, po.id);
+    });
+    const released = await linesOf(req.id);
+    expect(released.every((l) => l.status === "OPEN" && l.poId === null && l.poItemId === null)).toBe(true);
+    expect((await prisma.itemRequest.findUniqueOrThrow({ where: { id: req.id } })).status).toBe("OPEN");
+  });
+
+  it("resizes the OPEN request's lines when the WO plan changes", async () => {
+    const req = await createRequestFromWo(ids.wo, ids.user);
+    await prisma.workOrder.update({ where: { id: ids.wo }, data: { plannedQty: 20 } });
+    await syncRequestForWo(ids.wo);
+    expect((await linesOf(req.id)).map((l) => [l.itemId, Number(l.qty), l.status])).toEqual([
+      [ids.fabric, 30, "OPEN"],
+      [ids.button, 80, "OPEN"],
+    ]);
+  });
+
+  it("cancels OPEN lines with their WO and refuses to buy for a cancelled WO", async () => {
+    const req = await createRequestFromWo(ids.wo, ids.user);
+    const lines = await linesOf(req.id);
+    await prisma.workOrder.update({ where: { id: ids.wo }, data: { status: "CANCELLED" } });
+    await expect(
+      convertLinesToPo({ lineIds: [lines[0].id], supplierId: ids.supplier, prices: {} }, ids.user)
+    ).rejects.toThrow("sudah dibatalkan");
+
+    await prisma.$transaction((tx) => cancelOpenLinesForWo(tx, ids.wo));
+    expect((await linesOf(req.id)).every((l) => l.status === "CANCELLED")).toBe(true);
+    expect((await prisma.itemRequest.findUniqueOrThrow({ where: { id: req.id } })).status).toBe("CANCELLED");
   });
 });
