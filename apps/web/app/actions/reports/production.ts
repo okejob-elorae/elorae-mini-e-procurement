@@ -3,6 +3,7 @@
 import { prisma } from '@elorae/db';
 import { Decimal } from 'decimal.js';
 import * as XLSX from 'xlsx';
+import { toCsv } from "@/lib/reports/csv";
 
 export type VendorPerformanceRow = {
   docNumber: string;
@@ -96,9 +97,18 @@ export async function exportVendorPerformanceReport(
   }));
 
   if (format === 'csv') {
-    const headers = data.length ? Object.keys(data[0]).join(',') : 'Doc Number,Finished Good,Planned Qty,Actual Qty,Efficiency %,Material Cost,Return Value,Status,Completion Time (days)';
-    const lines = data.map((r) => Object.values(r).map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    return { data: [headers, ...lines].join('\n'), filename: `vendor-performance-${Date.now()}.csv` };
+    const headers = [
+      "Doc Number",
+      "Finished Good",
+      "Planned Qty",
+      "Actual Qty",
+      "Efficiency %",
+      "Material Cost",
+      "Return Value",
+      "Status",
+      "Completion Time (days)",
+    ];
+    return { data: toCsv(headers, data), filename: `vendor-performance-${Date.now()}.csv` };
   }
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);

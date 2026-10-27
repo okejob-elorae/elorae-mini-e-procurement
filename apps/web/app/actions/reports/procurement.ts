@@ -4,6 +4,7 @@ import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
 import { POStatus } from '@elorae/db';
 import * as XLSX from 'xlsx';
+import { toCsv } from "@/lib/reports/csv";
 
 export type ProcurementReportFilters = {
   fromDate?: Date;
@@ -122,17 +123,19 @@ export async function exportProcurementReport(
   const rows = reportToRows(report);
 
   if (format === 'csv') {
-    const headers =
-      rows.length > 0
-        ? Object.keys(rows[0]).join(',')
-        : 'Doc Number,Supplier,Supplier Code,Status,ETA Date,ETA Alert,Grand Total,Outstanding Qty,Outstanding Value,GRNs';
-    if (rows.length === 0) {
-      return { data: headers + '\n', filename: `procurement-report-${Date.now()}.csv` };
-    }
-    const headerLine = Object.keys(rows[0]).join(',');
-    const lines = rows.map((r) => Object.values(r).map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    const data = [headerLine, ...lines].join('\n');
-    return { data, filename: `procurement-report-${Date.now()}.csv` };
+    const headers = [
+      "Doc Number",
+      "Supplier",
+      "Supplier Code",
+      "Status",
+      "ETA Date",
+      "ETA Alert",
+      "Grand Total",
+      "Outstanding Qty",
+      "Outstanding Value",
+      "GRNs",
+    ];
+    return { data: toCsv(headers, rows), filename: `procurement-report-${Date.now()}.csv` };
   }
 
   const wb = XLSX.utils.book_new();

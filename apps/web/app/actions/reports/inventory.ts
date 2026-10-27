@@ -3,6 +3,7 @@
 import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
 import * as XLSX from 'xlsx';
+import { toCsv } from "@/lib/reports/csv";
 import { auth } from '@/lib/auth';
 import { requireAnyPermission, PERMISSIONS } from '@/lib/rbac';
 
@@ -188,9 +189,8 @@ export async function exportInventorySnapshotReport(
   }));
 
   if (format === 'csv') {
-    const headers = data.length ? Object.keys(data[0]).join(',') : 'SKU,Name,Type,UOM,Qty On Hand,Avg Cost,Total Value,% of Total';
-    const lines = data.map((r) => Object.values(r).map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','));
-    return { data: [headers, ...lines].join('\n'), filename: `inventory-snapshot-${Date.now()}.csv` };
+    const headers = ["SKU", "Name", "Type", "UOM", "Qty On Hand", "Avg Cost", "Total Value", "% of Total"];
+    return { data: toCsv(headers, data), filename: `inventory-snapshot-${Date.now()}.csv` };
   }
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);
