@@ -114,7 +114,11 @@ export function ItemDetailClient({
     if (!initialData?.id) return;
     setIsSaving(true);
     try {
-      await updateItem(initialData.id, data);
+      const result = await updateItem(initialData.id, data);
+      if (!result.success) {
+        toast.error(tItems(`saveRefusal.${result.code}`, { detail: result.detail }));
+        return;
+      }
       if (data.type === ItemType.FINISHED_GOOD && consumptionRules) {
         await saveConsumptionRules(initialData.id, consumptionRules);
       }

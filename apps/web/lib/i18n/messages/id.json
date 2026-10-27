@@ -1087,6 +1087,10 @@
     "trackingNumber": "Resi / nomor pelacakan"
   },
   "items": {
+    "saveRefusal": {
+      "VARIANT_SKU_TAKEN": "SKU varian {detail} sudah dipakai produk lain.",
+      "VARIANT_BARCODE_TAKEN": "Barcode {detail} sudah dipakai produk lain."
+    },
     "variantListTitle": "Daftar Varian",
     "noVariantsMatch": "Tidak ada varian yang cocok dengan filter ini.",
     "variantSku": "SKU Varian",

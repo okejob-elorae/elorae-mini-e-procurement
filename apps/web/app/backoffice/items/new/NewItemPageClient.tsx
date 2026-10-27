@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { ItemForm } from '@/components/forms/ItemForm';
 import { createItem, saveConsumptionRules } from '@/app/actions/items';
@@ -10,6 +11,7 @@ import { ItemType } from '@/lib/constants/enums';
 
 export function NewItemPageClient() {
   const router = useRouter();
+  const tItems = useTranslations("items");
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (
@@ -25,7 +27,12 @@ export function NewItemPageClient() {
   ) => {
     setIsLoading(true);
     try {
-      const item = await createItem(data);
+      const result = await createItem(data);
+      if (!result.success) {
+        toast.error(tItems(`saveRefusal.${result.code}`, { detail: result.detail }));
+        return;
+      }
+      const item = result.item;
       if (consumptionRules && consumptionRules.length > 0) {
         await saveConsumptionRules(item.id, consumptionRules);
       }

@@ -33,6 +33,10 @@ import {
   type SerializedItem,
 } from '@/lib/items/mutations';
 import {
+  VariantBarcodeTakenError,
+  VariantSkuTakenError,
+} from "@/lib/items/variant-sku-collisions";
+import {
   enqueueProductPushOnCreate,
   enqueueProductPushOnUpdate,
 } from '@/lib/jubelio/product-push';
@@ -65,11 +69,37 @@ async function requireSession() {
   return session;
 }
 
-export async function createItem(data: ItemFormData) {
+export type ItemSaveRefusal = {
+  success: false;
+  code: "VARIANT_SKU_TAKEN" | "VARIANT_BARCODE_TAKEN";
+  detail: string;
+};
+
+export type ItemSaveResult = { success: true; item: SerializedItem } | ItemSaveRefusal;
+
+function toItemSaveRefusal(error: unknown): ItemSaveRefusal | null {
+  if (error instanceof VariantSkuTakenError) {
+    return { success: false, code: "VARIANT_SKU_TAKEN", detail: error.skus.join(", ") };
+  }
+  if (error instanceof VariantBarcodeTakenError) {
+    return { success: false, code: "VARIANT_BARCODE_TAKEN", detail: error.barcodes.join(", ") };
+  }
+  return null;
+}
+
+export async function createItem(data: ItemFormData): Promise<ItemSaveResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_CREATE);
 
-  const { item, serialized } = await createItemLib(data);
+  let created: Awaited<ReturnType<typeof createItemLib>>;
+  try {
+    created = await createItemLib(data);
+  } catch (error) {
+    const refusal = toItemSaveRefusal(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+  const { item, serialized } = created;
 
   getActorName(session.user.id)
     .then((triggeredByName) =>
@@ -80,14 +110,37 @@ export async function createItem(data: ItemFormData) {
   enqueueProductPushOnCreate(item.id, session.user.id).catch(() => {});
 
   revalidatePath('/backoffice/items');
-  return serialized;
+  return { success: true, item: serialized };
 }
 
-export async function updateItem(id: string, data: ItemFormData) {
+export async function updateItem(id: string, data: ItemFormData): Promise<ItemSaveResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.ITEMS_EDIT);
 
-  const txResult = await prisma.$transaction(async (tx) => {
+  let txResult: Awaited<ReturnType<typeof runItemUpdate>>;
+  try {
+    txResult = await runItemUpdate(session.user.id, id, data);
+  } catch (error) {
+    const refusal = toItemSaveRefusal(error);
+    if (refusal) return refusal;
+    throw error;
+  }
+
+  if (txResult.outboxRowId) {
+    void apiFetch("POST", `/jubelio/outbox/enqueue/${txResult.outboxRowId}`, {
+      userId: session.user.id,
+    }).catch(() => {});
+  } else {
+    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
+  }
+
+  revalidatePath('/backoffice/items');
+  revalidatePath(`/backoffice/items/${id}`);
+  return { success: true, item: txResult.updated.serialized };
+}
+
+async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
+  return prisma.$transaction(async (tx) => {
     const beforeItem = await tx.item.findUnique({
       where: { id },
       select: {
@@ -120,7 +173,7 @@ export async function updateItem(id: string, data: ItemFormData) {
       const recalc = await recalcItemSellingPrice(tx, {
         itemId: id,
         trigger: "MARGIN_CHANGE",
-        changedById: session.user.id,
+        changedById: userId,
       });
       if (recalc.applied) {
         outboxRowId = recalc.outboxRowId;
@@ -137,25 +190,13 @@ export async function updateItem(id: string, data: ItemFormData) {
           additionalCostUsed: null,
           triggerReason: "MANUAL_EDIT",
           fgReceiptId: null,
-          changedById: session.user.id,
+          changedById: userId,
         },
       });
     }
 
     return { updated, outboxRowId };
   }, { timeout: 15000 });
-
-  if (txResult.outboxRowId) {
-    void apiFetch("POST", `/jubelio/outbox/enqueue/${txResult.outboxRowId}`, {
-      userId: session.user.id,
-    }).catch(() => {});
-  } else {
-    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
-  }
-
-  revalidatePath('/backoffice/items');
-  revalidatePath(`/backoffice/items/${id}`);
-  return txResult.updated.serialized;
 }
 
 export type DeleteItemActionResult =

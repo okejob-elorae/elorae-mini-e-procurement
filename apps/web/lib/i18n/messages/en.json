@@ -1087,6 +1087,10 @@
     "trackingNumber": "Resi / tracking number"
   },
   "items": {
+    "saveRefusal": {
+      "VARIANT_SKU_TAKEN": "Variant SKU {detail} is already used by another product.",
+      "VARIANT_BARCODE_TAKEN": "Barcode {detail} is already used by another product."
+    },
     "variantListTitle": "Variant List",
     "noVariantsMatch": "No variants match these filters.",
     "variantSku": "Variant SKU",

@@ -8,6 +8,13 @@ export class VariantSkuTakenError extends Error {
   }
 }
 
+export class VariantBarcodeTakenError extends Error {
+  constructor(public readonly barcodes: string[]) {
+    super(`Variant barcode already used by another item: ${barcodes.join(", ")}`);
+    this.name = "VariantBarcodeTakenError";
+  }
+}
+
 /**
  * Variant SKUs live inside Item.variants JSON with no index, so the database cannot refuse a
  * duplicate across items. This is the application-side check the import already runs, applied to
@@ -33,6 +40,31 @@ export async function findVariantSkuCollisions(
     }
   }
   return wanted.filter((s) => taken.has(skuMatchKey(s)));
+}
+
+/**
+ * The barcode twin of findVariantSkuCollisions: variant barcodes also live in Item.variants JSON
+ * with no index. Compared under skuMatchKey, like the import's BARCODE_TAKEN check.
+ */
+export async function findVariantBarcodeCollisions(
+  client: PrismaClient | Prisma.TransactionClient,
+  opts: { excludeItemId?: string; barcodes: string[] },
+): Promise<string[]> {
+  const wanted = opts.barcodes.filter((b) => b.trim() !== "");
+  if (wanted.length === 0) return [];
+  const others = await client.item.findMany({
+    where: opts.excludeItemId ? { id: { not: opts.excludeItemId } } : {},
+    select: { variants: true },
+  });
+  const taken = new Set<string>();
+  for (const item of others) {
+    const variants = Array.isArray(item.variants) ? item.variants : [];
+    for (const v of variants) {
+      const barcode = (v as Record<string, unknown>)?.barcode;
+      if (typeof barcode === "string" && barcode.trim() !== "") taken.add(skuMatchKey(barcode));
+    }
+  }
+  return wanted.filter((b) => taken.has(skuMatchKey(b)));
 }
 
 /**

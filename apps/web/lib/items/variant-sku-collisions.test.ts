@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { findVariantSkuCollisions, skusIntroducedByEdit } from "./variant-sku-collisions";
+import { findVariantBarcodeCollisions, findVariantSkuCollisions, skusIntroducedByEdit } from "./variant-sku-collisions";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -31,7 +31,7 @@ d("findVariantSkuCollisions (test bed only)", () => {
         type: "FINISHED_GOOD",
         uomId,
         isActive: true,
-        variants: [{ Warna: "Merah", sku: `TST-A-${token}-MERAH` }],
+        variants: [{ Warna: "Merah", sku: `TST-A-${token}-MERAH`, barcode: `899${token}` }],
       },
     });
     itemAId = a.id;
@@ -93,6 +93,28 @@ d("findVariantSkuCollisions (test bed only)", () => {
     const added = skusIntroducedByEdit(saved, [legacy, itemBSku.replace("TST-B", "TST-A")]);
     expect(added).toHaveLength(1);
     expect(await findVariantSkuCollisions(prisma, { excludeItemId: itemBId, skus: added })).toEqual(added);
+  });
+
+  describe("findVariantBarcodeCollisions", () => {
+    it("flags a barcode another item's variant carries, case-insensitively", async () => {
+      const barcode = `899${token.toLowerCase()}`;
+      expect(await findVariantBarcodeCollisions(prisma, { barcodes: [barcode] })).toEqual([barcode]);
+    });
+
+    it("ignores the excluded item's own barcode", async () => {
+      expect(
+        await findVariantBarcodeCollisions(prisma, { excludeItemId: itemAId, barcodes: [`899${token}`] }),
+      ).toEqual([]);
+    });
+
+    it("passes an unused barcode and skips blanks", async () => {
+      expect(await findVariantBarcodeCollisions(prisma, { barcodes: [`unused-${token}`, "", "  "] })).toEqual([]);
+      expect(await findVariantBarcodeCollisions(prisma, { barcodes: [] })).toEqual([]);
+    });
+
+    it("does not treat a SKU as a barcode", async () => {
+      expect(await findVariantBarcodeCollisions(prisma, { barcodes: [`TST-A-${token}-MERAH`] })).toEqual([]);
+    });
   });
 });
 
