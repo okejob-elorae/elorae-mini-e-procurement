@@ -6,6 +6,8 @@ import { encryptBankAccount } from '@/lib/encryption';
 import { generateSupplierCode } from '@/lib/docNumber';
 import { createPurchaseOrderFromOfflinePayload } from '@/lib/purchase-orders/mutations';
 import { parsePaymentTermsDays } from "@/lib/purchase-orders/payment-terms";
+import { updateSupplier, supplierUpdateSchema } from "@/lib/suppliers/mutations";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 
 export const dynamic = 'force-dynamic';
 
@@ -18,13 +20,18 @@ export async function POST(req: NextRequest) {
     }
 
     const operation = await req.json();
+    const permissions = session.user.permissions ?? [];
 
+    /* Each case is gated on the permission its online counterpart action enforces. */
     switch (operation.type) {
       case 'SUPPLIER_CREATE':
+        if (!hasPermission(permissions, PERMISSIONS.SUPPLIERS_CREATE)) return forbidden();
         return await handleSupplierCreate(operation.payload);
       case 'SUPPLIER_UPDATE':
+        if (!hasPermission(permissions, PERMISSIONS.SUPPLIERS_EDIT)) return forbidden();
         return await handleSupplierUpdate(operation.payload);
       case 'PO_CREATE':
+        if (!hasPermission(permissions, PERMISSIONS.PURCHASE_ORDERS_CREATE)) return forbidden();
         return await handlePOCreate(operation.payload, session.user.id);
       default:
         return NextResponse.json(
@@ -39,6 +46,10 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function forbidden() {
+  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
 async function handleSupplierCreate(payload: any) {
@@ -85,32 +96,29 @@ async function handleSupplierCreate(payload: any) {
 
 async function handleSupplierUpdate(payload: any) {
   try {
-    const { id, ...rest } = { ...payload };
-    delete rest.categoryId;
+    const id = payload?.id;
+    if (typeof id !== "string" || !id) {
+      return NextResponse.json({ error: "Validation error" }, { status: 400 });
+    }
 
-    if ("paymentTermsDays" in rest) {
-      const terms = parsePaymentTermsDays(rest.paymentTermsDays);
-      if (!terms.ok) {
-        return NextResponse.json(
-          { error: "Payment terms must be a whole number of days from 0 to 365" },
-          { status: 400 }
-        );
+    /* Same schema and writer as PUT /api/suppliers/[id]: unlisted columns, `id` and `status` included, are dropped. */
+    const parsed = supplierUpdateSchema.safeParse(payload);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: "Validation error", details: parsed.error.issues },
+        { status: 400 }
+      );
+    }
+
+    let supplier;
+    try {
+      supplier = await updateSupplier(id, parsed.data);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Supplier code already exists") {
+        return NextResponse.json({ error: error.message }, { status: 400 });
       }
-      rest.paymentTermsDays = terms.value;
+      throw error;
     }
-
-    let bankAccountEnc = undefined;
-    if (rest.bankAccount) {
-      bankAccountEnc = encryptBankAccount(rest.bankAccount, 'DEFAULT_PIN');
-    }
-
-    const supplier = await prisma.supplier.update({
-      where: { id },
-      data: {
-        ...rest,
-        bankAccountEnc,
-      },
-    });
 
     return NextResponse.json({ success: true, data: supplier });
   } catch (error) {
