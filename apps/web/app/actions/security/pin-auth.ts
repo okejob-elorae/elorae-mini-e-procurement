@@ -4,6 +4,7 @@ import { prisma } from "@elorae/db";
 import bcrypt from "bcryptjs";
 import { auth } from "@/lib/auth";
 import { verifyPin, type PinAuthResult } from "@/lib/security/pin";
+import { CHANGE_PASSWORD_ACTION } from "@/lib/security/attempt-throttle";
 import { SENSITIVE_ACTIONS } from "@/app/actions/security/pin-constants";
 
 export type { PinAuthResult };
@@ -61,7 +62,8 @@ export async function getPinAttempts(
   if (!session?.user?.id) return [];
   const userId = session.user.id;
   const attempts = await prisma.pinAttempt.findMany({
-    where: { userId },
+    /* The table also holds the password throttle's attempts; this is the PIN history. */
+    where: { userId, action: { not: CHANGE_PASSWORD_ACTION } },
     orderBy: { createdAt: 'desc' },
     take: limit,
     select: { id: true, action: true, success: true, ipAddress: true, createdAt: true },

@@ -376,11 +376,12 @@ describe("payment due date wiring", () => {
       });
       mockTransaction.mockImplementation(async (fn: (t: unknown) => unknown) => fn(tx));
 
-      await createGRN(
+      const result = await createGRN(
         { supplierId: "s1", items: [{ itemId: "i1", qty: 5, unitCost: 1 }] } as never,
         "u1"
       );
 
+      expect(result.success).toBe(true);
       expect(mockRecompute).not.toHaveBeenCalled();
     });
   });

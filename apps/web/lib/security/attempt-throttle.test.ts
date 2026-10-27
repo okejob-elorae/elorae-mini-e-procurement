@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { throttledCompare, MAX_FAILED_ATTEMPTS } from "./attempt-throttle";
 
-describe("throttledCompare", () => {
+const url = process.env.DATABASE_URL ?? "";
+const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
+const d = isProd ? describe.skip : describe;
+
+d("throttledCompare", () => {
   let userId = "";
 
   beforeEach(async () => {
