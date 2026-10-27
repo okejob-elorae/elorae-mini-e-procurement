@@ -87,7 +87,7 @@
     "navStockMovements": "Movements",
     "workOrders": "Work Orders",
     "navWorkOrdersList": "Work Orders List",
-    "registerNotaCmt": "Register Nota CMT",
+    "registerNotaCmt": "CMT Delivery Notes",
     "production": "Production",
     "navProductionPlanning": "Plan Kerja",
     "navForecast": "Forecast & S&OP",
@@ -890,6 +890,8 @@
     "WORK_ORDER_NOT_FOUND": "Work order not found."
   },
   "toasts": {
+    "failedToCompleteWO": "Failed to complete Work Order",
+    "workOrderCompleted": "Work Order completed",
     "failedToLoadWorkOrder": "Failed to load work order",
     "workOrderIssued": "Work Order issued",
     "failedToIssue": "Failed to issue",
@@ -1278,6 +1280,11 @@
     }
   },
   "workOrders": {
+    "completeWOBack": "Back",
+    "completeWOReason": "Reason (required)",
+    "completeWODescription": "The CMT will not deliver the rest. The work order closes at {actual} of {planned}. Stock and journals are not changed.",
+    "completeWOTitle": "Complete this work order?",
+    "completeWO": "Complete",
     "export": {
       "button": "Export Excel",
       "exporting": "Exporting...",
@@ -1378,7 +1385,9 @@
     "cardDescription": "Add, edit, or remove supplier types. Types in use cannot be deleted."
   },
   "notaRegister": {
-    "pageSubtitle": "List of material delivery (nota) to CMT",
+    "pageTitle": "CMT Delivery Notes",
+    "listTitle": "Delivery Notes",
+    "pageSubtitle": "Material delivery notes (surat jalan) sent to CMT",
     "filterSubtitle": "Vendor (CMT), date, and issue type",
     "issuesCount": "{count} issue(s)",
     "emptyHint": "Select filters and click Load, or no data yet."

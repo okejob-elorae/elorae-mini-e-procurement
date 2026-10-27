@@ -31,6 +31,7 @@ import {
 } from '@/lib/work-orders/queries';
 import { resolveWoLeadTimeFields } from '@/lib/leadtime/wo-snapshot';
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
+import { formatDateOnlyJakarta } from '@/lib/date-only';
 import { applyChainSignal } from '@/lib/leadtime/auto-confirm';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { toReceiptRefusal, type ReceiptRefusal } from "@/lib/inventory/receipt-refusal";
@@ -1173,10 +1174,13 @@ async function receiveFGInner(data: ReceiptFormData, userId: string) {
       (wo.actualQty?.toString() ? Number(wo.actualQty) : 0) + qtyAccepted;
     const plannedQty = Number(wo.plannedQty);
     const meetsTarget = newActualQty >= plannedQty;
-    const completedAt = meetsTarget ? (wo.completedAt ?? new Date()) : null;
+    // A WO closed short by `completeWorkOrder` stays COMPLETED when a late receipt still
+    // leaves it under plan, instead of dropping back to PARTIAL with a null completedAt.
+    const completedNow = meetsTarget || wo.status === 'COMPLETED';
+    const completedAt = completedNow ? (wo.completedAt ?? new Date()) : null;
     let actualLeadDays: number | undefined;
     if (
-      meetsTarget &&
+      completedNow &&
       wo.actualLeadDays == null &&
       wo.issuedAt != null
     ) {
@@ -1189,7 +1193,7 @@ async function receiveFGInner(data: ReceiptFormData, userId: string) {
       where: { id: data.woId },
       data: {
         actualQty: newActualQty,
-        status: meetsTarget ? 'COMPLETED' : 'PARTIAL',
+        status: completedNow ? 'COMPLETED' : 'PARTIAL',
         // Set once when WO first reaches Completed; keep on later over-production receipts
         completedAt,
         ...(actualLeadDays !== undefined ? { actualLeadDays } : {}),
@@ -1400,8 +1404,78 @@ export async function cancelWorkOrder(id: string, userId: string, reason?: strin
       notifyWOStatusUpdated(id, wo.docNumber, wo.status, 'CANCELLED', triggeredByName)
     )
     .catch(() => {});
-  
+
   revalidatePath('/backoffice/work-orders');
+}
+
+const completeReasonSchema = z.string().trim().min(1).max(500);
+
+/**
+ * Closes a PARTIAL work order short: the CMT will not deliver the rest of the plan. No stock or
+ * journal effect — `actualQty` stays at what was received, and leftover material goes through the
+ * vendor return / reconciliation flows. The reason is appended to `notes` and the audit log.
+ */
+export async function completeWorkOrder(id: string, userId: string, reason: string) {
+  const session = await auth();
+  if (!session) throw new Error('Unauthorized');
+  requirePermission(session.user.permissions, PERMISSIONS.WORK_ORDERS_MANAGE);
+  assertActor(session.user.id, userId);
+  const trimmedReason = completeReasonSchema.parse(reason);
+
+  const now = new Date();
+  const wo = await prisma.$transaction(async (tx) => {
+    const current = await tx.workOrder.findUnique({
+      where: { id },
+      select: {
+        docNumber: true,
+        status: true,
+        notes: true,
+        issuedAt: true,
+        actualLeadDays: true,
+        receipts: { select: { id: true } },
+      },
+    });
+    if (!current) throw new Error('Work Order not found');
+    if (current.status !== 'PARTIAL' || current.receipts.length === 0) {
+      throw new Error('Only a PARTIAL work order can be completed manually');
+    }
+
+    const actualLeadDays =
+      current.actualLeadDays == null && current.issuedAt != null
+        ? computeActualLeadDays(current.issuedAt, now)
+        : undefined;
+    const note = `[Closed short ${formatDateOnlyJakarta(now)}] ${trimmedReason}`;
+
+    // Compare-and-swap on status so a receipt or cancel committing in between is not overwritten.
+    const updated = await tx.workOrder.updateMany({
+      where: { id, status: 'PARTIAL' },
+      data: {
+        status: 'COMPLETED',
+        completedAt: now,
+        notes: current.notes ? `${current.notes}\n${note}` : note,
+        ...(actualLeadDays !== undefined ? { actualLeadDays } : {}),
+      },
+    });
+    if (updated.count === 0) throw new Error('Work Order status changed, refresh and try again');
+    return current;
+  });
+
+  await logAudit({
+    userId: session.user.id,
+    action: 'COMPLETE_SHORT',
+    entityType: 'WorkOrder',
+    entityId: id,
+    changes: { before: { status: 'PARTIAL' }, after: { status: 'COMPLETED', reason: trimmedReason } },
+  });
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyWOStatusUpdated(id, wo.docNumber, 'PARTIAL', 'COMPLETED', triggeredByName)
+    )
+    .catch(() => {});
+
+  revalidatePath('/backoffice/work-orders');
+  revalidatePath(`/backoffice/work-orders/${id}`);
 }
 
 export async function getWorkOrders(
@@ -1917,14 +1991,14 @@ export async function getMaterialIssuesForCMTRegister(
     where.issueType = filters.issueType as 'FABRIC' | 'ACCESSORIES';
   }
 
-  const mapIssue = (i: { id: string; docNumber: string; issueType: string; issuedAt: Date; totalCost: unknown; wo?: { docNumber?: string; vendor?: { name?: string; code?: string } } }) => {
+  // Surat Jalan CMT: a delivery note to the CMT, so no material cost leaves the server.
+  const mapIssue = (i: { id: string; docNumber: string; issueType: string; issuedAt: Date; wo?: { docNumber?: string; vendor?: { name?: string; code?: string } } }) => {
     const wo = i.wo;
     return {
       id: i.id,
       docNumber: i.docNumber,
       issueType: i.issueType,
       issuedAt: i.issuedAt,
-      totalCost: Number(i.totalCost),
       woDocNumber: wo?.docNumber ?? '',
       vendorName: wo?.vendor?.name ?? wo?.vendor?.code ?? '',
     };
@@ -1969,7 +2043,7 @@ export async function getMaterialIssuesForCMTRegister(
   return issues.map((i) => mapIssue(i as any));
 }
 
-/** Get a single material issue with full details for print (Nota ke CMT). */
+/** Get a single material issue for print (Surat Jalan CMT): quantities only, no cost. */
 export async function getMaterialIssueForPrint(issueId: string) {
   const issue = await prisma.materialIssue.findUnique({
     where: { id: issueId },
@@ -1991,7 +2065,7 @@ export async function getMaterialIssueForPrint(issueId: string) {
       rawItems = null;
     }
   }
-  type ItemLine = { itemId: string; qty: number; uomId: string; unitPrice?: number; totalCost?: number };
+  type ItemLine = { itemId: string; qty: number; uomId: string };
   const items: ItemLine[] = Array.isArray(rawItems)
     ? rawItems.filter((i): i is ItemLine => i != null && typeof i === 'object' && typeof (i as { itemId?: unknown }).itemId === 'string')
     : rawItems && typeof rawItems === 'object'
@@ -2010,14 +2084,11 @@ export async function getMaterialIssueForPrint(issueId: string) {
     itemSku: itemMap.get(line.itemId)?.sku ?? '',
     qty: Number(line.qty ?? 0),
     uomCode: line.uomId ? uomMap.get(line.uomId)?.code ?? '' : '',
-    unitPrice: line.unitPrice != null ? Number(line.unitPrice) : undefined,
-    lineTotal: line.totalCost != null ? Number(line.totalCost) : undefined,
   }));
   return {
     docNumber: issue.docNumber,
     issueType: issue.issueType,
     issuedAt: issue.issuedAt,
-    totalCost: Number(issue.totalCost),
     woDocNumber: issue.wo.docNumber,
     vendorName: issue.wo.vendor?.name ?? issue.wo.vendor?.code ?? '',
     lines,

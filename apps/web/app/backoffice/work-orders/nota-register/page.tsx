@@ -53,7 +53,6 @@ type RegisterRow = {
   docNumber: string;
   issueType: string;
   issuedAt: Date;
-  totalCost: number;
   woDocNumber: string;
   vendorName: string;
 };
@@ -140,10 +139,9 @@ export default function NotaRegisterPage() {
       vendorName: printData.vendorName,
       issuedAt: printData.issuedAt,
       issueType: printData.issueType,
-      totalCost: printData.totalCost,
       lines: printData.lines,
       labels: {
-        title: 'Nota ke CMT',
+        title: 'Surat Jalan CMT',
         doc: 'Doc',
         wo: 'WO',
         vendor: 'Vendor',
@@ -152,10 +150,9 @@ export default function NotaRegisterPage() {
         item: 'Item',
         qty: 'Qty',
         uom: 'UOM',
-        totalCost: 'Total cost',
       },
     });
-    printHtmlInIframe(html, 'Print Nota ke CMT', { errorMessage: tToasts('failedToLoadForPrint') });
+    printHtmlInIframe(html, 'Print Surat Jalan CMT', { errorMessage: tToasts('failedToLoadForPrint') });
   };
 
   return (
@@ -167,7 +164,7 @@ export default function NotaRegisterPage() {
           </Button>
         </Link>
         <div>
-          <h1 className="text-2xl font-bold">Register Nota ke CMT</h1>
+          <h1 className="text-2xl font-bold">{tNota('pageTitle')}</h1>
           <p className="text-muted-foreground">{tNota('pageSubtitle')}</p>
         </div>
       </div>
@@ -227,7 +224,7 @@ export default function NotaRegisterPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Daftar Nota</CardTitle>
+          <CardTitle>{tNota('listTitle')}</CardTitle>
           <CardDescription>{tNota('issuesCount', { count: issues.length })}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -243,7 +240,6 @@ export default function NotaRegisterPage() {
                     <TableHead>Vendor</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Total Cost</TableHead>
                     <TableHead className="w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -255,7 +251,6 @@ export default function NotaRegisterPage() {
                       <TableCell>{row.vendorName}</TableCell>
                       <TableCell>{row.issueType}</TableCell>
                       <TableCell>{new Date(row.issuedAt).toLocaleDateString('id-ID')}</TableCell>
-                      <TableCell className="text-right">{row.totalCost.toLocaleString()}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => openPrint(row.id)}>
                           <Printer className="h-4 w-4" />
@@ -285,7 +280,7 @@ export default function NotaRegisterPage() {
             }}
           />
           <DialogHeader>
-            <DialogTitle>Nota ke CMT</DialogTitle>
+            <DialogTitle>Surat Jalan CMT</DialogTitle>
           </DialogHeader>
           {printData ? (
             <div className="space-y-4">
@@ -314,7 +309,6 @@ export default function NotaRegisterPage() {
                   ))}
                 </TableBody>
               </Table>
-              <p className="font-semibold">Total cost: {printData.totalCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
               <div className="flex gap-2 no-print">
                 <Button variant="outline" onClick={closePrint}>Close</Button>
                 <Button onClick={handlePrint}><Printer className="mr-2 h-4 w-4" />Print</Button>

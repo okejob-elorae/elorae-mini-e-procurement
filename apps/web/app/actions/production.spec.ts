@@ -54,6 +54,7 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 
 import {
   cancelWorkOrder,
+  completeWorkOrder,
   createWorkOrder,
   getAdditionalMaterialsPreview,
   issueAdditionalMaterials,
@@ -172,5 +173,129 @@ describe("receiveFG refusals", () => {
   it("still throws an unknown error", async () => {
     mockTransaction.mockRejectedValue(new Error("db exploded"));
     await expect(receiveFG(input, "u1")).rejects.toThrow("db exploded");
+  });
+});
+
+describe("completeWorkOrder (close short)", () => {
+  const txWoFindUnique = vi.fn();
+  const txWoUpdateMany = vi.fn();
+  const partialWo = {
+    docNumber: "WO-1",
+    status: "PARTIAL",
+    notes: "rush order",
+    issuedAt: new Date("2026-10-01T00:00:00Z"),
+    actualLeadDays: null,
+    receipts: [{ id: "r1" }],
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+      cb({ workOrder: { findUnique: txWoFindUnique, updateMany: txWoUpdateMany } })
+    );
+    txWoFindUnique.mockResolvedValue(partialWo);
+    txWoUpdateMany.mockResolvedValue({ count: 1 });
+    const { getActorName } = await import("@/lib/notifications/actor-name");
+    vi.mocked(getActorName).mockResolvedValue("Admin");
+    const { computeActualLeadDays } = await import("@/lib/leadtime/calculations");
+    vi.mocked(computeActualLeadDays).mockReturnValue(26);
+  });
+
+  it("completes a PARTIAL work order with receipts and keeps the reason in notes", async () => {
+    await completeWorkOrder("wo1", "u1", "  CMT stopped sewing  ");
+    expect(txWoUpdateMany).toHaveBeenCalledWith({
+      where: { id: "wo1", status: "PARTIAL" },
+      data: expect.objectContaining({
+        status: "COMPLETED",
+        completedAt: expect.any(Date),
+        actualLeadDays: 26,
+        notes: expect.stringMatching(/^rush order\n\[Closed short \d{4}-\d{2}-\d{2}\] CMT stopped sewing$/),
+      }),
+    });
+    const { logAudit } = await import("@/lib/audit");
+    expect(logAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "COMPLETE_SHORT", entityType: "WorkOrder", entityId: "wo1" })
+    );
+  });
+
+  it("keeps an existing actualLeadDays", async () => {
+    txWoFindUnique.mockResolvedValue({ ...partialWo, actualLeadDays: 12 });
+    await completeWorkOrder("wo1", "u1", "done");
+    expect(txWoUpdateMany.mock.calls[0][0].data).not.toHaveProperty("actualLeadDays");
+  });
+
+  it.each([
+    ["IN_PRODUCTION", [{ id: "r1" }]],
+    ["COMPLETED", [{ id: "r1" }]],
+    ["PARTIAL", []],
+  ])("refuses status %s with %j receipts", async (status, receipts) => {
+    txWoFindUnique.mockResolvedValue({ ...partialWo, status, receipts });
+    await expect(completeWorkOrder("wo1", "u1", "done")).rejects.toThrow(
+      "Only a PARTIAL work order can be completed manually"
+    );
+    expect(txWoUpdateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses when the status changed between the read and the write", async () => {
+    txWoUpdateMany.mockResolvedValue({ count: 0 });
+    await expect(completeWorkOrder("wo1", "u1", "done")).rejects.toThrow(
+      "Work Order status changed, refresh and try again"
+    );
+  });
+
+  it("refuses a blank reason before touching the database", async () => {
+    await expect(completeWorkOrder("wo1", "u1", "   ")).rejects.toThrow();
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+
+  it("refuses a claimed id that is not the session user", async () => {
+    await expect(completeWorkOrder("wo1", "someone-else", "done")).rejects.toThrow(
+      "Forbidden: actor does not match the session"
+    );
+    expect(mockTransaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("receiveFG on a work order closed short", () => {
+  it("stays COMPLETED and keeps completedAt when a late receipt is still under plan", async () => {
+    vi.clearAllMocks();
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
+    const closedAt = new Date("2026-10-20T03:00:00Z");
+    const woUpdate = vi.fn();
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+      cb({
+        workOrder: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "wo1",
+            status: "COMPLETED",
+            completedAt: closedAt,
+            actualQty: "80",
+            plannedQty: "100",
+            actualLeadDays: 19,
+            issuedAt: new Date("2026-10-01T00:00:00Z"),
+            finishedGoodId: "fg1",
+            outputMode: "GENERIC",
+            issues: [],
+          }),
+          update: woUpdate,
+        },
+        fGReceipt: { create: vi.fn().mockResolvedValue({ id: "rc1", docNumber: "RCPT-1", receivedAt: new Date() }) },
+        workOrderStep: { findMany: vi.fn().mockResolvedValue([]) },
+        rejectedGoodsLedger: { create: vi.fn() },
+      })
+    );
+    const { notifyWOCompleted } = await import("@/lib/notifications/events");
+    vi.mocked(notifyWOCompleted).mockResolvedValue(undefined as never);
+    const { applyChainSignal } = await import("@/lib/leadtime/auto-confirm");
+    vi.mocked(applyChainSignal).mockResolvedValue(undefined as never);
+
+    // Every unit rejected: qtyAccepted 0 keeps costing and price recalculation out of the way.
+    await receiveFG({ woId: "wo1", qtyReceived: 5, qtyRejected: 5 } as never, "u1");
+
+    expect(woUpdate).toHaveBeenCalledWith({
+      where: { id: "wo1" },
+      data: expect.objectContaining({ status: "COMPLETED", completedAt: closedAt }),
+    });
   });
 });
