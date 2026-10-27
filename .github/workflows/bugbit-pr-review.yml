@@ -50,8 +50,8 @@ jobs:
           persist-credentials: false
 
       - name: Run bugbit review + describe
-        # JuicyBurger/bugbit v1.4.2
-        uses: JuicyBurger/bugbit@0257adea1ee9bcc46bb4c62faa4021662fea04ac
+        # JuicyBurger/bugbit f3b08d1 (retry 502 x3)
+        uses: JuicyBurger/bugbit@f3b08d1df669b4b719678d0a415996edc5cbf1c7
         with:
           cursor-api-key: ${{ secrets.CURSOR_API_KEY }}
           github-token: ${{ github.token }}
