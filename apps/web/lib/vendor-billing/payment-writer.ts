@@ -31,7 +31,11 @@ export type CreateVendorPaymentInput = z.input<typeof createVendorPaymentSchema>
  * rolls the whole payment back.
  */
 export async function createVendorPayment(input: CreateVendorPaymentInput, userId: string) {
-  const data = createVendorPaymentSchema.parse(input);
+  const parsed = createVendorPaymentSchema.parse(input);
+  // Round each allocation once so header, rows, bill balances and journal all add up to the same cents.
+  const allocations = parsed.allocations.map((a) => ({ ...a, amount: round2(a.amount) })).filter((a) => a.amount >= 0.01);
+  if (allocations.length === 0) throw new VendorBillError("Isi alokasi minimal Rp 0,01");
+  const data = { ...parsed, allocations };
   return runSerializable(
     async (tx) => {
       const bills = await tx.vendorBill.findMany({
@@ -62,7 +66,7 @@ export async function createVendorPayment(input: CreateVendorPaymentInput, userI
           notes: data.notes || null,
           amount,
           createdById: userId,
-          allocations: { create: data.allocations.map((a) => ({ billId: a.billId, amount: round2(a.amount) })) },
+          allocations: { create: data.allocations.map((a) => ({ billId: a.billId, amount: a.amount })) },
         },
         select: { id: true, docNumber: true },
       });

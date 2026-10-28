@@ -119,6 +119,32 @@ d("Vendor payment writer (test bed only)", () => {
     await expect(voidVendorPayment(p.id, "lagi", ids.user)).rejects.toThrow("sudah dibatalkan");
   });
 
+  it("keeps header, allocations, bills and journal on the same cents", async () => {
+    const p = await createVendorPayment(
+      { ...base(), allocations: [{ billId: ids.billA, amount: 10.015 }, { billId: ids.billB, amount: 10.015 }] },
+      ids.user
+    );
+    const row = await prisma.vendorPayment.findUniqueOrThrow({ where: { id: p.id }, include: { allocations: true } });
+    const allocSum = row.allocations.reduce((s, a) => s + Number(a.amount), 0);
+    const paidSum = Number((await billOf(ids.billA)).paidAmount) + Number((await billOf(ids.billB)).paidAmount);
+    const ap = (await journalOf(p.id))!.lines.find((l) => l.chartAccountId === ids.ap);
+    expect(Number(row.amount)).toBeCloseTo(allocSum, 2);
+    expect(paidSum).toBeCloseTo(allocSum, 2);
+    expect(Number(ap!.debit)).toBeCloseTo(allocSum, 2);
+  });
+
+  it("reverses onto the accounts the payment hit, dated on the void", async () => {
+    const p = await createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 50_000 }] }, ids.user);
+    // Re-point BANK after paying: the reversal must still debit the original bank account.
+    await prisma.journalAccountMapping.update({ where: { role: "BANK" }, data: { chartAccountId: ids.cash } });
+    await voidVendorPayment(p.id, "salah rekening", ids.user);
+    const voided = await prisma.vendorPayment.findUniqueOrThrow({ where: { id: p.id } });
+    const rev = await journalOf(p.id, "VENDOR_PAYMENT_REVERSAL");
+    expect(rev!.date.toISOString()).toBe(voided.voidedAt!.toISOString());
+    expect(rev!.lines.find((l) => l.chartAccountId === ids.bank)?.debit.toString()).toBe("50000");
+    expect(rev!.lines.some((l) => l.chartAccountId === ids.cash)).toBe(false);
+  });
+
   it("lets only one of two concurrent payments settle the same bill", async () => {
     const results = await Promise.allSettled([
       createVendorPayment({ ...base(), allocations: [{ billId: ids.billB, amount: 50_000 }] }, ids.user),

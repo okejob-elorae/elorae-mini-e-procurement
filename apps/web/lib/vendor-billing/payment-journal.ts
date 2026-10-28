@@ -1,4 +1,4 @@
-import { prisma, Prisma, type PrismaClient } from "@elorae/db";
+import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
@@ -31,27 +31,42 @@ export async function postVendorPaymentJournal(
   );
 }
 
-/** Mirror of the payment journal, posted only against one that exists. */
+/**
+ * Mirrors the payment journal as posted (debit and credit swapped on the same chart account), dated
+ * on `voidedAt`, like `postPaymentVoidJournal` for AR: a role re-pointed since the payment must not
+ * move the reversal onto another account.
+ */
 export async function postVendorPaymentReversalJournal(
   paymentId: string,
   postedById: string,
   client: AnyClient = prisma
 ): Promise<GenerateAutoJournalResult> {
+  const payment = await client.vendorPayment.findUnique({
+    where: { id: paymentId },
+    select: { docNumber: true, voidedAt: true },
+  });
+  if (!payment?.voidedAt) return { ok: false, code: "NOTHING_TO_POST" };
   const original = await client.journal.findUnique({
     where: { sourceType_sourceId: { sourceType: "VENDOR_PAYMENT", sourceId: paymentId } },
-    select: { id: true },
+    select: { lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
   });
   if (!original) return { ok: false, code: "NOTHING_TO_POST" };
-  const p = await paymentOf(paymentId, client);
-  if (!p || p.amount < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
-  return generateAutoJournal(
-    client,
-    "VENDOR_PAYMENT_REVERSAL",
-    paymentId,
-    [
-      { role: p.cashRole, debit: p.amount, credit: 0 },
-      { role: "AP", debit: 0, credit: p.amount },
-    ],
-    { date: new Date(), description: `Pembatalan pembayaran vendor ${p.docNumber}`, postedById }
-  );
+  try {
+    const res = await postJournal(client, {
+      source: { type: "VENDOR_PAYMENT_REVERSAL", id: paymentId },
+      date: payment.voidedAt,
+      description: `Pembatalan pembayaran vendor ${payment.docNumber}`,
+      postedById,
+      lines: original.lines.map((l) => ({
+        chartAccountId: l.chartAccountId,
+        debit: Number(l.credit),
+        credit: Number(l.debit),
+        ...(l.memo ? { memo: l.memo } : {}),
+      })),
+    });
+    return { ok: true, journalId: res.journalId, created: res.created };
+  } catch (e) {
+    if (e instanceof JournalError && e.code === "UNBALANCED") return { ok: false, code: "UNBALANCED" };
+    throw e;
+  }
 }
