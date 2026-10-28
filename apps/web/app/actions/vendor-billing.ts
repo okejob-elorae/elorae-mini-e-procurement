@@ -10,6 +10,8 @@ import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { listBillableSources } from "@/lib/vendor-billing/billable";
 import { createVendorBill, voidVendorBill, VendorBillError } from "@/lib/vendor-billing/bill-writer";
 import { listVendorBills, listBillLinesForPo, listBillLinesForWo } from "@/lib/vendor-billing/queries";
+import { createVendorPayment, voidVendorPayment } from "@/lib/vendor-billing/payment-writer";
+import { listOpenBills, listVendorPayments } from "@/lib/vendor-billing/payment-queries";
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -111,4 +113,63 @@ export async function getBillLinesForPo(poId: string) {
 export async function getBillLinesForWo(woId: string) {
   await session(PERMISSIONS.WORK_ORDERS_VIEW);
   return listBillLinesForWo(idSchema.parse(woId));
+}
+
+// --- Vendor bill payments (reuse the supplier payment permissions) ---
+
+export async function getVendorPayments(filters: { supplierId?: string; from?: string; to?: string; search?: string }) {
+  await session(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW);
+  return listVendorPayments({
+    supplierId: filters.supplierId || undefined,
+    from: filters.from ? parseDateOnly(filters.from) : undefined,
+    to: filters.to ? parseDateOnlyEnd(filters.to) : undefined,
+    search: filters.search?.slice(0, 100),
+  });
+}
+
+export async function getOpenBills(supplierId: string) {
+  await session(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE);
+  return listOpenBills(idSchema.parse(supplierId));
+}
+
+const paymentSchema = z.object({
+  supplierId: idSchema,
+  paidAt: z.string().min(1),
+  method: z.enum(["BANK", "CASH"]),
+  reference: z.string().optional(),
+  notes: z.string().optional(),
+  allocations: z.array(z.object({ billId: idSchema, amount: z.number() })),
+});
+
+export async function createVendorPaymentAction(input: z.input<typeof paymentSchema>, userId: string) {
+  const s = await session(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE, userId);
+  const data = paymentSchema.parse(input);
+  const paidAt = parseDateOnly(data.paidAt);
+  if (!paidAt) return { ok: false as const, error: "Tanggal bayar tidak valid" };
+  const res = await guard(() => createVendorPayment({ ...data, paidAt }, s.user.id));
+  if (res.ok) {
+    await logAudit({
+      userId: s.user.id,
+      action: "CREATE",
+      entityType: "VendorPayment",
+      entityId: res.id,
+      changes: { after: { docNumber: res.docNumber, supplierId: data.supplierId, allocations: data.allocations } },
+    });
+    revalidatePath("/backoffice/vendor-payments");
+    revalidatePath("/backoffice/vendor-bills");
+  }
+  return res;
+}
+
+export async function voidVendorPaymentAction(paymentId: string, reason: string, userId: string) {
+  const s = await session(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE, userId);
+  const id = idSchema.parse(paymentId);
+  const res = await guard(() => voidVendorPayment(id, reason, s.user.id));
+  if (res.ok) {
+    await logAudit({ userId: s.user.id, action: "UPDATE", entityType: "VendorPayment", entityId: id, changes: { after: { voided: true, reason } } });
+    revalidatePath("/backoffice/vendor-payments");
+    revalidatePath(`/backoffice/vendor-payments/${id}`);
+    revalidatePath("/backoffice/vendor-bills");
+  }
+  return res;
 }
