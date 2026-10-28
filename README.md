@@ -287,7 +287,7 @@ docker compose -f docker-compose.prod.yml down -v
 - The `.env` file is what Compose substitutes for `${DB_ROOT_PASSWORD}` / `${DB_PASSWORD}` in `docker-compose.prod.yml`. The two `.env.production*` files are loaded into containers as literal env vars (no interpolation).
 - DB password must match in three places: `.env` (DB_PASSWORD), `.env.production` (inside DATABASE_URL), `.env.production.web` (inside DATABASE_URL). Mismatch = api/web can't connect.
 - MariaDB port 3306 is bound to `127.0.0.1` on the VPS — no public access. Local dev tunnels via SSH (see Local-dev DB access above).
-- Migrations apply via `prisma migrate deploy` from inside the `api` container (see the First deploy block). Don't run `prisma migrate dev` against this DB.
+- Migrations and `packages/db/prisma/seed-*.sql` permission seeds apply automatically in the Deploy to VPS workflow (`migrate` job): the SQL is copied out of the api image on GHCR and run with the `mariadb` client. Applied migrations are tracked in `_prisma_migrations`, seeds in `_seed_runs` (each seed runs once). Don't run `prisma migrate dev` against this DB.
 - Redis data + DB data are in named Docker volumes (`redis-data`, `db-data`). Both survive container restarts. `docker compose down -v` wipes them — never run with `-v` in prod.
 - Caddy renews certs automatically. No cron needed.
 
