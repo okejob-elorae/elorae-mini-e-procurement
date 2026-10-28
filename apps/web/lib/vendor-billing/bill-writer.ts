@@ -35,7 +35,7 @@ export const createVendorBillSchema = z
 
 export type CreateVendorBillInput = z.input<typeof createVendorBillSchema>;
 
-function journalRefusal(res: Extract<GenerateAutoJournalResult, { ok: false }>): VendorBillError {
+export function journalRefusal(res: Extract<GenerateAutoJournalResult, { ok: false }>): VendorBillError {
   if (res.code === "UNMAPPED_ROLE") return new VendorBillError(`Petakan akun untuk ${res.role} di Pemetaan Akun dulu`);
   return new VendorBillError(`Jurnal tagihan gagal diposting (${res.code})`);
 }

@@ -115,6 +115,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   "/backoffice/settings/spg-commission": "spg_commission:manage",
   "/backoffice/item-requests": "item_requests:view",
   "/backoffice/vendor-bills": "vendor_bills:view",
+  "/backoffice/vendor-payments": "supplier_payments:view",
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
