@@ -171,8 +171,9 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           # The api image this deploy ships; a web-only change keeps packages/db untouched, so the
-          # current :master api image carries the same migrations.
-          MIGRATE_TAG: ${{ inputs.image_tag || (needs.build-push-api.result == 'success' && github.sha) || 'master' }}
+          # current :master api image carries the same migrations. image_tag only names an api
+          # image when this run ships the api (a web-only rollback sha has no api tag).
+          MIGRATE_TAG: ${{ (needs.build-push-api.result == 'success' && (inputs.image_tag || github.sha)) || 'master' }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
@@ -188,12 +189,15 @@ jobs:
             # Migrations and seeds come from the api image on GHCR (it ships packages/db/prisma),
             # not from this checkout, so the SQL applied is exactly what was built and type-checked.
             IMAGE="ghcr.io/okejob-elorae/elorae-api:${MIGRATE_TAG}"
+            # Reclaim disk before pulling, as deploy-api does: a pull that fails on a full disk
+            # would otherwise fail every later run the same way.
+            docker image prune -a --filter "until=72h" -f || true
             docker pull -q "$IMAGE"
             PRISMA_DIR=$(mktemp -d)
             trap 'rm -rf "$PRISMA_DIR"' EXIT
             CID=$(docker create "$IMAGE")
+            trap 'docker rm -f "$CID" >/dev/null 2>&1; rm -rf "$PRISMA_DIR"' EXIT
             docker cp "$CID:/app/packages/db/prisma/." "$PRISMA_DIR/"
-            docker rm "$CID" > /dev/null
             echo "Using SQL from $IMAGE"
 
             # Apply pending Prisma migrations via mariadb client (skip prisma migrate engine —
