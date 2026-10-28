@@ -113,6 +113,8 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   itemRequestsCreated ItemRequest[] @relation("ItemRequestCreatedBy")
+  vendorBillsCreated  VendorBill[]    @relation("VendorBillCreatedBy")
+  vendorPaymentsCreated VendorPayment[] @relation("VendorPaymentCreatedBy")
   @@index([roleId])
   @@index([themePantoneTcx])
   @@index([assignedStoreId])
@@ -198,6 +200,8 @@ model Supplier {
   purchaseOrders   PurchaseOrder[]
   workOrders       WorkOrder[]
   workOrderSteps   WorkOrderStep[]
+  vendorBills      VendorBill[]
+  vendorPayments   VendorPayment[]
   grns             GRN[]
   vendorReturns    VendorReturn[]
   planCmtAllocations PlanCmtAllocation[]
@@ -1472,6 +1476,7 @@ model POItem {
   notes       String?
   createdAt   DateTime      @default(now())
   requestLine ItemRequestLine?
+  vendorBillLines VendorBillLine[]
   @@index([poId])
   @@index([itemId])
   @@index([poId, itemId, variantSku])
@@ -1801,6 +1806,7 @@ model WorkOrderStep {
   notes              String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  vendorBillLines    VendorBillLine[]
   @@index([woId])
   @@index([supplierId])
   @@unique([woId, sequence])
@@ -2619,6 +2625,8 @@ enum DocType {
   STORETRF
   SELLTHRU
   ITEMREQ
+  VENDOR_BILL
+  VENDOR_PAYMENT
 }
 
 enum OpnameScope {
@@ -3387,4 +3395,105 @@ enum ItemRequestLineStatus {
   OPEN
   CONVERTED
   CANCELLED
+}
+
+/// A vendor's invoice, matched line by line to received PO items and WO processing steps.
+/// PO lines post no journal (AP is booked at GRN); WO step lines post Dr PRODUCTION_SERVICE_COST / Cr AP.
+model VendorBill {
+  id              String           @id @default(cuid())
+  docNumber       String           @unique
+  supplierId      String
+  supplier        Supplier         @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorInvoiceNo String
+  billDate        DateTime
+  dueDate         DateTime?
+  total           Decimal          @db.Decimal(15, 2)
+  /// Maintained by the vendor payment writers.
+  paidAmount      Decimal          @default(0) @db.Decimal(15, 2)
+  status          VendorBillStatus @default(UNPAID)
+  notes           String?          @db.Text
+  createdById     String
+  createdBy       User             @relation("VendorBillCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  voidedAt        DateTime?
+  voidReason      String?          @db.Text
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lines           VendorBillLine[]
+  allocations     VendorPaymentAllocation[]
+
+  /// Not unique: a voided bill frees its number. The bill writer enforces uniqueness among live bills.
+  @@index([supplierId, vendorInvoiceNo])
+  @@index([supplierId, status])
+  @@index([billDate])
+}
+
+model VendorBillLine {
+  id       String             @id @default(cuid())
+  billId   String
+  bill     VendorBill         @relation(fields: [billId], references: [id], onDelete: Cascade)
+  type     VendorBillLineType
+  poItemId String?
+  poItem   POItem?            @relation(fields: [poItemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  woStepId String?
+  woStep   WorkOrderStep?     @relation(fields: [woStepId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  qty      Decimal            @db.Decimal(10, 2)
+  price    Decimal            @db.Decimal(15, 2)
+  /// qty x price, stored.
+  amount   Decimal            @db.Decimal(15, 2)
+  /// PO price / step servicePrice at billing time, for the variance flag.
+  refPrice Decimal            @db.Decimal(15, 2)
+
+  @@index([billId])
+  @@index([poItemId])
+  @@index([woStepId])
+}
+
+model VendorPayment {
+  id          String              @id @default(cuid())
+  docNumber   String              @unique
+  supplierId  String
+  supplier    Supplier            @relation(fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  paidAt      DateTime
+  method      VendorPaymentMethod
+  reference   String?
+  /// Sum of allocations.
+  amount      Decimal             @db.Decimal(15, 2)
+  notes       String?             @db.Text
+  createdById String
+  createdBy   User                @relation("VendorPaymentCreatedBy", fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  voidedAt    DateTime?
+  voidReason  String?             @db.Text
+  createdAt   DateTime            @default(now())
+  allocations VendorPaymentAllocation[]
+
+  @@index([supplierId, paidAt])
+}
+
+model VendorPaymentAllocation {
+  id        String        @id @default(cuid())
+  paymentId String
+  payment   VendorPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  billId    String
+  bill      VendorBill    @relation(fields: [billId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  amount    Decimal       @db.Decimal(15, 2)
+
+  @@unique([paymentId, billId])
+  @@index([billId])
+}
+
+enum VendorBillStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  VOID
+}
+
+enum VendorBillLineType {
+  PO_ITEM
+  WO_STEP
+}
+
+enum VendorPaymentMethod {
+  BANK
+  CASH
 }

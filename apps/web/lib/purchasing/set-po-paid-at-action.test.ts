@@ -281,6 +281,42 @@ d("setPOPaidAt refusals (test bed only)", () => {
     expect(await journalPendingIdsFor([poId])).toEqual([]);
   });
 
+  it("refuses the mark, and writes nothing, on a PO billed through Vendor Billing", async () => {
+    const poId = await seedPo("B", null);
+    const uom = await prisma.uOM.create({ data: { code: `U-SPT-${token}`, nameId: "pcs", nameEn: "pcs" } });
+    const item = await prisma.item.create({
+      data: { sku: `SPT-${token}`, nameId: "Kain test", nameEn: "Fabric test", type: "FABRIC", uomId: uom.id, isActive: true },
+    });
+    const poItem = await prisma.pOItem.create({ data: { poId, itemId: item.id, qty: 10, price: 1_000, uomId: uom.id, receivedQty: 10 } });
+    const bill = await prisma.vendorBill.create({
+      data: {
+        docNumber: `BILL-SPT-${token}`,
+        supplierId,
+        vendorInvoiceNo: `INV-SPT-${token}`,
+        billDate: new Date(),
+        total: 10_000,
+        createdById: userId,
+        lines: { create: { type: "PO_ITEM", poItemId: poItem.id, qty: 10, price: 1_000, amount: 10_000, refPrice: 1_000 } },
+      },
+    });
+    try {
+      const r = await setPOPaidAt(poId, new Date("2026-06-25T00:00:00.000Z"));
+      expect(r).toEqual({ changed: false, refusal: "BILLED_VIA_VENDOR_BILL", journalFailure: null });
+      expect(await paidAtOf(poId)).toBeNull();
+      expect(await paymentJournalsFor(poId)).toEqual([]);
+
+      // A voided bill no longer blocks the toggle.
+      await prisma.vendorBill.update({ where: { id: bill.id }, data: { status: "VOID" } });
+      expect((await setPOPaidAt(poId, new Date("2026-06-25T00:00:00.000Z"))).refusal).toBeNull();
+    } finally {
+      await prisma.vendorBillLine.deleteMany({ where: { billId: seededId(bill.id) } });
+      await prisma.vendorBill.deleteMany({ where: { id: seededId(bill.id) } });
+      await prisma.pOItem.deleteMany({ where: { id: seededId(poItem.id) } });
+      await prisma.item.deleteMany({ where: { id: seededId(item.id) } });
+      await prisma.uOM.deleteMany({ where: { id: seededId(uom.id) } });
+    }
+  });
+
   it("still marks an ordinary unpaid PO paid", async () => {
     const poId = await seedPo("2", null);
 

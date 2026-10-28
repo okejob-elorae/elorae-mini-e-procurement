@@ -32,6 +32,7 @@
     "errorOccurred": "Terjadi kesalahan. Silakan coba lagi."
   },
   "navigation": {
+    "navVendorBills": "Vendor Billing",
     "navItemRequests": "Request Item",
     "purchasing": "Pembelian",
     "marketplaceSales": "Penjualan Marketplace",
@@ -402,6 +403,8 @@
       "WO": "Work Order",
       "ISSUE": "Pengeluaran Bahan",
       "ITEMREQ": "Request Item",
+      "VENDOR_BILL": "Tagihan Vendor",
+      "VENDOR_PAYMENT": "Pembayaran Tagihan Vendor",
       "RECEIPT": "Penerimaan Barang Jadi",
       "ADJ": "Penyesuaian Stok",
       "OPN": "Stok Opname",
@@ -1744,7 +1747,8 @@
     "markRefused": {
       "GRN_APPROVAL_PENDING": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Salah satu penerimaannya adalah kelebihan terima yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu di halaman Inventori dulu, lalu tandai lunas PO ini.",
       "GRN_JOURNALS_INCOMPLETE": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Salah satu penerimaannya belum punya jurnal GRN, jadi utangnya belum tercatat. Gunakan \"Posting jurnal\" di baris GRN itu pada halaman Inventori dulu (perlu izin journals:manage), lalu tandai lunas PO ini.",
-      "GRN_REVERSAL_MISSING": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Gunakan \"Posting jurnal pembalik\" di baris GRN yang ditolak itu pada halaman Inventori dulu (perlu izin journals:manage), lalu tandai lunas PO ini."
+      "GRN_REVERSAL_MISSING": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Gunakan \"Posting jurnal pembalik\" di baris GRN yang ditolak itu pada halaman Inventori dulu (perlu izin journals:manage), lalu tandai lunas PO ini.",
+      "BILLED_VIA_VENDOR_BILL": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. PO ini sudah ditagih lewat Vendor Billing, jadi pembayarannya lewat tagihan vendor. Gunakan Vendor Billing untuk PO ini."
     },
     "standingPayment": {
       "title": "Jurnal pembayaran masih berdiri padahal PO ini belum ditandai lunas",
@@ -5488,7 +5492,8 @@
       "TAX": "Pajak",
       "TRADE_PROGRAM_EXPENSE": "Biaya Program Dagang",
       "ADMIN_FEE_EXPENSE": "Biaya Admin",
-      "ROUNDING_EXPENSE": "Beban Selisih Pembulatan"
+      "ROUNDING_EXPENSE": "Beban Selisih Pembulatan",
+      "PRODUCTION_SERVICE_COST": "Biaya Jasa Produksi (CMT)"
     },
     "desc": {
       "INVENTORY": "Akun aset yang didebit saat stok masuk dan dikredit saat stok keluar.",
@@ -5510,7 +5515,8 @@
       "TAX": "Akun untuk kewajiban/beban pajak.",
       "TRADE_PROGRAM_EXPENSE": "Akun beban untuk potongan program dagang yang dinegosiasikan toko saat pelunasan.",
       "ADMIN_FEE_EXPENSE": "Akun beban untuk biaya admin yang dipotong toko saat pelunasan.",
-      "ROUNDING_EXPENSE": "Akun beban untuk sisa piutang di bawah satu rupiah yang dihapus sebagai penyesuaian pembulatan."
+      "ROUNDING_EXPENSE": "Akun beban untuk sisa piutang di bawah satu rupiah yang dihapus sebagai penyesuaian pembulatan.",
+      "PRODUCTION_SERVICE_COST": "Akun beban yang didebit saat tagihan vendor membebankan jasa proses work order (CMT, cuci, sablon); dikredit ke utang."
     },
     "error": {
       "FORBIDDEN": "Anda tidak memiliki izin untuk mengubah pemetaan akun.",
@@ -6547,5 +6553,79 @@
     "woRequestUpdated": "{docNumber} diperbarui",
     "woIssueBlocked": "Stok belum cukup",
     "woSavedShort": "Disimpan sebagai DRAFT: {count} bahan kurang"
+  },
+  "vendorBills": {
+    "title": "Vendor Billing",
+    "subtitle": "Tagihan vendor yang dicocokkan ke item PO yang diterima dan step proses WO",
+    "newBill": "Tagihan baru",
+    "listTitle": "Daftar tagihan",
+    "listSubtitle": "Saring per supplier, status, atau tanggal tagihan",
+    "supplier": "Supplier",
+    "allSuppliers": "Semua supplier",
+    "status": "Status",
+    "statusLabel": {
+      "ALL": "Semua",
+      "UNPAID": "Belum dibayar",
+      "PARTIAL": "Dibayar sebagian",
+      "PAID": "Lunas",
+      "VOID": "Batal"
+    },
+    "from": "Dari",
+    "to": "Sampai",
+    "search": "Cari",
+    "searchPlaceholder": "No. BILL atau invoice vendor",
+    "load": "Muat",
+    "loadFailed": "Gagal memuat",
+    "actionFailed": "Aksi gagal",
+    "empty": "Belum ada tagihan.",
+    "colBill": "Tagihan",
+    "colVendorInvoice": "Invoice vendor",
+    "colDate": "Tanggal",
+    "colDue": "Jatuh tempo",
+    "colTotal": "Total",
+    "colPaid": "Dibayar",
+    "back": "Kembali",
+    "newTitle": "Tagihan vendor baru",
+    "newSubtitle": "Pilih supplier, lalu centang item PO yang diterima dan step WO yang ditagih invoice ini",
+    "pickSupplier": "Pilih supplier",
+    "vendorInvoiceNo": "No. invoice vendor",
+    "billDate": "Tanggal tagihan",
+    "dueDate": "Jatuh tempo",
+    "dueDateHint": "Kosong: tanggal tagihan ditambah termin PO atau supplier",
+    "notes": "Catatan",
+    "poSourcesTitle": "Item PO yang diterima",
+    "poSourcesSubtitle": "Utangnya sudah dicatat saat penerimaan barang, jadi tidak ada jurnal di sini",
+    "noPoSources": "Tidak ada barang diterima yang belum ditagih untuk supplier ini.",
+    "colItem": "Item",
+    "colReceived": "Diterima",
+    "colBilled": "Sudah ditagih",
+    "colQty": "Qty tagih",
+    "colPrice": "Harga",
+    "colAmount": "Jumlah",
+    "poPaidNotBillable": "Sudah ditandai lunas lewat Pembayaran Pemasok, tidak bisa ditagih",
+    "variance": "Beda dari {ref}",
+    "woSourcesTitle": "Step proses WO",
+    "woSourcesSubtitle": "Memposting Dr Biaya Jasa Produksi / Cr Hutang",
+    "noWoSources": "Tidak ada step WO yang belum ditagih untuk supplier ini.",
+    "colStep": "Step",
+    "colStepQty": "Qty step",
+    "step": "Step",
+    "save": "Simpan tagihan",
+    "created": "{docNumber} disimpan",
+    "outstanding": "Sisa",
+    "createdBy": "Dibuat oleh",
+    "linesTitle": "Baris",
+    "colSource": "Sumber",
+    "paymentsTitle": "Pembayaran",
+    "noPayments": "Belum ada pembayaran.",
+    "journalsTitle": "Jurnal",
+    "noJournal": "Tidak ada jurnal (hanya baris PO).",
+    "void": "Batalkan",
+    "voidTitle": "Batalkan tagihan ini?",
+    "voidBody": "Barisnya bisa ditagih lagi dan jurnalnya dibalik. Tagihan yang sudah dibayar tidak bisa dibatalkan.",
+    "voidReason": "Alasan",
+    "voided": "{docNumber} dibatalkan",
+    "voidedOn": "Dibatalkan {date}",
+    "linkedTitle": "Tagihan vendor"
   }
 }

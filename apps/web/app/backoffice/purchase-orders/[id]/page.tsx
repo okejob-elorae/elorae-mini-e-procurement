@@ -41,6 +41,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from '@/components/ui/label';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { ChainPositionStrip } from '@/components/lead-time/chain-position-strip';
+import { LinkedBillLines } from '@/components/vendor-billing/LinkedBillLines';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 import type { SnapshotStep } from '@/lib/leadtime/calculations';
 
@@ -802,6 +803,8 @@ export default function PODetailPage() {
               </Table>
             </CardContent>
           </Card>
+
+          <LinkedBillLines poId={po.id} />
 
           {/* Status History */}
           <Card>

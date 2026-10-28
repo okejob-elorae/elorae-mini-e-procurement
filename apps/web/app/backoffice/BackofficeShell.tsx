@@ -149,6 +149,11 @@ const navItems: NavItem[] = [
         permission: PERMISSIONS.ITEM_REQUESTS_VIEW,
       },
       {
+        labelKey: 'navVendorBills',
+        href: '/backoffice/vendor-bills',
+        permission: PERMISSIONS.VENDOR_BILLS_VIEW,
+      },
+      {
         labelKey: 'vendorReturns',
         href: '/backoffice/vendor-returns',
         permission: PERMISSIONS.VENDOR_RETURNS_VIEW,

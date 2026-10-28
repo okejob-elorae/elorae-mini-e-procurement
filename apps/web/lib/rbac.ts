@@ -114,6 +114,7 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   "/backoffice/settings/purchasing": "purchase_orders:edit",
   "/backoffice/settings/spg-commission": "spg_commission:manage",
   "/backoffice/item-requests": "item_requests:view",
+  "/backoffice/vendor-bills": "vendor_bills:view",
   // API routes
   '/api/suppliers': 'suppliers:view',
   '/api/supplier-types': 'supplier_types:view',
@@ -305,6 +306,9 @@ export const PERMISSIONS = {
   // Request Item (material requests -> PO)
   ITEM_REQUESTS_VIEW: "item_requests:view",
   ITEM_REQUESTS_MANAGE: "item_requests:manage",
+  // Vendor billing (vendor invoices against PO items and WO steps)
+  VENDOR_BILLS_VIEW: "vendor_bills:view",
+  VENDOR_BILLS_MANAGE: "vendor_bills:manage",
   // Finance — Settlements
   SETTLEMENTS_VIEW: "finance:settlements:view",
   SETTLEMENTS_MANAGE: "finance:settlements:manage",
