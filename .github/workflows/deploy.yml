@@ -138,7 +138,9 @@ jobs:
           script: |
             set -euo pipefail
             cd /srv/elorae
-            git fetch origin master
+            # BatchMode: an unknown host key or missing deploy key fails in seconds with the ssh
+            # error, instead of waiting on a prompt nobody answers until command_timeout.
+            GIT_SSH_COMMAND="ssh -o BatchMode=yes" git fetch origin master
             git reset --hard origin/master
 
   migrate:
@@ -165,18 +167,38 @@ jobs:
       needs.build-push-api.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
-      - name: SSH and apply migrations
+      - name: SSH and apply migrations + seeds
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          # The api image this deploy ships; a web-only change keeps packages/db untouched, so the
+          # current :master api image carries the same migrations. image_tag only names an api
+          # image when this run ships the api (a web-only rollback sha has no api tag).
+          MIGRATE_TAG: ${{ (needs.build-push-api.result == 'success' && (inputs.image_tag || github.sha)) || 'master' }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT || 22 }}
+          envs: MIGRATE_TAG
           timeout: 2m
           command_timeout: 10m
           script: |
             set -euo pipefail
             cd /srv/elorae
+
+            # Migrations and seeds come from the api image on GHCR (it ships packages/db/prisma),
+            # not from this checkout, so the SQL applied is exactly what was built and type-checked.
+            IMAGE="ghcr.io/okejob-elorae/elorae-api:${MIGRATE_TAG}"
+            # Reclaim disk before pulling, as deploy-api does: a pull that fails on a full disk
+            # would otherwise fail every later run the same way.
+            docker image prune -a --filter "until=72h" -f || true
+            docker pull -q "$IMAGE"
+            PRISMA_DIR=$(mktemp -d)
+            trap 'rm -rf "$PRISMA_DIR"' EXIT
+            CID=$(docker create "$IMAGE")
+            trap 'docker rm -f "$CID" >/dev/null 2>&1; rm -rf "$PRISMA_DIR"' EXIT
+            docker cp "$CID:/app/packages/db/prisma/." "$PRISMA_DIR/"
+            echo "Using SQL from $IMAGE"
 
             # Apply pending Prisma migrations via mariadb client (skip prisma migrate engine —
             # it refuses to connect to the --skip-ssl MariaDB regardless of URL params).
@@ -195,7 +217,7 @@ jobs:
             );
             SQL
             APPLIED=$(docker exec elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl -N -B -e "SELECT migration_name FROM elorae._prisma_migrations")
-            cd packages/db/prisma/migrations
+            cd "$PRISMA_DIR/migrations"
             for m in $(ls -d */ | sort); do
               NAME=$(basename "$m")
               if ! grep -qx "$NAME" <<< "$APPLIED"; then
@@ -204,6 +226,37 @@ jobs:
                 CHECKSUM=$(sha256sum "${m}migration.sql" | cut -d' ' -f1)
                 UUID=$(cat /proc/sys/kernel/random/uuid)
                 docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae -e "INSERT INTO _prisma_migrations (id, checksum, finished_at, migration_name, started_at, applied_steps_count) VALUES ('$UUID', '$CHECKSUM', NOW(3), '$NAME', NOW(3), 1);"
+              fi
+            done
+
+            # Permission seeds (prisma/seed-*.sql, insert-if-missing) run ONCE each, tracked in
+            # _seed_runs: re-running every deploy would re-grant permissions an admin has since
+            # removed from a role. The INSERT IGNORE list marks the seeds that were run by hand on
+            # prod before this step existed. Other SQL in prisma/ (set-gl-cutover-date,
+            # fix-hutang-account-type) overwrites data and stays manual.
+            docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae <<'SQL'
+            CREATE TABLE IF NOT EXISTS _seed_runs (
+              name varchar(255) NOT NULL PRIMARY KEY,
+              checksum varchar(64) DEFAULT NULL,
+              applied_at datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+            );
+            INSERT IGNORE INTO _seed_runs (name) VALUES
+              ('seed-amplop-permission.sql'), ('seed-ar-permissions.sql'), ('seed-collections-permissions.sql'),
+              ('seed-credit-override-permission.sql'), ('seed-deliveries-permissions.sql'),
+              ('seed-field-return-permissions.sql'), ('seed-field-sales-delivery-permissions.sql'),
+              ('seed-finance-reports-permissions.sql'), ('seed-lead-time-permissions.sql'),
+              ('seed-pack-ratio-permissions.sql'), ('seed-packer-role-permissions.sql'),
+              ('seed-settlements-permission.sql'), ('seed-spg-commission-permission.sql'),
+              ('seed-spg-role-permissions.sql'), ('seed-tax-invoice-permissions.sql');
+            SQL
+            SEEDED=$(docker exec elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl -N -B -e "SELECT name FROM elorae._seed_runs")
+            cd "$PRISMA_DIR"
+            for s in $(ls seed-*.sql 2>/dev/null | sort); do
+              if ! grep -qx "$s" <<< "$SEEDED"; then
+                echo ">>> Seeding $s"
+                docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae < "$s"
+                CHECKSUM=$(sha256sum "$s" | cut -d' ' -f1)
+                docker exec -i elorae-db mariadb -uroot -p"${DB_ROOT_PASSWORD}" --skip-ssl elorae -e "INSERT INTO _seed_runs (name, checksum) VALUES ('$s', '$CHECKSUM');"
               fi
             done
 
