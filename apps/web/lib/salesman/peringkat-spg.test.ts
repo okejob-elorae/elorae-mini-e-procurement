@@ -85,6 +85,7 @@ d("peringkat SPG — penjualan bersih (test bed only)", () => {
   });
 
   afterAll(async () => {
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(notaIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(notaIds) } } });
     await prisma.user.deleteMany({ where: { id: { in: seededIds([salesId, spgA, spgB, spgC].filter(Boolean)) } } });
     await prisma.store.deleteMany({ where: { id: seededId(tokoId) } });

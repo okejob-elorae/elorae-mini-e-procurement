@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { kunciBaris } from "@/lib/spg/stok";
 import { bacaDiskonManual, KUNCI_DISKON_MANUAL } from "@/lib/spg/pengaturan";
 import { promoKonterUntukToko } from "@/lib/spg/promo-konter-queries";
 import { getSellableCatalogForSpg } from "@/lib/spg/sale-queries";
 import { recordSpgSale } from "@/lib/spg/sale-writer";
-import { muatanKirimNotaSpg, susunNotaTertahan } from "@/lib/pwa/offline/spg-jual-muatan";
-import { pembeliUntukKirim, pratinjauKeranjang, type BarisKeranjang } from "./keranjang";
+import { muatanKirimNotaSpg, muatanPembeli, susunNotaTertahan } from "@/lib/pwa/offline/spg-jual-muatan";
+import { KUNCI_MEMBER, MEMBER_BAWAAN, type AturanMember } from "@/lib/spg/member";
+import { bacaAturanMemberDb } from "@/lib/spg/member-queries";
+import { memberPembeliPerNomor } from "@/lib/spg/member-hp-queries";
+import { memberKeranjang, pembeliUntukKirim, pratinjauKeranjang, type BarisKeranjang, type PembeliKeranjang } from "./keranjang";
 
 /**
  * Layar jual ↔ penulis nota, di basis data sungguhan: total yang dilihat SPG di
@@ -14,8 +17,9 @@ import { pembeliUntukKirim, pratinjauKeranjang, type BarisKeranjang } from "./ke
  * sama dengan total yang dicatat server — untuk promo kategori, promo belanja,
  * dan diskon SPG — juga saat nota dikirim belakangan dari antrean HP.
  *
- * Promo uji HANYA untuk toko uji (`allStores: false`); pengaturan diskon manual
- * (global) dipotret dan dipulihkan PALING DULU.
+ * Promo uji HANYA untuk toko uji (`allStores: false`); pengaturan member dan
+ * diskon manual (global) dipotret dan dipulihkan PALING DULU. Member uji
+ * memakai nomor acak yang dicatat untuk dihapus, bersama jejaknya.
  */
 
 const url = process.env.DATABASE_URL ?? "";
@@ -32,6 +36,20 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
   let storeId = "";
   let promoIds: string[] = [];
   let setelanLama: string | null | undefined = undefined;
+  let memberLama: string | null | undefined = undefined;
+  let nomor: string[] = [];
+
+  /** Nomor HP acak (bentuk ketik `0812…`); bentuk simpannya dicatat untuk dihapus. */
+  const nomorBaru = () => {
+    const n = `62813${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
+    nomor.push(n);
+    return `0${n.slice(2)}`;
+  };
+
+  async function aturMember(ubah: Partial<AturanMember>) {
+    const nilai = JSON.stringify({ ...MEMBER_BAWAAN, ...ubah });
+    await prisma.systemSetting.upsert({ where: { key: KUNCI_MEMBER }, create: { key: KUNCI_MEMBER, value: nilai }, update: { value: nilai } });
+  }
 
   beforeEach(async () => {
     uomId = "";
@@ -41,6 +59,10 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
     storeId = "";
     promoIds = [];
     setelanLama = undefined;
+    memberLama = undefined;
+    nomor = [];
+    const m = await prisma.systemSetting.findUnique({ where: { key: KUNCI_MEMBER } });
+    memberLama = m ? m.value : null;
     const s = await prisma.systemSetting.findUnique({ where: { key: KUNCI_DISKON_MANUAL } });
     setelanLama = s ? s.value : null;
     uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
@@ -61,17 +83,26 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
 
   afterEach(async () => {
     // Pengaturan global dipulihkan PALING DULU — langkah lain boleh gagal, yang ini tidak.
+    if (memberLama === null) {
+      await prisma.systemSetting.delete({ where: { key: KUNCI_MEMBER } }).catch(() => undefined);
+    } else if (memberLama !== undefined) {
+      await prisma.systemSetting.update({ where: { key: KUNCI_MEMBER }, data: { value: memberLama } });
+    }
     if (setelanLama === null) {
       await prisma.systemSetting.delete({ where: { key: KUNCI_DISKON_MANUAL } }).catch(() => undefined);
     } else if (setelanLama !== undefined) {
       await prisma.systemSetting.update({ where: { key: KUNCI_DISKON_MANUAL }, data: { value: setelanLama } });
     }
+    const member = (await prisma.member.findMany({ where: { phone: { in: seededIds(nomor) } }, select: { id: true } })).map((x) => x.id);
+    await prisma.auditLog.deleteMany({ where: { entityType: "Member", entityId: { in: seededIds(member) } } });
+    await prisma.member.deleteMany({ where: { id: { in: seededIds(member) } } });
     await prisma.counterPromoTarget.deleteMany({ where: { promoId: { in: promoIds.map((id) => seededId(id)) } } });
     await prisma.counterPromo.deleteMany({ where: { id: { in: promoIds.map((id) => seededId(id)) } } });
     await prisma.storeCustomer.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.storeStockMovement.deleteMany({ where: { itemId: { in: [seededId(kaosId), seededId(topiId)] } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(kaosId), seededId(topiId)] } } });
     await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: [seededId(kaosId), seededId(topiId)] } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { storeId: seededId(storeId) }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(kaosId), seededId(topiId)] } } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(kategoriId) } });
@@ -129,7 +160,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       visitId: null,
       waktuJual,
       baris: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty, productName: "x", unitPrice: b.row.price ?? 0 })),
-      pembeli: pembeliUntukKirim({ jenis: "baru", nama: "Ani Uji", hp: "0812 0000 1234", setuju: true }),
+      pembeli: pembeliUntukKirim({ jenis: "baru", nama: "Ani Uji", hp: "0812 0000 1234", setuju: true, daftarMember: false, member: null }, { aktif: true }),
       diskonManual: null,
       totalPratinjau: p!.hasil.total,
       potonganPratinjau: p!.hasil.potonganTotal,
@@ -221,5 +252,110 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
     expect(Number(tercatat.subtotal)).toBe(193_867);
     expect(Number(tercatat.lines.find((l) => l.itemId === kaosId)?.unitPrice)).toBe(133_200);
     expect(Number(tercatat.lines.find((l) => l.itemId === topiId)?.unitPrice)).toBe(60_667);
+  });
+  /**
+   * Persis yang dilakukan layar untuk pembeli: tanya keanggotaan nomornya
+   * (`cekMemberNomorAction` → `memberPembeliPerNomor`), lalu pratinjau dengan
+   * aturan member halaman.
+   */
+  type PembeliTanpaMember = PembeliKeranjang extends infer P ? (P extends unknown ? Omit<P, "member"> : never) : never;
+  async function pembeliDiLayar(p: PembeliTanpaMember): Promise<PembeliKeranjang> {
+    const hp = p.jenis === "ada" ? p.hp : `62${p.hp.slice(1)}`;
+    const info = (await memberPembeliPerNomor([hp])).get(hp) ?? null;
+    return { ...p, member: info ? { hp, info } : null } as PembeliKeranjang;
+  }
+
+  it("member discount on: the phone shows the total the server records — registering, then a returning member", async () => {
+    await aturMember({
+      diskonAktif: true,
+      tingkat: [
+        { kode: "MEMBER", nama: "Member", minBelanja: 0, diskonPersen: 5 },
+        { kode: "GOLD", nama: "Gold", minBelanja: 250_000, diskonPersen: 10 },
+      ],
+    });
+    await buatPromo({ name: "Kaos 15%", type: "PERSEN", value: 15, kategori: kategoriId });
+    const aturanMember = await bacaAturanMemberDb();
+    const hp = nomorBaru();
+
+    // 1) Pembeli baru minta didaftarkan: tingkat pertama, diskon 5% dari potong yang tidak kena promo barang.
+    const layar = await bukaLayarJual({ [kaosId]: 2, [topiId]: 3 });
+    const baru = await pembeliDiLayar({ jenis: "baru", nama: "Mira Uji", hp, setuju: true, daftarMember: true });
+    expect(baru.member?.info).toEqual({ status: "BUKAN", tingkatDaftar: "Member", diskonPersenDaftar: 5 });
+    const waktu = new Date();
+    const p1 = pratinjauKeranjang({ ...layar, storeId, waktu, diskon: null, member: memberKeranjang(baru, aturanMember) });
+    expect(p1?.hasil.member).toMatchObject({ tingkat: "Member" });
+    expect(p1!.hasil.member!.potongan).toBeGreaterThan(0);
+    const kirim1 = muatanPembeli(pembeliUntukKirim(baru, aturanMember));
+    expect(kirim1).toMatchObject({ daftarMember: true });
+    const r1 = await recordSpgSale({
+      salesmanId,
+      storeId,
+      lines: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty })),
+      pembeli: kirim1,
+      idempotencyKey: `m1-${tag}`,
+    });
+    if (!r1.ok) throw new Error(r1.code);
+    expect(r1.total).toBe(p1!.hasil.total);
+    expect(r1.member).toEqual({ tingkat: "Member", potongan: p1!.hasil.member!.potongan, baru: true });
+
+    // 2) Datang lagi, dipilih dari pencarian sebagai pelanggan toko: belanjanya sudah ≥ 250 rb → Gold.
+    const pelanggan = await prisma.storeCustomer.findFirstOrThrow({ where: { storeId, phone: nomor[0] }, select: { id: true, name: true, phone: true } });
+    const ada = await pembeliDiLayar({ jenis: "ada", id: pelanggan.id, nama: pelanggan.name, hp: pelanggan.phone, daftarMember: false });
+    expect(ada.member?.info).toEqual({ status: "MEMBER", tingkat: "Gold", diskonPersen: 10 });
+    const layar2 = await bukaLayarJual({ [kaosId]: 1, [topiId]: 1 });
+    const p2 = pratinjauKeranjang({ ...layar2, storeId, waktu: new Date(), diskon: null, member: memberKeranjang(ada, aturanMember) });
+    const r2 = await recordSpgSale({
+      salesmanId,
+      storeId,
+      lines: layar2.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty })),
+      pembeli: muatanPembeli(pembeliUntukKirim(ada, aturanMember)),
+      idempotencyKey: `m2-${tag}`,
+    });
+    if (!r2.ok) throw new Error(r2.code);
+    expect(r2.total).toBe(p2!.hasil.total);
+    expect(r2.member).toEqual({ tingkat: "Gold", potongan: p2!.hasil.member!.potongan, baru: false });
+    const nota = await prisma.spgSale.findUniqueOrThrow({ where: { id: r2.spgSaleId } });
+    expect(nota.memberTier).toBe("Gold");
+    expect(Number(nota.memberDiscount)).toBe(p2!.hasil.member!.potongan);
+  });
+
+  it("registration from the offline queue: the request travels with the receipt, and a receipt below the minimum is recorded without member, as the phone showed", async () => {
+    await aturMember({ diskonAktif: true, minBelanjaDaftar: 400_000, tingkat: [{ kode: "MEMBER", nama: "Member", minBelanja: 0, diskonPersen: 10 }] });
+    const aturanMember = await bacaAturanMemberDb();
+    const layar = await bukaLayarJual({ [kaosId]: 1, [topiId]: 1 });
+    // Tanpa sinyal: keanggotaan nomor ini belum bisa ditanyakan → tingkat pertama.
+    const pembeli: PembeliKeranjang = { jenis: "baru", nama: "Nia Uji", hp: nomorBaru(), setuju: true, daftarMember: true, member: null };
+    const waktuJual = new Date(Date.now() - 30 * 60_000);
+    const p = pratinjauKeranjang({ ...layar, storeId, waktu: waktuJual, diskon: null, member: memberKeranjang(pembeli, aturanMember) });
+    expect(p?.daftarKurang).toEqual({ minimal: 400_000, kurang: 400_000 - p!.hasil.subtotal });
+    expect(p?.hasil.member).toBeNull();
+
+    const nota = susunNotaTertahan({
+      idempotencyKey: `kunci-m-${tag}`,
+      storeId,
+      storeName: "Toko Jual Uji",
+      visitId: null,
+      waktuJual,
+      baris: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty, productName: "x", unitPrice: b.row.price ?? 0 })),
+      pembeli: pembeliUntukKirim(pembeli, aturanMember),
+      diskonManual: null,
+      totalPratinjau: p!.hasil.total,
+      potonganPratinjau: p!.hasil.potonganTotal,
+    });
+    const m = muatanKirimNotaSpg(nota!);
+    expect(m.pembeli).toMatchObject({ daftarMember: true });
+    const res = await recordSpgSale({
+      salesmanId,
+      storeId,
+      lines: m.lines,
+      idempotencyKey: m.idempotencyKey,
+      pembeli: m.pembeli,
+      luring: m.luring,
+      waktuJual: new Date(m.waktuJual!),
+    });
+    if (!res.ok) throw new Error(res.code);
+    expect(res.total).toBe(p!.hasil.total);
+    expect(res.tanpaMember).toBe("BELANJA_KURANG");
+    expect(await prisma.member.count({ where: { phone: nomor[0] } })).toBe(0);
   });
 });

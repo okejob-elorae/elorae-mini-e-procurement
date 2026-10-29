@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { tambahPelangganAction, ubahPelangganAction, type HasilPelangganAksi } from "@/app/actions/spg-pelanggan";
+import { daftarkanMemberPelangganAction } from "@/app/actions/spg-member-hp";
 import { KeteranganKirim } from "@/app/pwa/KeteranganKirim";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -31,7 +32,16 @@ const KODE_GALAT = new Set([
   "TIDAK_DITEMUKAN",
 ]);
 
-export type AwalPelanggan = { id: string; nama: string; hp: string; catatan: string | null };
+export type AwalPelanggan = {
+  id: string;
+  nama: string;
+  hp: string;
+  catatan: string | null;
+  /** Nomor lama pelanggan ini member Elorae — keanggotaan tidak ikut pindah ke nomor baru. */
+  member?: boolean;
+};
+
+const KODE_GALAT_MEMBER = new Set(["PROGRAM_MATI", "MEMBER_NONAKTIF", "LEWAT_NOTA"]);
 
 /**
  * Tambah atau ubah pelanggan toko. Nomor HP yang sudah terdaftar di toko ini
@@ -39,9 +49,21 @@ export type AwalPelanggan = { id: string; nama: string; hp: string; catatan: str
  * Persetujuan dihubungi lewat WhatsApp wajib untuk pelanggan baru dan untuk
  * nomor yang diganti (persetujuan diberikan pemilik nomornya).
  */
-export function FormPelanggan({ namaToko, awal }: { namaToko: string; awal: AwalPelanggan | null }) {
+export function FormPelanggan({
+  namaToko,
+  awal,
+  bolehDaftarMember = false,
+}: {
+  namaToko: string;
+  awal: AwalPelanggan | null;
+  /** Pelanggan baru boleh langsung didaftarkan jadi member (program menerima, tanpa belanja minimal). */
+  bolehDaftarMember?: boolean;
+}) {
   const t = useTranslations("spgPelanggan");
   const td = dinamis(t);
+  const tm = useTranslations("spgPelanggan.hpMember");
+  const tmd = dinamis(tm);
+  const [daftarMember, setDaftarMember] = useState(false);
   const router = useRouter();
   const [pending, mulai] = useTransition();
   const [nama, setNama] = useState(awal?.nama ?? "");
@@ -87,6 +109,16 @@ export function FormPelanggan({ namaToko, awal }: { namaToko: string; awal: Awal
       }
       if (r.sudahAda) toast.info(t("form.sudahAda", { nama: r.nama ?? "" }));
       else toast.success(awal ? t("form.okUbah") : t("form.okTambah"));
+      if (!awal && bolehDaftarMember && daftarMember) {
+        // Pelanggan sudah tersimpan; pendaftaran member yang gagal tidak membatalkannya.
+        try {
+          const m = await daftarkanMemberPelangganAction({ customerId: r.id });
+          if (m.ok) toast.success(tm("okBaru", { nama: rapikanNamaPelanggan(nama) }));
+          else toast.warning(tm("formGagal"), { description: KODE_GALAT_MEMBER.has(m.code) ? tmd(`err.${m.code}`) : undefined });
+        } catch {
+          toast.warning(tm("formGagal"));
+        }
+      }
       router.replace(`/pwa/spg/pelanggan/${r.id}`);
     });
   }
@@ -133,6 +165,7 @@ export function FormPelanggan({ namaToko, awal }: { namaToko: string; awal: Awal
             disabled={pending}
           />
           <p className={hpSalah ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>{hpSalah ? t("form.hpSalah") : t("form.hpPetunjuk")}</p>
+          {awal?.member && hpSah && gantiNomor ? <p className="text-xs text-amber-700 dark:text-amber-300">{tm("gantiNomor")}</p> : null}
           {dipakai ? (
             <div className="space-y-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
               <p>{t("form.hpDipakai", { nama: dipakai.nama })}</p>
@@ -160,6 +193,22 @@ export function FormPelanggan({ namaToko, awal }: { namaToko: string; awal: Awal
             <span className="min-w-0 space-y-0.5">
               <span className="block text-sm font-medium leading-tight">{t("form.setuju")}</span>
               <span className="block text-xs text-muted-foreground">{awal ? t("form.setujuGanti") : t("form.setujuPetunjuk")}</span>
+            </span>
+          </label>
+        ) : null}
+
+        {!awal && bolehDaftarMember ? (
+          <label htmlFor="pelanggan-member" className="flex cursor-pointer items-start gap-3 rounded-lg border p-3">
+            <Checkbox
+              id="pelanggan-member"
+              checked={daftarMember}
+              onCheckedChange={(v) => setDaftarMember(v === true)}
+              disabled={pending}
+              className="mt-0.5"
+            />
+            <span className="min-w-0 space-y-0.5">
+              <span className="block text-sm font-medium leading-tight">{tm("formDaftar")}</span>
+              <span className="block text-xs text-muted-foreground">{tm("formDaftarPetunjuk")}</span>
             </span>
           </label>
         ) : null}

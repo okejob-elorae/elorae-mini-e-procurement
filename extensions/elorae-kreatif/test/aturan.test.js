@@ -34,6 +34,11 @@ describe("bersihkanPengaturan", () => {
     assert.deepEqual(a.bersihkanPengaturan(undefined), a.PENGATURAN_BAWAAN);
     assert.deepEqual(a.bersihkanPengaturan(null), a.PENGATURAN_BAWAAN);
   });
+  test("pemantauan 24 jam (00:00–24:00) dari Elorae dipakai apa adanya", () => {
+    const p = a.bersihkanPengaturan({ jamMulai: "00:00", jamSelesai: "24:00" });
+    assert.equal(p.jamMulai, "00:00");
+    assert.equal(p.jamSelesai, "24:00");
+  });
   test("nilai sah dipakai, nilai rusak diganti bawaan, min/maks ditukar bila terbalik", () => {
     const p = a.bersihkanPengaturan({
       jamMulai: "09:00",
@@ -450,6 +455,43 @@ describe("kiriman otomatis panel (D3)", () => {
     assert.equal(a.bacaanLengkap({ status: "CAPTCHA" }, URL_P), false);
     assert.equal(a.bacaanLengkap({ ...video(), data: { ...video().data, views: undefined } }, URL_V), false);
     assert.equal(a.bacaanLengkap(profil(), "https://www.tiktok.com/foryou"), false);
+  });
+
+  test("alasan bacaan belum lengkap disebut persis (untuk catatan di popup)", () => {
+    assert.equal(a.alasanBelumLengkap(profil(), URL_P), null);
+    assert.equal(a.alasanBelumLengkap({ status: "CAPTCHA" }, URL_P), "STATUS_CAPTCHA");
+    assert.equal(a.alasanBelumLengkap({ status: "OK" }, URL_P), "TANPA_DATA");
+    assert.equal(a.alasanBelumLengkap({ ...video(), data: { ...video().data, views: undefined } }, URL_V), "KURANG:views");
+    assert.equal(a.alasanBelumLengkap(profil(), "https://www.tiktok.com/foryou"), "BUKAN_HALAMAN_AKUN_ATAU_VIDEO");
+    assert.equal(a.alasanBelumLengkap(profil(), "https://www.tiktok.com/@orang.lain"), "BUKAN_MILIK_HALAMAN:orang.lain≠budi.santoso");
+    assert.equal(
+      a.alasanBelumLengkap(profil({ adaItemList: false, data: { ...profil().data, posting: [], jumlahVideo: 5 } }), URL_P),
+      "DAFTAR_VIDEO_BELUM_TERTANGKAP",
+    );
+  });
+
+  test("catatan kiriman otomatis terakhir → satu kalimat di popup", () => {
+    const at = SIANG;
+    const c = (lain) => ({ at, kunci: "PROFIL:bellaclrs_", ...lain });
+    assert.equal(a.teksKirimOtomatisTerakhir(null), null);
+    assert.equal(a.teksKirimOtomatisTerakhir(c({ alasan: "DIKIRIM", hasil: "DISIMPAN" }), at), "@bellaclrs_ · tersimpan di Elorae (10.00)");
+    assert.equal(a.teksKirimOtomatisTerakhir(c({ alasan: "DIKIRIM", hasil: "DIABAIKAN" }), at), "@bellaclrs_ · diabaikan Elorae: akun belum ada di Elorae dan tidak menandai Elorae (10.00)");
+    assert.equal(
+      a.teksKirimOtomatisTerakhir(c({ alasan: "BELUM_LENGKAP", rincian: "DAFTAR_VIDEO_BELUM_TERTANGKAP" }), at),
+      "@bellaclrs_ · belum dikirim: daftar video belum tertangkap (10.00)",
+    );
+    assert.equal(
+      a.teksKirimOtomatisTerakhir({ at, kunci: "KONTEN:7421234567890123456", alasan: "LATAR_TIDAK_MENJAWAB" }, at),
+      "video 7421234567890123456 · belum dikirim: ekstensi tidak menjawab panel — muat ulang tab ini (10.00)",
+    );
+    // Alasan yang tidak dikenal tetap tampil apa adanya, tidak hilang.
+    assert.equal(a.teksKirimOtomatisTerakhir({ at, alasan: "ANEH", rincian: "x" }, at), "belum dikirim: ANEH (x) (10.00)");
+  });
+
+  test("konten.js memakai kunci penyimpanan yang sama dengan popup", async () => {
+    const { readFileSync } = await import("node:fs");
+    const teks = readFileSync(new URL("../konten.js", import.meta.url), "utf8");
+    assert.ok(teks.includes(`"${a.KUNCI_KIRIM_OTOMATIS_TERAKHIR}"`));
   });
 
   test("semua syarat terpenuhi → kirim dengan kuncinya", () => {

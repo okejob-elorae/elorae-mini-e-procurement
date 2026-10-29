@@ -13,7 +13,7 @@ export type NotaSpgBaru = Omit<PendingSpgSale, "capturedAt" | "syncState" | "att
 export type MuatanJualSpg = {
   idempotencyKey: string;
   lines: { itemId: string; variantSku: string | null; qty: number }[];
-  pembeli: { id: string } | { nama: string; hp: string; setuju: boolean } | null;
+  pembeli: (({ id: string } | { nama: string; hp: string; setuju: boolean }) & { daftarMember?: true }) | null;
   diskonManual: { jenis: "PERSEN" | "RUPIAH"; nilai: number; alasan: string | null } | null;
   saleLat: number | null;
   saleLng: number | null;
@@ -24,11 +24,15 @@ export type MuatanJualSpg = {
   visitClientId?: string | null;
 };
 
-/** Nama untuk ditampilkan tidak ikut terkirim: pelanggan lama cukup id-nya. */
+/**
+ * Nama untuk ditampilkan tidak ikut terkirim: pelanggan lama cukup id-nya.
+ * Permintaan didaftarkan jadi member ikut hanya bila diminta.
+ */
 export function muatanPembeli(p: PembeliTertahan | null): MuatanJualSpg["pembeli"] {
   if (!p) return null;
-  if ("id" in p) return { id: p.id };
-  return { nama: p.nama.trim(), hp: p.hp.trim(), setuju: p.setuju };
+  const daftar = p.daftarMember === true ? { daftarMember: true as const } : {};
+  if ("id" in p) return { id: p.id, ...daftar };
+  return { nama: p.nama.trim(), hp: p.hp.trim(), setuju: p.setuju, ...daftar };
 }
 
 /** Diskon bernilai nol (atau isian rusak) berarti tanpa diskon — bukan diskon nol yang ikut diperiksa. */

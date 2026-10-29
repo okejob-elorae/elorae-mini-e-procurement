@@ -17,6 +17,7 @@ import { formatIDR } from "@/lib/sales-orders/format";
 import { cocokkanKode, kunciBaris } from "@/lib/spg/stok";
 import type { PromoKonter } from "@/lib/spg/promo-konter";
 import type { AturanDiskonManualSpg } from "@/lib/spg/pengaturan";
+import type { AturanMember } from "@/lib/spg/member";
 import type { SpgCatalogRow } from "@/lib/spg/sale-queries";
 import { cn } from "@/lib/utils";
 import { newLocalId } from "@/lib/pwa/id-lokal";
@@ -38,6 +39,8 @@ import {
   diskonUntukMesin,
   kekuranganJual,
   kunciSimpananKeranjang,
+  memberDiketahui,
+  memberKeranjang,
   pembeliUntukKirim,
   pratinjauKeranjang,
   uraiSimpananKeranjang,
@@ -220,6 +223,7 @@ export function SpgSaleShell({
   stokDilacak,
   promos,
   aturanManual,
+  aturanMember,
   visitId,
   checkinAtMs = null,
 }: {
@@ -232,6 +236,8 @@ export function SpgSaleShell({
   /** Promo konter yang bisa berlaku di toko ini (termasuk yang mulai beberapa hari lagi). */
   promos: PromoKonter[];
   aturanManual: AturanDiskonManualSpg;
+  /** Aturan member saat halaman dibuka — dasar diskon member di pratinjau, juga tanpa sinyal. */
+  aturanMember: AturanMember;
   /**
    * Kunjungan (check-in) aktif di toko ini menurut server, atau `null`. Tanpa
    * itu layar memakai check-in yang dicatat tanpa sinyal di HP
@@ -365,13 +371,25 @@ export function SpgSaleShell({
   // saat masih menyala diabaikan, tidak dikirim.
   const diskonAktif = aturanManual.aktif ? diskon : null;
 
-  // Pratinjau promo + diskon manual, dengan mesin dan masukan yang sama dengan server.
+  // Member pembeli (tingkat dan diskon dari server, atau tingkat pertama untuk
+  // pendaftaran yang belum bisa ditanyakan) — masukan yang sama dengan penulis nota.
+  const memberNota = useMemo(() => memberKeranjang(pembeli, aturanMember), [pembeli, aturanMember]);
+
+  // Pratinjau promo + diskon member + diskon manual, dengan mesin dan masukan yang sama dengan server.
   const pratinjau = useMemo(
     () =>
       menit === null
         ? null
-        : pratinjauKeranjang({ baris, promos, storeId, waktu: new Date(menit * 60_000), aturan: aturanManual, diskon: diskonAktif }),
-    [menit, baris, promos, storeId, aturanManual, diskonAktif],
+        : pratinjauKeranjang({
+            baris,
+            promos,
+            storeId,
+            waktu: new Date(menit * 60_000),
+            aturan: aturanManual,
+            diskon: diskonAktif,
+            member: memberNota,
+          }),
+    [menit, baris, promos, storeId, aturanManual, diskonAktif, memberNota],
   );
 
   const hasil = pratinjau?.hasil ?? null;
@@ -473,7 +491,8 @@ export function SpgSaleShell({
     if (baris.length === 0 || pending || kurang !== null) return;
     // Waktu jual = saat tombol ditekan; nota tanpa sinyal tercatat pada waktu ini.
     const waktuJual = new Date();
-    const pembeliKirim = pembeliUntukKirim(pembeli);
+    const pembeliKirim = pembeliUntukKirim(pembeli, aturanMember);
+    const infoMember = memberDiketahui(pembeli);
     const manual = diskonUntukMesin(diskonAktif);
     const diskonKirim = manual ? { ...manual, alasan: diskonAktif?.alasan.trim() || null } : null;
     const totalPratinjau = total;
@@ -490,6 +509,14 @@ export function SpgSaleShell({
       total: totalPratinjau,
       potongan: potonganPratinjau,
       namaPembeli: namaPembeliTertahan(pembeliKirim),
+      // Di bawah belanja minimal untuk mendaftar, layar tidak menjanjikan pendaftaran
+      // (permintaannya tetap ikut; server yang memutuskan dengan aturannya saat terkirim).
+      member:
+        pembeliKirim?.daftarMember === true && !pratinjau?.daftarKurang
+          ? { tingkat: null, daftar: true }
+          : infoMember?.status === "MEMBER"
+            ? { tingkat: infoMember.tingkat, daftar: false }
+            : null,
     };
 
     startTransition(async () => {
@@ -556,15 +583,25 @@ export function SpgSaleShell({
         // Keranjang selesai: dihapus dari simpanan dan dari layar, supaya
         // "Jual lagi" mulai dari keranjang kosong.
         kosongkan();
-        if (totalBerbeda(totalPratinjau, res.total)) {
-          // Harga atau promo di server berbeda dari layar: yang tercatat angka server.
-          catatSelisihTotalDiHp(res.spgSaleId, totalPratinjau, res.total);
-          toast.success(t("savedDifferent", { docNo: res.docNo, total: formatIDR(res.total) }), {
-            description: t("savedDifferentHint", { preview: formatIDR(totalPratinjau) }),
-          });
-        } else {
-          toast.success(t("saved", { docNo: res.docNo }));
-        }
+        const berbeda = totalBerbeda(totalPratinjau, res.total);
+        // Harga atau promo di server berbeda dari layar: yang tercatat angka server.
+        if (berbeda) catatSelisihTotalDiHp(res.spgSaleId, totalPratinjau, res.total);
+        const judul = berbeda ? t("savedDifferent", { docNo: res.docNo, total: formatIDR(res.total) }) : t("saved", { docNo: res.docNo });
+        // Hasil member: terdaftar, tingkat yang dipakai, atau kenapa tidak jadi
+        // member — notanya tetap tercatat dalam semua kasus.
+        const teksMember = res.member
+          ? res.member.baru
+            ? t("memberHasil.baru", { tingkat: res.member.tingkat })
+            : res.member.potongan > 0
+              ? t("memberHasil.potong", { tingkat: res.member.tingkat, amount: formatIDR(res.member.potongan) })
+              : t("memberHasil.tanpaPotong", { tingkat: res.member.tingkat })
+          : res.tanpaMember
+            ? td(`memberHasil.${res.tanpaMember}`, { minimal: formatIDR(aturanMember.minBelanjaDaftar) })
+            : null;
+        const keterangan = [berbeda ? t("savedDifferentHint", { preview: formatIDR(totalPratinjau) }) : null, teksMember].filter(Boolean).join(" ");
+        const opsiToast = keterangan ? { description: keterangan } : undefined;
+        if (res.tanpaMember) toast.warning(judul, opsiToast);
+        else toast.success(judul, opsiToast);
         // replace: Kembali dari nota tidak membuka layar jual yang sudah selesai.
         router.replace(`/pwa/spg/${res.spgSaleId}/nota`);
         return;
@@ -622,7 +659,7 @@ export function SpgSaleShell({
         </section>
       ) : null}
 
-      <SpandukPromo berlaku={hasil?.berlaku ?? []} promos={promos} />
+      <SpandukPromo berlaku={hasil?.berlaku ?? []} promos={promos} katalog={katalog} />
 
       <section className="beranda-kartu space-y-3">
         <PemindaiBarcode onKode={onKode} placeholder={t("scanPlaceholder")} />
@@ -847,6 +884,9 @@ export function SpgSaleShell({
             <div className="space-y-1 border-t px-4 py-3">
               <BarisUang label={t("cart.subtotal")} nilai={hasil?.subtotal ?? kotor} />
               {hasil && hasil.potonganBaris > 0 ? <BarisUang label={t("cart.itemPromos")} nilai={hasil.potonganBaris} potongan /> : null}
+              {hasil?.member && hasil.member.potongan > 0 ? (
+                <BarisUang label={t("cart.memberDiscount", { tingkat: hasil.member.tingkat })} nilai={hasil.member.potongan} potongan />
+              ) : null}
               {hasil?.promoNota ? (
                 <BarisUang label={t("cart.orderPromo", { name: hasil.promoNota.name })} nilai={hasil.promoNota.potongan} potongan />
               ) : null}
@@ -861,7 +901,14 @@ export function SpgSaleShell({
 
             <div className="space-y-2 border-t px-4 py-3">
               <h3 className="text-sm font-semibold">{t("pembeli.title")}</h3>
-              <IsianPembeli pembeli={pembeli} onUbah={setPembeli} online={online} disabled={pending} />
+              <IsianPembeli
+                pembeli={pembeli}
+                onUbah={setPembeli}
+                online={online}
+                disabled={pending}
+                aturanMember={aturanMember}
+                daftarKurang={pratinjau?.daftarKurang ?? null}
+              />
             </div>
           </div>
           <SheetFooter className="border-t pt-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">

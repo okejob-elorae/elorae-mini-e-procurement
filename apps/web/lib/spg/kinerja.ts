@@ -153,6 +153,10 @@ export type LainKinerja = {
   target: number | null;
   /** Penjualan bersih orangnya bulan ini di SEMUA toko — angka "Bulan ini" di berandanya. */
   nilaiOrang: number;
+  /** Nota bulan ini di toko ini yang mencatat pembelinya (`SpgSale.customerId`). */
+  notaBerpembeli: number;
+  /** Member yang ia daftarkan di toko ini bulan ini (`Member.joinedById`). */
+  memberBaru: number;
 };
 
 export type RingkasKinerja = {
@@ -186,6 +190,10 @@ export type RingkasKinerja = {
   target: number | null;
   nilaiOrang: number;
   capaianPersen: number | null;
+  notaBerpembeli: number;
+  /** Nota berpembeli ÷ nota (%), null tanpa nota. */
+  persenBerpembeli: number | null;
+  memberBaru: number;
 };
 
 const persen = (a: number, b: number): number | null => (b > 0 ? (a / b) * 100 : null);
@@ -258,6 +266,9 @@ export function ringkasKinerja(hari: readonly HariKinerja[], lain: LainKinerja):
     target: lain.target,
     nilaiOrang: lain.nilaiOrang,
     capaianPersen: lain.target ? persen(lain.nilaiOrang, lain.target) : null,
+    notaBerpembeli: lain.notaBerpembeli,
+    persenBerpembeli: persen(Math.min(lain.notaBerpembeli, nota), nota),
+    memberBaru: lain.memberBaru,
   };
 }
 

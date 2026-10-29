@@ -39,7 +39,9 @@ type KunciKolom =
   | "target"
   | "tutup"
   | "titip"
-  | "retur";
+  | "retur"
+  | "pembeli"
+  | "memberBaru";
 
 type Kolom = {
   kunci: KunciKolom;
@@ -59,9 +61,9 @@ type Kolom = {
  */
 const KOLOM_TAMPILAN: Record<Tampilan, KunciKolom[]> = {
   penjualan: ["nama", "toko", "nilai", "target", "nota", "potong", "pengunjung", "konversi", "rata", "retur"],
-  kehadiran: ["nama", "toko", "jadwal", "masuk", "terlambat", "tidakMasuk", "izin", "tutup", "titip"],
+  kehadiran: ["nama", "toko", "jadwal", "masuk", "terlambat", "tidakMasuk", "izin", "tutup", "titip", "pembeli", "memberBaru"],
 };
-const KOLOM_SEKUNDER: ReadonlySet<KunciKolom> = new Set(["rata", "retur", "potong", "izin"]);
+const KOLOM_SEKUNDER: ReadonlySet<KunciKolom> = new Set(["rata", "retur", "potong", "izin", "memberBaru"]);
 
 /**
  * Kinerja SPG di kantor: bulan dan toko di alamat (keduanya ditulis dalam SATU
@@ -201,6 +203,21 @@ export function KinerjaSpgClient({ data, tampilanAwal = "penjualan" }: { data: D
       isi: (b) => (b.titipDibuat === 0 ? "0" : t("sel.titip", { dibuat: b.titipDibuat, selesai: b.titipSelesai })),
     },
     { kunci: "retur", nilai: (b) => b.persenKembali, isi: (b) => (b.persenKembali === null ? kosong : persen(b.persenKembali)) },
+    {
+      kunci: "pembeli",
+      nilai: (b) => b.persenBerpembeli,
+      bungkus: true,
+      isi: (b) =>
+        b.persenBerpembeli === null ? (
+          kosong
+        ) : (
+          <span>
+            {persen(b.persenBerpembeli)}
+            <span className="block text-xs text-muted-foreground">{t("sel.pembeli", { ada: b.notaBerpembeli, nota: b.nota })}</span>
+          </span>
+        ),
+    },
+    { kunci: "memberBaru", nilai: (b) => b.memberBaru, isi: (b) => angka.format(b.memberBaru) },
   ];
 
   const kolomTampil = KOLOM_TAMPILAN[tampilan].flatMap((k) => kolom.filter((x) => x.kunci === k));

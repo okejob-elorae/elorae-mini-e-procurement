@@ -3,6 +3,7 @@ import { hitungPromoKonter, promoBerlaku, type BarisKeranjangPromo, type DiskonM
 import {
   contohPromo,
   hariSah,
+  jumlahPotongPaket,
   hitungPemakaianPromo,
   keHariWib,
   keRentangWib,
@@ -49,6 +50,8 @@ const isian = (i: Partial<IsianPromoKonter> = {}): IsianPromoKonter => ({
   priority: 0,
   note: "",
   storeSharePercent: 0,
+  memberOnly: false,
+  komponen: [],
   ...i,
 });
 
@@ -241,5 +244,177 @@ describe("hitungPemakaianPromo", () => {
 
   it("nota tanpa promo tidak tercatat", () => {
     expect(hitungPemakaianPromo([notaDariMesin("n1", [kaos], [persen])]).size).toBe(0);
+  });
+});
+
+describe("pemakaian dengan rincian dan diskon member (2026-10-20)", () => {
+  it("uses the recorded per-promo detail exactly, including a second promo on the same line", () => {
+    const hasil = hitungPemakaianPromo([
+      {
+        id: "n1",
+        total: 80_000,
+        discountTotal: 20_000,
+        orderDiscount: 0,
+        manualDiscount: 0,
+        memberDiscount: 5_000,
+        orderPromoId: null,
+        baris: [{ counterPromoId: "a", qty: 2, unitPrice: 50_000, lineTotal: 80_000, discount: 20_000 }],
+        rincian: [
+          { promoId: "a", discount: 10_000 },
+          { promoId: "b", discount: 5_000 },
+        ],
+      },
+    ]);
+    expect(hasil.get("a")).toEqual({ nota: 1, potongan: 10_000 });
+    expect(hasil.get("b")).toEqual({ nota: 1, potongan: 5_000 });
+  });
+
+  it("does not count the member discount as item-promo discount on notes without detail", () => {
+    const hasil = hitungPemakaianPromo([
+      {
+        id: "n1",
+        total: 85_000,
+        discountTotal: 15_000,
+        orderDiscount: 0,
+        manualDiscount: 0,
+        memberDiscount: 5_000,
+        orderPromoId: null,
+        baris: [{ counterPromoId: "a", qty: 1, unitPrice: 100_000, lineTotal: 85_000, discount: 15_000 }],
+      },
+    ]);
+    expect(hasil.get("a")?.potongan).toBe(10_000);
+  });
+});
+
+describe("promo paket dan khusus member di formulir kantor (2026-10-20)", () => {
+  const paket = (i: Partial<IsianPromoKonter> = {}) =>
+    isian({
+      name: "Paket kaos + celana",
+      type: "PAKET",
+      value: 250_000,
+      komponen: [
+        { jenis: "CATEGORY", refId: "kaos", qty: 2 },
+        { jenis: "ITEM", refId: "celana", qty: 1 },
+      ],
+      ...i,
+    });
+
+  it("derives the item and category targets from the components and never keeps 'all items'", () => {
+    const r = rapikanIsianPromoKonter(paket({ allItems: true, itemIds: ["lain"], categoryIds: ["lain"], buyQty: 2, freeQty: 1, minSubtotal: 9 }));
+    expect(r).toMatchObject({
+      type: "PAKET",
+      value: 250_000,
+      allItems: false,
+      itemIds: ["celana"],
+      categoryIds: ["kaos"],
+      buyQty: null,
+      freeQty: null,
+      minSubtotal: null,
+    });
+    expect(r.komponen).toEqual([
+      { jenis: "CATEGORY", refId: "kaos", qty: 2 },
+      { jenis: "ITEM", refId: "celana", qty: 1 },
+    ]);
+    expect(periksaIsianPromoKonter(r)).toEqual([]);
+  });
+
+  it("drops components from every other promo type", () => {
+    const r = rapikanIsianPromoKonter(isian({ komponen: [{ jenis: "ITEM", refId: "celana", qty: 2 }] }));
+    expect(r.komponen).toEqual([]);
+    expect(r.allItems).toBe(true);
+  });
+
+  it("keeps broken components so the check refuses them instead of saving a smaller bundle", () => {
+    const rusak = rapikanIsianPromoKonter(
+      paket({ komponen: [{ jenis: "ITEM", refId: "celana", qty: 1 }, { jenis: "BARANG", refId: "kaos", qty: 1 } as never, null as never] }),
+    );
+    expect(rusak.komponen).toHaveLength(3);
+    expect(periksaIsianPromoKonter(rusak)).toContain("PAKET_TIDAK_VALID");
+    expect(rapikanIsianPromoKonter(paket({ komponen: "bukan daftar" as never })).komponen).toEqual([]);
+  });
+
+  it("refuses an empty, duplicated, too small or out-of-range bundle with one problem, not 'no products' too", () => {
+    const masalah = (i: Partial<IsianPromoKonter>) => periksaIsianPromoKonter(rapikanIsianPromoKonter(paket(i)));
+    expect(masalah({ komponen: [] })).toEqual(["PAKET_TIDAK_VALID"]);
+    expect(
+      masalah({
+        komponen: [
+          { jenis: "ITEM", refId: "celana", qty: 1 },
+          { jenis: "ITEM", refId: "celana", qty: 1 },
+        ],
+      }),
+    ).toEqual(["PAKET_TIDAK_VALID"]);
+    expect(masalah({ komponen: [{ jenis: "ITEM", refId: "celana", qty: 1 }] })).toEqual(["PAKET_TIDAK_VALID"]);
+    expect(masalah({ komponen: [{ jenis: "ITEM", refId: "celana", qty: 21 }] })).toEqual(["PAKET_TIDAK_VALID"]);
+    expect(masalah({ komponen: [{ jenis: "ITEM", refId: "", qty: 2 }] })).toEqual(["PAKET_TIDAK_VALID"]);
+    expect(masalah({ komponen: [{ jenis: "ITEM", refId: "celana", qty: 1.5 }, { jenis: "CATEGORY", refId: "kaos", qty: 1 }] })).toEqual(["PAKET_TIDAK_VALID"]);
+    expect(masalah({ value: null })).toEqual(["NILAI_TIDAK_VALID"]);
+  });
+
+  it("keeps the members-only switch as a strict boolean on every promo type", () => {
+    expect(rapikanIsianPromoKonter(isian({ memberOnly: true })).memberOnly).toBe(true);
+    expect(rapikanIsianPromoKonter(isian({ memberOnly: "ya" as never })).memberOnly).toBe(false);
+    expect(rapikanIsianPromoKonter(paket({ memberOnly: true })).memberOnly).toBe(true);
+    expect(periksaIsianPromoKonter(rapikanIsianPromoKonter(isian({ memberOnly: true })))).toEqual([]);
+  });
+
+  it("counts the pieces of one bundle, ignoring quantities that are not whole numbers", () => {
+    expect(jumlahPotongPaket(paket().komponen)).toBe(3);
+    expect(jumlahPotongPaket([{ jenis: "ITEM", refId: "a", qty: Number.NaN }, { jenis: "ITEM", refId: "b", qty: 2 }])).toBe(2);
+    expect(jumlahPotongPaket(undefined)).toBe(0);
+  });
+
+  it("works the bundle example out with the same engine as the receipt", () => {
+    const komponen = paket().komponen;
+    expect(contohPromo({ type: "PAKET", value: 450_000, buyQty: null, freeQty: null, minSubtotal: null, komponen })).toEqual({
+      jenis: "BUNDEL",
+      qty: 3,
+      harga: 199_000,
+      kotor: 597_000,
+      bayar: 450_000,
+      terbentuk: true,
+      dariHargaBarang: false,
+    });
+    // Not below the normal price: the counter does not form the bundle.
+    expect(contohPromo({ type: "PAKET", value: 600_000, buyQty: null, freeQty: null, minSubtotal: null, komponen })).toEqual({
+      jenis: "BUNDEL",
+      qty: 3,
+      harga: 199_000,
+      kotor: 597_000,
+      bayar: 597_000,
+      terbentuk: false,
+      dariHargaBarang: false,
+    });
+    expect(contohPromo({ type: "PAKET", value: null, buyQty: null, freeQty: null, minSubtotal: null, komponen })).toBeNull();
+    expect(
+      contohPromo({ type: "PAKET", value: 100_000, buyQty: null, freeQty: null, minSubtotal: null, komponen: [{ jenis: "ITEM", refId: "a", qty: 1 }] }),
+    ).toBeNull();
+  });
+});
+
+describe("contoh paket dengan harga barang sebenarnya (2026-10-20)", () => {
+  const komponen = [
+    { jenis: "ITEM" as const, refId: "kemeja", qty: 1 },
+    { jenis: "ITEM" as const, refId: "celana", qty: 1 },
+  ];
+  const harga = new Map([
+    ["kemeja", 249_000],
+    ["celana", 279_000],
+  ]);
+  it("uses the goods' Elorae selling prices when every component is a specific item", () => {
+    const c = contohPromo({ type: "PAKET", value: 450_000, buyQty: null, freeQty: null, minSubtotal: null, komponen, hargaBarang: (id) => harga.get(id) ?? null });
+    expect(c).toEqual({ jenis: "BUNDEL", qty: 2, harga: 0, kotor: 528_000, bayar: 450_000, terbentuk: true, dariHargaBarang: true });
+  });
+  it("falls back to the sample price when a component is a category or a price is missing", () => {
+    const c = contohPromo({
+      type: "PAKET",
+      value: 450_000,
+      buyQty: null,
+      freeQty: null,
+      minSubtotal: null,
+      komponen: [komponen[0], { jenis: "CATEGORY", refId: "kaos", qty: 1 }],
+      hargaBarang: (id) => harga.get(id) ?? null,
+    });
+    expect(c && c.jenis === "BUNDEL" && c.dariHargaBarang).toBe(false);
   });
 });

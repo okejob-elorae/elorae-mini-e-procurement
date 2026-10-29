@@ -73,6 +73,7 @@ d("recordSpgSale: harga di toko konsinyasi (test bed only)", () => {
       await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
       await prisma.spgSaleLine.deleteMany({ where: { itemId: seededId(itemId) } });
     }
+    if (semuaToko().length) await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { storeId: { in: semuaToko() } }, select: { id: true } })).map((x) => x.id) } } });
     if (semuaToko().length) await prisma.spgSale.deleteMany({ where: { storeId: { in: semuaToko() } } });
     if (itemId) await prisma.item.delete({ where: { id: seededId(itemId) } });
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });

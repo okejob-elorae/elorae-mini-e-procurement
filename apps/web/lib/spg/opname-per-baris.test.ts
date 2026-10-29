@@ -63,6 +63,7 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
     await prisma.spgSaleReturn.deleteMany({ where: { id: { in: seededIds(retur) } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(kemeja) } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: seededIds(semuaNota) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(semuaNota) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(semuaNota) } } });
     await prisma.storeStockMovement.deleteMany({ where: { storeId: seededId(tokoId) } });
     await prisma.storeOpname.deleteMany({ where: { storeId: seededId(tokoId) } });

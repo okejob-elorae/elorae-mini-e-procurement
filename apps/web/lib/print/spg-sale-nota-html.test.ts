@@ -21,12 +21,14 @@ const dasar: SpgSaleDetail = {
   orderDiscount: 0,
   manualDiscount: 0,
   manualDiscountReason: null,
+  memberDiscount: 0,
+  memberTier: null,
   capturedOffline: false,
   syncedAtIso: null,
   customer: null,
   lines: [
-    { productName: "Kaos — M", variantSku: "KAOS-M", qty: 2, unitPrice: 100_000, lineTotal: 200_000, discount: 0, promoName: null },
-    { productName: "Topi", variantSku: null, qty: 1, unitPrice: 50_000, lineTotal: 50_000, discount: 0, promoName: null },
+    { productName: "Kaos — M", variantSku: "KAOS-M", qty: 2, unitPrice: 100_000, lineTotal: 200_000, discount: 0, promoName: null, promoDiscount: null },
+    { productName: "Topi", variantSku: null, qty: 1, unitPrice: 50_000, lineTotal: 50_000, discount: 0, promoName: null, promoDiscount: null },
   ],
 };
 
@@ -124,5 +126,82 @@ describe("spgSaleNotaHtml", () => {
     const html = spgSaleNotaHtml(dasar);
     expect(html).not.toMatch(/size:\s*80mm/);
     expect(html).toContain("max-width: 80mm");
+  });
+});
+
+describe("diskon member di nota (2026-10-20)", () => {
+  const baris = (discount: number, promoName: string | null, promoDiscount: number | null) => ({
+    productName: "x",
+    variantSku: null,
+    qty: 1,
+    unitPrice: 100_000,
+    lineTotal: 100_000 - discount,
+    discount,
+    promoName,
+    promoDiscount,
+  });
+
+  it("shows the member discount on its own row and keeps it out of the item-promo figure", () => {
+    const r = rincianNotaSpg({
+      subtotal: 200_000,
+      total: 167_000,
+      discountTotal: 33_000,
+      orderPromoName: null,
+      orderDiscount: 0,
+      manualDiscount: 0,
+      memberDiscount: 3_000,
+      memberTier: "Gold",
+      lines: [baris(30_000, "Paket", 30_000), baris(3_000, null, 0)],
+    });
+    expect(r.promoBarang).toBe(30_000);
+    expect(r.diskonMember).toEqual({ tingkat: "Gold", potongan: 3_000 });
+    expect(r.baris.map((b) => b.potongan)).toEqual([30_000, null]);
+    expect(jenisPotongan(r)).toBe(2);
+  });
+
+  it("writes the exact promo part on a line even when other discounts share it", () => {
+    const r = rincianNotaSpg({
+      subtotal: 100_000,
+      total: 85_000,
+      discountTotal: 15_000,
+      orderPromoName: "Belanja",
+      orderDiscount: 5_000,
+      manualDiscount: 0,
+      memberDiscount: 0,
+      memberTier: null,
+      lines: [baris(15_000, "Diskon 10%", 10_000)],
+    });
+    expect(r.baris[0].potongan).toBe(10_000);
+  });
+
+  it("prints the member row on the paper receipt", () => {
+    const html = spgSaleNotaHtml({
+      ...({} as Parameters<typeof spgSaleNotaHtml>[0]),
+      id: "s",
+      docNo: "SPG/1",
+      salesmanLabel: "SPG",
+      storeName: "Toko",
+      saleLat: null,
+      saleLng: null,
+      subtotal: 100_000,
+      total: 97_000,
+      cashReceived: 97_000,
+      changeGiven: 0,
+      note: null,
+      createdAtIso: "2026-10-20T05:00:00.000Z",
+      discountTotal: 3_000,
+      orderPromoName: null,
+      orderDiscount: 0,
+      manualDiscount: 0,
+      manualDiscountReason: null,
+      memberDiscount: 3_000,
+      memberTier: "Silver",
+      capturedOffline: false,
+      syncedAtIso: null,
+      customer: null,
+      lines: [baris(3_000, null, 0)],
+    });
+    expect(html).toContain("Diskon member (Silver)");
+    expect(html).not.toContain("Promo barang");
   });
 });

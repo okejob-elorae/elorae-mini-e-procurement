@@ -182,8 +182,13 @@ export interface PendingBuktiTerima {
  * Pembeli pada nota SPG yang tertahan: pelanggan toko yang sudah ada (`id`,
  * `nama` hanya untuk ditampilkan), atau pembeli baru yang dicatat di konter —
  * nomornya hanya dikirim kalau pembeli setuju dihubungi lewat WhatsApp.
+ * `daftarMember` = pembeli setuju didaftarkan sebagai member Elorae di nota ini;
+ * server yang memutuskan saat nota terkirim (nota tetap tercatat walau
+ * pendaftarannya tidak jadi). Kolom opsional di dalam objek tersimpan — bukan
+ * indeks — jadi tidak butuh versi skema Dexie baru; nota antrean lama tanpanya
+ * terbaca sebagai "tidak minta didaftarkan".
  */
-export type PembeliTertahan = { id: string; nama: string } | { nama: string; hp: string; setuju: boolean };
+export type PembeliTertahan = ({ id: string; nama: string } | { nama: string; hp: string; setuju: boolean }) & { daftarMember?: boolean };
 
 /**
  * Nota penjualan SPG yang dicatat tanpa sinyal. `localId` = kunci idempotensi

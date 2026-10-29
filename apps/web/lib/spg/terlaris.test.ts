@@ -52,6 +52,7 @@ d("terlarisToko — laku bersih (test bed only)", () => {
   });
 
   afterAll(async () => {
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(nota) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(nota) } } });
     await prisma.user.deleteMany({ where: { id: seededId(spg) } });
     await prisma.store.deleteMany({ where: { id: seededId(toko) } });

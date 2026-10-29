@@ -8,9 +8,11 @@ import {
   bagiSisaTerbesar,
   hitungPromoKonter,
   JENIS_PROMO_KONTER,
+  PAKET_MAKS_POTONG,
   periksaPromoKonter,
   promoNota,
   type JenisPromoKonter,
+  type KomponenPaket,
   type MasalahPromoKonter,
   type PromoKonter,
 } from "./promo-konter";
@@ -102,12 +104,29 @@ export const HARGA_CONTOH = 199_000;
 export type ContohPromo =
   | { jenis: "SATUAN"; harga: number; sesudah: number }
   | { jenis: "PAKET"; qty: number; harga: number; kotor: number; bayar: number; gratis: number }
+  /**
+   * Promo PAKET (bundling): `qty` potong seharga `harga` masing-masing, total
+   * `kotor`; `bayar` = yang dibayar pembeli. `terbentuk` salah = harga paket
+   * tidak di bawah harga normalnya, jadi konter tidak membentuk paket.
+   */
+  | { jenis: "BUNDEL"; qty: number; harga: number; kotor: number; bayar: number; terbentuk: boolean; dariHargaBarang: boolean }
   | { jenis: "NOTA"; belanja: number; sesudah: number };
+
+/** Jumlah potong satu paket (Σ jumlah komponen yang bilangan bulat ≥ 1). */
+export function jumlahPotongPaket(komponen: readonly KomponenPaket[] | null | undefined): number {
+  return (komponen ?? []).reduce((s, k) => s + (Number.isInteger(k.qty) && k.qty >= 1 ? k.qty : 0), 0);
+}
 
 /**
  * Contoh hitungan untuk formulir, memakai MESIN YANG SAMA dengan nota
  * (`hitungPromoKonter`) — jadi contohnya tidak pernah menjanjikan potongan
  * yang tidak akan diberikan konter. Null bila isian belum cukup untuk dihitung.
+ *
+ * Contoh paket yang isinya SEMUA barang tertentu memakai harga jual Elorae
+ * barang-barang itu (`hargaBarang`) — angka dari data, bukan tebakan. Paket
+ * dengan komponen kategori memakai satu harga contoh per potong, karena
+ * barangnya baru diketahui saat pembeli memilih. Di toko konsinyasi harga
+ * konternya lebih tinggi (dinaikkan margin toko); layar menyebutnya.
  */
 export function contohPromo(p: {
   type: JenisPromoKonter;
@@ -115,7 +134,12 @@ export function contohPromo(p: {
   buyQty: number | null;
   freeQty: number | null;
   minSubtotal: number | null;
+  komponen?: readonly KomponenPaket[] | null;
+  /** Harga jual Elorae per barang (untuk contoh paket); null/0 = tidak diketahui. */
+  hargaBarang?: (itemId: string) => number | null;
 }): ContohPromo | null {
+  const paket = p.type === "PAKET";
+  const isiPaket = paket ? jumlahPotongPaket(p.komponen) : 0;
   const promo: PromoKonter = {
     id: "contoh",
     name: "contoh",
@@ -124,8 +148,8 @@ export function contohPromo(p: {
     buyQty: p.buyQty,
     freeQty: p.freeQty,
     minSubtotal: p.minSubtotal,
-    allItems: true,
-    itemIds: [],
+    allItems: !paket,
+    itemIds: paket ? ["contoh"] : [],
     categoryIds: [],
     allStores: true,
     storeIds: [],
@@ -133,6 +157,7 @@ export function contohPromo(p: {
     endsAt: null,
     priority: 0,
     isActive: true,
+    ...(paket ? { komponen: [{ jenis: "ITEM" as const, refId: "contoh", qty: isiPaket }] } : {}),
   };
   const hitung = (qty: number, unitPrice: number) => {
     const h = hitungPromoKonter({
@@ -153,6 +178,25 @@ export function contohPromo(p: {
     return { jenis: "PAKET", qty: beli + gratis, harga: HARGA_CONTOH, kotor: h.subtotal, bayar: h.total, gratis: h.baris[0]?.gratis ?? 0 };
   }
   if (p.value === null || !Number.isFinite(p.value) || p.value <= 0) return null;
+  if (paket) {
+    if (isiPaket < 2 || isiPaket > PAKET_MAKS_POTONG) return null;
+    const komponen = (p.komponen ?? []).filter((k) => Number.isInteger(k.qty) && k.qty >= 1);
+    const harga = komponen.map((k) => (k.jenis === "ITEM" && k.refId ? (p.hargaBarang?.(k.refId) ?? null) : null));
+    if (komponen.length > 0 && harga.every((x) => x !== null && x > 0)) {
+      const asli = hitungPromoKonter({
+        baris: komponen.map((k, i) => ({ key: `k${i}`, itemId: k.refId, categoryId: null, qty: k.qty, unitPrice: harga[i] as number })),
+        promos: [{ ...promo, itemIds: komponen.map((k) => k.refId), komponen }],
+        storeId: "contoh",
+        waktu: new Date(0),
+      });
+      if (asli.ok) {
+        return { jenis: "BUNDEL", qty: isiPaket, harga: 0, kotor: asli.subtotal, bayar: asli.total, terbentuk: asli.total < asli.subtotal, dariHargaBarang: true };
+      }
+    }
+    const h = hitung(isiPaket, HARGA_CONTOH);
+    if (!h) return null;
+    return { jenis: "BUNDEL", qty: isiPaket, harga: HARGA_CONTOH, kotor: h.subtotal, bayar: h.total, terbentuk: h.total < h.subtotal, dariHargaBarang: false };
+  }
   if (promoNota(p.type)) {
     const min = p.minSubtotal ?? 0;
     if (!Number.isFinite(min) || min < 0) return null;
@@ -174,8 +218,15 @@ export type NotaPemakaian = {
   discountTotal: number;
   orderDiscount: number;
   manualDiscount: number;
+  /** Diskon member nota ini (0 untuk nota tanpa member dan nota lama). */
+  memberDiscount?: number;
   orderPromoId: string | null;
   baris: { counterPromoId: string | null; qty: number; unitPrice: number; lineTotal: number; discount: number }[];
+  /**
+   * Rincian potongan per promo yang dicatat penulis nota sejak 2026-10-20
+   * (`SpgSalePromo`). Kalau ada, dipakai PERSIS dan perkiraan di bawah tidak dipakai.
+   */
+  rincian?: { promoId: string | null; discount: number }[];
 };
 
 export type PemakaianPromo = { nota: number; potongan: number };
@@ -195,6 +246,10 @@ const keSen = (rupiah: number) => Math.round(rupiah * 100);
  *     manual, dan untuk promo belanja yang berlaku ke semua barang).
  * Baris yang kena dua promo barang dicatat atas promo yang potongannya terbesar
  * (`counterPromoId`) — sama dengan yang tertulis di nota.
+ *
+ * Nota sejak 2026-10-20 membawa rinciannya sendiri (`rincian`): setiap promo
+ * mendapat potongannya persis, termasuk promo kedua di baris yang sama. Diskon
+ * member bukan promo dan tidak pernah masuk ke sini.
  */
 export function hitungPemakaianPromo(nota: readonly NotaPemakaian[]): Map<string, PemakaianPromo> {
   const hasil = new Map<string, { nota: Set<string>; sen: number }>();
@@ -206,11 +261,15 @@ export function hitungPemakaianPromo(nota: readonly NotaPemakaian[]): Map<string
   };
 
   for (const n of nota) {
+    if (n.rincian && n.rincian.length > 0) {
+      for (const r of n.rincian) if (r.promoId) tambah(r.promoId, n.id, keSen(r.discount));
+      continue;
+    }
     if (n.orderPromoId) tambah(n.orderPromoId, n.id, keSen(n.orderDiscount));
 
     const barisPromo = n.baris.filter((b) => b.counterPromoId);
     if (barisPromo.length === 0) continue;
-    const potonganNotaSen = keSen(n.orderDiscount) + keSen(n.manualDiscount);
+    const potonganNotaSen = keSen(n.orderDiscount) + keSen(n.manualDiscount) + keSen(n.memberDiscount ?? 0);
     const promoBarangSen = Math.max(0, keSen(n.discountTotal) - potonganNotaSen);
     const totalSen = keSen(n.total);
     let bobot = barisPromo.map((b) => {
@@ -255,6 +314,13 @@ export type IsianPromoKonter = {
    * angka ini tidak berarti apa-apa di sana.
    */
   storeSharePercent: number;
+  /** Hanya berlaku bila nota punya member. */
+  memberOnly: boolean;
+  /**
+   * Hanya PAKET: isi satu paket (barang tertentu atau barang dari kategori,
+   * masing-masing dengan jumlahnya). Jenis lain selalu kosong.
+   */
+  komponen: KomponenPaket[];
 };
 
 export type MasalahIsianPromoKonter =
@@ -283,26 +349,58 @@ const unik = (xs: readonly string[]) => [...new Set(xs.filter((x) => typeof x ==
 const angkaAtauNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 /**
+ * Komponen paket dari isian yang belum tentu rapi (formulir, atau pemanggil
+ * aksi yang tidak dikenal). Bentuknya dipertahankan apa adanya — komponen yang
+ * rusak TIDAK dibuang diam-diam, supaya `komponenPaketSah` menolaknya dan paket
+ * tidak tersimpan dengan isi yang lebih sedikit dari yang dimaksud kantor.
+ */
+function rapikanKomponen(raw: unknown): KomponenPaket[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((k): KomponenPaket => {
+    const o = k && typeof k === "object" ? (k as Record<string, unknown>) : {};
+    return {
+      jenis: (typeof o.jenis === "string" ? o.jenis : "") as KomponenPaket["jenis"],
+      refId: typeof o.refId === "string" ? o.refId.trim() : "",
+      qty: typeof o.qty === "number" ? o.qty : Number.NaN,
+    };
+  });
+}
+
+/**
  * Rapikan isian sebelum diperiksa dan disimpan: kolom yang tidak dipakai jenis
  * promo itu dikosongkan (jadi isian lama yang tertinggal di formulir tidak
  * pernah ikut tersimpan), dan sasaran "semua" membuang daftar pilihannya.
+ *
+ * PAKET: sasaran barang/kategori DITURUNKAN dari komponennya (mesin dan
+ * pemeriksa rujukan membaca `itemIds`/`categoryIds`), dan tidak pernah "semua
+ * barang" — isi paketlah yang menentukan barangnya.
  */
 export function rapikanIsianPromoKonter(i: IsianPromoKonter): IsianPromoKonter {
   const type = String(i.type ?? "");
-  const paket = type === "BELI_GRATIS";
+  const beliGratis = type === "BELI_GRATIS";
+  const paket = type === "PAKET";
   const nota = (JENIS_PROMO_KONTER as readonly string[]).includes(type) && promoNota(type as JenisPromoKonter);
-  const allItems = i.allItems === true;
+  const komponen = paket ? rapikanKomponen(i.komponen) : [];
+  const allItems = !paket && i.allItems === true;
   const allStores = i.allStores === true;
   return {
     name: String(i.name ?? "").trim(),
     type,
-    value: paket ? null : angkaAtauNull(i.value),
-    buyQty: paket ? angkaAtauNull(i.buyQty) : null,
-    freeQty: paket ? angkaAtauNull(i.freeQty) : null,
+    value: beliGratis ? null : angkaAtauNull(i.value),
+    buyQty: beliGratis ? angkaAtauNull(i.buyQty) : null,
+    freeQty: beliGratis ? angkaAtauNull(i.freeQty) : null,
     minSubtotal: nota ? angkaAtauNull(i.minSubtotal) : null,
     allItems,
-    itemIds: allItems || !Array.isArray(i.itemIds) ? [] : unik(i.itemIds),
-    categoryIds: allItems || !Array.isArray(i.categoryIds) ? [] : unik(i.categoryIds),
+    itemIds: paket
+      ? unik(komponen.filter((k) => k.jenis === "ITEM").map((k) => k.refId))
+      : allItems || !Array.isArray(i.itemIds)
+        ? []
+        : unik(i.itemIds),
+    categoryIds: paket
+      ? unik(komponen.filter((k) => k.jenis === "CATEGORY").map((k) => k.refId))
+      : allItems || !Array.isArray(i.categoryIds)
+        ? []
+        : unik(i.categoryIds),
     allStores,
     storeIds: allStores || !Array.isArray(i.storeIds) ? [] : unik(i.storeIds),
     dari: String(i.dari ?? "").trim(),
@@ -310,6 +408,8 @@ export function rapikanIsianPromoKonter(i: IsianPromoKonter): IsianPromoKonter {
     priority: typeof i.priority === "number" ? i.priority : Number.NaN,
     note: String(i.note ?? "").trim(),
     storeSharePercent: typeof i.storeSharePercent === "number" ? i.storeSharePercent : Number.NaN,
+    memberOnly: i.memberOnly === true,
+    komponen,
   };
 }
 
@@ -317,14 +417,19 @@ export function rapikanIsianPromoKonter(i: IsianPromoKonter): IsianPromoKonter {
  * Periksa isian yang sudah dirapikan (tanpa basis data). Kosong = sah. Aturan
  * promo itu sendiri dari `periksaPromoKonter` di mesin; di sini ditambah yang
  * khas formulir kantor: tanggal, prioritas, panjang teks, batas angka.
+ *
+ * Paket tanpa komponen tidak dilaporkan dua kali: `PAKET_TIDAK_VALID` sudah
+ * mencakup "belum ada barang", jadi `BARANG_KOSONG` dibuang untuk PAKET.
  */
 export function periksaIsianPromoKonter(i: IsianPromoKonter): MasalahIsianPromoKonter[] {
   const rentang = keRentangWib(i.dari, i.sampai);
-  const masalah: MasalahIsianPromoKonter[] = periksaPromoKonter({
+  let masalah: MasalahIsianPromoKonter[] = periksaPromoKonter({
     ...i,
     startsAt: rentang?.startsAt ?? null,
     endsAt: rentang?.endsAt ?? null,
+    komponen: i.komponen,
   });
+  if (i.type === "PAKET") masalah = masalah.filter((m) => m !== "BARANG_KOSONG");
   if (i.name.length > PANJANG_NAMA_MAKS) masalah.push("NAMA_TERLALU_PANJANG");
   if (i.note.length > PANJANG_CATATAN_MAKS) masalah.push("CATATAN_TERLALU_PANJANG");
   if (!rentang) masalah.push("TANGGAL_TIDAK_VALID");

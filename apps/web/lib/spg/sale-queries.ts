@@ -143,6 +143,9 @@ export type SpgSaleDetail = {
   orderDiscount: number;
   manualDiscount: number;
   manualDiscountReason: string | null;
+  /** Diskon member nota ini (0 = bukan member atau tanpa diskon) dan tingkatnya saat dijual. */
+  memberDiscount: number;
+  memberTier: string | null;
   /** Dicatat tanpa sinyal lalu terkirim belakangan (`syncedAtIso`). */
   capturedOffline: boolean;
   syncedAtIso: string | null;
@@ -159,6 +162,11 @@ export type SpgSaleDetail = {
     lineTotal: number;
     discount: number;
     promoName: string | null;
+    /**
+     * Bagian PROMO BARANG dari `discount`, dari rincian promo nota
+     * (`SpgSalePromo`, sejak 2026-10-20). null untuk nota lama tanpa rincian.
+     */
+    promoDiscount: number | null;
   }>;
 };
 
@@ -173,9 +181,21 @@ export async function getSpgSaleById(id: string, opts?: { salesmanId?: string })
     include: { salesman: { select: { name: true, email: true } }, store: { select: { name: true } }, lines: true },
   });
   if (!r) return null;
-  const pelanggan = r.customerId
-    ? await prisma.storeCustomer.findFirst({ where: { id: r.customerId, storeId: r.storeId }, select: { id: true, name: true, phone: true } })
-    : null;
+  const [pelanggan, rincian] = await Promise.all([
+    r.customerId
+      ? prisma.storeCustomer.findFirst({ where: { id: r.customerId, storeId: r.storeId }, select: { id: true, name: true, phone: true } })
+      : null,
+    prisma.spgSalePromo.findMany({ where: { spgSaleId: r.id, kind: "BARANG" }, select: { spgSaleLineId: true, discount: true } }),
+  ]);
+  const adaRincian =
+    rincian.length > 0 || (r.orderPromoId !== null && (await prisma.spgSalePromo.count({ where: { spgSaleId: r.id } })) > 0);
+  const promoPerBaris = new Map<string, number>();
+  for (const x of rincian) {
+    if (x.spgSaleLineId) promoPerBaris.set(x.spgSaleLineId, Math.round(((promoPerBaris.get(x.spgSaleLineId) ?? 0) + Number(x.discount)) * 100) / 100);
+  }
+  // Nota dengan rincian: baris tanpa baris rincian memang tanpa promo barang (0). Nota lama
+  // yang memakai promo tanpa rincian → null, pembaca memakai aturan lamanya.
+  const sejakRincian = adaRincian;
   return {
     id: r.id,
     docNo: r.docNo,
@@ -194,6 +214,8 @@ export async function getSpgSaleById(id: string, opts?: { salesmanId?: string })
     orderDiscount: Number(r.orderDiscount),
     manualDiscount: Number(r.manualDiscount),
     manualDiscountReason: r.manualDiscountReason,
+    memberDiscount: Number(r.memberDiscount),
+    memberTier: r.memberTier,
     capturedOffline: r.capturedOffline,
     syncedAtIso: r.syncedAt ? r.syncedAt.toISOString() : null,
     customer: pelanggan,
@@ -205,6 +227,7 @@ export async function getSpgSaleById(id: string, opts?: { salesmanId?: string })
       lineTotal: Number(l.lineTotal),
       discount: Number(l.discount),
       promoName: l.promoName,
+      promoDiscount: sejakRincian ? (promoPerBaris.get(l.id) ?? 0) : null,
     })),
   };
 }

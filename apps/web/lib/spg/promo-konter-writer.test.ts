@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { JEJAK_PROMO_KONTER, type IsianPromoKonter } from "./promo-konter-kantor";
-import { laporanDiskonManual, laporanPemakaianPromo, pemakaianPromoKonter, promoKonterHp, promoKonterUntukUbah } from "./promo-konter-kantor-queries";
+import {
+  daftarPromoKonterKantor,
+  laporanDiskonManual,
+  laporanPemakaianPromo,
+  pemakaianPromoKonter,
+  promoKonterHp,
+  promoKonterUntukUbah,
+} from "./promo-konter-kantor-queries";
 import { aturAktifPromoKonter, hapusPromoKonter, simpanPromoKonter } from "./promo-konter-writer";
 import { recordSpgSale } from "./sale-writer";
 
@@ -61,6 +68,7 @@ d("promo konter kantor (test bed only)", () => {
     await prisma.storeStockMovement.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSale: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(kategoriId) } });
@@ -85,6 +93,8 @@ d("promo konter kantor (test bed only)", () => {
     priority: 0,
     note: "",
     storeSharePercent: 0,
+    memberOnly: false,
+    komponen: [],
     ...i,
   });
 
@@ -283,5 +293,134 @@ d("promo konter kantor (test bed only)", () => {
     expect(teks).not.toContain(itemId);
     expect(teks).not.toContain(kategoriId);
     expect(teks).not.toContain(storeId);
+  });
+  it("paket khusus member: komponen tersimpan dengan jumlahnya, jejak membawa isi paket sebelum/sesudah", async () => {
+    const id = await buat({
+      name: `Paket ${tag}`,
+      type: "PAKET",
+      value: 120_000,
+      memberOnly: true,
+      // Sisa isian jenis lain tidak boleh ikut tersimpan.
+      allItems: true,
+      itemIds: [item2Id],
+      komponen: [
+        { jenis: "ITEM", refId: itemId, qty: 2 },
+        { jenis: "CATEGORY", refId: kategoriId, qty: 1 },
+      ],
+    });
+    const p = await prisma.counterPromo.findUniqueOrThrow({ where: { id }, include: { targets: true } });
+    expect(p).toMatchObject({ type: "PAKET", memberOnly: true, allItems: false, buyQty: null, minSubtotal: null });
+    expect(Number(p.value)).toBe(120_000);
+    expect(p.targets.map((t) => `${t.kind}:${t.refId}:${t.qty ?? "-"}`).sort()).toEqual(
+      [`ITEM:${itemId}:2`, `CATEGORY:${kategoriId}:1`, `STORE:${storeId}:-`].sort(),
+    );
+
+    const ubah = await promoKonterUntukUbah(id);
+    expect(ubah?.isian).toMatchObject({ type: "PAKET", memberOnly: true, itemIds: [itemId], categoryIds: [kategoriId] });
+    expect(ubah?.isian.komponen).toEqual(
+      expect.arrayContaining([
+        { jenis: "ITEM", refId: itemId, qty: 2 },
+        { jenis: "CATEGORY", refId: kategoriId, qty: 1 },
+      ]),
+    );
+    expect(ubah?.isian.komponen).toHaveLength(2);
+
+    const daftar = await daftarPromoKonterKantor({ status: null });
+    const baris = daftar.baris.find((b) => b.id === id);
+    expect(baris).toMatchObject({ memberOnly: true, ringkasan: "Paket 3 potong Rp120.000" });
+    expect(baris?.isiPaket).toEqual([
+      { jenis: "ITEM", nama: `Kemeja Uji ${tag}`, qty: 2 },
+      { jenis: "CATEGORY", nama: `Kemeja ${tag}`, qty: 1 },
+    ]);
+
+    const hp = (await promoKonterHp(storeId)).find((x) => x.id === id);
+    expect(hp).toMatchObject({ memberOnly: true, ringkasan: "Paket 3 potong Rp120.000" });
+    expect(hp?.isiPaket.map((k) => `${k.qty}×${k.nama}`)).toEqual([`2×Kemeja Uji ${tag}`, `1×Kemeja ${tag}`]);
+    expect(JSON.stringify(hp)).not.toContain(itemId);
+    expect(JSON.stringify(hp)).not.toContain(kategoriId);
+
+    const r = await simpanPromoKonter({
+      id,
+      isian: isian({
+        name: `Paket ${tag}`,
+        type: "PAKET",
+        value: 130_000,
+        memberOnly: false,
+        komponen: [
+          { jenis: "ITEM", refId: item2Id, qty: 1 },
+          { jenis: "ITEM", refId: itemId, qty: 1 },
+        ],
+      }),
+      userId,
+    });
+    expect(r).toEqual({ ok: true, id });
+    const sesudah = await prisma.counterPromo.findUniqueOrThrow({ where: { id }, include: { targets: true } });
+    expect(sesudah.memberOnly).toBe(false);
+    expect(sesudah.targets.map((t) => `${t.kind}:${t.refId}:${t.qty ?? "-"}`).sort()).toEqual(
+      [`ITEM:${itemId}:1`, `ITEM:${item2Id}:1`, `STORE:${storeId}:-`].sort(),
+    );
+
+    const j = await jejak(id);
+    expect(j.map((x) => x.action)).toEqual([JEJAK_PROMO_KONTER.DIBUAT, JEJAK_PROMO_KONTER.DIUBAH]);
+    const urut = (xs: { jenis: string; refId: string; qty: number }[]) =>
+      [...xs].sort((a, b) => (a.jenis === b.jenis ? (a.refId < b.refId ? -1 : 1) : a.jenis < b.jenis ? -1 : 1));
+    expect(j[0].changes).toMatchObject({
+      before: null,
+      after: {
+        memberOnly: true,
+        komponen: urut([
+          { jenis: "ITEM", refId: itemId, qty: 2 },
+          { jenis: "CATEGORY", refId: kategoriId, qty: 1 },
+        ]),
+      },
+    });
+    expect(j[1].changes).toMatchObject({
+      before: { value: 120_000, memberOnly: true, komponen: urut([{ jenis: "ITEM", refId: itemId, qty: 2 }, { jenis: "CATEGORY", refId: kategoriId, qty: 1 }]) },
+      after: { value: 130_000, memberOnly: false, komponen: urut([{ jenis: "ITEM", refId: itemId, qty: 1 }, { jenis: "ITEM", refId: item2Id, qty: 1 }]) },
+    });
+  });
+
+  it("paket: komponen barang yang tidak ada atau bukan barang jadi ditolak tanpa menulis apa pun", async () => {
+    const r = await simpanPromoKonter({
+      isian: isian({
+        type: "PAKET",
+        value: 100_000,
+        komponen: [
+          { jenis: "ITEM", refId: itemId, qty: 1 },
+          { jenis: "ITEM", refId: kategoriId, qty: 1 },
+        ],
+      }),
+      userId,
+    });
+    expect(r).toMatchObject({ ok: false, code: "TIDAK_VALID", masalah: ["BARANG_TIDAK_DIKENAL"] });
+    const r2 = await simpanPromoKonter({
+      isian: isian({ type: "PAKET", value: 100_000, komponen: [{ jenis: "CATEGORY", refId: `${tag}-tidak-ada`, qty: 2 }] }),
+      userId,
+    });
+    expect(r2).toMatchObject({ ok: false, code: "TIDAK_VALID", masalah: ["KATEGORI_TIDAK_DIKENAL"] });
+    expect(await prisma.counterPromo.count({ where: { name: `Diskon ${tag}` } })).toBe(0);
+  });
+
+  it("paket yang tersimpan dihitung konter: dua barang dengan satu harga", async () => {
+    await buat({
+      name: `Paket jual ${tag}`,
+      type: "PAKET",
+      value: 120_000,
+      komponen: [
+        { jenis: "ITEM", refId: itemId, qty: 1 },
+        { jenis: "ITEM", refId: item2Id, qty: 1 },
+      ],
+    });
+    const nota = await recordSpgSale({
+      salesmanId: userId,
+      storeId,
+      lines: [
+        { itemId, variantSku: null, qty: 1 },
+        { itemId: item2Id, variantSku: null, qty: 1 },
+      ],
+    });
+    if (!nota.ok) throw new Error(nota.code);
+    // Kemeja 100.000 + celana 50.000 = 150.000 → paket 120.000.
+    expect(nota.total).toBe(120_000);
   });
 });

@@ -7,9 +7,11 @@ import {
   DURASI_HAUS_MS,
   fase,
   jarakKamera,
+  keputusanMutu,
   lerp,
   LEWATI_KE_MS,
   LEWATI_TAMPIL_MS,
+  majuWaktu,
   pelan,
   rgbKeHex,
   WAKTU,
@@ -106,11 +108,12 @@ export function HausElorae({ onSiap, onBuka, onSelesai }: Props) {
     };
 
     (async () => {
-      const [THREE, { RoomEnvironment }, { FontLoader }, { TextGeometry }] = await Promise.all([
+      const [THREE, { RoomEnvironment }, { FontLoader }, { TextGeometry }, { mergeVertices }] = await Promise.all([
         import("three"),
         import("three/examples/jsm/environments/RoomEnvironment.js"),
         import("three/examples/jsm/loaders/FontLoader.js"),
         import("three/examples/jsm/geometries/TextGeometry.js"),
+        import("three/examples/jsm/utils/BufferGeometryUtils.js"),
       ]);
       const font = await new FontLoader().loadAsync(FONT_3D);
       const wadah = kanvasRef.current;
@@ -142,8 +145,10 @@ export function HausElorae({ onSiap, onBuka, onSelesai }: Props) {
       sorot.position.set(1.5, 9, 3);
       sorot.target.position.set(0, 1, 0);
       sorot.castShadow = true;
-      sorot.shadow.mapSize.set(kecil ? 512 : 1024, kecil ? 512 : 1024);
+      // Bayangan huruf di lantai tampak berkotak pada 1024 (diukur 2026-10-18).
+      sorot.shadow.mapSize.set(kecil ? 1024 : 2048, kecil ? 1024 : 2048);
       sorot.shadow.bias = -0.0004;
+      sorot.shadow.normalBias = 0.02;
       scene.add(hemi, sorot, sorot.target);
 
       const matLantai = new THREE.MeshStandardMaterial({ roughness: 0.92 });
@@ -161,7 +166,15 @@ export function HausElorae({ onSiap, onBuka, onSelesai }: Props) {
       // Warna, logam, dan kekasaran diatur `pasangTema` menurut terang/gelap.
       const kromHuruf = new THREE.MeshPhysicalMaterial({ metalness: 0.6, roughness: 0.24, clearcoat: 1, clearcoatRoughness: 0.06, envMapIntensity: 1.1 });
 
-      const geoBlob = new THREE.IcosahedronGeometry(0.9, kecil ? 18 : 28);
+      // Titik-titik kembar digabung: tanpa itu setiap segitiga punya titiknya sendiri,
+      // `computeVertexNormals` menghasilkan normal per bidang, dan krom tampak bersegi-segi
+      // (50.460 titik → ±8.400; uv dan normal dibuang dulu supaya sambungan uv ikut menyatu).
+      const geoMentah = new THREE.IcosahedronGeometry(0.9, kecil ? 18 : 28);
+      geoMentah.deleteAttribute("uv");
+      geoMentah.deleteAttribute("normal");
+      const geoBlob = mergeVertices(geoMentah);
+      geoMentah.dispose();
+      geoBlob.computeVertexNormals();
       const asal = Float32Array.from(geoBlob.attributes.position.array as ArrayLike<number>);
       const blob = new THREE.Mesh(geoBlob, krom);
       blob.position.y = 1.55;
@@ -272,21 +285,36 @@ export function HausElorae({ onSiap, onBuka, onSelesai }: Props) {
       const e = new THREE.Euler();
       const vOrbit = new THREE.Vector3();
       const vTuju = new THREE.Vector3();
-      const mulai = performance.now();
+      let mulai = performance.now();
       let sudahBuka = false;
       let selesai = false;
       let tTema = 0;
-
-      const waktuEfektif = (sekarang: number) => {
-        const lw = lewatiPada.current;
-        if (lw === null) return sekarang - mulai;
-        const t0 = Math.max(lw - mulai, 0);
-        return Math.max(t0, LEWATI_KE_MS) + (sekarang - lw) * 1.25;
-      };
+      // Waktu pertunjukan dijumlahkan per bingkai (`majuWaktu`), bukan dibaca dari jam dinding:
+      // sesudah bingkai macet gerakannya berlanjut, tidak meloncat.
+      let tm = 0;
+      let sebelum = mulai;
+      let sudahLewati = false;
+      const selang: number[] = [];
+      let mutuDiputuskan = false;
 
       const bingkai = (sekarang: number) => {
         if (batal || selesai) return;
-        const tm = Math.min(DURASI_HAUS_MS, waktuEfektif(sekarang));
+        const dt = sekarang - sebelum;
+        sebelum = sekarang;
+        if (lewatiPada.current !== null && !sudahLewati) {
+          sudahLewati = true;
+          tm = Math.max(tm, LEWATI_KE_MS);
+        }
+        tm = majuWaktu({ tm, dt, nyata: sekarang - mulai, lewati: sudahLewati });
+        // Perangkat lambat: kerapatan piksel diturunkan sekali, selagi lampu baru menyala.
+        if (!mutuDiputuskan) {
+          if (dt > 0) selang.push(dt);
+          const putusan = keputusanMutu(selang);
+          if (putusan !== "BELUM" || tm > WAKTU.nyala[1]) {
+            mutuDiputuskan = true;
+            if (putusan === "TURUNKAN" && renderer.getPixelRatio() > 1) renderer.setPixelRatio(1);
+          }
+        }
         const s = tm / 1000;
         if (tm < 6000 && sekarang - tTema > 500) {
           tTema = sekarang;
@@ -387,8 +415,15 @@ export function HausElorae({ onSiap, onBuka, onSelesai }: Props) {
         raf = requestAnimationFrame(bingkai);
       };
 
+      // Shader dirakit di latar (KHR_parallel_shader_compile) sebelum bingkai pertama, supaya
+      // tidak menahan halaman saat bahan krom dan bayangan pertama kali digambar.
+      await renderer.compileAsync(scene, camera);
+      if (batal) return;
       renderer.render(scene, camera);
       balik.current.onSiap();
+      // Jam pertunjukan mulai di bingkai pertama, bukan sebelum shader dirakit.
+      mulai = performance.now();
+      sebelum = mulai;
       raf = requestAnimationFrame(bingkai);
     })().catch(gagal);
 

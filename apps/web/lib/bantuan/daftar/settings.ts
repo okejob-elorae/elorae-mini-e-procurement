@@ -225,6 +225,18 @@ export const ENTRI: EntriBantuan[] = [
     isi: { kunci: "settings.spg.subtitle" },
     kartu: [
       { judul: { kunci: "pengaturanDiskonManualSpg.judul" }, isi: { kunci: "pengaturanDiskonManualSpg.penjelasan" } },
+      {
+        judul: { kunci: "pengaturanMemberSpg.judul" },
+        isi: [
+          "Member Elorae berlaku di semua toko dan dikenali dari nomor WhatsApp pembeli — tanpa kartu atau nomor member terpisah. SPG mendaftarkan pembeli di konter dengan persetujuannya; gratis, kecuali belanja minimal untuk mendaftar diisi (nilai nota sebelum diskon member). Bila belanja minimal diisi, pendaftaran hanya lewat nota yang mencapainya — tidak dari rincian pelanggan.",
+          "Tingkat tidak disimpan: dihitung dari belanja bersih (nilai nota sesudah potongan, dikurangi barang yang dikembalikan) nomor itu di semua toko dalam periode penentu tingkat, termasuk belanja sebelum mendaftar. Member mendapat tingkat tertinggi yang belanja minimalnya tercapai. Tingkat pertama selalu mulai dari Rp0; paling banyak enam tingkat. Nota menyimpan nama tingkat saat itu, jadi mengganti nama tingkat tidak mengubah nota lama.",
+          "Diskon member bawaan mati. Selama mati, pendaftaran, tingkat, promo khusus member, dan pelacakan tetap jalan, tetapi tidak ada potongan uang. Menyalakannya mengurangi pendapatan di semua toko setiap kali member belanja, karena itu kartu meminta konfirmasi sebelum menyimpan. Member baru langsung mendapat diskon tingkatnya di nota tempat ia mendaftar.",
+          "Urutan potongan di nota: promo barang, diskon member, promo belanja, lalu diskon manual. Bila diskon member tidak digabung dengan promo, potong yang sudah kena promo barang tidak mendapat diskon member. Di toko konsinyasi, bagian toko dari diskon member mengikuti persen bagian toko (0 = ditanggung penuh Elorae); di toko putus hanya dicatat.",
+          "Pelanggan tidur: pelanggan yang tidak belanja di tokonya sekian hari atau lebih (bawaan 90). Dipakai layar Pelanggan SPG dan HP SPG.",
+          "Mematikan program member menutup pendaftaran baru; member yang sudah ada tetap member. Poin member belum ada: poin adalah utang ke pembeli yang harus dibukukan.",
+          "Kartu ini diubah oleh pengelola promo. Setiap perubahan tercatat di jejak audit beserta isi sebelum dan sesudahnya.",
+        ],
+      },
       { judul: { kunci: "spgTutupHari.pengaturan.judul" }, isi: { kunci: "spgTutupHari.pengaturan.penjelasan" } },
       { judul: { kunci: "spgTitip.pengaturan.judul" }, isi: { kunci: "spgTitip.pengaturan.penjelasan" } },
       { judul: { kunci: "jadwalSpg.pengaturan.judul" }, isi: { kunci: "jadwalSpg.pengaturan.penjelasan" } },

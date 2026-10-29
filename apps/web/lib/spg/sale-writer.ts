@@ -6,8 +6,11 @@ import { variantDetailForSku } from "@/lib/items/variants";
 import { nomorWhatsApp } from "@/lib/salesman/dasbor";
 import { bacaDiskonManual, KUNCI_DISKON_MANUAL } from "./pengaturan";
 import { hargaKasirSpg, syaratHargaToko } from "./harga-kasir";
-import { hitungPromoKonter, type DiskonManual } from "./promo-konter";
+import { hitungPromoKonter, type AnggotaNota, type DiskonManual } from "./promo-konter";
 import { promoKonterUntukToko } from "./promo-konter-queries";
+import { anggotaUntukNota, awalPeriodeMember, tingkatUntukBelanja } from "./member";
+import { bacaAturanMemberDb, belanjaBersihNomor } from "./member-queries";
+import { daftarkanMemberDiTx } from "./member-writer";
 import { ENTITAS_TITIP, JEJAK_TITIP, STATUS_TITIP_TERBUKA } from "./titip";
 import { kunciBaris } from "./stok";
 import { terhitungSesudah } from "./stok-writer";
@@ -18,8 +21,14 @@ export type SpgSaleLineInput = { itemId: string; variantSku: string | null; qty:
  * Pembeli pada nota: pelanggan toko yang sudah ada (`id`), atau yang baru
  * dicatat di konter (nama + HP). Pelanggan baru WAJIB sudah setuju dihubungi
  * lewat WhatsApp — nomornya hanya disimpan kalau `setuju` benar.
+ * `daftarMember` = pembeli setuju didaftarkan sebagai member Elorae di nota ini.
  */
-export type PembeliNota = { id: string } | { nama: string; hp: string; setuju: boolean };
+export type PembeliNota = ({ id: string } | { nama: string; hp: string; setuju: boolean }) & { daftarMember?: boolean };
+
+/** Kenapa pembeli yang minta didaftarkan tidak menjadi member (notanya tetap tercatat). */
+export type AlasanTanpaMember = "PROGRAM_MATI" | "MEMBER_NONAKTIF" | "BELANJA_KURANG";
+
+export type MemberNota = { tingkat: string; potongan: number; baru: boolean };
 
 export type DiskonManualNota = DiskonManual & { alasan?: string | null };
 
@@ -36,7 +45,15 @@ export type KodeGagalJualSpg =
   | "WAKTU_TIDAK_VALID";
 
 export type RecordSpgSaleResult =
-  | { ok: true; spgSaleId: string; docNo: string; changeGiven: number; total: number }
+  | {
+      ok: true;
+      spgSaleId: string;
+      docNo: string;
+      changeGiven: number;
+      total: number;
+      member?: MemberNota | null;
+      tanpaMember?: AlasanTanpaMember | null;
+    }
   | { ok: false; code: KodeGagalJualSpg };
 
 /** Penjualan tanpa sinyal yang lebih tua dari ini ditolak, bukan dicatat diam-diam. */
@@ -177,39 +194,66 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
   ]);
   const aturanManual = bacaDiskonManual(setelanManual?.value);
   if (manual && aturanManual.alasanWajib && !alasanManual) return { ok: false, code: "ALASAN_DISKON_WAJIB" };
-  const promo = hitungPromoKonter({
+
+  // Pembeli: pelanggan toko ini saja; pelanggan baru dicatat sekali per nomor.
+  // Di sini hanya DIBACA — penulisannya sesudah nota lolos semua tolakan.
+  const olehId = input.createdById ?? input.salesmanId;
+  let pembeli: { customerId: string | null; nama: string; phone: string } | null = null;
+  if (input.pembeli) {
+    if ("id" in input.pembeli) {
+      const ada = await tx.storeCustomer.findFirst({ where: { id: input.pembeli.id, storeId: input.storeId }, select: { id: true, name: true, phone: true } });
+      if (!ada) return { ok: false, code: "PELANGGAN_TIDAK_VALID" };
+      pembeli = { customerId: ada.id, nama: ada.name, phone: ada.phone };
+    } else {
+      const nama = input.pembeli.nama.trim();
+      const hp = nomorWhatsApp(input.pembeli.hp);
+      if (!nama || nama.length > 100 || !hp || !input.pembeli.setuju) return { ok: false, code: "PELANGGAN_TIDAK_VALID" };
+      const ada = await tx.storeCustomer.findUnique({ where: { storeId_phone: { storeId: input.storeId, phone: hp } }, select: { id: true, name: true } });
+      pembeli = { customerId: ada?.id ?? null, nama: ada?.name ?? nama, phone: hp };
+    }
+  }
+
+  // Member: dikenali dari nomornya di toko mana pun. Tingkat dari belanja bersih
+  // nomor itu sebelum nota ini, dalam jendela pengaturan member.
+  const aturanMember = pembeli ? await bacaAturanMemberDb(tx) : null;
+  let calonMember: { memberId: string | null; daftar: boolean; tanpa: AlasanTanpaMember | null } | null = null;
+  let anggota: AnggotaNota | null = null;
+  if (pembeli && aturanMember) {
+    const m = await tx.member.findUnique({ where: { phone: pembeli.phone }, select: { id: true, isActive: true } });
+    const mintaDaftar = input.pembeli?.daftarMember === true;
+    if (m?.isActive) calonMember = { memberId: m.id, daftar: false, tanpa: null };
+    else if (m && mintaDaftar) calonMember = { memberId: null, daftar: false, tanpa: "MEMBER_NONAKTIF" };
+    else if (!m && mintaDaftar) calonMember = aturanMember.aktif ? { memberId: null, daftar: true, tanpa: null } : { memberId: null, daftar: false, tanpa: "PROGRAM_MATI" };
+    if (calonMember && (calonMember.memberId || calonMember.daftar)) {
+      const belanja = await belanjaBersihNomor(tx, pembeli.phone, awalPeriodeMember(waktu, aturanMember.periodeBulan), waktu);
+      anggota = anggotaUntukNota(tingkatUntukBelanja(belanja, aturanMember), aturanMember);
+    }
+  }
+
+  const dasarPromo = {
     baris: priced.map((p) => ({ key: p.key, itemId: p.item.id, categoryId: p.item.categoryId, qty: p.line.qty, unitPrice: p.unitPrice })),
     promos,
     storeId: input.storeId,
     waktu,
     diskonManual: manual ? { jenis: manual.jenis, nilai: manual.nilai } : null,
     aturanManual,
-  });
-  if (!promo.ok) return { ok: false, code: promo.code };
-  const hasilBaris = new Map(promo.baris.map((b) => [b.key, b]));
+  };
+  const hitungAwal = hitungPromoKonter({ ...dasarPromo, anggota });
+  if (!hitungAwal.ok) return { ok: false, code: hitungAwal.code };
+  let promo = hitungAwal;
 
-  // Pembeli: pelanggan toko ini saja; pelanggan baru dicatat sekali per nomor.
-  let customerId: string | null = null;
-  if (input.pembeli) {
-    if ("id" in input.pembeli) {
-      const ada = await tx.storeCustomer.findFirst({ where: { id: input.pembeli.id, storeId: input.storeId }, select: { id: true } });
-      if (!ada) return { ok: false, code: "PELANGGAN_TIDAK_VALID" };
-      customerId = ada.id;
-    } else {
-      const nama = input.pembeli.nama.trim();
-      const hp = nomorWhatsApp(input.pembeli.hp);
-      if (!nama || nama.length > 100 || !hp || !input.pembeli.setuju) return { ok: false, code: "PELANGGAN_TIDAK_VALID" };
-      const ada = await tx.storeCustomer.findUnique({ where: { storeId_phone: { storeId: input.storeId, phone: hp } }, select: { id: true } });
-      customerId =
-        ada?.id ??
-        (
-          await tx.storeCustomer.create({
-            data: { storeId: input.storeId, name: nama, phone: hp, consentAt: sekarang, createdById: input.createdById ?? input.salesmanId },
-            select: { id: true },
-          })
-        ).id;
-    }
+  // Pendaftaran di nota ini butuh nilai nota minimal (sebelum diskon member).
+  // Kalau tidak tercapai, nota tetap tercatat — tanpa member dan tanpa harga member.
+  let tanpaMember: AlasanTanpaMember | null = calonMember?.tanpa ?? null;
+  let daftarkan = calonMember?.daftar === true;
+  if (daftarkan && promo.total + (promo.member?.potongan ?? 0) < aturanMember!.minBelanjaDaftar) {
+    daftarkan = false;
+    tanpaMember = "BELANJA_KURANG";
+    const ulang = hitungPromoKonter({ ...dasarPromo, anggota: null });
+    if (!ulang.ok) return { ok: false, code: ulang.code };
+    promo = ulang;
   }
+  const hasilBaris = new Map(promo.baris.map((b) => [b.key, b]));
 
   const displayName = (p: Priced) => {
     const label = variantDetailForSku(p.item.variants, p.line.variantSku);
@@ -220,6 +264,27 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
   const cashReceived = input.cashReceived ?? total;
   if (cashReceived < total) return { ok: false, code: "INSUFFICIENT_PAYMENT" };
   const changeGiven = cashReceived - total;
+
+  // Pelanggan baru dan member baru baru DITULIS sesudah semua tolakan di atas:
+  // transaksi ini selesai normal walau nota ditolak, jadi tulisan lebih awal
+  // akan tertinggal tanpa notanya.
+  let customerId: string | null = pembeli?.customerId ?? null;
+  if (pembeli && !customerId) {
+    customerId = (
+      await tx.storeCustomer.create({
+        data: { storeId: input.storeId, name: pembeli.nama, phone: pembeli.phone, consentAt: sekarang, createdById: olehId },
+        select: { id: true },
+      })
+    ).id;
+  }
+  let memberId = calonMember?.memberId ?? null;
+  if (daftarkan && pembeli) {
+    // Keadaan nomor sudah dibaca di transaksi ini (belum member, program nyala),
+    // jadi pendaftaran berhasil; balapan dengan pendaftaran lain diulang oleh runSerializable.
+    const daftar = await daftarkanMemberDiTx(tx, { phone: pembeli.phone, nama: pembeli.nama, storeId: input.storeId, userId: olehId, sekarang, sumber: "NOTA" });
+    if (daftar.ok) memberId = daftar.id;
+    else tanpaMember = daftar.code;
+  }
 
   const docNo = await generateDocNumber("SPGSALE", tx);
   const sale = await tx.spgSale.create({
@@ -239,6 +304,9 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
       manualDiscount: promo.diskonManual,
       manualDiscountReason: promo.diskonManual > 0 ? alasanManual : null,
       customerId,
+      memberId,
+      memberTier: memberId ? (promo.member?.tingkat ?? null) : null,
+      memberDiscount: memberId ? (promo.member?.potongan ?? 0) : 0,
       visitId: input.visitId ?? null,
       capturedOffline: Boolean(input.luring),
       syncedAt: input.luring ? sekarang : null,
@@ -265,8 +333,25 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
         }),
       },
     },
-    select: { id: true },
+    select: { id: true, lines: { select: { id: true, itemId: true, variantSku: true } } },
   });
+
+  // Rincian potongan per promo per baris — dasar laporan efektivitas promo.
+  const idBaris = new Map(sale.lines.map((l) => [`${l.itemId}::${l.variantSku}`, l.id]));
+  const rincian = priced.flatMap((p) =>
+    (hasilBaris.get(p.key)?.rincian ?? []).map((r) => ({
+      spgSaleId: sale.id,
+      spgSaleLineId: idBaris.get(`${p.line.itemId}::${p.line.variantSku ?? ""}`) ?? null,
+      promoId: r.promoId,
+      promoName: r.name,
+      kind: r.kind,
+      qty: r.qty,
+      discount: r.potongan,
+      storeDiscount: r.potonganToko,
+      createdAt: waktu,
+    })),
+  );
+  if (rincian.length > 0) await tx.spgSalePromo.createMany({ data: rincian });
 
   const rows = buildOfflineSalesHistoryRows({
     orderNo: docNo,
@@ -307,7 +392,7 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
         kind: "JUAL" as const,
         refType: "SpgSale",
         refId: sale.id,
-        createdById: input.createdById ?? input.salesmanId,
+        createdById: olehId,
         createdAt: waktu,
       })),
     });
@@ -347,5 +432,13 @@ export async function recordSpgSaleTx(tx: Prisma.TransactionClient, input: Input
     }
   }
 
-  return { ok: true, spgSaleId: sale.id, docNo, changeGiven, total };
+  return {
+    ok: true,
+    spgSaleId: sale.id,
+    docNo,
+    changeGiven,
+    total,
+    member: memberId && promo.member ? { tingkat: promo.member.tingkat, potongan: promo.member.potongan, baru: daftarkan } : null,
+    tanpaMember,
+  };
 }

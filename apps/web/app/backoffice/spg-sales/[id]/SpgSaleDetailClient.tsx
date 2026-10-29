@@ -135,6 +135,9 @@ export function SpgSaleDetailClient({ sale, kembali }: Props) {
             <>
               <Uang label={t("subtotalLabel")} nilai={rincian.subtotal} />
               {rincian.promoBarang > 0 && <Uang label={t("itemPromoLabel")} nilai={rincian.promoBarang} potongan />}
+              {rincian.diskonMember && (
+                <Uang label={t("memberDiscountLabel", { tingkat: rincian.diskonMember.tingkat })} nilai={rincian.diskonMember.potongan} potongan />
+              )}
               {rincian.promoBelanja && (
                 <Uang label={t("orderPromoLabel", { name: rincian.promoBelanja.nama })} nilai={rincian.promoBelanja.potongan} potongan />
               )}

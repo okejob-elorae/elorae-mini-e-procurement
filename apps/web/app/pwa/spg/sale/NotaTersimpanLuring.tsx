@@ -11,6 +11,11 @@ export type RingkasanNotaLuring = {
   total: number;
   potongan: number;
   namaPembeli: string | null;
+  /**
+   * Member pada nota ini menurut HP: pendaftaran yang ikut terkirim (`daftar`),
+   * atau tingkat member yang sudah diketahui. Server yang memastikan saat terkirim.
+   */
+  member?: { tingkat: string | null; daftar: boolean } | null;
 };
 
 /**
@@ -52,6 +57,11 @@ export function NotaTersimpanLuring({
           ))}
         </ul>
         {ringkasan.namaPembeli ? <p className="text-sm text-muted-foreground">{t("buyer", { name: ringkasan.namaPembeli })}</p> : null}
+        {ringkasan.member?.daftar ? (
+          <p className="text-sm text-muted-foreground">{t("memberDaftar")}</p>
+        ) : ringkasan.member?.tingkat ? (
+          <p className="text-sm text-muted-foreground">{t("memberTingkat", { tingkat: ringkasan.member.tingkat })}</p>
+        ) : null}
         <div className="space-y-1 border-t pt-3">
           {ringkasan.potongan > 0 ? (
             <div className="flex items-baseline justify-between gap-3 text-sm">

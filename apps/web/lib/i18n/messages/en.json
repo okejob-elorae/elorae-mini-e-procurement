@@ -6360,7 +6360,8 @@
         "subtotal": "Subtotal",
         "itemPromos": "Item promos",
         "orderPromo": "Spend promo: {name}",
-        "manualDiscount": "SPG discount"
+        "manualDiscount": "SPG discount",
+        "memberDiscount": "Member discount ({tingkat})"
       },
       "save": "Save sale",
       "saveShort": "Save",
@@ -6400,7 +6401,13 @@
         "bannerMore": "+{count, plural, one {# more promo} other {# more promos}}",
         "seeAll": "See all promos",
         "lineFallback": "Promo",
-        "free": "{count} free"
+        "free": "{count} free",
+        "khususMember": "Members only",
+        "isiPaket": "Holds: {isi}",
+        "isiBarang": "{qty} × {nama}",
+        "isiBarangUmum": "{qty} × specific product",
+        "isiKategori": "{qty} × {nama} (category)",
+        "isiKategoriUmum": "{qty} × category product"
       },
       "diskon": {
         "give": "Give a discount",
@@ -6448,7 +6455,9 @@
         "queueFailed": "The receipt couldn't be saved on this phone (storage full or private mode). The cart is kept — try again when there is a signal.",
         "offlineBanner": "No signal. You can still record sales — receipts are saved on this phone and sent by themselves once there is a signal.",
         "pendingLink": "{count, plural, one {# receipt not sent yet} other {# receipts not sent yet}}",
-        "saveOffline": "No signal: the receipt is saved on this phone first."
+        "saveOffline": "No signal: the receipt is saved on this phone first.",
+        "memberDaftar": "The member registration is sent together with the receipt.",
+        "memberTingkat": "Member {tingkat}"
       },
       "savedDifferent": "Sale {docNo} saved. Recorded total {total}.",
       "savedDifferentHint": "The screen showed {preview} — prices or promos on the server differ; the server's figure is what's recorded.",
@@ -6462,6 +6471,31 @@
         "PEMBELI_NAMA": "Enter the new shopper's name, or cancel the shopper.",
         "PEMBELI_HP": "Enter a phone number the shopper can be reached on via WhatsApp (e.g. 0812…).",
         "PEMBELI_SETUJU": "Tick the shopper's consent to be contacted on WhatsApp, or cancel the shopper."
+      },
+      "member": {
+        "badge": "Member {tingkat}",
+        "nonaktifSingkat": "Inactive member",
+        "diskon": "Member discount {persen}%",
+        "diskonNol": "This tier has no discount yet",
+        "diskonMati": "Member discount not yet switched on by the office",
+        "nonaktif": "This number is a member deactivated by the office. The receipt is recorded without member prices.",
+        "memeriksa": "Checking membership…",
+        "daftar": "Register as a member",
+        "daftarPersetujuan": "Ask the shopper first. An Elorae membership works at every Elorae store and is recognised by this WhatsApp number.",
+        "syaratBelanja": "Requirement: spend at least {minimal} on one receipt.",
+        "langsungJadi": "Joins straight as {tingkat}",
+        "tingkatNanti": "The tier and discount are confirmed when the receipt is saved.",
+        "tingkatLuring": "No signal: the tier and discount are confirmed when the receipt is sent.",
+        "luringBelumTahu": "Without signal, this number's membership is checked when the receipt is sent.",
+        "belanjaKurang": "Spend at least {minimal} to register — {kurang} short. The receipt is still saved, without membership."
+      },
+      "memberHasil": {
+        "baru": "The shopper is now an Elorae member ({tingkat}).",
+        "potong": "Member {tingkat}: member discount {amount}.",
+        "tanpaPotong": "Member {tingkat}.",
+        "PROGRAM_MATI": "The shopper is not a member yet: the office has closed member registration.",
+        "MEMBER_NONAKTIF": "The shopper is not a member: the number is a member deactivated by the office.",
+        "BELANJA_KURANG": "The shopper is not a member yet: the minimum spend on one receipt is {minimal}."
       }
     },
     "spgNota": {
@@ -6494,7 +6528,8 @@
         "manualDiscount": "SPG discount",
         "manualReason": "Reason: {reason}",
         "totalDiffers": "The screen showed {preview} when sold; {total} was recorded — prices or promos were recalculated by the server when the receipt was sent.",
-        "shareTextSaving": "Receipt {docNo} - Total {total} (you save {saving})"
+        "shareTextSaving": "Receipt {docNo} - Total {total} (you save {saving})",
+        "memberDiscount": "Member discount ({tingkat})"
       },
       "pending": {
         "title": "{count, plural, one {# receipt not sent yet} other {# receipts not sent yet}}",
@@ -9140,7 +9175,8 @@
         "orderPromoLabel": "Spend promo: {name}",
         "manualDiscountLabel": "SPG discount",
         "manualReason": "Discount reason: {reason}",
-        "paidAtCashier": "Paid at the store's till."
+        "paidAtCashier": "Paid at the store's till.",
+        "memberDiscountLabel": "Member discount ({tingkat})"
       }
     }
   },
@@ -16812,7 +16848,8 @@
     "tab": {
       "daftar": "Promos",
       "pemakaian": "Usage",
-      "manual": "Manual discounts"
+      "manual": "Manual discounts",
+      "efektivitas": "Effectiveness"
     },
     "status": {
       "BERLAKU": "Running",
@@ -16881,13 +16918,14 @@
       "HARGA_KHUSUS": "Special price",
       "BELI_GRATIS": "Buy X get Y free",
       "MIN_BELANJA_PERSEN": "Minimum spend — percentage off",
-      "MIN_BELANJA_POTONGAN": "Minimum spend — rupiah off"
+      "MIN_BELANJA_POTONGAN": "Minimum spend — rupiah off",
+      "PAKET": "Bundle"
     },
     "aturan": {
       "judul": "How promos are applied at the counter",
       "pengantar": "Several promos can run at once. This is the order the sale screen and the receipt use:",
-      "satu": "One piece gets at most one product promo (percentage off, rupiah off, special price, or buy X get Y free).",
-      "prioritas": "Higher priority goes first. At the same priority each piece gets the biggest discount; buy X get Y free then uses the pieces left over.",
+      "satu": "One piece gets at most one product promo (bundle, percentage off, rupiah off, special price, or buy X get Y free).",
+      "prioritas": "Higher priority goes first. At the same priority bundles are computed first; then each remaining piece gets the biggest discount; buy X get Y free then uses the pieces left over.",
       "paket": "Buy X get Y free may mix products in that promo: pieces are sorted from the most expensive, and in every full group of X+Y the Y cheapest pieces are free.",
       "belanja": "After product promos, at most ONE minimum-spend promo — the one with the biggest discount — is applied to the net value of the products in that promo.",
       "manual": "The SPG's manual discount (when switched on in Settings → SPG) comes last, on the receipt's net value, and cannot exceed its percentage limit.",
@@ -16952,7 +16990,8 @@
         "HARGA_KHUSUS": "Every piece of an included product sells at this price — only when it is cheaper than the usual price.",
         "BELI_GRATIS": "Buy some pieces, get some free. Included products may be mixed; the free ones are the cheapest pieces.",
         "MIN_BELANJA_PERSEN": "When spending on included products reaches the minimum, the receipt is reduced by a percentage.",
-        "MIN_BELANJA_POTONGAN": "When spending on included products reaches the minimum, the receipt is reduced by a rupiah amount."
+        "MIN_BELANJA_POTONGAN": "When spending on included products reaches the minimum, the receipt is reduced by a rupiah amount.",
+        "PAKET": "A set of products sold at one price. A bundle may hold specific products or products from a category, each with its quantity. At the same priority a bundle is computed before other promos, and it only forms when its price is below the normal price of those pieces."
       },
       "beli": "Buy (pieces)",
       "gratis": "Free (pieces)",
@@ -16963,7 +17002,8 @@
         "HARGA_KHUSUS": "Special price per piece (Rp)",
         "BELI_GRATIS": "Value",
         "MIN_BELANJA_PERSEN": "Discount (%)",
-        "MIN_BELANJA_POTONGAN": "Amount off (Rp)"
+        "MIN_BELANJA_POTONGAN": "Amount off (Rp)",
+        "PAKET": "Price of one bundle (Rp)"
       },
       "contoh": {
         "barang": "Shirt",
@@ -16971,7 +17011,12 @@
         "satuan": "Example: {barang} {harga} → {sesudah}",
         "tanpaPotongan": "Example: {barang} {harga} stays {harga} — this special price is not cheaper.",
         "paket": "Example: {qty} × {barang} {harga} = {kotor} → pay {bayar} ({gratis} pieces free)",
-        "nota": "Example: spend {belanja} → {sesudah}"
+        "nota": "Example: spend {belanja} → {sesudah}",
+        "belumPaket": "Fill in the bundle price and its contents (at least 2 pieces) to see an example.",
+        "bundel": "Example: {qty} pieces @ {harga} = {kotor} → pay {bayar} (save {hemat})",
+        "bundelTidak": "Example: {qty} pieces @ {harga} = {kotor} — the bundle price is not cheaper, so no bundle forms.",
+        "bundelAsli": "At these goods' Elorae selling prices: {kotor} → pays {bayar} (saves {hemat}). Consignment stores charge more at the counter, so the discount there is larger.",
+        "bundelAsliTidak": "These goods' Elorae selling prices total {kotor} — not above the bundle price, so the bundle does not form at outright-sale stores. Consignment stores charge more at the counter."
       },
       "mode": {
         "SEMUA": "All products",
@@ -17026,15 +17071,48 @@
         "BAGIAN_TOKO_TIDAK_VALID": "The store's share must be between 1 and 100 percent (at most two decimals).",
         "BARANG_TIDAK_DIKENAL": "A selected product no longer exists or is not a finished good.",
         "KATEGORI_TIDAK_DIKENAL": "A selected category no longer exists.",
-        "TOKO_TIDAK_DIKENAL": "A selected store no longer exists."
+        "TOKO_TIDAK_DIKENAL": "A selected store no longer exists.",
+        "PAKET_TIDAK_VALID": "The bundle contents are incomplete: choose a product or category on every row, a whole quantity of 1–20 per row, no duplicate rows, at most 10 rows, and 2–50 pieces per bundle in total."
       },
       "simpan": "Save promo",
       "sudahDipakaiJudul": "Already used on {n} receipts",
       "sudahDipakaiIsi": "Changes apply only to the next receipts; earlier receipts keep the discount they recorded. To stop the promo, switch it off.",
       "diskonManualJudul": "SPG manual discount",
-      "diskonManualIsi": "Discounts the SPG gives on their own are set in Settings → SPG (off by default). The manual discount comes after every promo here."
+      "diskonManualIsi": "Discounts the SPG gives on their own are set in Settings → SPG (off by default). The manual discount comes after every promo here.",
+      "memberOnly": "Members only",
+      "memberOnlyBantu": "Applies only when the receipt has a member. The sale screen banner still shows it, so the SPG can offer member sign-up.",
+      "paket": {
+        "judul": "Contents of one bundle",
+        "bantu": "The counter takes the most expensive matching pieces (specific products are filled before categories). The discount is split over the pieces by their price.",
+        "kolomJenis": "Kind",
+        "kolomPilihan": "Product or category",
+        "kolomJumlah": "Quantity",
+        "jenisBaris": "Kind of row {n}",
+        "jenis": {
+          "ITEM": "Specific product",
+          "CATEGORY": "Product from a category"
+        },
+        "pilihBarang": "Choose a product",
+        "pilihKategori": "Choose a category",
+        "cariKategori": "Search categories",
+        "belumDipilih": "Not chosen yet.",
+        "kurangi": "Decrease quantity of row {n}",
+        "tambahi": "Increase quantity of row {n}",
+        "jumlahBaris": "Quantity of row {n}",
+        "hapusBaris": "Remove row {n}",
+        "tambah": "Add contents",
+        "total": "One bundle holds {n} pieces.",
+        "minimal": "A bundle holds at least 2 pieces.",
+        "maksimal": "A bundle holds at most {n} pieces.",
+        "maksBaris": "At most {n} content rows.",
+        "pilihanBaris": "Item or category, row {n}"
+      }
     },
-    "kembaliKeDaftar": "Back to counter promos"
+    "kembaliKeDaftar": "Back to counter promos",
+    "khususMember": "Members only",
+    "isiPaket": "Bundle: {isi}",
+    "isiPaketBarang": "{qty} × {nama}",
+    "isiPaketKategori": "{qty} × {nama} (category)"
   },
   "pengaturanDiskonManualSpg": {
     "judul": "Manual discount at the counter",
@@ -17080,7 +17158,11 @@
     "berlakuUntukBelanja": "Counted on spending for:",
     "semuaBarang": "all products",
     "ringkas": "Show less",
-    "lihatSemua": "Show all ({n})"
+    "lihatSemua": "Show all ({n})",
+    "khususMember": "Members only",
+    "khususMemberBantu": "Applies only when the buyer is registered as a member.",
+    "isiPaket": "One bundle holds:",
+    "isiKategori": "(category)"
   },
   "jadwalSpg": {
     "judul": "SPG schedule & shifts",
@@ -17620,9 +17702,163 @@
         "totalBelanja": "Total spent",
         "titipTerbuka": "Open requests",
         "menungguTertua": "Waiting since",
-        "palingSering": "Most requested"
+        "palingSering": "Most requested",
+        "member": "Members",
+        "cakupan": "Buyer recorded",
+        "kembali": "Returning",
+        "baru": "First purchase",
+        "tidur": "Dormant",
+        "belanjaPeriode": "Recorded spend",
+        "status": "Status",
+        "rata": "Average/receipt",
+        "pertama": "First purchase",
+        "favorit": "Favourite category"
       },
-      "judulMenu": "Shoppers & hold requests"
+      "judulMenu": "Shoppers & hold requests",
+      "tabMember": "Members",
+      "periode": "Period",
+      "periodeOpsi": "Last {n} days",
+      "semuaTokoPeriode": "All stores · last {n} days",
+      "ringkasMember": "{aktif} active members of {n}",
+      "ringkasToko": "{n} customers at {toko}",
+      "dariNota": "{ada} of {nota} receipts",
+      "cariPelanggan": "Search name or last 4 phone digits",
+      "memberTingkat": "Member · {tingkat}",
+      "memberNonaktif": "Inactive member",
+      "dicatatPada": "Recorded {tanggal}",
+      "hariIni": "today",
+      "hariLalu": "{n} days ago",
+      "favoritPotong": "{n} pcs",
+      "kosongSaringJudul": "No customers match",
+      "hapusSaring": "Clear filters",
+      "status": {
+        "BARU": "New",
+        "AKTIF": "Active",
+        "TIDUR": "Dormant",
+        "BELUM_BELANJA": "No purchase yet"
+      },
+      "saring": {
+        "semua": "All",
+        "status": "Filter customer status",
+        "member": "Members",
+        "bukanMember": "Not a member"
+      },
+      "ubin": {
+        "pelanggan": "Recorded customers",
+        "pelangganCatatan": "{n} with no purchase yet",
+        "member": "Active members",
+        "memberCatatan": "Recognised by WhatsApp number",
+        "cakupan": "Receipts with a recorded buyer",
+        "cakupanCatatan": "{ada} of {nota} receipts",
+        "kembali": "Returning customers",
+        "kembaliCatatan": "{kembali} of {pembeli} buyers",
+        "baru": "First purchase",
+        "baruCatatan": "within the period",
+        "tidur": "Dormant customers",
+        "tidurCatatan": "{hari} days or more without a purchase"
+      },
+      "member": {
+        "judul": "Elorae members",
+        "cari": "Search name or last 4 phone digits",
+        "saringLabel": "Filter member status",
+        "saring": {
+          "aktif": "Active",
+          "nonaktif": "Inactive"
+        },
+        "kosongJudul": "No members yet",
+        "kosongIsi": "SPGs sign buyers up as members at the counter, with the buyer's consent.",
+        "kosongSaringJudul": "No members match",
+        "kolom": {
+          "nama": "Name",
+          "tingkat": "Tier",
+          "belanjaPeriode": "Spend over {bulan} months",
+          "toko": "Bought at",
+          "bergabung": "Joined",
+          "status": "Status",
+          "aksi": "Action"
+        },
+        "tokoLain": "+{n} more stores",
+        "status": {
+          "aktif": "Active",
+          "nonaktif": "Inactive",
+          "nonaktifSejak": "since {tanggal}"
+        },
+        "nonaktifkan": "Deactivate",
+        "aktifkan": "Activate",
+        "dialog": {
+          "nonaktifJudul": "Deactivate member {nama}?",
+          "nonaktifIsi": "An inactive member gets no member discount and cannot be signed up again by an SPG until the office reactivates them. Their purchase history stays.",
+          "aktifJudul": "Reactivate {nama}?",
+          "aktifIsi": "This member gets their tier and discount back from the next receipt.",
+          "alasan": "Reason",
+          "alasanWajib": "A reason is required.",
+          "batal": "Cancel"
+        },
+        "tersimpanAktif": "Member reactivated.",
+        "tersimpanNonaktif": "Member deactivated.",
+        "err": {
+          "UNAUTHORIZED": "Your session has ended. Sign in again.",
+          "FORBIDDEN": "You are not allowed to change members.",
+          "TIDAK_ADA": "This member was not found.",
+          "ALASAN_WAJIB": "A reason is required.",
+          "GAGAL": "Could not save. Try again."
+        }
+      }
+    },
+    "hpMember": {
+      "badge": "Member {tingkat}",
+      "nonaktifSingkat": "Inactive member",
+      "status": {
+        "BELUM_BELANJA": "No purchases yet",
+        "BARU": "New shopper",
+        "KEMBALI": "Returning customer",
+        "TIDUR": "Dormant"
+      },
+      "terakhirBelanja": "Last purchase {hari, plural, =0 {today} =1 {yesterday} other {# days ago}}",
+      "tidurSapa": "{hari} days or more without a purchase — say hello on WhatsApp.",
+      "tidurTanpaWa": "{hari} days or more without a purchase. The number cannot receive WhatsApp — change the number first.",
+      "judul": "Elorae member",
+      "diskonLabel": "Member discount",
+      "diskonPersen": "{persen}%",
+      "diskonNol": "None at this tier",
+      "diskonMati": "Not yet switched on by the office",
+      "belanjaPeriode": "Spend in the last {bulan} months",
+      "naikKe": "To reach {tingkat}",
+      "kurang": "{amount} more",
+      "tertinggi": "Already at the top tier.",
+      "sejak": "Member since",
+      "semuaToko": "Spend and tier count every Elorae store with this number, after returned goods.",
+      "nonaktif": "This number's membership was deactivated by the office. Receipts are recorded without member prices; only the office can reactivate it.",
+      "belumMember": "Not an Elorae member yet. Members are recognised by their WhatsApp number at every Elorae store.",
+      "daftarkan": "Register as a member",
+      "mendaftarkan": "Registering…",
+      "dialogJudul": "Register {nama} as a member?",
+      "dialogIsi": "Ask the shopper first. With their consent, their WhatsApp number is recorded as an Elorae member and works at every Elorae store.",
+      "batal": "Cancel",
+      "setujuDaftar": "The shopper agrees, register",
+      "okBaru": "{nama} is now an Elorae member.",
+      "okSudah": "{nama} is already an Elorae member.",
+      "tidakBisa": {
+        "PROGRAM_MATI": "The office has closed member registration.",
+        "LEWAT_NOTA": "Registering needs a minimum spend of {minimal} on one receipt — register from the sale screen.",
+        "HP_TIDAK_SAH": "The number cannot receive WhatsApp. Change the number first."
+      },
+      "err": {
+        "FORBIDDEN": "Your account does not have access to this.",
+        "NO_ASSIGNED_STORE": "You have not been assigned to a store yet. Contact the office.",
+        "VALIDATION": "Invalid input. Reload the page and try again.",
+        "PROGRAM_MATI": "The office has closed member registration.",
+        "MEMBER_NONAKTIF": "This number is a member deactivated by the office. Only the office can reactivate it.",
+        "PELANGGAN_TIDAK_ADA": "This customer is not at your store.",
+        "LEWAT_NOTA": "The office set a minimum spend to register — register from the sale screen.",
+        "GENERIC": "Not registered yet. Check your signal and try again."
+      },
+      "favoritJudul": "Favourite items at this store",
+      "favoritPcs": "{qty} pcs",
+      "gantiNomor": "The membership stays with the old number. The new number is not a member yet — register it again from the customer details.",
+      "formDaftar": "Also register as an Elorae member",
+      "formDaftarPetunjuk": "Ask the shopper first. The membership works at every Elorae store and is recognised by this WhatsApp number.",
+      "formGagal": "Customer saved, but not registered as a member."
     }
   },
   "spgTitip": {
@@ -17956,7 +18192,9 @@
       "target": "Target reached",
       "tutup": "Day closing",
       "titip": "Customer requests",
-      "retur": "Shopper returns"
+      "retur": "Shopper returns",
+      "pembeli": "Buyer recorded",
+      "memberBaru": "New members"
     },
     "sel": {
       "terlambat": "{kali}× · {menit} min",
@@ -17965,7 +18203,8 @@
       "tanpaTarget": "No target set for this month",
       "tutup": "{ditutup} of {jual} selling days",
       "titip": "{dibuat} created · {selesai} done",
-      "belumDisusun": "No shift schedule has been made for this SPG at this store"
+      "belumDisusun": "No shift schedule has been made for this SPG at this store",
+      "pembeli": "{ada} of {nota} receipts"
     },
     "keterangan": {
       "judul": "How to read this",
@@ -21898,7 +22137,8 @@
           "turunErPersen": "Anomaly: ER down by more than",
           "hariKontenBerkala": "After day 30, re-check videos every",
           "batasHariKonten": "Stop checking videos after posting"
-        }
+        },
+        "sepanjangHari": "Monitor 24 hours (no stop time)"
       },
       "satuan": {
         "pengecekan": "checks",
@@ -21950,7 +22190,8 @@
         "GAGAL": "Failed. Please try again.",
         "TANPA_IZIN": "The person who paired this device cannot manage Creative, so a new KOL cannot be created from the extension.",
         "KOL_DIBLOKIR": "This KOL is blocked in Elorae; the video was not added."
-      }
+      },
+      "meta24": "Monitoring 24 hours"
     },
     "performa": {
       "meta": "{n} videos tracked",
@@ -24395,5 +24636,184 @@
       "putih": "White"
     },
     "bukanPantone": "not Pantone"
+  },
+  "pengaturanMemberSpg": {
+    "judul": "Members & customers",
+    "aktif": "Member programme accepts sign-ups",
+    "aktifYa": "On — SPGs can sign buyers up as members at the counter, with the buyer's consent.",
+    "aktifTidak": "Off — no new sign-ups. Existing members stay members.",
+    "tingkatJudul": "Member tiers",
+    "tingkatBantu": "The tier comes from net spend (after returns) at every store over the period below. The first tier always starts at Rp0.",
+    "kolomNama": "Tier name",
+    "kolomMin": "Minimum spend (Rp)",
+    "kolomDiskon": "Discount (%)",
+    "hapus": "Remove",
+    "kode": "Code {kode}",
+    "minPertama": "Always Rp0",
+    "hapusTingkat": "Remove tier {nama}",
+    "tanpaNama": "unnamed",
+    "tingkatSalah": "Check the tiers: name of 1–30 characters, a whole-rupiah minimum spend that rises from tier to tier, discount 0–100.",
+    "tambahTingkat": "Add tier",
+    "maksTingkat": "At most {n} tiers.",
+    "periode": "Tier period (months)",
+    "periodeBantu": "Net spend over this many recent months sets the tier.",
+    "periodeSalah": "Enter a whole number from 1 to 36.",
+    "hariTidur": "Customer counts as dormant after (days)",
+    "hariTidurBantu": "After this many days without a purchase, a customer counts as dormant in SPG customers.",
+    "hariTidurSalah": "Enter a whole number from 7 to 730.",
+    "diskonAktif": "Apply the member discount on receipts",
+    "diskonAktifYa": "On — the tier discount is taken off every member receipt.",
+    "diskonAktifTidak": "Off — members are still recorded and their tier is computed, but no money is taken off.",
+    "diskonPeringatan": "The member discount lowers revenue at every store, every time a member buys.",
+    "gabungPromo": "Member discount also on items under a promotion",
+    "gabungPromoYa": "On — items already under an item promotion still get the member discount.",
+    "gabungPromoTidak": "Off — items already under an item promotion get no member discount.",
+    "bagianToko": "Consignment store share (%)",
+    "bagianTokoBantu": "0 = Elorae bears the whole member discount. At outright-sale stores it is only recorded.",
+    "bagianTokoSalah": "Enter 0–100, at most two decimals.",
+    "minDaftar": "Minimum spend to sign up (Rp)",
+    "minDaftarBantu": "Receipt value before the member discount. 0 = no spend required.",
+    "minDaftarSalah": "Enter whole rupiah.",
+    "urutan": "Discount order on a receipt: item promotions, member discount, spend promotions, then manual discount.",
+    "hanyaLihat": "Only promotion managers can change this setting.",
+    "pakaiBawaan": "Use defaults",
+    "simpan": "Save",
+    "isianSalah": "Check the fields marked in red.",
+    "tersimpan": "Member settings saved.",
+    "konfirmasiJudul": "Turn the member discount on?",
+    "konfirmasiIsi": "From the next receipt, every member gets the discount of their tier at every store. Each store's revenue drops by that discount.",
+    "konfirmasiYa": "Turn on and save",
+    "batal": "Cancel",
+    "err": {
+      "UNAUTHORIZED": "Your session has ended. Sign in again.",
+      "FORBIDDEN": "You are not allowed to change this setting.",
+      "INVALID": "Invalid input.",
+      "GAGAL": "Could not save. Try again."
+    }
+  },
+  "efektivitasPromo": {
+    "rentang": "Promos running between",
+    "daftarJudul": "Promo effectiveness",
+    "kosongJudul": "No promo ran in this range",
+    "kosongIsi": "Pick another date range.",
+    "terpotong": "Only the latest 500 promos were read.",
+    "pengakuan": "Compares the promo period with the equally long period before it. This is a comparison, not proof that the promo caused the change.",
+    "notaLamaDaftar": "{n} older receipts that used a promo without promo detail are not counted in usage.",
+    "kolom": {
+      "promo": "Promo",
+      "status": "Status",
+      "periode": "Period counted",
+      "nota": "Promo receipts",
+      "pcs": "Pieces under promo",
+      "potongan": "Discount",
+      "perubahan": "Target item sales",
+      "biaya": "Discount per Rp1 uplift"
+    },
+    "hari": "{n} days",
+    "sampaiSekarang": "now",
+    "dipotong": "clipped by range",
+    "promoBelanja": "spend promo",
+    "belumAdaPembanding": "no baseline yet",
+    "tidakNaik": "no increase",
+    "hasil": {
+      "khususMember": "members only",
+      "semuaToko": "all stores",
+      "nToko": "{n} stores",
+      "semuaBarang": "all items",
+      "nSasaran": "{barang} items, {kategori} categories",
+      "kembali": "Effectiveness",
+      "lihatPromo": "View promo",
+      "belumBerjalanJudul": "This promo has not run in this range",
+      "belumBerjalanIsi": "Results appear once the promo has started and there are receipts in its period.",
+      "periode": "Promo period {promo} ({hari} days) compared with {pembanding}.",
+      "lihatSeluruh": "See the whole promo period",
+      "catatan": {
+        "notaLama": "{n} older receipts used this promo but have no promo detail — not counted in usage, basket and buyers.",
+        "dipotong": "The promo period is clipped by the date range you picked. The baseline stays the period right before the promo started ({mulai}).",
+        "berjalan": "The promo is still running; the last day is not complete yet, and the baseline is equally long.",
+        "dimatikan": "The promo was switched off on {tanggal}; the promo period stops there.",
+        "dimatikanPerkiraan": "When the promo was switched off was not recorded; the promo period stops at its last change, {tanggal}.",
+        "kategori": "Target items from categories are read by each item's category today."
+      },
+      "ringkas": {
+        "nota": "Receipts using the promo",
+        "belanja": "spend promo — counted per receipt",
+        "pcs": "{n} pieces under promo",
+        "potongan": "Promo discount",
+        "potonganSub": "borne by Elorae at consignment stores: {elorae}",
+        "penjualan": "Target item sales",
+        "penjualanSub": "{promo} vs {pembanding}",
+        "biaya": "Discount per Rp1 uplift",
+        "tidakNaik": "Sales did not rise",
+        "tidakNaikSub": "no increase to weigh the discount against",
+        "biayaSub": "from an increase of {selisih}",
+        "tanpaPembanding": "No baseline yet",
+        "tanpaPembandingSub": "The comparison period had no sales of the target goods, so the increase cannot be judged."
+      },
+      "grafik": {
+        "judul": "Pieces sold per day",
+        "seriPromo": "Promo period",
+        "seriPembanding": "Baseline",
+        "pcs": "{n} pcs",
+        "hariKe": "Day {n}",
+        "kosong": "No target item sales in either period yet.",
+        "lihatTabel": "View daily figures",
+        "kolomHari": "Day",
+        "kolomPcs": "Pcs"
+      },
+      "penjualan": {
+        "judul": "Target item sales at target stores",
+        "pcs": "Net pieces",
+        "rupiah": "Net value",
+        "nota": "Receipts",
+        "ukuran": "Measure",
+        "selamaPromo": "Promo period",
+        "perHari": "Per day",
+        "pembanding": "Baseline",
+        "selisih": "Difference",
+        "perubahan": "Change"
+      },
+      "tanggungan": {
+        "judul": "Who bears the discount",
+        "konsi": "At consignment stores",
+        "konsiToko": "Borne by the store",
+        "konsiElorae": "Borne by Elorae",
+        "putus": "At outright-purchase stores (recorded only)"
+      },
+      "keranjang": {
+        "judul": "Receipt value",
+        "dengan": "Average receipt with the promo ({n} receipts)",
+        "tanpa": "Average receipt without this promo ({n} receipts)",
+        "selisih": "Difference",
+        "tidakBisa": "cannot be compared yet",
+        "dikecualikan": "{n} older receipts without promo detail are left out."
+      },
+      "pelanggan": {
+        "judul": "Buyers",
+        "cakupan": "Promo receipts with a recorded buyer",
+        "cakupanNilai": "{persen}% ({tercatat} of {nota})",
+        "pembeli": "Recorded buyers",
+        "baru": "New (never bought before)",
+        "member": "Recorded as members",
+        "kembali": "Bought again ≤ 30 days after the promo",
+        "kembaliBerjalan": "judged after the promo ends",
+        "kembaliBelum": "can be judged from {tanggal}",
+        "tanpaPembeli": "No promo receipt recorded its buyer, so buyers cannot be counted yet."
+      },
+      "toko": {
+        "judul": "Per store",
+        "kosongJudul": "No stores",
+        "kosongIsi": "This promo targets no store, or there are no receipts in either period.",
+        "toko": "Store",
+        "nota": "Promo receipts",
+        "potongan": "Discount",
+        "pcs": "Pieces (promo / baseline)",
+        "rupiahPromo": "Value in promo period",
+        "rupiahPembanding": "Baseline value",
+        "perubahan": "Change",
+        "konsi": "Consignment",
+        "putus": "Outright purchase"
+      }
+    }
   }
 }

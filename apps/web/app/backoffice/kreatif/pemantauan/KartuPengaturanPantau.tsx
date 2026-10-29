@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { Loader2, SlidersHorizontal } from "lucide-react";
@@ -13,8 +13,10 @@ import { Switch } from "@/components/ui/switch";
 import { JamInput } from "@/components/ui/tanggal-input";
 import {
   BATAS_PANTAU,
+  JAM_SEPANJANG_HARI,
   KUNCI_ANGKA_PANTAU,
   PANTAU_BAWAAN,
+  sepanjangHari,
   validasiPantau,
   type PengaturanPantau,
   type SebabGalatPantau,
@@ -56,6 +58,9 @@ export function KartuPengaturanPantau({ awal, bolehMengelola }: { awal: Pengatur
   const [aktif, setAktif] = useState(awal.aktif);
   const [jamMulai, setJamMulai] = useState(awal.jamMulai);
   const [jamSelesai, setJamSelesai] = useState(awal.jamSelesai);
+  // Jam terakhir sebelum "24 jam" dinyalakan, supaya mematikannya mengembalikan jam itu.
+  const jamSebelumnya = useRef(sepanjangHari(awal) ? null : { jamMulai: awal.jamMulai, jamSelesai: awal.jamSelesai });
+  const duaPuluhEmpat = sepanjangHari({ jamMulai, jamSelesai });
   const [nilai, setNilai] = useState(() => keTeks(awal));
   const [galat, setGalat] = useState<Map<string, SebabGalatPantau>>(new Map());
   const [menyimpan, mulai] = useTransition();
@@ -79,6 +84,24 @@ export function KartuPengaturanPantau({ awal, bolehMengelola }: { awal: Pengatur
       }
       if (r.kode === "TIDAK_VALID" && "galat" in r) setGalat(new Map(r.galat.map((g) => [g.kunci, g.sebab])));
       toast.error(td(`pantau.err.${r.kode}`));
+    });
+  };
+
+  const setelDuaPuluhEmpat = (nyala: boolean) => {
+    if (nyala) {
+      if (!duaPuluhEmpat) jamSebelumnya.current = { jamMulai, jamSelesai };
+      setJamMulai(JAM_SEPANJANG_HARI.jamMulai);
+      setJamSelesai(JAM_SEPANJANG_HARI.jamSelesai);
+    } else {
+      const j = jamSebelumnya.current ?? { jamMulai: PANTAU_BAWAAN.jamMulai, jamSelesai: PANTAU_BAWAAN.jamSelesai };
+      setJamMulai(j.jamMulai);
+      setJamSelesai(j.jamSelesai);
+    }
+    setGalat((g) => {
+      const baru = new Map(g);
+      baru.delete("jamMulai");
+      baru.delete("jamSelesai");
+      return baru;
     });
   };
 
@@ -110,6 +133,12 @@ export function KartuPengaturanPantau({ awal, bolehMengelola }: { awal: Pengatur
             <Label htmlFor="pantau-aktif">{t("pantau.pengaturan.kunci.aktif")}</Label>
           </div>
 
+          <div className="flex items-center gap-3">
+            <Switch id="pantau-24-jam" checked={duaPuluhEmpat} onCheckedChange={setelDuaPuluhEmpat} disabled={!bolehMengelola} />
+            <Label htmlFor="pantau-24-jam">{t("pantau.pengaturan.sepanjangHari")}</Label>
+          </div>
+
+          {duaPuluhEmpat ? null : (
           <div className="flex flex-wrap gap-x-6 gap-y-4">
             {(
               [
@@ -124,6 +153,7 @@ export function KartuPengaturanPantau({ awal, bolehMengelola }: { awal: Pengatur
               </div>
             ))}
           </div>
+          )}
 
           <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
             {KUNCI_ANGKA_PANTAU.map((k) => {

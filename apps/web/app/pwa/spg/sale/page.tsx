@@ -5,6 +5,7 @@ import { tokoSpg } from "@/lib/spg/queries";
 import { getSellableCatalogForSpg } from "@/lib/spg/sale-queries";
 import { bacaDiskonManual, KUNCI_DISKON_MANUAL } from "@/lib/spg/pengaturan";
 import { promoKonterUntukToko } from "@/lib/spg/promo-konter-queries";
+import { bacaAturanMemberDb } from "@/lib/spg/member-queries";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { SpgSaleShell } from "./SpgSaleShell";
 
@@ -27,7 +28,7 @@ export default async function SpgSalePage() {
   const aktifSemua = await getActiveVisit(session.user.id);
   const aktif = aktifSemua && aktifSemua.storeId === toko.id ? aktifSemua : null;
 
-  const [katalog, gerakanPertama, promos, setelanManual] = await Promise.all([
+  const [katalog, gerakanPertama, promos, setelanManual, aturanMember] = await Promise.all([
     getSellableCatalogForSpg(toko.id),
     // Toko tanpa satu gerakan pun belum dilacak stoknya: semua saldonya 0, dan
     // menampilkan "Stok toko: 0" di setiap baris hanya jadi peringatan palsu.
@@ -36,6 +37,9 @@ export default async function SpgSalePage() {
     // menjual tanpa sinyal menghitung promo dari daftar ini pada waktu jualnya.
     promoKonterUntukToko(toko.id, new Date()),
     prisma.systemSetting.findUnique({ where: { key: KUNCI_DISKON_MANUAL }, select: { value: true } }),
+    // Aturan member ikut halaman: HP menghitung diskon member (dan belanja
+    // minimal untuk mendaftar) dengan aturan yang sama, juga tanpa sinyal.
+    bacaAturanMemberDb(),
   ]);
 
   return (
@@ -46,6 +50,7 @@ export default async function SpgSalePage() {
       stokDilacak={gerakanPertama !== null}
       promos={promos}
       aturanManual={bacaDiskonManual(setelanManual?.value)}
+      aturanMember={aturanMember}
       visitId={aktif?.id ?? null}
       checkinAtMs={aktif ? aktif.checkinAt.getTime() : null}
     />

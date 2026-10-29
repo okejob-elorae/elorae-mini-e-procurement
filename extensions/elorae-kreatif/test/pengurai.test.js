@@ -462,6 +462,11 @@ describe("dalamJamKerja (WIB)", () => {
     assert.equal(p.dalamJamKerja(t("2026-10-09T16:00:00Z"), "22:00", "06:00"), true);
     assert.equal(p.dalamJamKerja(t("2026-10-09T05:00:00Z"), "22:00", "06:00"), false);
   });
+  test("00:00–24:00 = sepanjang hari (Elorae menyimpan pilihan 24 jam begini)", () => {
+    for (const iso of ["2026-10-09T16:59:59Z", "2026-10-09T17:00:00Z", "2026-10-09T05:30:00Z", "2026-10-09T16:16:00Z"]) {
+      assert.equal(p.dalamJamKerja(t(iso), "00:00", "24:00"), true, iso);
+    }
+  });
   test("jam tidak sah atau sama → di luar (tidak berjalan saat ragu)", () => {
     assert.equal(p.dalamJamKerja(t("2026-10-09T03:00:00Z"), "8", "17:00"), false);
     assert.equal(p.dalamJamKerja(t("2026-10-09T03:00:00Z"), "08:00", "25:00"), false);

@@ -109,7 +109,17 @@ const hari = (o: Partial<HariKinerja>): HariKinerja => ({
   tutup: false,
   ...o,
 });
-const LAIN: LainKinerja = { jadwalDisusun: true, titipDibuat: 3, titipSelesai: 1, qtyTerjual: 20, qtyKembali: 2, target: 2_000_000, nilaiOrang: 500_000 };
+const LAIN: LainKinerja = {
+  jadwalDisusun: true,
+  titipDibuat: 3,
+  titipSelesai: 1,
+  qtyTerjual: 20,
+  qtyKembali: 2,
+  target: 2_000_000,
+  nilaiOrang: 500_000,
+  notaBerpembeli: 2,
+  memberBaru: 1,
+};
 
 describe("ringkasKinerja", () => {
   const daftar = [
@@ -170,7 +180,17 @@ describe("ringkasKinerja", () => {
       kepatuhanTutupPersen: null,
       persenKembali: null,
       capaianPersen: null,
+      persenBerpembeli: null,
     });
+  });
+
+  it("measures receipts with a recorded buyer over all receipts and carries the new members", () => {
+    const r = ringkasKinerja(daftar, LAIN);
+    expect(r.notaBerpembeli).toBe(2);
+    expect(r.persenBerpembeli).toBeCloseTo((2 / 7) * 100);
+    expect(r.memberBaru).toBe(1);
+    // Tidak pernah di atas 100%, walau angka berpembeli lebih besar dari nota harian yang dihitung.
+    expect(ringkasKinerja(daftar, { ...LAIN, notaBerpembeli: 9 }).persenBerpembeli).toBe(100);
   });
 });
 

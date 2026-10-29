@@ -4,14 +4,28 @@ import { z } from "zod";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { recordSpgSale, type KodeGagalJualSpg } from "@/lib/spg/sale-writer";
+import { recordSpgSale, type AlasanTanpaMember, type KodeGagalJualSpg, type MemberNota } from "@/lib/spg/sale-writer";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { cariKunjunganAntrean } from "@/lib/pwa/kunjungan-antrean";
 
 export type KodeGagalJualSpgAksi = "FORBIDDEN" | "NO_ASSIGNED_STORE" | "NO_ACTIVE_VISIT" | "KUNJUNGAN_TIDAK_SAH" | "VALIDATION" | KodeGagalJualSpg;
 
+/**
+ * `member` = member pada nota ini (baru didaftarkan atau sudah member).
+ * `tanpaMember` = pembeli minta didaftarkan tapi tidak jadi — notanya TETAP
+ * tercatat, hanya tanpa member; layar menjelaskan alasannya. Nota yang dikirim
+ * ulang dengan kunci yang sama tidak membawa keduanya.
+ */
 export type RecordSpgSaleActionResult =
-  | { ok: true; spgSaleId: string; docNo: string; changeGiven: number; total: number }
+  | {
+      ok: true;
+      spgSaleId: string;
+      docNo: string;
+      changeGiven: number;
+      total: number;
+      member?: MemberNota | null;
+      tanpaMember?: AlasanTanpaMember | null;
+    }
   | { ok: false; code: KodeGagalJualSpgAksi };
 
 // storeId is NOT taken from the client — it's derived server-side from the SPG's
@@ -25,8 +39,14 @@ const schema = z.object({
   lines: z.array(z.object({ itemId: z.string().min(1), variantSku: z.string().nullable(), qty: z.number().int().positive() })).min(1),
   pembeli: z
     .union([
-      z.object({ id: z.string().min(1) }),
-      z.object({ nama: z.string().trim().min(1).max(100), hp: z.string().trim().min(6).max(30), setuju: z.boolean() }),
+      // `daftarMember`: pembeli setuju didaftarkan sebagai member Elorae di nota ini.
+      z.object({ id: z.string().min(1), daftarMember: z.boolean().optional() }),
+      z.object({
+        nama: z.string().trim().min(1).max(100),
+        hp: z.string().trim().min(6).max(30),
+        setuju: z.boolean(),
+        daftarMember: z.boolean().optional(),
+      }),
     ])
     .nullable()
     .optional(),
@@ -95,6 +115,16 @@ export async function recordSpgSaleAction(input: unknown): Promise<RecordSpgSale
     waktuJual: d.luring && d.waktuJual ? new Date(d.waktuJual) : null,
     visitId,
   });
-  if (res.ok) return { ok: true, spgSaleId: res.spgSaleId, docNo: res.docNo, changeGiven: res.changeGiven, total: res.total };
+  if (res.ok) {
+    return {
+      ok: true,
+      spgSaleId: res.spgSaleId,
+      docNo: res.docNo,
+      changeGiven: res.changeGiven,
+      total: res.total,
+      member: res.member ?? null,
+      tanpaMember: res.tanpaMember ?? null,
+    };
+  }
   return { ok: false, code: res.code };
 }

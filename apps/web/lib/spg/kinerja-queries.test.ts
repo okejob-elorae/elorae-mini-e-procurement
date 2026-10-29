@@ -32,6 +32,7 @@ d("kinerja SPG (test bed only)", () => {
   let visitIds: string[] = [];
   let leaveIds: string[] = [];
   let requestIds: string[] = [];
+  let memberIds: string[] = [];
   let toleransi = 15;
 
   const jual = async (storeId: string, userId: string, createdAt: Date, baris: { qty: number; bersih: number; kembali?: number }[]) => {
@@ -84,6 +85,7 @@ d("kinerja SPG (test bed only)", () => {
     visitIds = [];
     leaveIds = [];
     requestIds = [];
+    memberIds = [];
 
     const setelan = await prisma.systemSetting.findUnique({ where: { key: KUNCI_SHIFT }, select: { value: true } });
     toleransi = bacaAturanShift(setelan?.value).toleransiTerlambatMenit;
@@ -138,9 +140,25 @@ d("kinerja SPG (test bed only)", () => {
       prisma.customerRequest.create({ data: { storeId: tokoA, customerId: pelanggan, description: "Kaos XL", status, createdById: s1, createdAt: wib("2026-08-05", "12:00") } });
     requestIds.push((await titip("MENUNGGU")).id);
     requestIds.push((await titip("SELESAI")).id);
+
+    // Nota 3 Agu 15.00 (s1, toko A) mencatat pembelinya: 1 dari 3 nota s1 di toko A.
+    await prisma.spgSale.update({ where: { id: saleIds[1] }, data: { customerId: pelanggan } });
+    // Member yang didaftarkan s1: satu di toko A bulan ini, satu di toko B bulan ini, satu di toko A bulan lalu.
+    const member = async (storeId: string, joinedAt: Date) =>
+      memberIds.push(
+        (
+          await prisma.member.create({
+            data: { phone: `62812${Math.floor(1_000_000 + Math.random() * 8_999_999)}`, name: `Member ${tag}`, consentAt: joinedAt, joinedAt, joinedStoreId: storeId, joinedById: s1 },
+          })
+        ).id,
+      );
+    await member(tokoA, wib("2026-08-05", "12:00"));
+    await member(tokoB, wib("2026-08-10", "12:00"));
+    await member(tokoA, wib("2026-07-31", "23:30"));
   });
 
   afterAll(async () => {
+    await prisma.member.deleteMany({ where: { id: { in: seededIds(memberIds) } } });
     await prisma.customerRequest.deleteMany({ where: { id: { in: seededIds(requestIds) } } });
     await prisma.storeCustomer.deleteMany({ where: { id: seededId(pelanggan) } });
     await prisma.spgDailyClose.deleteMany({ where: { storeId: { in: seededIds([tokoA, tokoB].filter(Boolean)) } } });
@@ -148,6 +166,7 @@ d("kinerja SPG (test bed only)", () => {
     await prisma.spgShift.deleteMany({ where: { userId: { in: seededIds([s1, s2, s3].filter(Boolean)) } } });
     await prisma.leaveRequest.deleteMany({ where: { id: { in: seededIds(leaveIds) } } });
     await prisma.storeVisit.deleteMany({ where: { id: { in: seededIds(visitIds) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(saleIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(saleIds) } } });
     await prisma.user.deleteMany({ where: { id: { in: seededIds([s1, s2, s3].filter(Boolean)) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoA, tokoB].filter(Boolean)) } } });
@@ -189,6 +208,9 @@ d("kinerja SPG (test bed only)", () => {
     });
     expect(r1.konversiPersen).toBeCloseTo(20);
     expect(r1.persenKembali).toBeCloseTo(100 / 6);
+    // Pembeli tercatat di 1 dari 3 nota; member baru hanya yang didaftarkan di toko ini, di bulan ini.
+    expect(r1).toMatchObject({ notaBerpembeli: 1, memberBaru: 1 });
+    expect(r1.persenBerpembeli).toBeCloseTo(100 / 3);
 
     const r2 = data.baris.find((b) => b.userId === s2)!;
     expect(r2).toMatchObject({
@@ -217,7 +239,7 @@ d("kinerja SPG (test bed only)", () => {
     const milik = data.baris.filter((b) => b.userId === s1);
     expect(milik.map((b) => b.storeId).sort()).toEqual([tokoA, tokoB].sort());
     const diB = milik.find((b) => b.storeId === tokoB)!;
-    expect(diB).toMatchObject({ bukanTokoTetap: true, nota: 1, nilai: 70_000, hariIzin: 0, jadwalDisusun: false, nilaiOrang: 370_000 });
+    expect(diB).toMatchObject({ bukanTokoTetap: true, nota: 1, nilai: 70_000, hariIzin: 0, jadwalDisusun: false, nilaiOrang: 370_000, notaBerpembeli: 0, persenBerpembeli: 0, memberBaru: 1 });
   });
 
   it("lists a current SPG with no activity in the running month, with schedule columns empty rather than zero", async () => {

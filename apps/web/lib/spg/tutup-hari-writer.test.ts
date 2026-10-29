@@ -163,6 +163,7 @@ d("laporan tutup hari SPG (test bed only)", () => {
     await prisma.auditLog.deleteMany({ where: { entityType: "Store", entityId: { in: seededIds([tokoA, tokoB, tokoC].filter(Boolean)) } } });
     await prisma.spgDailyClose.deleteMany({ where: { id: { in: seededIds(tutup.map((t) => t.id)) } } });
     await prisma.spgSaleReturn.deleteMany({ where: { id: { in: seededIds(returIds) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(saleIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(saleIds) } } });
     await prisma.storeReceipt.deleteMany({ where: { id: { in: seededIds(receiptIds) } } });
     await prisma.lostSale.deleteMany({ where: { id: { in: seededIds(lostIds) } } });

@@ -35,6 +35,47 @@ export const LEWATI_KE_MS = WAKTU.buka;
 /** Tombol "Lewati" muncul sesudah ini. */
 export const LEWATI_TAMPIL_MS = 1200;
 
+/**
+ * Bingkai yang macet (dasbor sedang dirender di bawah, peramban sibuk) tidak boleh melompati
+ * babak: waktu pertunjukan maju paling banyak sebesar ini per bingkai, jadi sesudah macet
+ * gerakannya berlanjut, bukan meloncat setengah detik ke depan.
+ */
+export const MAKS_LANGKAH_MS = 50;
+/** …tetapi tidak pernah tertinggal dari jam dinding lebih dari ini, supaya perangkat lambat tidak menahan pengguna. */
+export const MAKS_TERTINGGAL_MS = 3000;
+
+/**
+ * Waktu pertunjukan untuk bingkai ini. `tm` = waktu pertunjukan bingkai lalu, `dt` = jarak
+ * bingkai di jam dinding, `nyata` = lama sejak mulai di jam dinding. Sesudah Lewati
+ * pertunjukan berjalan 1,25× lebih cepat (lompatan ke `LEWATI_KE_MS` dilakukan pemanggil).
+ */
+export function majuWaktu(k: { tm: number; dt: number; nyata: number; lewati: boolean }): number {
+  const laju = k.lewati ? 1.25 : 1;
+  const maju = k.tm + Math.min(Math.max(k.dt, 0), MAKS_LANGKAH_MS) * laju;
+  return Math.min(DURASI_HAUS_MS, Math.max(maju, k.nyata - MAKS_TERTINGGAL_MS));
+}
+
+/** Bingkai yang ditunggu sebelum memutuskan mutu gambar. */
+export const BINGKAI_UJI_MUTU = 24;
+/** Jarak bingkai di atas ini (± di bawah 40 bingkai per detik) = gambar diturunkan. */
+const BATAS_BINGKAI_LAMBAT_MS = 25;
+/** Jeda lebih panjang dari ini bukan ukuran kecepatan gambar (tab tersembunyi, macet sekali). */
+const ABAIKAN_JEDA_MS = 250;
+
+/**
+ * Perangkat ini terlalu lambat untuk gambar penuh? Median jarak bingkai dari `BINGKAI_UJI_MUTU`
+ * bingkai pertama yang wajar; "BELUM" selama bingkainya belum cukup. Pemanggil menurunkan
+ * kerapatan piksel sekali saja — di babak awal, saat lampu baru menyala dan perubahannya
+ * tidak terlihat.
+ */
+export function keputusanMutu(selang: readonly number[]): "BELUM" | "PENUH" | "TURUNKAN" {
+  const wajar = selang.filter((d) => d > 0 && d < ABAIKAN_JEDA_MS).slice(0, BINGKAI_UJI_MUTU);
+  if (wajar.length < BINGKAI_UJI_MUTU) return "BELUM";
+  const urut = [...wajar].sort((a, b) => a - b);
+  const tengah = (urut[(urut.length - 1) >> 1] + urut[urut.length >> 1]) / 2;
+  return tengah > BATAS_BINGKAI_LAMBAT_MS ? "TURUNKAN" : "PENUH";
+}
+
 export const jepit = (v: number, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 export const fase = (t: number, a: number, b: number) => jepit((t - a) / (b - a));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;

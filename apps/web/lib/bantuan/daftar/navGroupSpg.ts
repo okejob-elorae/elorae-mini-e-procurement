@@ -24,7 +24,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "kinerjaSpg.deskripsi" },
       "Satu baris per SPG per toko untuk bulan yang dipilih. Pilih nama SPG untuk rincian hariannya.",
-      "Tabelnya dua tampilan supaya muat di laptop: Penjualan (nilai, capaian target, nota, potong, pengunjung, konversi) dan Kehadiran & layanan (jadwal, masuk, terlambat, tanpa izin, izin, tutup hari, titip pesan). Potong bersih, izin, rata-rata per nota, dan retur pembeli hanya tampil di layar lebar; angkanya juga ada di rincian SPG. Tab yang dibuka tercatat di alamat, jadi tautannya bisa dibagikan.",
+      "Tabelnya dua tampilan supaya muat di laptop: Penjualan (nilai, capaian target, nota, potong, pengunjung, konversi) dan Kehadiran & layanan (jadwal, masuk, terlambat, tanpa izin, izin, tutup hari, titip pesan, pembeli tercatat, member baru). Potong bersih, izin, rata-rata per nota, retur pembeli, dan member baru hanya tampil di layar lebar; angkanya juga ada di rincian SPG. Tab yang dibuka tercatat di alamat, jadi tautannya bisa dibagikan.",
     ],
     kartu: [
       {
@@ -40,6 +40,8 @@ export const ENTRI: EntriBantuan[] = [
           { kunci: "kinerjaSpg.keterangan.tutup" },
           { kunci: "kinerjaSpg.keterangan.titip" },
           { kunci: "kinerjaSpg.keterangan.retur" },
+          "Pembeli tercatat = nota SPG itu di toko itu dalam bulan itu yang mencatat pembelinya ÷ semua notanya di toko itu dalam bulan itu × 100%. Tanpa nota tampil “—”.",
+          "Member baru: member yang didaftarkan SPG itu di toko itu dalam bulan itu (hari kalender WIB), dari nota maupun dari rincian pelanggan.",
         ],
       },
     ],
@@ -80,7 +82,10 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "promoKonter.judul" },
     isi: [
       { kunci: "promoKonter.deskripsi" },
-      "Tiga tab: daftar promo, pemakaian per promo, dan nota dengan diskon manual SPG. Rentang tanggal bawaannya bulan berjalan. Melihat butuh izin melihat promo; mengubah butuh izin mengelola promo.",
+      "Empat tab: daftar promo, pemakaian per promo, efektivitas per promo, dan nota dengan diskon manual SPG. Rentang tanggal bawaannya bulan berjalan (Efektivitas: 90 hari terakhir). Melihat butuh izin melihat promo; mengubah butuh izin mengelola promo.",
+      "Promo jenis Paket (bundling) menjual sekumpulan barang dengan satu harga: isinya boleh barang tertentu atau barang dari kategori, masing-masing dengan jumlahnya (2–50 potong per paket, paling banyak 10 baris isi). Pada prioritas yang sama paket dihitung paling dulu, sebelum promo per potong dan beli X gratis Y. Konter mengambil potong yang termahal di antara yang cocok (barang tertentu diisi lebih dulu dari kategori), dan paket hanya terbentuk kalau harganya di bawah harga normal potong-potong itu. Potongannya dibagi ke setiap potong menurut harganya; di toko konsinyasi bagian toko berlaku seperti promo lain.",
+      "Promo bertanda Khusus member hanya dipakai bila nota punya member. Spanduk di layar jual SPG tetap menampilkannya, supaya SPG bisa menawarkan pendaftaran member. Daftar promo menandai promo khusus member dan menyebut isi setiap paket.",
+      "Tab Efektivitas menampilkan setiap promo yang berjalan di rentang tanggal pilihan (bawaannya 90 hari terakhir): nota yang memakai promo, potong yang kena promo, potongannya, perubahan nilai bersih penjualan barang sasaran di toko sasaran dibandingkan periode sebelumnya yang sama panjang, dan potongan per Rp1 kenaikan. Rentang memotong masa promo; pembandingnya tetap periode tepat sebelum promo mulai. Ini perbandingan, bukan bukti sebab-akibat. Klik nama promo untuk melihat hasil lengkapnya dengan rentang yang sama.",
     ],
     kartu: [
       {
@@ -97,13 +102,39 @@ export const ENTRI: EntriBantuan[] = [
       },
       { judul: { kunci: "promoKonter.pemakaian.tanggunganJudul" }, isi: { kunci: "promoKonter.pemakaian.tanggunganIsi" } },
       { judul: { kunci: "promoKonter.pemakaian.judul" }, isi: { kunci: "promoKonter.pemakaian.catatan" } },
+      { judul: { kunci: "efektivitasPromo.daftarJudul" }, isi: { kunci: "efektivitasPromo.pengakuan" } },
+    ],
+  },
+  {
+    rute: "/backoffice/promo-konter/[id]/hasil",
+    bagian: "navGroupSpg",
+    judul: "Hasil promo konter",
+    isi: [
+      "Halaman ini menilai satu promo konter dari data nota SPG: berapa kali promo dipakai, berapa potongannya, dan bagaimana penjualan barang sasarannya di toko sasaran selama promo dibandingkan dengan periode sebelumnya yang sama panjang. Ini perbandingan, bukan bukti bahwa promo penyebab perubahannya — musim, stok, dan promo lain juga bisa mengubah penjualan.",
+      "Masa promo dihitung dari tanggal mulai promo (atau saat promo dibuat bila tanpa tanggal mulai) sampai tanggal akhirnya, saat promo dimatikan, atau sekarang — mana yang paling awal. Pembanding adalah periode sepanjang itu tepat sebelum promo mulai. Kalau Anda membuka halaman ini dari tab Efektivitas, masa promo dipotong rentang tanggal tab itu; pembandingnya tetap periode tepat sebelum promo mulai. Kalau promo pernah dimatikan lalu dinyalakan lagi, hari-hari saat mati ikut terhitung.",
+      "Rincian potongan per promo baru dicatat sejak 20 Okt 2026. Nota lama yang memakai promo ini tetapi tidak punya rincian disebut jumlahnya dan tidak dihitung di pemakaian, nilai nota, dan pembeli. Penjualan barang sasarannya tetap dihitung, karena itu hanya membaca baris nota.",
+    ],
+    kartu: [
+      { judul: "Pemakaian promo", isi: "Nota = nota yang punya rincian promo ini di masa promo. Potong = jumlah potong yang kena promo (untuk promo belanja yang dihitung notanya). Potongan = jumlah potongan promo ini di rincian nota." },
+      { judul: "Penjualan barang sasaran", isi: "Barang sasaran = barang yang dipilih di promo ditambah barang yang KINI berada di kategori sasaran (kategori dibaca seperti hari ini). Potong bersih = jumlah terjual dikurangi yang dikembalikan pembeli. Nilai bersih = nilai bersih baris nota × (jumlah − kembali) ÷ jumlah — harga yang dibayar pembeli sesudah semua potongan; di toko konsinyasi itu harga di toko. Per hari = jumlah ÷ panjang periode dalam hari. Perubahan = (masa promo − pembanding) ÷ pembanding × 100; kalau pembandingnya nol tertulis 'belum ada pembanding'." },
+      { judul: "Potongan per Rp1 kenaikan", isi: "Total potongan promo ÷ (nilai bersih masa promo − nilai bersih pembanding). Hanya dihitung kalau penjualan naik; kalau tidak naik tertulis 'tidak naik'. Contoh: Rp 0,28 berarti setiap Rp1 kenaikan penjualan dibayar dengan Rp0,28 potongan." },
+      { judul: "Siapa menanggung potongan", isi: "Di toko konsinyasi: ditanggung toko = bagian toko yang dibekukan di rincian nota; ditanggung Elorae = potongan − bagian toko. Di toko putus barangnya milik toko, jadi potongannya hanya dicatat." },
+      { judul: "Nilai nota", isi: "Rata-rata nilai nota (total sesudah potongan, dikurangi barang yang dikembalikan) di toko sasaran selama promo: nota yang memakai promo ini dibandingkan dengan nota yang tidak memakainya — termasuk nota dengan promo lain. Nota lama tanpa rincian tidak dimasukkan ke keduanya." },
+      { judul: "Pembeli", isi: "Hanya pembeli yang dicatat SPG di nota. Cakupan = nota promo dengan pembeli tercatat ÷ seluruh nota promo. Pembeli dikenali dari nomor WhatsApp-nya di toko mana pun. Baru = nomor itu belum punya nota di toko mana pun sebelum masa promo. Member = setidaknya satu nota promonya tercatat dengan member. Belanja lagi = punya nota di toko mana pun dalam 30 hari sesudah masa promo berakhir; baru dinilai sesudah promo berakhir dan 30 hari itu lewat." },
+      { judul: "Potong terjual per hari", isi: "Potong bersih barang sasaran per hari: hari ke-1 masa promo dijajarkan dengan hari ke-1 pembanding, dan seterusnya. Satu 'hari' = 24 jam sejak awal periodenya. Pada promo yang masih berjalan, hari terakhir belum penuh, dan hari terakhir pembandingnya sama panjang." },
+      { judul: "Per toko", isi: "Angka yang sama, per toko. Promo untuk toko tertentu menampilkan toko sasarannya; promo semua toko menampilkan setiap toko yang punya nota SPG di masa promo atau pembanding." },
     ],
   },
   {
     rute: "/backoffice/promo-konter/baru",
     bagian: "navGroupSpg",
     judul: { kunci: "promoKonter.judulBaru" },
-    isi: { kunci: "promoKonter.deskripsiBaru" },
+    isi: [
+      { kunci: "promoKonter.deskripsiBaru" },
+      "Pilih jenis Paket (bundling) untuk menjual beberapa barang dengan satu harga. Di bagian Isi satu paket, setiap baris memilih Barang tertentu atau Barang dari kategori beserta jumlahnya; total isi paket tampil di bawahnya. Isi Harga satu paket — contoh di bawahnya memakai harga contoh per potong dan menunjukkan apakah paket terbentuk. Bagian Barang yang ikut tidak dipakai untuk paket: barangnya ditentukan isi paket.",
+      "Pada prioritas yang sama paket dihitung paling dulu; konter mengambil potong yang termahal di antara yang cocok, dan paket hanya terbentuk kalau harganya di bawah harga normal potong-potong itu. Potongannya dibagi ke setiap potong menurut harganya, dan bagian toko di toko konsinyasi berlaku seperti promo lain.",
+      "Sakelar Khusus member berlaku untuk semua jenis promo: promonya hanya dipakai bila nota punya member, tetapi spanduk di layar jual tetap menampilkannya.",
+    ],
     kartu: [
       {
         judul: { kunci: "promoKonter.aturan.judul" },
@@ -124,7 +155,13 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/promo-konter/[id]",
     bagian: "navGroupSpg",
     judul: { kunci: "promoKonter.judulUbah" },
-    isi: { kunci: "promoKonter.deskripsiUbah" },
+    isi: [
+      { kunci: "promoKonter.deskripsiUbah" },
+      "Pilih jenis Paket (bundling) untuk menjual beberapa barang dengan satu harga. Di bagian Isi satu paket, setiap baris memilih Barang tertentu atau Barang dari kategori beserta jumlahnya; total isi paket tampil di bawahnya. Isi Harga satu paket — contoh di bawahnya memakai harga contoh per potong dan menunjukkan apakah paket terbentuk. Bagian Barang yang ikut tidak dipakai untuk paket: barangnya ditentukan isi paket.",
+      "Pada prioritas yang sama paket dihitung paling dulu; konter mengambil potong yang termahal di antara yang cocok, dan paket hanya terbentuk kalau harganya di bawah harga normal potong-potong itu. Potongannya dibagi ke setiap potong menurut harganya, dan bagian toko di toko konsinyasi berlaku seperti promo lain.",
+      "Sakelar Khusus member berlaku untuk semua jenis promo: promonya hanya dipakai bila nota punya member, tetapi spanduk di layar jual tetap menampilkannya.",
+      "Mengubah isi paket atau sakelar khusus member hanya berlaku untuk nota berikutnya; jejak perubahan mencatat isi paket dan sakelar itu sebelum dan sesudah.",
+    ],
     kartu: [
       {
         judul: { kunci: "promoKonter.aturan.judul" },
@@ -147,11 +184,41 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgPelanggan.kantor.judul" },
     isi: [
       { kunci: "spgPelanggan.kantor.deskripsi" },
-      "Tab Pelanggan menunjukkan per toko berapa pembeli tercatat dan seberapa sering mereka belanja; pilih toko untuk melihat daftarnya. Tab Titip pesan menunjukkan per toko berapa permintaan di tiap status dan barang yang paling sering dititip.",
+      "Tiga tab. Pelanggan: ringkasan pencatatan pembeli per toko dan semua toko dalam periode yang dipilih (30, 90, 180, atau 365 hari terakhir, hari kalender WIB; bawaan 90); pilih toko untuk melihat daftar pelanggannya. Member: member Elorae di semua toko. Titip pesan: per toko berapa permintaan di tiap status dan barang yang paling sering dititip.",
       "Tiga layar ini saling terkait dan saling ditautkan di kepala halaman: titip pesan (pembeli menunggu barang tertentu), barang dicari pembeli (yang ditanyakan tetapi tidak ada di rak), dan permintaan kiriman SPG. Permintaan pembeli yang sering muncul sebaiknya diteruskan SPG menjadi permintaan kiriman ke salesman pemegang toko.",
     ],
     kartu: [
-      { judul: "Pelanggan satu toko", isi: { kunci: "spgPelanggan.kantor.samarPetunjuk" } },
+      {
+        judul: "Ringkasan pelacakan",
+        isi: [
+          "Pelanggan tercatat: pembeli yang dicatat SPG di toko itu. Orang yang sama di dua toko dihitung dua kali — pelanggan milik toko.",
+          "Member aktif: per toko, pelanggan toko itu yang nomornya member aktif. Di ringkasan semua toko, jumlah member aktif Elorae; satu member yang belanja di dua toko dihitung sekali, jadi angkanya tidak sama dengan jumlah per toko.",
+          "Nota dengan pembeli tercatat = nota SPG dalam periode yang mencatat pembelinya ÷ semua nota SPG dalam periode × 100%. Toko yang menjual tanpa mencatat pembeli tampil 0%.",
+          "Pelanggan kembali = pembeli yang belanja dalam periode dan sudah punya dua nota atau lebih di toko itu ÷ semua pembeli yang belanja dalam periode × 100%.",
+          "Belanja pertama: pelanggan yang nota pertamanya di toko itu jatuh dalam periode.",
+          "Pelanggan tidur: belanja terakhirnya di toko itu sudah sekian hari atau lebih yang lalu (Pengaturan → SPG → Member & pelanggan, bawaan 90 hari). Tidak tergantung periode.",
+          "Belanja tercatat: nilai nota berpembeli dalam periode sesudah potongan, dikurangi barang yang sudah dikembalikan pembeli. Persen tampil “—” bila penyebutnya nol.",
+        ],
+      },
+      {
+        judul: "Pelanggan satu toko",
+        isi: [
+          { kunci: "spgPelanggan.kantor.samarPetunjuk" },
+          "Status diperiksa berurutan: Belum belanja (dicatat tanpa nota, misalnya dari titip pesan); Tidur (belanja terakhir sekian hari atau lebih yang lalu); Baru (belanja pertama dalam periode dan baru satu nota); selain itu Aktif. Tidur didahulukan dari Baru.",
+          "Nota, belanja, rata-rata per nota, belanja pertama, dan belanja terakhir dihitung sepanjang waktu di toko itu. Belanja = nilai nota sesudah potongan dikurangi barang yang dikembalikan; rata-rata = belanja ÷ jumlah nota.",
+          "Kategori favorit: kategori barang dengan potong bersih (dibeli dikurangi dikembalikan) terbanyak. Barang tanpa kategori tidak dihitung.",
+          "Tanda member menunjukkan tingkatnya sekarang. Member yang dinonaktifkan kantor tampil sebagai member nonaktif dan masuk saringan “bukan member”.",
+          "Kotak cari mencocokkan nama dan nomor yang tampil disamarkan (empat angka depan dan empat angka belakang), jadi nomor lengkap tidak bisa ditebak lewat pencarian. Angka pada tombol saring mengikuti kotak cari. Daftar diurutkan dari belanja terakhir yang terbaru.",
+        ],
+      },
+      {
+        judul: "Member",
+        isi: [
+          "Member dikenali dari nomor WhatsApp dan berlaku di semua toko. Tingkat = tingkat tertinggi yang belanja minimalnya tercapai oleh belanja bersih nomor itu di semua toko dalam periode penentu tingkat (Pengaturan → SPG, bawaan 12 bulan) — angka yang sama dengan yang dipakai di nota.",
+          "Belanja di: toko tempat nomor ini punya nota. Bergabung: tanggal dan toko tempat ia didaftarkan.",
+          "Menonaktifkan member butuh alasan dan izin mengelola promo. Member nonaktif tidak mendapat diskon member dan SPG tidak bisa mendaftarkannya ulang sampai kantor mengaktifkannya kembali; riwayat belanjanya tetap. Setiap perubahan tercatat di jejak audit beserta alasannya.",
+        ],
+      },
       { judul: { kunci: "spgPelanggan.kantor.titipJudul" }, isi: { kunci: "spgPelanggan.kantor.titipPetunjuk" } },
     ],
   },

@@ -2015,6 +2015,9 @@ model SpgSale {
   visitId              String?
   capturedOffline      Boolean   @default(false)
   syncedAt             DateTime?
+  memberId             String?
+  memberTier           String?
+  memberDiscount       Decimal   @default(0) @db.Decimal(15, 2)
   salesman       User          @relation("SpgSaleSalesman", fields: [salesmanId], references: [id])
   createdBy      User          @relation("SpgSaleCreatedBy", fields: [createdById], references: [id])
   store          Store         @relation(fields: [storeId], references: [id])
@@ -2023,6 +2026,7 @@ model SpgSale {
   @@index([salesmanId, createdAt])
   @@index([storeId])
   @@index([customerId])
+  @@index([memberId])
 }
 
 model SpgSaleLine {
@@ -4858,6 +4862,7 @@ model CounterPromo {
   endsAt      DateTime?
   priority    Int       @default(0)
   isActive    Boolean   @default(true)
+  memberOnly  Boolean   @default(false)
   note        String?   @db.Text
   storeSharePercent Decimal @default(0) @db.Decimal(5, 2)
   createdById String
@@ -4874,6 +4879,7 @@ model CounterPromoTarget {
   promoId String
   kind    String
   refId   String
+  qty     Int?
 
   promo   CounterPromo @relation(fields: [promoId], references: [id], onDelete: Cascade)
 
@@ -4894,6 +4900,41 @@ model StoreCustomer {
 
   @@unique([storeId, phone])
   @@index([storeId, name])
+}
+
+model Member {
+  id              String    @id @default(cuid())
+  phone           String    @unique
+  name            String
+  consentAt       DateTime
+  joinedAt        DateTime  @default(now())
+  joinedStoreId   String
+  joinedById      String
+  isActive        Boolean   @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  note            String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([joinedStoreId])
+  @@index([isActive])
+}
+
+model SpgSalePromo {
+  id            String   @id @default(cuid())
+  spgSaleId     String
+  spgSaleLineId String?
+  promoId       String?
+  promoName     String
+  kind          String
+  qty           Int      @default(0)
+  discount      Decimal  @default(0) @db.Decimal(15, 2)
+  storeDiscount Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt     DateTime @default(now())
+
+  @@index([spgSaleId])
+  @@index([promoId])
 }
 
 model CustomerRequest {

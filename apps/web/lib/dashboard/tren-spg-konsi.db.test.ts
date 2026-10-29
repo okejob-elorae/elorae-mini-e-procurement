@@ -38,6 +38,7 @@ d("getTrenPenjualan — nota SPG toko KONSI (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(saleIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(saleIds) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoKonsiId, tokoPutusId].filter(Boolean)) } } });
     if (userId) await prisma.user.delete({ where: { id: seededId(userId) } });

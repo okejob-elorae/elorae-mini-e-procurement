@@ -73,6 +73,7 @@ d("recordSpgSale tahap 2 (test bed only)", () => {
     await prisma.storeStockMovement.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(item2Id)] } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

@@ -76,6 +76,7 @@ d("komisi SPG toko putus (test bed only)", () => {
     await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
     await prisma.spgCommission.deleteMany({ where: { storeId: { in: tokoIds() } } });
     await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: { in: seededIds(nota) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(nota) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(nota) } } });
     nota.length = 0;
   });

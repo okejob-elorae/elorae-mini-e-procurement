@@ -4,7 +4,8 @@ import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { bacaStatusPromoKonter, hariSah } from "@/lib/spg/promo-konter-kantor";
 import { daftarPromoKonterKantor, laporanDiskonManual, laporanPemakaianPromo } from "@/lib/spg/promo-konter-kantor-queries";
-import { hariIniWib } from "@/lib/tanggal-isian";
+import { daftarEfektivitasPromo } from "@/lib/spg/efektivitas-promo-queries";
+import { geserHari, hariIniWib } from "@/lib/tanggal-isian";
 import { PromoKonterPageClient, type TabPromoKonter } from "./PromoKonterPageClient";
 
 export const dynamic = "force-dynamic";
@@ -13,12 +14,16 @@ type PageProps = {
   searchParams: Promise<{ tab?: string; status?: string; dari?: string; sampai?: string }>;
 };
 
-const TAB: readonly TabPromoKonter[] = ["daftar", "pemakaian", "manual"];
+const TAB: readonly TabPromoKonter[] = ["daftar", "pemakaian", "efektivitas", "manual"];
+
+/** Tab Efektivitas melihat ke belakang lebih jauh: bawaannya 90 hari terakhir, bukan bulan berjalan. */
+const HARI_EFEKTIVITAS = 90;
 
 /**
- * Promo konter SPG — kantor. Tiga tab di alamat (`?tab=`): daftar promo,
- * pemakaian per promo, dan nota yang diberi diskon manual oleh SPG. Rentang
- * tanggal (`?dari=&sampai=`, hari WIB) bawaannya bulan berjalan.
+ * Promo konter SPG — kantor. Empat tab di alamat (`?tab=`): daftar promo,
+ * pemakaian per promo, efektivitas per promo, dan nota yang diberi diskon
+ * manual oleh SPG. Rentang tanggal (`?dari=&sampai=`, hari WIB) bawaannya bulan
+ * berjalan — kecuali Efektivitas: 90 hari terakhir.
  *
  * Melihat = `promos:view`; tombol ubah hanya untuk `promos:manage` (aksinya
  * memeriksa ulang).
@@ -33,16 +38,18 @@ export default async function PromoKonterPage({ searchParams }: PageProps) {
   const tab = (TAB as readonly string[]).includes(sp.tab ?? "") ? (sp.tab as TabPromoKonter) : "daftar";
   const status = bacaStatusPromoKonter(sp.status);
   const hariIni = hariIniWib();
-  const dari = sp.dari && hariSah(sp.dari) ? sp.dari : `${hariIni.slice(0, 8)}01`;
+  const dariBawaan = tab === "efektivitas" ? geserHari(hariIni, -(HARI_EFEKTIVITAS - 1)) : `${hariIni.slice(0, 8)}01`;
+  const dari = sp.dari && hariSah(sp.dari) ? sp.dari : dariBawaan;
   const sampaiMentah = sp.sampai && hariSah(sp.sampai) ? sp.sampai : hariIni;
   // Rentang terbalik dari alamat yang diketik tangan dibalik, bukan dikosongkan.
   const [awal, akhir] = dari <= sampaiMentah ? [dari, sampaiMentah] : [sampaiMentah, dari];
   const rentang = { dari: parseDateOnly(awal) ?? null, sampai: parseDateOnlyEnd(akhir) ?? null };
 
-  const [daftar, pemakaian, manual] = await Promise.all([
+  const [daftar, pemakaian, manual, efektivitas] = await Promise.all([
     tab === "daftar" ? daftarPromoKonterKantor({ status }) : null,
     tab === "pemakaian" ? laporanPemakaianPromo(rentang) : null,
     tab === "manual" ? laporanDiskonManual(rentang) : null,
+    tab === "efektivitas" ? daftarEfektivitasPromo(rentang) : null,
   ]);
 
   return (
@@ -55,6 +62,7 @@ export default async function PromoKonterPage({ searchParams }: PageProps) {
       daftar={daftar}
       pemakaian={pemakaian}
       manual={manual}
+      efektivitas={efektivitas}
     />
   );
 }

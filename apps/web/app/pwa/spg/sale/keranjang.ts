@@ -3,8 +3,10 @@
  * bisa dites di Node: bentuk simpanan `sessionStorage`, isian diskon manual,
  * isian pembeli, dan alasan PERTAMA tombol simpan masih mati.
  */
-import { hitungPromoKonter, type DiskonManual, type GagalPromoKonter, type HasilPromoKonter, type PromoKonter } from "@/lib/spg/promo-konter";
+import { hitungPromoKonter, type AnggotaNota, type DiskonManual, type GagalPromoKonter, type HasilPromoKonter, type PromoKonter } from "@/lib/spg/promo-konter";
 import type { AturanDiskonManualSpg } from "@/lib/spg/pengaturan";
+import type { AturanMember } from "@/lib/spg/member";
+import { anggotaPratinjau, mintaDaftarMember, uraiMemberPembeli, type MemberPembeli } from "@/lib/spg/member-hp";
 import type { SpgCatalogRow } from "@/lib/spg/sale-queries";
 import type { PembeliTertahan } from "@/lib/pwa/offline/db";
 import { nomorWhatsApp } from "@/lib/salesman/dasbor";
@@ -12,10 +14,22 @@ import { nomorWhatsApp } from "@/lib/salesman/dasbor";
 /** Isian diskon manual di layar. `nilai` teks apa adanya (koma desimal, titik ribuan). */
 export type IsianDiskon = { jenis: "PERSEN" | "RUPIAH"; nilai: string; alasan: string };
 
-/** Pembeli di keranjang: pelanggan toko yang dipilih dari pencarian, atau pembeli baru. */
+/**
+ * Keadaan member yang dibaca server untuk nomor `hp` (bentuk simpan `62…`).
+ * Hanya berlaku selama nomor pembeli di keranjang masih nomor itu — nomor
+ * yang diketik ulang dibaca ulang.
+ */
+export type MemberTerbaca = { hp: string; info: MemberPembeli };
+
+/**
+ * Pembeli di keranjang: pelanggan toko yang dipilih dari pencarian, atau
+ * pembeli baru. `daftarMember` = pembeli setuju didaftarkan jadi member di nota
+ * ini; `member` = keadaan member nomornya menurut server (null = belum diketahui,
+ * misalnya tanpa sinyal).
+ */
 export type PembeliKeranjang =
-  | { jenis: "ada"; id: string; nama: string; hp: string }
-  | { jenis: "baru"; nama: string; hp: string; setuju: boolean };
+  | { jenis: "ada"; id: string; nama: string; hp: string; daftarMember: boolean; member: MemberTerbaca | null }
+  | { jenis: "baru"; nama: string; hp: string; setuju: boolean; daftarMember: boolean; member: MemberTerbaca | null };
 
 /**
  * Keranjang disimpan per toko di `sessionStorage`, supaya tidak hilang saat SPG
@@ -44,14 +58,24 @@ function uraiDiskon(v: unknown): IsianDiskon | null {
   return { jenis: o.jenis, nilai, alasan };
 }
 
+function uraiMemberTerbaca(v: unknown): MemberTerbaca | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const hp = teks(o.hp, 30);
+  const info = uraiMemberPembeli(o.info);
+  return hp && info ? { hp, info } : null;
+}
+
 function uraiPembeli(v: unknown): PembeliKeranjang | null {
   if (!v || typeof v !== "object") return null;
   const o = v as Record<string, unknown>;
   const nama = teks(o.nama, 100);
   const hp = teks(o.hp, 30);
   if (nama === null || hp === null) return null;
-  if (o.jenis === "ada" && typeof o.id === "string" && o.id) return { jenis: "ada", id: o.id, nama, hp };
-  if (o.jenis === "baru") return { jenis: "baru", nama, hp, setuju: o.setuju === true };
+  // Simpanan dari sebelum ada member: tidak minta didaftarkan, keadaan member belum diketahui.
+  const member = { daftarMember: o.daftarMember === true, member: uraiMemberTerbaca(o.member) };
+  if (o.jenis === "ada" && typeof o.id === "string" && o.id) return { jenis: "ada", id: o.id, nama, hp, ...member };
+  if (o.jenis === "baru") return { jenis: "baru", nama, hp, setuju: o.setuju === true, ...member };
   return null;
 }
 
@@ -93,12 +117,52 @@ export function diskonUntukMesin(isian: IsianDiskon | null): DiskonManual | null
   return n !== null && Number.isFinite(n) && n > 0 ? { jenis: isian.jenis, nilai: n } : null;
 }
 
-/** Pembeli untuk dikirim/diantrekan. Pembeli baru yang belum lengkap → null (tombol simpan sudah mati). */
-export function pembeliUntukKirim(p: PembeliKeranjang | null): PembeliTertahan | null {
+/** Keadaan member yang masih berlaku untuk nomor pembeli SEKARANG, atau null (belum diketahui). */
+export function memberDiketahui(p: PembeliKeranjang | null): MemberPembeli | null {
+  if (!p?.member) return null;
+  const hp = nomorWhatsApp(p.hp);
+  return hp && hp === p.member.hp ? p.member.info : null;
+}
+
+/** Nomor pembeli yang perlu ditanyakan keadaan membernya ke server, atau null (sudah diketahui / nomor belum sah). */
+export function nomorPerluCekMember(p: PembeliKeranjang | null): string | null {
   if (!p) return null;
-  if (p.jenis === "ada") return { id: p.id, nama: p.nama };
+  const hp = nomorWhatsApp(p.hp);
+  if (!hp) return null;
+  return p.member?.hp === hp ? null : hp;
+}
+
+/**
+ * Member pembeli untuk pratinjau dan kiriman — aturan yang sama dengan penulis
+ * nota (`anggotaPratinjau`, `mintaDaftarMember`).
+ */
+export function memberKeranjang(
+  p: PembeliKeranjang | null,
+  aturan: AturanMember,
+): { anggota: AnggotaNota | null; mendaftar: boolean; minBelanjaDaftar: number } {
+  if (!p) return { anggota: null, mendaftar: false, minBelanjaDaftar: aturan.minBelanjaDaftar };
+  // Member dikenali dari nomornya: tanpa nomor yang sah, belum ada member. (Pembeli
+  // baru yang belum lengkap menahan tombol simpan — totalnya tetap total member.)
+  if (!nomorWhatsApp(p.hp)) return { anggota: null, mendaftar: false, minBelanjaDaftar: aturan.minBelanjaDaftar };
+  const member = memberDiketahui(p);
+  return {
+    anggota: anggotaPratinjau({ member, daftarMember: p.daftarMember, aturan }),
+    mendaftar: mintaDaftarMember({ member, daftarMember: p.daftarMember, aturan }),
+    minBelanjaDaftar: aturan.minBelanjaDaftar,
+  };
+}
+
+/**
+ * Pembeli untuk dikirim/diantrekan. Pembeli baru yang belum lengkap → null
+ * (tombol simpan sudah mati). Permintaan didaftarkan jadi member ikut hanya
+ * selama program menerima pendaftaran dan nomornya belum (diketahui) member.
+ */
+export function pembeliUntukKirim(p: PembeliKeranjang | null, aturan: Pick<AturanMember, "aktif">): PembeliTertahan | null {
+  if (!p) return null;
+  const daftar = mintaDaftarMember({ member: memberDiketahui(p), daftarMember: p.daftarMember, aturan }) ? { daftarMember: true } : {};
+  if (p.jenis === "ada") return { id: p.id, nama: p.nama, ...daftar };
   if (masalahPembeliBaru(p)) return null;
-  return { nama: p.nama.trim(), hp: p.hp.trim(), setuju: p.setuju };
+  return { nama: p.nama.trim(), hp: p.hp.trim(), setuju: p.setuju, ...daftar };
 }
 
 /**
@@ -162,6 +226,12 @@ export type PratinjauKeranjang = {
   tanpaManual: HasilPromoKonter;
   /** Kenapa mesin menolak diskon SPG, atau null. */
   galatMesin: GagalPromoKonter["code"] | null;
+  /**
+   * Pembeli minta didaftarkan tapi nilai notanya (sebelum diskon member) di
+   * bawah belanja minimal: nota tercatat TANPA member — hitungan di atas sudah
+   * tanpa member. `kurang` = selisihnya. null = tidak berlaku.
+   */
+  daftarKurang: { minimal: number; kurang: number } | null;
 };
 
 /**
@@ -178,6 +248,8 @@ export function pratinjauKeranjang(input: {
   waktu: Date;
   aturan: AturanDiskonManualSpg;
   diskon: IsianDiskon | null;
+  /** Member pembeli (`memberKeranjang`); tidak ada = nota tanpa member. */
+  member?: { anggota: AnggotaNota | null; mendaftar: boolean; minBelanjaDaftar: number } | null;
 }): PratinjauKeranjang | null {
   const dasar = {
     baris: input.baris.map((b) => ({ key: b.kunci, itemId: b.row.itemId, categoryId: b.row.categoryId, qty: b.qty, unitPrice: b.row.price ?? 0 })),
@@ -186,10 +258,28 @@ export function pratinjauKeranjang(input: {
     waktu: input.waktu,
     aturanManual: input.aturan,
   };
-  const tanpaManual = hitungPromoKonter(dasar);
-  if (!tanpaManual.ok) return null;
   const manual = input.aturan.aktif ? diskonUntukMesin(input.diskon) : null;
-  if (!manual) return { hasil: tanpaManual, tanpaManual, galatMesin: null };
-  const dengan = hitungPromoKonter({ ...dasar, diskonManual: manual });
-  return dengan.ok ? { hasil: dengan, tanpaManual, galatMesin: null } : { hasil: tanpaManual, tanpaManual, galatMesin: dengan.code };
+  const hitung = (anggota: AnggotaNota | null): Omit<PratinjauKeranjang, "daftarKurang"> | null => {
+    const tanpaManual = hitungPromoKonter({ ...dasar, anggota });
+    if (!tanpaManual.ok) return null;
+    if (!manual) return { hasil: tanpaManual, tanpaManual, galatMesin: null };
+    const dengan = hitungPromoKonter({ ...dasar, diskonManual: manual, anggota });
+    return dengan.ok ? { hasil: dengan, tanpaManual, galatMesin: null } : { hasil: tanpaManual, tanpaManual, galatMesin: dengan.code };
+  };
+  const anggota = input.member?.anggota ?? null;
+  const awal = hitung(anggota);
+  if (!awal) return null;
+  // Sama dengan penulis nota: mendaftar di nota ini butuh nilai nota minimal
+  // (sesudah promo dan diskon SPG, sebelum diskon member). Tidak tercapai →
+  // notanya tetap tercatat, tanpa member dan tanpa harga member.
+  if (input.member?.mendaftar && anggota && !awal.galatMesin) {
+    const nilai = awal.hasil.total + (awal.hasil.member?.potongan ?? 0);
+    const minimal = input.member.minBelanjaDaftar;
+    if (nilai < minimal) {
+      const tanpa = hitung(null);
+      if (!tanpa) return null;
+      return { ...tanpa, daftarKurang: { minimal, kurang: Math.round((minimal - nilai) * 100) / 100 } };
+    }
+  }
+  return { ...awal, daftarKurang: null };
 }

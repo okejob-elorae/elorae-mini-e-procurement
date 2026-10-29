@@ -8,7 +8,7 @@ import { DaftarIsiPengaturan } from "../DaftarIsiPengaturan";
 import { DAFTAR_ISI_SPG, TAUTAN_TARGET_SPG } from "./daftar-isi";
 
 /**
- * Kepala halaman + daftar isi Pengaturan → SPG (8 kartu). Tautan ke target
+ * Kepala halaman + daftar isi Pengaturan → SPG (9 kartu). Tautan ke target
  * bulanan SPG hanya untuk yang bisa membuka Pengaturan → Salesman
  * (field_sales_orders:view).
  */

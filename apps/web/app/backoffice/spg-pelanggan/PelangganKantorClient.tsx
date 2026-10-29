@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, BellRing, Store, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { BellRing, Store, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -14,28 +13,45 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDisplayDate } from "@/lib/date-only";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { formatIDR } from "@/lib/sales-orders/format";
-import type { PelangganKantor, RingkasPelangganToko } from "@/lib/spg/pelanggan-kantor";
+import type { DataMemberKantor, DataPelangganToko, DataRingkasPelanggan } from "@/lib/spg/pelanggan-kantor";
+import { PERIODE_BAWAAN_HARI, type SaringMember, type SaringStatusMember, type StatusPelanggan } from "@/lib/spg/pelanggan-lacak";
 import { STATUS_TITIP } from "@/lib/spg/titip";
 import type { RingkasTitipToko } from "@/lib/spg/titip-kantor";
 import { cn } from "@/lib/utils";
 import { nadaStatusTitip } from "@/app/pwa/spg/titip/tampilan";
+import { denganParam } from "../piutang/_daftar/halaman";
+import { DaftarMemberKantor } from "./DaftarMemberKantor";
+import { DaftarPelangganToko } from "./DaftarPelangganToko";
+import { PilihPeriode, UbinLacak } from "./UbinLacak";
 
-type PerToko = { toko: { id: string; name: string; code: string } | null; baris: PelangganKantor[]; total: number };
+const JALUR = "/backoffice/spg-pelanggan";
+type Tab = "pelanggan" | "member" | "titip";
 
 /**
- * Pelanggan & titip pesan SPG di kantor. Nomor HP pembeli selalu disamarkan —
- * yang menghubungi pembeli adalah SPG tokonya, dari HP-nya.
+ * Pelanggan, member & titip pesan SPG di kantor. Nomor HP pembeli selalu
+ * disamarkan — yang menghubungi pembeli adalah SPG tokonya, dari HP-nya.
  */
 export function PelangganKantorClient({
   tab,
+  bolehAturMember,
+  periodeHari,
+  cari,
+  saring,
   ringkas,
-  titip,
   perToko,
+  member,
+  titip,
 }: {
-  tab: "pelanggan" | "titip";
-  ringkas: RingkasPelangganToko[];
+  tab: Tab;
+  /** `promos:manage` — menonaktifkan / mengaktifkan member. */
+  bolehAturMember: boolean;
+  periodeHari: number;
+  cari: string;
+  saring: { status: StatusPelanggan | null; member: SaringMember | null; statusMember: SaringStatusMember | null };
+  ringkas: DataRingkasPelanggan | null;
+  perToko: DataPelangganToko | null;
+  member: DataMemberKantor | null;
   titip: RingkasTitipToko[];
-  perToko: PerToko | null;
 }) {
   const t = useTranslations("spgPelanggan.kantor");
   const tt = useTranslations("spgTitip");
@@ -43,124 +59,114 @@ export function PelangganKantorClient({
   const locale = useLocale();
   const router = useRouter();
   const tgl = (iso: string | null) => (iso ? formatDisplayDate(iso, locale) : "—");
+  const angka = new Intl.NumberFormat(locale === "en" ? "en-US" : "id-ID", { maximumFractionDigits: 1 });
+  const persen = (n: number | null) => (n === null ? "—" : `${angka.format(n)}%`);
+  const periode = periodeHari === PERIODE_BAWAAN_HARI ? null : String(periodeHari);
 
-  const totalPelanggan = ringkas.reduce((n, r) => n + r.jumlahPelanggan, 0);
   const totalTerbuka = titip.reduce((n, r) => n + r.terbuka, 0);
+  const meta =
+    tab === "titip"
+      ? t("ringkasTitip", { toko: titip.length, n: totalTerbuka })
+      : tab === "member" && member
+        ? t("ringkasMember", { aktif: member.hitung.aktif, n: member.hitung.semua })
+        : perToko
+          ? t("ringkasToko", { toko: perToko.toko.name, n: perToko.ringkas.pelanggan })
+          : ringkas
+            ? t("ringkasPelanggan", { toko: ringkas.toko.length, n: ringkas.semua.pelanggan })
+            : undefined;
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title={t("judulMenu")}
-        meta={tab === "pelanggan" ? t("ringkasPelanggan", { toko: ringkas.length, n: totalPelanggan }) : t("ringkasTitip", { toko: titip.length, n: totalTerbuka })}
-        actions={<TautanTerkaitSpg kecuali="titip" />}
-      />
+      <PageHeader title={t("judulMenu")} meta={meta} actions={<TautanTerkaitSpg kecuali="titip" />} />
 
-      <Tabs value={tab} onValueChange={(v) => router.replace(v === "titip" ? "/backoffice/spg-pelanggan?tab=titip" : "/backoffice/spg-pelanggan")}>
+      <Tabs value={tab} onValueChange={(v) => router.replace(v === "pelanggan" ? denganParam(JALUR, {}, { periode }) : `${JALUR}?tab=${v}`)}>
         <TabsList>
           <TabsTrigger value="pelanggan">{t("tabPelanggan")}</TabsTrigger>
+          <TabsTrigger value="member">{t("tabMember")}</TabsTrigger>
           <TabsTrigger value="titip">{t("tabTitip")}</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      {tab === "pelanggan" && perToko?.toko ? (
-        <Card>
-          <CardHeader>
-            <Button variant="ghost" size="sm" asChild className="-ml-2 w-fit">
-              <Link href="/backoffice/spg-pelanggan" replace>
-                <ArrowLeft className="h-4 w-4" aria-hidden />
-                {t("semuaToko")}
-              </Link>
-            </Button>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              {t("pelangganToko", { toko: perToko.toko.name })}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className={perToko.baris.length === 0 ? undefined : "px-0"}>
-            {perToko.baris.length === 0 ? (
-              <EmptyState icon={Users} title={t("kosongTokoJudul")} description={t("kosongTokoIsi")} />
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("kolom.nama")}</TableHead>
-                      <TableHead>{t("kolom.hp")}</TableHead>
-                      <TableHead>{t("kolom.dicatat")}</TableHead>
-                      <TableHead className="text-right">{t("kolom.nota")}</TableHead>
-                      <TableHead>{t("kolom.belanjaTerakhir")}</TableHead>
-                      <TableHead className="text-right">{t("kolom.totalBelanja")}</TableHead>
-                      <TableHead className="text-right">{t("kolom.titipTerbuka")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {perToko.baris.map((p) => (
-                      <TableRow key={p.id}>
-                        <TableCell className="min-w-[10rem] whitespace-normal font-medium">{p.nama}</TableCell>
-                        <TableCell className="tabular-nums">{p.hpSamar}</TableCell>
-                        <TableCell>{tgl(p.dicatat)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{p.jumlahNota}</TableCell>
-                        <TableCell>{tgl(p.belanjaTerakhir)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatIDR(p.totalBelanja)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{p.titipTerbuka}</TableCell>
+      {tab === "pelanggan" && perToko ? (
+        <DaftarPelangganToko data={perToko} periodeHari={periodeHari} cari={cari} saring={{ status: saring.status, member: saring.member }} />
+      ) : tab === "pelanggan" && ringkas ? (
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium">{t("semuaTokoPeriode", { n: periodeHari })}</p>
+            <PilihPeriode periodeHari={periodeHari} />
+          </div>
+          <UbinLacak r={ringkas.semua} hariTidur={ringkas.hariTidur} />
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Store className="h-5 w-5" />
+                {t("perTokoJudul")}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className={ringkas.toko.length === 0 ? undefined : "px-0"}>
+              {ringkas.toko.length === 0 ? (
+                <EmptyState icon={Users} title={t("kosongJudul")} description={t("kosongIsi")} />
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader className="[&_th]:whitespace-normal">
+                      <TableRow>
+                        <TableHead>{t("kolom.toko")}</TableHead>
+                        <TableHead className="text-right">{t("kolom.pelanggan")}</TableHead>
+                        <TableHead className="text-right">{t("kolom.member")}</TableHead>
+                        <TableHead className="text-right">{t("kolom.cakupan")}</TableHead>
+                        <TableHead className="text-right">{t("kolom.kembali")}</TableHead>
+                        <TableHead className="text-right">{t("kolom.baru")}</TableHead>
+                        <TableHead className="text-right">{t("kolom.tidur")}</TableHead>
+                        <TableHead className="text-right">{t("kolom.belanjaPeriode")}</TableHead>
+                        <TableHead className="hidden 2xl:table-cell">{t("kolom.belanjaTerakhir")}</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-            {perToko.total > perToko.baris.length ? (
-              <p className="px-6 pt-3 text-xs text-muted-foreground">{t("terpotong", { tampil: perToko.baris.length, total: perToko.total })}</p>
-            ) : null}
-          </CardContent>
-        </Card>
-      ) : tab === "pelanggan" ? (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Store className="h-5 w-5" />
-              {t("perTokoJudul")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className={ringkas.length === 0 ? undefined : "px-0"}>
-            {ringkas.length === 0 ? (
-              <EmptyState icon={Users} title={t("kosongJudul")} description={t("kosongIsi")} />
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t("kolom.toko")}</TableHead>
-                      <TableHead className="text-right">{t("kolom.pelanggan")}</TableHead>
-                      <TableHead className="text-right">{t("kolom.nota")}</TableHead>
-                      <TableHead>{t("kolom.belanjaTerakhir")}</TableHead>
-                      <TableHead className="text-right">{t("kolom.totalBelanja")}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ringkas.map((r) => (
-                      <TableRow key={r.storeId}>
-                        <TableCell className="min-w-[12rem] whitespace-normal">
-                          <Link
-                            href={`/backoffice/spg-pelanggan?toko=${r.storeId}`}
-                            className="font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
-                          >
-                            {r.toko}
-                          </Link>
-                          {r.kode ? <span className="block text-xs text-muted-foreground">{r.kode}</span> : null}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{r.jumlahPelanggan}</TableCell>
-                        <TableCell className="text-right tabular-nums">{r.jumlahNota}</TableCell>
-                        <TableCell>{tgl(r.belanjaTerakhir)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{formatIDR(r.totalBelanja)}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {ringkas.toko.map((r) => (
+                        <TableRow key={r.storeId}>
+                          <TableCell className="min-w-[12rem] whitespace-normal">
+                            <Link
+                              href={denganParam(JALUR, {}, { toko: r.storeId, periode })}
+                              className="font-medium underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
+                            >
+                              {r.toko}
+                            </Link>
+                            {r.kode ? <span className="block text-xs text-muted-foreground">{r.kode}</span> : null}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{r.pelanggan}</TableCell>
+                          <TableCell className="text-right tabular-nums">{r.member}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {persen(r.cakupanPersen)}
+                            <span className="block text-xs text-muted-foreground">{t("dariNota", { ada: r.notaBerpembeli, nota: r.notaPeriode })}</span>
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{persen(r.kembaliPersen)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{r.baru}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {r.tidur > 0 ? (
+                              <Link
+                                href={denganParam(JALUR, {}, { toko: r.storeId, periode, status: "TIDUR" })}
+                                className="underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
+                              >
+                                {r.tidur}
+                              </Link>
+                            ) : (
+                              0
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{formatIDR(r.belanjaPeriode)}</TableCell>
+                          <TableCell className="hidden 2xl:table-cell">{tgl(r.belanjaTerakhir)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      ) : tab === "member" && member ? (
+        <DaftarMemberKantor data={member} cari={cari} status={saring.statusMember} bolehAtur={bolehAturMember} />
       ) : (
         <Card>
           <CardHeader>

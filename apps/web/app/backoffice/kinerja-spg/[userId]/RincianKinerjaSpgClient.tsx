@@ -165,6 +165,8 @@ function BagianToko({
     { label: t("kolom.tutup"), nilai: persen(r.kepatuhanTutupPersen), catatan: t("sel.tutup", { ditutup: r.hariJualDitutup, jual: r.hariJual }) },
     { label: t("kolom.titip"), nilai: t("sel.titip", { dibuat: r.titipDibuat, selesai: r.titipSelesai }) },
     { label: t("kolom.retur"), nilai: persen(r.persenKembali), catatan: t("rincian.ubin.kembali", { kembali: r.qtyKembali, terjual: r.qtyTerjual }) },
+    { label: t("kolom.pembeli"), nilai: persen(r.persenBerpembeli), catatan: t("sel.pembeli", { ada: r.notaBerpembeli, nota: r.nota }) },
+    { label: t("kolom.memberBaru"), nilai: angka.format(r.memberBaru) },
   ];
 
   return (

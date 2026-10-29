@@ -51,18 +51,31 @@ const pilihPromo = {
   isActive: true,
   note: true,
   storeSharePercent: true,
-  targets: { select: { kind: true, refId: true } },
+  memberOnly: true,
+  targets: { select: { kind: true, refId: true, qty: true } },
 } satisfies Prisma.CounterPromoSelect;
 
 type BarisPromo = Prisma.CounterPromoGetPayload<{ select: typeof pilihPromo }>;
 
-/** Bentuk jejak: angka biasa, tanggal ISO, sasaran terurut — supaya sebelum/sesudah bisa dibandingkan mata. */
+/**
+ * Bentuk jejak: angka biasa, tanggal ISO, sasaran terurut — supaya sebelum/sesudah
+ * bisa dibandingkan mata. Isi paket ikut dengan jumlahnya (`komponen`, kosong
+ * untuk jenis lain): tanpa itu "2 kaos + 1 celana" yang diubah jadi "1 kaos + 1
+ * celana" tidak meninggalkan jejak apa pun, karena daftar barangnya sama.
+ */
 function potret(p: BarisPromo) {
   const ref = (kind: string) =>
     p.targets
       .filter((t) => t.kind === kind)
       .map((t) => t.refId)
       .sort();
+  const komponen =
+    p.type === "PAKET"
+      ? p.targets
+          .filter((t) => t.kind === "ITEM" || t.kind === "CATEGORY")
+          .map((t) => ({ jenis: t.kind, refId: t.refId, qty: t.qty ?? 1 }))
+          .sort((a, b) => (a.jenis === b.jenis ? (a.refId < b.refId ? -1 : a.refId > b.refId ? 1 : 0) : a.jenis < b.jenis ? -1 : 1))
+      : [];
   return {
     name: p.name,
     type: p.type,
@@ -81,16 +94,31 @@ function potret(p: BarisPromo) {
     isActive: p.isActive,
     note: p.note,
     storeSharePercent: Number(p.storeSharePercent),
+    memberOnly: p.memberOnly,
+    komponen,
   };
 }
 
+/**
+ * Baris `CounterPromoTarget` dari isian yang sudah dirapikan. PAKET menulis
+ * komponennya (dengan `qty`) sebagai sasaran ITEM/CATEGORY — `itemIds`/
+ * `categoryIds`-nya diturunkan dari komponen yang sama, jadi tidak ditulis lagi
+ * (satu barang satu baris: kunci unik promo × jenis × id).
+ */
 const sasaran = (i: IsianPromoKonter) => [
-  ...i.itemIds.map((refId) => ({ kind: "ITEM", refId })),
-  ...i.categoryIds.map((refId) => ({ kind: "CATEGORY", refId })),
+  ...(i.type === "PAKET"
+    ? i.komponen.map((k) => ({ kind: k.jenis, refId: k.refId, qty: k.qty }))
+    : [
+        ...i.itemIds.map((refId) => ({ kind: "ITEM", refId })),
+        ...i.categoryIds.map((refId) => ({ kind: "CATEGORY", refId })),
+      ]),
   ...i.storeIds.map((refId) => ({ kind: "STORE", refId })),
 ];
 
-/** Sasaran yang disebut harus ada: barang jadi, kategori, dan toko. Yang nonaktif boleh (promo lama yang diubah). */
+/**
+ * Sasaran yang disebut harus ada: barang jadi, kategori, dan toko. Yang nonaktif boleh (promo lama yang diubah).
+ * Komponen paket ikut terperiksa: `rapikanIsianPromoKonter` menurunkan `itemIds`/`categoryIds` dari komponennya.
+ */
 async function periksaRujukan(klien: Klien | typeof prisma, i: IsianPromoKonter): Promise<MasalahIsianPromoKonter[]> {
   const [barang, kategori, toko] = await Promise.all([
     i.itemIds.length ? klien.item.count({ where: { id: { in: i.itemIds }, type: "FINISHED_GOOD" } }) : 0,
@@ -143,6 +171,7 @@ export async function simpanPromoKonter(input: {
     priority: isian.priority,
     note: isian.note || null,
     storeSharePercent: isian.storeSharePercent,
+    memberOnly: isian.memberOnly,
   };
 
   return runSerializable(async (tx): Promise<HasilSimpanPromoKonter> => {

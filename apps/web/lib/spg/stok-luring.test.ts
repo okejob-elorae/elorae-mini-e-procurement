@@ -58,6 +58,7 @@ d("stok toko dari antrean HP (test bed only)", () => {
     await prisma.spgSaleReturnLine.deleteMany({ where: { returnId: { in: seededIds(retur) } } });
     await prisma.spgSaleReturn.deleteMany({ where: { id: { in: seededIds(retur) } } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: seededIds([...nota]) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds([...nota]) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds([...nota]) } } });
     await prisma.storeStockMovement.deleteMany({ where: { storeId: seededId(tokoId) } });
     await prisma.storeOpname.deleteMany({ where: { storeId: seededId(tokoId) } });

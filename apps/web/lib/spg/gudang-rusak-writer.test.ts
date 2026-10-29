@@ -114,6 +114,7 @@ d("gudang barang rusak (test bed only)", () => {
     await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: tokoIds() } } });
     await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: { in: seededIds(saleIds) } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(kaos) } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(saleIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(saleIds) } } });
   });
 

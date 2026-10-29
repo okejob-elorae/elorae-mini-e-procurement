@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 import { getRequiredPermission } from './lib/rbac';
+import { jawabTanpaSesiDenganJson } from './lib/auth/tanpa-sesi';
 
 export async function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -63,6 +64,9 @@ export async function proxy(request: NextRequest) {
 
   // Require authentication for protected routes
   if (!token) {
+    if (jawabTanpaSesiDenganJson(pathname)) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
     const loginUrl = new URL('/login', request.url);
     // Remember the page so sign-in can return to it (validated after login).
     if (request.method === 'GET') {

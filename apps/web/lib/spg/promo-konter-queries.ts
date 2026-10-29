@@ -21,7 +21,8 @@ export function keBentukPromo(r: {
   priority: number;
   isActive: boolean;
   storeSharePercent?: unknown;
-  targets: { kind: string; refId: string }[];
+  memberOnly?: boolean;
+  targets: { kind: string; refId: string; qty?: number | null }[];
 }): PromoKonter | null {
   if (!(JENIS_PROMO_KONTER as readonly string[]).includes(r.type)) return null;
   const ref = (kind: string) => r.targets.filter((t) => t.kind === kind).map((t) => t.refId);
@@ -43,6 +44,15 @@ export function keBentukPromo(r: {
     priority: r.priority,
     isActive: r.isActive,
     storeSharePercent: Number(r.storeSharePercent ?? 0) || 0,
+    memberOnly: r.memberOnly === true,
+    ...(r.type === "PAKET"
+      ? {
+          komponen: r.targets
+            .filter((t) => t.kind === "ITEM" || t.kind === "CATEGORY")
+            .map((t) => ({ jenis: t.kind as "ITEM" | "CATEGORY", refId: t.refId, qty: t.qty ?? 1 }))
+            .sort((a, b) => (a.jenis + a.refId < b.jenis + b.refId ? -1 : 1)),
+        }
+      : {}),
   };
 }
 
@@ -65,7 +75,7 @@ export async function promoKonterUntukToko(storeId: string, sejak: Date, klien: 
       ],
     },
     orderBy: [{ priority: "desc" }, { id: "asc" }],
-    include: { targets: { select: { kind: true, refId: true } } },
+    include: { targets: { select: { kind: true, refId: true, qty: true } } },
   });
   return rows
     .map((r) => keBentukPromo(r))

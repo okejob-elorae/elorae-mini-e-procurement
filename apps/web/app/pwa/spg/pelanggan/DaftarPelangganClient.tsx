@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { ChevronRight, Search, UserPlus, UserRound, Users } from "lucide-react";
+import { BadgeCheck, ChevronRight, Moon, Search, UserPlus, UserRound, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
@@ -101,9 +101,29 @@ export function DaftarPelangganClient({
                     <span className="block text-xs text-muted-foreground">
                       {p.belanjaTerakhir ? t("ringkasBelanja", { n: p.jumlahNota, tanggal: p.belanjaTerakhir[bahasa] }) : t("belumBelanja")}
                     </span>
-                    {p.titipTerbuka > 0 ? (
-                      <span className="inline-block rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
-                        {t("titipTerbuka", { n: p.titipTerbuka })}
+                    {p.member || p.status === "TIDUR" || p.titipTerbuka > 0 ? (
+                      <span className="flex flex-wrap gap-1 pt-0.5">
+                        {p.member ? (
+                          p.member.aktif ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium">
+                              <BadgeCheck className="h-3 w-3" aria-hidden />
+                              {t("hpMember.badge", { tingkat: p.member.tingkat })}
+                            </span>
+                          ) : (
+                            <span className="inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{t("hpMember.nonaktifSingkat")}</span>
+                          )
+                        ) : null}
+                        {p.status === "TIDUR" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                            <Moon className="h-3 w-3" aria-hidden />
+                            {t("hpMember.status.TIDUR")}
+                          </span>
+                        ) : null}
+                        {p.titipTerbuka > 0 ? (
+                          <span className="inline-block rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
+                            {t("titipTerbuka", { n: p.titipTerbuka })}
+                          </span>
+                        ) : null}
                       </span>
                     ) : null}
                   </span>

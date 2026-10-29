@@ -102,6 +102,13 @@ describe("muatanPembeli / muatanDiskon", () => {
     expect(muatanPembeli(null)).toBeNull();
   });
 
+  it("carries the member registration request only when asked — a receipt queued before members existed sends none", () => {
+    expect(muatanPembeli({ id: "c1", nama: "Budi", daftarMember: true })).toEqual({ id: "c1", daftarMember: true });
+    expect(muatanPembeli({ nama: " Ani ", hp: "0812", setuju: true, daftarMember: true })).toEqual({ nama: "Ani", hp: "0812", setuju: true, daftarMember: true });
+    expect(muatanPembeli({ nama: "Ani", hp: "0812", setuju: true, daftarMember: false })).toEqual({ nama: "Ani", hp: "0812", setuju: true });
+    expect(muatanPembeli({ nama: "Ani", hp: "0812", setuju: true })).not.toHaveProperty("daftarMember");
+  });
+
   it("treats an empty reason as no reason", () => {
     expect(muatanDiskon({ jenis: "PERSEN", nilai: 5, alasan: "   " })).toEqual({ jenis: "PERSEN", nilai: 5, alasan: null });
     expect(muatanDiskon({ jenis: "PERSEN", nilai: Number.NaN, alasan: null })).toBeNull();

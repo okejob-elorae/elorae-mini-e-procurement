@@ -22,6 +22,14 @@ export const ENTRI: EntriBantuan[] = [
           "Isi keranjang tetap tersimpan bila Anda meninggalkan layar ini sebentar, dan menyimpan ulang nota yang sama tidak membuatnya tercatat dua kali.",
         ],
       },
+      {
+        judul: "Member Elorae",
+        isi: [
+          "Member dikenali dari nomor WhatsApp pembeli dan berlaku di semua toko Elorae. Begitu pembeli dipilih atau nomornya diketik, layar menanyakan keanggotaannya: tingkat member dan diskonnya tampil di bawah pembeli, dan diskon member masuk ke rincian keranjang. Tingkat dihitung dari belanja nomor itu di semua toko dalam jendela yang diatur kantor, sesudah barang yang dikembalikan.",
+          "Pembeli yang belum member bisa didaftarkan lewat sakelar Daftarkan jadi member — tanyakan dulu persetujuannya. Member baru langsung mendapat diskon tingkatnya di nota itu. Bila kantor memasang belanja minimal untuk mendaftar dan notanya belum mencapai itu, layar menyebut kekurangannya; nota tetap tersimpan, hanya tanpa member.",
+          "Diskon member baru dipotong bila kantor menyalakannya; sebelum itu layar menulis bahwa diskon member belum dinyalakan. Member yang dinonaktifkan kantor dicatat tanpa harga member. Tanpa sinyal, keanggotaan diperiksa saat nota terkirim, jadi total di layar adalah perkiraan.",
+        ],
+      },
     ],
   },
   {
@@ -268,6 +276,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgPelanggan.judul" },
     isi: [
       "Daftar pembeli toko Anda yang setuju dihubungi lewat WhatsApp, misalnya untuk mengabari barang baru, titip pesan, atau promo. Cari dengan nama atau nomor HP. Pembeli juga tercatat sebagai pelanggan saat Anda mengisi pembeli di nota.",
+      "Keping Member menandai pelanggan yang nomornya member Elorae, dengan tingkatnya. Keping Tidur menandai pelanggan yang sudah lama tidak belanja di toko ini (batasnya diatur kantor) — saat yang baik untuk menyapanya lewat WhatsApp.",
       { kunci: "spgPelanggan.petunjuk" },
     ],
   },
@@ -275,14 +284,31 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/pwa/spg/pelanggan/baru",
     bagian: "pwaSpg",
     judul: { kunci: "spgPelanggan.form.judulBaru" },
-    isi: "Mencatat pembeli sebagai pelanggan toko. Nomor HP harus nomor yang bisa menerima WhatsApp, dan pembeli harus setuju dihubungi — tanyakan langsung kepadanya. Kalau nomornya sudah terdaftar di toko ini, tidak dibuat pelanggan kedua; layar membuka pelanggan yang sudah ada.",
+    isi: [
+      "Mencatat pembeli sebagai pelanggan toko. Nomor HP harus nomor yang bisa menerima WhatsApp, dan pembeli harus setuju dihubungi — tanyakan langsung kepadanya. Kalau nomornya sudah terdaftar di toko ini, tidak dibuat pelanggan kedua; layar membuka pelanggan yang sudah ada.",
+      "Selama kantor tidak memasang belanja minimal untuk mendaftar, pembeli bisa langsung didaftarkan jadi member Elorae dari sini (dengan persetujuannya). Bila pendaftarannya gagal, pelanggannya tetap tersimpan.",
+    ],
   },
   {
     rute: "/pwa/spg/pelanggan/[id]",
     bagian: "pwaSpg",
     judul: "Rincian pelanggan",
-    isi: "Satu pelanggan toko: tombol Chat WhatsApp, catatan, tanggal setuju dihubungi, titip pesannya, dan riwayat belanjanya di toko ini. Hanya pelanggan toko Anda yang bisa dibuka.",
+    isi: [
+      "Satu pelanggan toko: tombol Chat WhatsApp, status belanjanya, keanggotaan member, barang favorit, catatan, tanggal setuju dihubungi, titip pesannya, dan riwayat belanjanya di toko ini. Hanya pelanggan toko Anda yang bisa dibuka.",
+      "Status di bawah nomor: Pembeli baru (satu nota), Pelanggan kembali (dua nota atau lebih), atau Tidur bila belanja terakhirnya di toko ini sudah melewati batas yang diatur kantor — sapa lewat tombol Chat WhatsApp.",
+    ],
     kartu: [
+      {
+        judul: { kunci: "spgPelanggan.hpMember.judul" },
+        isi: [
+          "Untuk member: tingkatnya, diskon member yang dipotong di nota, belanja dalam jendela yang diatur kantor, kekurangan untuk naik ke tingkat berikutnya, dan tanggal mendaftar. Belanja dan tingkat dihitung dari semua toko Elorae dengan nomor ini, sesudah barang yang dikembalikan.",
+          "Untuk yang belum member: tombol Daftarkan jadi member, sesudah pembeli setuju. Bila kantor memasang belanja minimal untuk mendaftar, pendaftaran hanya lewat nota di layar jual, karena di sanalah belanjanya diperiksa. Member yang dinonaktifkan kantor hanya bisa diaktifkan lagi oleh kantor.",
+        ],
+      },
+      {
+        judul: { kunci: "spgPelanggan.hpMember.favoritJudul" },
+        isi: "Tiga barang yang paling banyak dibeli pelanggan ini di toko Anda, dihitung dari potong bersih sesudah barang yang dikembalikan. Bahan untuk menawarkan barang baru yang mirip.",
+      },
       {
         judul: { kunci: "spgPelanggan.rincian.titipJudul" },
         isi: "Permintaan pembeli ini untuk dikabari saat barang datang. Titip pesan baru membuka formulir dengan pembeli ini sudah terpilih.",
@@ -297,7 +323,7 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/pwa/spg/pelanggan/[id]/ubah",
     bagian: "pwaSpg",
     judul: { kunci: "spgPelanggan.form.judulUbah" },
-    isi: "Mengubah nama, nomor HP, atau catatan pelanggan. Kalau nomor HP diganti, persetujuan dihubungi lewat WhatsApp harus ditanyakan lagi kepada pemilik nomor yang baru. Nomor yang sudah dipakai pelanggan lain di toko ini ditolak, dengan tautan ke pelanggan itu.",
+    isi: "Mengubah nama, nomor HP, atau catatan pelanggan. Kalau nomor HP diganti, persetujuan dihubungi lewat WhatsApp harus ditanyakan lagi kepada pemilik nomor yang baru. Nomor yang sudah dipakai pelanggan lain di toko ini ditolak, dengan tautan ke pelanggan itu. Keanggotaan member melekat pada nomor: mengganti nomor tidak memindahkan keanggotaannya — nomor baru perlu didaftarkan lagi.",
   },
   {
     rute: "/pwa/spg/titip",

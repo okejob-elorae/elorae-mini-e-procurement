@@ -72,7 +72,7 @@ export function NotaView({ sale }: { sale: SpgSaleDetail }) {
     }
   }
 
-  const adaKeterangan = sale.capturedOffline || sale.customer || rincian.diskonSpg > 0 || selisih;
+  const adaKeterangan = sale.capturedOffline || sale.customer || rincian.diskonSpg > 0 || rincian.diskonMember || selisih;
 
   return (
     <div className="flex min-h-dvh flex-col gap-3 p-4">
@@ -109,6 +109,12 @@ export function NotaView({ sale }: { sale: SpgSaleDetail }) {
                 <span className="text-muted-foreground">{t("buyer")}: </span>
                 <span className="font-medium">{sale.customer.name}</span>
                 <span className="text-muted-foreground tabular-nums"> · {tampilHp(sale.customer.phone)}</span>
+              </p>
+            ) : null}
+            {rincian.diskonMember ? (
+              <p className="flex items-baseline justify-between gap-3">
+                <span className="text-muted-foreground">{t("memberDiscount", { tingkat: rincian.diskonMember.tingkat })}</span>
+                <span className="shrink-0 whitespace-nowrap tabular-nums">−{formatIDR(rincian.diskonMember.potongan)}</span>
               </p>
             ) : null}
             {rincian.diskonSpg > 0 ? (

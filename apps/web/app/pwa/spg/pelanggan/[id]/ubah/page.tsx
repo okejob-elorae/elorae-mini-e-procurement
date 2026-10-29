@@ -14,5 +14,5 @@ export default async function SpgUbahPelangganPage({ params }: { params: Promise
   const { id } = await params;
   const p = await rincianPelangganHp(toko.id, id);
   if (!p) redirect("/pwa/spg/pelanggan");
-  return <FormPelanggan namaToko={toko.name} awal={{ id: p.id, nama: p.nama, hp: p.hp, catatan: p.catatan }} />;
+  return <FormPelanggan namaToko={toko.name} awal={{ id: p.id, nama: p.nama, hp: p.hp, catatan: p.catatan, member: p.member !== null }} />;
 }

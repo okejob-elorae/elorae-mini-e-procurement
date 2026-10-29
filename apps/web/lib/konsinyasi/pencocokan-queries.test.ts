@@ -78,6 +78,7 @@ afterEach(async () => {
   await prisma.spgSaleReturnLine.deleteMany({ where: { returnId: seededId(returId) } });
   await prisma.spgSaleReturn.deleteMany({ where: { id: seededId(returId) } });
   await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: seededId(jualId) } });
+  await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: seededId(jualId) }, select: { id: true } })).map((x) => x.id) } } });
   await prisma.spgSale.deleteMany({ where: { id: seededId(jualId) } });
   await prisma.consignmentShipmentItem.deleteMany({ where: { shipmentId: { in: seededIds(kirimIds) } } });
   await prisma.consignmentShipment.deleteMany({ where: { id: { in: seededIds(kirimIds) } } });

@@ -29,12 +29,14 @@ import { AturanMutasiCard } from "../salesman/AturanMutasiCard";
 import { HariKerjaSpgCard } from "../salesman/HariKerjaSpgCard";
 import { KUNCI_ATURAN_MUTASI } from "@/lib/spg/mutasi-aturan";
 import { bacaHariKerjaSpg, KUNCI_HARI_KERJA_SPG } from "@/lib/salesman/izin";
+import { bacaAturanMember, KUNCI_MEMBER } from "@/lib/spg/member";
+import { MemberCard } from "./MemberCard";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Pengaturan → SPG: aturan kerja SPG di konter. Setiap kartu memakai izin
- * pemilik keputusannya — promo/diskon oleh pengelola promo, jadwal dan tutup
+ * pemilik keputusannya — promo/diskon/member oleh pengelola promo, jadwal dan tutup
  * hari oleh pengelola toko, komisi oleh keuangan — tanpa izin baru.
  */
 export default async function PengaturanSpgPage() {
@@ -55,6 +57,7 @@ export default async function PengaturanSpgPage() {
           KUNCI_BARANG_HILANG,
           KUNCI_ATURAN_MUTASI,
           KUNCI_HARI_KERJA_SPG,
+          KUNCI_MEMBER,
         ],
       },
     },
@@ -71,6 +74,9 @@ export default async function PengaturanSpgPage() {
       <JudulKelompok kunci="settings.spg.toc.konter" />
       <div id="diskon-manual" className={jangkar}>
         <DiskonManualCard bolehUbah={hasPermission(izin, PERMISSIONS.PROMOS_MANAGE)} nilai={bacaDiskonManual(nilai(KUNCI_DISKON_MANUAL))} />
+      </div>
+      <div id="member" className={jangkar}>
+        <MemberCard bolehUbah={hasPermission(izin, PERMISSIONS.PROMOS_MANAGE)} nilai={bacaAturanMember(nilai(KUNCI_MEMBER))} />
       </div>
       <div id="tutup-hari" className={jangkar}>
         <TutupHariCard bolehUbah={hasPermission(izin, PERMISSIONS.STORES_MANAGE)} nilai={bacaTutupHari(nilai(KUNCI_TUTUP_HARI))} />

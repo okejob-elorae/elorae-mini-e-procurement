@@ -4,6 +4,8 @@ import { nilaiBersihSpg } from "@/lib/dashboard/tren";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { nomorWhatsApp } from "@/lib/salesman/dasbor";
 import { hpLokal, hpUntukCari } from "./pelanggan";
+import { bacaAturanMemberDb, keadaanMemberPerNomor } from "./member-queries";
+import { barangFavorit, statusPelangganHp, type StatusPelangganHp } from "./pelanggan-hp";
 import { kelompokTitip, STATUS_TITIP_TERBUKA, stokUntukPermintaan, type KelompokTitip } from "./titip";
 import { saldoBarangToko } from "./titip-saldo";
 
@@ -28,10 +30,17 @@ export type BarisPelangganHp = {
   jumlahNota: number;
   belanjaTerakhir: TeksDwibahasa | null;
   titipTerbuka: number;
+  /** Member Elorae dengan nomor ini (di toko mana pun), atau null. */
+  member: { tingkat: string; aktif: boolean } | null;
+  status: StatusPelangganHp;
 };
 
 /** Pelanggan toko ini, urut nama; dengan `q` dicari di nama atau nomor HP. */
-export async function daftarPelangganHp(storeId: string, opsi: { q?: string | null } = {}): Promise<{ baris: BarisPelangganHp[]; total: number }> {
+export async function daftarPelangganHp(
+  storeId: string,
+  opsi: { q?: string | null; sekarang?: Date } = {},
+): Promise<{ baris: BarisPelangganHp[]; total: number }> {
+  const sekarang = opsi.sekarang ?? new Date();
   const teks = (opsi.q ?? "").trim().slice(0, 60);
   const hp = hpUntukCari(teks);
   const atau = [
@@ -44,7 +53,8 @@ export async function daftarPelangganHp(storeId: string, opsi: { q?: string | nu
     prisma.storeCustomer.count({ where }),
   ]);
   const ids = rows.map((r) => r.id);
-  const [nota, titip] = ids.length
+  const aturan = await bacaAturanMemberDb();
+  const [nota, titip, member] = ids.length
     ? await Promise.all([
         prisma.spgSale.groupBy({ by: ["customerId"], where: { storeId, customerId: { in: ids } }, _count: { _all: true }, _max: { createdAt: true } }),
         prisma.customerRequest.groupBy({
@@ -52,21 +62,29 @@ export async function daftarPelangganHp(storeId: string, opsi: { q?: string | nu
           where: { storeId, customerId: { in: ids }, status: { in: [...STATUS_TITIP_TERBUKA] } },
           _count: { _all: true },
         }),
+        keadaanMemberPerNomor(
+          rows.map((r) => r.phone),
+          { aturan, waktu: sekarang },
+        ),
       ])
-    : [[], []];
+    : [[], [], new Map()];
   const notaPer = new Map(nota.map((n) => [n.customerId, n]));
   const titipPer = new Map(titip.map((t) => [t.customerId, t._count._all]));
   return {
     total,
     baris: rows.map((r) => {
       const n = notaPer.get(r.id);
+      const m = member.get(r.phone);
+      const jumlahNota = n?._count._all ?? 0;
       return {
         id: r.id,
         nama: r.name,
         hp: hpLokal(r.phone),
-        jumlahNota: n?._count._all ?? 0,
+        jumlahNota,
         belanjaTerakhir: n?._max.createdAt ? tanggal(n._max.createdAt) : null,
         titipTerbuka: titipPer.get(r.id) ?? 0,
+        member: m ? { tingkat: m.tingkat, aktif: m.aktif } : null,
+        status: statusPelangganHp({ jumlahNota, terakhir: n?._max.createdAt ?? null, sekarang, hariTidur: aturan.hariTidur }).status,
       };
     }),
   };
@@ -92,6 +110,27 @@ export type TitipPelangganHp = {
   dibuat: TeksDwibahasa;
 };
 
+/**
+ * Member pelanggan ini. Belanja periode = belanja bersih nomor ini di SEMUA toko
+ * Elorae dalam jendela pengaturan — dasar tingkatnya (pelanggan toko sendiri,
+ * jadi angkanya boleh tampil di HP SPG).
+ */
+export type MemberRincianHp = {
+  aktif: boolean;
+  tingkat: string;
+  /** Yang sungguh dipotong di nota (0 kalau kantor mematikan diskon member, atau member nonaktif). */
+  diskonPersen: number;
+  /** Diskon member dinyalakan kantor (pengaturan, bukan tingkat ini). */
+  diskonDinyalakan: boolean;
+  belanjaPeriode: number;
+  periodeBulan: number;
+  berikut: { nama: string; kurang: number } | null;
+  sejak: TeksDwibahasa;
+};
+
+/** Bisa tidaknya pelanggan yang belum member didaftarkan dari rinciannya. */
+export type DaftarMemberHp = { boleh: true } | { boleh: false; alasan: "PROGRAM_MATI" | "LEWAT_NOTA" | "HP_TIDAK_SAH"; minimal: number };
+
 export type RincianPelangganHp = {
   id: string;
   nama: string;
@@ -105,19 +144,31 @@ export type RincianPelangganHp = {
   totalBelanja: number;
   riwayat: NotaPelangganHp[];
   titip: TitipPelangganHp[];
+  /** Member Elorae dengan nomor ini, atau null (belum member). */
+  member: MemberRincianHp | null;
+  /** Untuk pelanggan yang belum member. */
+  daftarMember: DaftarMemberHp;
+  status: StatusPelangganHp;
+  /** Hari sejak belanja terakhir di toko ini, atau null. */
+  hariSejakBelanja: number | null;
+  hariTidur: number;
+  /** Tiga barang dengan potong bersih terbanyak di toko ini. */
+  favorit: { itemId: string; nama: string; qty: number }[];
 };
 
 /**
  * Satu pelanggan toko ini, dengan riwayat belanjanya DI TOKO INI dan titip
  * pesannya. `null` kalau id itu bukan pelanggan toko ini.
  */
-export async function rincianPelangganHp(storeId: string, id: string): Promise<RincianPelangganHp | null> {
+export async function rincianPelangganHp(storeId: string, id: string, opsi: { sekarang?: Date } = {}): Promise<RincianPelangganHp | null> {
+  const sekarang = opsi.sekarang ?? new Date();
   const p = await prisma.storeCustomer.findFirst({
     where: { id, storeId },
     select: { id: true, name: true, phone: true, note: true, consentAt: true, createdAt: true },
   });
   if (!p) return null;
-  const [nota, jumlah, titip] = await Promise.all([
+  const aturan = await bacaAturanMemberDb();
+  const [nota, jumlah, titip, keadaan, anggota, barisBarang] = await Promise.all([
     prisma.spgSale.findMany({
       where: { storeId, customerId: p.id },
       orderBy: { createdAt: "desc" },
@@ -140,6 +191,12 @@ export async function rincianPelangganHp(storeId: string, id: string): Promise<R
       take: 50,
       select: { id: true, description: true, qty: true, status: true, itemId: true, variantSku: true, createdAt: true },
     }),
+    keadaanMemberPerNomor([p.phone], { aturan, waktu: sekarang }),
+    prisma.member.findUnique({ where: { phone: p.phone }, select: { joinedAt: true } }),
+    prisma.spgSaleLine.findMany({
+      where: { spgSale: { storeId, customerId: p.id } },
+      select: { itemId: true, qty: true, returnedQty: true, item: { select: { nameId: true } } },
+    }),
   ]);
   const saldo = await saldoBarangToko(
     prisma,
@@ -147,6 +204,16 @@ export async function rincianPelangganHp(storeId: string, id: string): Promise<R
     titip.filter((t) => t.status === "MENUNGGU" && t.itemId).map((t) => t.itemId as string),
   );
   const wa = nomorWhatsApp(p.phone);
+  const m = keadaan.get(p.phone);
+  const status = statusPelangganHp({ jumlahNota: jumlah.length, terakhir: nota[0]?.createdAt ?? null, sekarang, hariTidur: aturan.hariTidur });
+  // Belanja minimal untuk mendaftar diperiksa di nota — dengan syarat itu, mendaftar hanya lewat nota.
+  const daftarMember: DaftarMemberHp = !aturan.aktif
+    ? { boleh: false, alasan: "PROGRAM_MATI", minimal: aturan.minBelanjaDaftar }
+    : aturan.minBelanjaDaftar > 0
+      ? { boleh: false, alasan: "LEWAT_NOTA", minimal: aturan.minBelanjaDaftar }
+      : !wa
+        ? { boleh: false, alasan: "HP_TIDAK_SAH", minimal: aturan.minBelanjaDaftar }
+        : { boleh: true };
   return {
     id: p.id,
     nama: p.name,
@@ -172,5 +239,22 @@ export async function rincianPelangganHp(storeId: string, id: string): Promise<R
       kelompok: kelompokTitip(t.status, stokUntukPermintaan(t.itemId, t.variantSku, saldo)),
       dibuat: tanggal(t.createdAt),
     })),
+    member: m
+      ? {
+          aktif: m.aktif,
+          tingkat: m.tingkat,
+          diskonPersen: m.diskonPersen,
+          diskonDinyalakan: aturan.diskonAktif,
+          belanjaPeriode: m.belanjaPeriode,
+          periodeBulan: aturan.periodeBulan,
+          berikut: m.berikut,
+          sejak: anggota ? tanggal(anggota.joinedAt) : { id: m.sejak, en: m.sejak },
+        }
+      : null,
+    daftarMember,
+    status: status.status,
+    hariSejakBelanja: status.hariSejak,
+    hariTidur: aturan.hariTidur,
+    favorit: barangFavorit(barisBarang.map((b) => ({ itemId: b.itemId, nama: b.item.nameId, qty: b.qty, kembali: b.returnedQty }))),
   };
 }

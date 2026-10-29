@@ -37,7 +37,10 @@ function fmtDate(iso: string): string {
   });
 }
 
-type NotaUntukRincian = Pick<SpgSaleDetail, "subtotal" | "total" | "discountTotal" | "orderPromoName" | "orderDiscount" | "manualDiscount" | "lines">;
+type NotaUntukRincian = Pick<SpgSaleDetail, "subtotal" | "total" | "discountTotal" | "orderPromoName" | "orderDiscount" | "manualDiscount" | "lines"> &
+  Partial<Pick<SpgSaleDetail, "memberDiscount" | "memberTier">> & {
+    lines: Array<SpgSaleDetail["lines"][number] | Omit<SpgSaleDetail["lines"][number], "promoDiscount">>;
+  };
 
 export type RincianBarisNota = {
   /** qty × harga sebelum potongan. */
@@ -50,6 +53,8 @@ export type RincianBarisNota = {
    * promo belanja atau diskon SPG, potongan baris (`SpgSaleLine.discount`)
    * ikut memuat bagian keduanya, dan menulisnya di bawah nama promo barang
    * akan salah label. Rinciannya kemudian ada di ringkasan bawah.
+   * Nota yang punya rincian promo (sejak 2026-10-20) selalu menulis bagian
+   * promo barangnya sendiri, persis.
    */
   potongan: number | null;
 };
@@ -57,9 +62,11 @@ export type RincianBarisNota = {
 export type RincianNota = {
   baris: RincianBarisNota[];
   subtotal: number;
-  /** Potongan promo barang seluruh nota (seluruh potongan − promo belanja − diskon SPG). */
+  /** Potongan promo barang seluruh nota (seluruh potongan − promo belanja − diskon member − diskon SPG). */
   promoBarang: number;
   promoBelanja: { nama: string; potongan: number } | null;
+  /** Diskon member dan tingkatnya, atau null. */
+  diskonMember: { tingkat: string; potongan: number } | null;
   diskonSpg: number;
   potonganTotal: number;
   total: number;
@@ -68,24 +75,30 @@ export type RincianNota = {
 /**
  * Rincian nota untuk dicetak dan ditampilkan — satu tempat, supaya HP, kantor,
  * dan kertas nota membaca angka yang sama. Jumlah baris kotor = subtotal;
- * promo barang + promo belanja + diskon SPG = seluruh potongan; subtotal −
+ * promo barang + promo belanja + diskon member + diskon SPG = seluruh potongan; subtotal −
  * seluruh potongan = total (= jumlah nilai bersih baris, dijamin penulis nota).
  */
 export function rincianNotaSpg(sale: NotaUntukRincian): RincianNota {
   const promoBelanja = sale.orderDiscount > 0 ? { nama: sale.orderPromoName ?? "Promo belanja", potongan: sale.orderDiscount } : null;
   const diskonSpg = Math.max(0, sale.manualDiscount);
+  const member = Math.max(0, sale.memberDiscount ?? 0);
+  const diskonMember = member > 0 ? { tingkat: sale.memberTier ?? "Member", potongan: member } : null;
   const potonganTotal = Math.max(0, sale.discountTotal);
-  const promoBarang = Math.max(0, Math.round((potonganTotal - (promoBelanja?.potongan ?? 0) - diskonSpg) * 100) / 100);
-  const hanyaPromoBarang = !promoBelanja && diskonSpg === 0;
+  const promoBarang = Math.max(0, Math.round((potonganTotal - (promoBelanja?.potongan ?? 0) - member - diskonSpg) * 100) / 100);
+  const hanyaPromoBarang = !promoBelanja && diskonSpg === 0 && member === 0;
   return {
-    baris: sale.lines.map((l) => ({
-      kotor: l.qty * l.unitPrice,
-      promo: l.promoName,
-      potongan: hanyaPromoBarang && l.discount > 0 ? l.discount : null,
-    })),
+    baris: sale.lines.map((l) => {
+      const persis = "promoDiscount" in l && l.promoDiscount !== null ? l.promoDiscount : null;
+      return {
+        kotor: l.qty * l.unitPrice,
+        promo: l.promoName,
+        potongan: persis !== null ? (persis > 0 ? persis : null) : hanyaPromoBarang && l.discount > 0 ? l.discount : null,
+      };
+    }),
     subtotal: sale.subtotal,
     promoBarang,
     promoBelanja,
+    diskonMember,
     diskonSpg,
     potonganTotal,
     total: sale.total,
@@ -97,8 +110,8 @@ export function rincianNotaSpg(sale: NotaUntukRincian): RincianNota {
  * Baris "Total potongan" hanya dicetak kalau lebih dari satu — dengan satu
  * jenis saja ia mengulang angka yang sama persis dan terbaca seperti dua potongan.
  */
-export function jenisPotongan(r: Pick<RincianNota, "promoBarang" | "promoBelanja" | "diskonSpg">): number {
-  return (r.promoBarang > 0 ? 1 : 0) + (r.promoBelanja ? 1 : 0) + (r.diskonSpg > 0 ? 1 : 0);
+export function jenisPotongan(r: Pick<RincianNota, "promoBarang" | "promoBelanja" | "diskonSpg"> & Partial<Pick<RincianNota, "diskonMember">>): number {
+  return (r.promoBarang > 0 ? 1 : 0) + (r.promoBelanja ? 1 : 0) + (r.diskonMember ? 1 : 0) + (r.diskonSpg > 0 ? 1 : 0);
 }
 
 export function spgSaleNotaHtml(sale: SpgSaleDetail): string {
@@ -135,6 +148,7 @@ export function spgSaleNotaHtml(sale: SpgSaleDetail): string {
     r.potonganTotal > 0
       ? `<div class="tot-row"><span>Subtotal</span><span class="amt">${rupiah(r.subtotal)}</span></div>
   ${r.promoBarang > 0 ? `<div class="tot-row"><span>Promo barang</span><span class="amt">-${rupiah(r.promoBarang)}</span></div>` : ""}
+  ${r.diskonMember ? `<div class="tot-row"><span>Diskon member (${esc(r.diskonMember.tingkat)})</span><span class="amt">-${rupiah(r.diskonMember.potongan)}</span></div>` : ""}
   ${r.promoBelanja ? `<div class="tot-row"><span>${esc(r.promoBelanja.nama)}</span><span class="amt">-${rupiah(r.promoBelanja.potongan)}</span></div>` : ""}
   ${r.diskonSpg > 0 ? `<div class="tot-row"><span>Diskon SPG</span><span class="amt">-${rupiah(r.diskonSpg)}</span></div>` : ""}
   ${jenisPotongan(r) > 1 ? `<div class="tot-row"><span>Total potongan</span><span class="amt">-${rupiah(r.potonganTotal)}</span></div>` : ""}

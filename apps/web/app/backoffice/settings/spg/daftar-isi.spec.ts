@@ -13,8 +13,8 @@ const ambil = (pesan: unknown, kunci: string): unknown =>
 describe("daftar isi Pengaturan → SPG", () => {
   const semua = DAFTAR_ISI_SPG.flatMap((g) => g.kartu);
 
-  it("delapan kartu, jangkar unik", () => {
-    expect(semua).toHaveLength(8);
+  it("sembilan kartu, jangkar unik", () => {
+    expect(semua).toHaveLength(9);
     const ids = semua.map((k) => k.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
@@ -29,7 +29,7 @@ describe("daftar isi Pengaturan → SPG", () => {
   });
 
   it("setiap kartu dirender sekali", () => {
-    for (const kartu of ["DiskonManualCard", "TutupHariCard", "TitipPesanCard", "ShiftCard", "HariKerjaSpgCard", "KomisiPutusCard", "BarangHilangCard", "AturanMutasiCard"]) {
+    for (const kartu of ["DiskonManualCard", "MemberCard", "TutupHariCard", "TitipPesanCard", "ShiftCard", "HariKerjaSpgCard", "KomisiPutusCard", "BarangHilangCard", "AturanMutasiCard"]) {
       expect(halaman.split(`<${kartu}`).length - 1, kartu).toBe(1);
     }
   });

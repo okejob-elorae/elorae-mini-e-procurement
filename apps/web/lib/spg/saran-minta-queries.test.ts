@@ -170,6 +170,7 @@ d("saranMintaToko — kueri (test bed only)", () => {
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: seededIds(orderIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: seededIds(saleIds) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(saleIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(saleIds) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoId, peerId]) } } });
     await prisma.storeGroup.deleteMany({ where: { id: seededId(areaId) } });

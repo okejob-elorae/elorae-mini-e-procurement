@@ -6360,7 +6360,8 @@
         "subtotal": "Subtotal",
         "itemPromos": "Promo barang",
         "orderPromo": "Promo belanja: {name}",
-        "manualDiscount": "Diskon SPG"
+        "manualDiscount": "Diskon SPG",
+        "memberDiscount": "Diskon member ({tingkat})"
       },
       "save": "Simpan penjualan",
       "saveShort": "Simpan",
@@ -6400,7 +6401,13 @@
         "bannerMore": "+{count} promo lain",
         "seeAll": "Lihat semua promo",
         "lineFallback": "Promo",
-        "free": "gratis {count}"
+        "free": "gratis {count}",
+        "khususMember": "Khusus member",
+        "isiPaket": "Isi: {isi}",
+        "isiBarang": "{qty} × {nama}",
+        "isiBarangUmum": "{qty} × barang tertentu",
+        "isiKategori": "{qty} × {nama} (kategori)",
+        "isiKategoriUmum": "{qty} × barang kategori"
       },
       "diskon": {
         "give": "Beri diskon",
@@ -6448,7 +6455,9 @@
         "queueFailed": "Nota tidak bisa disimpan di HP ini (penyimpanan penuh atau mode privat). Keranjang tetap ada — coba lagi saat ada sinyal.",
         "offlineBanner": "Tidak ada sinyal. Penjualan tetap bisa dicatat — nota disimpan di HP dan terkirim sendiri saat ada sinyal.",
         "pendingLink": "{count} nota belum terkirim",
-        "saveOffline": "Tanpa sinyal: nota disimpan di HP dulu."
+        "saveOffline": "Tanpa sinyal: nota disimpan di HP dulu.",
+        "memberDaftar": "Pendaftaran member ikut terkirim bersama nota.",
+        "memberTingkat": "Member {tingkat}"
       },
       "savedDifferent": "Penjualan {docNo} tersimpan. Total tercatat {total}.",
       "savedDifferentHint": "Di layar tadi {preview} — harga atau promo di server berbeda; yang tercatat angka server.",
@@ -6462,6 +6471,31 @@
         "PEMBELI_NAMA": "Isi nama pembeli baru, atau batalkan pembeli.",
         "PEMBELI_HP": "Isi nomor HP pembeli yang bisa dihubungi lewat WhatsApp (mis. 0812…).",
         "PEMBELI_SETUJU": "Centang persetujuan pembeli dihubungi lewat WhatsApp, atau batalkan pembeli."
+      },
+      "member": {
+        "badge": "Member {tingkat}",
+        "nonaktifSingkat": "Member nonaktif",
+        "diskon": "Diskon member {persen}%",
+        "diskonNol": "Tingkat ini belum mendapat diskon",
+        "diskonMati": "Diskon member belum dinyalakan kantor",
+        "nonaktif": "Nomor ini member yang dinonaktifkan kantor. Nota dicatat tanpa harga member.",
+        "memeriksa": "Memeriksa keanggotaan…",
+        "daftar": "Daftarkan jadi member",
+        "daftarPersetujuan": "Tanyakan dulu ke pembeli. Member Elorae berlaku di semua toko Elorae dan dikenali dari nomor WhatsApp ini.",
+        "syaratBelanja": "Syarat: belanja minimal {minimal} dalam satu nota.",
+        "langsungJadi": "Langsung jadi {tingkat}",
+        "tingkatNanti": "Tingkat dan diskonnya dipastikan saat nota disimpan.",
+        "tingkatLuring": "Tanpa sinyal: tingkat dan diskonnya dipastikan saat nota terkirim.",
+        "luringBelumTahu": "Tanpa sinyal, keanggotaan nomor ini diperiksa saat nota terkirim.",
+        "belanjaKurang": "Belanja minimal {minimal} untuk mendaftar — kurang {kurang}. Nota tetap tersimpan, tanpa member."
+      },
+      "memberHasil": {
+        "baru": "Pembeli terdaftar jadi member Elorae ({tingkat}).",
+        "potong": "Member {tingkat}: diskon member {amount}.",
+        "tanpaPotong": "Member {tingkat}.",
+        "PROGRAM_MATI": "Pembeli belum jadi member: pendaftaran member sedang ditutup kantor.",
+        "MEMBER_NONAKTIF": "Pembeli belum jadi member: nomornya member yang dinonaktifkan kantor.",
+        "BELANJA_KURANG": "Pembeli belum jadi member: belanja minimal {minimal} dalam satu nota."
       }
     },
     "spgNota": {
@@ -6494,7 +6528,8 @@
         "manualDiscount": "Diskon SPG",
         "manualReason": "Alasan: {reason}",
         "totalDiffers": "Total di layar saat dijual {preview}; yang tercatat {total} — harga atau promo dihitung ulang server saat nota terkirim.",
-        "shareTextSaving": "Nota {docNo} - Total {total} (hemat {saving})"
+        "shareTextSaving": "Nota {docNo} - Total {total} (hemat {saving})",
+        "memberDiscount": "Diskon member ({tingkat})"
       },
       "pending": {
         "title": "{count} nota belum terkirim",
@@ -9140,7 +9175,8 @@
         "orderPromoLabel": "Promo belanja: {name}",
         "manualDiscountLabel": "Diskon SPG",
         "manualReason": "Alasan diskon: {reason}",
-        "paidAtCashier": "Dibayar di kasir toko."
+        "paidAtCashier": "Dibayar di kasir toko.",
+        "memberDiscountLabel": "Diskon member ({tingkat})"
       }
     }
   },
@@ -16812,7 +16848,8 @@
     "tab": {
       "daftar": "Daftar promo",
       "pemakaian": "Pemakaian",
-      "manual": "Diskon manual"
+      "manual": "Diskon manual",
+      "efektivitas": "Efektivitas"
     },
     "status": {
       "BERLAKU": "Berlaku",
@@ -16881,13 +16918,14 @@
       "HARGA_KHUSUS": "Harga khusus",
       "BELI_GRATIS": "Beli X gratis Y",
       "MIN_BELANJA_PERSEN": "Minimal belanja — diskon persen",
-      "MIN_BELANJA_POTONGAN": "Minimal belanja — potongan rupiah"
+      "MIN_BELANJA_POTONGAN": "Minimal belanja — potongan rupiah",
+      "PAKET": "Paket (bundling)"
     },
     "aturan": {
       "judul": "Cara promo dihitung di konter",
       "pengantar": "Beberapa promo bisa berlaku bersamaan. Inilah urutan yang dipakai layar jual dan nota:",
-      "satu": "Satu potong barang hanya kena satu promo barang (diskon persen, potongan rupiah, harga khusus, atau beli X gratis Y).",
-      "prioritas": "Promo dengan prioritas lebih tinggi didahulukan. Pada prioritas yang sama, setiap potong mendapat potongan terbesar; sesudah itu promo beli X gratis Y memakai potong yang tersisa.",
+      "satu": "Satu potong barang hanya kena satu promo barang (paket, diskon persen, potongan rupiah, harga khusus, atau beli X gratis Y).",
+      "prioritas": "Promo dengan prioritas lebih tinggi didahulukan. Pada prioritas yang sama, paket dihitung paling dulu; lalu setiap potong yang tersisa mendapat potongan terbesar; sesudah itu promo beli X gratis Y memakai potong yang tersisa.",
       "paket": "Beli X gratis Y boleh campur barang yang ikut promo itu: potong diurutkan dari yang termahal, dan di setiap kelompok X+Y yang penuh, Y potong termurah gratis.",
       "belanja": "Sesudah promo barang, paling banyak SATU promo minimal belanja — yang potongannya terbesar — dihitung dari nilai bersih barang yang ikut promo itu.",
       "manual": "Diskon manual SPG (kalau dinyalakan di Pengaturan → SPG) dihitung paling akhir, dari nilai bersih nota, dan tidak boleh melewati batas persennya.",
@@ -16952,7 +16990,8 @@
         "HARGA_KHUSUS": "Setiap potong barang yang ikut dijual dengan harga ini — hanya kalau lebih murah dari harga biasanya.",
         "BELI_GRATIS": "Beli sekian potong, gratis sekian potong. Boleh campur barang yang ikut promo; yang gratis potong termurah.",
         "MIN_BELANJA_PERSEN": "Kalau belanja barang yang ikut mencapai minimal, nota dipotong sekian persen.",
-        "MIN_BELANJA_POTONGAN": "Kalau belanja barang yang ikut mencapai minimal, nota dipotong sejumlah rupiah."
+        "MIN_BELANJA_POTONGAN": "Kalau belanja barang yang ikut mencapai minimal, nota dipotong sejumlah rupiah.",
+        "PAKET": "Sekumpulan barang dijual dengan satu harga. Isi paket boleh barang tertentu atau barang dari kategori, masing-masing dengan jumlahnya. Pada prioritas yang sama paket dihitung lebih dulu dari promo lain, dan hanya terbentuk kalau harganya di bawah harga normal potong-potong itu."
       },
       "beli": "Beli (potong)",
       "gratis": "Gratis (potong)",
@@ -16963,7 +17002,8 @@
         "HARGA_KHUSUS": "Harga khusus per potong (Rp)",
         "BELI_GRATIS": "Nilai",
         "MIN_BELANJA_PERSEN": "Diskon (%)",
-        "MIN_BELANJA_POTONGAN": "Potongan (Rp)"
+        "MIN_BELANJA_POTONGAN": "Potongan (Rp)",
+        "PAKET": "Harga satu paket (Rp)"
       },
       "contoh": {
         "barang": "Kemeja",
@@ -16971,7 +17011,12 @@
         "satuan": "Contoh: {barang} {harga} → {sesudah}",
         "tanpaPotongan": "Contoh: {barang} {harga} tetap {harga} — harga khusus ini tidak lebih murah.",
         "paket": "Contoh: {qty} × {barang} {harga} = {kotor} → bayar {bayar} ({gratis} potong gratis)",
-        "nota": "Contoh: belanja {belanja} → {sesudah}"
+        "nota": "Contoh: belanja {belanja} → {sesudah}",
+        "belumPaket": "Isi harga paket dan isinya (paling sedikit 2 potong) untuk melihat contohnya.",
+        "bundel": "Contoh: {qty} potong @ {harga} = {kotor} → bayar {bayar} (hemat {hemat})",
+        "bundelTidak": "Contoh: {qty} potong @ {harga} = {kotor} — harga paket tidak lebih murah, jadi paket tidak terbentuk.",
+        "bundelAsli": "Dengan harga jual Elorae barang-barang ini: {kotor} → bayar {bayar} (hemat {hemat}). Di toko konsinyasi harga konternya lebih tinggi, jadi potongannya lebih besar.",
+        "bundelAsliTidak": "Harga jual Elorae barang-barang ini {kotor} — tidak lebih mahal dari harga paket, jadi di toko putus paket tidak terbentuk. Di toko konsinyasi harga konternya lebih tinggi."
       },
       "mode": {
         "SEMUA": "Semua barang",
@@ -17026,15 +17071,48 @@
         "BAGIAN_TOKO_TIDAK_VALID": "Bagian toko harus antara 1 dan 100 persen (paling banyak dua angka di belakang koma).",
         "BARANG_TIDAK_DIKENAL": "Ada barang terpilih yang sudah tidak ada atau bukan barang jadi.",
         "KATEGORI_TIDAK_DIKENAL": "Ada kategori terpilih yang sudah tidak ada.",
-        "TOKO_TIDAK_DIKENAL": "Ada toko terpilih yang sudah tidak ada."
+        "TOKO_TIDAK_DIKENAL": "Ada toko terpilih yang sudah tidak ada.",
+        "PAKET_TIDAK_VALID": "Isi paket belum lengkap: pilih barang atau kategori di setiap baris, jumlah bilangan bulat 1–20 per baris, tanpa baris kembar, paling banyak 10 baris, dan total 2–50 potong per paket."
       },
       "simpan": "Simpan promo",
       "sudahDipakaiJudul": "Sudah dipakai di {n} nota",
       "sudahDipakaiIsi": "Perubahan hanya berlaku untuk nota berikutnya; nota lama tetap memakai potongan yang tercatat. Untuk menghentikan promo, matikan saja.",
       "diskonManualJudul": "Diskon manual SPG",
-      "diskonManualIsi": "Potongan yang diberi SPG sendiri diatur di Pengaturan → SPG (bawaan mati). Diskon manual dihitung sesudah semua promo di sini."
+      "diskonManualIsi": "Potongan yang diberi SPG sendiri diatur di Pengaturan → SPG (bawaan mati). Diskon manual dihitung sesudah semua promo di sini.",
+      "memberOnly": "Khusus member",
+      "memberOnlyBantu": "Hanya berlaku bila nota punya member. Spanduk di layar jual tetap menampilkannya, supaya SPG bisa menawarkan pendaftaran member.",
+      "paket": {
+        "judul": "Isi satu paket",
+        "bantu": "Konter mengambil potong yang termahal di antara yang cocok (barang tertentu diisi lebih dulu dari kategori). Potongannya dibagi ke setiap potong menurut harganya.",
+        "kolomJenis": "Jenis",
+        "kolomPilihan": "Barang atau kategori",
+        "kolomJumlah": "Jumlah",
+        "jenisBaris": "Jenis isi baris {n}",
+        "jenis": {
+          "ITEM": "Barang tertentu",
+          "CATEGORY": "Barang dari kategori"
+        },
+        "pilihBarang": "Pilih barang",
+        "pilihKategori": "Pilih kategori",
+        "cariKategori": "Cari kategori",
+        "belumDipilih": "Belum dipilih.",
+        "kurangi": "Kurangi jumlah baris {n}",
+        "tambahi": "Tambah jumlah baris {n}",
+        "jumlahBaris": "Jumlah baris {n}",
+        "hapusBaris": "Hapus baris {n}",
+        "tambah": "Tambah isi",
+        "total": "Satu paket berisi {n} potong.",
+        "minimal": "Paket berisi paling sedikit 2 potong.",
+        "maksimal": "Paket berisi paling banyak {n} potong.",
+        "maksBaris": "Paling banyak {n} baris isi.",
+        "pilihanBaris": "Barang atau kategori baris {n}"
+      }
     },
-    "kembaliKeDaftar": "Kembali ke promo konter"
+    "kembaliKeDaftar": "Kembali ke promo konter",
+    "khususMember": "Khusus member",
+    "isiPaket": "Isi paket: {isi}",
+    "isiPaketBarang": "{qty} × {nama}",
+    "isiPaketKategori": "{qty} × {nama} (kategori)"
   },
   "pengaturanDiskonManualSpg": {
     "judul": "Diskon manual di konter",
@@ -17080,7 +17158,11 @@
     "berlakuUntukBelanja": "Dihitung dari belanja:",
     "semuaBarang": "semua barang",
     "ringkas": "Ringkas",
-    "lihatSemua": "Lihat semua ({n})"
+    "lihatSemua": "Lihat semua ({n})",
+    "khususMember": "Khusus member",
+    "khususMemberBantu": "Hanya berlaku bila pembeli terdaftar sebagai member.",
+    "isiPaket": "Isi satu paket:",
+    "isiKategori": "(kategori)"
   },
   "jadwalSpg": {
     "judul": "Jadwal & shift SPG",
@@ -17620,9 +17702,163 @@
         "totalBelanja": "Total belanja",
         "titipTerbuka": "Titip terbuka",
         "menungguTertua": "Menunggu sejak",
-        "palingSering": "Paling sering dititip"
+        "palingSering": "Paling sering dititip",
+        "member": "Member",
+        "cakupan": "Pembeli tercatat",
+        "kembali": "Kembali",
+        "baru": "Belanja pertama",
+        "tidur": "Tidur",
+        "belanjaPeriode": "Belanja tercatat",
+        "status": "Status",
+        "rata": "Rata-rata/nota",
+        "pertama": "Belanja pertama",
+        "favorit": "Kategori favorit"
       },
-      "judulMenu": "Pelanggan & titip pesan"
+      "judulMenu": "Pelanggan & titip pesan",
+      "tabMember": "Member",
+      "periode": "Periode",
+      "periodeOpsi": "{n} hari terakhir",
+      "semuaTokoPeriode": "Semua toko · {n} hari terakhir",
+      "ringkasMember": "{aktif} member aktif dari {n}",
+      "ringkasToko": "{n} pelanggan di {toko}",
+      "dariNota": "{ada} dari {nota} nota",
+      "cariPelanggan": "Cari nama atau 4 angka terakhir HP",
+      "memberTingkat": "Member · {tingkat}",
+      "memberNonaktif": "Member nonaktif",
+      "dicatatPada": "Dicatat {tanggal}",
+      "hariIni": "hari ini",
+      "hariLalu": "{n} hari lalu",
+      "favoritPotong": "{n} pcs",
+      "kosongSaringJudul": "Tidak ada pelanggan yang cocok",
+      "hapusSaring": "Hapus saringan",
+      "status": {
+        "BARU": "Baru",
+        "AKTIF": "Aktif",
+        "TIDUR": "Tidur",
+        "BELUM_BELANJA": "Belum belanja"
+      },
+      "saring": {
+        "semua": "Semua",
+        "status": "Saring status pelanggan",
+        "member": "Member",
+        "bukanMember": "Bukan member"
+      },
+      "ubin": {
+        "pelanggan": "Pelanggan tercatat",
+        "pelangganCatatan": "{n} belum belanja",
+        "member": "Member aktif",
+        "memberCatatan": "Dikenali dari nomor WhatsApp",
+        "cakupan": "Nota dengan pembeli tercatat",
+        "cakupanCatatan": "{ada} dari {nota} nota",
+        "kembali": "Pelanggan kembali",
+        "kembaliCatatan": "{kembali} dari {pembeli} pembeli",
+        "baru": "Belanja pertama",
+        "baruCatatan": "dalam periode",
+        "tidur": "Pelanggan tidur",
+        "tidurCatatan": "{hari} hari atau lebih tanpa belanja"
+      },
+      "member": {
+        "judul": "Member Elorae",
+        "cari": "Cari nama atau 4 angka terakhir HP",
+        "saringLabel": "Saring status member",
+        "saring": {
+          "aktif": "Aktif",
+          "nonaktif": "Nonaktif"
+        },
+        "kosongJudul": "Belum ada member",
+        "kosongIsi": "SPG mendaftarkan pembeli sebagai member di konter, dengan persetujuan pembeli.",
+        "kosongSaringJudul": "Tidak ada member yang cocok",
+        "kolom": {
+          "nama": "Nama",
+          "tingkat": "Tingkat",
+          "belanjaPeriode": "Belanja {bulan} bulan",
+          "toko": "Belanja di",
+          "bergabung": "Bergabung",
+          "status": "Status",
+          "aksi": "Aksi"
+        },
+        "tokoLain": "+{n} toko lain",
+        "status": {
+          "aktif": "Aktif",
+          "nonaktif": "Nonaktif",
+          "nonaktifSejak": "sejak {tanggal}"
+        },
+        "nonaktifkan": "Nonaktifkan",
+        "aktifkan": "Aktifkan",
+        "dialog": {
+          "nonaktifJudul": "Nonaktifkan member {nama}?",
+          "nonaktifIsi": "Member nonaktif tidak mendapat diskon member dan tidak bisa didaftarkan ulang oleh SPG sampai kantor mengaktifkannya kembali. Riwayat belanjanya tetap.",
+          "aktifJudul": "Aktifkan kembali {nama}?",
+          "aktifIsi": "Member ini kembali mendapat tingkat dan diskonnya mulai nota berikutnya.",
+          "alasan": "Alasan",
+          "alasanWajib": "Alasan wajib diisi.",
+          "batal": "Batal"
+        },
+        "tersimpanAktif": "Member diaktifkan kembali.",
+        "tersimpanNonaktif": "Member dinonaktifkan.",
+        "err": {
+          "UNAUTHORIZED": "Sesi Anda berakhir. Masuk lagi.",
+          "FORBIDDEN": "Anda tidak punya izin mengubah member.",
+          "TIDAK_ADA": "Member ini tidak ditemukan.",
+          "ALASAN_WAJIB": "Alasan wajib diisi.",
+          "GAGAL": "Gagal menyimpan. Coba lagi."
+        }
+      }
+    },
+    "hpMember": {
+      "badge": "Member {tingkat}",
+      "nonaktifSingkat": "Member nonaktif",
+      "status": {
+        "BELUM_BELANJA": "Belum belanja",
+        "BARU": "Pembeli baru",
+        "KEMBALI": "Pelanggan kembali",
+        "TIDUR": "Tidur"
+      },
+      "terakhirBelanja": "Belanja terakhir {hari, plural, =0 {hari ini} =1 {kemarin} other {# hari lalu}}",
+      "tidurSapa": "Sudah {hari} hari atau lebih tanpa belanja — sapa lewat WhatsApp.",
+      "tidurTanpaWa": "Sudah {hari} hari atau lebih tanpa belanja. Nomornya tidak bisa dihubungi lewat WhatsApp — ubah nomornya dulu.",
+      "judul": "Member Elorae",
+      "diskonLabel": "Diskon member",
+      "diskonPersen": "{persen}%",
+      "diskonNol": "Belum ada di tingkat ini",
+      "diskonMati": "Belum dinyalakan kantor",
+      "belanjaPeriode": "Belanja {bulan} bulan terakhir",
+      "naikKe": "Naik ke {tingkat}",
+      "kurang": "kurang {amount}",
+      "tertinggi": "Sudah di tingkat tertinggi.",
+      "sejak": "Member sejak",
+      "semuaToko": "Belanja dan tingkat dihitung dari semua toko Elorae dengan nomor ini, sesudah barang yang dikembalikan.",
+      "nonaktif": "Keanggotaan nomor ini dinonaktifkan kantor. Nota dicatat tanpa harga member; hanya kantor yang bisa mengaktifkannya lagi.",
+      "belumMember": "Belum jadi member Elorae. Member dikenali dari nomor WhatsApp-nya di semua toko Elorae.",
+      "daftarkan": "Daftarkan jadi member",
+      "mendaftarkan": "Mendaftarkan…",
+      "dialogJudul": "Daftarkan {nama} jadi member?",
+      "dialogIsi": "Tanyakan dulu ke pembeli. Dengan persetujuannya, nomor WhatsApp-nya dicatat sebagai member Elorae dan berlaku di semua toko Elorae.",
+      "batal": "Batal",
+      "setujuDaftar": "Pembeli setuju, daftarkan",
+      "okBaru": "{nama} terdaftar jadi member Elorae.",
+      "okSudah": "{nama} sudah member Elorae.",
+      "tidakBisa": {
+        "PROGRAM_MATI": "Pendaftaran member sedang ditutup kantor.",
+        "LEWAT_NOTA": "Mendaftar butuh belanja minimal {minimal} dalam satu nota — daftarkan dari layar jual.",
+        "HP_TIDAK_SAH": "Nomornya tidak bisa dihubungi lewat WhatsApp. Ubah nomornya dulu."
+      },
+      "err": {
+        "FORBIDDEN": "Akun Anda tidak punya akses untuk ini.",
+        "NO_ASSIGNED_STORE": "Anda belum ditugaskan ke toko mana pun. Hubungi kantor.",
+        "VALIDATION": "Isian tidak sah. Muat ulang halaman lalu coba lagi.",
+        "PROGRAM_MATI": "Pendaftaran member sedang ditutup kantor.",
+        "MEMBER_NONAKTIF": "Nomor ini member yang dinonaktifkan kantor. Hanya kantor yang bisa mengaktifkannya lagi.",
+        "PELANGGAN_TIDAK_ADA": "Pelanggan ini tidak ada di toko Anda.",
+        "LEWAT_NOTA": "Kantor memasang belanja minimal untuk mendaftar — daftarkan dari layar jual.",
+        "GENERIC": "Belum terdaftar. Periksa sinyal lalu coba lagi."
+      },
+      "favoritJudul": "Barang favorit di toko ini",
+      "favoritPcs": "{qty} pcs",
+      "gantiNomor": "Keanggotaan member tetap pada nomor lama. Nomor baru belum member — daftarkan lagi dari rincian pelanggan.",
+      "formDaftar": "Daftarkan juga jadi member Elorae",
+      "formDaftarPetunjuk": "Tanyakan dulu ke pembeli. Member berlaku di semua toko Elorae dan dikenali dari nomor WhatsApp ini.",
+      "formGagal": "Pelanggan tersimpan, tapi belum jadi member."
     }
   },
   "spgTitip": {
@@ -17956,7 +18192,9 @@
       "target": "Capaian target",
       "tutup": "Tutup hari",
       "titip": "Titip pesan",
-      "retur": "Retur pembeli"
+      "retur": "Retur pembeli",
+      "pembeli": "Pembeli tercatat",
+      "memberBaru": "Member baru"
     },
     "sel": {
       "terlambat": "{kali}× · {menit} mnt",
@@ -17965,7 +18203,8 @@
       "tanpaTarget": "Target bulan ini belum ditetapkan",
       "tutup": "{ditutup} dari {jual} hari berjualan",
       "titip": "{dibuat} dibuat · {selesai} selesai",
-      "belumDisusun": "Jadwal shift belum disusun untuk SPG ini di toko ini"
+      "belumDisusun": "Jadwal shift belum disusun untuk SPG ini di toko ini",
+      "pembeli": "{ada} dari {nota} nota"
     },
     "keterangan": {
       "judul": "Cara membaca",
@@ -21898,7 +22137,8 @@
           "turunErPersen": "Anomali: ER turun lebih dari",
           "hariKontenBerkala": "Sesudah H+30, cek video lagi setiap",
           "batasHariKonten": "Berhenti cek video sesudah tayang"
-        }
+        },
+        "sepanjangHari": "Pantau 24 jam (tanpa jam berhenti)"
       },
       "satuan": {
         "pengecekan": "pengecekan",
@@ -21950,7 +22190,8 @@
         "GAGAL": "Gagal. Coba lagi.",
         "TANPA_IZIN": "Orang yang memasang perangkat ini tidak punya izin mengelola Kreatif, jadi KOL baru tidak bisa dibuat dari ekstensi.",
         "KOL_DIBLOKIR": "KOL ini diblokir di Elorae; videonya tidak ditambahkan."
-      }
+      },
+      "meta24": "Pantau 24 jam"
     },
     "performa": {
       "meta": "{n} video dipantau",
@@ -24395,5 +24636,184 @@
       "putih": "Putih"
     },
     "bukanPantone": "bukan Pantone"
+  },
+  "pengaturanMemberSpg": {
+    "judul": "Member & pelanggan",
+    "aktif": "Program member menerima pendaftaran",
+    "aktifYa": "Menyala — SPG bisa mendaftarkan pembeli sebagai member di konter, dengan persetujuan pembeli.",
+    "aktifTidak": "Mati — tidak ada pendaftaran baru. Member yang sudah ada tetap member.",
+    "tingkatJudul": "Tingkat member",
+    "tingkatBantu": "Tingkat dihitung dari belanja bersih (sesudah retur) di semua toko dalam periode di bawah. Tingkat pertama selalu mulai dari Rp0.",
+    "kolomNama": "Nama tingkat",
+    "kolomMin": "Belanja minimal (Rp)",
+    "kolomDiskon": "Diskon (%)",
+    "hapus": "Hapus",
+    "kode": "Kode {kode}",
+    "minPertama": "Selalu Rp0",
+    "hapusTingkat": "Hapus tingkat {nama}",
+    "tanpaNama": "tanpa nama",
+    "tingkatSalah": "Periksa tingkat: nama 1–30 huruf, belanja minimal rupiah utuh yang naik dari tingkat ke tingkat, diskon 0–100.",
+    "tambahTingkat": "Tambah tingkat",
+    "maksTingkat": "Paling banyak {n} tingkat.",
+    "periode": "Periode penentu tingkat (bulan)",
+    "periodeBantu": "Belanja bersih sekian bulan terakhir menentukan tingkat.",
+    "periodeSalah": "Isi bilangan bulat 1–36.",
+    "hariTidur": "Pelanggan tidur sesudah (hari)",
+    "hariTidurBantu": "Tanpa belanja sekian hari, pelanggan dihitung tidur di Pelanggan SPG.",
+    "hariTidurSalah": "Isi bilangan bulat 7–730.",
+    "diskonAktif": "Potong diskon member di nota",
+    "diskonAktifYa": "Menyala — diskon tingkat dipotong di setiap nota member.",
+    "diskonAktifTidak": "Mati — member tetap tercatat dan tingkatnya dihitung, tetapi tidak ada potongan uang.",
+    "diskonPeringatan": "Diskon member mengurangi pendapatan di semua toko, setiap kali member belanja.",
+    "gabungPromo": "Diskon member juga untuk barang yang kena promo",
+    "gabungPromoYa": "Menyala — barang yang sudah kena promo barang tetap mendapat diskon member.",
+    "gabungPromoTidak": "Mati — barang yang sudah kena promo barang tidak mendapat diskon member.",
+    "bagianToko": "Bagian toko konsinyasi (%)",
+    "bagianTokoBantu": "0 = diskon member ditanggung penuh Elorae. Di toko putus hanya dicatat.",
+    "bagianTokoSalah": "Isi 0–100, paling banyak dua angka desimal.",
+    "minDaftar": "Belanja minimal untuk mendaftar (Rp)",
+    "minDaftarBantu": "Nilai nota sebelum diskon member. 0 = tanpa syarat belanja.",
+    "minDaftarSalah": "Isi rupiah utuh.",
+    "urutan": "Urutan potongan di nota: promo barang, diskon member, promo belanja, lalu diskon manual.",
+    "hanyaLihat": "Hanya pengelola promo yang bisa mengubah pengaturan ini.",
+    "pakaiBawaan": "Pakai bawaan",
+    "simpan": "Simpan",
+    "isianSalah": "Periksa isian yang ditandai merah.",
+    "tersimpan": "Pengaturan member disimpan.",
+    "konfirmasiJudul": "Nyalakan diskon member?",
+    "konfirmasiIsi": "Mulai nota berikutnya, setiap member mendapat potongan sesuai tingkatnya di semua toko. Pendapatan setiap toko berkurang sebesar potongan itu.",
+    "konfirmasiYa": "Nyalakan dan simpan",
+    "batal": "Batal",
+    "err": {
+      "UNAUTHORIZED": "Sesi Anda berakhir. Masuk lagi.",
+      "FORBIDDEN": "Anda tidak punya izin mengubah pengaturan ini.",
+      "INVALID": "Isian tidak sah.",
+      "GAGAL": "Gagal menyimpan. Coba lagi."
+    }
+  },
+  "efektivitasPromo": {
+    "rentang": "Promo yang berjalan di antara",
+    "daftarJudul": "Efektivitas promo",
+    "kosongJudul": "Tidak ada promo yang berjalan di rentang ini",
+    "kosongIsi": "Pilih rentang tanggal lain.",
+    "terpotong": "Hanya 500 promo terbaru yang dibaca.",
+    "pengakuan": "Membandingkan masa promo dengan periode sebelumnya yang sama panjang. Ini perbandingan, bukan bukti bahwa promo penyebab perubahannya.",
+    "notaLamaDaftar": "{n} nota lama yang memakai promo tanpa rincian promo tidak dihitung di pemakaian.",
+    "kolom": {
+      "promo": "Promo",
+      "status": "Status",
+      "periode": "Periode dihitung",
+      "nota": "Nota promo",
+      "pcs": "Potong kena promo",
+      "potongan": "Potongan",
+      "perubahan": "Penjualan barang sasaran",
+      "biaya": "Potongan per Rp1 kenaikan"
+    },
+    "hari": "{n} hari",
+    "sampaiSekarang": "sekarang",
+    "dipotong": "dipotong rentang",
+    "promoBelanja": "promo belanja",
+    "belumAdaPembanding": "belum ada pembanding",
+    "tidakNaik": "tidak naik",
+    "hasil": {
+      "khususMember": "khusus member",
+      "semuaToko": "semua toko",
+      "nToko": "{n} toko",
+      "semuaBarang": "semua barang",
+      "nSasaran": "{barang} barang, {kategori} kategori",
+      "kembali": "Efektivitas",
+      "lihatPromo": "Lihat promo",
+      "belumBerjalanJudul": "Promo ini belum berjalan di rentang ini",
+      "belumBerjalanIsi": "Hasil muncul sesudah promo mulai dan ada nota di masa promonya.",
+      "periode": "Masa promo {promo} ({hari} hari) dibandingkan dengan {pembanding}.",
+      "lihatSeluruh": "Lihat seluruh masa promo",
+      "catatan": {
+        "notaLama": "{n} nota lama memakai promo ini tetapi tidak punya rincian promo — tidak dihitung di pemakaian, keranjang, dan pelanggan.",
+        "dipotong": "Masa promo dipotong rentang tanggal yang Anda pilih. Pembanding tetap periode tepat sebelum promo mulai ({mulai}).",
+        "berjalan": "Promo masih berjalan; hari terakhir belum penuh, dan pembandingnya sama panjang.",
+        "dimatikan": "Promo dimatikan pada {tanggal}; masa promo berhenti di situ.",
+        "dimatikanPerkiraan": "Waktu promo dimatikan tidak tercatat; masa promo berhenti pada perubahan terakhirnya, {tanggal}.",
+        "kategori": "Barang sasaran dari kategori dibaca menurut kategori barang hari ini."
+      },
+      "ringkas": {
+        "nota": "Nota memakai promo",
+        "belanja": "promo belanja — dihitung per nota",
+        "pcs": "{n} potong kena promo",
+        "potongan": "Potongan promo",
+        "potonganSub": "ditanggung Elorae di toko konsinyasi: {elorae}",
+        "penjualan": "Penjualan barang sasaran",
+        "penjualanSub": "{promo} vs {pembanding}",
+        "biaya": "Potongan per Rp1 kenaikan",
+        "tidakNaik": "Penjualan tidak naik",
+        "tidakNaikSub": "tidak ada kenaikan untuk dibandingkan dengan potongannya",
+        "biayaSub": "dari kenaikan {selisih}",
+        "tanpaPembanding": "Belum ada pembanding",
+        "tanpaPembandingSub": "Periode pembanding tanpa penjualan barang sasaran — kenaikannya tidak bisa dinilai."
+      },
+      "grafik": {
+        "judul": "Potong terjual per hari",
+        "seriPromo": "Masa promo",
+        "seriPembanding": "Pembanding",
+        "pcs": "{n} pcs",
+        "hariKe": "Hari ke-{n}",
+        "kosong": "Belum ada penjualan barang sasaran di kedua periode.",
+        "lihatTabel": "Lihat angka per hari",
+        "kolomHari": "Hari ke",
+        "kolomPcs": "Pcs"
+      },
+      "penjualan": {
+        "judul": "Penjualan barang sasaran di toko sasaran",
+        "pcs": "Potong bersih",
+        "rupiah": "Nilai bersih",
+        "nota": "Nota",
+        "ukuran": "Ukuran",
+        "selamaPromo": "Masa promo",
+        "perHari": "Per hari",
+        "pembanding": "Pembanding",
+        "selisih": "Selisih",
+        "perubahan": "Perubahan"
+      },
+      "tanggungan": {
+        "judul": "Siapa menanggung potongan",
+        "konsi": "Di toko konsinyasi",
+        "konsiToko": "Ditanggung toko",
+        "konsiElorae": "Ditanggung Elorae",
+        "putus": "Di toko putus (hanya dicatat)"
+      },
+      "keranjang": {
+        "judul": "Nilai nota",
+        "dengan": "Rata-rata nota dengan promo ({n} nota)",
+        "tanpa": "Rata-rata nota tanpa promo ini ({n} nota)",
+        "selisih": "Selisih",
+        "tidakBisa": "belum bisa dibandingkan",
+        "dikecualikan": "{n} nota lama tanpa rincian promo tidak dimasukkan."
+      },
+      "pelanggan": {
+        "judul": "Pembeli",
+        "cakupan": "Nota promo dengan pembeli tercatat",
+        "cakupanNilai": "{persen}% ({tercatat} dari {nota})",
+        "pembeli": "Pembeli tercatat",
+        "baru": "Baru (belum pernah belanja)",
+        "member": "Tercatat sebagai member",
+        "kembali": "Belanja lagi ≤ 30 hari sesudah promo",
+        "kembaliBerjalan": "dinilai sesudah promo berakhir",
+        "kembaliBelum": "bisa dinilai mulai {tanggal}",
+        "tanpaPembeli": "Tidak ada nota promo yang mencatat pembelinya, jadi pembeli belum bisa dihitung."
+      },
+      "toko": {
+        "judul": "Per toko",
+        "kosongJudul": "Tidak ada toko",
+        "kosongIsi": "Promo ini tidak menyasar toko mana pun, atau tidak ada nota di kedua periode.",
+        "toko": "Toko",
+        "nota": "Nota promo",
+        "potongan": "Potongan",
+        "pcs": "Potong (promo / pembanding)",
+        "rupiahPromo": "Nilai masa promo",
+        "rupiahPembanding": "Nilai pembanding",
+        "perubahan": "Perubahan",
+        "konsi": "Konsinyasi",
+        "putus": "Putus"
+      }
+    }
   }
 }

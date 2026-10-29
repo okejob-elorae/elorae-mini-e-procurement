@@ -82,6 +82,7 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
       .map((a) => a.id);
     await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
     await prisma.spgCommission.deleteMany({ where: { storeId: { in: tokoIds() } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(nota) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(nota) } } });
     nota.length = 0;
 

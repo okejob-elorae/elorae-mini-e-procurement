@@ -132,6 +132,12 @@ Data tambahan ini juga ikut pada pemeriksaan otomatis dan Simpan ke Elorae.
 Berlaku seketika, juga untuk tab TikTok yang sedang terbuka. Menyalakannya lagi langsung mengirim
 halaman yang sedang terbuka (bila belum terkirim dalam 6 jam terakhir).
 
+## Kiriman otomatis terakhir (v0.11.1)
+
+Popup menampilkan keputusan kiriman otomatis terakhir dari panel: tersimpan, diabaikan Elorae,
+atau belum dikirim beserta alasannya (misalnya "daftar video belum tertangkap"). Kalau baris ini
+tidak pernah muncul sesudah membuka profil TikTok, muat ulang ekstensi lalu muat ulang tab TikTok.
+
 ## Instagram dan YouTube (v0.11.0)
 
 Sesudah memperbarui ekstensi (Muat ulang di `chrome://extensions`), muat ulang juga tab Instagram

@@ -1703,6 +1703,22 @@
   }
 
   // ------------------------------------------------ kiriman otomatis (tanpa tombol)
+  // Keputusan terakhir ditulis ke storage (KUNCI_KIRIM_OTOMATIS_TERAKHIR di lib/aturan.js — kunci
+  // ditulis langsung karena dipakai juga saat modul aturan GAGAL dimuat) dan tampil di popup.
+  // Hanya ditulis bila berubah: setiap bacaan ulang (gulir, tangkapan) memanggil fungsi ini.
+  const KUNCI_KIRIM_TERAKHIR = "kirimOtomatisTerakhir";
+  let catatanKirimTerakhir = "";
+  function catatKirimTerakhir(c) {
+    const sidik = JSON.stringify([c.url, c.kunci, c.alasan, c.rincian, c.hasil]);
+    if (sidik === catatanKirimTerakhir) return;
+    catatanKirimTerakhir = sidik;
+    try {
+      chrome.storage.local.set({ [KUNCI_KIRIM_TERAKHIR]: { ...c, at: Date.now() } }).catch(() => {});
+    } catch {
+      // konteks ekstensi sudah tidak berlaku (ekstensi dimuat ulang): tidak ada yang bisa dicatat
+    }
+  }
+
   async function sakelarKirimNyala(at) {
     try {
       const r = await chrome.storage.local.get(at.KUNCI_SAKELAR_KIRIM_OTOMATIS);
@@ -1718,13 +1734,20 @@
    * setiap bacaan ulang (gulir, tangkapan daftar video) tidak mengirim pesan berisi 200 posting.
    */
   async function kirimOtomatisBilaPerlu(h) {
-    const at = await muatAturan.catch(() => null);
-    if (!at || !panel) return;
+    let galatAturan = null;
+    const at = await muatAturan.catch((e) => {
+      galatAturan = e;
+      return null;
+    });
+    if (!panel) return;
     const url = location.href;
-    if (!at.bacaanLengkap(h, url)) return;
-    const kunci = at.kunciKirimOtomatis(h.data);
-    if (!kunci || sedangKirimOtomatis.has(kunci) || (tanyaOtomatisLagi.get(kunci) ?? 0) > Date.now()) return;
-    if (!(await sakelarKirimNyala(at))) return;
+    if (!at) return catatKirimTerakhir({ url, alasan: "ATURAN_GAGAL", rincian: String(galatAturan?.message ?? galatAturan) });
+    const kunci = at.kunciKirimOtomatis(h?.data);
+    const belum = at.alasanBelumLengkap(h, url);
+    if (belum) return catatKirimTerakhir({ url, kunci, alasan: "BELUM_LENGKAP", rincian: belum });
+    if (!kunci) return catatKirimTerakhir({ url, alasan: "TANPA_KUNCI" });
+    if (sedangKirimOtomatis.has(kunci) || (tanyaOtomatisLagi.get(kunci) ?? 0) > Date.now()) return;
+    if (!(await sakelarKirimNyala(at))) return catatKirimTerakhir({ url, kunci, alasan: "SAKELAR_MATI" });
     sedangKirimOtomatis.add(kunci);
     let jawaban = null;
     try {
@@ -1732,6 +1755,9 @@
     } finally {
       sedangKirimOtomatis.delete(kunci);
     }
+    if (!jawaban) catatKirimTerakhir({ url, kunci, alasan: "LATAR_TIDAK_MENJAWAB" });
+    else if (jawaban.dikirim) catatKirimTerakhir({ url, kunci, alasan: "DIKIRIM", hasil: jawaban.kabar?.ok ? jawaban.kabar.hasil : (jawaban.kabar?.kode ?? "?") });
+    else catatKirimTerakhir({ url, kunci, alasan: jawaban.alasan ?? jawaban.kode ?? "?", rincian: jawaban.rincian });
     tanyaOtomatisLagi.set(kunci, jawaban?.selesai ? Infinity : Date.now() + JEDA_TANYA_ULANG_MS);
     if (!panel || location.href !== url) return;
     const tampil = at.teksKabarOtomatis(jawaban?.kabar);

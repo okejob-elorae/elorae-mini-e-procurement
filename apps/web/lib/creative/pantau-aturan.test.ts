@@ -6,11 +6,13 @@ import {
   bacaPantau,
   dalamJamKerja,
   DAFTAR_KUNCI_PANTAU,
+  JAM_SEPANJANG_HARI,
   JEJAK_PANTAU,
   KODE_GALAT_PANTAU,
   KODE_MASALAH,
   normalKodeSambung,
   PANTAU_BAWAAN,
+  sepanjangHari,
   validasiPantau,
 } from "./pantau-aturan";
 
@@ -86,6 +88,34 @@ describe("dalamJamKerja", () => {
     expect(dalamJamKerja(new Date("2003-05-05T01:00:00Z"), PANTAU_BAWAAN)).toBe(true);
     expect(dalamJamKerja(new Date("2003-05-05T09:59:00Z"), PANTAU_BAWAAN)).toBe(true);
     expect(dalamJamKerja(new Date("2003-05-05T10:00:00Z"), PANTAU_BAWAAN)).toBe(false);
+  });
+
+  // 16:59Z = 23:59 WIB; 17:00Z = 00:00 WIB hari berikutnya.
+  it("00.00–24.00 berarti sepanjang hari, termasuk menit terakhir dan tengah malam", () => {
+    const sehari = { jamMulai: JAM_SEPANJANG_HARI.jamMulai, jamSelesai: JAM_SEPANJANG_HARI.jamSelesai };
+    for (const iso of ["2003-05-05T16:00:00Z", "2003-05-05T16:59:00Z", "2003-05-05T17:00:00Z", "2003-05-05T05:30:00Z"]) {
+      expect(dalamJamKerja(new Date(iso), sehari), iso).toBe(true);
+    }
+  });
+});
+
+describe("pemantauan 24 jam", () => {
+  it("jam selesai 24.00 diterima dan tersimpan apa adanya; jam mulai 24.00 tidak", () => {
+    const v = validasiPantau({ ...PANTAU_BAWAAN, jamMulai: "00:00", jamSelesai: "24:00" });
+    expect(v.ok && v.pengaturan.jamSelesai).toBe("24:00");
+    expect(bacaPantau({ jamMulai: "00:00", jamSelesai: "24:00" })).toMatchObject({ jamMulai: "00:00", jamSelesai: "24:00" });
+    const mulai = validasiPantau({ ...PANTAU_BAWAAN, jamMulai: "24:00", jamSelesai: "24:00" });
+    expect(!mulai.ok && mulai.galat).toEqual([{ kunci: "jamMulai", sebab: "BUKAN_JAM" }]);
+    for (const salah of ["24:30", "25:00", "24:0"]) {
+      expect(validasiPantau({ ...PANTAU_BAWAAN, jamSelesai: salah }).ok, salah).toBe(false);
+    }
+  });
+
+  it("sepanjangHari hanya untuk 00.00–24.00 persis", () => {
+    expect(sepanjangHari({ jamMulai: "00:00", jamSelesai: "24:00" })).toBe(true);
+    expect(sepanjangHari({ jamMulai: "00:00", jamSelesai: "23:59" })).toBe(false);
+    expect(sepanjangHari({ jamMulai: "08:00", jamSelesai: "24:00" })).toBe(false);
+    expect(sepanjangHari(PANTAU_BAWAAN)).toBe(false);
   });
 });
 

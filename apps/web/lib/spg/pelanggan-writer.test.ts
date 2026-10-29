@@ -56,6 +56,7 @@ d("pelanggan toko — penulis & bacaan (test bed only)", () => {
     await prisma.storeStockMovement.deleteMany({ where: { itemId: seededId(kemeja) } });
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(kemeja) } });
     await prisma.spgSaleLine.deleteMany({ where: { itemId: seededId(kemeja) } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { storeId: { in: tokoIds() } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { storeId: { in: tokoIds() } } });
     await prisma.storeCustomer.deleteMany({ where: { storeId: { in: tokoIds() } } });
   });
@@ -187,11 +188,11 @@ d("pelanggan toko — penulis & bacaan (test bed only)", () => {
     expect(daftar.baris[0]).toMatchObject({ id: a.id, jumlahNota: 1 });
 
     // Kantor: angka per toko, nomor disamarkan.
-    const ringkas = (await ringkasPelangganKantor()).find((x) => x.storeId === toko);
-    expect(ringkas).toMatchObject({ jumlahPelanggan: 1, jumlahNota: 1, totalBelanja: 100_000 });
-    const kantor = await pelangganTokoKantor(toko);
-    expect(kantor.baris).toHaveLength(1);
-    expect(kantor.baris[0]).toMatchObject({ nama: "Rina", hpSamar: "0812****2222", jumlahNota: 1, totalBelanja: 100_000 });
+    const ringkas = (await ringkasPelangganKantor({ periodeHari: 90 })).toko.find((x) => x.storeId === toko);
+    expect(ringkas).toMatchObject({ pelanggan: 1, notaPeriode: 1, notaBerpembeli: 1, belanjaPeriode: 100_000 });
+    const kantor = (await pelangganTokoKantor(toko, { periodeHari: 90 }))!;
+    expect(kantor.halaman.baris).toHaveLength(1);
+    expect(kantor.halaman.baris[0]).toMatchObject({ nama: "Rina", hpSamar: "0812****2222", nota: 1, belanja: 100_000 });
     expect(JSON.stringify(kantor)).not.toContain("6281211112222");
     expect(JSON.stringify(kantor)).not.toContain("081211112222");
   });

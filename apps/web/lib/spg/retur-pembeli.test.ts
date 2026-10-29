@@ -92,6 +92,7 @@ d("catatReturPembeli (test bed only)", () => {
     const nota = () => saleIds.filter(Boolean).map(seededId);
     if (nota().length) {
       await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: { in: nota() } } });
+      await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: nota() } }, select: { id: true } })).map((x) => x.id) } } });
       await prisma.spgSale.deleteMany({ where: { id: { in: nota() } } });
     }
     if (itemId) {

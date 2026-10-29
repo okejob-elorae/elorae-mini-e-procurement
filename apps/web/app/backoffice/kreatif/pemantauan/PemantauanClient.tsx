@@ -29,6 +29,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { angkaTitik } from "@/lib/creative/angka-konten";
+import { sepanjangHari } from "@/lib/creative/pantau-aturan";
 import type { BarisPerangkat, DataPemantauan, KeadaanPerangkat } from "@/lib/creative/pantau-queries";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -71,7 +72,7 @@ export function PemantauanClient({ data, bolehMengelola }: { data: DataPemantaua
     });
 
   const meta = [
-    t("pantau.meta", { mulai: pg.jamMulai.replace(":", "."), selesai: pg.jamSelesai.replace(":", ".") }),
+    sepanjangHari(pg) ? t("pantau.meta24") : t("pantau.meta", { mulai: pg.jamMulai.replace(":", "."), selesai: pg.jamSelesai.replace(":", ".") }),
     !pg.aktif ? t("pantau.nonaktif") : !data.dalamJam ? t("pantau.diLuarJam") : null,
   ]
     .filter(Boolean)

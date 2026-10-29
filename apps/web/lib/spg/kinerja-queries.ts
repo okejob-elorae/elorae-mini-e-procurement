@@ -21,7 +21,8 @@ import { izinPada, jamWib, kunciSel, labelShift, type Kenyataan } from "./shift"
  * Kueri halaman Kinerja SPG (kantor). Semua dibaca langsung dari tabelnya:
  * nota (`SpgSale`, bersih), check-in (`StoreVisit`), jadwal (`SpgShift`), izin
  * disetujui (`LeaveRequest`), penghitung pengunjung (`SpgVisitorCount`),
- * laporan tutup hari (`SpgDailyClose`) dan titip pesan (`CustomerRequest`).
+ * laporan tutup hari (`SpgDailyClose`), titip pesan (`CustomerRequest`), dan
+ * member yang didaftarkan (`Member.joinedById` × `joinedStoreId`).
  *
  * Siapa yang masuk tabel (satu baris per SPG × toko): SPG yang saat ini
  * memegang toko (`User.assignedStoreId`, akunnya sudah ada di bulan itu),
@@ -139,7 +140,7 @@ async function muat(m: { bulan: string; sekarang: Date; storeIds: readonly strin
   };
   if (pasangan.length === 0) return hasilKosong;
 
-  const [shift, kunjungan, izin, nota, hitungan, tutup, titip] = await Promise.all([
+  const [shift, kunjungan, izin, nota, hitungan, tutup, titip, memberBaru] = await Promise.all([
     prisma.spgShift.findMany({
       where: { userId: { in: userIds }, day: rentangHari },
       select: { userId: true, storeId: true, day: true, kind: true, shiftCode: true, startTime: true, endTime: true },
@@ -157,6 +158,7 @@ async function muat(m: { bulan: string; sekarang: Date; storeIds: readonly strin
         storeId: true,
         createdAt: true,
         total: true,
+        customerId: true,
         lines: { select: { itemId: true, qty: true, lineTotal: true, returnedQty: true } },
       },
     }),
@@ -166,7 +168,14 @@ async function muat(m: { bulan: string; sekarang: Date; storeIds: readonly strin
       where: { createdById: { in: userIds }, createdAt: { gte: awal, lt: akhir } },
       select: { createdById: true, storeId: true, status: true, createdAt: true },
     }),
+    // Member yang didaftarkan orang-orang ini bulan itu, per toko tempat mendaftar.
+    prisma.member.groupBy({
+      by: ["joinedById", "joinedStoreId"],
+      where: { joinedById: { in: userIds }, joinedAt: { gte: awal, lt: akhir } },
+      _count: { _all: true },
+    }),
   ]);
+  const memberBaruPer = new Map(memberBaru.map((x) => [kunciPasangan(x.joinedById, x.joinedStoreId), x._count._all]));
 
   // Jadwal per orang × hari (satu baris per orang per hari, di satu toko).
   const jadwal = new Map(shift.map((s) => [kunciSel(s.userId, s.day), s]));
@@ -184,7 +193,9 @@ async function muat(m: { bulan: string; sekarang: Date; storeIds: readonly strin
   const jual = new Map<string, JualHari>();
   const nilaiOrangSen = new Map<string, number>();
   const qtyPasangan = new Map<string, { terjual: number; kembali: number }>();
+  const berpembeliPasangan = new Map<string, number>();
   for (const n of nota) {
+    if (n.customerId) berpembeliPasangan.set(kunciPasangan(n.salesmanId, n.storeId), (berpembeliPasangan.get(kunciPasangan(n.salesmanId, n.storeId)) ?? 0) + 1);
     const dok = dokumenSpg(n);
     nilaiOrangSen.set(n.salesmanId, (nilaiOrangSen.get(n.salesmanId) ?? 0) + dok.totalSen);
     const kunci = `${n.salesmanId}|${n.storeId}|${kunciHariWib(n.createdAt)}`;
@@ -301,6 +312,8 @@ async function muat(m: { bulan: string; sekarang: Date; storeIds: readonly strin
         qtyKembali: q.kembali,
         target: bacaTargetBulan(nilaiTarget, userId, bulanDari(hari)),
         nilaiOrang: (nilaiOrangSen.get(userId) ?? 0) / 100,
+        notaBerpembeli: berpembeliPasangan.get(kunciPasangan(userId, storeId)) ?? 0,
+        memberBaru: memberBaruPer.get(kunciPasangan(userId, storeId)) ?? 0,
       },
     );
     return { userId, storeId, hari: hariBaris, ringkas };

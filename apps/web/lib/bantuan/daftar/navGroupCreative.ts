@@ -551,7 +551,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: { kunci: "kreatifRuang.pantau.pengaturan.judul" },
         isi: [
-          "Semua angka ini keputusan sementara pemilik: kuota 300 pengecekan per hari, jam kerja 08.00–17.00 WIB, jeda acak 15–40 detik antar tugas, istirahat 5–10 menit setiap 45 menit, jeda otomatis 60 menit, jeda sesudah 3 gagal berturut-turut, akun aktif setiap 7 hari, akun lain setiap 30 hari, anomali pengikut di atas 30% dalam 14 hari dan ER turun di atas 40%.",
+          "Semua angka ini keputusan sementara pemilik: kuota 300 pengecekan per hari, jam kerja 08.00–17.00 WIB, jeda acak 15–40 detik antar tugas, istirahat 5–10 menit setiap 45 menit, jeda otomatis 60 menit, jeda sesudah 3 gagal berturut-turut, akun aktif setiap 7 hari, akun lain setiap 30 hari, anomali pengikut di atas 30% dalam 14 hari dan ER turun di atas 40%. Sakelar Pantau 24 jam menghapus jam berhenti: ekstensi bekerja sepanjang hari (00.00–24.00 WIB), tetap dengan jeda, istirahat dan kuota yang sama.",
           "Mematikan Pemantauan aktif menghentikan pemberian tugas ke semua perangkat. Isian di luar batas ditolak dan ditandai, tidak diganti diam-diam. Setiap simpanan tercatat di jejak audit (sebelum dan sesudah).",
         ],
       },

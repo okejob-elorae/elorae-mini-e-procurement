@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  BINGKAI_UJI_MUTU,
   campurHex,
   DURASI_HAUS_MS,
   fase,
   HURUF_TERANG,
   jarakKamera,
   kecerahan,
+  LEWATI_KE_MS,
+  MAKS_LANGKAH_MS,
+  MAKS_TERTINGGAL_MS,
+  majuWaktu,
   pelan,
+  keputusanMutu,
   rasioKontras,
   rgbKeHex,
   uraiHex,
@@ -102,5 +108,49 @@ describe("warna wordmark", () => {
     const h = warnaHurufTema("#1e293b", "#121214", true);
     expect(h).not.toBe("#1e293b");
     expect(rasioKontras(h, "#121214")).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("waktu pertunjukan sesudah bingkai macet", () => {
+  const maju = (tm: number, dt: number, nyata: number, lewati = false) => majuWaktu({ tm, dt, nyata, lewati });
+
+  it("bingkai biasa maju sebesar jarak bingkainya", () => {
+    expect(maju(1000, 16.7, 1016.7)).toBeCloseTo(1016.7);
+  });
+
+  it("macet satu detik tidak melompati babak: maju paling banyak satu langkah", () => {
+    expect(maju(3000, 1000, 4000)).toBe(3000 + MAKS_LANGKAH_MS);
+  });
+
+  it("tidak pernah tertinggal dari jam dinding lebih dari batasnya", () => {
+    expect(maju(2000, 1000, 9000)).toBe(9000 - MAKS_TERTINGGAL_MS);
+  });
+
+  it("sesudah Lewati berjalan 1,25× lebih cepat", () => {
+    expect(maju(LEWATI_KE_MS, 16, LEWATI_KE_MS, true)).toBeCloseTo(LEWATI_KE_MS + 20);
+  });
+
+  it("tidak pernah melewati akhir dan tidak mundur oleh jam yang mundur", () => {
+    expect(maju(DURASI_HAUS_MS - 5, 40, DURASI_HAUS_MS + 50_000)).toBe(DURASI_HAUS_MS);
+    expect(maju(500, -30, 400)).toBe(500);
+  });
+});
+
+describe("turunkan mutu gambar di perangkat lambat", () => {
+  const ulang = (ms: number, n: number) => Array.from({ length: n }, () => ms);
+
+  it("belum memutuskan sebelum cukup bingkai", () => {
+    expect(keputusanMutu(ulang(40, BINGKAI_UJI_MUTU - 1))).toBe("BELUM");
+  });
+
+  it("60 dan 45 bingkai per detik tetap mutu penuh; di bawah ±40 bingkai per detik diturunkan", () => {
+    expect(keputusanMutu(ulang(16.7, BINGKAI_UJI_MUTU))).toBe("PENUH");
+    expect(keputusanMutu(ulang(22, BINGKAI_UJI_MUTU))).toBe("PENUH");
+    expect(keputusanMutu(ulang(30, BINGKAI_UJI_MUTU))).toBe("TURUNKAN");
+  });
+
+  it("satu-dua macet tidak menurunkan mutu, dan jeda tab tersembunyi tidak dihitung", () => {
+    expect(keputusanMutu([...ulang(16.7, BINGKAI_UJI_MUTU - 2), 400, 1000])).toBe("BELUM");
+    expect(keputusanMutu([...ulang(16.7, BINGKAI_UJI_MUTU), ...ulang(1000, 30)])).toBe("PENUH");
   });
 });

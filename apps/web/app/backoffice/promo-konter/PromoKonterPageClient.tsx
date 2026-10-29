@@ -13,13 +13,15 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dinamis } from "@/lib/i18n/dinamis";
 import type { StatusPromoKonter } from "@/lib/spg/promo-konter-kantor";
 import type { DaftarPromoKantor, LaporanDiskonManual, LaporanPemakaian } from "@/lib/spg/promo-konter-kantor-queries";
+import type { DaftarEfektivitas } from "@/lib/spg/efektivitas-promo-queries";
 import { cn } from "@/lib/utils";
 import { DaftarPromoKonter } from "./DaftarPromoKonter";
 import { DiskonManualKonter } from "./DiskonManualKonter";
+import { EfektivitasPromoKonter } from "./EfektivitasPromoKonter";
 import { PemakaianPromoKonter } from "./PemakaianPromoKonter";
 
-export type TabPromoKonter = "daftar" | "pemakaian" | "manual";
-const TAB: readonly TabPromoKonter[] = ["daftar", "pemakaian", "manual"];
+export type TabPromoKonter = "daftar" | "pemakaian" | "efektivitas" | "manual";
+const TAB: readonly TabPromoKonter[] = ["daftar", "pemakaian", "efektivitas", "manual"];
 
 /**
  * Promo konter SPG — kantor. Tab, saringan status, dan rentang tanggal tinggal
@@ -35,6 +37,7 @@ export function PromoKonterPageClient({
   daftar,
   pemakaian,
   manual,
+  efektivitas,
 }: {
   tab: TabPromoKonter;
   status: StatusPromoKonter | null;
@@ -44,8 +47,10 @@ export function PromoKonterPageClient({
   daftar: DaftarPromoKantor | null;
   pemakaian: LaporanPemakaian | null;
   manual: LaporanDiskonManual | null;
+  efektivitas: DaftarEfektivitas | null;
 }) {
   const t = useTranslations("promoKonter");
+  const te = useTranslations("efektivitasPromo");
   const td = dinamis(t);
   const router = useRouter();
   const [pindah, mulaiPindah] = useTransition();
@@ -58,8 +63,13 @@ export function PromoKonterPageClient({
       const s = ubah.status !== undefined ? ubah.status : status;
       if (s) q.set("status", s);
     } else {
-      q.set("dari", ubah.dari ?? dari);
-      q.set("sampai", ubah.sampai ?? sampai);
+      // Efektivitas punya rentang bawaannya sendiri (90 hari): pindah ke atau
+      // dari tab itu memakai bawaan tab tujuan, bukan rentang tab sebelumnya.
+      const gantiJenis = ubah.tab !== undefined && (ubah.tab === "efektivitas") !== (tab === "efektivitas");
+      if (!gantiJenis || ubah.dari) {
+        q.set("dari", ubah.dari ?? dari);
+        q.set("sampai", ubah.sampai ?? sampai);
+      }
     }
     const qs = q.toString();
     mulaiPindah(() => router.replace(qs ? `/backoffice/promo-konter?${qs}` : "/backoffice/promo-konter", { scroll: false }));
@@ -94,7 +104,7 @@ export function PromoKonterPageClient({
 
       {tab !== "daftar" ? (
         <div className="space-y-1.5 sm:max-w-sm">
-          <Label htmlFor="rentang-promo-konter">{t("rentang")}</Label>
+          <Label htmlFor="rentang-promo-konter">{tab === "efektivitas" ? te("rentang") : t("rentang")}</Label>
           <RentangTanggalInput
             id="rentang-promo-konter"
             required
@@ -114,6 +124,7 @@ export function PromoKonterPageClient({
         ) : null}
         {tab === "pemakaian" && pemakaian ? <PemakaianPromoKonter data={pemakaian} /> : null}
         {tab === "manual" && manual ? <DiskonManualKonter data={manual} /> : null}
+        {tab === "efektivitas" && efektivitas ? <EfektivitasPromoKonter data={efektivitas} dari={dari} sampai={sampai} /> : null}
       </div>
     </div>
   );

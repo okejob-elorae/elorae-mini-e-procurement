@@ -21,10 +21,12 @@ import { urlUntukTab as urlUntukTabInstagram } from "./lib/pengurai-instagram.js
 import { LABEL_PLATFORM, platformHalaman } from "./lib/platform.js";
 import {
   BATAS_TUNGGU_ITEMLIST_MS,
+  KUNCI_KIRIM_OTOMATIS_TERAKHIR,
   KUNCI_MUNDUR_KIRIM_OTOMATIS,
   KUNCI_RIWAYAT_KIRIM_OTOMATIS,
   KUNCI_SAKELAR_KIRIM_OTOMATIS,
   MAKS_PUTARAN_CEPAT_MS,
+  alasanBelumLengkap,
   bersihkanPengaturan,
   catatKirimOtomatis,
   catatanFinal,
@@ -47,6 +49,7 @@ import {
   setelahKirimOtomatis,
   setelahTugas,
   teksKeadaan,
+  teksKirimOtomatisTerakhir,
 } from "./lib/aturan.js";
 
 const ASAL_ELORAE = ["http://localhost:3000", "https://elorae.cloud"];
@@ -995,7 +998,9 @@ async function kirimOtomatis(pesan, pengirim) {
   });
   if (!putusan.kirim) {
     const selesai = putusan.alasan === "TAB_OTOMATIS" || (putusan.alasan === "SUDAH_DIKIRIM" && catatanFinal(putusan.sebelumnya));
-    return { ok: true, dikirim: false, alasan: putusan.alasan, kabar: kabarDariRiwayat(putusan.sebelumnya), selesai };
+    const rincian =
+      putusan.alasan === "BELUM_LENGKAP" ? alasanBelumLengkap({ status: "OK", data, adaItemList: pesan.adaItemList === true }, url) : undefined;
+    return { ok: true, dikirim: false, alasan: putusan.alasan, rincian, kabar: kabarDariRiwayat(putusan.sebelumnya), selesai };
   }
 
   const r = await panggilDenganToken("/otomatis", { body: { url: urlKirim(url), data: rampingkanData(data) } });
@@ -1033,7 +1038,7 @@ async function susunRingkasanPopup(segarkan) {
     // "Siap" di popup berarti detak berikutnya akan mengambil tugas; tampilkan sebagai berjalan.
     if (!sedangBerdetak) await simpanRingkasan(putusan.langkah === "AMBIL" ? { ...putusan, keadaan: "MENUNGGU" } : putusan);
   }
-  const s = await baca("koneksi", "terputus", "otomatis", "ringkasan", "statusServer", "galatTerakhir", "jadwal");
+  const s = await baca("koneksi", "terputus", "otomatis", "ringkasan", "statusServer", "galatTerakhir", "jadwal", KUNCI_KIRIM_OTOMATIS_TERAKHIR);
   const pengaturan = bersihkanPengaturan(s.statusServer?.data?.pengaturan);
   const ringkasan = s.ringkasan ?? { keadaan: s.koneksi?.token ? "MENUNGGU" : "BELUM_TERSAMBUNG" };
   return {
@@ -1048,6 +1053,7 @@ async function susunRingkasanPopup(segarkan) {
     hariIni: s.statusServer?.data?.hariIni ?? null,
     statusAt: s.statusServer?.at ?? null,
     galatTerakhir: s.galatTerakhir ?? null,
+    kirimOtomatisTerakhir: teksKirimOtomatisTerakhir(s[KUNCI_KIRIM_OTOMATIS_TERAKHIR]),
     tabTikTok: (await tabTikTokTerbuka()).length > 0,
     tabInstagram: (await tabInstagramTerbuka()).length > 0,
     jedaPlatform: rapikanJedaPlatform((await baca("jedaPlatform")).jedaPlatform, Date.now()),

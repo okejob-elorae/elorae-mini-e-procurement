@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { BellRing, ChevronRight, MessageCircle, Pencil, Receipt } from "lucide-react";
+import { BadgeCheck, BellRing, ChevronRight, Heart, MessageCircle, Moon, Pencil, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { dinamis } from "@/lib/i18n/dinamis";
@@ -11,14 +11,29 @@ import type { RincianPelangganHp } from "@/lib/spg/pelanggan-queries";
 import { cn } from "@/lib/utils";
 import { nadaKelompokTitip } from "../../titip/tampilan";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
+import { TombolDaftarMember } from "./TombolDaftarMember";
+
+/** Satu baris "label ...... nilai" di kartu; nilai tidak pernah dipotong. */
+function BarisInfo({ label, nilai }: { label: string; nilai: string }) {
+  return (
+    <p className="flex justify-between gap-3">
+      <span className="min-w-0 text-muted-foreground">{label}</span>
+      <span className="shrink-0 text-right tabular-nums">{nilai}</span>
+    </p>
+  );
+}
 
 /**
- * Satu pelanggan toko: nomor (ketuk → WhatsApp), catatan, persetujuan, titip
- * pesannya, dan riwayat belanjanya DI TOKO INI. Total nota = sesudah potongan
- * dan sesudah barang yang dikembalikan pembeli.
+ * Satu pelanggan toko: nomor (ketuk → WhatsApp), status belanjanya, member
+ * Elorae (tingkat, belanja periode, tingkat berikutnya — atau tombol mendaftar),
+ * barang favorit, catatan, persetujuan, titip pesan, dan riwayat belanjanya DI
+ * TOKO INI. Total nota = sesudah potongan dan sesudah barang yang dikembalikan
+ * pembeli.
  */
 export function RincianPelangganClient({ rincian }: { rincian: RincianPelangganHp | null }) {
   const t = useTranslations("spgPelanggan");
+  const tm = useTranslations("spgPelanggan.hpMember");
+  const tmd = dinamis(tm);
   const tt = useTranslations("spgTitip");
   const ttd = dinamis(tt);
   const bahasa = useLocale() === "en" ? "en" : "id";
@@ -53,6 +68,25 @@ export function RincianPelangganClient({ rincian }: { rincian: RincianPelangganH
           <TombolBantuanHp judul={rincian.nama} />
         </div>
         <p className="text-sm text-muted-foreground tabular-nums">{rincian.hp}</p>
+        <p className="flex flex-wrap items-center gap-1.5 pt-1 text-sm">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
+              rincian.status === "TIDUR" ? "bg-amber-500/15 text-amber-800 dark:text-amber-300" : "bg-muted text-muted-foreground",
+            )}
+          >
+            {rincian.status === "TIDUR" ? <Moon className="h-3 w-3" aria-hidden /> : null}
+            {tmd(`status.${rincian.status}`)}
+          </span>
+          {rincian.hariSejakBelanja !== null ? (
+            <span className="text-xs text-muted-foreground">{tm("terakhirBelanja", { hari: rincian.hariSejakBelanja })}</span>
+          ) : null}
+        </p>
+        {rincian.status === "TIDUR" ? (
+          <p className="text-xs text-muted-foreground">
+            {rincian.tautanWa ? tm("tidurSapa", { hari: rincian.hariTidur }) : tm("tidurTanpaWa", { hari: rincian.hariTidur })}
+          </p>
+        ) : null}
       </header>
 
       <div className="grid grid-cols-2 gap-2">
@@ -73,6 +107,66 @@ export function RincianPelangganClient({ rincian }: { rincian: RincianPelangganH
           </Link>
         </Button>
       </div>
+
+      <section className="beranda-kartu space-y-3" aria-labelledby="pelanggan-member">
+        <div className="flex items-center gap-2">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+            <BadgeCheck className="h-4 w-4" aria-hidden />
+          </span>
+          <h2 id="pelanggan-member" className="beranda-judul">
+            {tm("judul")}
+          </h2>
+        </div>
+        {rincian.member?.aktif ? (
+          <div className="space-y-2 text-sm">
+            <p className="text-2xl font-bold leading-tight">{rincian.member.tingkat}</p>
+            <BarisInfo
+              label={tm("diskonLabel")}
+              nilai={
+                rincian.member.diskonPersen > 0
+                  ? tm("diskonPersen", { persen: rincian.member.diskonPersen })
+                  : rincian.member.diskonDinyalakan
+                    ? tm("diskonNol")
+                    : tm("diskonMati")
+              }
+            />
+            <BarisInfo label={tm("belanjaPeriode", { bulan: rincian.member.periodeBulan })} nilai={formatIDR(rincian.member.belanjaPeriode)} />
+            {rincian.member.berikut ? (
+              <BarisInfo label={tm("naikKe", { tingkat: rincian.member.berikut.nama })} nilai={tm("kurang", { amount: formatIDR(rincian.member.berikut.kurang) })} />
+            ) : (
+              <p className="text-muted-foreground">{tm("tertinggi")}</p>
+            )}
+            <BarisInfo label={tm("sejak")} nilai={rincian.member.sejak[bahasa]} />
+            <p className="text-xs text-muted-foreground">{tm("semuaToko")}</p>
+          </div>
+        ) : rincian.member ? (
+          <p className="text-sm text-muted-foreground">{tm("nonaktif")}</p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{tm("belumMember")}</p>
+            <TombolDaftarMember customerId={rincian.id} nama={rincian.nama} daftar={rincian.daftarMember} />
+          </div>
+        )}
+      </section>
+
+      {rincian.favorit.length > 0 ? (
+        <section className="beranda-kartu space-y-2" aria-labelledby="pelanggan-favorit">
+          <div className="flex items-center gap-2">
+            <Heart className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+            <h2 id="pelanggan-favorit" className="beranda-judul">
+              {tm("favoritJudul")}
+            </h2>
+          </div>
+          <ol className="space-y-1.5 text-sm">
+            {rincian.favorit.map((b) => (
+              <li key={b.itemId} className="flex items-start justify-between gap-3">
+                <span className="min-w-0 flex-1 break-words">{b.nama}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">{tm("favoritPcs", { qty: b.qty })}</span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
 
       <section className="beranda-kartu space-y-2 text-sm">
         {rincian.catatan ? (

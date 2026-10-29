@@ -93,6 +93,16 @@ export const BATAS_PANTAU: Record<KunciAngka, { min: number; maks: number }> = {
 };
 
 const POLA_JAM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/** Jam selesai boleh "24:00" = sampai tengah malam (ekstensi ≥ 0.9 sudah membacanya begitu). */
+const POLA_JAM_SELESAI = /^(([01]\d|2[0-3]):([0-5]\d)|24:00)$/;
+const POLA_PER_KUNCI = { jamMulai: POLA_JAM, jamSelesai: POLA_JAM_SELESAI } as const;
+
+/** Pemantauan 24 jam (pemilik 2026-10-15): mulai tengah malam, selesai tengah malam berikutnya. */
+export const JAM_SEPANJANG_HARI = { jamMulai: "00:00", jamSelesai: "24:00" } as const;
+
+export function sepanjangHari(p: Pick<PengaturanPantau, "jamMulai" | "jamSelesai">): boolean {
+  return p.jamMulai === JAM_SEPANJANG_HARI.jamMulai && p.jamSelesai === JAM_SEPANJANG_HARI.jamSelesai;
+}
 
 function keObjek(nilai: unknown): Record<string, unknown> | null {
   let x = nilai;
@@ -131,7 +141,7 @@ export function bacaPantau(nilai: unknown): PengaturanPantau {
   if (!o) return hasil;
   if (typeof o.aktif === "boolean") hasil.aktif = o.aktif;
   for (const k of ["jamMulai", "jamSelesai"] as const) {
-    if (typeof o[k] === "string" && POLA_JAM.test(o[k] as string)) hasil[k] = o[k] as string;
+    if (typeof o[k] === "string" && POLA_PER_KUNCI[k].test(o[k] as string)) hasil[k] = o[k] as string;
   }
   for (const k of KUNCI_ANGKA_PANTAU) {
     if (o[k] !== undefined && periksaAngka(k, o[k]) === null) hasil[k] = o[k] as number;
@@ -167,7 +177,7 @@ export function validasiPantau(input: unknown): HasilValidasiPantau {
   }
   for (const k of ["jamMulai", "jamSelesai"] as const) {
     if (o[k] === undefined) continue;
-    if (typeof o[k] === "string" && POLA_JAM.test(o[k] as string)) p[k] = o[k] as string;
+    if (typeof o[k] === "string" && POLA_PER_KUNCI[k].test(o[k] as string)) p[k] = o[k] as string;
     else galat.push({ kunci: k, sebab: "BUKAN_JAM" });
   }
   for (const k of KUNCI_ANGKA_PANTAU) {

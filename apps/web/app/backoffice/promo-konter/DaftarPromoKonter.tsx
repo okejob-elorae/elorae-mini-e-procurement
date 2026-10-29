@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Tag } from "lucide-react";
+import { BadgeCheck, Tag } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -36,7 +37,12 @@ export function DaftarPromoKonter({
   const daftarNama = (nama: string[]) =>
     nama.length <= NAMA_TAMPIL ? nama.join(", ") : `${nama.slice(0, NAMA_TAMPIL).join(", ")} ${t("lainnya", { n: nama.length - NAMA_TAMPIL })}`;
 
+  /** Isi paket: "2 × Kaos (kategori) + 1 × Celana Chino". */
+  const isiPaket = (b: BarisPromoKantor) =>
+    b.isiPaket.map((k) => (k.jenis === "CATEGORY" ? t("isiPaketKategori", { qty: k.qty, nama: k.nama }) : t("isiPaketBarang", { qty: k.qty, nama: k.nama }))).join(" + ");
+
   const sasaran = (b: BarisPromoKantor) => {
+    if (b.isiPaket.length > 0) return t("isiPaket", { isi: isiPaket(b) });
     if (b.semuaBarang) return t("semuaBarang");
     const bagian: string[] = [];
     if (b.barang.length) bagian.push(t("sasaranBarang", { n: b.barang.length, nama: daftarNama(b.barang) }));
@@ -122,6 +128,12 @@ export function DaftarPromoKonter({
                         </Link>
                         <span className="block text-xs text-muted-foreground">{b.ringkasan}</span>
                         <span className="block text-xs text-muted-foreground">{tanggungan(b.bagianToko)}</span>
+                        {b.memberOnly ? (
+                          <Badge variant="outline" className="mt-1">
+                            <BadgeCheck aria-hidden />
+                            {t("khususMember")}
+                          </Badge>
+                        ) : null}
                       </TableCell>
                       <TableCell className="min-w-[12rem] max-w-xs whitespace-normal text-sm">{sasaran(b)}</TableCell>
                       <TableCell className="min-w-[10rem] max-w-xs whitespace-normal text-sm">

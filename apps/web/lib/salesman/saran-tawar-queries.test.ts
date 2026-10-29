@@ -189,6 +189,7 @@ d("saran tawar — kueri (test bed only)", () => {
 
   afterAll(async () => {
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: seededIds(spgIds) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(spgIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(spgIds) } } });
     await prisma.consignmentSold.deleteMany({ where: { cycleId: seededId(siklusId) } });
     await prisma.consignmentCycle.deleteMany({ where: { id: seededId(siklusId) } });

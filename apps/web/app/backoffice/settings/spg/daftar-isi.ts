@@ -14,6 +14,7 @@ export const DAFTAR_ISI_SPG: KelompokDaftarIsi[] = [
     judul: "settings.spg.toc.konter",
     kartu: [
       { id: "diskon-manual", judul: "pengaturanDiskonManualSpg.judul" },
+      { id: "member", judul: "pengaturanMemberSpg.judul" },
       { id: "tutup-hari", judul: "spgTutupHari.pengaturan.judul" },
       { id: "titip-pesan", judul: "spgTitip.pengaturan.judul" },
     ],

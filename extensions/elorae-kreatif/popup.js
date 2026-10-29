@@ -67,6 +67,9 @@ function gambar(r) {
       ? "Aktif — memakai tab Instagram yang terbuka (pastikan Anda sudah masuk)"
       : "Tidak dicek — buka satu tab instagram.com yang sudah masuk di Chrome ini";
 
+  $("barisKirimTerakhir").hidden = !r.kirimOtomatisTerakhir;
+  $("kirimTerakhir").textContent = r.kirimOtomatisTerakhir ?? "";
+
   const galat = r.galatTerakhir;
   $("barisGalat").hidden = !galat;
   if (galat) $("galatTerakhir").textContent = `${galat.pesan} (${waktuWib(galat.at)})`;
@@ -152,7 +155,7 @@ gambarSakelarKirim();
 chrome.storage.onChanged.addListener((perubahan, area) => {
   if (area !== "local") return;
   if (KUNCI_SAKELAR_KIRIM_OTOMATIS in perubahan) gambarSakelarKirim();
-  if (["ringkasan", "statusServer", "koneksi", "otomatis", "galatTerakhir", "jadwal"].some((k) => k in perubahan)) {
+  if (["ringkasan", "statusServer", "koneksi", "otomatis", "galatTerakhir", "jadwal", "kirimOtomatisTerakhir"].some((k) => k in perubahan)) {
     segarkan(false);
   }
 });

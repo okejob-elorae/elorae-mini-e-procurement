@@ -407,17 +407,92 @@ export function kunciKirimOtomatis(data) {
  * yang menandai Elorae.
  */
 export function bacaanLengkap(hasil, url) {
-  if (hasil?.status !== "OK" || !hasil.data || kurangWajib(hasil.data).length > 0) return false;
+  return alasanBelumLengkap(hasil, url) === null;
+}
+
+/**
+ * Kenapa bacaan ini belum boleh dikirim sendiri, atau null bila sudah lengkap. Kode-kodenya
+ * ditampilkan di popup ("Kiriman otomatis terakhir"), jadi kegagalan tidak lagi diam.
+ */
+export function alasanBelumLengkap(hasil, url) {
+  if (hasil?.status !== "OK") return `STATUS_${hasil?.status ?? "KOSONG"}`;
+  if (!hasil.data) return "TANPA_DATA";
+  const kurang = kurangWajib(hasil.data);
+  if (kurang.length > 0) return `KURANG:${kurang.join(",")}`;
   const target = typeof url === "string" ? jenisHalaman(url) : null;
-  if (!target || !cocokDenganUrl(hasil.data, target)) return false;
+  if (!target) return "BUKAN_HALAMAN_AKUN_ATAU_VIDEO";
+  if (!cocokDenganUrl(hasil.data, target)) {
+    const diHalaman = target.jenis === "KONTEN" ? target.videoId : target.handle;
+    const diData = hasil.data.jenis === "KONTEN" ? hasil.data.videoId : normalHandle(hasil.data.uniqueId ?? "");
+    return `BUKAN_MILIK_HALAMAN:${diHalaman ?? "?"}≠${diData || "?"}`;
+  }
   if (hasil.data.jenis === "PROFIL") {
     // YouTube: kanal tidak pernah membawa posting (angkanya ringkas) — pengikut saja sudah lengkap.
-    if (platformData(hasil.data) === "YOUTUBE") return true;
+    if (platformData(hasil.data) === "YOUTUBE") return null;
     // Akun tanpa video: TikTok tidak selalu memuat daftar video kosong, jadi angka profilnya cukup.
     // Instagram: posting hanya tertangkap bila pemilik sudah masuk; tanpa itu tidak dikirim sendiri.
-    return hasil.adaItemList === true || hasil.data.posting.length > 0 || hasil.data.jumlahVideo === 0;
+    const ada = hasil.adaItemList === true || hasil.data.posting.length > 0 || hasil.data.jumlahVideo === 0;
+    return ada ? null : "DAFTAR_VIDEO_BELUM_TERTANGKAP";
   }
-  return true;
+  return null;
+}
+
+/** chrome.storage.local: keputusan kiriman otomatis terakhir (panel dan service worker), untuk popup. */
+export const KUNCI_KIRIM_OTOMATIS_TERAKHIR = "kirimOtomatisTerakhir";
+
+const TEKS_ALASAN_KIRIM = {
+  BELUM_TERSAMBUNG: "ekstensi belum tersambung ke Elorae",
+  MATI: "sakelar kiriman otomatis mati",
+  SAKELAR_MATI: "sakelar kiriman otomatis mati",
+  TAB_OTOMATIS: "tab ini milik putaran otomatis",
+  SUDAH_DIKIRIM: "sudah dikirim dalam 6 jam terakhir",
+  MUNDUR: "Elorae meminta jeda sebentar",
+  TANPA_KUNCI: "akun atau video tidak dikenali",
+  ATURAN_GAGAL: "modul ekstensi gagal dimuat — muat ulang ekstensi lalu tab ini",
+  LATAR_TIDAK_MENJAWAB: "ekstensi tidak menjawab panel — muat ulang tab ini",
+};
+
+const TEKS_RINCIAN = {
+  DAFTAR_VIDEO_BELUM_TERTANGKAP: "daftar video belum tertangkap",
+  TANPA_DATA: "angka belum terbaca",
+  BUKAN_HALAMAN_AKUN_ATAU_VIDEO: "bukan halaman akun atau video",
+};
+
+function teksRincian(rincian) {
+  if (typeof rincian !== "string" || !rincian) return null;
+  if (TEKS_RINCIAN[rincian]) return TEKS_RINCIAN[rincian];
+  if (rincian.startsWith("STATUS_")) return `halaman terbaca sebagai ${rincian.slice(7)}`;
+  if (rincian.startsWith("KURANG:")) return `angka belum terbaca: ${rincian.slice(7)}`;
+  if (rincian.startsWith("BUKAN_MILIK_HALAMAN:")) return `data milik halaman lain (${rincian.slice(20)})`;
+  return rincian;
+}
+
+function labelKunci(kunci) {
+  if (typeof kunci !== "string") return null;
+  const bagian = kunci.split(":");
+  const [jenis, nilai] = bagian.length === 3 ? bagian.slice(1) : bagian;
+  if (!nilai) return null;
+  return jenis === "PROFIL" ? `@${nilai}` : `video ${nilai}`;
+}
+
+/** Catatan `KUNCI_KIRIM_OTOMATIS_TERAKHIR` → satu kalimat untuk popup, atau null. */
+export function teksKirimOtomatisTerakhir(catatan, sekarang = Date.now()) {
+  if (!catatan || typeof catatan !== "object" || typeof catatan.alasan !== "string") return null;
+  let isi;
+  if (catatan.alasan === "DIKIRIM") {
+    if (catatan.hasil === "DISIMPAN") isi = "tersimpan di Elorae";
+    else if (catatan.hasil === "DIABAIKAN") isi = "diabaikan Elorae: akun belum ada di Elorae dan tidak menandai Elorae";
+    else isi = `ditolak Elorae (${catatan.hasil ?? "?"})`;
+  } else if (catatan.alasan === "BELUM_LENGKAP") {
+    isi = `belum dikirim: ${teksRincian(catatan.rincian) ?? "bacaan belum lengkap"}`;
+  } else {
+    const dasar = TEKS_ALASAN_KIRIM[catatan.alasan] ?? catatan.alasan;
+    const rinci = !TEKS_ALASAN_KIRIM[catatan.alasan] && catatan.rincian ? ` (${catatan.rincian})` : "";
+    isi = `belum dikirim: ${dasar}${rinci}`;
+  }
+  const label = labelKunci(catatan.kunci);
+  const waktu = Number.isFinite(catatan.at) ? ` (${waktuWib(catatan.at, sekarang)})` : "";
+  return `${label ? `${label} · ` : ""}${isi}${waktu}`;
 }
 
 export function catatanFinal(catatan) {

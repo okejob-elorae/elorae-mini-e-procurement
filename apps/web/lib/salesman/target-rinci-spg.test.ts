@@ -138,6 +138,7 @@ d("target rinci — capaian SPG dari nota penjualannya (test bed only)", () => {
 
   afterAll(async () => {
     await prisma.salesTarget.deleteMany({ where: { id: { in: seededIds(targetIds) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(notaIds) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(notaIds) } } });
     await prisma.user.deleteMany({ where: { id: { in: seededIds([spgA, spgB].filter(Boolean)) } } });
     await prisma.store.deleteMany({ where: { id: seededId(tokoId) } });

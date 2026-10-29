@@ -1,6 +1,6 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
-import { ringkasPromoKonter, promoNota, type JenisPromoKonter } from "./promo-konter";
+import { ringkasPromoKonter, promoNota, type JenisPromoKonter, type KomponenPaket } from "./promo-konter";
 import {
   hitungPemakaianPromo,
   keHariWib,
@@ -54,6 +54,23 @@ async function petaNama(ref: { barang: string[]; kategori: string[]; toko: strin
 /** Nama yang sudah dihapus dari master tetap terlihat sebagai tanda, bukan menghilang diam-diam. */
 const namai = (peta: Map<string, string>, ids: string[]) => ids.map((id) => peta.get(id) ?? "—").sort((a, b) => a.localeCompare(b, "id"));
 
+/** Satu komponen paket untuk layar: nama (bukan id) dan jumlahnya. */
+export type KomponenPaketTampil = { jenis: "ITEM" | "CATEGORY"; nama: string; qty: number };
+
+/** Komponen paket dari sasaran berjumlah (sasaran TOKO diabaikan). Sasaran lama tanpa jumlah dibaca 1. */
+function komponenDariSasaran(targets: readonly { kind: string; refId: string; qty?: number | null }[]): KomponenPaket[] {
+  return targets
+    .filter((t) => t.kind === "ITEM" || t.kind === "CATEGORY")
+    .map((t) => ({ jenis: t.kind as KomponenPaket["jenis"], refId: t.refId, qty: t.qty ?? 1 }));
+}
+
+/** Komponen dengan nama: barang tertentu dulu, lalu kategori, masing-masing urut nama. */
+function namaiKomponen(peta: PetaNama, komponen: readonly KomponenPaket[]): KomponenPaketTampil[] {
+  return komponen
+    .map((k) => ({ jenis: k.jenis, nama: (k.jenis === "ITEM" ? peta.barang : peta.kategori).get(k.refId) ?? "—", qty: k.qty }))
+    .sort((a, b) => (a.jenis === b.jenis ? a.nama.localeCompare(b.nama, "id") : a.jenis === "ITEM" ? -1 : 1));
+}
+
 // ---------------------------------------------------------------------------
 // Pemakaian
 // ---------------------------------------------------------------------------
@@ -68,8 +85,18 @@ export async function pemakaianPromoKonter(opsi: RentangInstan & { promoIds?: st
   const waktu: Prisma.DateTimeFilter = {};
   if (opsi.dari) waktu.gte = opsi.dari;
   if (opsi.sampai) waktu.lte = opsi.sampai;
+  // Promo kedua di satu baris hanya tercatat di rincian (`SpgSalePromo`), bukan di `counterPromoId`.
+  const dariRincian = opsi.promoIds
+    ? [...new Set((await prisma.spgSalePromo.findMany({ where: { promoId: { in: opsi.promoIds } }, select: { spgSaleId: true } })).map((r) => r.spgSaleId))]
+    : [];
   const pakaiPromo: Prisma.SpgSaleWhereInput = opsi.promoIds
-    ? { OR: [{ orderPromoId: { in: opsi.promoIds } }, { lines: { some: { counterPromoId: { in: opsi.promoIds } } } }] }
+    ? {
+        OR: [
+          { orderPromoId: { in: opsi.promoIds } },
+          { lines: { some: { counterPromoId: { in: opsi.promoIds } } } },
+          ...(dariRincian.length ? [{ id: { in: dariRincian } }] : []),
+        ],
+      }
     : { OR: [{ orderPromoId: { not: null } }, { lines: { some: { counterPromoId: { not: null } } } }] };
   const rows = await prisma.spgSale.findMany({
     where: {
@@ -83,6 +110,7 @@ export async function pemakaianPromoKonter(opsi: RentangInstan & { promoIds?: st
       discountTotal: true,
       orderDiscount: true,
       manualDiscount: true,
+      memberDiscount: true,
       orderPromoId: true,
       lines: {
         where: { counterPromoId: { not: null } },
@@ -90,12 +118,19 @@ export async function pemakaianPromoKonter(opsi: RentangInstan & { promoIds?: st
       },
     },
   });
+  const rincian = rows.length
+    ? await prisma.spgSalePromo.findMany({ where: { spgSaleId: { in: rows.map((r) => r.id) } }, select: { spgSaleId: true, promoId: true, discount: true } })
+    : [];
+  const rincianPer = new Map<string, { promoId: string | null; discount: number }[]>();
+  for (const r of rincian) rincianPer.set(r.spgSaleId, [...(rincianPer.get(r.spgSaleId) ?? []), { promoId: r.promoId, discount: angka(r.discount) }]);
   const nota: NotaPemakaian[] = rows.map((r) => ({
     id: r.id,
     total: angka(r.total),
     discountTotal: angka(r.discountTotal),
     orderDiscount: angka(r.orderDiscount),
     manualDiscount: angka(r.manualDiscount),
+    memberDiscount: angka(r.memberDiscount),
+    rincian: rincianPer.get(r.id),
     orderPromoId: r.orderPromoId,
     baris: r.lines.map((l) => ({
       counterPromoId: l.counterPromoId,
@@ -133,6 +168,10 @@ export type BarisPromoKantor = {
   isActive: boolean;
   /** Bagian toko konsinyasi dari potongan, persen (0 = penuh Elorae). */
   bagianToko: number;
+  /** Hanya berlaku bila nota punya member. */
+  memberOnly: boolean;
+  /** Hanya PAKET: isi satu paket dengan nama; kosong untuk jenis lain. */
+  isiPaket: KomponenPaketTampil[];
   nota: number;
   potongan: number;
 };
@@ -158,16 +197,26 @@ const pilihDaftar = {
   priority: true,
   isActive: true,
   storeSharePercent: true,
-  targets: { select: { kind: true, refId: true } },
+  memberOnly: true,
+  targets: { select: { kind: true, refId: true, qty: true } },
 } satisfies Prisma.CounterPromoSelect;
 
-function ringkas(r: { type: string; value: unknown; buyQty: number | null; freeQty: number | null; minSubtotal: unknown }): string {
+function ringkas(r: {
+  type: string;
+  value: unknown;
+  buyQty: number | null;
+  freeQty: number | null;
+  minSubtotal: unknown;
+  targets?: readonly { kind: string; refId: string; qty?: number | null }[];
+}): string {
   return ringkasPromoKonter({
     type: r.type as JenisPromoKonter,
     value: angkaAtauNull(r.value),
     buyQty: r.buyQty,
     freeQty: r.freeQty,
     minSubtotal: angkaAtauNull(r.minSubtotal),
+    // Paket menyebut jumlah potongnya ("Paket 3 potong Rp…") dari komponennya.
+    komponen: r.type === "PAKET" && r.targets ? komponenDariSasaran(r.targets) : undefined,
   });
 }
 
@@ -217,6 +266,8 @@ export async function daftarPromoKonterKantor(opsi: { status: StatusPromoKonter 
         priority: r.priority,
         isActive: r.isActive,
         bagianToko: Number(r.storeSharePercent),
+        memberOnly: r.memberOnly,
+        isiPaket: r.type === "PAKET" ? namaiKomponen(nama, komponenDariSasaran(r.targets)) : [],
         nota: p?.nota ?? 0,
         potongan: p?.potongan ?? 0,
       };
@@ -243,7 +294,7 @@ export type BarisPemakaian = {
 /**
  * Siapa menanggung potongan — dari kolom yang DIBEKUKAN di baris nota
  * (`SpgSaleLine.storeDiscount`), bukan dari pengaturan promo hari ini.
- * Mencakup seluruh potongan nota (promo barang, promo belanja, diskon manual).
+ * Mencakup seluruh potongan nota (promo barang, diskon member, promo belanja, diskon manual).
  * Toko konsinyasi: bagian Elorae = potongan − bagian toko. Toko putus: barangnya
  * milik toko, angkanya hanya dicatat.
  */
@@ -384,7 +435,7 @@ export async function laporanDiskonManual(rentang: RentangInstan): Promise<Lapor
 // Formulir
 // ---------------------------------------------------------------------------
 
-export type OpsiBarang = { id: string; sku: string; nama: string; kategoriId: string | null; aktif: boolean };
+export type OpsiBarang = { id: string; sku: string; nama: string; kategoriId: string | null; aktif: boolean; /** Harga jual Elorae; null = belum diset. */ harga: number | null };
 export type OpsiKategori = { id: string; nama: string; aktif: boolean };
 export type OpsiToko = { id: string; nama: string; kode: string; termsType: string; aktif: boolean; spg: number };
 export type OpsiFormPromoKonter = { barang: OpsiBarang[]; kategori: OpsiKategori[]; toko: OpsiToko[] };
@@ -399,7 +450,7 @@ export async function opsiFormPromoKonter(terpilih?: { itemIds: string[]; catego
   const [barang, kategori, toko, spg] = await Promise.all([
     prisma.item.findMany({
       where: { type: "FINISHED_GOOD", OR: [{ isActive: true }, { id: { in: t.itemIds } }] },
-      select: { id: true, sku: true, nameId: true, categoryId: true, isActive: true },
+      select: { id: true, sku: true, nameId: true, categoryId: true, isActive: true, sellingPrice: true },
       orderBy: [{ nameId: "asc" }, { sku: "asc" }],
     }),
     prisma.itemCategory.findMany({
@@ -416,7 +467,14 @@ export async function opsiFormPromoKonter(terpilih?: { itemIds: string[]; catego
   ]);
   const spgPerToko = new Map(spg.map((g) => [g.assignedStoreId, g._count._all]));
   return {
-    barang: barang.map((b) => ({ id: b.id, sku: b.sku, nama: b.nameId || b.sku, kategoriId: b.categoryId, aktif: b.isActive })),
+    barang: barang.map((b) => ({
+      id: b.id,
+      sku: b.sku,
+      nama: b.nameId || b.sku,
+      kategoriId: b.categoryId,
+      aktif: b.isActive,
+      harga: b.sellingPrice === null ? null : Number(b.sellingPrice),
+    })),
     kategori: kategori.map((k) => ({ id: k.id, nama: k.name, aktif: k.isActive })),
     toko: toko.map((s) => ({ id: s.id, nama: s.name, kode: s.code, termsType: String(s.termsType), aktif: s.isActive, spg: spgPerToko.get(s.id) ?? 0 })),
   };
@@ -454,6 +512,8 @@ export async function promoKonterUntukUbah(id: string, sekarang: Date = new Date
       priority: r.priority,
       note: r.note ?? "",
       storeSharePercent: Number(r.storeSharePercent),
+      memberOnly: r.memberOnly,
+      komponen: r.type === "PAKET" ? komponenDariSasaran(r.targets) : [],
     },
   };
 }
@@ -473,11 +533,17 @@ export type PromoHp = {
   barang: string[];
   kategori: string[];
   belanja: boolean;
+  /** Hanya berlaku bila pembeli member. */
+  memberOnly: boolean;
+  /** Hanya PAKET: isi satu paket dengan nama; kosong untuk jenis lain. */
+  isiPaket: KomponenPaketTampil[];
 };
 
 /**
  * Promo konter yang berlaku sekarang atau akan datang di toko SPG ini. Sasaran
  * dikirim sebagai NAMA, tidak pernah id; daftar toko tidak dikirim sama sekali.
+ * Promo khusus member ikut terkirim (dan ditandai): SPG menawarkannya ke pembeli
+ * yang mau mendaftar.
  */
 export async function promoKonterHp(storeId: string, sekarang: Date = new Date()): Promise<PromoHp[]> {
   const promos = await promoKonterUntukToko(storeId, sekarang);
@@ -508,5 +574,7 @@ export async function promoKonterHp(storeId: string, sekarang: Date = new Date()
     barang: p.allItems ? [] : namai(nama.barang, p.itemIds),
     kategori: p.allItems ? [] : namai(nama.kategori, p.categoryIds),
     belanja: promoNota(p.type),
+    memberOnly: p.memberOnly === true,
+    isiPaket: p.type === "PAKET" ? namaiKomponen(nama, p.komponen ?? []) : [],
   }));
 }

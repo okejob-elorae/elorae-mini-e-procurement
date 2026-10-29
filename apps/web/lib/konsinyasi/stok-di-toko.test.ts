@@ -134,6 +134,7 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
     await prisma.spgSaleReturnLine.deleteMany({ where: { saleReturn: { spgSaleId: seededId(notaId) } } });
     await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: seededId(notaId) } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: seededId(notaId) } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: seededId(notaId) }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: seededId(notaId) } });
     await prisma.storeStockTarget.deleteMany({ where: { storeId: seededId(tokoId) } });
     await prisma.storeStockMovement.deleteMany({ where: { storeId: seededId(tokoId) } });

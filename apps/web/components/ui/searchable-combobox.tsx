@@ -37,6 +37,8 @@ export interface SearchableComboboxProps {
   className?: string;
   id?: string;
   "aria-invalid"?: boolean;
+  /** Nama untuk pembaca layar bila tidak ada `<Label htmlFor>`. */
+  "aria-label"?: string;
   /** Trigger width class (e.g. w-full, min-w-[200px]) */
   triggerClassName?: string;
 }
@@ -54,6 +56,7 @@ export function SearchableCombobox({
   className,
   id,
   "aria-invalid": ariaInvalid,
+  "aria-label": ariaLabel,
   triggerClassName,
 }: SearchableComboboxProps) {
   // Bawaan lewat i18n: formulir yang tidak mengisinya dulu tampil berbahasa Inggris (Search…).
@@ -85,6 +88,7 @@ export function SearchableCombobox({
           role="combobox"
           aria-expanded={open}
           aria-invalid={ariaInvalid}
+          aria-label={ariaLabel}
           disabled={disabled}
           className={cn(
             "border-input data-[placeholder]:text-muted-foreground flex h-9 w-full items-center justify-between gap-2 rounded-md border bg-transparent px-3 py-2 text-sm font-normal shadow-xs transition-[color,box-shadow] outline-none hover:bg-transparent focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20",
