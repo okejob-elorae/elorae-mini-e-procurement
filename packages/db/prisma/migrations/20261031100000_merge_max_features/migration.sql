@@ -94,6 +94,19 @@ WHERE r.`invoiceNo` IS NULL;
 
 ALTER TABLE `Receivable` MODIFY `invoiceNo` VARCHAR(191) NOT NULL;
 
+-- The team's CHECK demanded exactly one of deliveryId / sellThroughId, which refuses every
+-- MANUAL and IMPORT receivable (both NULL). Re-add it source-aware: a DELIVERY-sourced row
+-- (deliveries and konsi sell-throughs, which carry the column default) still needs exactly one
+-- source; a MANUAL or IMPORT row must carry neither.
+ALTER TABLE `Receivable` DROP CONSTRAINT IF EXISTS `Receivable_one_source_check`;
+
+ALTER TABLE `Receivable` ADD CONSTRAINT `Receivable_one_source_check` CHECK (
+  CASE WHEN `source` = 'DELIVERY'
+    THEN (`deliveryId` IS NULL) <> (`sellThroughId` IS NULL)
+    ELSE `deliveryId` IS NULL AND `sellThroughId` IS NULL
+  END
+);
+
 -- AlterTable
 ALTER TABLE `StoreTransfer` ADD COLUMN `cancelledAt` DATETIME(3) NULL,
     ADD COLUMN `cancelledById` VARCHAR(191) NULL,
