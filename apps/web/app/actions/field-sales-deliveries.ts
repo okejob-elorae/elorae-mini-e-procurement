@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma } from "@elorae/db";
+import { lockPeriodForPosting, prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
@@ -18,10 +18,11 @@ import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { JENIS_KABAR, kabariPengguna } from "@/lib/notifications/kabar-pengguna";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
+import { SEMUA_SUMBER_JURNAL_NOTA } from "@/lib/finance/lapangan/aturan";
 import { kaitNotaTerbit } from "@/lib/finance/lapangan/kait";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
-import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
+import { isFieldDeliveryJournalRetryable } from "@/lib/finance/ar/journal-pending";
 import { logPrint } from "./audit";
 
 const AUDIT_REASON_MAX_LENGTH = 191;
@@ -42,6 +43,8 @@ export type DeliveryActionResult =
         | "INSUFFICIENT_STOCK"
         | "NOT_RETRYABLE"
         | "RECEIVABLE_HAS_PAYMENTS"
+        /** Koreksi tanggal nota yang jurnalnya (atau tanggal barunya) jatuh di bulan yang sudah ditutup. */
+        | "PERIOD_CLOSED"
         | "SHIPMENT_IN_FLIGHT"
         | "REPLAY_MISMATCH"
         /** Pesanan pre-order yang jendelanya belum dirilis: stoknya belum dicadangkan. */
@@ -195,22 +198,6 @@ async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBI
 }
 
 /**
- * Both of a delivery's journals, through `postArJournalSafely` — never a builder called bare. The
- * success path and the `REPLAY_MISMATCH` refusal share it, so the two cannot drift apart. Posting
- * is idempotent on the source document, so a delivery whose journals already posted re-posts
- * nothing. Never exported: from a `"use server"` module that would publish it as a network-callable
- * action posting journals for any delivery id.
- */
-async function postDeliveryJournals(deliveryId: string, postedById: string): Promise<void> {
-  await postArJournalSafely("field_delivery_revenue", deliveryId, () =>
-    postFieldDeliveryRevenueJournal(deliveryId, postedById),
-  );
-  await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
-    postFieldDeliveryCogsJournal(deliveryId, postedById),
-  );
-}
-
-/**
  * `idempotencyKey` is required, not optional: it is the only thing between a double-submit and a
  * second stock movement plus a second SalesHistory row, and a repeat only fails on its own if it
  * exceeds the outstanding qty — a partial delivery would go through twice. Taking an object rather
@@ -259,13 +246,14 @@ export async function recordDeliveryAction(input: {
       if (e.code === "REPLAY_MISMATCH" && e.replay) {
         /**
          * The refused replay's delivery is REAL — its stock moved and its receivable stands — and
-         * its journals may never have posted: a crash after the writer committed and before the
-         * posts below leaves exactly that, and the operator's edited resubmit lands here. The
+         * its nota journal may never have posted: a crash after the writer committed and before the
+         * post below leaves exactly that, and the operator's edited resubmit lands here. The
          * dialog then rotates its key, so no later call would ever reach the success path for this
-         * delivery, and with no JOURNAL_PENDING flag the retry control never appears either. So
-         * the recorded delivery's journals post here, before the refusal goes back.
+         * delivery. So the recorded delivery's nota journal posts here, through the same hook as
+         * the success path, before the refusal goes back. The daily sweep would also find it, but
+         * only the next night.
          */
-        await postDeliveryJournals(e.replay.deliveryId, g.userId);
+        await kaitNotaTerbit(e.replay.deliveryId, g.userId);
       }
       return {
         ok: false,
@@ -281,14 +269,13 @@ export async function recordDeliveryAction(input: {
   }
 
   /**
-   * Posted AFTER the writer's transaction commits, not inside it. Every value these journals need
-   * is fixed by rows that transaction just created and nothing else can touch them, so posting
-   * inside would only stretch an already long serializable window — it holds the delivery, the
-   * stock consume, the order-line updates and the SalesHistory rows — for no correctness gain.
+   * The delivery's ONE journal — the nota journal (`FIELD_DELIVERY`: store receivable, revenue
+   * net of PPN, PPN and COGS) — posted AFTER the writer's transaction commits, not inside it.
+   * Every value it needs is fixed by rows that transaction just created, so posting inside would
+   * only stretch an already long serializable window — it holds the delivery, the stock consume,
+   * the order-line updates and the SalesHistory rows — for no correctness gain. Idempotent, and it
+   * never fails the delivery: a failure becomes a `nota_putus` JOURNAL_PENDING.
    */
-  await postDeliveryJournals(deliveryId, g.userId);
-  // Jurnal nota tagihan (piutang toko, pendapatan, PPN, HPP) — sesudah commit, idempoten,
-  // tidak pernah menggagalkan pengiriman (gagal → JOURNAL_PENDING).
   await kaitNotaTerbit(deliveryId, g.userId);
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
@@ -352,6 +339,7 @@ export async function updateDeliveryDatesAction(input: {
     | { kind: "NOT_FOUND" }
     | { kind: "CONFLICT" }
     | { kind: "HAS_PAYMENTS" }
+    | { kind: "PERIOD_CLOSED" }
   >(async (tx) => {
     const before = await tx.fieldSalesDelivery.findUnique({
       where: { id: input.deliveryId },
@@ -360,17 +348,19 @@ export async function updateDeliveryDatesAction(input: {
     if (!before) return { kind: "NOT_FOUND" };
 
     /**
-     * REFUSE once live money has been applied. A payment posts its own DR Cash / CR AR journal dated
-     * on `paidAt`, and that date is correct — the cash moved then, and no invoice correction changes
-     * when it moved. Re-dating the revenue journal on a paid invoice therefore SPLITS the pair:
-     * invoice Jan 1, payment journaled Jan 5, correct the invoice to Feb 1, and revenue lands in
-     * February while the receipt stays in January — January carries a credit AR balance and revenue
-     * is recognised a month after the cash that settled it.
+     * REFUSE once live money has been applied: a payment receipt (`paidAmount`) or a verified BKM
+     * against this nota. Either posts its own DR Cash/Bank / CR receivable journal dated on when the
+     * money moved, and that date is correct — no invoice correction changes when it moved. Re-dating
+     * the nota journal on a paid invoice therefore SPLITS the pair: invoice Jan 1, payment journaled
+     * Jan 5, correct the invoice to Feb 1, and revenue lands in February while the receipt stays in
+     * January — January carries a credit receivable balance and revenue is recognised a month after
+     * the cash that settled it. A BKM still waiting for verification has moved nothing (a claim is
+     * not a payment), so it does not block.
      *
      * Fail closed, not with a warning: the resulting GL disagreement is silent, permanent, and
      * nothing recomputes a journal's date later. An operator who must re-date a paid invoice voids
-     * the payment first — a deliberate, audited act — which restores `paidAmount` to 0 and reopens
-     * the correction.
+     * the payment (or cancels the BKM) first — a deliberate, audited act — which reopens the
+     * correction.
      *
      * Read and refused BEFORE the delivery CAS below, not after. `runSerializable` is a plain
      * `prisma.$transaction`, which COMMITS on a normal return and rolls back only on a throw — so a
@@ -384,6 +374,35 @@ export async function updateDeliveryDatesAction(input: {
       select: { id: true, paidAmount: true },
     });
     if (receivable && Number(receivable.paidAmount) > 0) return { kind: "HAS_PAYMENTS" };
+    if (receivable) {
+      const verifiedClaim = await tx.paymentClaimReceivable.findFirst({
+        where: { receivableId: receivable.id, paymentClaim: { status: "TERVERIFIKASI" } },
+        select: { paymentClaimId: true },
+      });
+      if (verifiedClaim) return { kind: "HAS_PAYMENTS" };
+    }
+
+    /**
+     * A journal is never moved into or out of a CLOSED month: that month's figures are already
+     * reported. The posted date, the date it was shifted away from (`originalDate`) and the new
+     * invoice date must all lie in open months. `lockPeriodForPosting` also locks those months'
+     * period rows until this transaction ends — earliest month first, the order every poster and
+     * the month close take them in — so a month closing concurrently waits for the re-date or sees
+     * it. A nota with no journal yet moves nothing in the GL and is not checked: its post dates on
+     * the corrected invoice date and follows the closed-period rule then.
+     */
+    const journals = await tx.journal.findMany({
+      where: { sourceType: { in: [...SEMUA_SUMBER_JURNAL_NOTA] }, sourceId: before.id },
+      select: { date: true, originalDate: true },
+    });
+    if (journals.length > 0) {
+      const touched = [parsedInvoiceDate, ...journals.flatMap((j) => (j.originalDate ? [j.date, j.originalDate] : [j.date]))].sort(
+        (a, b) => a.getTime() - b.getTime(),
+      );
+      for (const date of touched) {
+        if ((await lockPeriodForPosting(tx, date)) === "CLOSED") return { kind: "PERIOD_CLOSED" };
+      }
+    }
 
     /**
      * The read pair is part of the filter, so the write only lands on the row the audit entry is
@@ -409,18 +428,19 @@ export async function updateDeliveryDatesAction(input: {
     });
 
     /**
-     * An invoice-date correction means the sale belongs to a different period, so its journals move
+     * An invoice-date correction means the sale belongs to a different period, so its journal moves
      * with it — otherwise the GL and the AR ledger disagree about which month the revenue is in.
-     * Safe only because this system has no period-close mechanism; if one is ever built, this
-     * re-dating must be revisited, since it could move revenue into or out of a closed period.
+     * That is the nota journal (`FIELD_DELIVERY`), or for a delivery journaled before it existed,
+     * both halves of the old pair. Every month involved was checked open above. A journal that was
+     * shifted out of a closed month now carries its true date, so its `originalDate` is cleared.
      * The action's existing AuditLog entry is what makes the change traceable.
      */
     const journalRedate = await tx.journal.updateMany({
       where: {
-        sourceType: { in: ["FIELD_DELIVERY_REVENUE", "FIELD_DELIVERY_COGS"] },
+        sourceType: { in: [...SEMUA_SUMBER_JURNAL_NOTA] },
         sourceId: before.id,
       },
-      data: { date: parsedInvoiceDate },
+      data: { date: parsedInvoiceDate, originalDate: null },
     });
 
     await tx.auditLog.create({
@@ -441,14 +461,14 @@ export async function updateDeliveryDatesAction(input: {
           /**
            * `Journal` has no history table and no audit of its own, so this row is the ONLY trail
            * for a mutation of posted GL. `receivablesSynced`/`journalsRedated` are the `updateMany`
-           * counts above; `journalsPreviousDate` is `before.invoiceDate` — accurate because a
-           * journal's `date` is always kept equal to its delivery's `invoiceDate` by this same
-           * action on every prior correction, so the delivery's pre-write snapshot IS the journals'
-           * pre-write date.
+           * counts above; `journalsPreviousDate` is the date the journals carried before this write,
+           * read in this same transaction. A journal shifted out of a closed month carried a date
+           * other than its delivery's `invoiceDate`, so the delivery's snapshot is only the fallback
+           * for a nota with no journal.
            */
           receivablesSynced: receivableSync.count,
           journalsRedated: journalRedate.count,
-          journalsPreviousDate: before.invoiceDate.toISOString(),
+          journalsPreviousDate: (journals[0]?.date ?? before.invoiceDate).toISOString(),
         },
         metadata: { receivableId: receivable?.id ?? null },
         reason,
@@ -461,6 +481,7 @@ export async function updateDeliveryDatesAction(input: {
   if (outcome.kind === "NOT_FOUND") return { ok: false, reason: "NOT_FOUND" };
   if (outcome.kind === "CONFLICT") return { ok: false, reason: "CONFLICT" };
   if (outcome.kind === "HAS_PAYMENTS") return { ok: false, reason: "RECEIVABLE_HAS_PAYMENTS" };
+  if (outcome.kind === "PERIOD_CLOSED") return { ok: false, reason: "PERIOD_CLOSED" };
 
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${outcome.orderId}`);
@@ -474,28 +495,32 @@ export type PostFieldDeliveryJournalsResult =
   | Extract<DeliveryActionResult, { ok: false }>;
 
 /**
- * Retries the two delivery journals following the shape of `postVanSaleJournalAction`
- * (`apps/web/app/actions/van-sale.ts`).
+ * Retries a delivery's journal from the receivable's detail page, following the shape of
+ * `postVanSaleJournalAction` (`apps/web/app/actions/van-sale.ts`). The two kinds survive as the
+ * names of what failed; both post through the nota engine (`postFieldDeliveryRevenueJournal` /
+ * `postFieldDeliveryCogsJournal`, `lib/finance/ar/delivery-journal.ts`), so a delivery never gets a
+ * second journal beside its nota journal — only a delivery journaled in the old two-journal shape
+ * gets its missing half.
  *
- * The ENTRY gate — a kind is only attempted when `isArJournalRetryable` says it was flagged — stays
- * on `isArJournalRetryable`. That is correct: every backfilled receivable has no journal by
- * construction, and re-posting one of those would book revenue for a delivery nobody ever attempted
- * to post.
+ * The ENTRY gate — a kind is only attempted when `isFieldDeliveryJournalRetryable` says it was
+ * flagged (the revenue kind also by the nota engine's own `nota_putus` flag) — is a flag, never a
+ * missing journal: every backfilled receivable has no journal by construction, and posting one of
+ * those would book revenue for a delivery nobody ever attempted to post.
  *
- * The post-attempt success determination is NOT the same gate re-checked. `isArJournalRetryable`
- * matches any `JOURNAL_PENDING` notification for the (kind, docId) pair and deliberately ignores
- * `readAt`, and nothing in production ever deletes or updates one of those rows — so once a kind has
- * failed once, re-checking the gate after a retry reads "still pending" forever, even immediately
- * after a retry that just succeeded. `postArJournalSafely` now returns the outcome it already
- * computes, so success is read from THAT instead.
+ * The post-attempt success determination is NOT the same gate re-checked. The gate matches any
+ * `JOURNAL_PENDING` notification for the (kind, docId) pair and deliberately ignores `readAt`, and
+ * nothing in production ever deletes one of those rows — so once a kind has failed once, re-checking
+ * the gate after a retry reads "still pending" forever, even immediately after a retry that just
+ * succeeded. `postArJournalSafely` returns the outcome it already computes, so success is read from
+ * THAT instead.
  */
 export async function postFieldDeliveryJournalsAction(deliveryId: string): Promise<PostFieldDeliveryJournalsResult> {
   const g = await guard();
   if ("ok" in g) return g;
   if (typeof deliveryId !== "string" || deliveryId === "") return { ok: false, reason: "INVALID_REQUEST" };
 
-  const revenue = await isArJournalRetryable("field_delivery_revenue", deliveryId);
-  const cogs = await isArJournalRetryable("field_delivery_cogs", deliveryId);
+  const revenue = await isFieldDeliveryJournalRetryable("field_delivery_revenue", deliveryId);
+  const cogs = await isFieldDeliveryJournalRetryable("field_delivery_cogs", deliveryId);
   if (!revenue && !cogs) return { ok: false, reason: "NOT_RETRYABLE" };
 
   const posted: FieldDeliveryJournalKind[] = [];

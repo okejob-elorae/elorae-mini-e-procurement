@@ -1,7 +1,50 @@
 import { prisma } from "@elorae/db";
+import { JENIS_TERTUNDA_LAPANGAN, SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "@/lib/finance/lapangan/aturan";
 import type { ArJournalKind } from "./post-ar-journal-safely";
 
 export type ArJournalPendingFlag = { reason: string | null; role: string | null };
+
+/**
+ * The `kind` the nota engine files its own failures under (`lib/finance/lapangan/tertunda.ts`). A
+ * delivery's journal is the nota journal, so a `nota_putus` flag is as much evidence of a failed
+ * delivery post as the older `field_delivery_revenue` one.
+ */
+export const NOTA_JOURNAL_PENDING_KIND = JENIS_TERTUNDA_LAPANGAN[SUMBER_LAPANGAN.NOTA];
+
+type PendingMetadata = { docId?: string; kind?: string; reason?: string | null; role?: string | null };
+
+/* JSON can arrive as text on this adapter; it is read the same either way. */
+function metadataOf(value: unknown): PendingMetadata | null {
+  let v = value;
+  if (typeof v === "string") {
+    try {
+      v = JSON.parse(v);
+    } catch {
+      return null;
+    }
+  }
+  return v !== null && typeof v === "object" && !Array.isArray(v) ? (v as PendingMetadata) : null;
+}
+
+async function findPendingFlags(kinds: ReadonlySet<string>, docIds: string[]): Promise<Map<string, ArJournalPendingFlag>> {
+  if (docIds.length === 0) return new Map();
+  const idSet = new Set(docIds);
+  const notifications = await prisma.adminNotification.findMany({
+    where: { category: "JOURNAL_PENDING" },
+    orderBy: { createdAt: "desc" },
+    select: { metadata: true },
+  });
+  const flags = new Map<string, ArJournalPendingFlag>();
+  for (const n of notifications) {
+    const m = metadataOf(n.metadata);
+    if (m === null) continue;
+    const docId = m.docId;
+    if (m.kind === undefined || !kinds.has(m.kind) || docId === undefined || !idSet.has(docId)) continue;
+    if (flags.has(docId)) continue;
+    flags.set(docId, { reason: m.reason ?? null, role: m.role ?? null });
+  }
+  return flags;
+}
 
 /**
  * The most recent JOURNAL_PENDING flag for each of `docIds` that carries one, keyed by `docId`.
@@ -21,25 +64,27 @@ export async function findArJournalPendingFlags(
   kind: ArJournalKind,
   docIds: string[],
 ): Promise<Map<string, ArJournalPendingFlag>> {
-  if (docIds.length === 0) return new Map();
-  const idSet = new Set(docIds);
-  const notifications = await prisma.adminNotification.findMany({
-    where: { category: "JOURNAL_PENDING" },
-    orderBy: { createdAt: "desc" },
-    select: { metadata: true },
-  });
-  const flags = new Map<string, ArJournalPendingFlag>();
-  for (const n of notifications) {
-    const m = n.metadata as
-      | { docId?: string; kind?: string; reason?: string | null; role?: string | null }
-      | null;
-    if (m === null) continue;
-    const docId = m.docId;
-    if (m.kind !== kind || docId === undefined || !idSet.has(docId)) continue;
-    if (flags.has(docId)) continue;
-    flags.set(docId, { reason: m.reason ?? null, role: m.role ?? null });
-  }
-  return flags;
+  return findPendingFlags(new Set([kind]), docIds);
+}
+
+/**
+ * `findArJournalPendingFlags` across several kinds, including the field-journal kinds the
+ * `lib/finance/lapangan` engine files (`JENIS_TERTUNDA_LAPANGAN`), which are not `ArJournalKind`s.
+ */
+export async function findJournalPendingFlagsOfKinds(
+  kinds: readonly string[],
+  docIds: string[],
+): Promise<Map<string, ArJournalPendingFlag>> {
+  return findPendingFlags(new Set(kinds), docIds);
+}
+
+/**
+ * `findArJournalPendingFlags` for a delivery's revenue: a flag under either kind a delivery's journal
+ * can fail under — `field_delivery_revenue` from the delivery/shipment actions, `nota_putus` from the
+ * nota engine itself.
+ */
+export async function findDeliveryRevenuePendingFlags(deliveryIds: string[]): Promise<Map<string, ArJournalPendingFlag>> {
+  return findJournalPendingFlagsOfKinds(["field_delivery_revenue", NOTA_JOURNAL_PENDING_KIND], deliveryIds);
 }
 
 /**
@@ -74,10 +119,27 @@ export async function isArJournalRetryable(kind: ArJournalKind, docId: string): 
   return postable.has(docId);
 }
 
-const FIELD_DELIVERY_SOURCE_TYPE = {
-  field_delivery_revenue: "FIELD_DELIVERY_REVENUE",
-  field_delivery_cogs: "FIELD_DELIVERY_COGS",
-} as const;
+type FieldDeliveryJournalKind = "field_delivery_revenue" | "field_delivery_cogs";
+
+/* The flag kinds that make each delivery journal kind retryable. The nota journal carries the revenue, so its own flag gates that kind. */
+const FIELD_DELIVERY_FLAG_KINDS: Record<FieldDeliveryJournalKind, ReadonlySet<string>> = {
+  field_delivery_revenue: new Set<string>(["field_delivery_revenue", NOTA_JOURNAL_PENDING_KIND]),
+  field_delivery_cogs: new Set<string>(["field_delivery_cogs"]),
+};
+
+/* The journals whose existence means a kind has posted: the nota journal, or that kind's half of the old pair. */
+const FIELD_DELIVERY_POSTED_BY: Record<FieldDeliveryJournalKind, string[]> = {
+  field_delivery_revenue: [SUMBER_LAPANGAN.NOTA, SUMBER_NOTA_LAMA.PENDAPATAN],
+  field_delivery_cogs: [SUMBER_LAPANGAN.NOTA, SUMBER_NOTA_LAMA.HPP],
+};
+
+/**
+ * The retry gate for one delivery journal kind: `isArJournalRetryable`, widened to the nota
+ * engine's own `nota_putus` flag for the revenue kind.
+ */
+export async function isFieldDeliveryJournalRetryable(kind: FieldDeliveryJournalKind, deliveryId: string): Promise<boolean> {
+  return (await findPendingFlags(FIELD_DELIVERY_FLAG_KINDS[kind], [deliveryId])).has(deliveryId);
+}
 
 /**
  * Whether the receivable detail page should still show the journal-pending banner for one delivery
@@ -89,12 +151,12 @@ const FIELD_DELIVERY_SOURCE_TYPE = {
  * own: a backfilled delivery has no journal either, and the flag is what proves a post was attempted.
  */
 export async function isFieldDeliveryJournalStillPending(
-  kind: keyof typeof FIELD_DELIVERY_SOURCE_TYPE,
+  kind: FieldDeliveryJournalKind,
   deliveryId: string,
 ): Promise<boolean> {
-  if (!(await isArJournalRetryable(kind, deliveryId))) return false;
+  if (!(await isFieldDeliveryJournalRetryable(kind, deliveryId))) return false;
   const posted = await prisma.journal.findFirst({
-    where: { sourceType: FIELD_DELIVERY_SOURCE_TYPE[kind], sourceId: deliveryId },
+    where: { sourceType: { in: FIELD_DELIVERY_POSTED_BY[kind] }, sourceId: deliveryId },
     select: { id: true },
   });
   return posted === null;

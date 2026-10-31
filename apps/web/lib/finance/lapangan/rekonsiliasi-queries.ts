@@ -5,7 +5,7 @@ import { SARING_JURNAL_BERLAKU } from "@/lib/finance/journals/status-jurnal";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { idBebanDariCatatan } from "@/lib/receivables/penanda-beban";
 import { daftarPiutang } from "@/lib/receivables/queries";
-import { keSen, SUMBER_LAPANGAN } from "./aturan";
+import { keSen, SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "./aturan";
 import { bacaNilaiReturBanyak } from "./jurnal";
 import { ringkasRekonsiliasi, type BarisRekonsiliasiToko, type RekonsiliasiPiutang } from "./rekonsiliasi";
 
@@ -84,13 +84,20 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
       })
     : [];
   const detailPer = new Map(detail.map((d) => [d.id, d]));
+  // Nota berjurnal: jurnal notanya, atau separuh pendapatan bentuk lama yang mendebit AR_STORE.
+  // Separuh lama yang mendebit AR (sebelum satu peran piutang toko) tidak ada di saldo AR_STORE.
   const notaBerjurnal = new Set(
     (
       await prisma.journal.findMany({
-        where: { sourceType: SUMBER_LAPANGAN.NOTA, sourceId: { in: detail.map((d) => d.deliveryId).filter((x): x is string => Boolean(x)) } },
-        select: { sourceId: true },
+        where: {
+          sourceType: { in: [SUMBER_LAPANGAN.NOTA, SUMBER_NOTA_LAMA.PENDAPATAN] },
+          sourceId: { in: detail.map((d) => d.deliveryId).filter((x): x is string => Boolean(x)) },
+        },
+        select: { sourceId: true, sourceType: true, lines: { select: { memo: true, debit: true } } },
       })
-    ).map((j) => j.sourceId),
+    )
+      .filter((j) => j.sourceType === SUMBER_LAPANGAN.NOTA || j.lines.some((l) => l.memo === "AR_STORE" && Number(l.debit) > 0))
+      .map((j) => j.sourceId),
   );
   // Faktur manual/impor yang sudah punya jurnal `STORE_INVOICE` sendiri (generasi pertama = id faktur).
   const fakturBerjurnal = new Set(

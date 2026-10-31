@@ -64,6 +64,29 @@ export const SEMUA_SUMBER_LAPANGAN: readonly SumberLapangan[] = [
 export const SUMBER_BERGENERASI: readonly SumberLapangan[] = [SUMBER_LAPANGAN.BKM, SUMBER_LAPANGAN.RETUR, SUMBER_LAPANGAN.FAKTUR];
 
 /**
+ * Jurnal nota bentuk lama: pendapatan (DR AR / CR SALES_REVENUE) dan HPP
+ * (DR COGS / CR INVENTORY) sebagai DUA jurnal ber-sourceId pengiriman, dari
+ * sebelum nota memakai satu jurnal `FIELD_DELIVERY`. Barisnya mungkin sudah ada
+ * di produksi dan tidak pernah dibalik. Nota yang memegang salah satunya TIDAK
+ * PERNAH diberi jurnal `FIELD_DELIVERY` lagi — itu mengakui piutang,
+ * pendapatan, dan HPP-nya dua kali. Separuh pasangan yang gagal dilengkapi
+ * lewat `lib/finance/ar/delivery-journal.ts`, bukan oleh mesin nota; separuh
+ * pendapatan yang dilengkapi di sana mendebit `AR_STORE` (satu peran piutang
+ * toko), bukan `AR` — pelunasannya mengkredit akun yang didebit jurnalnya.
+ */
+export const SUMBER_NOTA_LAMA = {
+  PENDAPATAN: "FIELD_DELIVERY_REVENUE",
+  HPP: "FIELD_DELIVERY_COGS",
+} as const;
+
+/** Setiap sourceType yang berarti "nota ini sudah berjurnal" — yang baru dan pasangan lamanya. */
+export const SEMUA_SUMBER_JURNAL_NOTA: readonly string[] = [
+  SUMBER_LAPANGAN.NOTA,
+  SUMBER_NOTA_LAMA.PENDAPATAN,
+  SUMBER_NOTA_LAMA.HPP,
+];
+
+/**
  * `kind` di metadata `JOURNAL_PENDING` (`{ docId, kind, reason, role }`).
  * KONTRAK dengan `lib/finance/jurnal-tertunda.ts` dan
  * `lib/notifications/navigation.ts` — keduanya memetakan kind yang sama.

@@ -75,7 +75,8 @@ export async function voidSellThrough(input: VoidSellThroughInput): Promise<{ id
         select: { id: true },
       });
       if (submission) throw new SellThroughError("COLLECTION_PENDING");
-      await tx.receivable.update({ where: { id: receivable.id }, data: { status: "VOIDED", outstandingAmount: 0 } });
+      /* `outstanding` is the receivables module's cache of the same figure; a void owes nothing in either. */
+      await tx.receivable.update({ where: { id: receivable.id }, data: { status: "VOIDED", outstandingAmount: 0, outstanding: 0 } });
     }
 
     if (doc.taxInvoice) await tx.taxInvoice.update({ where: { id: doc.taxInvoice.id }, data: { status: "CANCELLED" } });

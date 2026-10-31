@@ -1,6 +1,11 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { prisma } from "@elorae/db";
-import { isArJournalRetryable, findPostableArJournalDocIds, isFieldDeliveryJournalStillPending } from "./journal-pending";
+import {
+  isArJournalRetryable,
+  findPostableArJournalDocIds,
+  isFieldDeliveryJournalRetryable,
+  isFieldDeliveryJournalStillPending,
+} from "./journal-pending";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -84,6 +89,31 @@ d("journal-pending gating (test bed only)", () => {
 
   it("never reports an unflagged delivery as pending just because it has no journal", async () => {
     expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", cleanDoc)).toBe(false);
+  });
+
+  it("gates the revenue kind on the nota engine's own flag, and clears it once the nota journal exists", async () => {
+    const n = await prisma.adminNotification.create({
+      data: {
+        category: "JOURNAL_PENDING",
+        severity: "WARNING",
+        title: `test ${token}`,
+        message: "test",
+        metadata: { docId: flaggedDoc, kind: "nota_putus", reason: "UNMAPPED_ROLE", role: "AR_STORE" },
+      },
+    });
+    notificationId = n.id;
+    expect(await isFieldDeliveryJournalRetryable("field_delivery_revenue", flaggedDoc)).toBe(true);
+    expect(await isFieldDeliveryJournalRetryable("field_delivery_cogs", flaggedDoc)).toBe(false);
+    expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(true);
+
+    const journal = await prisma.journal.create({
+      data: { date: new Date(), description: `test ${token}`, sourceType: "FIELD_DELIVERY", sourceId: flaggedDoc, postedById: "test-user" },
+    });
+    try {
+      expect(await isFieldDeliveryJournalStillPending("field_delivery_revenue", flaggedDoc)).toBe(false);
+    } finally {
+      await prisma.journal.delete({ where: { id: journal.id } });
+    }
   });
 
   /**

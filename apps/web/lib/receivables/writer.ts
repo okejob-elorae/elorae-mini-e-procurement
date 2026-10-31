@@ -112,10 +112,37 @@ export async function hitungUlangPiutangDanTahanan(
       // Tanggal lunas ikut dibersihkan kalau sisanya kembali > 0 — misalnya
       // ketika sebuah klaim dibatalkan setelah sempat terverifikasi.
       settledAt: sisa === 0 ? new Date() : null,
+      ...(await kolomPembayaranKantor(client, receivableId, sisa)),
     },
   });
 
   return baca;
+}
+
+/**
+ * Kolom piutang yang dibaca layar pembayaran kantor (Keuangan → Piutang,
+ * batas kredit toko): `outstandingAmount` dan `status`. Ikut sisa yang baru —
+ * sisa modul ini dikurangi uang yang dialokasikan lewat pembayaran kantor
+ * (`paidAmount`, yang tidak dikenal `hitungSisaPiutang`). Piutang yang
+ * dibatalkan (VOIDED) atau dihapusbukukan (WRITTEN_OFF) tidak disentuh:
+ * keadaannya diputuskan di sana, bukan oleh BKM.
+ */
+async function kolomPembayaranKantor(
+  client: Klien,
+  receivableId: string,
+  sisa: number,
+): Promise<{ outstandingAmount?: Prisma.Decimal; status?: 'OUTSTANDING' | 'PARTIAL' | 'PAID' }> {
+  const p = await client.receivable.findUnique({
+    where: { id: receivableId },
+    select: { originalAmount: true, paidAmount: true, status: true },
+  });
+  if (!p || p.status === 'VOIDED' || p.status === 'WRITTEN_OFF') return {};
+  const sisaSen = Math.max(0, Math.round(sisa * 100) - Math.round(angka(p.paidAmount) * 100));
+  const asalSen = Math.round(angka(p.originalAmount) * 100);
+  return {
+    outstandingAmount: new Prisma.Decimal(sisaSen / 100),
+    status: sisaSen === 0 ? 'PAID' : sisaSen < asalSen ? 'PARTIAL' : 'OUTSTANDING',
+  };
 }
 
 /** Hitung ulang setiap piutang yang disentuh sebuah klaim. */

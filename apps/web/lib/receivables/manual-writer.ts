@@ -132,6 +132,10 @@ export async function tulisPiutangManual(
       // Faktur baru belum dibayar apa pun. Sisanya tetap dihitung ulang oleh
       // pembacanya dari klaim yang menyentuhnya, jadi kolom ini cache.
       outstanding: D(total),
+      // Kolom yang dibaca layar pembayaran kantor (Keuangan → Piutang), sama
+      // dengan piutang nota (`buatPiutangNota`).
+      originalAmount: D(total),
+      outstandingAmount: D(total),
       source: 'MANUAL',
       ...(input.note ? { note: input.note } : {}),
       items: {

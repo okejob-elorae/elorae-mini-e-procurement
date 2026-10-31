@@ -20,7 +20,13 @@ import { prisma } from "@elorae/db";
  */
 
 export type SumberNotifikasiJurnal =
-  | { tipe: "dokumen"; sourceType: string; sourceId: string }
+  /*
+   * `setara`: sourceType lain yang sama-sama menyelesaikan notifikasi ini.
+   * Hanya jurnal nota bentuk lama: separuh pasangan lamanya yang dilengkapi
+   * menyelesaikan tanda kegagalannya, walau jurnal `FIELD_DELIVERY` tidak
+   * pernah ada untuk nota itu.
+   */
+  | { tipe: "dokumen"; sourceType: string; sourceId: string; setara?: readonly string[] }
   /*
    * Jurnal pembayaran pemasok ber-`sourceId` `poId#generasi`, jadi dicocokkan
    * per PO dan arah, bukan per pasangan sumber.
@@ -59,6 +65,30 @@ const JENIS_LAPANGAN = new Map([
   ["faktur_piutang", "STORE_INVOICE"],
 ]);
 const LAPANGAN_BERGENERASI = new Set(["FIELD_COLLECTION", "STORE_RETURN", "STORE_INVOICE"]);
+
+/*
+ * Jurnal piutang `postArJournalSafely` (`lib/finance/ar/post-ar-journal-safely.ts`,
+ * metadata `{ docId, kind }`). Nota tagihan putus hanya punya SATU jurnal,
+ * `FIELD_DELIVERY` (`lib/finance/ar/delivery-journal.ts` memostingnya lewat
+ * mesin nota), jadi kedua kind pengiriman menunjuk ke sana; separuh pasangan
+ * bentuk lama yang dilengkapi ikut menyelesaikannya (`setara`).
+ */
+const JENIS_NOTA_PIUTANG = new Map([
+  ["field_delivery_revenue", "FIELD_DELIVERY_REVENUE"],
+  ["field_delivery_cogs", "FIELD_DELIVERY_COGS"],
+]);
+const JENIS_PIUTANG = new Map([
+  ["ar_payment", "PAYMENT_RECEIPT"],
+  ["ar_payment_void", "PAYMENT_VOID"],
+  ["konsi_sell_through_revenue", "KONSI_SELLTHRU_REVENUE"],
+  ["konsi_sell_through_cogs", "KONSI_SELLTHRU_COGS"],
+  ["konsi_sell_through_shrinkage", "KONSI_SELLTHRU_SHRINKAGE"],
+  ["konsi_sell_through_surplus", "KONSI_SELLTHRU_SURPLUS"],
+  ["konsi_sell_through_revenue_void", "KONSI_SELLTHRU_REVENUE_VOID"],
+  ["konsi_sell_through_cogs_void", "KONSI_SELLTHRU_COGS_VOID"],
+  ["konsi_sell_through_shrinkage_void", "KONSI_SELLTHRU_SHRINKAGE_VOID"],
+  ["konsi_sell_through_surplus_void", "KONSI_SELLTHRU_SURPLUS_VOID"],
+]);
 
 /*
  * Jurnal operasional (`lib/finance/operasional/`, `JENIS_TERTUNDA_OPERASIONAL`):
@@ -133,6 +163,10 @@ export function sumberNotifikasiJurnal(metadata: unknown): SumberNotifikasiJurna
     if (kind === "jurnal_berulang") return dokumenJurnal("RECURRING", docId);
     const lapangan = JENIS_LAPANGAN.get(kind);
     if (lapangan) return dokumenJurnal(lapangan, docId);
+    const notaLama = JENIS_NOTA_PIUTANG.get(kind);
+    if (notaLama) return { tipe: "dokumen", sourceType: "FIELD_DELIVERY", sourceId: docId, setara: [notaLama] };
+    const piutang = JENIS_PIUTANG.get(kind);
+    if (piutang) return dokumenJurnal(piutang, docId);
     const operasional = JENIS_OPERASIONAL.get(kind);
     if (operasional) return dokumenJurnal(operasional, docId);
     return null;
@@ -174,6 +208,13 @@ function kunci(s: SumberNotifikasiJurnal): string {
   return `p|${s.arah}|${s.poId}`;
 }
 
+/** Setiap kunci yang menyelesaikan sumber ini: kuncinya sendiri dan sourceType `setara`-nya. */
+function kunciPenyelesai(s: SumberNotifikasiJurnal): string[] {
+  const sendiri = kunci(s);
+  if (s.tipe !== "dokumen" || !s.setara) return [sendiri];
+  return [sendiri, ...s.setara.map((sourceType) => kunci(dokumenJurnal(sourceType, s.sourceId)))];
+}
+
 /**
  * Menandai selesai (`readAt`) setiap notifikasi `JOURNAL_PENDING` yang belum
  * selesai untuk dokumen-dokumen ini — dipanggil sesudah jurnalnya berhasil
@@ -207,7 +248,7 @@ export async function tandaiJurnalTertundaSelesai(
     const ids = belum
       .filter((n) => {
         const s = sumberNotifikasiJurnal(n.metadata);
-        return s != null && dicari.has(kunci(s));
+        return s != null && kunciPenyelesai(s).some((k) => dicari.has(k));
       })
       .map((n) => n.id);
     if (ids.length === 0) return 0;
@@ -242,9 +283,11 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
     if (s.tipe === "dokumen") {
       // Jurnal lapangan bergenerasi: hanya `readAt` dari penyelarasnya yang menyelesaikan.
       if (bergenerasi(s.sourceType)) continue;
-      const ids = perJenis.get(s.sourceType) ?? new Set<string>();
-      ids.add(s.sourceId);
-      perJenis.set(s.sourceType, ids);
+      for (const sourceType of [s.sourceType, ...(s.setara ?? [])]) {
+        const ids = perJenis.get(sourceType) ?? new Set<string>();
+        ids.add(s.sourceId);
+        perJenis.set(sourceType, ids);
+      }
     } else if (s.tipe === "pembayaranPemasok") {
       poIds.add(s.poId);
     }
@@ -276,7 +319,7 @@ async function idSudahBerjurnal(baris: BarisNotifikasi[]): Promise<Set<string>> 
   for (const { n, s } of terpetakan) {
     if (!s) continue;
     if (s.tipe === "dokumen") {
-      if (!bergenerasi(s.sourceType) && ada.has(kunci(s))) sudah.add(n.id);
+      if (!bergenerasi(s.sourceType) && kunciPenyelesai(s).some((k) => ada.has(k))) sudah.add(n.id);
       continue;
     }
     if (s.tipe === "kolaborasiKol") continue;

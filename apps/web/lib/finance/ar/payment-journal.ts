@@ -1,9 +1,10 @@
 import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
-import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { generateAutoJournal, type AutoJournalLine, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { withRetry } from "@/lib/db/tx-retry";
+import { JENIS_TERTUNDA_LAPANGAN, SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "@/lib/finance/lapangan/aturan";
 import { SELL_THROUGH_JOURNAL_SOURCE_TYPES } from "@/lib/konsi-sell-through/journal";
-import { findArJournalPendingFlags } from "./journal-pending";
+import { findDeliveryRevenuePendingFlags, findJournalPendingFlagsOfKinds } from "./journal-pending";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource, ReceivableSourceMissingError } from "./receivable-source";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
@@ -55,16 +56,36 @@ function receiptDescription(docNo: string, method: string, excluded: number): st
 }
 
 /**
- * One entry per requested receivable id: `null` when the revenue journal that debited it stands,
- * otherwise the gate code saying why it does not. The source is resolved through
- * `resolveReceivableSource`, never `receivable.delivery`, since a receivable is backed by either a
- * putus delivery or a konsi sell-through report.
+ * The receivables role a store invoice's own journal debited. Every store invoice posted today
+ * debits AR_STORE — the nota journal (`FIELD_DELIVERY`), a konsi sell-through invoice and a
+ * MANUAL/IMPORT invoice (`STORE_INVOICE`) — and tags that line with the role name as its memo. A
+ * journal with no such line is the old shape, which debited AR, so its receipt credits AR: crediting
+ * an account the invoice never debited would leave one account negative and the other overstated by
+ * the same amount.
+ */
+export type StoreReceivableRole = "AR" | "AR_STORE";
+
+const AR_STORE_MEMO = "AR_STORE";
+
+type ReceivableVerdict = { gate: ArReceiptGateCode | null; role: StoreReceivableRole };
+
+/**
+ * One entry per requested receivable id: `gate` is `null` when the journal that debited it stands,
+ * otherwise the code saying why it does not; `role` is the account that journal debited. The source
+ * is resolved through `resolveReceivableSource`, never `receivable.delivery`, since a receivable is
+ * backed by a putus delivery, a konsi sell-through report, or only its own invoice number.
+ *
+ * A delivery is in the ledger once its nota journal stands, or the revenue half of the old pair
+ * (`SUMBER_NOTA_LAMA`) does. Its post is late when either kind a delivery post fails under is
+ * flagged — `field_delivery_revenue` or the nota engine's own `nota_putus`. A MANUAL/IMPORT invoice
+ * is in the ledger once its first-generation `STORE_INVOICE` journal stands, and late while its
+ * `faktur_piutang` post is flagged.
  */
 async function classifyReceivables(
   ids: string[],
   client: AnyClient,
-): Promise<Map<string, ArReceiptGateCode | null>> {
-  const result = new Map<string, ArReceiptGateCode | null>();
+): Promise<Map<string, ReceivableVerdict>> {
+  const result = new Map<string, ReceivableVerdict>();
   if (ids.length === 0) return result;
 
   const rows = await client.receivable.findMany({
@@ -73,56 +94,80 @@ async function classifyReceivables(
   });
   const deliveryOf = new Map<string, string>();
   const sellThroughOf = new Map<string, string>();
+  const invoiceIds = new Set<string>();
   for (const row of rows) {
     try {
       const source = resolveReceivableSource(row);
       if (source.kind === "DELIVERY") deliveryOf.set(row.id, source.deliveryId);
-      else sellThroughOf.set(row.id, source.sellThroughId);
+      else if (source.kind === "SELL_THROUGH") sellThroughOf.set(row.id, source.sellThroughId);
+      else invoiceIds.add(row.id);
     } catch (e) {
       if (!(e instanceof ReceivableSourceMissingError)) throw e;
     }
   }
 
-  const journaledIds = async (sourceType: string, sourceIds: string[]): Promise<Set<string | null>> => {
-    if (sourceIds.length === 0) return new Set();
+  /* sourceId → the role its journal debited, preferring the first of `sourceTypes` that stands. */
+  const journaledRoles = async (sourceTypes: string[], sourceIds: string[]): Promise<Map<string, StoreReceivableRole>> => {
+    const roles = new Map<string, StoreReceivableRole>();
+    if (sourceIds.length === 0) return roles;
     const journals = await client.journal.findMany({
-      where: { sourceType, sourceId: { in: sourceIds } },
-      select: { sourceId: true },
+      where: { sourceType: { in: sourceTypes }, sourceId: { in: sourceIds } },
+      select: { sourceType: true, sourceId: true, lines: { select: { memo: true, debit: true } } },
     });
-    return new Set(journals.map((j) => j.sourceId));
+    const rank = (sourceType: string | null) => sourceTypes.indexOf(sourceType ?? "");
+    journals.sort((x, y) => rank(x.sourceType) - rank(y.sourceType));
+    for (const j of journals) {
+      if (j.sourceId === null || roles.has(j.sourceId)) continue;
+      const storeLine = j.lines.some((l) => l.memo === AR_STORE_MEMO && Number(l.debit) > 0);
+      roles.set(j.sourceId, storeLine ? "AR_STORE" : "AR");
+    }
+    return roles;
   };
   const deliveryIds = [...new Set(deliveryOf.values())];
-  const deliveryJournaled = await journaledIds("FIELD_DELIVERY_REVENUE", deliveryIds);
-  const sellThroughJournaled = await journaledIds(
-    SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_revenue,
+  const deliveryJournaled = await journaledRoles([SUMBER_LAPANGAN.NOTA, SUMBER_NOTA_LAMA.PENDAPATAN], deliveryIds);
+  const sellThroughJournaled = await journaledRoles(
+    [SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_revenue],
     [...new Set(sellThroughOf.values())],
   );
-  const failedDeliveryPosts = await findArJournalPendingFlags(
-    "field_delivery_revenue",
-    deliveryIds.filter((id) => !deliveryJournaled.has(id)),
+  const invoiceJournaled = await journaledRoles([SUMBER_LAPANGAN.FAKTUR], [...invoiceIds]);
+  const failedDeliveryPosts = await findDeliveryRevenuePendingFlags(deliveryIds.filter((id) => !deliveryJournaled.has(id)));
+  const failedInvoicePosts = await findJournalPendingFlagsOfKinds(
+    [JENIS_TERTUNDA_LAPANGAN[SUMBER_LAPANGAN.FAKTUR]],
+    [...invoiceIds].filter((id) => !invoiceJournaled.has(id)),
   );
 
+  const outside: ReceivableVerdict = { gate: "RECEIVABLE_OUTSIDE_LEDGER", role: "AR_STORE" };
+  const late: ReceivableVerdict = { gate: "RECEIVABLE_REVENUE_NOT_POSTED_YET", role: "AR_STORE" };
   for (const id of ids) {
     const deliveryId = deliveryOf.get(id);
     const sellThroughId = sellThroughOf.get(id);
     if (deliveryId !== undefined) {
-      if (deliveryJournaled.has(deliveryId)) result.set(id, null);
-      else if (failedDeliveryPosts.has(deliveryId)) result.set(id, "RECEIVABLE_REVENUE_NOT_POSTED_YET");
-      else result.set(id, "RECEIVABLE_OUTSIDE_LEDGER");
+      const role = deliveryJournaled.get(deliveryId);
+      if (role) result.set(id, { gate: null, role });
+      else result.set(id, failedDeliveryPosts.has(deliveryId) ? late : outside);
     } else if (sellThroughId !== undefined) {
-      result.set(id, sellThroughJournaled.has(sellThroughId) ? null : "RECEIVABLE_REVENUE_NOT_POSTED_YET");
+      const role = sellThroughJournaled.get(sellThroughId);
+      result.set(id, role ? { gate: null, role } : late);
+    } else if (invoiceIds.has(id)) {
+      const role = invoiceJournaled.get(id);
+      if (role) result.set(id, { gate: null, role });
+      else result.set(id, failedInvoicePosts.has(id) ? late : outside);
     } else {
-      result.set(id, "RECEIVABLE_OUTSIDE_LEDGER");
+      result.set(id, outside);
     }
   }
   return result;
 }
 
 /**
- * Posts DR <method's role> / CR AR for the part of the payment this ledger can credit: the sum of
- * the allocations whose invoice's revenue journal stands. That journal is the only thing that
- * debited AR here, so crediting AR for any other allocation would drive Piutang below what the
- * books ever carried — the same counterpart gate `classifySaleLeg` applies to marketplace returns.
+ * Posts DR <method's role> / CR the store receivable for the part of the payment this ledger can
+ * credit: the sum of the allocations whose invoice's own journal stands. That journal is the only
+ * thing that debited the receivable here, so crediting it for any other allocation would drive
+ * Piutang below what the books ever carried — the same counterpart gate `classifySaleLeg` applies to
+ * marketplace returns. Each allocation credits the role its invoice's journal debited
+ * (`StoreReceivableRole`), so a payment settling both an old-shape invoice and a current one posts
+ * one credit line per role. The AR_STORE line carries the store, which is how the store-receivables
+ * reconciliation reads its balance per store.
  *
  * Any allocation whose invoice journal is merely late (`RECEIVABLE_REVENUE_NOT_POSTED_YET`) refuses
  * the WHOLE payment, so a retry once that journal posts credits the payment in full rather than
@@ -131,9 +176,9 @@ async function classifyReceivables(
  * `RECEIVABLE_OUTSIDE_LEDGER`. A mixed payment is common, since settlement approval allocates
  * oldest-first across backfilled and live invoices.
  *
- * For a delivery-backed invoice, "late" means a `JOURNAL_PENDING` flag exists for its
- * `field_delivery_revenue` post, never merely a missing journal: every backfilled delivery has no
- * journal by construction, and the flag is the only evidence a post was attempted and failed (the
+ * For a delivery-backed invoice, "late" means a `JOURNAL_PENDING` flag exists for its revenue post
+ * (`field_delivery_revenue` or `nota_putus`), never merely a missing journal: every backfilled
+ * delivery has no journal by construction, and the flag is the only evidence a post was attempted and failed (the
  * AR retry-gate entry in `docs/ARCHITECTURE-NOTES.md`). A sell-through report is always invoiced
  * through a revenue post, so its missing journal is always late.
  *
@@ -191,6 +236,7 @@ async function postReceiptLocked(
       amount: true,
       method: true,
       paidAt: true,
+      storeId: true,
       allocations: { select: { receivableId: true, amount: true } },
     },
   });
@@ -201,17 +247,28 @@ async function postReceiptLocked(
     payment.allocations.map((a) => a.receivableId),
     tx,
   );
-  if (payment.allocations.some((a) => verdicts.get(a.receivableId) === "RECEIVABLE_REVENUE_NOT_POSTED_YET")) {
+  if (payment.allocations.some((a) => verdicts.get(a.receivableId)?.gate === "RECEIVABLE_REVENUE_NOT_POSTED_YET")) {
     return { ok: false, code: "RECEIVABLE_REVENUE_NOT_POSTED_YET" };
   }
-  const inLedger = payment.allocations.filter((a) => verdicts.get(a.receivableId) === null);
+  const inLedger = payment.allocations.filter((a) => verdicts.get(a.receivableId)?.gate === null);
   const excluded = payment.allocations.length - inLedger.length;
-  const value = roundCents(inLedger.reduce((sum, a) => sum + Number(a.amount), 0));
+  const creditByRole = new Map<StoreReceivableRole, number>();
+  for (const a of inLedger) {
+    const role = verdicts.get(a.receivableId)!.role;
+    creditByRole.set(role, (creditByRole.get(role) ?? 0) + Number(a.amount));
+  }
+  const credits = [...creditByRole].map(([role, amount]) => ({ role, amount: roundCents(amount) })).filter((c) => c.amount >= 0.01);
+  const value = roundCents(credits.reduce((sum, c) => sum + c.amount, 0));
   if (value < 0.01) return { ok: false, code: "RECEIVABLE_OUTSIDE_LEDGER" };
 
-  const lines = [
+  const lines: AutoJournalLine[] = [
     { role: debitRole(payment.method), debit: value, credit: 0 },
-    { role: "AR" as const, debit: 0, credit: value },
+    ...credits.map((c) => ({
+      role: c.role,
+      debit: 0,
+      credit: c.amount,
+      ...(c.role === "AR_STORE" ? { storeId: payment.storeId } : {}),
+    })),
   ];
   return generateAutoJournal(tx, "PAYMENT_RECEIPT", paymentId, lines, {
     date: payment.paidAt,
@@ -229,7 +286,7 @@ async function postReceiptLocked(
  * in — dating it back to the original payment would silently rewrite a prior period's cash.
  *
  * The reversal MIRRORS the receipt as posted — every line's debit and credit swapped on the same
- * chart account — and never recomputes it from the payment. A receipt can credit less than the
+ * chart account, store and channel — and never recomputes it from the payment. A receipt can credit less than the
  * payment (allocations outside the ledger are excluded), and a role can be re-pointed between the
  * two posts; recomputing would reverse what was never posted. No standing receipt means nothing to
  * reverse.
@@ -248,7 +305,7 @@ export async function postPaymentVoidJournal(
   }
   const receipt = await client.journal.findUnique({
     where: { sourceType_sourceId: { sourceType: "PAYMENT_RECEIPT", sourceId: paymentId } },
-    select: { lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
+    select: { lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true, channel: true, storeId: true } } },
   });
   if (!receipt) return { ok: false, code: "NOTHING_TO_POST" };
   try {
@@ -262,6 +319,8 @@ export async function postPaymentVoidJournal(
         debit: Number(l.credit),
         credit: Number(l.debit),
         ...(l.memo ? { memo: l.memo } : {}),
+        ...(l.channel ? { channel: l.channel } : {}),
+        ...(l.storeId ? { storeId: l.storeId } : {}),
       })),
     });
     return { ok: true, journalId: res.journalId, created: res.created };

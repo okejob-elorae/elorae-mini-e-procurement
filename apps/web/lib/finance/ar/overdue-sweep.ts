@@ -1,7 +1,7 @@
 import { prisma } from "@elorae/db";
 import { daysOverdue } from "./aging";
 import { OVERDUE_THRESHOLD_SETTING_KEY, parseOverdueThresholds } from "./overdue-thresholds";
-import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "./receivable-source";
+import { RECEIVABLE_SOURCE_SELECT, tryResolveReceivableSource } from "./receivable-source";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { sendNotificationToUsers } from "@/lib/notifications/recipients";
 import { capNotificationText } from "@/lib/notifications/text";
@@ -127,7 +127,9 @@ export async function runOverdueSweep(options?: {
     const collectorName = r.collector?.name ?? null;
     if (!collectorId || !r.collector) unassigned++;
 
-    const docNo = resolveReceivableSource(r).docNo;
+    /* An orphan (its delivery or report deleted under `relationMode = "prisma"`) still owes money and
+     * is still announced, under its own invoice number, rather than halting the whole run. */
+    const docNo = tryResolveReceivableSource(r)?.docNo ?? r.invoiceNo;
     const outstandingAmount = Number(r.outstandingAmount);
     const outstandingText = rupiah.format(outstandingAmount);
     /* `AdminNotification.title` is VARCHAR(191); a long store name would otherwise fail this crossing on every run. */

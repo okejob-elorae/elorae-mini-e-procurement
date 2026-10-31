@@ -26,7 +26,7 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 /* Every case drives several real serializable writers end to end, well past vitest's 5s default. */
 const SLOW = 60_000;
 
-const MAPPED_ROLES: PostingRole[] = ["AR", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_VARIANCE"];
+const MAPPED_ROLES: PostingRole[] = ["AR_STORE", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_VARIANCE"];
 
 d("konsi sell-through journals (test bed only)", () => {
   const fx = createSellThroughFixtures();
@@ -61,7 +61,7 @@ d("konsi sell-through journals (test bed only)", () => {
 
     const mapRole = (role: PostingRole, chartAccountId: string) =>
       prisma.journalAccountMapping.upsert({ where: { role }, create: { role, chartAccountId }, update: { chartAccountId } });
-    await mapRole("AR", arId);
+    await mapRole("AR_STORE", arId);
     await mapRole("SALES_REVENUE", salesRevenueId);
     await mapRole("COGS", cogsId);
     await mapRole("INVENTORY", inventoryId);
@@ -99,7 +99,7 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(sellThroughCostTotals([{ billedQty: 0, shrinkageQty: 0, surplusQty: 3, unitCost: 333.34 }]).surplus).toBe(1000.02);
   });
 
-  it("posts revenue Dr AR / Cr SALES_REVENUE for the total and COGS Dr COGS / Cr INVENTORY at unit cost, dated on the invoice date", async () => {
+  it("posts revenue Dr AR_STORE / Cr SALES_REVENUE for the total and COGS Dr COGS / Cr INVENTORY at unit cost, dated on the invoice date", async () => {
     /* SHELF_COUNT report billing 4 @ 40000, unitCost 10000 → revenue 160000, cogs 40000 */
     await setMethod("SHELF_COUNT");
     await transferIn(6);
@@ -125,6 +125,8 @@ d("konsi sell-through journals (test bed only)", () => {
     expect(cogsJournal!.date.toISOString()).toBe(doc.invoiceDate!.toISOString());
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === arId)!.debit)).toBe(160000);
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === arId)!.credit)).toBe(0);
+    /* Tagged so a payment receipt credits the same store receivable back, per store. */
+    expect(revenueJournal!.lines.find((l) => l.chartAccountId === arId)).toMatchObject({ memo: "AR_STORE", storeId: doc.storeId });
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === salesRevenueId)!.credit)).toBe(160000);
     expect(Number(revenueJournal!.lines.find((l) => l.chartAccountId === salesRevenueId)!.debit)).toBe(0);
     expect(Number(cogsJournal!.lines.find((l) => l.chartAccountId === cogsId)!.debit)).toBe(40000);

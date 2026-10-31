@@ -15,6 +15,13 @@ import { bacaTanggalMulaiTagihan, tagihanSesudahMulaiBuku } from '../gerbang-tan
 
 const D = (n: number) => new Prisma.Decimal(n);
 
+/** `status` modul pembayaran kantor untuk faktur yang diimpor: dari sisa terhadap nilainya, dalam sen. */
+function statusImpor(nilai: number, sisa: number): 'OUTSTANDING' | 'PARTIAL' | 'PAID' {
+  const sisaSen = Math.round(sisa * 100);
+  if (sisaSen <= 0) return 'PAID';
+  return sisaSen < Math.round(nilai * 100) ? 'PARTIAL' : 'OUTSTANDING';
+}
+
 export type AlasanLewat =
   | 'BARIS_BERMASALAH'
   | 'TOKO_TIDAK_DITEMUKAN'
@@ -185,6 +192,13 @@ export async function simpanImpor(
           // boleh menyisakan pecahan sen palsu.
           paidBeforeImport: Prisma.Decimal.max(0, D(b.nilai!).minus(b.sisa!)),
           settledAt: null,
+          // Kolom yang dibaca layar pembayaran kantor (Keuangan → Piutang).
+          // `paidAmount` tetap 0: kolom itu hanya uang yang dialokasikan lewat
+          // pembayaran kantor, dan yang dibayar sebelum impor sudah ada di
+          // `paidBeforeImport`.
+          originalAmount: D(b.nilai!),
+          outstandingAmount: D(b.sisa!),
+          status: statusImpor(b.nilai!, b.sisa!),
           source: 'IMPORT',
         },
         select: { id: true },

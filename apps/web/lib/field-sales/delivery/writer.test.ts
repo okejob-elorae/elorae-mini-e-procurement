@@ -4,7 +4,9 @@ import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder, CadanganTidakC
 import { approveFieldSalesOrder } from "../writer";
 import { DeliveryError } from "../errors";
 import { deliveredGoodsValue } from "./undelivered-residual";
-import { postFieldDeliveryRevenueJournal } from "@/lib/finance/ar/delivery-journal";
+import { bacaBahanNota } from "@/lib/finance/lapangan/jurnal";
+import { barisNota, jumlahSen } from "@/lib/finance/lapangan/aturan";
+import { PPN_BAWAAN } from "@/lib/finance/pajak/ppn";
 import { recordPayment } from "@/lib/finance/ar/payment-writer";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "@/lib/finance/journals/mapping-test-fixture";
@@ -1137,23 +1139,20 @@ d("recordFieldSalesDelivery — whole-rupiah total (test bed only)", () => {
     expect(Number(history.lineTotal)).toBe(1899.4);
   });
 
-  it("posts a balanced revenue journal at the rounded total", async () => {
+  /**
+   * The delivery's one journal is the nota journal (`lib/finance/lapangan`). Its receivable and
+   * revenue lines are read from what the engine reads (`bacaBahanNota`) through its own rule
+   * (`barisNota`), so the rounded total is pinned without the shared bed's GL cutover or mappings.
+   */
+  it("books the nota journal's receivable and revenue at the rounded total", async () => {
     const { deliveryId } = await deliverAll();
-    const posted = await postFieldDeliveryRevenueJournal(deliveryId, userId);
-    expect(posted).toMatchObject({ ok: true, created: true });
+    const bahan = await bacaBahanNota(prisma, deliveryId);
+    expect(bahan).toMatchObject({ total: 1899, putus: true, storeId });
 
-    const journal = await prisma.journal.findUniqueOrThrow({
-      where: { sourceType_sourceId: { sourceType: "FIELD_DELIVERY_REVENUE", sourceId: deliveryId } },
-      include: { lines: true },
-    });
-    const debit = journal.lines.reduce((sum, l) => sum + Number(l.debit), 0);
-    const credit = journal.lines.reduce((sum, l) => sum + Number(l.credit), 0);
-    expect(debit).toBe(1899);
-    expect(credit).toBe(1899);
-    const arLine = journal.lines.find((l) => l.chartAccountId === arAccountId)!;
-    const revenueLine = journal.lines.find((l) => l.chartAccountId === revenueAccountId)!;
-    expect(Number(arLine.debit)).toBe(1899);
-    expect(Number(revenueLine.credit)).toBe(1899);
+    const baris = barisNota({ total: bahan!.total, storeId, tanggal: bahan!.invoiceDate, pengaturanPpn: PPN_BAWAAN, hpp: [] });
+    expect(baris.find((b) => b.role === "AR_STORE")).toMatchObject({ sen: 189900, storeId });
+    expect(baris.find((b) => b.role === "SALES_REVENUE")).toMatchObject({ sen: -189900, storeId });
+    expect(jumlahSen(baris)).toBe(0);
   });
 
   it("settles to PAID on a whole-rupiah cash payment of the total", async () => {

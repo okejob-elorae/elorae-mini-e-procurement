@@ -1,6 +1,7 @@
 import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { KANAL_JURNAL } from "@/lib/finance/journals/kanal";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
@@ -86,6 +87,7 @@ async function loadInvoicedReport(client: AnyClient, id: string) {
     where: { id },
     select: {
       docNo: true,
+      storeId: true,
       status: true,
       baseline: true,
       invoiceDate: true,
@@ -175,6 +177,13 @@ async function voidJournalGaps(id: string, client: AnyClient): Promise<SellThrou
   );
 }
 
+/**
+ * DR the store receivable / CR SALES_REVENUE at the invoice total. The receivable is AR_STORE — the
+ * one store-receivables role every store invoice debits (a putus nota, a manual or imported
+ * invoice, this report), separate from the marketplace AR — tagged with its role as memo and with
+ * the store, so a payment receipt credits the same account back (`postPaymentReceiptJournal`) and
+ * the reversal mirrors it per store. Reports journaled before this rule carry AR and keep it.
+ */
 export async function postSellThroughRevenueJournal(id: string, postedById: string, client: AnyClient = prisma): Promise<GenerateAutoJournalResult> {
   const doc = await loadInvoicedReport(client, id);
   if (!doc) return { ok: false, code: "NOTHING_TO_POST" };
@@ -185,8 +194,8 @@ export async function postSellThroughRevenueJournal(id: string, postedById: stri
     SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_revenue,
     id,
     [
-      { role: "AR", debit: value, credit: 0 },
-      { role: "SALES_REVENUE", debit: 0, credit: value },
+      { role: "AR_STORE", debit: value, credit: 0, memo: "AR_STORE", storeId: doc.storeId },
+      { role: "SALES_REVENUE", debit: 0, credit: value, memo: "SALES_REVENUE", channel: KANAL_JURNAL.KONSINYASI, storeId: doc.storeId },
     ],
     { date: doc.invoiceDate, description: `Nota tagihan konsi ${doc.docNo}`, postedById },
   );
@@ -246,7 +255,8 @@ export async function postSellThroughSurplusJournal(id: string, postedById: stri
 
 /**
  * Reverses one original journal of a VOIDED report by mirroring it as posted: every line's debit
- * and credit swapped on the same chart account, under the reversal's own source type. It
+ * and credit swapped on the same chart account, store and channel, under the reversal's own source
+ * type. It
  * deliberately bypasses `resolveAccount` — a mapping changed since approve must not send the
  * reversal to a different account than the original hit. A replay is a no-op through the
  * `(sourceType, sourceId)` unique key. NOTHING_TO_POST when the report is not VOIDED or the
@@ -270,7 +280,7 @@ export async function postSellThroughVoidJournal(
   if (!doc || doc.status !== "VOIDED") return { ok: false, code: "NOTHING_TO_POST" };
   const original = await client.journal.findFirst({
     where: { sourceType: SELL_THROUGH_JOURNAL_SOURCE_TYPES[VOID_OF[kind]], sourceId: id },
-    select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true } } },
+    select: { date: true, lines: { select: { chartAccountId: true, debit: true, credit: true, memo: true, channel: true, storeId: true } } },
   });
   if (!original) return { ok: false, code: "NOTHING_TO_POST" };
   const date = doc.voidedAt !== null && doc.voidedAt > original.date ? doc.voidedAt : original.date;
@@ -285,6 +295,8 @@ export async function postSellThroughVoidJournal(
         debit: Number(l.credit),
         credit: Number(l.debit),
         ...(l.memo ? { memo: l.memo } : {}),
+        ...(l.channel ? { channel: l.channel } : {}),
+        ...(l.storeId ? { storeId: l.storeId } : {}),
       })),
     });
     return { ok: true, journalId: res.journalId, created: res.created };

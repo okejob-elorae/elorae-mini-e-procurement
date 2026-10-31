@@ -1004,6 +1004,10 @@ d("konsi sell-through writer (test bed only)", () => {
       expect(Number(doc.receivable?.originalAmount)).toBe(160000);
       expect(Number(doc.receivable?.outstandingAmount)).toBe(160000);
       expect(doc.receivable?.dueDate.getTime()).toBe(doc.dueDate?.getTime());
+      /* The receivables module's own columns, so its screens show the report's real figures. */
+      expect(doc.receivable).toMatchObject({ invoiceNo: doc.docNo, source: "DELIVERY", salesmanId: state.salesmanId });
+      expect(Number(doc.receivable?.amount)).toBe(160000);
+      expect(Number(doc.receivable?.outstanding)).toBe(160000);
       expect(doc.taxInvoice).toMatchObject({ status: "PENDING", deliveryId: null });
     }, SLOW);
 

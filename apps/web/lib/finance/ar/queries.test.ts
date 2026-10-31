@@ -615,6 +615,32 @@ d("AR queries — sell-through source (test bed only)", () => {
     expect(sellThroughRow.sourceKind).toBe("SELL_THROUGH");
   });
 
+  it("lists a MANUAL receivable under its own invoice number instead of failing the page", async () => {
+    const manual = await prisma.receivable.create({
+      data: {
+        storeId,
+        invoiceNo: `TEST-ARQ2-INV-${token}`,
+        source: "MANUAL",
+        salesmanId: putusSalesmanId,
+        invoiceDate: new Date("2026-05-25T00:00:00.000+07:00"),
+        dueDate: new Date("2026-06-25T00:00:00.000+07:00"),
+        amount: 700,
+        outstanding: 700,
+        originalAmount: 700,
+        outstandingAmount: 700,
+      },
+    });
+    try {
+      const row = (await listReceivables({ storeId })).rows.find((r) => r.id === manual.id);
+      expect(row).toMatchObject({ docNo: `TEST-ARQ2-INV-${token}`, sourceKind: "INVOICE", salesmanName: `Sales Putus ${token}` });
+      expect((await listReceivables({ storeId, salesmanId: putusSalesmanId })).rows.map((r) => r.id)).toContain(manual.id);
+      expect((await listReceivables({ storeId, search: `TEST-ARQ2-INV-${token}` })).rows.map((r) => r.id)).toEqual([manual.id]);
+      expect((await getReceivable(manual.id))?.source).toMatchObject({ kind: "INVOICE", origin: "MANUAL" });
+    } finally {
+      await prisma.receivable.delete({ where: { id: manual.id } });
+    }
+  });
+
   it("filters by salesmanId across both a delivery's order and a sell-through report's own salesman", async () => {
     const putusFiltered = await listReceivables({ storeId, salesmanId: putusSalesmanId });
     expect(putusFiltered.rows.map((r) => r.id)).toEqual([putusRecId]);

@@ -1,7 +1,10 @@
 /**
  * Resolves a `Receivable` or `TaxInvoice` row to whichever document actually backs it — a putus
  * `FieldSalesDelivery` or a `KonsiSellThrough` report — now that both relations on both models are
- * optional (`Receivable.deliveryId`/`sellThroughId`, `TaxInvoice.deliveryId`/`sellThroughId`).
+ * optional (`Receivable.deliveryId`/`sellThroughId`, `TaxInvoice.deliveryId`/`sellThroughId`). A
+ * receivable can also stand on its own invoice number: one typed in by hand (`source = MANUAL`) or
+ * imported from a spreadsheet (`source = IMPORT`) carries NEITHER relation by construction, and the
+ * `Receivable_one_source_check` CHECK demands exactly one source only of a `DELIVERY`-sourced row.
  *
  * Deliberately import-free apart from `import type { Prisma }` for the `Decimal` type on
  * `FieldSalesDelivery.total` — no runtime `@elorae/db` import, so this module stays cheap to pull
@@ -10,15 +13,19 @@
  * with `as const`. They carry no `satisfies Prisma.ReceivableSelect`/`TaxInvoiceSelect` annotation;
  * each consumer's own `select` inference type-checks them.
  *
- * `resolve*` prefers `delivery` when both relations are somehow set, and throws
- * `ReceivableSourceMissingError` when neither is — both branches are unreachable through the normal
- * write paths (exactly one of the two FKs is ever set), except for an orphan whose relation row was
- * deleted out from under it, which `relationMode = "prisma"` makes possible with no database FK to
- * stop it.
+ * `resolveReceivableSource` prefers `delivery` when both relations are somehow set, resolves a
+ * MANUAL/IMPORT row to its own invoice (`kind: "INVOICE"`), and throws `ReceivableSourceMissingError`
+ * only for a `DELIVERY`-sourced row that resolves neither relation — unreachable through the normal
+ * write paths, except for an orphan whose relation row was deleted out from under it, which
+ * `relationMode = "prisma"` makes possible with no database FK to stop it.
  */
 import type { Prisma } from "@elorae/db";
 
 export const RECEIVABLE_SOURCE_SELECT = {
+  invoiceNo: true,
+  source: true,
+  salesmanId: true,
+  salesman: { select: { name: true } },
   delivery: {
     select: {
       id: true,
@@ -47,6 +54,15 @@ export const RECEIVABLE_SOURCE_SELECT = {
 } as const;
 
 export type ReceivableSourceRow = {
+  /*
+   * The receivable's own invoice fields. Optional so a caller that builds its own `delivery`/
+   * `sellThrough` selection instead of spreading `RECEIVABLE_SOURCE_SELECT` still type-checks — but
+   * without them a MANUAL/IMPORT row cannot be told from an orphan and is refused as one.
+   */
+  invoiceNo?: string;
+  source?: "DELIVERY" | "IMPORT" | "MANUAL";
+  salesmanId?: string | null;
+  salesman?: { name: string | null } | null;
   delivery: {
     id: string;
     docNo: string;
@@ -87,14 +103,23 @@ export type ReceivableSource =
       salesmanName: string | null;
       periodStart: Date | null;
       periodEnd: Date;
+    }
+  | {
+      /* A receivable backed by nothing but its own invoice number; `docNo` IS that number. */
+      kind: "INVOICE";
+      origin: "MANUAL" | "IMPORT";
+      docNo: string;
+      salesmanId: string | null;
+      salesmanName: string | null;
     };
 
 /**
- * Thrown by `resolveReceivableSource`/`resolveTaxInvoiceSource` when a row carries neither
- * relation. Unreachable through any writer in this codebase — every `Receivable`/`TaxInvoice` is
- * created with exactly one of `deliveryId`/`sellThroughId` set — except for an orphan whose
- * relation row was deleted after the fact: `relationMode = "prisma"` means neither FK is backed by
- * a real database constraint, so that deletion is not stopped at the database.
+ * Thrown by `resolveReceivableSource`/`resolveTaxInvoiceSource` when a row carries no source it can
+ * name. Unreachable through any writer in this codebase — every delivery- or sell-through-backed
+ * `Receivable`/`TaxInvoice` is created with exactly one of `deliveryId`/`sellThroughId` set, and a
+ * MANUAL/IMPORT receivable resolves to its own invoice — except for an orphan whose relation row was
+ * deleted after the fact: `relationMode = "prisma"` means neither FK is backed by a real database
+ * constraint, so that deletion is not stopped at the database.
  */
 export class ReceivableSourceMissingError extends Error {
   constructor() {
@@ -127,17 +152,30 @@ export function resolveReceivableSource(row: ReceivableSourceRow): ReceivableSou
       periodEnd: row.sellThrough.periodEnd,
     };
   }
+  if (row.invoiceNo !== undefined && (row.source === "MANUAL" || row.source === "IMPORT")) {
+    return {
+      kind: "INVOICE",
+      origin: row.source,
+      docNo: row.invoiceNo,
+      salesmanId: row.salesmanId ?? null,
+      salesmanName: row.salesman?.name ?? null,
+    };
+  }
   throw new ReceivableSourceMissingError();
 }
 
 /**
- * `resolveReceivableSource` for a row that may be an orphan — `null` when neither relation
- * resolved (a dangling id under `relationMode = "prisma"`), the resolved source otherwise.
+ * `resolveReceivableSource` for a row that may be an orphan — `null` when the row names no source
+ * (a dangling id under `relationMode = "prisma"`), the resolved source otherwise.
  * For READ surfaces that must render an orphan rather than 500; writers keep the throwing form.
  */
 export function tryResolveReceivableSource(row: ReceivableSourceRow): ReceivableSource | null {
-  if (!row.delivery && !row.sellThrough) return null;
-  return resolveReceivableSource(row);
+  try {
+    return resolveReceivableSource(row);
+  } catch (e) {
+    if (e instanceof ReceivableSourceMissingError) return null;
+    throw e;
+  }
 }
 
 /**

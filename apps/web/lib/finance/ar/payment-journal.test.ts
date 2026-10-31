@@ -20,6 +20,7 @@ d("payment-journal (test bed only)", () => {
   let bankId = "";
   let revId = "";
   let arId = "";
+  let arStoreId = "";
   let paymentIds: string[] = [];
   let orderIds: string[] = [];
   let deliveryIds: string[] = [];
@@ -32,10 +33,10 @@ d("payment-journal (test bed only)", () => {
     token = Math.floor(Math.random() * 1_000_000);
     seq = 0;
     storeId = ""; userId = ""; paymentId = "";
-    cashId = ""; bankId = ""; revId = ""; arId = "";
+    cashId = ""; bankId = ""; revId = ""; arId = ""; arStoreId = "";
     paymentIds = []; orderIds = []; deliveryIds = []; sellThroughIds = []; receivableIds = []; notificationIds = [];
     mappingSnapshot = undefined;
-    mappingSnapshot = await snapshotMappings(["CASH", "BANK", "SALES_REVENUE", "AR"]);
+    mappingSnapshot = await snapshotMappings(["CASH", "BANK", "SALES_REVENUE", "AR", "AR_STORE"]);
 
     const store = await prisma.store.create({
       data: { code: `TEST-PJ-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -52,6 +53,7 @@ d("payment-journal (test bed only)", () => {
     bankId = await mk(`9${token}2`, "ASET");
     revId = await mk(`9${token}3`, "PENDAPATAN");
     arId = await mk(`9${token}4`, "ASET");
+    arStoreId = await mk(`9${token}5`, "ASET");
     const map = async (role: string, id: string) =>
       prisma.journalAccountMapping.upsert({
         where: { role: role as never },
@@ -62,6 +64,7 @@ d("payment-journal (test bed only)", () => {
     await map("BANK", bankId);
     await map("SALES_REVENUE", revId);
     await map("AR", arId);
+    await map("AR_STORE", arStoreId);
   });
 
   afterEach(async () => {
@@ -78,15 +81,37 @@ d("payment-journal (test bed only)", () => {
     await prisma.konsiSellThrough.deleteMany({ where: { id: { in: sellThroughIds.map(seededId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [cashId, bankId, revId, arId].filter(Boolean) } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [cashId, bankId, revId, arId, arStoreId].filter(Boolean) } } });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
-  /* The gate only checks that the invoice's revenue journal exists, so a bare row stands in for the real post. */
+  /*
+   * The gate only checks that the invoice's revenue journal exists, so a bare row stands in for the
+   * real post. A bare row carries no AR_STORE line, which is the old shape: its receipt credits AR.
+   */
   async function journalSource(sourceType: "FIELD_DELIVERY_REVENUE" | "KONSI_SELLTHRU_REVENUE", sourceId: string) {
     await prisma.journal.create({
       data: { date: paidAt, description: "fixture", sourceType, sourceId, postedById: userId },
+    });
+  }
+
+  /* An invoice journal in today's shape: the store receivable debited on AR_STORE, tagged with its role. */
+  async function storeInvoiceJournal(sourceType: "FIELD_DELIVERY" | "KONSI_SELLTHRU_REVENUE", sourceId: string, amount: number) {
+    await prisma.journal.create({
+      data: {
+        date: paidAt,
+        description: "fixture",
+        sourceType,
+        sourceId,
+        postedById: userId,
+        lines: {
+          create: [
+            { chartAccountId: arStoreId, debit: amount, credit: 0, memo: "AR_STORE", storeId },
+            { chartAccountId: revId, debit: 0, credit: amount, memo: "SALES_REVENUE", storeId },
+          ],
+        },
+      },
     });
   }
 
@@ -297,6 +322,47 @@ d("payment-journal (test bed only)", () => {
     expect(await postPaymentReceiptJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
     const j = await receiptOf(paymentId);
     expect(Number(j!.lines.find((l) => l.chartAccountId === bankId)!.debit)).toBe(400);
+  });
+
+  it("an invoice whose nota journal debited AR_STORE is credited back on AR_STORE, with its store", async () => {
+    const { receivableId, deliveryId } = await makeReceivable(400, { revenueJournal: false });
+    await storeInvoiceJournal("FIELD_DELIVERY", deliveryId, 400);
+    paymentId = await createPayment("TRANSFER", 400, [{ receivableId, amount: 400 }]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
+    const j = await receiptOf(paymentId);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === bankId)!.debit)).toBe(400);
+    expect(j!.lines.find((l) => l.chartAccountId === arStoreId)).toMatchObject({ storeId });
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arStoreId)!.credit)).toBe(400);
+    expect(j!.lines.find((l) => l.chartAccountId === arId)).toBeUndefined();
+  });
+
+  it("a payment settling an old-shape invoice and a current one credits each the account its journal debited", async () => {
+    const old = await makeReceivable(300, { revenueJournal: true });
+    const current = await makeReceivable(200, { revenueJournal: false });
+    await storeInvoiceJournal("FIELD_DELIVERY", current.deliveryId, 200);
+    const report = await makeSellThroughReceivable(100, { revenueJournal: false });
+    await storeInvoiceJournal("KONSI_SELLTHRU_REVENUE", report.sellThroughId, 100);
+    paymentId = await createPayment("CASH", 600, [
+      { receivableId: old.receivableId, amount: 300 },
+      { receivableId: current.receivableId, amount: 200 },
+      { receivableId: report.receivableId, amount: 100 },
+    ]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
+    const j = await receiptOf(paymentId);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === cashId)!.debit)).toBe(600);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arId)!.credit)).toBe(300);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arStoreId)!.credit)).toBe(300);
+    expect(j!.description).not.toContain("sebagian");
+
+    /* The reversal mirrors the store dimension too, so the per-store receivable balance nets back. */
+    await prisma.payment.update({ where: { id: paymentId }, data: { status: "VOIDED", voidedAt } });
+    expect(await postPaymentVoidJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
+    const reversal = await prisma.journal.findUnique({
+      where: { sourceType_sourceId: { sourceType: "PAYMENT_VOID", sourceId: paymentId } },
+      include: { lines: true },
+    });
+    expect(reversal!.lines.find((l) => l.chartAccountId === arStoreId)).toMatchObject({ storeId });
+    expect(Number(reversal!.lines.find((l) => l.chartAccountId === arStoreId)!.debit)).toBe(300);
   });
 
   it("a payment with no allocations → refuses RECEIVABLE_OUTSIDE_LEDGER", async () => {

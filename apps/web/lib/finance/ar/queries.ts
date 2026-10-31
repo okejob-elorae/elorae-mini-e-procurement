@@ -24,10 +24,10 @@ export type ReceivableRow = {
   storeId: string;
   storeName: string;
   docNo: string;
-  /** Null only for a SELL_THROUGH row whose report has no salesman yet; a DELIVERY row keeps the
-   * pre-existing "" fallback so existing output is byte-identical. */
+  /** Null for a SELL_THROUGH row whose report has no salesman yet, or an INVOICE row raised without
+   * one; a DELIVERY row keeps the pre-existing "" fallback so existing output is byte-identical. */
   salesmanName: string | null;
-  sourceKind: "DELIVERY" | "SELL_THROUGH";
+  sourceKind: "DELIVERY" | "SELL_THROUGH" | "INVOICE";
   invoiceDate: Date;
   dueDate: Date;
   originalAmount: number;
@@ -54,12 +54,12 @@ export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
   }
 
   /*
-   * One `AND` element per independent `OR`: a receivable's salesman lives on either its delivery's
-   * order or its sellThrough report, so that filter is itself an `OR` now — and the search filter
-   * below is its own `OR` too. Two sibling `where.OR` assignments on the same object would silently
-   * overwrite each other, so each is nested inside its own `AND` element instead, keeping them
-   * independent. With no salesman filter this reduces to exactly the prior shape: a single `AND`
-   * element holding the search `OR`.
+   * One `AND` element per independent `OR`: a receivable's salesman lives on its delivery's order,
+   * its sellThrough report, or — for a MANUAL/IMPORT invoice backed by neither — the receivable row
+   * itself, so that filter is itself an `OR` now — and the search filter below is its own `OR` too.
+   * Two sibling `where.OR` assignments on the same object would silently overwrite each other, so
+   * each is nested inside its own `AND` element instead, keeping them independent. With no salesman
+   * filter this reduces to exactly the prior shape: a single `AND` element holding the search `OR`.
    */
   const andClauses: Prisma.ReceivableWhereInput[] = [];
 
@@ -68,6 +68,7 @@ export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
       OR: [
         { delivery: { order: { salesmanId: f.salesmanId } } },
         { sellThrough: { salesmanId: f.salesmanId } },
+        { source: { in: ["MANUAL", "IMPORT"] }, salesmanId: f.salesmanId },
       ],
     });
   }
@@ -79,6 +80,7 @@ export function whereFor(f: ReceivableFilters): Prisma.ReceivableWhereInput {
         { store: { name: { contains: search } } },
         { delivery: { docNo: { contains: search } } },
         { sellThrough: { docNo: { contains: search } } },
+        { source: { in: ["MANUAL", "IMPORT"] }, invoiceNo: { contains: search } },
       ],
     });
   }
@@ -170,8 +172,8 @@ export async function listReceivables(filters: ReceivableFilters): Promise<{
       storeId: r.storeId,
       storeName: r.store.name,
       docNo: source.docNo,
-      /* DELIVERY keeps the pre-existing "" fallback byte-identical; SELL_THROUGH may genuinely
-       * have no salesman yet, so it stays null rather than being coerced to "". */
+      /* DELIVERY keeps the pre-existing "" fallback byte-identical; SELL_THROUGH and INVOICE may
+       * genuinely have no salesman, so they stay null rather than being coerced to "". */
       salesmanName: source.kind === "DELIVERY" ? (source.salesmanName ?? "") : source.salesmanName,
       sourceKind: source.kind,
       invoiceDate: r.invoiceDate,
@@ -488,9 +490,9 @@ export type ReceivableExportRow = {
   outstandingAmount: number;
   status: string;
   collectorName: string | null;
-  /** Null only for a SELL_THROUGH row whose report has no salesman yet; see `ReceivableRow`. */
+  /** Null for a SELL_THROUGH or INVOICE row without a salesman; see `ReceivableRow`. */
   salesmanName: string | null;
-  sourceKind: "DELIVERY" | "SELL_THROUGH";
+  sourceKind: "DELIVERY" | "SELL_THROUGH" | "INVOICE";
 };
 
 /**

@@ -1,4 +1,5 @@
 import { prisma, type Prisma, type PrismaClient } from "@elorae/db";
+import { runSerializable } from "@/lib/db/tx-retry";
 import { generateAutoJournal } from "@/lib/finance/journal";
 import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
@@ -21,6 +22,7 @@ import {
   nilaiFakturDijurnal,
   nilaiReturBukuBesar,
   peranPotongan,
+  SEMUA_SUMBER_JURNAL_NOTA,
   SUMBER_LAPANGAN,
   tanggalJurnalKlaim,
   type BarisBertanda,
@@ -145,12 +147,39 @@ export async function bacaBahanNota(client: Klien, deliveryId: string): Promise<
   };
 }
 
+function klienAkar(client: Klien): client is PrismaClient {
+  return typeof (client as PrismaClient).$transaction === "function";
+}
+
+/**
+ * Jurnal nota tagihan satu pengiriman — satu-satunya jurnal piutang, pendapatan,
+ * PPN, dan HPP sebuah nota putus.
+ *
+ * Nota yang sudah memegang jurnal bentuk lama (`SUMBER_NOTA_LAMA`) dijawab
+ * `NOTHING_TO_POST`: jurnal `FIELD_DELIVERY` di atasnya mengakui nota yang sama
+ * dua kali. Pemeriksaannya di sini, bukan di pemanggil, karena pintunya banyak
+ * (kait pasca-commit, sapuan harian, "Selaraskan" per toko, posting ulang dari
+ * rekonsiliasi, tombol posting ulang di halaman piutang).
+ *
+ * Dibaca dan diposting dalam SATU transaksi serializable yang lebih dulu
+ * membaca baris pengirimannya. Koreksi tanggal nota (`updateDeliveryDatesAction`)
+ * menulis baris yang sama lalu memindahkan tanggal jurnal nota di transaksinya
+ * sendiri, jadi keduanya berurutan: jurnal tidak pernah tertinggal di tanggal
+ * lama sementara nota dan piutangnya sudah membawa tanggal baru.
+ */
 export async function postJurnalNota(deliveryId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalLapangan> {
-  const ada = await client.journal.findUnique({
-    where: { sourceType_sourceId: { sourceType: SUMBER_LAPANGAN.NOTA, sourceId: deliveryId } },
-    select: { id: true },
+  if (klienAkar(client)) return runSerializable((tx) => postJurnalNotaDalam(tx, deliveryId, postedById));
+  return postJurnalNotaDalam(client, deliveryId, postedById);
+}
+
+async function postJurnalNotaDalam(client: Prisma.TransactionClient, deliveryId: string, postedById: string): Promise<HasilJurnalLapangan> {
+  const ada = await client.journal.findMany({
+    where: { sourceId: deliveryId, sourceType: { in: [...SEMUA_SUMBER_JURNAL_NOTA] } },
+    select: { id: true, sourceType: true },
   });
-  if (ada) return { ok: true, journalId: ada.id, created: false };
+  const nota = ada.find((j) => j.sourceType === SUMBER_LAPANGAN.NOTA);
+  if (nota) return { ok: true, journalId: nota.id, created: false };
+  if (ada.length > 0) return { ok: false, code: "NOTHING_TO_POST" };
 
   const b = await bacaBahanNota(client, deliveryId);
   if (!b || !b.putus) return { ok: false, code: "NOTHING_TO_POST" };

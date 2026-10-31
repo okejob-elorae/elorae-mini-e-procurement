@@ -134,12 +134,42 @@ describe("resolveReceivableSource", () => {
     const row: ReceivableSourceRow = { delivery: null, sellThrough: null };
     expect(() => resolveReceivableSource(row)).toThrow(ReceivableSourceMissingError);
   });
+
+  it("resolves a MANUAL or IMPORT receivable to its own invoice", () => {
+    for (const origin of ["MANUAL", "IMPORT"] as const) {
+      const row: ReceivableSourceRow = {
+        invoiceNo: "INV/LAMA/0042",
+        source: origin,
+        salesmanId: "salesman-1",
+        salesman: { name: "Budi" },
+        delivery: null,
+        sellThrough: null,
+      };
+      expect(resolveReceivableSource(row)).toEqual({
+        kind: "INVOICE",
+        origin,
+        docNo: "INV/LAMA/0042",
+        salesmanId: "salesman-1",
+        salesmanName: "Budi",
+      });
+    }
+  });
+
+  it("still refuses a DELIVERY-sourced row whose delivery is gone, even with an invoice number", () => {
+    const row: ReceivableSourceRow = { invoiceNo: "DLV/0001", source: "DELIVERY", delivery: null, sellThrough: null };
+    expect(() => resolveReceivableSource(row)).toThrow(ReceivableSourceMissingError);
+  });
 });
 
 describe("tryResolveReceivableSource", () => {
   it("returns null for an orphan carrying neither relation", () => {
     const row: ReceivableSourceRow = { delivery: null, sellThrough: null };
     expect(tryResolveReceivableSource(row)).toBeNull();
+  });
+
+  it("resolves a MANUAL receivable instead of treating it as an orphan", () => {
+    const row: ReceivableSourceRow = { invoiceNo: "INV/9", source: "MANUAL", salesmanId: null, salesman: null, delivery: null, sellThrough: null };
+    expect(tryResolveReceivableSource(row)?.kind).toBe("INVOICE");
   });
 
   it("returns what resolveReceivableSource returns for a DELIVERY row", () => {

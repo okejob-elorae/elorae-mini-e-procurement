@@ -3,7 +3,7 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { PPN_BAWAAN } from "@/lib/finance/pajak/ppn";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { daftarkanSumberSapuan, type DokumenTanpaJurnal, type OpsiCariSapuan } from "@/lib/finance/sapuan/registri";
-import { barisKlaim, barisRetur, barisTukar, peranPotongan, SUMBER_LAPANGAN, type SumberLapangan } from "./aturan";
+import { barisKlaim, barisRetur, barisTukar, peranPotongan, SEMUA_SUMBER_JURNAL_NOTA, SUMBER_LAPANGAN, type SumberLapangan } from "./aturan";
 import { bacaBahanRetur } from "./jurnal";
 import { postingJurnalLapanganAman } from "./tertunda";
 
@@ -17,8 +17,15 @@ import { postingJurnalLapanganAman } from "./tertunda";
  * "Tanpa jurnal" = belum punya jurnal GENERASI PERTAMA (sourceId = id dokumen).
  * Jurnal bergenerasi yang sudah ada tetapi tertinggal dari keadaan dokumennya
  * diselaraskan oleh kait pasca-commit dan tombol "Selaraskan" di layar
- * rekonsiliasi, bukan oleh sapuan ini.
+ * rekonsiliasi, bukan oleh sapuan ini. Nota yang berjurnal bentuk lama
+ * (`SUMBER_NOTA_LAMA`) juga terhitung berjurnal: sapuan tidak pernah
+ * memberinya jurnal nota kedua.
  */
+
+/** sourceType yang berarti dokumen ini sudah berjurnal. */
+function jenisBerjurnal(sourceType: SumberLapangan): readonly string[] {
+  return sourceType === SUMBER_LAPANGAN.NOTA ? SEMUA_SUMBER_JURNAL_NOTA : [sourceType];
+}
 
 const HALAMAN = 100;
 
@@ -47,7 +54,7 @@ async function kumpulkan(
     const berjurnal = new Set(
       (
         await prisma.journal.findMany({
-          where: { sourceType, sourceId: { in: kandidat.map((k) => k.id) } },
+          where: { sourceType: { in: [...jenisBerjurnal(sourceType)] }, sourceId: { in: kandidat.map((k) => k.id) } },
           select: { sourceId: true },
         })
       ).map((j) => j.sourceId),

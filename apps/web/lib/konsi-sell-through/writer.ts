@@ -482,6 +482,7 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
       where: { id: input.id },
       select: {
         id: true,
+        docNo: true,
         storeId: true,
         method: true,
         status: true,
@@ -636,12 +637,30 @@ export async function approveSellThrough(input: ApproveSellThroughInput): Promis
     }
 
     if (pricing.total > 0) {
+      /*
+       * The report's number is its receivable's invoice number, the way a nota's is, so the
+       * receivables screens name it. A manual or imported invoice that already holds the number
+       * refuses the approve before the unique index does: a bare P2002 would reach the operator as
+       * a generic failure.
+       */
+      const taken = await tx.receivable.findUnique({ where: { invoiceNo: doc.docNo }, select: { id: true } });
+      if (taken) throw new SellThroughError("INVOICE_NO_TAKEN", doc.docNo);
+      /*
+       * Both column families are written: `originalAmount`/`outstandingAmount`/`status` for the
+       * sell-through and payment screens, `invoiceNo`/`amount`/`outstanding`/`salesmanId` for the
+       * receivables module (`lib/receivables`), the same dual-write as a putus nota's receivable.
+       */
       await tx.receivable.create({
         data: {
           sellThroughId: doc.id,
           storeId: doc.storeId,
+          invoiceNo: doc.docNo,
+          source: "DELIVERY",
+          salesmanId: input.salesmanId,
           invoiceDate: input.invoiceDate,
           dueDate,
+          amount: pricing.total,
+          outstanding: pricing.total,
           originalAmount: pricing.total,
           outstandingAmount: pricing.total,
         },

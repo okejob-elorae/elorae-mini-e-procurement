@@ -55,6 +55,39 @@ describe("sumberNotifikasiJurnal — metadata setiap penulis JOURNAL_PENDING", (
     });
   });
 
+  it("memetakan kind jurnal piutang (`postArJournalSafely`) — nota ke jurnal nota, pasangan lamanya setara", () => {
+    expect(sumberNotifikasiJurnal({ docId: "d1", kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE" })).toEqual({
+      tipe: "dokumen",
+      sourceType: "FIELD_DELIVERY",
+      sourceId: "d1",
+      setara: ["FIELD_DELIVERY_REVENUE"],
+    });
+    expect(sumberNotifikasiJurnal({ docId: "d1", kind: "field_delivery_cogs" })).toEqual({
+      tipe: "dokumen",
+      sourceType: "FIELD_DELIVERY",
+      sourceId: "d1",
+      setara: ["FIELD_DELIVERY_COGS"],
+    });
+    expect(sumberNotifikasiJurnal({ docId: "p1", kind: "ar_payment" })).toEqual(dokumenJurnal("PAYMENT_RECEIPT", "p1"));
+    expect(sumberNotifikasiJurnal({ docId: "p1", kind: "ar_payment_void" })).toEqual(dokumenJurnal("PAYMENT_VOID", "p1"));
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_revenue" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_REVENUE", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_cogs" })).toEqual(dokumenJurnal("KONSI_SELLTHRU_COGS", "k1"));
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_shrinkage" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_SHRINKAGE", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_surplus" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_SURPLUS", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_revenue_void" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_REVENUE_VOID", "k1"),
+    );
+    expect(sumberNotifikasiJurnal({ docId: "k1", kind: "konsi_sell_through_surplus_void" })).toEqual(
+      dokumenJurnal("KONSI_SELLTHRU_SURPLUS_VOID", "k1"),
+    );
+  });
+
   it("metadata yang tiba sebagai teks JSON dibaca sama dengan objeknya", () => {
     expect(sumberNotifikasiJurnal(JSON.stringify({ grnId: "g1", kind: "receipt", reason: "ERROR" }))).toEqual(
       dokumenJurnal("GRN", "g1"),
@@ -187,6 +220,43 @@ d("hitung & tandai JOURNAL_PENDING (basis data uji)", () => {
     // Pendapatan sudah berjurnal; HPP belum; bentuk asing tetap dihitung.
     expect(await hitungJurnalTertunda({ notifikasiIds: [rev, cogs, asing] })).toBe(2);
     expect(await dibaca(rev)).toBe(false);
+  });
+
+  it("tanda pengiriman (`field_delivery_*`) selesai oleh jurnal nota, atau oleh separuh pasangan lamanya sendiri", async () => {
+    const lewatNota = `dlv-nota-${token}`;
+    const lewatLama = `dlv-lama-${token}`;
+    const notaRev = await gagal({ docId: lewatNota, kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE", role: "AR" });
+    const notaCogs = await gagal({ docId: lewatNota, kind: "field_delivery_cogs", reason: "UNMAPPED_ROLE", role: "COGS" });
+    const lamaRev = await gagal({ docId: lewatLama, kind: "field_delivery_revenue", reason: "UNMAPPED_ROLE", role: "AR" });
+    const lamaCogs = await gagal({ docId: lewatLama, kind: "field_delivery_cogs", reason: "UNMAPPED_ROLE", role: "COGS" });
+    const semua = [notaRev, notaCogs, lamaRev, lamaCogs];
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(4);
+
+    // Satu jurnal nota membawa piutang, pendapatan, dan HPP: kedua tandanya beres.
+    await jurnal("FIELD_DELIVERY", lewatNota);
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(2);
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("FIELD_DELIVERY", lewatNota)])).toBe(2);
+    expect(await dibaca(notaRev)).toBe(true);
+    expect(await dibaca(notaCogs)).toBe(true);
+
+    // Separuh lama hanya menyelesaikan tandanya sendiri.
+    await jurnal("FIELD_DELIVERY_COGS", lewatLama);
+    expect(await hitungJurnalTertunda({ notifikasiIds: semua })).toBe(1);
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("FIELD_DELIVERY_COGS", lewatLama)])).toBe(1);
+    expect(await dibaca(lamaCogs)).toBe(true);
+    expect(await dibaca(lamaRev)).toBe(false);
+  });
+
+  it("tanda pembayaran dan konsi sell-through selesai begitu jurnal sumbernya ada", async () => {
+    const paymentId = `pay-${token}`;
+    const reportId = `kst-${token}`;
+    const bayar = await gagal({ docId: paymentId, kind: "ar_payment", reason: "UNMAPPED_ROLE", role: "AR_STORE" });
+    const konsi = await gagal({ docId: reportId, kind: "konsi_sell_through_cogs", reason: "UNMAPPED_ROLE", role: "COGS" });
+    expect(await hitungJurnalTertunda({ notifikasiIds: [bayar, konsi] })).toBe(2);
+
+    await jurnal("PAYMENT_RECEIPT", paymentId);
+    await jurnal("KONSI_SELLTHRU_COGS", reportId);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [bayar, konsi] })).toBe(0);
   });
 
   it("pembayaran pemasok: jurnal yang berdiri SEBELUM kegagalan tidak menyelesaikannya; yang sesudahnya menyelesaikan", async () => {

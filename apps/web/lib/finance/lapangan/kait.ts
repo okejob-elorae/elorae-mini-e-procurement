@@ -1,4 +1,5 @@
 import { SUMBER_LAPANGAN } from "./aturan";
+import type { HasilPostingLapangan } from "./tertunda";
 
 /*
  * Kait pasca-commit untuk aksi server — KHUSUS SERVER, TIDAK PERNAH MELEMPAR.
@@ -49,6 +50,23 @@ async function posting(sumber: (typeof SUMBER_LAPANGAN)[keyof typeof SUMBER_LAPA
 
 export function kaitNotaTerbit(deliveryId: string, userId: string): Promise<void> {
   return aman("nota", () => posting(SUMBER_LAPANGAN.NOTA, deliveryId, userId));
+}
+
+/**
+ * `kaitNotaTerbit` yang mengembalikan hasilnya, untuk pemanggil yang perlu tahu
+ * apakah jurnal notanya kini berdiri (posting ulang dari halaman piutang,
+ * pengiriman yang selesai lewat surat jalan — `lib/finance/ar/delivery-journal.ts`).
+ * `null` = kait mati (di bawah vitest) atau mesinnya gagal dimuat. Tidak
+ * pernah melempar, sama dengan kait lain.
+ */
+export async function postingNotaKait(deliveryId: string, userId: string): Promise<HasilPostingLapangan | null> {
+  if (kaitMati()) return null;
+  try {
+    return await posting(SUMBER_LAPANGAN.NOTA, deliveryId, userId);
+  } catch (e) {
+    console.error("[jurnal-lapangan] kait nota gagal", e);
+    return null;
+  }
 }
 
 export function kaitTukarSelesai(exchangeId: string, userId: string): Promise<void> {

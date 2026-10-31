@@ -41,7 +41,7 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 import { buatKlaimPembayaran } from "@/lib/receivables/claim-writer";
 import { batalkanKlaim, putuskanKlaim } from "@/lib/receivables/writer";
 import { catatHitunganGudang, putuskanBeban } from "@/lib/receivables/return-writer";
-import { SUMBER_LAPANGAN } from "./aturan";
+import { SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "./aturan";
 import { kunciStokPengiriman, postJurnalNota, postJurnalTukar, selaraskanJurnalKlaim, selaraskanJurnalRetur } from "./jurnal";
 import { kaitKlaimBerubah, kaitReturBerubah } from "./kait";
 import { postingJurnalLapanganAman } from "./tertunda";
@@ -335,6 +335,43 @@ describe("nota tagihan putus", () => {
     await buatPenyesuaianKirim(orderNo, deliveryId, lineId, 2, 50_000);
     expect(await postingJurnalLapanganAman(SUMBER_LAPANGAN.NOTA, deliveryId, keuanganId)).toMatchObject({ ok: true, created: true });
     expect((await prisma.adminNotification.findUnique({ where: { id: tanda[0].id }, select: { readAt: true } }))?.readAt).not.toBeNull();
+  });
+
+  it("nota yang sudah berjurnal bentuk lama tidak pernah diberi jurnal nota, dari pintu mana pun", async () => {
+    const lamaPendapatan = await buatNota({ total: 600_000, qty: 2, harga: 300_000, biaya: 100_000 });
+    const lamaHpp = await buatNota({ total: 600_000, qty: 2, harga: 300_000, biaya: 100_000 });
+    // Baris di akun uji supaya teardown (jurnal ber-akun uji) ikut menghapusnya.
+    const lama = async (sourceType: string, sourceId: string, debit: string, kredit: string, nilai: number) =>
+      prisma.journal.create({
+        data: {
+          date: new Date(),
+          description: `${tag} jurnal nota lama`,
+          sourceType,
+          sourceId,
+          postedById: keuanganId,
+          lines: {
+            create: [
+              { chartAccountId: h.akun.get(debit)!, debit: nilai, credit: 0 },
+              { chartAccountId: h.akun.get(kredit)!, debit: 0, credit: nilai },
+            ],
+          },
+        },
+      });
+    await lama(SUMBER_NOTA_LAMA.PENDAPATAN, lamaPendapatan.deliveryId, "AR_STORE", "SALES_REVENUE", 600_000);
+    await lama(SUMBER_NOTA_LAMA.HPP, lamaHpp.deliveryId, "COGS", "INVENTORY_FG", 200_000);
+
+    for (const { deliveryId } of [lamaPendapatan, lamaHpp]) {
+      expect(await postJurnalNota(deliveryId, keuanganId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+      expect(await postingJurnalLapanganAman(SUMBER_LAPANGAN.NOTA, deliveryId, keuanganId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+      expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, deliveryId)).toBe(0);
+    }
+    const opsi = { sejak: new Date(Date.now() - 3_600_000), sampai: new Date(Date.now() + 3_600_000), batas: 1000 };
+    const tanpaJurnal = (await cariNotaTanpaJurnal(opsi)).map((d) => d.id);
+    expect(tanpaJurnal).not.toContain(lamaPendapatan.deliveryId);
+    expect(tanpaJurnal).not.toContain(lamaHpp.deliveryId);
+    expect(await selaraskanJurnalToko(tokoId, keuanganId)).toMatchObject({ berubah: 0, gagal: [] });
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, lamaPendapatan.deliveryId)).toBe(0);
+    expect(await jumlahGenerasi(SUMBER_LAPANGAN.NOTA, lamaHpp.deliveryId)).toBe(0);
   });
 });
 
