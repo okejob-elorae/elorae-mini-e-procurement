@@ -1,16 +1,21 @@
 "use client";
 
+import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Truck } from "lucide-react";
+import { ChevronRight, Truck } from "lucide-react";
 import type { CanvasserSummary } from "@/lib/canvassing/queries";
+import type { AlasanBukanKanvas } from "@/lib/canvassing/kelayakan-kanvas";
+import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import {
   Table,
   TableBody,
@@ -21,7 +26,8 @@ import {
 } from "@/components/ui/table";
 
 type Props = {
-  canvassers: CanvasserSummary[];
+  /** `bukanKanvas` terisi hanya untuk yang masih memegang stok mobil padahal bukan sales kanvas. */
+  canvassers: Array<CanvasserSummary & { bukanKanvas?: AlasanBukanKanvas | null }>;
 };
 
 export function CanvassingListClient({ canvassers }: Props) {
@@ -31,10 +37,7 @@ export function CanvassingListClient({ canvassers }: Props) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       <Card>
         <CardHeader>
@@ -57,23 +60,43 @@ export function CanvassingListClient({ canvassers }: Props) {
                     <TableHead>{t("colCanvasser")}</TableHead>
                     <TableHead className="text-right">{t("colLines")}</TableHead>
                     <TableHead className="text-right">{t("colTotalQty")}</TableHead>
+                    <TableHead className="w-10" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {canvassers.map((c) => (
                     <TableRow
                       key={c.id}
-                      className="cursor-pointer hover:bg-muted/50"
+                      className="group cursor-pointer hover:bg-muted/50"
                       onClick={() =>
                         startTransition(() => router.push(`/backoffice/canvassing/${c.id}`))
                       }
                     >
                       <TableCell className="font-medium">
-                        <div>{c.name}</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/backoffice/canvassing/${c.id}`}
+                            className={TAUTAN_DOKUMEN}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {c.name}
+                          </Link>
+                          {c.bukanKanvas && (
+                            <Badge variant="outline" className="border-amber-500/40 text-amber-700 dark:text-amber-300">
+                              {t(`lencanaBukanKanvas.${c.bukanKanvas}`)}
+                            </Badge>
+                          )}
+                        </div>
                         <div className="text-xs text-muted-foreground">{c.email}</div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{c.lineCount}</TableCell>
                       <TableCell className="text-right tabular-nums">{c.totalQty}</TableCell>
+                      <TableCell className="w-10 text-right">
+                        <ChevronRight
+                          className="ml-auto h-4 w-4 text-muted-foreground transition-colors group-hover:text-foreground"
+                          aria-hidden
+                        />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

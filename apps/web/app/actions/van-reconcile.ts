@@ -10,6 +10,7 @@ import { postVanJournalSafely } from "@/lib/canvassing/post-van-journal-safely";
 import type { VanJournalFailure } from "@/lib/canvassing/post-van-journal-safely";
 import { postVanReconcileJournal } from "@/lib/canvassing/van-journal";
 import { isJournalRetryable } from "@/lib/canvassing/journal-pending";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 
 export type RecordVanReconcileActionResult =
@@ -70,6 +71,8 @@ export async function postVanReconcileJournalAction(
   }
 
   const r = await postVanReconcileJournal(vanReconcileId, session.user.id);
+  // Jurnal berdiri → tanda "Jurnal gagal" selesai (Beranda). Barisnya tetap ada untuk tombol ulang.
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("VAN_RECONCILE", vanReconcileId)]);
   revalidatePath(`/backoffice/canvassing/reconcile/${vanReconcileId}`);
   revalidatePath(`/backoffice/canvassing/${recon.canvasserId}`);
   return r;

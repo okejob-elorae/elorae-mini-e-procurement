@@ -4,6 +4,7 @@ import { prisma } from '@elorae/db';
 import { ItemType } from '@elorae/db';
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { parseItemVariants } from "@/lib/items/variants";
 
 /**
  * Every "use server" export is independently callable regardless of what the page gated
@@ -151,10 +152,10 @@ export async function getStockCard(
   };
 }
 
-/** Returns variant SKU options for an item (from item.variants, the stock ledger, and stock movement history - the two movement sources are unioned, not swapped, because each covers a gap the other has). Use to populate variant combobox when item is selected, before Load. */
+/** Returns variant SKU options for an item (from item.variants - also in JSON-text / upper-case-key form -, the stock rows, the stock ledger, and stock movement history - the two movement sources are unioned, not swapped, because each covers a gap the other has). Use to populate variant combobox when item is selected, before Load. */
 export async function getItemVariantOptions(itemId: string): Promise<string[]> {
   await assertInventoryView();
-  const [item, ledgerVariants, movementVariants] = await Promise.all([
+  const [item, ledgerVariants, movementVariants, stockVariants] = await Promise.all([
     prisma.item.findUnique({
       where: { id: itemId },
       select: { variants: true },
@@ -184,18 +185,18 @@ export async function getItemVariantOptions(itemId: string): Promise<string[]> {
       where: { itemId, variantSku: { not: null } },
       _count: { id: true },
     }),
+    prisma.inventoryValue.findMany({
+      where: { itemId, variantSku: { not: null } },
+      select: { variantSku: true },
+    }),
   ]);
-  const fromItem: string[] = [];
-  if (Array.isArray(item?.variants)) {
-    for (const v of item.variants as Array<Record<string, unknown>>) {
-      const sku = v?.sku != null ? String(v.sku).trim() : '';
-      if (sku) fromItem.push(sku);
-    }
-  }
+  const fromItem = parseItemVariants(item?.variants)
+    .map((v) => (v?.sku != null ? String(v.sku).trim() : ''))
+    .filter(Boolean);
   const fromLedger = ledgerVariants
     .map((g) => g.variantSku)
     .filter((s) => s.trim() !== '');
-  const fromMovements = movementVariants
+  const fromMovements = [...movementVariants, ...stockVariants]
     .map((g) => g.variantSku)
     .filter((s): s is string => s != null && s.trim() !== '');
   const set = new Set<string>([...fromItem, ...fromLedger, ...fromMovements]);

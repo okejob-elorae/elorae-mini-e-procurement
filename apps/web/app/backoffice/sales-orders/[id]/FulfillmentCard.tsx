@@ -21,8 +21,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { SalesChannel, SalesOrderFulfillmentStatus, SalesOrderStatus } from "@/lib/constants/enums";
-import { formatDateTime } from "@/lib/sales-orders/format";
 import { hasStoredResi, isAwaitingResi } from "@/lib/sales-orders/resi-pending";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import {
   finishPickAction,
   finishPackAction,
@@ -344,7 +344,7 @@ function TimelineRow({
     <div className="flex justify-between">
       <span className="text-muted-foreground">{label}</span>
       <span>
-        {at ? formatDateTime(at, locale) : "—"}
+        {at ? formatDisplayDateTime(at, locale) : "—"}
         {by ? <span className="text-muted-foreground ml-2">{byUserLabel(by)}</span> : null}
       </span>
     </div>

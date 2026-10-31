@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ArrowLeft, BookText, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { VanSaleDetail } from "@/lib/canvassing/sale-queries";
@@ -13,8 +13,10 @@ import { postVanSaleJournalAction } from "@/app/actions/van-sale";
 import { vanSaleNotaHtml } from "@/lib/print/van-sale-nota-html";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { hasPermission } from "@/lib/rbac";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import {
   Table,
@@ -24,18 +26,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatRupiah } from "@/lib/format/rupiah";
 
 type Props = {
   sale: VanSaleDetail;
 };
-
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 // Exact 2dp display — for the Subtotal row ONLY. `formatRupiah` rounds for display, which would
 // make Subtotal look identical to the already-rounded Total whenever they differ by under Rp 1.
@@ -55,16 +50,6 @@ function formatAdjustment(value: number): string {
   return `${sign}${formatRupiahExact(Math.abs(value))}`;
 }
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function Field({ label, value }: { label: string; value: string | null }) {
   if (!value) return null;
   return (
@@ -78,6 +63,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function VanSaleDetailClient({ sale }: Props) {
   const t = useTranslations("vanSale.backoffice.detail");
   const tVanSale = useTranslations("vanSale");
+  const locale = useLocale();
   const router = useRouter();
   const { data: session } = useSession();
   const canPostJournal = hasPermission(session?.user?.permissions ?? [], "journals:manage");
@@ -149,7 +135,10 @@ export function VanSaleDetailClient({ sale }: Props) {
               {tVanSale("back")}
             </Link>
           </Button>
-          <h1 className="text-2xl font-semibold font-mono">{sale.docNo}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold font-mono">{sale.docNo}</h1>
+            <TombolBantuan judul={sale.docNo} />
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {sale.journalId ? (
@@ -183,7 +172,7 @@ export function VanSaleDetailClient({ sale }: Props) {
         <Field label={t("salesmanLabel")} value={sale.salesmanLabel} />
         <Field label={t("buyerLabel")} value={sale.storeName ?? sale.buyerName ?? t("buyerWalkIn")} />
         <Field label={t("buyerPhoneLabel")} value={sale.buyerPhone} />
-        <Field label={t("dateLabel")} value={formatDateTime(sale.createdAtIso)} />
+        <Field label={t("dateLabel")} value={formatDisplayDateTime(sale.createdAtIso, locale)} />
         {sale.saleLat !== null && sale.saleLng !== null && (
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{t("gpsLabel")}</span>
@@ -244,7 +233,7 @@ export function VanSaleDetailClient({ sale }: Props) {
             <TableBody>
               {sale.lines.map((line, i) => (
                 <TableRow key={i}>
-                  <TableCell>{line.productName}</TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">{line.productName}</TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>
                   <TableCell className="text-right">{line.qty}</TableCell>
                   <TableCell className="text-right">{formatRupiah(line.unitPrice)}</TableCell>

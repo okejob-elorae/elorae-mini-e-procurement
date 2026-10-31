@@ -61,6 +61,7 @@ describe("OutboxProcessor", () => {
       jubelioOutbox: {
         findUnique: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
+        // Klaim atomik PENDING → PROCESSING (updateMany); 1 = klaim ini menang.
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };

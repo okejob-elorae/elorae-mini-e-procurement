@@ -1,7 +1,9 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
 import { ExpirationPlugin, NetworkFirst, Serwist, StaleWhileRevalidate } from "serwist";
+// Jalur relatif, bukan alias `@/`: service worker dibangun penyusun anak Serwist.
 import { parsePushPayload } from "../../lib/pwa/push-payload";
+import { tautanKabar } from "../../lib/notifications/tautan-kabar";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -66,9 +68,25 @@ const serwist = new Serwist({
 /**
  * FCM push for the PWA, handled here rather than by a Firebase messaging service worker: two
  * service workers cannot share the `/pwa/` scope, and the PWA obtains its FCM token against this
- * registration. Every push MUST show a notification (Chrome's `userVisibleOnly` contract), so an
+ * registration. Every push MUST show a notification (Chrome's `userVisibleOnly` contract, and
+ * iPhone revokes the subscription of an app that receives a push without showing anything), so an
  * unreadable payload still shows a generic one.
+ *
+ * FCM sends `{ notification: { title, body }, data: { type, ...ids } }`. A field-staff heads-up
+ * (`kabariPengguna`) opens its own screen through `tautanKabar`; every other type opens through
+ * the bell's navigation map (`parsePushPayload`).
  */
+function dataPush(raw: unknown): Record<string, string> {
+  const root = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
+  const data = root?.data;
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
 self.addEventListener("push", (event) => {
   let raw: unknown = null;
   try {
@@ -77,12 +95,15 @@ self.addEventListener("push", (event) => {
     raw = null;
   }
   const payload = parsePushPayload(raw);
+  const data = dataPush(raw);
+  const kabar = data.type ? tautanKabar(data.type, data) : null;
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
       tag: payload.tag,
       icon: "/pwa/icon-192.png",
-      data: { url: payload.url },
+      badge: "/pwa/icon-192.png",
+      data: { ...data, url: kabar ?? payload.url },
     }),
   );
 });

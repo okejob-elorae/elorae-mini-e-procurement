@@ -42,13 +42,13 @@ export function StockHealthKpis({ summary, activeStatus, onSelectStatus }: Props
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
-            {summary.totalAvailable.toLocaleString()}
+            {summary.totalAvailable.toLocaleString('id-ID')}
           </div>
           <p className="text-xs text-muted-foreground">
             {t("kpiTotalStockHint", { count: summary.totalItems })}
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            {t("kpiTotalValue", { value: summary.totalValue.toLocaleString() })}
+            {t("kpiTotalValue", { value: summary.totalValue.toLocaleString('id-ID') })}
           </p>
         </CardContent>
       </Card>

@@ -1,5 +1,6 @@
 import { prisma } from '@elorae/db';
 import { getETAStatus } from '@/lib/eta-alerts';
+import { overduePOWhere } from '@/lib/purchase-orders/overdue';
 import type { POStatus } from '@elorae/db';
 import { serializePODetail, serializePOListRow } from '@/lib/purchase-orders/serialize';
 import {
@@ -7,6 +8,9 @@ import {
   poIdsWithStandingPaymentJournalWhileUnpaid,
 } from '@/lib/purchasing/supplier-payment-journal';
 import { paymentJournalPendingWhilePaid } from "@/lib/purchasing/post-supplier-payment-journal-safely";
+import { kreditReturPerPo, returUntukPo } from '@/lib/purchase-orders/kredit-retur-queries';
+import { hitungUtangPo, type RincianUtangPo } from '@/lib/purchase-orders/utang';
+import { syaratCariPo } from '@/lib/purchase-orders/cari-po';
 
 export type ListPOsFilters = {
   status?: POStatus;
@@ -18,6 +22,8 @@ export type ListPOsFilters = {
   paymentDueFrom?: Date;
   paymentDueTo?: Date;
   paid?: boolean;
+  /** Kata kunci: nomor PO, nama atau kode pemasok — disaring di server (`syaratCariPo`). */
+  cari?: string;
 };
 
 export type ListPOsOpts = { page: number; pageSize: number };
@@ -47,7 +53,37 @@ export type ListPOsExtras = {
  */
 type POListRow = ReturnType<typeof serializePOListRow> & {
   paymentJournalStandingWhileUnpaid?: boolean;
+  /** Σ kredit retur pemasok yang selesai untuk PO ini. */
+  kreditRetur?: number;
+  /** Utang ke pemasok: total − tidak akan datang (PO ditutup) − kredit retur. */
+  utang?: RincianUtangPo;
 };
+
+/**
+ * Selalu ditambahkan: satu `groupBy` untuk seluruh halaman. Tampilan saja —
+ * jurnal pembayaran pemasok tetap membaca GL, bukan angka ini.
+ */
+async function withUtang(rows: POListRow[]): Promise<POListRow[]> {
+  if (rows.length === 0) return rows;
+  const kredit = await kreditReturPerPo(rows.map((r) => r.id));
+  return rows.map((row) => {
+    const kreditRetur = kredit.get(row.id) ?? 0;
+    return {
+      ...row,
+      kreditRetur,
+      utang: hitungUtangPo(
+        {
+          status: row.status,
+          grandTotal: row.grandTotal,
+          ppnRatePercent: row.ppnRatePercent,
+          closedAt: row.closedAt,
+          items: row.items,
+        },
+        kreditRetur
+      ),
+    };
+  });
+}
 
 /**
  * Stamps the standing-payment flag onto rows when it was asked for. Scoped to the
@@ -108,10 +144,16 @@ export function buildPOsWhere(filters?: ListPOsFilters) {
     where.paidAt = null;
   }
   if (filters?.overdue) {
-    where.etaDate = { lt: new Date() };
+    /* Tanggal tiba hari ini belum terlambat: batasnya awal hari ini WIB, sama dengan `overduePOWhere`. */
+    where.etaDate = overduePOWhere().etaDate;
     /* ANDed in, never assigned to `where.status`, so an explicit status or statusIn still applies. */
     const openStatus = { status: { notIn: ["CLOSED", "OVER", "CANCELLED"] } };
     where.AND = Array.isArray(where.AND) ? [...where.AND, openStatus] : [openStatus];
+  }
+  const cari = syaratCariPo(filters?.cari);
+  if (cari) {
+    // AND, bukan OR di akar: tidak boleh menimpa saringan lain yang kelak memakai OR.
+    where.AND = Array.isArray(where.AND) ? [...where.AND, cari] : [cari];
   }
 
   return where;
@@ -161,7 +203,7 @@ export async function listPOs(
       prisma.purchaseOrder.count({ where }),
     ]);
     const items = await withStandingPaymentFlag(
-      pos.map((po) => serializePOListRow(po)),
+      await withUtang(pos.map((po) => serializePOListRow(po))),
       extras
     );
     return { items, totalCount };
@@ -174,7 +216,7 @@ export async function listPOs(
   });
 
   return withStandingPaymentFlag(
-    pos.map((po) => serializePOListRow(po)),
+    await withUtang(pos.map((po) => serializePOListRow(po))),
     extras
   );
 }
@@ -184,6 +226,8 @@ export async function getPOById(id: string) {
     where: { id },
     include: {
       supplier: true,
+      // Tahap produksi PO ini ("Buat PO" dari ruang kerja tahap).
+      planStage: { select: { id: true, name: true, planCategory: { select: { code: true, name: true } } } },
       items: {
         include: {
           item: {
@@ -194,6 +238,7 @@ export async function getPOById(id: string) {
               nameEn: true,
               type: true,
               variants: true,
+              kgPerRoll: true,
               uom: true,
             },
           },
@@ -227,11 +272,19 @@ export async function getPOById(id: string) {
     po.paidAt == null ? await hasStandingPaymentJournalWhileUnpaid(id) : false;
   /* The mirror image, for a paid PO: only asked when `paidAt` is set, for the same reason. */
   const paymentJournalPending = po.paidAt != null ? await paymentJournalPendingWhilePaid(id) : null;
+  const [returPemasok, penutup] = await Promise.all([
+    returUntukPo(id),
+    po.closedById
+      ? prisma.user.findUnique({ where: { id: po.closedById }, select: { name: true, email: true } })
+      : Promise.resolve(null),
+  ]);
 
   return serializePODetail({
     ...po,
     paymentJournalStandingWhileUnpaid,
     paymentJournalPending,
+    returPemasok,
+    closedByName: penutup ? penutup.name || penutup.email || null : null,
     items: po.items.map((line) => ({
       ...line,
       item: line.item
@@ -252,13 +305,8 @@ export async function getPOById(id: string) {
 }
 
 export async function getOverduePOs() {
-  const today = new Date();
-
   const pos = await prisma.purchaseOrder.findMany({
-    where: {
-      etaDate: { lt: today },
-      status: { notIn: ['CLOSED', 'OVER', 'CANCELLED'] },
-    },
+    where: overduePOWhere(),
     include: {
       supplier: {
         select: {
@@ -294,4 +342,29 @@ export async function getOverduePOs() {
       etaAlert: etaStatus,
     };
   });
+}
+
+/**
+ * Count-only variants for the sidebar badges. `getOverduePOs` above pulls the
+ * supplier and every line item because the dashboard table renders them; a
+ * badge needs one integer, and paying that price on every navigation would be
+ * a real cost for a decoration.
+ */
+/**
+ * PO yang sudah lewat tanggal tiba dan barangnya belum lengkap.
+ *
+ * `DRAFT` DIKECUALIKAN. Draft belum pernah dikirim ke pemasok mana pun, jadi ia
+ * tidak bisa terlambat — tidak ada yang berjanji apa pun. Sebelum ini sebuah
+ * draft yang tanggal perkiraannya kebetulan sudah lewat ikut terhitung, dan itu
+ * muncul sebagai lencana merah di menu samping yang tidak menunjuk pekerjaan
+ * apa pun. Lencana yang salah sekali membuat orang berhenti mempercayai
+ * seluruh lencana.
+ */
+export async function getOverduePOCount(): Promise<number> {
+  return prisma.purchaseOrder.count({ where: overduePOWhere() });
+}
+
+/** POs waiting for approval: DRAFT (an approver submitting one sends it to the supplier). */
+export async function getDraftPOCount(): Promise<number> {
+  return prisma.purchaseOrder.count({ where: { status: 'DRAFT' } });
 }

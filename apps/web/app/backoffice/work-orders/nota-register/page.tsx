@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { ArrowLeft, Loader2, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -22,7 +23,7 @@ import {
 } from '@/components/ui/table';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
-import { formatDateOnly, parseDateOnly, parseDateOnlyEnd } from '@/lib/date-only';
+import { formatDateOnly, formatDisplayDate, parseDateOnly, parseDateOnlyEnd } from '@/lib/date-only';
 import {
   Select,
   SelectContent,
@@ -36,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   getMaterialIssuesForCMTRegister,
@@ -47,9 +48,12 @@ import { logPrint } from '@/app/actions/audit';
 import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { Pagination } from '@/components/ui/pagination';
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { LABEL_NOTA_CMT } from '../label-nota-cmt';
 
 type RegisterRow = {
   id: string;
+  woId?: string;
   docNumber: string;
   issueType: string;
   issuedAt: Date;
@@ -58,21 +62,46 @@ type RegisterRow = {
 };
 
 export default function NotaRegisterPage() {
-  const tToasts = useTranslations('toasts');
   const tNota = useTranslations('notaRegister');
   const tPlaceholders = useTranslations('placeholders');
+  const tWO = useTranslations('workOrders');
+  const tCommon = useTranslations('common');
+  const locale = useLocale();
+  const issueTypeLabel = (type: string) =>
+    type === 'FABRIC' ? tNota('typeFabric') : type === 'ACCESSORIES' ? tNota('typeAccessories') : type;
   const [issues, setIssues] = useState<RegisterRow[]>([]);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [vendorId, setVendorId] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [issueType, setIssueType] = useState<'FABRIC' | 'ACCESSORIES' | ''>('');
+  // Saringan tinggal di URL (?vendor=&dari=&sampai=&jenis=&page=): berlaku
+  // langsung saat diubah, bisa dibagikan, dan bertahan saat kembali.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const vendorId = searchParams.get('vendor') ?? '';
+  const dateFrom = searchParams.get('dari') ?? '';
+  const dateTo = searchParams.get('sampai') ?? '';
+  const jenisUrl = searchParams.get('jenis');
+  const issueType: 'FABRIC' | 'ACCESSORIES' | '' = jenisUrl === 'FABRIC' || jenisUrl === 'ACCESSORIES' ? jenisUrl : '';
+  const page = Math.max(1, Number(searchParams.get('page')) || 1);
   const [isLoading, setIsLoading] = useState(false);
   const [printIssueId, setPrintIssueId] = useState<string | null>(null);
   const [printData, setPrintData] = useState<Awaited<ReturnType<typeof getMaterialIssueForPrint>>>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
+  const pageSize = DEFAULT_PAGE_SIZE;
   const [totalCount, setTotalCount] = useState(0);
+
+  /** Ganti parameter URL sekaligus; saringan baru kembali ke halaman 1. */
+  const setParams = useCallback(
+    (ubah: Record<string, string | null>) => {
+      const q = new URLSearchParams(searchParams.toString());
+      for (const [k, v] of Object.entries(ubah)) {
+        if (v == null || v === '') q.delete(k);
+        else q.set(k, v);
+      }
+      if (!('page' in ubah)) q.delete('page');
+      const qs = q.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
 
   useEffect(() => {
     import('@/app/actions/suppliers')
@@ -80,19 +109,18 @@ export default function NotaRegisterPage() {
       .then((data: unknown) => setSuppliers(Array.isArray(data) ? data : []))
       .catch(() => {
         setSuppliers([]);
-        toast.error('Failed to load suppliers');
+        toast.error(tNota('loadSuppliersFailed'));
       });
-  }, []);
+  }, [tNota]);
 
   const loadIssues = async () => {
     setIsLoading(true);
     try {
       const filters: { vendorId?: string; dateFrom?: Date; dateTo?: Date; issueType?: 'FABRIC' | 'ACCESSORIES' } = {};
       if (vendorId) filters.vendorId = vendorId;
-      const parsedFrom = parseDateOnly(dateFrom);
-      const parsedTo = parseDateOnlyEnd(dateTo);
-      if (parsedFrom) filters.dateFrom = parsedFrom;
-      if (parsedTo) filters.dateTo = parsedTo;
+      // Tanggal WIB; "sampai" inklusif sampai akhir harinya (dulu tengah malam UTC → hari terakhir hilang).
+      if (dateFrom) filters.dateFrom = parseDateOnly(dateFrom);
+      if (dateTo) filters.dateTo = parseDateOnlyEnd(dateTo);
       if (issueType) filters.issueType = issueType;
       const result = await getMaterialIssuesForCMTRegister(filters, { page, pageSize });
       if (result != null && typeof result === 'object' && 'items' in result && 'totalCount' in result) {
@@ -104,7 +132,7 @@ export default function NotaRegisterPage() {
         setTotalCount(list.length);
       }
     } catch {
-      toast.error('Failed to load issues');
+      toast.error(tNota('loadFailed'));
     } finally {
       setIsLoading(false);
     }
@@ -127,8 +155,8 @@ export default function NotaRegisterPage() {
     if (!printIssueId) return;
     getMaterialIssueForPrint(printIssueId)
       .then(setPrintData)
-      .catch(() => toast.error('Failed to load for print'));
-  }, [printIssueId]);
+      .catch(() => toast.error(tNota('printLoadFailed')));
+  }, [printIssueId, tNota]);
 
   const handlePrint = async () => {
     if (!printData || !printIssueId) return;
@@ -140,56 +168,49 @@ export default function NotaRegisterPage() {
       issuedAt: printData.issuedAt,
       issueType: printData.issueType,
       lines: printData.lines,
-      labels: {
-        title: 'Surat Jalan CMT',
-        doc: 'Doc',
-        wo: 'WO',
-        vendor: 'Vendor',
-        date: 'Date',
-        type: 'Type',
-        item: 'Item',
-        qty: 'Qty',
-        uom: 'UOM',
-      },
+      labels: { ...LABEL_NOTA_CMT, title: 'Surat Jalan CMT' },
     });
-    printHtmlInIframe(html, 'Print Surat Jalan CMT', { errorMessage: tToasts('failedToLoadForPrint') });
+    printHtmlInIframe(html, 'Print Surat Jalan CMT', { errorMessage: tNota('printLoadFailed') });
   };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/backoffice/work-orders">
-          <Button variant="ghost" size="icon">
+        <Button asChild variant="ghost" size="icon">
+          <Link
+            href="/backoffice/work-orders"
+            aria-label={tNota('backToWorkOrders')}
+            title={tNota('backToWorkOrders')}
+          >
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
+          </Link>
+        </Button>
+        <div className="flex items-center gap-1">
           <h1 className="text-2xl font-bold">{tNota('pageTitle')}</h1>
-          <p className="text-muted-foreground">{tNota('pageSubtitle')}</p>
+          <TombolBantuan judul={tNota('pageTitle')} />
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Filter</CardTitle>
-          <CardDescription>{tNota('filterSubtitle')}</CardDescription>
+          <CardTitle>{tNota('filterTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4 items-end">
           <div className="space-y-2">
-            <Label>Vendor (CMT)</Label>
+            <Label>{tNota('vendorLabel')}</Label>
             <SearchableCombobox
               options={[
                 { value: '_', label: tPlaceholders('all') },
                 ...suppliers.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })),
               ]}
               value={vendorId || '_'}
-              onValueChange={(v) => setVendorId(v === '_' ? '' : v)}
+              onValueChange={(v) => setParams({ vendor: v === '_' ? null : v })}
               placeholder={tPlaceholders('all')}
               triggerClassName="w-[220px]"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="nota-date-range">Dari – Sampai</Label>
+            <Label htmlFor="nota-date-range">{tNota('dateRangeLabel')}</Label>
             <DateRangePicker
               id="nota-date-range"
               triggerClassName="w-[220px]"
@@ -197,62 +218,81 @@ export default function NotaRegisterPage() {
                 from: parseDateOnly(dateFrom),
                 to: parseDateOnly(dateTo),
               }}
-              onChange={(range) => {
-                setDateFrom(range?.from ? formatDateOnly(range.from) : '');
-                setDateTo(range?.to ? formatDateOnly(range.to) : '');
-              }}
+              onChange={(range) =>
+                setParams({
+                  dari: range?.from ? formatDateOnly(range.from) : null,
+                  sampai: range?.to ? formatDateOnly(range.to) : null,
+                })
+              }
             />
           </div>
           <div className="space-y-2">
-            <Label>Tipe</Label>
-            <Select value={issueType || '_'} onValueChange={(v) => setIssueType(v === '_' ? '' : (v as 'FABRIC' | 'ACCESSORIES'))}>
-              <SelectTrigger className="w-[140px]">
+            <Label>{tNota('typeLabel')}</Label>
+            <Select value={issueType || '_'} onValueChange={(v) => setParams({ jenis: v === '_' ? null : v })}>
+              <SelectTrigger className="w-[140px]" aria-label={tNota('typeLabel')}>
                 <SelectValue placeholder={tPlaceholders('all')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="_">{tPlaceholders('all')}</SelectItem>
-                <SelectItem value="FABRIC">FABRIC</SelectItem>
-                <SelectItem value="ACCESSORIES">ACCESSORIES</SelectItem>
+                <SelectItem value="FABRIC">{tNota('typeFabric')}</SelectItem>
+                <SelectItem value="ACCESSORIES">{tNota('typeAccessories')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => setPage(1)} disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Load'}
-          </Button>
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>{tNota('listTitle')}</CardTitle>
-          <CardDescription>{tNota('issuesCount', { count: issues.length })}</CardDescription>
+          <CardDescription>{tNota('issuesCount', { count: totalCount })}</CardDescription>
         </CardHeader>
         <CardContent>
-          {issues.length === 0 ? (
+          {isLoading && issues.length === 0 ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : issues.length === 0 ? (
             <p className="text-muted-foreground py-8 text-center">{tNota('emptyHint')}</p>
           ) : (
             <div className="border rounded-md overflow-auto max-h-[500px]">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Doc #</TableHead>
-                    <TableHead>WO</TableHead>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="w-[80px]">Actions</TableHead>
+                    <TableHead>{tNota('colDoc')}</TableHead>
+                    <TableHead>{tNota('colWo')}</TableHead>
+                    <TableHead>{tNota('colVendor')}</TableHead>
+                    <TableHead>{tNota('colType')}</TableHead>
+                    <TableHead>{tNota('colDate')}</TableHead>
+
+                    <TableHead className="w-[80px]">{tNota('colActions')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {issues.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell className="font-medium">{row.docNumber}</TableCell>
-                      <TableCell>{row.woDocNumber}</TableCell>
-                      <TableCell>{row.vendorName}</TableCell>
-                      <TableCell>{row.issueType}</TableCell>
-                      <TableCell>{new Date(row.issuedAt).toLocaleDateString('id-ID')}</TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="sm" onClick={() => openPrint(row.id)}>
+                        {row.woId ? (
+                          <Link href={`/backoffice/work-orders/${row.woId}`} className="hover:underline">
+                            {row.woDocNumber}
+                          </Link>
+                        ) : (
+                          row.woDocNumber
+                        )}
+                      </TableCell>
+                      <TableCell className="min-w-[140px] whitespace-normal">{row.vendorName}</TableCell>
+                      <TableCell>{issueTypeLabel(row.issueType)}</TableCell>
+                      <TableCell>{formatDisplayDate(row.issuedAt, locale)}</TableCell>
+
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openPrint(row.id)}
+                          aria-label={tNota('printNota', { docNumber: row.docNumber })}
+                          title={tNota('printNota', { docNumber: row.docNumber })}
+                        >
                           <Printer className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -265,7 +305,7 @@ export default function NotaRegisterPage() {
           <Pagination
             page={page}
             totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
-            onPageChange={setPage}
+            onPageChange={(p) => setParams({ page: p > 1 ? String(p) : null })}
             totalCount={totalCount}
             pageSize={pageSize}
           />
@@ -285,37 +325,37 @@ export default function NotaRegisterPage() {
           {printData ? (
             <div className="space-y-4">
               <div className="text-sm space-y-1">
-                <p><span className="text-muted-foreground">Doc:</span> {printData.docNumber}</p>
-                <p><span className="text-muted-foreground">WO:</span> {printData.woDocNumber}</p>
-                <p><span className="text-muted-foreground">Vendor:</span> {printData.vendorName}</p>
-                <p><span className="text-muted-foreground">Date:</span> {new Date(printData.issuedAt).toLocaleDateString('id-ID')}</p>
-                <p><span className="text-muted-foreground">Type:</span> {printData.issueType}</p>
+                <p><span className="text-muted-foreground">{tWO('docLabel')}</span> {printData.docNumber}</p>
+                <p><span className="text-muted-foreground">{tWO('woLabel')}</span> {printData.woDocNumber}</p>
+                <p><span className="text-muted-foreground">{tWO('vendorLabel')}</span> {printData.vendorName}</p>
+                <p><span className="text-muted-foreground">{tWO('dateLabel')}</span> {formatDisplayDate(printData.issuedAt, locale)}</p>
+                <p><span className="text-muted-foreground">{tWO('typeLabel')}</span> {issueTypeLabel(printData.issueType)}</p>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="text-right">Qty</TableHead>
-                    <TableHead>UOM</TableHead>
+                    <TableHead>{tWO('item')}</TableHead>
+                    <TableHead className="text-right">{tWO('qty')}</TableHead>
+                    <TableHead>{tNota('colUom')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {printData.lines.map((line, i) => (
                     <TableRow key={i}>
                       <TableCell>{line.itemName}</TableCell>
-                      <TableCell className="text-right">{line.qty.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{line.qty.toLocaleString('id-ID')}</TableCell>
                       <TableCell>{line.uomCode}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
               <div className="flex gap-2 no-print">
-                <Button variant="outline" onClick={closePrint}>Close</Button>
-                <Button onClick={handlePrint}><Printer className="mr-2 h-4 w-4" />Print</Button>
+                <Button variant="outline" onClick={closePrint}>{tWO('close')}</Button>
+                <Button onClick={handlePrint}><Printer className="mr-2 h-4 w-4" />{tWO('print')}</Button>
               </div>
             </div>
           ) : (
-            <p className="text-muted-foreground">Loading...</p>
+            <p className="text-muted-foreground">{tCommon('loading')}</p>
           )}
         </DialogContent>
       </Dialog>

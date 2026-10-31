@@ -12,17 +12,23 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { getWorkOrderById, receiveFG } from '@/app/actions/production';
+import { getBahanWo, getDasarBiayaPenerimaan, getWorkOrderById, terimaBarangJadi } from '@/app/actions/production';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { formatRupiah } from '@/lib/format/rupiah';
+import { rincianBiayaPenerimaan, type DasarBiayaPenerimaan } from '@/lib/production/biaya-penerimaan';
+import { angkaSetoranWo, lebihDariTarget } from '@/lib/production/setoran-wo';
+import { CatatanTanpaDokumen, RingkasSetoran } from '../../RingkasSetoran';
+import { WoTidakDitemukan } from '../../WoTidakDitemukan';
 
 export default function WorkOrderReceivePage() {
   const t = useTranslations('toasts');
-  const tRefusal = useTranslations('receiptRefusal');
+  const tRc = useTranslations('workOrders.receive');
+  const tTolak = useTranslations('productionErrors');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -30,6 +36,10 @@ export default function WorkOrderReceivePage() {
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /** Σ nilai bahan yang sudah kembali ke gudang — tidak ikut dipikul barang jadi. */
+  const [nilaiKembali, setNilaiKembali] = useState(0);
+  /** Dasar biaya penerimaan dari server — pratinjau memakai rumus yang sama dengan yang dicatat. */
+  const [dasarBiaya, setDasarBiaya] = useState<DasarBiayaPenerimaan | null>(null);
 
   const [qtyReceived, setQtyReceived] = useState('');
   const [qtyRejected, setQtyRejected] = useState('0');
@@ -41,6 +51,12 @@ export default function WorkOrderReceivePage() {
 
   useEffect(() => {
     if (!id) return;
+    getBahanWo(id)
+      .then((r) => setNilaiKembali((r?.riwayat ?? []).reduce((s, b) => s + b.nilai, 0)))
+      .catch(() => setNilaiKembali(0));
+    getDasarBiayaPenerimaan(id)
+      .then(setDasarBiaya)
+      .catch(() => setDasarBiaya(null));
     getWorkOrderById(id)
       .then((data) => {
         setWO(data);
@@ -62,23 +78,44 @@ export default function WorkOrderReceivePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- id, router drive fetch
   }, [id, router]);
 
+  // "Disetor" = semua yang diserahkan CMT, TERMASUK yang cacat; yang masuk
+  // stok = disetor − cacat (sama dengan rumus penulis receiveFG).
   const received = Number(qtyReceived) || 0;
   const rejected = Number(qtyRejected) || 0;
   const accepted = Math.max(0, received - rejected);
+  const cacatMelebihi = rejected > received;
   const issuesArr = Array.isArray(wo?.issues) ? wo.issues : [];
-  const totalMaterialCost = issuesArr.length
-    ? (issuesArr as any[]).reduce(
-        (sum: number, i: any) => sum + Number(i.totalCost ?? 0),
-        0
-      )
-    : 0;
-  const costPerUnit = accepted > 0 ? totalMaterialCost / accepted : 0;
+  const receiptsArr = (Array.isArray(wo?.receipts) ? wo.receipts : []) as Array<{
+    qtyReceived: unknown;
+    qtyRejected?: unknown;
+    qtyAccepted: unknown;
+  }>;
+  // Satu definisi angka setoran (lib/production/setoran-wo.ts), sama dengan rincian WO dan daftar.
+  const setoran = angkaSetoranWo({
+    plannedQty: (wo as { plannedQty?: unknown } | null)?.plannedQty,
+    actualQty: (wo as { actualQty?: unknown } | null)?.actualQty,
+    receipts: receiptsArr,
+  });
+  const lebih = lebihDariTarget(setoran, accepted);
+  const totalMaterialCost = Math.max(
+    0,
+    (issuesArr as Array<{ totalCost?: unknown }>).reduce((sum, i) => sum + Number(i.totalCost ?? 0), 0) - nilaiKembali
+  );
+  // Pratinjau memakai rumus yang sama dengan yang dicatat: bahan sebanding
+  // setoran, jasa langkah WO dan biaya tambahan per pcs lolos.
+  const pratinjau = dasarBiaya
+    ? rincianBiayaPenerimaan(dasarBiaya, { qtyDiterima: received, qtyLolos: accepted, tanggal: new Date() })
+    : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.user?.id || !wo) return;
     if (received <= 0) {
       toast.error(t('qtyReceivedMustBePositive'));
+      return;
+    }
+    if (cacatMelebihi) {
+      toast.error(tRc('cacatMelebihi'));
       return;
     }
     const sb = (wo as { skuBreakdown?: unknown })?.skuBreakdown;
@@ -90,20 +127,22 @@ export default function WorkOrderReceivePage() {
     if (needsVariantBreakdown) {
       const sumAccepted = variantQtys.reduce((s, x) => s + x.qty, 0);
       if (Math.abs(sumAccepted - accepted) > 0.01) {
-        toast.error('Sum of variant qtys must equal qty accepted');
+        toast.error(tRc('variantSumMismatch'));
         return;
       }
       if (rejected > 0) {
         const sumRejected = rejectedVariantQtys.reduce((s, x) => s + x.qty, 0);
         if (Math.abs(sumRejected - rejected) > 0.01) {
-          toast.error('Sum of rejected variant qtys must equal qty rejected');
+          toast.error(tRc('rejectedSumMismatch'));
           return;
         }
       }
     }
     setIsSubmitting(true);
     try {
-      const result = await receiveFG(
+      // Penolakan berkode (WO batal/draf) dikembalikan, bukan dilempar:
+      // di build produksi pesan lemparan aksi server disamarkan.
+      const hasil = await terimaBarangJadi(
         {
           woId: String(wo.id),
           qtyReceived: received,
@@ -120,11 +159,10 @@ export default function WorkOrderReceivePage() {
             needsVariantBreakdown && rejected > 0 && rejectedVariantQtys.length > 0
               ? rejectedVariantQtys
               : undefined
-        },
-        session.user.id
+        }
       );
-      if (!result.success) {
-        toast.error(tRefusal(result.code, { detail: result.detail ?? "" }));
+      if (!hasil.ok) {
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : t('failedToReceive'));
         return;
       }
       toast.success(t('fgReceived'));
@@ -136,42 +174,47 @@ export default function WorkOrderReceivePage() {
     }
   };
 
-  if (isLoading || !wo) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
+  if (!wo) return <WoTidakDitemukan />;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/backoffice/work-orders/${id}`}>
-          <Button variant="ghost" size="icon">
+        <Button asChild variant="ghost" size="icon">
+          <Link href={`/backoffice/work-orders/${id}`} aria-label={tRc('backToWO')} title={tRc('backToWO')}>
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div>
-          <h1 className="text-2xl font-bold">Receive Finished Goods</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{tRc('title')}</h1>
+            <TombolBantuan judul={tRc('title')} />
+          </div>
           <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Receipt</CardTitle>
-          <CardDescription>
-            Enter received and rejected quantities. Material cost is allocated
-            from issues.
-          </CardDescription>
+          <CardTitle>{tRc('cardTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-1 rounded-lg border p-3 text-sm">
+              <RingkasSetoran angkaWo={setoran} />
+              <CatatanTanpaDokumen angkaWo={setoran} />
+            </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label>Qty Received (good)</Label>
+                <Label htmlFor="qty-disetor">{tRc('qtyReceived')}</Label>
                 <Input
+                  id="qty-disetor"
                   type="number"
                   min={0}
                   step={1}
@@ -181,8 +224,9 @@ export default function WorkOrderReceivePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Qty Rejected (defects)</Label>
+                <Label htmlFor="qty-cacat">{tRc('qtyRejected')}</Label>
                 <Input
+                  id="qty-cacat"
                   type="number"
                   min={0}
                   step={1}
@@ -192,28 +236,70 @@ export default function WorkOrderReceivePage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Qty Accepted (net)</Label>
+                <Label htmlFor="qty-masuk">{tRc('qtyAccepted')}</Label>
                 <Input
+                  id="qty-masuk"
                   type="text"
                   readOnly
-                  value={accepted.toLocaleString()}
+                  value={accepted.toLocaleString('id-ID')}
                   className="bg-muted"
                 />
               </div>
             </div>
+            <div className="space-y-1 text-sm">
+              <p className="font-medium">{tRc('masukStok', { qty: accepted.toLocaleString('id-ID') })}</p>
+              {cacatMelebihi ? <p className="text-destructive">{tRc('cacatMelebihi')}</p> : null}
+              {lebih > 0 ? (
+                <p className="text-amber-800 dark:text-amber-300">
+                  {tRc('lebihTargetMasukStok', { lebih: lebih.toLocaleString('id-ID') })}
+                </p>
+              ) : null}
+            </div>
             <div className="rounded-lg border bg-muted/50 p-4">
-              <p className="text-sm font-medium">Cost allocation</p>
+              <p className="text-sm font-medium">{tRc('costAllocation')}</p>
               <p className="text-muted-foreground">
-                Total material cost: {totalMaterialCost.toLocaleString()} →{' '}
-                {accepted > 0
-                  ? `${costPerUnit.toFixed(2)} per unit (${accepted} accepted)`
-                  : 'N/A'}
+                {tRc('totalMaterialCost', { value: formatRupiah(totalMaterialCost) })}
+                {nilaiKembali > 0 ? ` ${tRc('sudahKembali', { value: formatRupiah(nilaiKembali) })}` : ''} →{' '}
+                {accepted > 0 && pratinjau
+                  ? tRc('costPerUnit', {
+                      cost: formatRupiah(pratinjau.perUnit.toNumber()),
+                      accepted: accepted.toLocaleString('id-ID'),
+                      total: formatRupiah(pratinjau.total.toNumber()),
+                    })
+                  : tRc('notAvailable')}
               </p>
+              {accepted > 0 && pratinjau ? (
+                <ul className="mt-2 space-y-0.5 text-sm text-muted-foreground tabular-nums">
+                  <li>{tRc('rincianBahan', { value: formatRupiah(pratinjau.bahan.toNumber()) })}</li>
+                  {pratinjau.jasa.perLangkah.length > 0 ? (
+                    <li>
+                      {tRc('rincianJasa', {
+                        langkah: pratinjau.jasa.perLangkah.length,
+                        value: formatRupiah(pratinjau.jasa.tagihan.toNumber()),
+                      })}
+                      {pratinjau.ppnMasukan.gt(0)
+                        ? ` ${tRc('rincianPpnMasukan', { value: formatRupiah(pratinjau.ppnMasukan.toNumber()) })}`
+                        : ''}
+                    </li>
+                  ) : null}
+                  {pratinjau.tambahan.gt(0) ? (
+                    <li>{tRc('rincianTambahan', { value: formatRupiah(pratinjau.tambahan.toNumber()) })}</li>
+                  ) : null}
+                </ul>
+              ) : null}
+              {/* Status PKP pemasok jasa belum diisi: PPN jasa dihitung seolah ia memungut PPN. */}
+              {dasarBiaya?.langkah.some((l) => l.pemasokPkp == null) ? (
+                <p className="mt-2 text-sm text-amber-800 dark:text-amber-300">
+                  {tRc('pkpPemasokBelumDiisi', {
+                    nama: [...new Set(dasarBiaya.langkah.filter((l) => l.pemasokPkp == null).map((l) => l.namaPemasok ?? '?'))].join(', '),
+                  })}
+                </p>
+              ) : null}
             </div>
             {variantQtys.length > 1 && (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Per-variant breakdown (sum must equal qty accepted)</Label>
+                  <Label>{tRc('variantBreakdown')}</Label>
                   {variantQtys.map((row, i) => (
                     <div key={row.variantSku} className="flex items-center gap-2">
                       <span className="w-48 truncate text-sm">{row.variantSku}</span>
@@ -227,17 +313,21 @@ export default function WorkOrderReceivePage() {
                           setVariantQtys((prev) => prev.map((p, j) => (j === i ? { ...p, qty: v } : p)));
                         }}
                         placeholder="0"
+                        aria-label={tRc('labelVarianMasuk', { sku: row.variantSku })}
                         className="w-24"
                       />
                     </div>
                   ))}
                   <p className="text-xs text-muted-foreground">
-                    Sum: {variantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString()} / {accepted.toLocaleString()} accepted
+                    {tRc('sumAccepted', {
+                      sum: variantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID'),
+                      accepted: accepted.toLocaleString('id-ID'),
+                    })}
                   </p>
                 </div>
                 {rejected > 0 && (
                   <div className="space-y-2">
-                    <Label>Per-variant rejected (sum must equal qty rejected)</Label>
+                    <Label>{tRc('variantRejected')}</Label>
                     {rejectedVariantQtys.map((row, i) => (
                       <div key={row.variantSku} className="flex items-center gap-2">
                         <span className="w-48 truncate text-sm">{row.variantSku}</span>
@@ -253,36 +343,40 @@ export default function WorkOrderReceivePage() {
                             );
                           }}
                           placeholder="0"
+                          aria-label={tRc('labelVarianCacat', { sku: row.variantSku })}
                           className="w-24"
                         />
                       </div>
                     ))}
                     <p className="text-xs text-muted-foreground">
-                      Sum: {rejectedVariantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString()} / {rejected.toLocaleString()} rejected
+                      {tRc('sumRejected', {
+                        sum: rejectedVariantQtys.reduce((s, x) => s + x.qty, 0).toLocaleString('id-ID'),
+                        rejected: rejected.toLocaleString('id-ID'),
+                      })}
                     </p>
                   </div>
                 )}
               </div>
             )}
             <div className="space-y-2">
-              <Label>QC Notes</Label>
+              <Label htmlFor="catatan-qc">{tRc('qcNotes')}</Label>
               <Textarea
+                id="catatan-qc"
                 value={qcNotes}
                 onChange={(e) => setQcNotes(e.target.value)}
-                placeholder="Quality check notes"
+                placeholder={tRc('qcNotesPlaceholder')}
                 rows={3}
               />
             </div>
             <div className="flex gap-4">
-              <Button type="submit" disabled={isSubmitting || received <= 0}>
-                {isSubmitting ? 'Saving...' : 'Save Receipt'}
+              <Button type="submit" disabled={isSubmitting || received <= 0 || cacatMelebihi}>
+                {isSubmitting ? tRc('saving') : tRc('save')}
               </Button>
-              <Link href={`/backoffice/work-orders/${id}`}>
-                <Button type="button" variant="outline">
-                  Cancel
-                </Button>
-              </Link>
+              <Button asChild variant="outline">
+                <Link href={`/backoffice/work-orders/${id}`}>{tRc('cancel')}</Link>
+              </Button>
             </div>
+            {received <= 0 ? <p className="text-xs text-muted-foreground">{tRc('isiDisetorDulu')}</p> : null}
           </form>
         </CardContent>
       </Card>

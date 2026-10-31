@@ -4,8 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { kunciGalatOpname } from "@/lib/inventory/galat-opname";
 import { ScanLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { OpnameItemCountRow, OpnameRollCountRow } from "@/components/inventory/OpnameCountRows";
+import { BarisHitungBarang, BarisHitungRol } from "./BarisHitungButa";
+import { isianAwalBarang, isianKembaran, kembaranBaris, type BarisHitungGudang } from "./baris-kembar";
+import { masihMenghitung } from "../../angka-sistem";
 import { useBarcodeWedgeScanner } from "@/hooks/use-barcode-wedge-scanner";
 import {
   getOpnameById,
@@ -55,12 +59,30 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
     else delete rowRefs.current[rowId];
   }, []);
 
-  const commitItemCount = useCallback((rowId: string, value: string) => {
-    setItemCounts((prev) => {
-      if (prev[rowId] === value) return prev;
-      return { ...prev, [rowId]: value };
-    });
-  }, []);
+  // Opname yang dibekukan sebelum baris stok kembar (null + "") digabung bisa
+  // punya dua baris hitung untuk satu barang. Di layar buta keduanya tampak
+  // sama: hanya baris pertama yang tampil, kembarannya diisi 0.
+  const kembaran = useMemo(
+    () =>
+      kembaranBaris(
+        opname && opname.scope !== "FABRIC" && Array.isArray(opname.items)
+          ? (opname.items as unknown as BarisHitungGudang[])
+          : [],
+      ),
+    [opname],
+  );
+  const tersembunyi = useMemo(() => new Set([...kembaran.values()].flat()), [kembaran]);
+
+  const commitItemCount = useCallback(
+    (rowId: string, value: string) => {
+      setItemCounts((prev) => {
+        const kembar = isianKembaran(kembaran, rowId, value);
+        if (prev[rowId] === value && Object.entries(kembar).every(([id, v]) => prev[id] === v)) return prev;
+        return { ...prev, [rowId]: value, ...kembar };
+      });
+    },
+    [kembaran],
+  );
 
   const commitRollCount = useCallback((rowId: string, value: string) => {
     setRollCounts((prev) => {
@@ -81,11 +103,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
         }
         setRollCounts(init);
       } else if (Array.isArray(data?.items)) {
-        const init: Record<string, string> = {};
-        for (const r of data.items as Array<{ id: string; countedQty?: number | null }>) {
-          init[r.id] = r.countedQty != null ? String(r.countedQty) : "";
-        }
-        setItemCounts(init);
+        setItemCounts(isianAwalBarang(data.items as unknown as BarisHitungGudang[]));
       }
     } finally {
       setLoading(false);
@@ -174,7 +192,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
   );
 
   const { scanInputRef, onScanInputKeyDown, focusScanInput } = useBarcodeWedgeScanner({
-    enabled: !loading && opname != null,
+    enabled: !loading && opname != null && masihMenghitung(String(opname.status)),
     onScan: handleScan,
   });
 
@@ -195,7 +213,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
           countedQty: Number(itemCounts[row.id]),
         }));
       const r = await updateOpnameCounts(opnameId, counts);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("saved"));
         await load();
@@ -216,7 +234,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
           countedLength: Number(rollCounts[row.id]),
         }));
       const r = await updateOpnameRollCounts(opnameId, counts);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("saved"));
         await load();
@@ -227,7 +245,33 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
   };
 
   if (loading || !opname) {
-    return <p className="text-muted-foreground py-8">{loading ? "Loading..." : "Not found"}</p>;
+    return <p className="text-muted-foreground py-8">{loading ? t("loading") : t("notFound")}</p>;
+  }
+
+  // Sesudah dikirim untuk persetujuan hitungan ditutup (server juga menolaknya):
+  // penyetuju sudah melihat angka sistem, jadi hitungan tidak lagi buta.
+  if (!masihMenghitung(String(opname.status))) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold">{t("count")}</h1>
+            <p className="text-muted-foreground">{String(opname.docNumber)}</p>
+          </div>
+          <Link href={`/backoffice/inventory/stock-opname/${opnameId}`}>
+            <Button variant="outline">{t("back")}</Button>
+          </Link>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            {/* Opname yang dibatalkan bukan "sudah dikirim untuk persetujuan". */}
+            <p className="text-sm text-muted-foreground">
+              {String(opname.status) === "CANCELLED" ? t("countCancelled") : t("countClosed")}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   const isFabric = opname.scope === "FABRIC";
@@ -236,11 +280,14 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">{t("count")}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold">{t("count")}</h1>
+            <TombolBantuan judul={t("count")} />
+          </div>
           <p className="text-muted-foreground">{String(opname.docNumber)}</p>
         </div>
         <Link href={`/backoffice/inventory/stock-opname/${opnameId}`}>
-          <Button variant="outline">Back</Button>
+          <Button variant="outline">{t("back")}</Button>
         </Link>
       </div>
 
@@ -261,6 +308,8 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
                 className="font-mono"
               />
               <p className="text-xs text-muted-foreground">{t("scanHint")}</p>
+              {/* Hitungan buta: angka sistem baru tampil di halaman persetujuan. */}
+              <p className="text-xs text-muted-foreground">{t("blindNote")}</p>
             </div>
             <Button type="button" variant="secondary" onClick={focusScanInput}>
               {t("focusScanner")}
@@ -284,8 +333,7 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Roll</TableHead>
-                          <TableHead>{t("snapshot")}</TableHead>
+                          <TableHead>{t("roll")}</TableHead>
                           <TableHead>{t("counted")}</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -293,11 +341,10 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
                         {rolls.map((roll) => {
                           const rowId = String(roll.id);
                           return (
-                            <OpnameRollCountRow
+                            <BarisHitungRol
                               key={rowId}
                               rowId={rowId}
                               rollCode={String(roll.rollCode)}
-                              snapshotLength={Number(roll.snapshotLength)}
                               value={rollCounts[rowId] ?? ""}
                               highlighted={highlightedRowId === rowId}
                               onCommit={commitRollCount}
@@ -322,28 +369,28 @@ export default function StockOpnameCountPageClient({ opnameId }: { opnameId: str
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Item</TableHead>
-                  <TableHead>{t("snapshot")}</TableHead>
+                  <TableHead>{t("item")}</TableHead>
                   <TableHead>{t("counted")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {(opname.items as Array<Record<string, unknown>>).map((row) => {
-                  const rowId = String(row.id);
-                  return (
-                    <OpnameItemCountRow
-                      key={rowId}
-                      rowId={rowId}
-                      itemName={String(row.itemName)}
-                      sku={String(row.variantSku ?? "").trim()}
-                      snapshotQty={Number(row.snapshotQty)}
-                      value={itemCounts[rowId] ?? ""}
-                      highlighted={highlightedRowId === rowId}
-                      onCommit={commitItemCount}
-                      onRowRef={registerRowRef}
-                    />
-                  );
-                })}
+                {(opname.items as Array<Record<string, unknown>>)
+                  .filter((row) => !tersembunyi.has(String(row.id)))
+                  .map((row) => {
+                    const rowId = String(row.id);
+                    return (
+                      <BarisHitungBarang
+                        key={rowId}
+                        rowId={rowId}
+                        itemName={String(row.itemName)}
+                        sku={String(row.variantSku ?? "").trim()}
+                        value={itemCounts[rowId] ?? ""}
+                        highlighted={highlightedRowId === rowId}
+                        onCommit={commitItemCount}
+                        onRowRef={registerRowRef}
+                      />
+                    );
+                  })}
               </TableBody>
             </Table>
             <Button className="mt-4" onClick={saveItems} disabled={saving}>

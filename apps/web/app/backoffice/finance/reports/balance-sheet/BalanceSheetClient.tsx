@@ -6,29 +6,56 @@ import { useTranslations, useLocale } from "next-intl";
 import { AlertTriangle, CheckCircle2, Info, Landmark } from "lucide-react";
 import type { BalanceSheet } from "@/lib/finance/reports/balance-sheet";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { ReportSection } from "../ReportSection";
+import { BarisTotalLaporan, KepalaKolomLaporan, ReportSection } from "../ReportSection";
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
+import { BALANCE_SHEET_COVERAGE_BODY } from "@/lib/finance/reports/disclosures";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportBalanceSheetExcel } from "@/app/actions/finance-reports";
+import { formatDisplayDate } from "@/lib/date-only";
+import { TanggalInput } from "@/components/ui/tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { LabelPeriode } from "../LabelPeriode";
+import { SpandukBukuBesar } from "../../_kesiapan/SpandukBukuBesar";
+import type { KesiapanBukuBesar } from "../../_kesiapan/kesiapan";
+import type { AksesSpanduk } from "../../_kesiapan/baca";
+import { tautanBukuBesar } from "../../journals/_sumber/tautan";
 
 type Props = {
   report: BalanceSheet;
   openingWarningDate: string | null;
-  filters: { asOf: string };
+  filters: { asOf: string; nol: boolean };
+  /** Tanggal posisi yang benar-benar dipakai ("YYYY-MM-DD", WIB) — hari ini bila isian kosong. */
+  tanggalPosisi: string;
+  /** Ada jurnal sampai tanggal posisi — tanpa itu tidak ada yang bisa disebut "seimbang". */
+  adaJurnal: boolean;
+  kesiapan: KesiapanBukuBesar | null;
+  akses: AksesSpanduk;
 };
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
-
-export function BalanceSheetClient({ report, openingWarningDate, filters }: Props) {
+export function BalanceSheetClient({
+  report,
+  openingWarningDate,
+  filters,
+  tanggalPosisi,
+  adaJurnal,
+  kesiapan,
+  akses,
+}: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
   const locale = useLocale();
   const [isPending, startTransition] = useTransition();
+  const tautanAkun = akses.jurnal
+    ? (accountId: string) => tautanBukuBesar(accountId, { dari: null, sampai: tanggalPosisi })
+    : undefined;
+
+  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`disclosures.ts`).
+  const cakupan = locale.toLowerCase().startsWith("id") ? BALANCE_SHEET_COVERAGE_BODY : t("balanceSheet.coverageBody");
 
   function pushParam(key: string, value: string | undefined) {
     const params = new URLSearchParams(sp.toString());
@@ -44,41 +71,50 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
   }
 
   /**
-   * Pinned to WIB so the SSR pass (prod runs UTC) and the browser agree, and so
-   * this matches `formatOpeningDate` in `disclosures.ts`, which the print view
-   * and the Excel export use for the same warning.
+   * Pinned to WIB (inside `formatDisplayDate`) so the SSR pass (prod runs UTC)
+   * and the browser agree on the day `formatOpeningDate` in `disclosures.ts`
+   * prints for the same warning.
    */
-  const formattedEarliest = openingWarningDate
-    ? new Intl.DateTimeFormat(locale, {
-        timeZone: "Asia/Jakarta",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(new Date(openingWarningDate))
-    : "";
+  const formattedEarliest = openingWarningDate ? formatDisplayDate(openingWarningDate, locale) : "";
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("balanceSheet.pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("balanceSheet.subtitle")}</p>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t("balanceSheet.pageTitle")}</h1>
+            <TombolBantuan judul={t("balanceSheet.pageTitle")} />
+          </div>
+          <LabelPeriode jenis="per" tanggal={tanggalPosisi} />
         </div>
         <ReportExportButtons
-          onExcel={() => exportBalanceSheetExcel({ asOf: filters.asOf })}
-          printHref={`/print/finance/balance-sheet?asOf=${encodeURIComponent(filters.asOf)}`}
+          onExcel={() => exportBalanceSheetExcel({ asOf: filters.asOf, nol: filters.nol })}
+          printHref={`/print/finance/balance-sheet?asOf=${encodeURIComponent(filters.asOf)}&nol=${filters.nol ? "1" : "0"}`}
         />
       </div>
 
+      <SpandukBukuBesar kesiapan={kesiapan} akses={akses} />
+
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.asOf")}</label>
-            <Input
-              type="date"
+            <label htmlFor="tanggal-per" className="text-xs text-muted-foreground mb-1 block">{t("filter.asOf")}</label>
+            <TanggalInput
+              id="tanggal-per"
               value={filters.asOf}
               onChange={(e) => pushParam("asOf", e.target.value || undefined)}
             />
+          </div>
+          <div className="flex items-end gap-2">
+            <Checkbox
+              id="tampilNol"
+              checked={filters.nol}
+              disabled={isPending}
+              onCheckedChange={(checked) => pushParam("nol", checked === true ? "1" : undefined)}
+            />
+            <Label htmlFor="tampilNol" className="text-sm font-normal cursor-pointer">
+              {t("filter.showZeroAccounts")}
+            </Label>
           </div>
           <div className="flex items-end">
             <Button variant="outline" onClick={reset} disabled={isPending}>
@@ -94,7 +130,7 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
           <div>
             <p className="font-medium">{t("balanceSheet.openingTitle")}</p>
             <p className="text-muted-foreground">
-              {t("balanceSheet.openingBody", { date: formattedEarliest })}
+              {t("balanceSheet.openingBodySaldoAwal", { date: formattedEarliest })}
             </p>
           </div>
         </div>
@@ -108,56 +144,85 @@ export function BalanceSheetClient({ report, openingWarningDate, filters }: Prop
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <Table className="min-w-[360px]">
-              <TableBody>
-                <ReportSection
-                  title={t("balanceSheet.sectionAset")}
-                  nodes={report.aset}
-                  total={report.totalAset}
-                  totalLabel={t("balanceSheet.totalAset")}
-                  emptyLabel={t("balanceSheet.sectionEmpty")}
-                />
-                <ReportSection
-                  title={t("balanceSheet.sectionLiabilitas")}
-                  nodes={report.liabilitas}
-                  total={report.totalLiabilitas}
-                  totalLabel={t("balanceSheet.totalLiabilitas")}
-                  emptyLabel={t("balanceSheet.sectionEmpty")}
-                />
-                <ReportSection
-                  title={t("balanceSheet.sectionEkuitas")}
-                  nodes={report.ekuitas}
-                  total={report.totalEkuitas}
-                  totalLabel={t("balanceSheet.totalEkuitas")}
-                  emptyLabel={t("balanceSheet.sectionEmpty")}
-                />
-                <TableRow>
-                  <TableCell className="pl-6">{t("balanceSheet.unclosedEarnings")}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatRupiah(report.unclosedEarnings)}
-                  </TableCell>
-                </TableRow>
-                <TableRow className="border-t-2 font-bold">
-                  <TableCell>{t("balanceSheet.totalLiabilitasEkuitas")}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatRupiah(report.totalLiabilitasEkuitas)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
+          {!adaJurnal ? (
+            <div className="text-center py-12">
+              <Landmark className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <p className="text-muted-foreground">{t("balanceSheet.empty")}</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <Table className="min-w-[360px]">
+                  <KepalaKolomLaporan />
+                  <TableBody>
+                    <ReportSection
+                      title={t("balanceSheet.sectionAset")}
+                      nodes={report.aset}
+                      total={report.totalAset}
+                      totalLabel={t("balanceSheet.totalAset")}
+                      emptyLabel={t("balanceSheet.sectionEmpty")}
+                      tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
+                    />
+                    <ReportSection
+                      title={t("balanceSheet.sectionLiabilitas")}
+                      nodes={report.liabilitas}
+                      total={report.totalLiabilitas}
+                      totalLabel={t("balanceSheet.totalLiabilitas")}
+                      emptyLabel={t("balanceSheet.sectionEmpty")}
+                      tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
+                    />
+                    <ReportSection
+                      title={t("balanceSheet.sectionEkuitas")}
+                      nodes={report.ekuitas}
+                      total={report.totalEkuitas}
+                      totalLabel={t("balanceSheet.totalEkuitas")}
+                      emptyLabel={t("balanceSheet.sectionEmpty")}
+                      tautanAkun={tautanAkun}
+                      tampilkanNol={filters.nol}
+                    />
+                    {report.labaTahunLaluBelumDitutup !== 0 ? (
+                      <TableRow>
+                        <TableCell className="pl-6">{t("balanceSheet.labaTahunLalu")}</TableCell>
+                        <TableCell />
+                        <TableCell className="text-right tabular-nums">
+                          {rupiahLaporan(report.labaTahunLaluBelumDitutup)}
+                        </TableCell>
+                      </TableRow>
+                    ) : null}
+                    <TableRow>
+                      <TableCell className="pl-6">{t("balanceSheet.labaTahunBerjalan")}</TableCell>
+                      <TableCell />
+                      <TableCell className="text-right tabular-nums">
+                        {rupiahLaporan(report.labaTahunBerjalan)}
+                      </TableCell>
+                    </TableRow>
+                    <BarisTotalLaporan label={t("balanceSheet.totalLiabilitasEkuitas")} nilai={report.totalLiabilitasEkuitas} />
+                  </TableBody>
+                </Table>
+              </div>
 
-          <div
-            className={`mt-4 flex items-start gap-2 rounded-md border p-3 text-sm ${report.isBalanced ? "border-emerald-500/40 text-muted-foreground" : "border-destructive/50 text-destructive"}`}
-          >
-            {report.isBalanced ? (
-              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-            ) : (
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            )}
-            <p>{report.isBalanced ? t("balanceSheet.balancedNote") : t("balanceSheet.unbalancedNote")}</p>
-          </div>
+              <div
+                className={`mt-4 flex items-start gap-2 rounded-md border p-3 text-sm ${report.isBalanced ? "border-emerald-500/40 text-muted-foreground" : "border-destructive/50 text-destructive"}`}
+              >
+                {report.isBalanced ? (
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                ) : (
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                )}
+                <p>{report.isBalanced ? t("balanceSheet.balancedNote") : t("balanceSheet.unbalancedNote")}</p>
+              </div>
+
+              <div className="mt-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+                <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="font-medium">{t("balanceSheet.coverageTitle")}</p>
+                  <p className="text-muted-foreground">{cakupan}</p>
+                </div>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

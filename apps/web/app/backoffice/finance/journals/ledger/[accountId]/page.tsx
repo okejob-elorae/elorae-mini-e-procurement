@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { parseDateOnly, parseDateOnlyEnd } from "@/lib/date-only";
@@ -34,11 +35,18 @@ export default async function AccountLedgerPage({ params, searchParams }: PagePr
     notFound();
   }
 
+  /* Pemilih akun di kepala halaman — pindah akun tanpa kembali ke Bagan Akun (audit G8). */
+  const akun = await prisma.chartAccount.findMany({
+    orderBy: { code: "asc" },
+    select: { id: true, code: true, name: true, isActive: true },
+  });
+
   return (
     <AccountLedgerClient
       accountId={accountId}
       ledger={ledger}
       filters={{ from: sp.from ?? "", to: sp.to ?? "" }}
+      pilihanAkun={akun.map((a) => ({ value: a.id, label: `${a.code} ${a.name}`, nonaktif: !a.isActive }))}
     />
   );
 }

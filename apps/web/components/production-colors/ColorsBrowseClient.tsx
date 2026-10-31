@@ -3,11 +3,10 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Pagination } from '@/components/ui/pagination';
 import {
   ColorsFilterBar,
-  FilterSummaryBadges,
   type ColorFiltersState,
   type FilterFacetCounts,
 } from '@/components/production-colors/ColorsFilterBar';
@@ -79,11 +78,10 @@ export function ColorsBrowseClient({
 
   return (
     <div className="space-y-6">
+      {/* No "Filter" heading: a search field with chips under it needs no label,
+          and the row it occupied is better spent on swatches. */}
       <Card className="w-full">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">{t('filtersTitle')}</CardTitle>
-        </CardHeader>
-        <CardContent className="pt-0">
+        <CardContent>
           <ColorsFilterBar
             filters={filters}
             facetCounts={facetCounts}
@@ -97,7 +95,6 @@ export function ColorsBrowseClient({
       </Card>
 
       <div className="space-y-4">
-        <FilterSummaryBadges filters={filters} />
         <p className="text-sm text-muted-foreground">
           {t('colorCount', { count: totalCount })}
         </p>

@@ -1,13 +1,10 @@
 ﻿'use client';
 
-import { useState, useEffect } from 'react';
+import { Fragment, useMemo, useRef, useState, useEffect } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-  LayoutDashboard,
-  Package,
-  FileText,
   Settings,
   Menu,
   ChevronDown,
@@ -17,23 +14,16 @@ import {
   Moon,
   Monitor,
   Check,
-  CalendarDays,
-  Activity,
-  Store,
-  Wallet,
-  BarChart2,
+  Search,
+  Star,
+  X,
   PanelLeftClose,
   PanelLeft,
-  Users,
   Loader2,
-  ShoppingCart,
-  ShoppingBag,
-  Truck,
-  BookOpen,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,15 +41,23 @@ import {
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { Role } from '@/lib/constants/enums';
-import { hasPermission, PERMISSIONS } from '@/lib/rbac';
+import { hasPermission } from '@/lib/rbac';
+import { bolehAnak, grupUntukRute, navItems } from '@/lib/nav/menu';
+import { entriHalamanAktif, geserAgarTerlihat, geserKeJangkar, idJangkar } from '@/lib/nav/halaman-aktif';
+import { grupTerbuka, saringNav, type ItemTerlabel } from '@/lib/nav/saring';
+import { BAHASA, keadaanTema } from '@/lib/nav/tampilan-pengguna';
+import { bacaFavorit, tulisFavorit, ubahFavorit, BATAS_FAVORIT } from '@/lib/nav/favorit';
 import { OfflineIndicator } from '@/components/offline/OfflineIndicator';
 import { QuickActionFAB } from '@/components/QuickActionFAB';
 import { FcmRegistration } from '@/components/notifications/FcmRegistration';
 import { deleteFcmToken } from "@/components/notifications/fcm-client";
 import { NotificationIcon } from '@/components/notifications/NotificationIcon';
 import { setupSyncListeners, syncReferenceData } from '@/lib/offline/sync';
-import { LanguageSwitcher } from '@/components/ui/LanguageSwitcher';
+import { useNamaPeran } from '@/app/backoffice/settings/rbac/pakai-nama-peran';
+import { useLocaleContext } from '@/components/providers/LocaleProvider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
+import { toast } from 'sonner';
 import {
   Collapsible,
   CollapsibleContent,
@@ -68,414 +66,118 @@ import {
 
 const SIDEBAR_COLLAPSED_KEY = 'elorae.sidebar.collapsed';
 
-interface NavChild {
-  labelKey: string;
-  href: string;
-  permission?: string;
-  /**
-   * Visible when the user holds ANY ONE of these, for a page whose actors legitimately hold
-   * different permissions — the deliveries register is reachable by both `deliveries:ship` (pack,
-   * track, ship, cancel) and `deliveries:pod` (close against proof), and its server page admits
-   * either. Checked in addition to `permission`, so a child carrying both is visible when either
-   * matches.
-   */
-  anyPermissions?: string[];
+/**
+ * Sidebar badge counts, fetched after mount so navigation never blocks on them.
+ * A failure resolves to an empty map: the shell must survive a bad count.
+ */
+/**
+ * Lencana menu: total per GRUP, dan total per HALAMAN.
+ *
+ * Dua peta, bukan satu. Sebagian induk berbagi href dengan salah satu anaknya
+ * sendiri — Produksi dan Plan Kerja dua-duanya `/backoffice/production/planning`
+ * — jadi satu peta membuat anak itu mewarisi total seluruh grupnya dan memakai
+ * lencana untuk pekerjaan yang ada di halaman lain.
+ */
+function useNavCounts(): { grup: Record<string, number>; halaman: Record<string, number> } {
+  const [data, setData] = useState<{
+    grup: Record<string, number>;
+    halaman: Record<string, number>;
+  }>({ grup: {}, halaman: {} });
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/backoffice/nav-counts')
+      .then((r) => (r.ok ? r.json() : { counts: {}, pages: {} }))
+      .then((d) => {
+        if (!cancelled) setData({ grup: d.counts ?? {}, halaman: d.pages ?? {} });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return data;
 }
+
+function NavCountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    // Merah tetap, bukan `bg-destructive`: di mode gelap token itu merah muda
+    // terang, dan angka putih di atasnya hanya 2,9:1.
+    <span className="ml-auto shrink-0 rounded-full bg-red-600 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-white tabular-nums">
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+// Susunan menu tinggal di `lib/nav/menu.ts` — juga dibaca lencana menu dan editor peran.
+export { navItems, bolehAnak } from '@/lib/nav/menu';
 
 /**
- * Single spelling of a child's visibility rule, shared by the top-level filter and
- * `visibleChildrenOf` — two copies of it is how one list starts hiding what the other shows.
+ * Title of the page actually open.
+ *
+ * The header hardcoded the dashboard label, so every screen in the app
+ * announced itself as "Beranda" — the one place that always tells you where
+ * you are was always wrong. Resolved against the same nav tree the sidebar
+ * renders, longest match first so a child route beats its parent.
  */
-function isChildVisible(permissions: string[], child: NavChild): boolean {
-  if (child.anyPermissions?.length) {
-    if (child.anyPermissions.some((code) => hasPermission(permissions, code))) return true;
-  }
-  if (!child.permission) return !child.anyPermissions?.length;
-  return hasPermission(permissions, child.permission);
+function useCurrentPageLabel(): string | null {
+  const pathname = usePathname();
+  const tNav = useTranslations('navigation');
+  // Anak menang seri atas induknya (Laporan → Neraca Saldo, Data Master → Pemasok).
+  const best = entriHalamanAktif(pathname, navItems);
+  return best ? tNav(best.labelKey as never) : null;
 }
-
-interface NavItem {
-  labelKey: string;
-  href: string;
-  icon: React.ElementType;
-  permission: string; // Permission code required to view this nav item
-  children?: NavChild[];
-  /** When true, only users with legacy User.role ADMIN see this item */
-  adminOnly?: boolean;
-}
-
-/**
- * Grouping follows the 2026-10 menu audit: one group per business flow (purchasing, warehouse,
- * production, each sales channel, cash, bookkeeping, reports). Every child names its own
- * permission — children move between groups, so none may lean on its parent's code.
- * A group's `href` is only its open-state key; `getOpenKeyFromPath` derives it from the children.
- */
-const navItems: NavItem[] = [
-  {
-    labelKey: 'dashboard',
-    href: '/backoffice/dashboard',
-    icon: LayoutDashboard,
-    permission: PERMISSIONS.DASHBOARD_VIEW,
-  },
-  {
-    labelKey: 'purchasing',
-    href: '#purchasing',
-    icon: ShoppingCart,
-    permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-    children: [
-      {
-        labelKey: 'masterSuppliers',
-        href: '/backoffice/suppliers',
-        permission: PERMISSIONS.SUPPLIERS_VIEW,
-      },
-      {
-        labelKey: 'supplierType',
-        href: '/backoffice/suppliers/types',
-        permission: PERMISSIONS.SUPPLIER_TYPES_VIEW,
-      },
-      {
-        labelKey: 'leadTime',
-        href: '/backoffice/lead-time',
-        permission: PERMISSIONS.LEAD_TIME_VIEW,
-      },
-      {
-        labelKey: 'purchaseOrders',
-        href: '/backoffice/purchase-orders',
-        permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'navItemRequests',
-        href: '/backoffice/item-requests',
-        permission: PERMISSIONS.ITEM_REQUESTS_VIEW,
-      },
-      {
-        labelKey: 'navVendorBills',
-        href: '/backoffice/vendor-bills',
-        permission: PERMISSIONS.VENDOR_BILLS_VIEW,
-      },
-      {
-        labelKey: 'navVendorPayments',
-        href: '/backoffice/vendor-payments',
-        permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
-      },
-      {
-        labelKey: 'vendorReturns',
-        href: '/backoffice/vendor-returns',
-        permission: PERMISSIONS.VENDOR_RETURNS_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'inventory',
-    href: '#inventory',
-    icon: Package,
-    permission: PERMISSIONS.INVENTORY_VIEW,
-    children: [
-      { labelKey: 'navStockOnHand', href: '/backoffice/inventory', permission: PERMISSIONS.INVENTORY_VIEW },
-      { labelKey: 'navItemsAll', href: '/backoffice/items', permission: PERMISSIONS.ITEMS_VIEW },
-      { labelKey: 'navItemsCategory', href: '/backoffice/items/categories', permission: PERMISSIONS.ITEMS_VIEW },
-      { labelKey: 'navStockCard', href: '/backoffice/inventory/stock-card', permission: PERMISSIONS.INVENTORY_VIEW },
-      {
-        labelKey: 'navStockMovements',
-        href: '/backoffice/inventory/movements',
-        permission: PERMISSIONS.INVENTORY_VIEW,
-      },
-      {
-        labelKey: 'navStockOpname',
-        href: '/backoffice/inventory/stock-opname',
-        permission: PERMISSIONS.INVENTORY_OPNAME_VIEW,
-      },
-      {
-        labelKey: 'navStockReconciliation',
-        href: '/backoffice/inventory/reconciliation',
-        permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW,
-      },
-      {
-        labelKey: 'navRejectedGoods',
-        href: '/backoffice/inventory/rejected-goods',
-        permission: PERMISSIONS.INVENTORY_VIEW,
-      },
-      { labelKey: 'navFulfillment', href: '/backoffice/fulfillment', permission: PERMISSIONS.SALES_ORDERS_VIEW },
-      {
-        labelKey: 'navDeliveries',
-        href: '/backoffice/deliveries',
-        anyPermissions: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD],
-      },
-    ],
-  },
-  {
-    labelKey: 'production',
-    href: '#production',
-    icon: CalendarDays,
-    permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
-    children: [
-      {
-        labelKey: 'navForecast',
-        href: '/backoffice/forecast',
-        permission: PERMISSIONS.FORECAST_VIEW,
-      },
-      {
-        labelKey: 'navProductionPlanning',
-        href: '/backoffice/production/planning',
-        permission: PERMISSIONS.PRODUCTION_PLANNING_VIEW,
-      },
-      {
-        labelKey: 'navProductionColors',
-        href: '/backoffice/production/colors',
-        permission: PERMISSIONS.PRODUCTION_COLORS_VIEW,
-      },
-      {
-        labelKey: 'navWorkOrdersList',
-        href: '/backoffice/work-orders',
-        permission: PERMISSIONS.WORK_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'registerNotaCmt',
-        href: '/backoffice/work-orders/nota-register',
-        permission: PERMISSIONS.NOTA_REGISTER_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'marketplaceSales',
-    href: '#marketplace',
-    icon: ShoppingBag,
-    permission: PERMISSIONS.SALES_ORDERS_VIEW,
-    children: [
-      { labelKey: 'navSalesOrders', href: '/backoffice/sales-orders', permission: PERMISSIONS.SALES_ORDERS_VIEW },
-      { labelKey: 'navSalesReturns', href: '/backoffice/returns', permission: PERMISSIONS.SALES_ORDERS_VIEW },
-      {
-        labelKey: 'navFinanceSettlements',
-        href: '/backoffice/finance/settlements',
-        permission: PERMISSIONS.SETTLEMENTS_VIEW,
-      },
-      {
-        labelKey: 'navRecordPacker',
-        href: '/packer',
-        permission: PERMISSIONS.PACKER_MENU,
-      },
-    ],
-  },
-  {
-    labelKey: 'canvassingSales',
-    href: '#canvassing',
-    icon: Truck,
-    permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
-    children: [
-      {
-        labelKey: 'navCanvassing',
-        href: '/backoffice/canvassing',
-        permission: PERMISSIONS.CANVASSING_MANAGE,
-      },
-      {
-        labelKey: 'navFieldSalesOrders',
-        href: '/backoffice/field-sales-orders',
-        permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW,
-      },
-      {
-        labelKey: 'navVanSales',
-        href: '/backoffice/van-sales',
-        permission: PERMISSIONS.CANVASSING_MANAGE,
-      },
-      {
-        labelKey: 'navFieldReturns',
-        href: '/backoffice/field-returns',
-        anyPermissions: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_RETURNS_MANAGE],
-      },
-    ],
-  },
-  {
-    labelKey: 'consignmentSales',
-    href: '#consignment',
-    icon: Store,
-    permission: PERMISSIONS.STORES_VIEW,
-    children: [
-      {
-        labelKey: 'masterStores',
-        href: '/backoffice/stores',
-        permission: PERMISSIONS.STORES_VIEW,
-      },
-      {
-        labelKey: "storeStocktakes",
-        href: "/backoffice/store-stocktakes",
-        permission: PERMISSIONS.STORES_MANAGE,
-      },
-      {
-        labelKey: "navKonsiSellThrough",
-        href: "/backoffice/konsi-sell-through",
-        permission: PERMISSIONS.STORES_VIEW,
-      },
-      {
-        labelKey: "storeTransfers",
-        href: "/backoffice/store-transfers",
-        permission: PERMISSIONS.STORES_MANAGE,
-      },
-      {
-        labelKey: 'navSpgSales',
-        href: '/backoffice/spg-sales',
-        permission: PERMISSIONS.SPG_SALES_VIEW,
-      },
-      {
-        labelKey: "navSpgCommission",
-        href: "/backoffice/spg-commission",
-        permission: PERMISSIONS.SPG_SALES_VIEW,
-      },
-      {
-        labelKey: 'promos',
-        href: '/backoffice/promos',
-        permission: PERMISSIONS.PROMOS_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'finance',
-    href: '#finance',
-    icon: Wallet,
-    permission: PERMISSIONS.RECEIVABLES_VIEW,
-    children: [
-      {
-        labelKey: "navFinancePiutang",
-        href: "/backoffice/finance/piutang",
-        permission: PERMISSIONS.RECEIVABLES_VIEW,
-      },
-      {
-        labelKey: "navFinancePayments",
-        href: "/backoffice/finance/payments",
-        permission: PERMISSIONS.PAYMENTS_MANAGE,
-      },
-      {
-        labelKey: "navFinanceStoreSettlements",
-        href: "/backoffice/finance/pelunasan",
-        permission: PERMISSIONS.COLLECTIONS_MANAGE,
-      },
-      {
-        labelKey: "navFinanceCollections",
-        href: "/backoffice/finance/collections",
-        permission: PERMISSIONS.COLLECTIONS_MANAGE,
-      },
-      {
-        labelKey: 'supplierPayment',
-        href: '/backoffice/supplier-payments',
-        permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'accounting',
-    href: '#accounting',
-    icon: BookOpen,
-    permission: PERMISSIONS.COA_VIEW,
-    children: [
-      { labelKey: 'navCoa', href: '/backoffice/finance/coa', permission: PERMISSIONS.COA_VIEW },
-      {
-        labelKey: 'navFinanceAccountMapping',
-        href: '/backoffice/finance/account-mapping',
-        permission: PERMISSIONS.JOURNALS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceJournals',
-        href: '/backoffice/finance/journals',
-        permission: PERMISSIONS.JOURNALS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceCashFlowSections',
-        href: '/backoffice/finance/cash-flow-sections',
-        permission: PERMISSIONS.JOURNALS_VIEW,
-      },
-      {
-        labelKey: 'navFakturPajak',
-        href: '/backoffice/finance/faktur-pajak',
-        permission: PERMISSIONS.TAX_INVOICES_VIEW,
-      },
-    ],
-  },
-  {
-    labelKey: 'reports',
-    href: '#reports',
-    icon: BarChart2,
-    permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-    children: [
-      {
-        labelKey: 'navFinanceTrialBalance',
-        href: '/backoffice/finance/reports/trial-balance',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceIncomeStatement',
-        href: '/backoffice/finance/reports/income-statement',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceBalanceSheet',
-        href: '/backoffice/finance/reports/balance-sheet',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      {
-        labelKey: 'navFinanceCashFlow',
-        href: '/backoffice/finance/reports/cash-flow',
-        permission: PERMISSIONS.FINANCE_REPORTS_VIEW,
-      },
-      { labelKey: 'hppReport', href: '/backoffice/reports/hpp', permission: PERMISSIONS.REPORTS_HPP_VIEW },
-    ],
-  },
-  {
-    labelKey: 'auditTrail',
-    href: '/backoffice/audit-trail',
-    icon: FileText,
-    permission: PERMISSIONS.AUDIT_TRAIL_VIEW,
-  },
-  {
-    labelKey: 'jubelio',
-    href: '/backoffice/jubelio/admin',
-    icon: Activity,
-    permission: PERMISSIONS.JUBELIO_ADMIN_VIEW,
-    children: [
-      { labelKey: 'navJubelioAdmin', href: '/backoffice/jubelio/admin', permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
-      { labelKey: 'navJubelioSettings', href: '/backoffice/jubelio/settings', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-      { labelKey: 'navJubelioCategories', href: '/backoffice/jubelio/categories', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-      { labelKey: 'navJubelioMigration', href: '/backoffice/jubelio/migration', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-      { labelKey: 'navJubelioCouriers', href: '/backoffice/jubelio/couriers', permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
-    ],
-  },
-  {
-    labelKey: 'profileAccounts',
-    href: '/backoffice/profile-accounts',
-    icon: Users,
-    permission: PERMISSIONS.SETTINGS_RBAC_VIEW,
-    adminOnly: true,
-  },
-  {
-    labelKey: 'settings',
-    href: '/backoffice/settings',
-    icon: Settings,
-    permission: PERMISSIONS.SETTINGS_SECURITY_VIEW, // Settings hub - check any settings permission
-  },
-];
 
 function ThemeDropdownItems() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
-  const current = theme ?? 'system';
-  const isLight = current === 'light' || (current === 'system' && resolvedTheme === 'light');
-  const isDark = current === 'dark' || (current === 'system' && resolvedTheme === 'dark');
-  const isSystem = current === 'system';
+  const { theme, setTheme, systemTheme } = useTheme();
+  const tNav = useTranslations('navigation');
+  // Centang hanya pada pilihan yang TERSIMPAN; "ikuti perangkat" menyebut tema perangkat sekarang.
+  const { terpilih, perangkat } = keadaanTema(theme, systemTheme);
+  const labelPerangkat =
+    perangkat === 'light' ? tNav('temaPerangkatTerang') : perangkat === 'dark' ? tNav('temaPerangkatGelap') : tNav('temaPerangkat');
   return (
     <>
       <DropdownMenuItem onClick={() => setTheme('light')}>
         <Sun className="mr-2 h-4 w-4" />
-        Light
-        {isLight && <Check className="ml-auto h-4 w-4" />}
+        {tNav('temaTerang')}
+        {terpilih === 'light' && <Check className="ml-auto h-4 w-4" />}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => setTheme('dark')}>
         <Moon className="mr-2 h-4 w-4" />
-        Dark
-        {isDark && <Check className="ml-auto h-4 w-4" />}
+        {tNav('temaGelap')}
+        {terpilih === 'dark' && <Check className="ml-auto h-4 w-4" />}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => setTheme('system')}>
         <Monitor className="mr-2 h-4 w-4" />
-        System
-        {isSystem && <Check className="ml-auto h-4 w-4" />}
+        {labelPerangkat}
+        {terpilih === 'system' && <Check className="ml-auto h-4 w-4" />}
       </DropdownMenuItem>
     </>
+  );
+}
+
+/** Pilihan bahasa di kepala halaman — nama bahasanya lengkap ("Bahasa Indonesia", bukan "Bahasa"). */
+function PilihBahasa() {
+  const { locale, setLocale } = useLocaleContext();
+  const tNav = useTranslations('navigation');
+  const terpilih = BAHASA.find((b) => b.kode === locale) ?? BAHASA[0];
+  return (
+    <Select value={locale} onValueChange={(value) => setLocale(value as 'id' | 'en')}>
+      <SelectTrigger className="w-auto" aria-label={tNav('bahasa')}>
+        {/* Layar sempit: kodenya saja, supaya kepala halaman tidak meluap. */}
+        <SelectValue>
+          <span className="sm:hidden">{terpilih.kode.toUpperCase()}</span>
+          <span className="hidden sm:inline">{terpilih.nama}</span>
+        </SelectValue>
+      </SelectTrigger>
+      <SelectContent>
+        {BAHASA.map((b) => (
+          <SelectItem key={b.kode} value={b.kode}>
+            {b.nama}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -489,27 +191,45 @@ function Sidebar({
 }: {
   className?: string;
   permissions: string[];
-  userRole: Role;
+  /** Entri `adminOnly` hanya tampil bagi peran lama ADMIN. */
+  userRole?: Role;
   onClose?: () => void;
+  /** Menu samping ciut: ikon saja, grup dibuka sebagai menu tarik-turun. */
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 }) {
   const pathname = usePathname();
   const tNav = useTranslations('navigation');
-  // Longest matching child href wins, so `/work-orders/nota-register` opens Purchasing while
-  // `/work-orders/123` opens Production. A page under no child falls through to null, which
-  // leaves the open group as it is.
-  const getOpenKeyFromPath = (path: string) => {
-    let best: { key: string; length: number } | null = null;
-    for (const item of navItems) {
-      for (const child of item.children ?? []) {
-        if (path !== child.href && !path.startsWith(`${child.href}/`)) continue;
-        if (!best || child.href.length > best.length) best = { key: item.href, length: child.href.length };
-      }
-    }
-    return best?.key ?? null;
-  };
+  const navCounts = useNavCounts();
+  const getOpenKeyFromPath = (path: string) => grupUntukRute(path);
+
   const [openNavKey, setOpenNavKey] = useState<string | null>(() => getOpenKeyFromPath(pathname));
+  const [cari, setCari] = useState('');
+  const [favorit, setFavorit] = useState<string[]>([]);
+  const kotakCari = useRef<HTMLInputElement>(null);
+  const daftarMenu = useRef<HTMLElement>(null);
+
+  /*
+   * Sematan dibaca SETELAH terpasang, bukan saat state dibuat.
+   *
+   * `localStorage` tidak ada di server, jadi membacanya sebagai nilai awal
+   * `useState` membuat gambaran server dan klien berbeda — React mengeluh
+   * ketidakcocokan hidrasi dan membuang seluruh hasil server.
+   */
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage hanya ada di klien
+    setFavorit(bacaFavorit());
+  }, []);
+
+  const sematkan = (href: string) => {
+    const { daftar, hasil } = ubahFavorit(favorit, href);
+    if (hasil === 'penuh') {
+      toast.error(tNav('favoritPenuh', { batas: BATAS_FAVORIT }));
+      return;
+    }
+    setFavorit(daftar);
+    tulisFavorit(daftar);
+  };
 
   useEffect(() => {
     const key = getOpenKeyFromPath(pathname);
@@ -517,86 +237,140 @@ function Sidebar({
     if (key) setOpenNavKey(key);
   }, [pathname]);
 
-  const filteredItems = navItems.filter((item) => {
-    if (item.adminOnly && userRole !== Role.ADMIN) return false;
-    if (item.children?.length) {
-      const visibleChildren = item.children.filter((child) => isChildVisible(permissions, child));
-      if (visibleChildren.length === 0) return false;
-      if (hasPermission(permissions, item.permission)) return true;
-      return visibleChildren.some(
-        (child) => (child.permission || child.anyPermissions?.length) && isChildVisible(permissions, child)
-      );
+  /*
+   * Tautan aktif selalu terlihat. Di laptop 768–800 px menu terakhir sebuah
+   * grup panjang (SPG, Tim Lapangan) berada di bawah tepi menu, jadi orang
+   * tidak melihat di mana ia berada. Diulang sesudah animasi buka/tutup grup,
+   * karena grup lain yang menutup menggeser posisinya.
+   */
+  useEffect(() => {
+    const wadah = daftarMenu.current;
+    if (!wadah) return;
+    const geser = () => {
+      const semua = wadah.querySelectorAll<HTMLElement>('[aria-current="page"]');
+      const aktif = semua[semua.length - 1];
+      if (!aktif) return;
+      const d = geserAgarTerlihat(wadah.getBoundingClientRect(), aktif.getBoundingClientRect());
+      if (d !== 0) wadah.scrollTop += d;
+    };
+    const bingkai = requestAnimationFrame(geser);
+    const tunda = setTimeout(geser, 320);
+    return () => {
+      cancelAnimationFrame(bingkai);
+      clearTimeout(tunda);
+    };
+  }, [pathname, openNavKey]);
+
+  /** Yang boleh dilihat pengguna ini. Penyaringan izin selalu lebih dulu. */
+  const terizinkan = useMemo(
+    () =>
+      navItems.filter((item) => {
+        if ('adminOnly' in item && item.adminOnly && userRole !== Role.ADMIN) return false;
+        if (item.children?.length) {
+          const anakTerlihat = item.children.filter(
+            (child) => bolehAnak(permissions, child.permission),
+          );
+          if (anakTerlihat.length === 0) return false;
+          if (item.permission && hasPermission(permissions, item.permission)) return true;
+          return anakTerlihat.some(
+            (child) => child.permission !== undefined && bolehAnak(permissions, child.permission),
+          );
+        }
+        return bolehAnak(permissions, item.permission);
+      }),
+    [permissions, userRole],
+  );
+
+  /*
+   * Label yang SUDAH diterjemahkan diserahkan ke penyaring, bukan kunci i18n.
+   * Orang mencari pada teks yang mereka baca — "Piutang", bukan "receivables".
+   */
+  const berlabel: ItemTerlabel[] = useMemo(
+    () =>
+      terizinkan.map((item) => ({
+        href: item.href,
+        label: tNav(item.labelKey as never),
+        anak: (item.children ?? [])
+          .filter((c) => bolehAnak(permissions, c.permission))
+          .map((c) => ({ href: c.href, label: tNav(c.labelKey as never) })),
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tNav stabil per locale
+    [terizinkan, permissions],
+  );
+
+  const sedangMencari = cari.trim().length > 0;
+  const hasilCari = useMemo(() => saringNav(berlabel, cari), [berlabel, cari]);
+
+  /** href → hasil saringnya, supaya render tidak menyaring ulang tiap baris. */
+  const lolos = useMemo(() => new Map(hasilCari.map((h) => [h.item.href, h])), [hasilCari]);
+
+  const filteredItems = useMemo(
+    () => terizinkan.filter((i) => lolos.has(i.href)),
+    [terizinkan, lolos],
+  );
+
+  /**
+   * Halaman yang disematkan, dalam bentuk siap gambar.
+   *
+   * Dicari di seluruh pohon — induk maupun anak — karena orang menyematkan
+   * halaman, dan halaman bisa berada di kedua tingkat. Sematan yang menunjuk
+   * rute yang sudah tidak ada, atau yang izinnya dicabut, hilang sendiri di
+   * sini alih-alih jadi tautan mati.
+   */
+  const barisFavorit = useMemo(() => {
+    if (favorit.length === 0 || sedangMencari) return [];
+    const semua: { href: string; label: string; icon: React.ElementType }[] = [];
+    for (const item of terizinkan) {
+      semua.push({ href: item.href, label: tNav(item.labelKey as never), icon: item.icon });
+      for (const c of item.children ?? []) {
+        if (!bolehAnak(permissions, c.permission)) continue;
+        semua.push({ href: c.href, label: tNav(c.labelKey as never), icon: item.icon });
+      }
     }
-    return hasPermission(permissions, item.permission);
-  });
+    return favorit
+      .map((h) => semua.find((x) => x.href === h))
+      .filter((x): x is { href: string; label: string; icon: React.ElementType } => Boolean(x));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tNav stabil per locale
+  }, [favorit, terizinkan, permissions, sedangMencari]);
 
-  function visibleChildrenOf(item: NavItem): NavChild[] {
-    return (item.children ?? []).filter((child) => isChildVisible(permissions, child));
-  }
+  const tombolCiut = onToggleCollapse ? (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="h-8 w-8 shrink-0 text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+      onClick={onToggleCollapse}
+      aria-label={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
+      title={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
+    >
+      {collapsed ? <PanelLeft className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+    </Button>
+  ) : null;
 
-  function isChildActive(child: NavChild, siblings: NavChild[]): boolean {
-    const matching = siblings
-      .filter((c) => pathname === c.href || pathname.startsWith(`${c.href}/`))
-      .sort((a, b) => b.href.length - a.href.length);
-    return matching[0]?.href === child.href;
-  }
-
-  return (
-    <TooltipProvider delayDuration={0}>
-      <div className={cn('flex flex-col h-full text-sidebar-foreground', className)}>
-        <div
-          className={cn(
-            'flex items-center border-b border-sidebar-foreground/20',
-            collapsed ? 'flex-col gap-2 px-2 py-3' : 'gap-3 px-4 py-4'
-          )}
-        >
-          <div className="w-10 h-10 bg-sidebar-foreground rounded-lg flex items-center justify-center shrink-0">
-            <span className="text-sidebar font-bold text-lg">E</span>
-          </div>
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <h1 className="font-bold text-lg truncate">Elorae ERP</h1>
-              <p className="text-xs text-sidebar-foreground/60">v1.0.0</p>
+  if (collapsed) {
+    return (
+      <TooltipProvider delayDuration={0}>
+        <div data-menu-samping className={cn('flex flex-col h-full text-primary-foreground', className)}>
+          <div className="flex flex-col items-center gap-2 px-2 py-3 border-b border-primary-foreground/20">
+            <div className="w-10 h-10 bg-primary-foreground rounded-lg flex items-center justify-center shrink-0">
+              <span className="text-primary font-bold text-lg">E</span>
             </div>
-          )}
-          {onToggleCollapse && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground"
-              onClick={onToggleCollapse}
-              aria-label={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
-              title={collapsed ? tNav('expandSidebar') : tNav('collapseSidebar')}
-            >
-              {collapsed ? (
-                <PanelLeft className="h-4 w-4" />
-              ) : (
-                <PanelLeftClose className="h-4 w-4" />
-              )}
-            </Button>
-          )}
-        </div>
+            {tombolCiut}
+          </div>
+          <nav ref={daftarMenu} className="flex-1 min-h-0 overflow-y-auto py-4 px-2 space-y-1">
+            {terizinkan.map((item) => {
+              const label = tNav(item.labelKey as never);
+              const ada = (navCounts.grup[item.href] ?? 0) > 0;
+              const titik = ada ? (
+                <span aria-hidden className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-600" />
+              ) : null;
 
-        <nav
-          className={cn(
-            'flex-1 min-h-0 overflow-y-auto py-4 space-y-1',
-            collapsed ? 'px-2' : 'px-3'
-          )}
-        >
-          {filteredItems.map((item) => {
-            const Icon = item.icon;
-            const hasChildren = item.children && item.children.length > 0;
-            const pathOpenKey = getOpenKeyFromPath(pathname);
-            const isParentActive = hasChildren
-              ? pathOpenKey === item.href
-              : pathname === item.href || pathname.startsWith(`${item.href}/`);
-            const label = tNav(item.labelKey as any);
-
-            if (hasChildren) {
-              const children = visibleChildrenOf(item);
-
-              if (collapsed) {
+              if (item.children?.length) {
+                const anak = item.children.filter((child) => bolehAnak(permissions, child.permission));
+                const aktif = anak
+                  .filter((c) => pathname === c.href || pathname.startsWith(`${c.href}/`))
+                  .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+                const isParentActive = getOpenKeyFromPath(pathname) === item.href;
                 return (
                   <DropdownMenu key={item.href}>
                     <DropdownMenuTrigger asChild>
@@ -605,27 +379,28 @@ function Sidebar({
                         variant="ghost"
                         size="icon"
                         className={cn(
-                          'w-full h-10 text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground',
-                          isParentActive && 'bg-sidebar-foreground text-sidebar hover:bg-sidebar-foreground hover:text-sidebar'
+                          'relative w-full h-10 text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground',
+                          isParentActive && 'bg-primary-foreground text-primary hover:bg-primary-foreground hover:text-primary',
                         )}
                         aria-label={label}
                       >
-                        <Icon className="w-5 h-5" />
+                        <item.icon aria-hidden className="h-[18px] w-5" strokeWidth={1.75} />
+                        {titik}
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" align="start" className="w-56">
                       <DropdownMenuLabel>{label}</DropdownMenuLabel>
                       <DropdownMenuSeparator />
-                      {children.map((child) => (
+                      {anak.map((child) => (
                         <DropdownMenuItem key={child.href} asChild>
                           <Link
                             href={child.href}
                             onClick={onClose}
-                            className={cn(
-                              isChildActive(child, children) && 'font-medium'
-                            )}
+                            aria-current={aktif === child.href ? 'page' : undefined}
+                            className={cn(aktif === child.href && 'font-medium')}
                           >
-                            {tNav(child.labelKey as any)}
+                            <span className="flex-1 truncate">{tNav(child.labelKey as never)}</span>
+                            <NavCountBadge count={navCounts.halaman[child.href] ?? 0} />
                           </Link>
                         </DropdownMenuItem>
                       ))}
@@ -634,51 +409,7 @@ function Sidebar({
                 );
               }
 
-              return (
-                <Collapsible
-                  key={item.href}
-                  open={openNavKey === item.href}
-                  onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
-                  className="group/collapsible"
-                >
-                  <CollapsibleTrigger
-                    className={cn(
-                      'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
-                      isParentActive
-                        ? 'bg-sidebar-foreground text-sidebar'
-                        : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
-                    )}
-                  >
-                    <Icon className="w-5 h-5 shrink-0" />
-                    <span className="flex-1 text-left">{label}</span>
-                    <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <div className="ml-4 mt-1 space-y-0.5 border-l border-sidebar-foreground/20 pl-3">
-                      {children.map((child) => (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          onClick={onClose}
-                          className={cn(
-                            'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors',
-                            isChildActive(child, children)
-                              ? 'font-medium text-sidebar-foreground'
-                              : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
-                          )}
-                        >
-                          {tNav(child.labelKey as any)}
-                        </Link>
-                      ))}
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              );
-            }
-
-            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-
-            if (collapsed) {
+              const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Tooltip key={item.href}>
                   <TooltipTrigger asChild>
@@ -686,52 +417,276 @@ function Sidebar({
                       href={item.href}
                       onClick={onClose}
                       aria-label={label}
+                      aria-current={isActive ? 'page' : undefined}
                       className={cn(
-                        'flex h-10 w-full items-center justify-center rounded-lg transition-colors',
+                        'relative flex h-10 w-full items-center justify-center rounded-lg transition-colors',
                         isActive
-                          ? 'bg-sidebar-foreground text-sidebar'
-                          : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
+                          ? 'bg-primary-foreground text-primary'
+                          : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground',
                       )}
                     >
-                      <Icon className="w-5 h-5" />
+                      <item.icon aria-hidden className="h-[18px] w-5" strokeWidth={1.75} />
+                      {titik}
                     </Link>
                   </TooltipTrigger>
                   <TooltipContent side="right">{label}</TooltipContent>
                 </Tooltip>
               );
-            }
+            })}
+          </nav>
+        </div>
+      </TooltipProvider>
+    );
+  }
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-sidebar-foreground text-sidebar'
-                    : 'text-sidebar-foreground/70 hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground'
-                )}
-              >
-                <Icon className="w-5 h-5" />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+  return (
+    <div data-menu-samping className={cn('flex flex-col h-full text-primary-foreground', className)}>
+      <div className="flex items-center gap-3 px-4 py-4 border-b border-primary-foreground/20">
+        <div className="w-10 h-10 bg-primary-foreground rounded-lg flex items-center justify-center shrink-0">
+          <span className="text-primary font-bold text-lg">E</span>
+        </div>
+        <div className="min-w-0 flex-1">
+          <h1 className="font-bold text-lg truncate">Elorae ERP</h1>
+          <p className="text-xs text-primary-foreground/75">v1.0.0</p>
+        </div>
+        {tombolCiut}
+      </div>
 
-        <div
-          className={cn(
-            'border-t border-sidebar-foreground/20 [&_button]:text-sidebar-foreground [&_button]:hover:bg-sidebar-foreground/10 [&_button]:hover:text-sidebar-foreground',
-            collapsed
-              ? 'p-2 [&_button]:justify-center [&_button_span]:hidden [&_button_svg:last-child]:hidden'
-              : 'p-4'
+      {/*
+        * The nav list scrolls on short viewports (768px cuts off the last two
+        * items). Without a cue nothing tells you more menus exist below, so the
+        * wrapper fades the bottom edge — the scroll itself was never broken,
+        * only invisible.
+        */}
+      {/* Kotak cari. Menu ini berisi 53 tautan dalam 11 grup yang sebagian
+          besar tertutup — menemukan sesuatu berarti menebak grupnya, dan
+          tebakan itu salah separuh waktu. */}
+      <div className="px-3 pt-3">
+        <div className="relative">
+          <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-primary-foreground/75" />
+          <input
+            ref={kotakCari}
+            value={cari}
+            onChange={(e) => setCari(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && setCari('')}
+            placeholder={tNav('cariMenu')}
+            aria-label={tNav('cariMenu')}
+            className="w-full rounded-lg bg-primary-foreground/10 py-2 pl-8 pr-8 text-sm text-primary-foreground outline-none transition-colors placeholder:text-primary-foreground/80 focus:bg-primary-foreground/[0.16]"
+          />
+          {cari && (
+            <button
+              type="button"
+              onClick={() => {
+                setCari('');
+                kotakCari.current?.focus();
+              }}
+              aria-label={tNav('bersihkanCari')}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/60 hover:bg-primary-foreground/10 hover:text-primary-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           )}
-        >
-          <OfflineIndicator />
         </div>
       </div>
-    </TooltipProvider>
+
+      <div className="relative flex-1 min-h-0">
+        <nav ref={daftarMenu} className="h-full overflow-y-auto py-4 px-3 space-y-1">
+        {/* Sematan. Seseorang membuka tiga halaman yang sama sepanjang hari
+            dan tiap kali harus membuka grupnya lagi. */}
+        {barisFavorit.length > 0 && (
+          <div className="mb-3 space-y-0.5">
+            <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/80">
+              {tNav('favorit')}
+            </p>
+            {barisFavorit.map((f) => (
+              <div key={`fav-${f.href}`} className="group/fav relative">
+                <Link
+                  href={f.href}
+                  onClick={onClose}
+                  aria-current={pathname === f.href ? 'page' : undefined}
+                  className={cn(
+                    'flex items-center gap-3 rounded-lg py-2 pl-3 pr-9 text-sm transition-colors',
+                    pathname === f.href
+                      ? 'bg-primary-foreground text-primary'
+                      : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground',
+                  )}
+                >
+                  <f.icon aria-hidden className="h-[18px] w-5 shrink-0" strokeWidth={1.75} />
+                  <span className="flex-1 truncate text-left">{f.label}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => sematkan(f.href)}
+                  aria-label={tNav('lepasSematan')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/60 opacity-0 transition-opacity hover:text-primary-foreground group-hover/fav:opacity-100 focus-visible:opacity-100"
+                >
+                  <Star className="h-3.5 w-3.5 fill-current" />
+                </button>
+              </div>
+            ))}
+            <div className="!mt-3 border-t border-primary-foreground/15" />
+          </div>
+        )}
+
+        {sedangMencari && filteredItems.length === 0 && (
+          <p className="px-3 py-6 text-center text-sm text-primary-foreground/80">
+            {tNav('cariKosong', { kueri: cari.trim() })}
+          </p>
+        )}
+        {filteredItems.map((item, i) => {
+          const hasChildren = item.children && item.children.length > 0;
+          /*
+           * Judul bagian digambar dari entri PERTAMA yang benar-benar terlihat
+           * di bagian itu — bukan dari entri yang menuliskannya di data. Kalau
+           * yang menuliskannya kebetulan tersaring izin, judulnya akan hilang
+           * bersamanya dan sisa bagian itu menggantung di bawah judul bagian
+           * SEBELUMNYA, yang lebih menyesatkan daripada tanpa judul sama sekali.
+           */
+          const judulBagian =
+            item.section && item.section !== filteredItems[i - 1]?.section ? item.section : null;
+          const pathOpenKey = getOpenKeyFromPath(pathname);
+          const isParentActive = hasChildren
+            ? pathOpenKey === item.href
+            : pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+          const bagian = judulBagian ? (
+            <p
+              key={`sec-${judulBagian}`}
+              className="px-3 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-primary-foreground/80"
+            >
+              {tNav(judulBagian as never)}
+            </p>
+          ) : null;
+
+          if (hasChildren) {
+            return (
+              <Fragment key={item.href}>
+                {bagian}
+              <Collapsible
+                // Saat mencari, grup yang lolos saringan terbuka — anak yang cocok langsung terlihat.
+                open={grupTerbuka(item.href, openNavKey, sedangMencari, lolos.has(item.href))}
+                onOpenChange={(open) => setOpenNavKey(open ? item.href : null)}
+                className="group/collapsible"
+              >
+                <CollapsibleTrigger
+                  className={cn(
+                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors [&[data-state=open]>svg:last-of-type]:rotate-90',
+                    isParentActive
+                      ? 'bg-primary-foreground text-primary'
+                      : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                  )}
+                >
+                  <item.icon aria-hidden className="h-[18px] w-5 shrink-0" strokeWidth={1.75} />
+                  <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
+                  <NavCountBadge count={navCounts.grup[item.href] ?? 0} />
+                  <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200" />
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="ml-4 mt-1 space-y-0.5 border-l border-primary-foreground/20 pl-3">
+                    {(() => {
+                      /*
+                       * Saat mencari, hanya anak yang cocok yang digambar.
+                       * Menampilkan seluruh isi grup yang kebetulan punya satu
+                       * anak cocok memaksa orang mencari lagi dengan mata.
+                       */
+                      const lolosAnak = lolos.get(item.href)?.anak;
+                      const visibleChildren = sedangMencari
+                        ? item.children!.filter((c) => lolosAnak?.some((a) => a.href === c.href))
+                        : item.children!.filter(
+                            (child) =>
+                              bolehAnak(permissions, child.permission),
+                          );
+                      return visibleChildren.map((child) => {
+                        // Prefer the longest matching child href so nested routes
+                        // (e.g. /work-orders/nota-register) don't also light up the parent list item.
+                        const matching = visibleChildren
+                          .filter(
+                            (c) =>
+                              pathname === c.href || pathname.startsWith(`${c.href}/`)
+                          )
+                          .sort((a, b) => b.href.length - a.href.length);
+                        const isChildActive = matching[0]?.href === child.href;
+                        return (
+                          <div key={child.href} className="group/anak relative">
+                            <Link
+                              href={child.href}
+                              onClick={onClose}
+                              aria-current={isChildActive ? 'page' : undefined}
+                              className={cn(
+                                'flex items-center gap-2 rounded-md py-1.5 pl-2 pr-7 text-sm transition-colors',
+                                isChildActive
+                                  ? 'font-medium text-primary-foreground'
+                                  : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+                              )}
+                            >
+                              <span className="flex-1 truncate">{tNav(child.labelKey as any)}</span>
+                              {/* Lencana ikut turun ke anaknya. Angka di induk saja
+                                  menyebut ADA pekerjaan tanpa menyebut DI MANA, dan
+                                  orang harus membuka delapan anak untuk mencarinya. */}
+                              <NavCountBadge count={navCounts.halaman[child.href] ?? 0} />
+                            </Link>
+                            {/* Muncul saat disentuh saja — tombol bintang di 53
+                                baris sekaligus membuat menunya jadi papan tombol. */}
+                            <button
+                              type="button"
+                              onClick={() => sematkan(child.href)}
+                              aria-label={tNav(
+                                favorit.includes(child.href) ? 'lepasSematan' : 'sematkan',
+                              )}
+                              className={cn(
+                                'absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-primary-foreground/50 transition-opacity hover:text-primary-foreground',
+                                favorit.includes(child.href)
+                                  ? 'opacity-100'
+                                  : 'opacity-0 group-hover/anak:opacity-100 focus-visible:opacity-100',
+                              )}
+                            >
+                              <Star
+                                className={cn(
+                                  'h-3 w-3',
+                                  favorit.includes(child.href) && 'fill-current',
+                                )}
+                              />
+                            </button>
+                          </div>
+                        );
+                      });
+                    })()}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+              </Fragment>
+            );
+          }
+
+          const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          return (
+            <Fragment key={item.href}>
+              {bagian}
+            <Link
+              href={item.href}
+              onClick={onClose}
+              aria-current={isActive ? 'page' : undefined}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-primary-foreground text-primary'
+                  : 'text-primary-foreground/70 hover:bg-primary-foreground/10 hover:text-primary-foreground'
+              )}
+            >
+              <item.icon aria-hidden className="h-[18px] w-5 shrink-0" strokeWidth={1.75} />
+              <span className="flex-1 text-left">{tNav(item.labelKey as any)}</span>
+              <NavCountBadge count={navCounts.grup[item.href] ?? 0} />
+            </Link>
+            </Fragment>
+          );
+        })}
+        </nav>
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-primary to-transparent"
+        />
+      </div>
+    </div>
   );
 }
 
@@ -740,18 +695,24 @@ export function BackofficeShell({
 }: {
   children: React.ReactNode;
 }) {
+  const pageLabel = useCurrentPageLabel();
   const tRole = useTranslations('auth.roles');
+  // Nama peran yang SAMA dengan Pengaturan → Pengguna dan Peran & izin (Keuangan, Admin pajak…);
+  // `auth.roles` hanya mengenal enum lama dan menyebut PURCHASER "Pembeli".
+  const namaPeran = useNamaPeran();
+  const tAuth = useTranslations('auth');
   const tNav = useTranslations('navigation');
   const { data: session, status } = useSession();
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-      if (stored === '1') setSidebarCollapsed(true);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage hanya ada di klien
+      if (localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1') setSidebarCollapsed(true);
     } catch {
       // ignore
     }
@@ -768,6 +729,57 @@ export function BackofficeShell({
       return next;
     });
   }
+
+  // Laci tertutup setiap kali halaman berganti, lewat jalan mana pun (tautan menu, sematan, tombol kembali).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- menutup laci saat rute berganti
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  /*
+   * Jangkar `#…` di alamat (mis. Pengaturan → Salesman `#target`). Yang
+   * menggulir di kantor adalah `<main>`, bukan dokumen, dan kartu tujuan sering
+   * baru muncul sesudah kerangka muat diganti isi — jadi penggulir bawaan
+   * peramban/Next tidak menemukannya. Ditunggu sampai elemennya ada (paling
+   * lama 5 detik), lalu `<main>` digeser sampai jangkar di tepi atasnya.
+   */
+  const isiHalaman = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const ikuti = () => {
+      const id = idJangkar(window.location.hash);
+      if (!id) return () => {};
+      const geser = () => {
+        const el = document.getElementById(id);
+        const wadah = isiHalaman.current;
+        if (!el || !wadah) return false;
+        wadah.scrollTop += geserKeJangkar(wadah.getBoundingClientRect().top, el.getBoundingClientRect().top);
+        return true;
+      };
+      // Diulang sekali sesudah isi di atasnya selesai dimuat (posisinya bisa bergeser).
+      const ulang = setTimeout(geser, 700);
+      if (geser()) return () => clearTimeout(ulang);
+      const amati = new MutationObserver(() => {
+        if (geser()) amati.disconnect();
+      });
+      amati.observe(document.body, { childList: true, subtree: true });
+      const batas = setTimeout(() => amati.disconnect(), 5000);
+      return () => {
+        amati.disconnect();
+        clearTimeout(batas);
+        clearTimeout(ulang);
+      };
+    };
+    let lepas = ikuti();
+    const gantiHash = () => {
+      lepas();
+      lepas = ikuti();
+    };
+    window.addEventListener('hashchange', gantiHash);
+    return () => {
+      lepas();
+      window.removeEventListener('hashchange', gantiHash);
+    };
+  }, [pathname]);
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -817,8 +829,8 @@ export function BackofficeShell({
       {/* Desktop Sidebar */}
       <aside
         className={cn(
-          'hidden lg:flex lg:flex-col shrink-0 border-r border-sidebar-border bg-sidebar min-h-0 transition-[width] duration-200 ease-in-out',
-          sidebarCollapsed ? 'w-[4.25rem]' : 'w-64'
+          'hidden lg:flex lg:flex-col shrink-0 border-r border-primary-foreground/10 bg-primary min-h-0 transition-[width] duration-200 ease-in-out',
+          sidebarCollapsed ? 'w-[4.25rem]' : 'w-64',
         )}
       >
         <Sidebar
@@ -829,29 +841,24 @@ export function BackofficeShell({
         />
       </aside>
 
-      {/* Mobile Sidebar */}
-      <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
-          <Sidebar
-            permissions={session.user.permissions}
-            userRole={userRole}
-            onClose={() => setMobileMenuOpen(false)}
-          />
-        </SheetContent>
-      </Sheet>
-
       {/* Main Content — min-h-0 so flex-1 + overflow-auto actually scroll inside the viewport */}
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header */}
         <header className="h-16 shrink-0 border-b bg-card flex items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
-            <Sheet>
+            {/* Laci menu HP: SATU lembar terkendali. Dulu ada dua — pemicunya membuka
+                lembar yang tidak terkendali, sedangkan memilih halaman menutup lembar
+                yang lain, jadi laci tetap menutupi halaman tujuan. */}
+            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild className="lg:hidden">
-                <Button variant="ghost" size="icon">
-                  <Menu className="h-5 w-5" />
+                <Button variant="ghost" size="icon" aria-label={tNav('bukaMenu')}>
+                  <Menu aria-hidden className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="p-0 w-64 bg-sidebar border-sidebar-border">
+              {/* `text-primary-foreground`: tombol tutup lembar (X) mengikuti warna teks menu, terbaca di tema gelap maupun terang. */}
+              <SheetContent side="left" className="p-0 w-64 bg-primary text-primary-foreground border-primary-foreground/10">
+                <SheetTitle className="sr-only">{tNav('judulMenuSamping')}</SheetTitle>
+                <SheetDescription className="sr-only">{tNav('keteranganMenuSamping')}</SheetDescription>
                 <Sidebar
                   permissions={session.user.permissions}
                   userRole={userRole}
@@ -860,13 +867,14 @@ export function BackofficeShell({
               </SheetContent>
             </Sheet>
             <h2 className="text-lg font-semibold hidden sm:block">
-              {tNav('dashboard')} - {session.user.name || session.user.email}
+              {pageLabel ?? tNav('dashboard')}
             </h2>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <QuickActionFAB />
             <NotificationIcon />
-            <LanguageSwitcher />
+            <PilihBahasa />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2">
@@ -878,22 +886,22 @@ export function BackofficeShell({
                   <div className="hidden sm:block text-left">
                     <p className="text-sm font-medium">{session.user.name || session.user.email}</p>
                     <p className="text-xs text-muted-foreground">
-                      {tRole(userRole as any)}
+                      {session.user.roleName ? namaPeran(session.user.roleName) : tRole(userRole as any)}
                     </p>
                   </div>
                   <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuLabel>{tNav('akunSaya')}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                <DropdownMenuLabel>{tNav('tema')}</DropdownMenuLabel>
                 <ThemeDropdownItems />
                 <DropdownMenuSeparator />
                 <DropdownMenuItem asChild>
                   <Link href="/backoffice/settings" className="flex items-center">
                     <Settings className="mr-2 h-4 w-4" />
-                    Settings
+                    {tNav('settings')}
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -912,7 +920,7 @@ export function BackofficeShell({
                   ) : (
                     <LogOut className="mr-2 h-4 w-4" />
                   )}
-                  Sign out
+                  {tAuth('logout')}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -920,9 +928,12 @@ export function BackofficeShell({
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">{children}</main>
-        <QuickActionFAB />
+        <main ref={isiHalaman} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 lg:p-6">
+          {children}
+        </main>
         <FcmRegistration />
+        {/* Sinyal dan antrean kantor → pulau status di tengah atas (dulu label "Online" di menu samping). */}
+        <OfflineIndicator />
       </div>
     </div>
   );

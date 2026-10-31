@@ -130,8 +130,11 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     expect(rowB).toBeDefined();
     // 1000 delivered putus + 400 van = 1400, 2 realised transactions (1 delivery + 1 van sale)
     expect(rowA!.realised).toEqual({ count: 2, amount: 1400 });
+    // Rinciannya disebut apa adanya — "2 transaksi" membuka daftar pesanan yang berisi 1.
+    expect(rowA!.realisedRincian).toEqual({ pengiriman: 1, van: 1, pesanan: 1 });
     expect(rowA!.outstanding).toEqual({ count: 1, amount: 500 });
     expect(rowA!.awaitingDelivery).toEqual({ count: 0, amount: 0 });
+    expect(rowA!.menungguKirim).toEqual({ count: 0, amount: 0 });
     // 2000 delivered putus + 50 van = 2050
     expect(rowB!.realised).toEqual({ count: 2, amount: 2050 });
     expect(rowB!.outstanding).toEqual({ count: 1, amount: 100 });
@@ -165,6 +168,35 @@ d("getSalesmenSalesSummary (test bed only)", () => {
     const rowB = summary.rows.find((r) => r.salesmanId === salesmanBId);
     expect(rowA!.realised).toEqual({ count: 0, amount: 0 });
     expect(rowB!.realised).toEqual({ count: 1, amount: 300 });
+    expect(rowB!.menungguKirim).toEqual({ count: 0, amount: 0 });
+  });
+
+  it("satu pesanan yang dikirim dua kali: dua pengiriman, SATU pesanan (angka yang dicocokkan dengan daftar pesanan)", async () => {
+    const order = await makeOrder(14, salesmanAId, "APPROVED", "PUTUS", 800, "DELIVERED");
+    await makeDelivery(4, order.id, salesmanAId, 300);
+    await makeDelivery(5, order.id, salesmanAId, 500);
+
+    const summary = await getSalesmenSalesSummary();
+    const rowA = summary.rows.find((r) => r.salesmanId === salesmanAId);
+    expect(rowA!.realised).toEqual({ count: 2, amount: 800 });
+    expect(rowA!.realisedRincian).toEqual({ pengiriman: 2, van: 0, pesanan: 1 });
+    expect(summary.totals.realisedRincian.pesanan).toBeGreaterThanOrEqual(1);
+  });
+
+  it("pesanan putus yang sudah disetujui tetapi belum dikirim punya embernya sendiri — tidak hilang dari kedua angka", async () => {
+    // Sama dengan daftar `?kirim=PENDING`: DISETUJUI, PUTUS, belum satu pun pengiriman.
+    await makeOrder(9, salesmanAId, "APPROVED", "PUTUS", 900);
+    await makeOrder(10, salesmanAId, "APPROVED", "PUTUS", 100);
+    await makeOrder(11, salesmanAId, "APPROVED", "KONSI", 700); // transfer, bukan penjualan
+    await makeOrder(12, salesmanAId, "PENDING_APPROVAL", "PUTUS", 50); // masih menunggu persetujuan
+    await makeOrder(13, salesmanAId, "REJECTED", "PUTUS", 60); // ditolak/dibatalkan
+
+    const summary = await getSalesmenSalesSummary();
+    const rowA = summary.rows.find((r) => r.salesmanId === salesmanAId);
+    expect(rowA!.menungguKirim).toEqual({ count: 2, amount: 1000 });
+    expect(rowA!.outstanding).toEqual({ count: 1, amount: 50 });
+    expect(rowA!.realised).toEqual({ count: 0, amount: 0 });
+    expect(summary.totals.menungguKirim.count).toBeGreaterThanOrEqual(2);
   });
 
   it("awaitingDelivery: an approved putus order with no delivery counts at its full total, and its salesman gets a row", async () => {

@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { CalendarPlus } from "lucide-react";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ItemType } from "@/lib/constants/enums";
 import { PERMISSIONS, hasPermission } from "@/lib/rbac";
 import { getItemCategories } from "@/app/actions/item-categories";
@@ -35,15 +37,24 @@ import {
   upsertAccessoryPlans,
   upsertMonthlyCmtAllocations,
   upsertMonthlyColorAllocations,
+  type HasilTahap,
 } from "@/app/actions/planning";
 import { PlanningPageShell, PlanningTabPanel } from "@/components/planning/planning-page-shell";
+import { usulanTahunPlan } from "./usulan-tahun";
 import { PlanGridTab } from "@/components/planning/plan-grid-tab";
 import { PlanDashboardTab } from "@/components/planning/plan-dashboard-tab";
 import { PlanDetailsTab } from "@/components/planning/plan-details-tab";
 import { PlanColorsTab } from "@/components/planning/plan-colors-tab";
 import { PlanCmtTab } from "@/components/planning/plan-cmt-tab";
 import { PlanAccessoriesTab } from "@/components/planning/plan-accessories-tab";
-import type { ComboboxOption, PlanDashboardData, PlanYearDetail } from "@/components/planning/types";
+import { PlanKalenderTab } from "@/components/planning/plan-kalender-tab";
+import type {
+  ComboboxOption,
+  PlanDashboardData,
+  PlanStageAddData,
+  PlanStageUpdateData,
+  PlanYearDetail,
+} from "@/components/planning/types";
 
 export function PlanningPageClient() {
   const searchParams = useSearchParams();
@@ -51,9 +62,12 @@ export function PlanningPageClient() {
   const { data: session } = useSession();
   const tCmt = useTranslations("planning.cmt");
   const tColors = useTranslations("planning.colors");
+  const tToast = useTranslations("planning.toasts");
+  const tEmpty = useTranslations("planning.empty");
+  const tKosong = useTranslations("planning.kosongTab");
+  const tTolak = useTranslations("jadwalProduksi.plan.tolak");
   const activeTab = searchParams.get("tab") || "grid";
 
-  const isAdmin = session?.user?.role === "ADMIN";
   const canManage = hasPermission(
     session?.user?.permissions || [],
     PERMISSIONS.PRODUCTION_PLANNING_MANAGE
@@ -62,14 +76,18 @@ export function PlanningPageClient() {
     session?.user?.permissions || [],
     PERMISSIONS.WORK_ORDERS_CREATE
   );
+  const lihatPo = hasPermission(session?.user?.permissions || [], PERMISSIONS.PURCHASE_ORDERS_VIEW);
+  const lihatSpk = hasPermission(session?.user?.permissions || [], PERMISSIONS.WORK_ORDERS_VIEW);
 
   const [years, setYears] = useState<
     Array<{ id: string; year: number; isLocked: boolean; status: "DRAFT" | "ACTIVE" }>
   >([]);
   const [selectedYearId, setSelectedYearId] = useState("");
   const [detail, setDetail] = useState<PlanYearDetail | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [dashboard, setDashboard] = useState<PlanDashboardData | null>(null);
-  const [newYear, setNewYear] = useState(String(new Date().getFullYear()));
+  // Usulan tahun baru mengikuti tahun bawaan Forecast (lib: ./usulan-tahun.ts).
+  const [newYear, setNewYear] = useState(() => String(usulanTahunPlan([])));
   const [itemOptions, setItemOptions] = useState<ComboboxOption[]>([]);
   const [itemCategoryOptions, setItemCategoryOptions] = useState<ComboboxOption[]>([]);
   const [accessoryOptions, setAccessoryOptions] = useState<ComboboxOption[]>([]);
@@ -78,6 +96,7 @@ export function PlanningPageClient() {
 
   const refreshAll = async (preferredYearId?: string) => {
     const planYears = await getPlanYears();
+    setNewYear(String(usulanTahunPlan(planYears.map((y) => y.year))));
     setYears(
       planYears.map((y) => ({
         id: y.id,
@@ -86,7 +105,10 @@ export function PlanningPageClient() {
         status: y.status as "DRAFT" | "ACTIVE",
       }))
     );
-    const nextYearId = preferredYearId || selectedYearId || planYears[0]?.id || "";
+    // ?tahun= di URL (dibagikan / kembali) dipakai sebelum tahun pertama.
+    const tahunUrl = new URLSearchParams(window.location.search).get("tahun");
+    const dariUrl = tahunUrl ? planYears.find((y) => String(y.year) === tahunUrl)?.id : undefined;
+    const nextYearId = preferredYearId || selectedYearId || dariUrl || planYears[0]?.id || "";
     setSelectedYearId(nextYearId);
     if (!nextYearId) {
       setDetail(null);
@@ -102,9 +124,11 @@ export function PlanningPageClient() {
   };
 
   useEffect(() => {
-    refreshAll().catch((err: unknown) => {
-      toast.error(err instanceof Error ? err.message : "Failed to load planning");
-    });
+    refreshAll()
+      .catch((err: unknown) => {
+        toast.error(err instanceof Error ? err.message : tToast("loadFailed"));
+      })
+      .finally(() => setLoaded(true));
     Promise.all([
       getItemsByType(ItemType.FINISHED_GOOD),
       getItemsByType(ItemType.ACCESSORIES),
@@ -145,7 +169,7 @@ export function PlanningPageClient() {
   useEffect(() => {
     if (!selectedYearId) return;
     refreshAll(selectedYearId).catch((err: unknown) => {
-      toast.error(err instanceof Error ? err.message : "Failed to load plan year");
+      toast.error(err instanceof Error ? err.message : tToast("loadYearFailed"));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedYearId]);
@@ -199,13 +223,73 @@ export function PlanningPageClient() {
     return null;
   };
 
-  const handleCreateWo = async (stageId: string) => {
+  // Tambah/ubah tahap mengembalikan kode penolakan (tidak melempar); `true` = tersimpan.
+  const hasilTahap = (hasil: HasilTahap): boolean => {
+    if (hasil.ok) return true;
+    toast.error(
+      hasil.code === "SUDAH_ADA_WO"
+        ? tTolak("SUDAH_ADA_WO", { docNumber: hasil.docNumber ?? "" })
+        : tTolak(hasil.code)
+    );
+    return false;
+  };
+  const handleAddStage = async (planCategoryId: string, data: PlanStageAddData) => {
     try {
-      await createWorkOrderFromStage(stageId);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Failed to create WO");
+      return hasilTahap(await createPlanStage({ planCategoryId, ...data }));
+    } catch {
+      toast.error(tTolak("GAGAL"));
+      return false;
     }
   };
+  const handleUpdateStage = async (stageId: string, data: PlanStageUpdateData) => {
+    try {
+      return hasilTahap(await updatePlanStage(stageId, data));
+    } catch {
+      toast.error(tTolak("GAGAL"));
+      return false;
+    }
+  };
+
+  // Klik ganda pada "Buat WO" tidak boleh membuat dua WO untuk satu tahap.
+  const woSedangDibuat = useRef(new Set<string>());
+  const handleCreateWo = async (stageId: string) => {
+    if (woSedangDibuat.current.has(stageId)) return;
+    woSedangDibuat.current.add(stageId);
+    try {
+      // Penolakan datang sebagai kode; perpindahan ke WO baru dilakukan di sini
+      // (aksi server tidak lagi memanggil redirect()).
+      const hasil = await createWorkOrderFromStage(stageId);
+      if (!hasil.ok) {
+        toast.error(
+          hasil.code === "SUDAH_ADA_WO"
+            ? tToast("woDariTahap.SUDAH_ADA_WO", { docNumber: hasil.docNumber ?? "" })
+            : tToast.has(`woDariTahap.${hasil.code}`)
+              ? tToast(`woDariTahap.${hasil.code}`)
+              : tToast("createWoFailed")
+        );
+        return;
+      }
+      toast.success(tToast("woDariTahap.berhasil", { docNumber: hasil.docNumber }));
+      router.push(`/backoffice/work-orders/${hasil.id}`);
+    } catch {
+      toast.error(tToast("createWoFailed"));
+    } finally {
+      woSedangDibuat.current.delete(stageId);
+    }
+  };
+
+  // Before the first load finishes there is nothing to say yet; after it, a
+  // missing plan gets an explanation instead of a blank space under the tabs.
+  // Each tab says what it will hold once a plan year exists.
+  const kosong = (tab: "grid" | "dashboard" | "rincian" | "kalender" | "warna" | "jahitan" | "aksesoris") =>
+    loaded ? (
+      <EmptyState
+        icon={CalendarPlus}
+        className="rounded-xl border bg-card"
+        title={tEmpty("title")}
+        description={`${tKosong(tab)} ${canManage ? tKosong("kelola") : tKosong("lihat")}`}
+      />
+    ) : null;
 
   return (
     <PlanningPageShell
@@ -213,11 +297,17 @@ export function PlanningPageClient() {
       onTabChange={setTab}
       years={years}
       selectedYearId={selectedYearId}
-      onYearChange={setSelectedYearId}
+      onYearChange={(id) => {
+        setSelectedYearId(id);
+        const tahun = years.find((y) => y.id === id)?.year;
+        const params = new URLSearchParams(searchParams.toString());
+        if (tahun != null) params.set("tahun", String(tahun));
+        router.replace(`/backoffice/production/planning?${params.toString()}`);
+      }}
       createdByName={detail?.createdBy.name}
       planStatus={detail?.status}
       isLocked={detail?.isLocked}
-      isAdmin={isAdmin}
+      bolehKunci={canManage}
       canManage={canManage}
       newYear={newYear}
       onNewYearChange={setNewYear}
@@ -225,20 +315,19 @@ export function PlanningPageClient() {
         if (!canManage) return;
         const year = Number(newYear);
         if (!Number.isInteger(year)) {
-          toast.error("Invalid year");
+          toast.error(tToast("invalidYear"));
           return;
         }
         try {
           const created = await createPlanYear({ year });
           await refreshAll(created.id);
-          setNewYear(String(year + 1));
-          toast.success("Plan year created");
+          toast.success(tToast("yearCreated"));
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Failed to create year");
+          toast.error(err instanceof Error ? err.message : tToast("createYearFailed"));
         }
       }}
       onToggleLock={async () => {
-        if (!detail || !isAdmin) return;
+        if (!detail || !canManage) return;
         await setPlanYearLock(detail.id, !detail.isLocked);
         await refreshAll(detail.id);
       }}
@@ -252,9 +341,9 @@ export function PlanningPageClient() {
         try {
           await activatePlanYear(detail.id);
           await refreshAll(detail.id);
-          toast.success("Plan activated");
+          toast.success(tToast("activated"));
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Activation failed");
+          toast.error(err instanceof Error ? err.message : tToast("activateFailed"));
         }
       }}
       onReopenPlan={async () => {
@@ -262,9 +351,9 @@ export function PlanningPageClient() {
         try {
           await reopenPlanYear(detail.id);
           await refreshAll(detail.id);
-          toast.success("Plan reopened to draft");
+          toast.success(tToast("reopened"));
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Reopen failed");
+          toast.error(err instanceof Error ? err.message : tToast("reopenFailed"));
         }
       }}
       onDownloadTemplate={async () => {
@@ -275,7 +364,7 @@ export function PlanningPageClient() {
           link.download = filename;
           link.click();
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Download failed");
+          toast.error(err instanceof Error ? err.message : tToast("downloadFailed"));
         }
       }}
       onImportExcel={async (file) => {
@@ -290,15 +379,19 @@ export function PlanningPageClient() {
           const result = await importPlanFromExcel(detail.id, base64);
           await refreshAll(detail.id);
           toast.success(
-            `Import: ${result.created} created, ${result.updated} updated, ${result.errors.length} errors`
+            tToast("importSummary", {
+              created: result.created,
+              updated: result.updated,
+              errors: result.errors.length,
+            })
           );
         } catch (err: unknown) {
-          toast.error(err instanceof Error ? err.message : "Import failed");
+          toast.error(err instanceof Error ? err.message : tToast("importFailed"));
         }
       }}
     >
       <PlanningTabPanel value="grid">
-        {detail && (
+        {detail ? (
           <PlanGridTab
             detail={detail}
             disabled={disabled}
@@ -345,60 +438,57 @@ export function PlanningPageClient() {
             onResetAllMonths={async (id) => {
               await resetMonthlyToAuto(id);
             }}
-            onAddStage={async (id, data) => {
-              await createPlanStage({ planCategoryId: id, ...data });
-            }}
-            onUpdateStage={async (id, data) => {
-              await updatePlanStage(id, data);
-            }}
+            onAddStage={handleAddStage}
+            onUpdateStage={handleUpdateStage}
             onDeleteStage={async (id) => {
               await deletePlanStage(id);
             }}
             onCreateWo={handleCreateWo}
           />
-        )}
+        ) : kosong("grid")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="dashboard">
-        {dashboard && <PlanDashboardTab dashboard={dashboard} />}
+        {dashboard ? <PlanDashboardTab dashboard={dashboard} /> : kosong("dashboard")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="rincian">
-        {detail && (
+        {detail ? (
           <PlanDetailsTab
             detail={detail}
             supplierOptions={tailorOptions}
             disabled={disabled}
+            canManage={canManage}
             canCreateWo={canCreateWorkOrder}
             onRefresh={() => refreshAll(detail.id)}
-            onAddStage={async (id, data) => {
-              await createPlanStage({ planCategoryId: id, ...data });
-            }}
-            onUpdateStage={async (id, data) => {
-              await updatePlanStage(id, data);
-            }}
+            onAddStage={handleAddStage}
+            onUpdateStage={handleUpdateStage}
             onDeleteStage={(id) => deletePlanStage(id)}
             onCreateWo={handleCreateWo}
           />
-        )}
+        ) : kosong("rincian")}
+      </PlanningTabPanel>
+
+      <PlanningTabPanel value="kalender">
+        {detail ? <PlanKalenderTab tahun={detail.year} lihatPo={lihatPo} lihatSpk={lihatSpk} /> : kosong("kalender")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="warna">
-        {detail && (
+        {detail ? (
           <PlanColorsTab
             detail={detail}
             disabled={disabled}
             onRefresh={() => refreshAll(detail.id)}
             onSave={async (categoryId, month, allocations) => {
               await upsertMonthlyColorAllocations(categoryId, month, allocations);
-              toast.success("Color allocations saved");
+              toast.success(tToast("colorsSaved"));
             }}
           />
-        )}
+        ) : kosong("warna")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="jahitan">
-        {detail && (
+        {detail ? (
           <PlanCmtTab
             detail={detail}
             tailorOptions={tailorOptions}
@@ -408,7 +498,7 @@ export function PlanningPageClient() {
             onRefresh={() => refreshAll(detail.id)}
             onSave={async (categoryId, month, variantSku, allocations) => {
               await upsertMonthlyCmtAllocations(categoryId, month, variantSku, allocations);
-              toast.success("CMT allocations saved");
+              toast.success(tToast("cmtSaved"));
             }}
             onGenerateWorkOrders={async (filters) => {
               const result = await generateWorkOrdersFromPlan(detail.id, filters);
@@ -426,11 +516,11 @@ export function PlanningPageClient() {
               return result;
             }}
           />
-        )}
+        ) : kosong("jahitan")}
       </PlanningTabPanel>
 
       <PlanningTabPanel value="aksesoris">
-        {detail && (
+        {detail ? (
           <PlanAccessoriesTab
             detail={detail}
             accessoryOptions={accessoryOptions}
@@ -441,7 +531,7 @@ export function PlanningPageClient() {
             }}
             onSuggestBom={(categoryId) => suggestAccessoryFromBom(categoryId)}
           />
-        )}
+        ) : kosong("aksesoris")}
       </PlanningTabPanel>
     </PlanningPageShell>
   );

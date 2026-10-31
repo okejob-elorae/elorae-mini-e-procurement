@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getSpgSaleById } from "@/lib/spg/sale-queries";
+import { kembaliPerNota } from "@/lib/spg/retur-pembeli";
 import { SpgSaleDetailClient } from "./SpgSaleDetailClient";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +18,8 @@ export default async function SpgSaleDetailPage({ params }: PageProps) {
   if (!hasPermission(perms, PERMISSIONS.SPG_SALES_VIEW)) redirect("/backoffice");
 
   const { id } = await params;
-  const sale = await getSpgSaleById(id);
+  const [sale, kembali] = await Promise.all([getSpgSaleById(id), kembaliPerNota(id)]);
   if (!sale) notFound();
 
-  return <SpgSaleDetailClient sale={sale} />;
+  return <SpgSaleDetailClient sale={sale} kembali={kembali} />;
 }

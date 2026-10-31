@@ -1,8 +1,8 @@
 "use client";
 
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
-import { toDisplayDate } from "@/lib/date-only";
+import { formatDisplayDate } from "@/lib/date-only";
 
 type Props = {
   supplierCode: string;
@@ -20,6 +20,7 @@ export function EtaSuggestionHint({
   hintKey = "etaHint",
 }: Props) {
   const t = useTranslations("leadTime.po");
+  const locale = useLocale();
   if (!suggestedEta || totalDays <= 0) return null;
 
   return (
@@ -28,7 +29,7 @@ export function EtaSuggestionHint({
         {t(hintKey, {
           supplier: supplierCode,
           days: totalDays,
-          date: toDisplayDate(suggestedEta),
+          date: formatDisplayDate(suggestedEta, locale),
         })}
       </span>
       <Button type="button" size="sm" variant="outline" onClick={onUseDate}>

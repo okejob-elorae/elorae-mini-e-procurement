@@ -1,4 +1,5 @@
-'use server';
+// Bukan aksi server: dipanggil hanya dari kode server, dan pemagarnya adalah
+// pembungkus di app/actions/* (lihat bukan-aksi-server.test.ts).
 
 import { prisma } from '@elorae/db';
 import { serializeForClient } from '@/lib/serialize-for-client';

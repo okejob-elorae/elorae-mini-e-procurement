@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { daftarSalesman } from "@/lib/salesman/queries";
+import { daftarArea } from "@/lib/stores/areas";
 import { StoreForm } from "../StoreForm";
 
 export default async function NewStorePage() {
@@ -9,9 +11,11 @@ export default async function NewStorePage() {
   const perms = session.user.permissions ?? [];
   if (!hasPermission(perms, PERMISSIONS.STORES_MANAGE)) redirect("/backoffice/stores");
 
+  const [areas, salesmen] = await Promise.all([daftarArea(), daftarSalesman()]);
+
   return (
     <div className="max-w-3xl">
-      <StoreForm mode="create" initial={{
+      <StoreForm mode="create" areas={areas} salesmen={salesmen} initial={{
         code: "",
         name: "",
         address: "",
@@ -27,6 +31,10 @@ export default async function NewStorePage() {
         lng: null,
         checkinRadiusMeters: null,
         sellThroughMethod: null,
+        isPkp: false,
+        consignmentVat: false,
+        groupId: null,
+        salesmanId: null,
         isActive: true,
       }} />
     </div>

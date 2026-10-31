@@ -1,13 +1,14 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
+import { tautanFakturPajak, tautanPiutangFaktur } from "./tautan-penagihan";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { MoreHorizontal, Pencil, Printer, Receipt, Truck } from "lucide-react";
+import { Eye, FileCheck2, FileText, Landmark, MoreHorizontal, PackageCheck, Pencil, Printer, Receipt, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,8 +45,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatDateTime, formatIDR } from "@/lib/sales-orders/format";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { formatDateOnlyJakarta, formatDisplayDate, formatDisplayDateTime } from "@/lib/date-only";
 import { STATUS_BADGE_VARIANT, STATUS_LABEL_KEY } from "@/lib/tax-invoices/status-display";
 import type {
   FieldSalesDeliveryStatus,
@@ -63,6 +64,14 @@ import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
 import { promoNameForDeliveryLine } from "@/lib/field-sales/delivery-nota-promos";
 import { buildNotaGudangPrintHtml } from "@/lib/print/field-sales-nota-gudang-html";
 import { buildNotaTagihanPrintHtml } from "@/lib/print/field-sales-nota-tagihan-html";
+import { buildBuktiTerimaPrintHtml } from "@/lib/print/bukti-terima-html";
+import {
+  DialogBuktiTerimaKantor,
+  LightboxBuktiTerima,
+  SelBuktiTerima,
+  cetakDenganGambar,
+  type SasaranKantor,
+} from "./BuktiTerimaKantor";
 import {
   DeliveryFormDialog,
   deliveryErrorKey,
@@ -71,6 +80,8 @@ import {
 } from "./DeliveryFormDialog";
 import { CreateShipmentDialog } from "./CreateShipmentDialog";
 import { DELIVERY_BADGE_CLASS, DELIVERY_BADGE_VARIANT } from "../delivery-status-badge";
+import { TanggalInput } from "@/components/ui/tanggal-input";
+import type { PiutangKiriman } from "./tautan-pesanan";
 
 type Props = {
   orderId: string;
@@ -86,6 +97,27 @@ type Props = {
   paymentTempo: number;
   canDeliver: boolean;
   canShipShipment: boolean;
+  /**
+   * Mencatat/mengoreksi bukti terima: izin kirim ATAU setujui. Tidak diisi =
+   * sama dengan `canDeliver` (penulis tetap memeriksa izinnya sendiri).
+   */
+  canRecordReceipt?: boolean;
+  /**
+   * Pre-order yang jendelanya belum dirilis: stoknya belum disiapkan, jadi
+   * pengiriman belum bisa dicatat (penulis menolak dengan `INDEN_BELUM_RILIS`).
+   * Menutup sisa tetap boleh — toko yang membatalkan pre-order-nya.
+   */
+  indenBelumRilis?: boolean;
+  /** Piutang tiap nota (per `deliveryId`), sisa dihitung ulang; kosong = tidak boleh/ tidak termuat. */
+  piutangKiriman?: Record<string, PiutangKiriman>;
+  bolehBukaPiutang?: boolean;
+  bolehBukaFakturPajak?: boolean;
+};
+
+const KUNCI_FAKTUR: Record<"PENDING" | "CREATED" | "NOT_REQUIRED", "fakturMenunggu" | "fakturDibuat" | "fakturTidakPerlu"> = {
+  PENDING: "fakturMenunggu",
+  CREATED: "fakturDibuat",
+  NOT_REQUIRED: "fakturTidakPerlu",
 };
 
 /**
@@ -98,15 +130,6 @@ const ACTION_SLOT_CLASS = [
   "max-sm:col-start-1 max-sm:row-start-2 max-sm:row-span-1",
   "max-sm:justify-self-start max-sm:justify-start",
 ].join(" ");
-
-function formatDay(date: Date, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    timeZone: "Asia/Jakarta",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
-}
 
 function totalQty(delivery: FieldSalesDeliverySummary): number {
   return delivery.lines.reduce((sum, line) => sum + line.qty, 0);
@@ -126,11 +149,20 @@ export function DeliveriesCard({
   paymentTempo,
   canDeliver,
   canShipShipment,
+  canRecordReceipt = canDeliver,
+  indenBelumRilis = false,
+  piutangKiriman = {},
+  bolehBukaPiutang = false,
+  bolehBukaFakturPajak = false,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
   const tCommon = useTranslations("common");
   const tFakturStatus = useTranslations("fakturPajakStatus");
   const tShipments = useTranslations("deliveryShipments");
+  const tBukti = useTranslations("buktiTerima.kantor");
+  const tCetak = useTranslations("buktiTerima.cetak");
+  const [sasaranBukti, setSasaranBukti] = useState<SasaranKantor | null>(null);
+  const [lihatBukti, setLihatBukti] = useState<FieldSalesDeliverySummary | null>(null);
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -157,7 +189,8 @@ export function DeliveriesCard({
   if (status !== "APPROVED" && deliveries.length === 0) return null;
 
   const hasOutstanding = lines.some((line) => line.outstanding > 0);
-  const showActions = canDeliver && status === "APPROVED";
+  // Tanpa sisa, kedua tombol tidak punya arti — lencana Terkirim/Ditutup sudah mengatakannya.
+  const showActions = canDeliver && status === "APPROVED" && hasOutstanding;
   const statusKey = `delivery.status.${deliveryStatus}`;
 
   /**
@@ -209,6 +242,51 @@ export function DeliveriesCard({
       },
     });
     printHtmlInIframe(html, t("print.notaGudang"));
+  }
+
+  /**
+   * Tanda terima: lembar kosong untuk ditandatangani toko selama belum ada bukti, salinan bukti
+   * yang tercatat (nama, jam WIB, gambar) sesudahnya. Dicetak lewat `cetakDenganGambar`, yang
+   * menunggu gambar buktinya termuat — `printHtml` di atas mencetak sebelum foto sempat tiba.
+   */
+  function handlePrintTandaTerima(delivery: FieldSalesDeliverySummary): void {
+    logPrintQuietly("FieldSalesTandaTerima", delivery.id);
+    const html = buildBuktiTerimaPrintHtml({
+      docNo: delivery.docNo,
+      orderNo,
+      storeName,
+      salesmanName,
+      deliveredAt: delivery.deliveredAt,
+      receivedByName: delivery.receivedByName,
+      receivedAt: delivery.receivedAt,
+      podPhotoUrl: delivery.podPhotoUrl,
+      lines: delivery.lines.map((line) => ({
+        productName: line.productName,
+        variantSku: line.variantSku,
+        variantLabel: lineVariantLabel(line.orderLineId),
+        qty: line.qty,
+      })),
+      labels: {
+        title: tCetak("judul"),
+        doc: tCetak("nota"),
+        orderRef: tCetak("pesanan"),
+        store: tCetak("toko"),
+        salesman: tCetak("sales"),
+        deliveredAt: tCetak("tanggalKirim"),
+        receivedBy: tCetak("diterimaOleh"),
+        receivedAt: tCetak("waktuDiterima"),
+        evidence: tCetak("bukti"),
+        no: tCetak("no"),
+        product: tCetak("produk"),
+        qty: tCetak("qty"),
+        totalQty: tCetak("totalQty"),
+        statement: tCetak("pernyataan"),
+        notYetReceived: tCetak("belum"),
+        signature: tCetak("tandaTangan"),
+        issuedBy: tCetak("diterbitkan"),
+      },
+    });
+    cetakDenganGambar(html, tCetak("judulJendela"));
   }
 
   function openTagihanDialog(deliveryId: string): void {
@@ -365,7 +443,8 @@ export function DeliveriesCard({
           <CardAction className={ACTION_SLOT_CLASS}>
             <Button
               className="h-10"
-              disabled={isPending || !hasOutstanding}
+              disabled={isPending || indenBelumRilis}
+              title={indenBelumRilis ? t("delivery.err.INDEN_BELUM_RILIS") : undefined}
               onClick={() => setFormOpen(true)}
             >
               <Truck className="h-4 w-4" />
@@ -385,7 +464,7 @@ export function DeliveriesCard({
             <Button
               variant="outline"
               className="h-10"
-              disabled={isPending || !hasOutstanding}
+              disabled={isPending}
               onClick={() => setCloseOpen(true)}
             >
               {t("delivery.close")}
@@ -411,15 +490,24 @@ export function DeliveriesCard({
                 <TableHead>{t("delivery.deliveredBy")}</TableHead>
                 <TableHead>{t("delivery.invoiceDueDates")}</TableHead>
                 <TableHead>{t("delivery.taxInvoiceStatus")}</TableHead>
+                <TableHead>{tBukti("kolom")}</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {deliveries.map((delivery) => (
                 <TableRow key={delivery.id}>
-                  <TableCell className="font-mono whitespace-nowrap">{delivery.docNo}</TableCell>
+                  <TableCell className="min-w-[10rem] whitespace-normal">
+                    <div className="font-mono whitespace-nowrap">{delivery.docNo}</div>
+                    <PenagihanKiriman
+                      delivery={delivery}
+                      piutang={piutangKiriman[delivery.id] ?? null}
+                      bolehBukaPiutang={bolehBukaPiutang}
+                      bolehBukaFakturPajak={bolehBukaFakturPajak}
+                    />
+                  </TableCell>
                   <TableCell className="whitespace-nowrap">
-                    {formatDateTime(delivery.deliveredAt, locale)}
+                    {formatDisplayDateTime(delivery.deliveredAt, locale)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{totalQty(delivery)}</TableCell>
                   <TableCell className="text-right tabular-nums whitespace-nowrap">
@@ -427,7 +515,7 @@ export function DeliveriesCard({
                   </TableCell>
                   <TableCell className="max-w-40 truncate">{delivery.deliveredByName}</TableCell>
                   <TableCell className="max-w-56 truncate whitespace-nowrap">
-                    {formatDay(delivery.invoiceDate, locale)} → {formatDay(delivery.dueDate, locale)}
+                    {formatDisplayDate(delivery.invoiceDate, locale)} → {formatDisplayDate(delivery.dueDate, locale)}
                   </TableCell>
                   <TableCell>
                     {delivery.taxInvoiceStatus ? (
@@ -438,10 +526,18 @@ export function DeliveriesCard({
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
+                  <TableCell className="whitespace-normal">
+                    <SelBuktiTerima kiriman={delivery} onLihat={() => setLihatBukti(delivery)} />
+                  </TableCell>
                   <TableCell className="w-12 text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" aria-label={tCommon("actions")}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={tCommon("actions")}
+                          title={tCommon("actions")}
+                        >
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -454,10 +550,46 @@ export function DeliveriesCard({
                           <Receipt className="mr-2 h-4 w-4" />
                           {t("print.notaTagihan")}
                         </DropdownMenuItem>
+                        {bolehBukaPiutang && piutangKiriman[delivery.id] && (
+                          <DropdownMenuItem asChild>
+                            <Link href={tautanPiutangFaktur(piutangKiriman[delivery.id].invoiceNo)}>
+                              <Landmark className="mr-2 h-4 w-4" />
+                              {t("delivery.penagihan.lihatPiutang")}
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
+                        {bolehBukaFakturPajak && tautanFakturPajak(delivery.taxInvoice, delivery.docNo) && (
+                          <DropdownMenuItem asChild>
+                            <Link href={tautanFakturPajak(delivery.taxInvoice, delivery.docNo) ?? ""}>
+                              <FileText className="mr-2 h-4 w-4" />
+                              {t("delivery.penagihan.lihatFakturPajak")}
+                            </Link>
+                          </DropdownMenuItem>
+                        )}
                         {canDeliver && (
                           <DropdownMenuItem onClick={() => openEditDialog(delivery)}>
                             <Pencil className="mr-2 h-4 w-4" />
                             {t("delivery.editDates")}
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem onClick={() => handlePrintTandaTerima(delivery)}>
+                          <FileCheck2 className="mr-2 h-4 w-4" />
+                          {tBukti("cetak")}
+                        </DropdownMenuItem>
+                        {delivery.podPhotoUrl && (
+                          <DropdownMenuItem onClick={() => setLihatBukti(delivery)}>
+                            <Eye className="mr-2 h-4 w-4" />
+                            {tBukti("lihat")}
+                          </DropdownMenuItem>
+                        )}
+                        {canRecordReceipt && (
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setSasaranBukti({ kiriman: delivery, mode: delivery.receivedAt ? "KOREKSI" : "CATAT" })
+                            }
+                          >
+                            <PackageCheck className="mr-2 h-4 w-4" />
+                            {delivery.receivedAt ? tBukti("koreksi") : tBukti("catat")}
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
@@ -469,6 +601,9 @@ export function DeliveriesCard({
           </Table>
         )}
       </CardContent>
+
+      <DialogBuktiTerimaKantor sasaran={sasaranBukti} onTutup={() => setSasaranBukti(null)} />
+      <LightboxBuktiTerima kiriman={lihatBukti} onTutup={() => setLihatBukti(null)} />
 
       <DeliveryFormDialog
         orderId={orderId}
@@ -568,9 +703,8 @@ export function DeliveriesCard({
               <Label htmlFor="edit-invoice-date" className="text-xs text-muted-foreground">
                 {t("delivery.invoiceDate")}
               </Label>
-              <Input
+              <TanggalInput
                 id="edit-invoice-date"
-                type="date"
                 className="h-10"
                 value={editInvoiceDate}
                 disabled={isPending}
@@ -584,9 +718,8 @@ export function DeliveriesCard({
               <Label htmlFor="edit-due-date" className="text-xs text-muted-foreground">
                 {t("delivery.dueDate")}
               </Label>
-              <Input
+              <TanggalInput
                 id="edit-due-date"
-                type="date"
                 className="h-10"
                 value={editDueDate}
                 min={editInvoiceDate || undefined}
@@ -631,5 +764,54 @@ export function DeliveriesCard({
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+/**
+ * Langkah sesudah nota: piutang (sisa sesungguhnya) dan faktur pajak nota ini, di bawah nomornya.
+ * Tautan hanya untuk yang boleh membuka halaman tujuannya.
+ */
+function PenagihanKiriman({
+  delivery,
+  piutang,
+  bolehBukaPiutang,
+  bolehBukaFakturPajak,
+}: {
+  delivery: FieldSalesDeliverySummary;
+  piutang: PiutangKiriman | null;
+  bolehBukaPiutang: boolean;
+  bolehBukaFakturPajak: boolean;
+}) {
+  const t = useTranslations("fieldSalesOrders.delivery.penagihan");
+  const faktur = delivery.taxInvoice;
+  if (!piutang && !faktur) return null;
+  const teksPiutang = piutang ? (piutang.sisa > 0 ? t("piutangSisa", { nilai: formatIDR(piutang.sisa) }) : t("piutangLunas")) : null;
+  const teksFaktur = !faktur
+    ? null
+    : faktur.status === "CREATED"
+      ? t("fakturDibuat", { nomor: faktur.invoiceNo ?? "—" })
+      : t(KUNCI_FAKTUR[faktur.status]);
+  return (
+    <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
+      {teksPiutang &&
+        (bolehBukaPiutang && piutang ? (
+          <Link href={tautanPiutangFaktur(piutang.invoiceNo)} className="underline underline-offset-2 hover:text-foreground">
+            {teksPiutang}
+          </Link>
+        ) : (
+          <span>{teksPiutang}</span>
+        ))}
+      {teksFaktur &&
+        (bolehBukaFakturPajak && tautanFakturPajak(faktur, delivery.docNo) ? (
+          <Link
+            href={tautanFakturPajak(faktur, delivery.docNo) ?? ""}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            {teksFaktur}
+          </Link>
+        ) : (
+          <span>{teksFaktur}</span>
+        ))}
+    </div>
   );
 }

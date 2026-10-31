@@ -2,109 +2,124 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { getTrialBalanceReport } from "@/app/actions/finance-reports";
+import { bacaKesiapanCetakAction, type KesiapanCetak } from "@/app/backoffice/finance/_kesiapan/aksi";
+import { CatatanBukuBesar } from "../CatatanBukuBesar";
+import { GagalCetak, KepalaCetak, MemuatCetak, useCetakOtomatis } from "../cetak-laporan";
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
+import { sisiSaldo } from "@/lib/finance/reports/trial-balance";
+import type { AccountType } from "@/lib/constants/enums";
+import {
+  TRIAL_BALANCE_BALANCED_NOTE,
+  TRIAL_BALANCE_UNBALANCED_NOTE,
+  REPORT_EMPTY_PERIOD_NOTE,
+} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getTrialBalanceReport>>;
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+/** Saldo + sisi sebenarnya (D/K), sama dengan layar dan Excel. */
+function saldo(type: AccountType, nilai: number): string {
+  const s = sisiSaldo(type, nilai);
+  return s.sisi ? `${rupiahLaporan(s.jumlah)} ${s.sisi}` : rupiahLaporan(0);
 }
 
 export default function PrintTrialBalancePage() {
   const sp = useSearchParams();
-  const printedRef = useRef(false);
   const [report, setReport] = useState<Report | "error" | null>(null);
+  const [kesiapan, setKesiapan] = useState<KesiapanCetak | null>(null);
 
   useEffect(() => {
-    getTrialBalanceReport({
-      from: sp.get("from") ?? undefined,
-      to: sp.get("to") ?? undefined,
-      includeZero: sp.get("zero") === "1",
-    })
-      .then(setReport)
+    Promise.all([
+      getTrialBalanceReport({
+        from: sp.get("from") ?? undefined,
+        to: sp.get("to") ?? undefined,
+        includeZero: sp.get("zero") === "1",
+      }),
+      bacaKesiapanCetakAction().catch(() => null),
+    ])
+      .then(([r, k]) => {
+        setKesiapan(k);
+        setReport(r);
+      })
       .catch(() => setReport("error"));
   }, [sp]);
 
+  useCetakOtomatis(!!report && report !== "error");
+
+  const loggedRef = useRef(false);
   useEffect(() => {
-    if (!report || report === "error" || printedRef.current) return;
-    printedRef.current = true;
-    /**
-     * Delay so the DOM is fully rendered before the print dialog opens — the
-     * sibling work-order print view learned this from a real failure. Teardown
-     * releases the guard so a Strict Mode double-invocation still prints once
-     * (first timer cancelled, second one fires).
-     */
-    const timer = setTimeout(() => {
-      logPrintQuietly("TrialBalanceStatement", report.periodLabel);
-      window.print();
-    }, 400);
-    return () => {
-      clearTimeout(timer);
-      printedRef.current = false;
-    };
+    if (!report || report === "error" || loggedRef.current) return;
+    loggedRef.current = true;
+    logPrintQuietly("TrialBalanceStatement", report.periodLabel);
   }, [report]);
 
-  if (!report) {
-    return (
-      <div className="flex min-h-[50vh] items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-500" />
-      </div>
-    );
-  }
-
-  if (report === "error") {
-    return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-1 text-center">
-        <p className="font-bold">Gagal memuat laporan.</p>
-        <p className="text-sm text-gray-600">
-          Anda mungkin tidak memiliki akses ke laporan keuangan. Tutup tab ini dan kembali.
-        </p>
-      </div>
-    );
-  }
+  if (!report) return <MemuatCetak />;
+  if (report === "error") return <GagalCetak />;
 
   return (
     <div className="print-statement mx-auto max-w-3xl">
-      <div className="mb-6 text-center">
-        <h1 className="text-lg font-bold">Elorae</h1>
-        <h2 className="text-base font-semibold">Neraca Saldo</h2>
-        <p className="text-sm">{report.periodLabel}</p>
-        <p className="mt-1 text-xs text-gray-600">Disiapkan oleh: {report.preparedBy}</p>
-        <p className="text-xs text-gray-600">Dicetak: {report.printedAt}</p>
-      </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-black">
-            <th className="py-1 text-left">Kode</th>
-            <th className="py-1 text-left">Nama Akun</th>
-            <th className="py-1 text-right">Debit</th>
-            <th className="py-1 text-right">Kredit</th>
-            <th className="py-1 text-right">Saldo</th>
-          </tr>
-        </thead>
-        <tbody>
-          {report.rows.map((row) => (
-            <tr key={row.accountId} className="border-b border-gray-200">
-              <td className="py-1 font-mono text-xs">{row.code}</td>
-              <td className="py-1">{row.name}</td>
-              <td className="py-1 text-right">{formatRupiah(row.debit)}</td>
-              <td className="py-1 text-right">{formatRupiah(row.credit)}</td>
-              <td className="py-1 text-right">{formatRupiah(row.signed)}</td>
-            </tr>
-          ))}
-          <tr className="border-t border-black font-semibold">
-            <td className="py-1" colSpan={2}>
-              Total
-            </td>
-            <td className="py-1 text-right">{formatRupiah(report.totalDebit)}</td>
-            <td className="py-1 text-right">{formatRupiah(report.totalCredit)}</td>
-            <td />
-          </tr>
-        </tbody>
-      </table>
-      <p className="mt-4 text-xs text-gray-700">{report.notes.note}</p>
+      <KepalaCetak judul="Neraca Saldo" periode={report.periodLabel} disiapkanOleh={report.preparedBy} dicetak={report.printedAt} />
+      <CatatanBukuBesar kesiapan={kesiapan} />
+      {report.rows.length === 0 ? (
+        <p className="py-6 text-center text-sm">{REPORT_EMPTY_PERIOD_NOTE}</p>
+      ) : (
+        <>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-black">
+                <th className="py-1 text-left">Kode</th>
+                <th className="py-1 text-left">Nama akun</th>
+                <th className="py-1 text-right">Saldo awal</th>
+                <th className="py-1 text-right">Debit</th>
+                <th className="py-1 text-right">Kredit</th>
+                <th className="py-1 text-right">Saldo akhir</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.rows.map((row) => (
+                <tr key={row.accountId} className="border-b border-gray-200">
+                  <td className="py-1 font-mono">{row.code}</td>
+                  <td className="py-1">{row.name}</td>
+                  <td className="py-1 text-right">{saldo(row.type, row.opening)}</td>
+                  <td className="py-1 text-right">{rupiahLaporan(row.debit)}</td>
+                  <td className="py-1 text-right">{rupiahLaporan(row.credit)}</td>
+                  <td className="py-1 text-right">{saldo(row.type, row.closing)}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-black font-semibold">
+                <td className="py-1" colSpan={3}>
+                  Total mutasi
+                </td>
+                <td className="py-1 text-right">{rupiahLaporan(report.totalDebit)}</td>
+                <td className="py-1 text-right">{rupiahLaporan(report.totalCredit)}</td>
+                <td />
+              </tr>
+              <tr>
+                <td className="py-1" colSpan={2}>
+                  Jumlah saldo di sisi debit
+                </td>
+                <td className="py-1 text-right">{rupiahLaporan(report.totalSaldoAwal.debit)} D</td>
+                <td colSpan={2} />
+                <td className="py-1 text-right">{rupiahLaporan(report.totalSaldoAkhir.debit)} D</td>
+              </tr>
+              <tr>
+                <td className="py-1" colSpan={2}>
+                  Jumlah saldo di sisi kredit
+                </td>
+                <td className="py-1 text-right">{rupiahLaporan(report.totalSaldoAwal.kredit)} K</td>
+                <td colSpan={2} />
+                <td className="py-1 text-right">{rupiahLaporan(report.totalSaldoAkhir.kredit)} K</td>
+              </tr>
+            </tbody>
+          </table>
+          {(report.totalDebit !== 0 || report.totalCredit !== 0 || report.adaSaldoAwal) && (
+            <p className="mt-4 text-xs text-gray-700">
+              {report.isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE}
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }

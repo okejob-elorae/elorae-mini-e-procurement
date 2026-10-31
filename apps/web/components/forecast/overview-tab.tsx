@@ -28,6 +28,7 @@ import { DemandSourcesCard } from './demand-sources-card';
 import { MonthlyForecastRow } from './monthly-forecast-row';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
+import { MIN_BULAN_DATA_MUSIMAN } from '@/app/backoffice/forecast/tahun-forecast';
 
 const PAGE_SIZE = 25;
 
@@ -217,13 +218,13 @@ export function ForecastOverviewTab({
     try {
       const res = await runForecast({ targetYear: year });
       if (!res.success) {
-        toast.error(res.error ?? 'Forecast failed');
+        toast.error(res.error ?? t('results.runFailed'));
         return;
       }
-      toast.success(`Forecast complete: ${res.articleCount ?? 0} articles`);
+      toast.success(t('results.runComplete', { count: res.articleCount ?? 0 }));
       onRefresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Forecast failed');
+      toast.error(err instanceof Error ? err.message : t('results.runFailed'));
     } finally {
       setRunning(false);
     }
@@ -242,13 +243,13 @@ export function ForecastOverviewTab({
         {canManage && (
           <>
             <Button variant="outline" size="sm" onClick={onEditConfig}>
-              {t('config.editConfig')}
+              {t('config.ubahKonfigurasi')}
             </Button>
-            <Button size="sm" onClick={handleRun} disabled={running}>
-              {running ? t('config.running') : t('config.run')}
+            <Button size="sm" onClick={handleRun} disabled={running || coverageMonths <= 0}>
+              {running ? t('config.running') : t('config.jalankanForecast')}
             </Button>
             <Button variant="secondary" size="sm" asChild>
-              <Link href="/backoffice/forecast/import">{t('import.goToImport')}</Link>
+              <Link href="/backoffice/forecast/import">{t('import.keImpor')}</Link>
             </Button>
             <Button variant="outline" size="sm" asChild>
               <Link href="/backoffice/forecast/reconciliation">{t('import.viewReconciliation')}</Link>
@@ -256,11 +257,18 @@ export function ForecastOverviewTab({
           </>
         )}
       </div>
+      {canManage && coverageMonths < MIN_BULAN_DATA_MUSIMAN ? (
+        <p className="text-sm text-muted-foreground">
+          {coverageMonths <= 0
+            ? t('results.belumAdaData')
+            : t('results.dataKurangSetahun', { bulan: coverageMonths, minimal: MIN_BULAN_DATA_MUSIMAN })}
+        </p>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.totalArticles')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.totalArtikel')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">{results.length}</p>
@@ -268,23 +276,23 @@ export function ForecastOverviewTab({
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.annual')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.forecastTahunan')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{totalAnnual.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{totalAnnual.toLocaleString('id-ID')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.avgMonthly')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.rataRataPerBulan')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold">{avgMonthly.toLocaleString()}</p>
+            <p className="text-2xl font-bold">{avgMonthly.toLocaleString('id-ID')}</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">{t('results.dataCoverage')}</CardTitle>
+            <CardTitle className="text-sm font-medium">{t('results.cakupanData')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
@@ -308,7 +316,7 @@ export function ForecastOverviewTab({
 
       <Card>
         <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle>{t('results.summaryTitle')}</CardTitle>
+          <CardTitle>{t('results.ringkasanForecast')}</CardTitle>
           <Input
             type="search"
             value={searchQuery}
@@ -324,7 +332,7 @@ export function ForecastOverviewTab({
               <TableRow>
                 <TableHead>#</TableHead>
                 <SortableHead
-                  label={t('matrixModal.parentSku')}
+                  label={t('matrixModal.skuInduk')}
                   sortKey="parentSku"
                   activeSort={sortKey}
                   sortDir={sortDir}
@@ -352,7 +360,7 @@ export function ForecastOverviewTab({
                   onSort={handleSort}
                 />
                 <SortableHead
-                  label={t('matrixModal.avgMonthly')}
+                  label={t('matrixModal.rataRataPerBulan')}
                   sortKey="avgMonthlyDemand"
                   activeSort={sortKey}
                   sortDir={sortDir}
@@ -368,7 +376,7 @@ export function ForecastOverviewTab({
                   className="text-right"
                 />
                 <SortableHead
-                  label={t('results.planTarget')}
+                  label={t('results.targetPlanKalimat')}
                   sortKey="planTarget"
                   activeSort={sortKey}
                   sortDir={sortDir}
@@ -388,7 +396,7 @@ export function ForecastOverviewTab({
                   >
                     <TableCell>{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                     <TableCell className="font-mono text-sm">{row.parentSku}</TableCell>
-                    <TableCell>{row.productName}</TableCell>
+                    <TableCell className="min-w-[180px] whitespace-normal">{row.productName}</TableCell>
                     <TableCell>
                       <Badge className={abcBadgeClass(row.abcClass)}>{row.abcClass}</Badge>
                     </TableCell>
@@ -396,13 +404,13 @@ export function ForecastOverviewTab({
                       <Badge className={xyzBadgeClass(row.xyzClass)}>{row.xyzClass}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      {Math.round(row.avgMonthlyDemand).toLocaleString()}
+                      {Math.round(row.avgMonthlyDemand).toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      {row.annualForecast.toLocaleString()}
+                      {row.annualForecast.toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell className="text-right">
-                      {row.planTarget != null ? row.planTarget.toLocaleString() : t('results.noPlan')}
+                      {row.planTarget != null ? row.planTarget.toLocaleString('id-ID') : t('results.noPlan')}
                     </TableCell>
                   </TableRow>
                   {expandedSku === row.parentSku && (

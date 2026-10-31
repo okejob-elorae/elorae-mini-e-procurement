@@ -85,6 +85,11 @@ export function createPoSchema(t: ValidationTranslate = defaultT) {
     paymentTermsDays: paymentTermsDaysField.optional(),
     notes: z.string().optional(),
     terms: z.string().optional(),
+    /**
+     * Tahap produksi (Plan Kerja) yang dilayani PO ini. `undefined` = tidak
+     * disentuh (edit mempertahankan tautan lama), `null` = dilepas.
+     */
+    planStageId: z.string().min(1).nullable().optional(),
     items: z.array(poItem).min(1, t('minOneItem')),
   });
 }

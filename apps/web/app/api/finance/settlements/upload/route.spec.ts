@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHash } from "node:crypto";
+import { NextRequest } from "next/server";
+
+const m = vi.hoisted(() => {
+  class SettlementGandaError extends Error {
+    readonly code = "SETTLEMENT_GANDA" as const;
+    constructor(readonly pertama: { id: string; fileName: string; uploadedAt: Date; uploadedByName: string | null; status: string }) {
+      super("ganda");
+    }
+  }
+  return { SettlementGandaError };
+});
 
 vi.mock("@elorae/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@elorae/db")>();
@@ -18,17 +29,22 @@ vi.mock("@/lib/finance/settlement/parser", () => ({
   parseSettlement: vi.fn(),
   isSupportedMarketplace: (m: string) => m === "SHOPEE" || m === "TIKTOK",
 }));
-vi.mock("@/lib/finance/settlement/persist", () => ({ persistSettlement: vi.fn() }));
+vi.mock("@/lib/finance/settlement/persist", () => ({
+  persistSettlement: vi.fn(),
+  hapusSettlementBelumDijurnal: vi.fn(),
+  SettlementGandaError: m.SettlementGandaError,
+}));
 vi.mock("@/lib/finance/settlement/match", () => ({ matchSettlement: vi.fn() }));
 vi.mock("@/lib/finance/settlement/start-resync", () => ({ startSettlementResync: vi.fn() }));
 
 import { prisma, Prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { parseSettlement } from "@/lib/finance/settlement/parser";
-import { persistSettlement } from "@/lib/finance/settlement/persist";
+import { hapusSettlementBelumDijurnal, persistSettlement } from "@/lib/finance/settlement/persist";
 import { matchSettlement } from "@/lib/finance/settlement/match";
 import { startSettlementResync } from "@/lib/finance/settlement/start-resync";
-import { POST } from "./route";
+import { PERMISSIONS } from "@/lib/rbac";
+import { DELETE, POST } from "./route";
 
 const mockAuth = auth as unknown as ReturnType<typeof vi.fn>;
 const mockFindFirst = prisma.settlement.findFirst as unknown as ReturnType<typeof vi.fn>;
@@ -36,6 +52,9 @@ const mockParse = parseSettlement as unknown as ReturnType<typeof vi.fn>;
 const mockPersist = persistSettlement as unknown as ReturnType<typeof vi.fn>;
 const mockMatch = matchSettlement as unknown as ReturnType<typeof vi.fn>;
 const mockResync = startSettlementResync as unknown as ReturnType<typeof vi.fn>;
+const mockHapus = hapusSettlementBelumDijurnal as unknown as ReturnType<typeof vi.fn>;
+
+const keuangan = { user: { id: "u-keu", permissions: [PERMISSIONS.SETTLEMENTS_MANAGE] } };
 
 const FILE_BYTES = Buffer.from("settlement-file-bytes");
 const FILE_SHA = createHash("sha256").update(FILE_BYTES).digest("hex");
@@ -49,6 +68,21 @@ function buildRequest(): Parameters<typeof POST>[0] {
     method: "POST",
     body: formData,
   }) as unknown as Parameters<typeof POST>[0];
+}
+
+function unggahan() {
+  const fd = new FormData();
+  fd.append("file", new File([new Uint8Array([1, 2, 3])], "Income.sudah dilepas.xlsx"));
+  fd.append("marketplace", "SHOPEE");
+  return new NextRequest("http://localhost/api/finance/settlements/upload", { method: "POST", body: fd });
+}
+
+function hapus(body: unknown) {
+  return new NextRequest("http://localhost/api/finance/settlements/upload", {
+    method: "DELETE",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  });
 }
 
 beforeEach(() => {
@@ -133,6 +167,41 @@ describe("POST /api/finance/settlements/upload dedupe", () => {
   });
 });
 
+describe("POST unggah settlement", () => {
+  it("unggahan kembar → 409 yang menyebut unggahan pertama", async () => {
+    mockAuth.mockResolvedValue(keuangan);
+    mockPersist.mockRejectedValue(
+      new m.SettlementGandaError({
+        id: "stl-1",
+        fileName: "juni.xlsx",
+        uploadedAt: new Date("2026-07-02T03:04:05.000Z"),
+        uploadedByName: "Rina",
+        status: "MATCHED",
+      }),
+    );
+
+    const res = await POST(unggahan());
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      code: "SETTLEMENT_GANDA",
+      pertama: {
+        id: "stl-1",
+        fileName: "juni.xlsx",
+        uploadedAt: "2026-07-02T03:04:05.000Z",
+        uploadedByName: "Rina",
+        status: "MATCHED",
+      },
+    });
+  });
+
+  it("galat lain tetap 500", async () => {
+    mockAuth.mockResolvedValue(keuangan);
+    mockPersist.mockRejectedValue(new Error("boom"));
+    const res = await POST(unggahan());
+    expect(res.status).toBe(500);
+  });
+});
+
 describe("POST /api/finance/settlements/upload size pre-check", () => {
   function requestWithLength(length: number): Parameters<typeof POST>[0] {
     return new Request("http://localhost/api/finance/settlements/upload", {
@@ -160,5 +229,47 @@ describe("POST /api/finance/settlements/upload size pre-check", () => {
     const res = await POST(requestWithLength(10 * 1024 * 1024 + 64 * 1024));
 
     expect(res.status).not.toBe(413);
+  });
+});
+
+describe("DELETE batalkan unggahan settlement", () => {
+  it("tanpa izin settlement → 403 dan tidak menghapus apa pun", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u-gudang", permissions: ["inventory:view"] } });
+    const res = await DELETE(hapus({ settlementId: "stl-1", alasan: "salah unggah" }));
+    expect(res.status).toBe(403);
+    expect(mockHapus).not.toHaveBeenCalled();
+  });
+
+  it("tanpa sesi → 401", async () => {
+    mockAuth.mockResolvedValue(null);
+    const res = await DELETE(hapus({ settlementId: "stl-1", alasan: "x" }));
+    expect(res.status).toBe(401);
+    expect(mockHapus).not.toHaveBeenCalled();
+  });
+
+  it("pelaku diambil dari sesi, bukan dari isian", async () => {
+    mockAuth.mockResolvedValue(keuangan);
+    mockHapus.mockResolvedValue({ ok: true });
+    const res = await DELETE(hapus({ settlementId: "stl-1", alasan: "kembar", userId: "orang-lain" }));
+    expect(res.status).toBe(200);
+    expect(mockHapus).toHaveBeenCalledWith({ settlementId: "stl-1", userId: "u-keu", alasan: "kembar" });
+  });
+
+  it("yang sudah dijurnal → 409, yang tidak ada → 404, alasan kosong → 400", async () => {
+    mockAuth.mockResolvedValue(keuangan);
+    mockHapus.mockResolvedValueOnce({ ok: false, code: "SUDAH_DIJURNAL" });
+    expect((await DELETE(hapus({ settlementId: "a", alasan: "x" }))).status).toBe(409);
+    mockHapus.mockResolvedValueOnce({ ok: false, code: "TIDAK_DITEMUKAN" });
+    expect((await DELETE(hapus({ settlementId: "b", alasan: "x" }))).status).toBe(404);
+    mockHapus.mockResolvedValueOnce({ ok: false, code: "ALASAN_WAJIB" });
+    const r = await DELETE(hapus({ settlementId: "c", alasan: " " }));
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ ok: false, code: "ALASAN_WAJIB" });
+  });
+
+  it("isian rusak → 400 tanpa memanggil penulis", async () => {
+    mockAuth.mockResolvedValue(keuangan);
+    expect((await DELETE(hapus({ settlementId: 5 }))).status).toBe(400);
+    expect(mockHapus).not.toHaveBeenCalled();
   });
 });

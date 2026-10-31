@@ -23,6 +23,36 @@ const ROLE_SECTIONS: Partial<Record<PostingRole, CashFlowSection>> = {
   INVENTORY: "OPERASIONAL",
   INVENTORY_FG: "OPERASIONAL",
   INVENTORY_VAN: "OPERASIONAL",
+  KOL_PAYABLE: "OPERASIONAL",
+  KOL_PREPAID: "OPERASIONAL",
+  PPH21_PAYABLE: "OPERASIONAL",
+  PPH23_PAYABLE: "OPERASIONAL",
+  AR_STORE: "OPERASIONAL",
+  AR_CONSIGNMENT: "OPERASIONAL",
+  INVENTORY_CONSIGNMENT: "OPERASIONAL",
+  INVENTORY_DAMAGED: "OPERASIONAL",
+  PPN_MASUKAN: "OPERASIONAL",
+  PPN_KELUARAN: "OPERASIONAL",
+  PPN_PAYABLE: "OPERASIONAL",
+  PPH4_2_PAYABLE: "OPERASIONAL",
+  PPH_FINAL_PAYABLE: "OPERASIONAL",
+  PPH22_PREPAID: "OPERASIONAL",
+  PPH23_PREPAID: "OPERASIONAL",
+  PPH25_PREPAID: "OPERASIONAL",
+  COMMISSION_PAYABLE: "OPERASIONAL",
+  REIMBURSE_PAYABLE: "OPERASIONAL",
+  PREPAID_EXPENSE: "OPERASIONAL",
+  ACCRUED_EXPENSE: "OPERASIONAL",
+  FIXED_ASSET: "INVESTASI",
+  // Hampir seluruh geraknya penyusutan — beban non-kas yang ditambahkan kembali
+  // di arus kas OPERASIONAL (metode tidak langsung), bukan investasi.
+  ACCUM_DEPRECIATION: "OPERASIONAL",
+  /*
+   * RETAINED_EARNINGS dan OPENING_EQUITY sengaja TIDAK di sini: ekuitas jatuh ke
+   * PENDANAAN lewat konvensi tipe. Jurnal penutup tahun (`YEAR_END_CLOSE`) dan
+   * jurnal saldo awal (`OPENING`) bukan arus kas — penyusun laporan arus kas
+   * harus mengecualikan kedua sumber itu, bukan mengandalkan seksi peran.
+   */
 };
 
 const CLASSIFIABLE: readonly AccountType[] = ["ASET", "LIABILITAS", "EKUITAS"];

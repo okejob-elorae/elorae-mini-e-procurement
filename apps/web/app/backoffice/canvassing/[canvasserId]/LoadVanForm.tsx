@@ -106,7 +106,7 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
     }
 
     if (validLines.length === 0) {
-      toast.error(t("errEmpty"));
+      toast.error(t("errKosongBarang"));
       return;
     }
 
@@ -132,12 +132,14 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
         if (result.reason === "INSUFFICIENT_STOCK") {
           setShortLines(result.shortLines ?? []);
           toast.error(t("errInsufficientStock"));
+        } else if (result.reason === "NOT_CANVASSER") {
+          toast.error(t(`bukanKanvas.${result.sebab}`));
         } else if (result.reason === "FORBIDDEN") {
           toast.error(t("errForbidden"));
         } else if (result.reason === "VALIDATION") {
           toast.error(t("errValidation"));
         } else {
-          toast.error(t("errEmpty"));
+          toast.error(t("errKosongBarang"));
         }
       } catch {
         toast.error(t("errGeneric"));
@@ -171,12 +173,13 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
             <div key={block.id} className="space-y-3 rounded-md border p-3">
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <Label className="text-xs">{t("item")}</Label>
+                  <Label className="text-xs">{t("barang")}</Label>
                   <SearchableCombobox
                     options={itemOptionsFor(block.id).map((i) => ({ value: i.id, label: `${i.sku} - ${i.nameId}` }))}
                     value={block.itemId}
                     onValueChange={(value) => updateBlock(block.id, { itemId: value, qty: {} })}
-                    placeholder={t("selectItem")}
+                    placeholder={t("pilihBarang")}
+                    searchPlaceholder={t("cariBarang")}
                     disabled={pending}
                     triggerClassName="w-full"
                   />
@@ -268,7 +271,7 @@ export function LoadVanForm({ canvasserId, itemOptions, loadableInventory }: Pro
 
       <Button type="button" variant="outline" size="sm" disabled={pending} onClick={addBlock}>
         <Plus className="mr-2 h-4 w-4" />
-        {t("addItem")}
+        {t("tambahBarang")}
       </Button>
 
       <div className="space-y-1.5">

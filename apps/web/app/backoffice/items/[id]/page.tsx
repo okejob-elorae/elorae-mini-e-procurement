@@ -8,6 +8,7 @@ import { getItemImages } from '@/lib/items/images/queries';
 import { jubelioCreateEligibility } from '@/lib/items/jubelio-create-eligibility';
 import { ItemDetailClient } from './ItemDetailClient';
 import { ItemGalleryEditor } from '@/components/items/ItemGalleryEditor';
+import { bacaHppBarang } from "@/lib/items/hpp-barang-queries";
 
 export const dynamic = 'force-dynamic';
 
@@ -44,6 +45,11 @@ export default async function ItemDetailPage({
     pantone: item.pantone
       ? { ...item.pantone, hex: item.pantone.hex.startsWith('#') ? item.pantone.hex : `#${item.pantone.hex}` }
       : null,
+    material: item.material ?? null,
+    careInstructions: item.careInstructions ?? null,
+    sizeChartId: item.sizeChartId ?? null,
+    kgPerRoll: item.kgPerRoll != null ? Number(item.kgPerRoll) : null,
+    commissionPerPcs: item.commissionPerPcs != null ? Number(item.commissionPerPcs) : 0,
     consumptionRules: (
       item.fgConsumptions as Array<{
         materialId: string;
@@ -82,6 +88,8 @@ export default async function ItemDetailPage({
 
   const images = await getItemImages(item.id);
   const jubelioStockPushEnabled = await isJubelioStockPushEnabled(prisma);
+  // HPP per pcs di samping harga jual (barang jadi saja, hanya dibaca).
+  const hpp = item.type === ItemType.FINISHED_GOOD ? await bacaHppBarang(prisma, item.id) : null;
   const canManage = hasPermission(perms, PERMISSIONS.ITEMS_MANAGE);
   const jubelioCreateState = hasPermission(perms, PERMISSIONS.ITEMS_EDIT)
     ? await jubelioCreateEligibility(item.id)
@@ -95,6 +103,7 @@ export default async function ItemDetailPage({
   return (
     <ItemDetailClient
       initialData={initialData}
+      hpp={hpp}
       itemType={item.type as ItemType}
       nameId={item.nameId}
       nameEn={item.nameEn}

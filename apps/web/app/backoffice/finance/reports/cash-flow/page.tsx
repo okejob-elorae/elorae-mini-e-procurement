@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { getCashFlowReport } from "@/app/actions/finance-reports";
 import { CashFlowClient } from "./CashFlowClient";
+import { aksesSpanduk, bacaKesiapanBukuBesar, hariIniWib } from "../../_kesiapan/baca";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +21,19 @@ export default async function CashFlowPage({ searchParams }: PageProps) {
   }
 
   const sp = await searchParams;
-  const report = await getCashFlowReport({ from: sp.from, to: sp.to });
+  const [report, kesiapan] = await Promise.all([
+    getCashFlowReport({ from: sp.from, to: sp.to }),
+    bacaKesiapanBukuBesar(),
+  ]);
 
   return (
     <CashFlowClient
       report={report}
       filters={{ from: sp.from ?? "", to: sp.to ?? "" }}
       canManageJournals={hasPermission(permissions, PERMISSIONS.JOURNALS_VIEW)}
+      hariIni={hariIniWib()}
+      kesiapan={kesiapan}
+      akses={aksesSpanduk(permissions)}
     />
   );
 }

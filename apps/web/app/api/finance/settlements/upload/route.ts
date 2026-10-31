@@ -5,7 +5,11 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { exceedsDeclaredLength } from "@/lib/uploads/content-length";
 import { parseSettlement, isSupportedMarketplace } from "@/lib/finance/settlement/parser";
-import { persistSettlement } from "@/lib/finance/settlement/persist";
+import {
+  hapusSettlementBelumDijurnal,
+  persistSettlement,
+  SettlementGandaError,
+} from "@/lib/finance/settlement/persist";
 import { matchSettlement } from "@/lib/finance/settlement/match";
 import { startSettlementResync } from "@/lib/finance/settlement/start-resync";
 
@@ -88,6 +92,16 @@ export async function POST(request: NextRequest) {
         fileSha256,
       });
     } catch (err) {
+      // Berkas yang sama sudah pernah diunggah: tolak dan sebut unggahan pertamanya.
+      if (err instanceof SettlementGandaError) {
+        return NextResponse.json(
+          {
+            code: err.code,
+            pertama: { ...err.pertama, uploadedAt: err.pertama.uploadedAt.toISOString() },
+          },
+          { status: 409 },
+        );
+      }
       /**
        * Two identical uploads racing: the loser trips the (marketplace, fileSha256) unique (P2002), or
        * expires waiting on the winner's uncommitted key inside the interactive transaction (P2028).
@@ -128,5 +142,45 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Settlement upload error:", error);
     return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+  }
+}
+
+/**
+ * Membatalkan unggahan yang BELUM dijurnal (salah unggah / unggahan kembar).
+ * Isi: `{ settlementId, alasan }`. Izin sama dengan mengunggah; jejaknya di AuditLog.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ ok: false, code: "UNAUTHORIZED" }, { status: 401 });
+    }
+    const perms = (session.user as { permissions?: string[] }).permissions ?? [];
+    if (!hasPermission(perms, PERMISSIONS.SETTLEMENTS_MANAGE)) {
+      return NextResponse.json({ ok: false, code: "FORBIDDEN" }, { status: 403 });
+    }
+
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
+    }
+    const b = (typeof body === "object" && body !== null ? body : {}) as { settlementId?: unknown; alasan?: unknown };
+    if (typeof b.settlementId !== "string" || typeof b.alasan !== "string") {
+      return NextResponse.json({ ok: false, code: "INVALID_REQUEST" }, { status: 400 });
+    }
+
+    const hasil = await hapusSettlementBelumDijurnal({
+      settlementId: b.settlementId,
+      userId: session.user.id,
+      alasan: b.alasan,
+    });
+    if (hasil.ok) return NextResponse.json(hasil);
+    const status = hasil.code === "TIDAK_DITEMUKAN" ? 404 : hasil.code === "SUDAH_DIJURNAL" ? 409 : 400;
+    return NextResponse.json(hasil, { status });
+  } catch (error) {
+    console.error("Settlement delete error:", error);
+    return NextResponse.json({ ok: false, code: "ERROR" }, { status: 500 });
   }
 }

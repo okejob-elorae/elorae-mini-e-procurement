@@ -225,7 +225,7 @@ export async function runReconciliation(
    * `undefined` (the default, every production caller) scans every mapping, `[]` scans none. This
    * is the only thing scoped; the Jubelio snapshot fetch and the classification loop are unchanged.
    */
-  opts: { itemIds?: string[] } = {},
+  opts: { itemIds?: readonly string[] } = {},
 ): Promise<{
   runId: string;
   skipped?: boolean;
@@ -288,7 +288,7 @@ export async function runReconciliation(
     const pushEnabled = await isJubelioStockPushEnabled(prisma);
 
     const mappings = await prisma.jubelioProductMapping.findMany({
-      where: opts.itemIds !== undefined ? { itemId: { in: opts.itemIds } } : undefined,
+      where: opts.itemIds !== undefined ? { itemId: { in: [...opts.itemIds] } } : undefined,
       include: {
         item: {
           select: {

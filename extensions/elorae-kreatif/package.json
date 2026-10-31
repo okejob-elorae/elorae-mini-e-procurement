@@ -1,0 +1,9 @@
+{
+  "name": "elorae-kreatif-ekstensi",
+  "private": true,
+  "type": "module",
+  "description": "Ekstensi Chrome Elorae Kreatif. Di luar workspace pnpm, tanpa dependensi, tanpa langkah build. Berkas ini hanya memberi tahu Node bahwa .js di sini modul ES (untuk node --test).",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

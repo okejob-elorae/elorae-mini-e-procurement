@@ -11,6 +11,8 @@ declare module 'next-auth' {
       roleId: string | null;
       roleName: string;
       permissions: string[];
+      /** Toko tetap SPG — disegarkan bersama izin (lib/auth/segarkan-sesi.ts). */
+      assignedStoreId?: string | null;
     };
   }
 
@@ -23,6 +25,7 @@ declare module 'next-auth' {
     roleName?: string;
     permissions?: string[];
     permissionsVersion?: number;
+    assignedStoreId?: string | null;
   }
 }
 
@@ -34,5 +37,8 @@ declare module 'next-auth/jwt' {
     roleName: string;
     permissions: string[];
     permissionsVersion?: number;
+    assignedStoreId?: string | null;
+    /** Kapan isi token terakhir dibaca dari basis data (ms epoch). */
+    disegarkanPada?: number;
   }
 }

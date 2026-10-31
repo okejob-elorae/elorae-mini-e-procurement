@@ -21,17 +21,33 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { compressImage } from "@/lib/pwa/photo/compress";
-import { enqueuePhoto, deletePendingPhoto, listPendingPhotosForVisit, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
+import { enqueuePhoto, deletePendingPhoto, listPendingPhotosForKunjungan, retryPendingPhoto, newLocalId } from "@/lib/pwa/offline/photo-queue";
 import { MAX_PHOTOS_PER_VISIT } from "@/lib/field-sales/visit-photo-cap";
 import { PHOTO_CAP_REACHED_ERROR } from "@/lib/pwa/offline/photo-classify";
 import { flushPendingPhotos } from "@/lib/pwa/offline/photo-sync";
+import { catatFotoTerkirim } from "@/lib/pwa/offline/foto-kunjungan";
 import type { PendingPhoto } from "@/lib/pwa/offline/db";
 
 type SyncedPhoto = { id: string; url: string; caption: string | null; capturedAtIso: string };
 type Mode = "idle" | "live" | "preview";
 type Captured = { blob: Blob; url: string };
 
-export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: string; storeId: string; synced: SyncedPhoto[] }) {
+/**
+ * Foto kunjungan. `visitId` = kunjungan server; untuk kunjungan yang check-in-nya
+ * masih di HP (dicatat tanpa sinyal) `visitId` null dan `visitClientId` = id
+ * check-in HP — fotonya diantrekan dan baru naik sesudah check-in itu sampai.
+ */
+export function VisitPhotoCapture({
+  visitId,
+  visitClientId = null,
+  storeId,
+  synced,
+}: {
+  visitId: string | null;
+  visitClientId?: string | null;
+  storeId: string;
+  synced: SyncedPhoto[];
+}) {
   const [pending, setPending] = useState<PendingPhoto[]>([]);
   const [busy, setBusy] = useState(false);
   const [caption, setCaption] = useState("");
@@ -50,8 +66,13 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
   const total = synced.length + pending.length;
   const atCap = total >= MAX_PHOTOS_PER_VISIT;
 
-  const refresh = () => listPendingPhotosForVisit(visitId).then(setPending);
-  useEffect(() => { void refresh(); }, [visitId]);
+  const refresh = () => listPendingPhotosForKunjungan({ visitId, visitClientId }).then(setPending);
+  useEffect(() => { void refresh(); }, [visitId, visitClientId]);
+  // Jumlah foto yang sudah di server diingat HP: check-out tanpa sinyal menjaga
+  // aturan "wajib foto" dengan angka ini ditambah foto yang masih di antrean.
+  useEffect(() => {
+    if (visitId) catatFotoTerkirim(visitId, synced.length);
+  }, [visitId, synced.length]);
 
   // Object URLs for pending thumbnails — revoked on change/unmount.
   useEffect(() => {
@@ -140,7 +161,14 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
     setBusy(true);
     try {
       const compressed = await compressImage(captured.blob);
-      await enqueuePhoto({ localId: newLocalId(), visitId, storeId, blob: compressed, caption: caption.trim() || undefined });
+      await enqueuePhoto({
+        localId: newLocalId(),
+        visitId: visitId ?? "",
+        visitClientId: visitId ? null : visitClientId,
+        storeId,
+        blob: compressed,
+        caption: caption.trim() || undefined,
+      });
       await refresh();
       void flushPendingPhotos().then((r) => { void refresh(); if (r.synced > 0) router.refresh(); });
       closeOverlay();
@@ -214,9 +242,10 @@ export function VisitPhotoCapture({ visitId, storeId, synced }: { visitId: strin
     : null;
 
   return (
-    <Card className="flex-col gap-3 p-4">
+    // Bentuk kartu sama dengan kartu lain di halaman toko (`beranda-kartu`, judul kecil kapital).
+    <Card className="beranda-kartu flex-col gap-3 p-4">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">{t("title")}</span>
+        <h2 className="beranda-judul">{t("title")}</h2>
         <Badge variant="secondary">{total}/{MAX_PHOTOS_PER_VISIT}</Badge>
       </div>
 

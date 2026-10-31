@@ -6,7 +6,7 @@ import { auth } from '@/lib/auth';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { notifySupplierCreated, notifySupplierApproved } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
-import { verifyPin } from '@/lib/security/pin';
+import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import {
   listSuppliers,
   getSupplierById,
@@ -92,12 +92,21 @@ export async function getSupplierByIdAction(id: string) {
 export async function createSupplierAction(input: z.infer<typeof supplierSchema>) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_CREATE);
-  const supplier = await createSupplier(input);
+  const supplier = await createSupplier(input, session.user.id);
   getActorName(session.user.id)
     .then((triggeredByName) => notifySupplierCreated(supplier.id, supplier.name, triggeredByName))
     .catch(() => {});
   revalidatePath('/backoffice/suppliers');
-  return supplier;
+  return tanpaSandi(supplier);
+}
+
+/** Kolom terenkripsi (rekening, NPWP) tidak pernah dikirim balik ke browser. */
+function tanpaSandi<T extends { bankAccountEnc: string | null; npwpEnc: string | null }>(s: T): T {
+  return {
+    ...s,
+    bankAccountEnc: s.bankAccountEnc ? '***ENCRYPTED***' : null,
+    npwpEnc: s.npwpEnc ? '***ENCRYPTED***' : null,
+  };
 }
 
 export async function updateSupplierAction(
@@ -106,10 +115,10 @@ export async function updateSupplierAction(
 ) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_EDIT);
-  const supplier = await updateSupplier(id, input);
+  const supplier = await updateSupplier(id, input, session.user.id);
   revalidatePath('/backoffice/suppliers');
   revalidatePath(`/backoffice/suppliers/${id}`);
-  return supplier;
+  return tanpaSandi(supplier);
 }
 
 export type DeleteSupplierActionResult =
@@ -117,23 +126,31 @@ export type DeleteSupplierActionResult =
   | {
       success: false;
       reason?: undefined;
+      securityMessageKey?: undefined;
       messageKey: 'cannotDeleteSupplierInUse' | 'failedToDeleteSupplier';
     }
-  | { success: false; reason: 'PIN'; messageKey?: string; message?: string };
+  /** PIN ditolak; `securityMessageKey` = kunci namespace `security` (mis. `pinIncorrect`). */
+  | { success: false; reason: 'PIN'; messageKey?: string; message?: string; securityMessageKey: string };
 
-export async function deleteSupplierAction(
-  id: string,
-  pin: string
-): Promise<DeleteSupplierActionResult> {
+/**
+ * Hapus pemasok: butuh `suppliers:delete` DAN PIN pengguna sesi, keduanya
+ * diperiksa di sini. Dulu PIN hanya diperiksa browser lewat panggilan terpisah,
+ * jadi memanggil aksi ini langsung melewati PIN.
+ */
+export async function deleteSupplierAction(id: string, pin: string): Promise<DeleteSupplierActionResult> {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_DELETE);
-  const pinResult = await verifyPin(session.user.id, pin, "DELETE_SUPPLIER");
+  if (typeof pin !== "string" || pin.trim() === "") {
+    return { success: false, reason: 'PIN', messageKey: "pinInvalid", securityMessageKey: "pinInvalid" };
+  }
+  const pinResult = await verifyPinForAction(session.user.id, pin, "DELETE_SUPPLIER");
   if (!pinResult.success) {
     return {
       success: false,
       reason: 'PIN',
       messageKey: pinResult.messageKey,
       message: pinResult.message,
+      securityMessageKey: pinResult.messageKey ?? "pinIncorrect",
     };
   }
   try {
@@ -170,10 +187,15 @@ export async function rejectSupplierAction(id: string, reason: string) {
 
 export async function decryptSupplierBankAction(id: string, pin: string) {
   const session = await requireSession();
+  // Izin dulu, baru PIN: tanpa `suppliers:view` tidak ada tebakan PIN yang dihitung.
   requirePermission(session.user.permissions, PERMISSIONS.SUPPLIERS_VIEW);
-  const pinResult = await verifyPin(session.user.id, pin, 'VIEW_BANK_ACCOUNT', {
-    ipAddress: 'server-action',
-  });
+  const pinResult = await verifyPinForAction(
+    session.user.id,
+    pin,
+    'VIEW_BANK_ACCOUNT',
+    'User requested bank account view',
+    'server-action'
+  );
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message ?? 'Invalid PIN');
   }

@@ -1,5 +1,8 @@
 import { getETAStatus } from '@/lib/eta-alerts';
 import type { POStatus } from '@elorae/db';
+import { hitungUtangPo } from './utang';
+import type { ReturUntukPo } from './kredit-retur-queries';
+import { tahapPo } from './tahap';
 
 const toNum = (v: unknown): number | null => (v == null ? null : Number(v));
 
@@ -62,6 +65,9 @@ export function serializePOListRow(po: {
   supplier: { name: string; code: string };
   items: Array<Parameters<typeof serializePOListLineItem>[0]>;
   _count: { grns: number };
+  ppnRatePercent?: unknown;
+  closedAt?: Date | null;
+  closeReason?: string | null;
 }) {
   return {
     id: po.id,
@@ -85,6 +91,9 @@ export function serializePOListRow(po: {
     items: po.items.map(serializePOListLineItem),
     _count: po._count,
     etaAlert: getETAStatus(po.etaDate, po.status),
+    ppnRatePercent: toNum(po.ppnRatePercent) ?? null,
+    closedAt: toIso(po.closedAt),
+    closeReason: po.closeReason ?? null,
   };
 }
 
@@ -128,6 +137,17 @@ type PODetailRow = {
    * reason as the flag above — absent means "nothing pending", never "unknown".
    */
   paymentJournalPending?: { reason: string | null; role: string | null } | null;
+  ppnRatePercent?: unknown;
+  closedAt?: Date | null;
+  closedById?: string | null;
+  closeReason?: string | null;
+  /** Nama penutup "Tutup PO", dibaca `getPOById`. */
+  closedByName?: string | null;
+  /** Retur pemasok selesai yang mengurangi utang PO ini (`returUntukPo`). */
+  returPemasok?: ReturUntukPo[];
+  planStageId?: string | null;
+  /** Tahap produksi tertaut (null juga bila tautannya menggantung). */
+  planStage?: { id: string; name: string; planCategory: { code: string; name: string } | null } | null;
   supplier: Record<string, unknown>;
   items: Array<{
     id: string;
@@ -148,6 +168,7 @@ type PODetailRow = {
       nameEn: string | null;
       type: string;
       variants: unknown;
+      kgPerRoll?: unknown;
       uom: { id: string; code: string; nameId: string; nameEn: string } | null;
     } | null;
   }>;
@@ -197,6 +218,29 @@ export function serializePODetail(po: PODetailRow) {
     actualLeadDays: po.actualLeadDays,
     paymentJournalStandingWhileUnpaid: po.paymentJournalStandingWhileUnpaid ?? false,
     paymentJournalPending: po.paymentJournalPending ?? null,
+    ppnRatePercent: toNum(po.ppnRatePercent) ?? null,
+    closedAt: toIso(po.closedAt),
+    closedById: po.closedById ?? null,
+    closeReason: po.closeReason ?? null,
+    closedByName: po.closedByName ?? null,
+    returPemasok: po.returPemasok ?? [],
+    planStageId: po.planStageId ?? null,
+    tahap: tahapPo(po.planStage),
+    utang: hitungUtangPo(
+      {
+        status: po.status,
+        grandTotal: toNum(po.grandTotal) ?? 0,
+        ppnRatePercent: toNum(po.ppnRatePercent) ?? null,
+        closedAt: po.closedAt ?? null,
+        items: po.items.map((l) => ({
+          qty: toNum(l.qty) ?? 0,
+          receivedQty: toNum(l.receivedQty) ?? 0,
+          price: toNum(l.price) ?? 0,
+          ppnIncluded: l.ppnIncluded,
+        })),
+      },
+      (po.returPemasok ?? []).reduce((t, r) => t + r.poCreditAmount, 0),
+    ),
     supplier: po.supplier,
     items: po.items.map((line) => ({
       id: line.id,
@@ -218,6 +262,7 @@ export function serializePODetail(po: PODetailRow) {
             nameEn: line.item.nameEn,
             type: line.item.type,
             variants: line.item.variants,
+            kgPerRoll: toNum(line.item.kgPerRoll) ?? null,
             uom: line.item.uom
               ? {
                   id: line.item.uom.id,

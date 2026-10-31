@@ -1,16 +1,36 @@
-import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { getActiveVisit, getStore, listActiveStoresForPwa, listRecentVisitsForUser } from "@/lib/stores/queries";
+import { ambilTokoTetap } from "@/lib/pwa/peran";
+import { kembaliAman } from "@/lib/pwa/kembali-setelah-checkin";
+import { getActiveVisit } from "@/lib/stores/queries";
 import { getStoreCountState, readCountSchedule } from "@/lib/konsi-count-schedule/queries";
+import { ringkasanSpg, tokoSpg } from "@/lib/spg/queries";
+import { hariWib, labelMasuk, labelMasukUntuk } from "@/lib/spg/beranda-spg";
+import { prisma } from "@elorae/db";
+import { shiftHariIni } from "@/lib/spg/shift-queries";
+import { daftarTitipHp } from "@/lib/spg/titip-queries";
+import { pengunjungUntukHp } from "@/lib/spg/pengunjung-queries";
+import { hitungPesananDiproses, pesananMenujuToko } from "@/lib/spg/pesanan-menuju-toko";
+import { kunciHariWib } from "@/lib/dashboard/tren";
+import { kemajuanTarget } from "@/lib/salesman/dasbor";
+import { bulanWib } from "@/lib/salesman/pengaturan";
+import { berandaPenjualanHp, komisiUntukHp } from "@/lib/salesman/penjualan-hp-queries";
+import { komisiBisaNaikOlehKonsi } from "@/lib/salesman/penjualan-hp";
+import { absenBeranda } from "@/lib/salesman/absensi-queries";
+import { ringkasTugasTagihSaya } from "@/lib/receivables/tugas-tagih-queries";
+import { jumlahTargetRinci } from "@/lib/salesman/target-rinci-queries";
+import { jadwalHariIniSales } from "@/lib/salesman/jadwal-queries";
+import { kartuPengumumanBeranda } from "@/lib/pengumuman/queries";
+import { catatanTersematPerToko } from "@/lib/stores/catatan-queries";
+import { pengaturanSalesman, pesananSaya, tokoSaya } from "@/lib/salesman/queries";
+import { tokoMenurunHp } from "@/lib/salesman/toko-menurun-queries";
 import { HomeShell } from "./HomeShell";
-import { SpgHomeShell } from "./SpgHomeShell";
-import { LogoutButton } from "./LogoutButton";
-import { Card, CardContent } from "@/components/ui/card";
+import { SpgHomeShell, SpgTanpaToko, type DataBerandaSpg } from "./SpgHomeShell";
+import { logout } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function PwaHome() {
+export default async function PwaHome({ searchParams }: { searchParams: Promise<{ kembali?: string | string[] }> }) {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Unauthorized");
 
@@ -21,107 +41,213 @@ export default async function PwaHome() {
 
   /**
    * SPG is a fixed-store role (User.assignedStoreId) — detect it before
-   * falling back to the roaming salesman home below. The session/JWT doesn't
-   * carry assignedStoreId (see lib/auth.ts callbacks), so this is one extra
-   * indexed lookup on every /pwa load; non-SPG users pay it too (assignedStoreId
-   * is null for them, a cheap PK-indexed miss).
+   * falling back to the roaming salesman home below. The lookup is shared
+   * with the /pwa layout through React `cache`, so it costs one query per
+   * request, not two.
    */
-  const me = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { assignedStoreId: true },
-  });
+  const assignedStoreId = await ambilTokoTetap(session.user.id);
 
-  if (me?.assignedStoreId) {
-    const [store, active] = await Promise.all([
-      getStore(me.assignedStoreId),
-      getActiveVisit(session.user.id),
-    ]);
+  if (assignedStoreId) {
+    const sekarang = new Date();
+    const [toko, active] = await Promise.all([tokoSpg(session.user.id), getActiveVisit(session.user.id)]);
 
-    if (!store) {
+    if (!toko) {
       /**
        * assignedStoreId is FK-free (relationMode=prisma) — the store could have
        * been deleted or the assignment misconfigured. Surface a clear dead-end
        * instead of a crash or silently falling through to the salesman home.
        */
-      return (
-        <div className="p-4 space-y-4">
-          <header className="flex items-center justify-between pb-2">
-            <div>
-              <p className="text-xs text-muted-foreground">Selamat datang</p>
-              <p className="text-lg font-semibold">{userName}</p>
-            </div>
-            <LogoutButton />
-          </header>
-          <Card>
-            <CardContent className="p-6 text-center text-sm text-destructive">
-              Toko Anda belum diatur atau tidak ditemukan. Hubungi admin untuk mengatur toko Anda.
-            </CardContent>
-          </Card>
-        </div>
-      );
+      return <SpgTanpaToko userName={userName} onLogout={logout} />;
     }
 
-    const activeAtThisStore = active && active.storeId === store.id ? active : null;
-    const activeAtOtherStoreName = active && active.storeId !== store.id ? active.store.name : null;
+    const hariKunci = kunciHariWib(sekarang);
+    // Kartu tambahan SPG tahap 2 — masing-masing boleh gagal tanpa menjatuhkan beranda.
+    const aman = <T,>(janji: Promise<T>, cadangan: T, nama: string) =>
+      janji.catch((e) => {
+        console.error(`[beranda] ${nama} gagal dimuat`, e);
+        return cadangan;
+      });
+    const [r, pengumuman, shift, titip, tukarMasuk, sudahTutup, pengunjung, pesananDiproses] = await Promise.all([
+      ringkasanSpg(session.user.id, toko, sekarang),
+      kartuPengumumanBeranda(session.user.id, sekarang).catch((e) => {
+        console.error("[beranda] pengumuman gagal dimuat", e);
+        return null;
+      }),
+      aman(shiftHariIni(session.user.id, sekarang), null, "shift"),
+      aman(daftarTitipHp(toko.id, sekarang).then((d) => d.datang.length), 0, "titip pesan"),
+      aman(prisma.spgShiftSwap.count({ where: { partnerId: session.user.id, status: "MENUNGGU_REKAN" } }), 0, "tukar shift"),
+      aman(
+        prisma.spgDailyClose.findUnique({ where: { storeId_day: { storeId: toko.id, day: hariKunci } }, select: { id: true } }).then(Boolean),
+        false,
+        "tutup hari",
+      ),
+      aman(pengunjungUntukHp(session.user.id, toko.id, hariKunci), null, "pengunjung"),
+      // Pesanan sales untuk toko ini yang masih diproses kantor — hitungan saja, rinciannya di Terima kiriman.
+      aman(pesananMenujuToko(toko.id, sekarang).then(hitungPesananDiproses), 0, "pesanan menuju toko"),
+    ]);
+    // Pengingat tutup hari: sesudah jam 17.00 WIB, kalau toko sudah berjualan dan belum ada laporannya.
+    const jamWib = Number(new Intl.DateTimeFormat("en-GB", { hour: "2-digit", hour12: false, timeZone: "Asia/Jakarta" }).format(sekarang));
+    const disini = active && active.storeId === toko.id ? active : null;
+    // `?kembali=` dari layar "check-in dulu" (opname, terima, jual): hanya
+    // alamat /pwa/... yang diterima, dan hanya dipakai selama belum check-in.
+    // Sengaja TIDAK dialihkan bila sudah check-in: sesudah check-in SPG
+    // diteruskan ke layar itu, dan Kembali dari sana mendarat di alamat ini —
+    // pengalihan akan melemparnya maju lagi, seolah tombol Kembali rusak.
+    const kembali = disini ? null : kembaliAman((await searchParams).kembali);
+    // Jam dan tanggal diformat DI SERVER: format tanggal di klien bisa berbeda
+    // antara Node dan Safari, dan React menganggapnya hydration error.
+    const jam = (d: Date | string) =>
+      new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Jakarta" }).format(new Date(d));
+    const resmi = r.gajiKomisi.resmi[0] ?? null;
+    // Jam masuk dalam dua bentuk, diformat di server; HP memilih menurut harinya
+    // sendiri (halaman dari cache bisa dibuka keesokan harinya).
+    const masuk = disini ? labelMasuk(disini.checkinAt) : null;
+    const hariIniKunci = hariWib(sekarang);
 
     /**
      * The due hint shows only while the store has an open count and a month is owed (DUE or
      * OVERDUE), at the stores the daily sweep reads: every active KONSI store. A count opened
      * while nothing is owed carries no deadline, because no month is waiting on it.
      */
-    let countDue: { overdue: boolean; dueAtIso: string } | null = null;
-    if (store.termsType === "KONSI" && store.isActive) {
-      const countState = await getStoreCountState({ id: store.id, createdAt: store.createdAt }, await readCountSchedule(), new Date());
-      if (countState.openStocktakeId && (countState.status === "DUE" || countState.status === "OVERDUE")) {
-        countDue = { overdue: countState.status === "OVERDUE", dueAtIso: countState.dueAt.toISOString() };
-      }
+    let countDue: { overdue: boolean; dueLabel: string } | null = null;
+    if (toko.termsType === "KONSI") {
+      const status = await aman(
+        prisma.store
+          .findUnique({ where: { id: toko.id }, select: { id: true, createdAt: true, isActive: true } })
+          .then(async (st) => {
+            if (!st?.isActive) return null;
+            const countState = await getStoreCountState({ id: st.id, createdAt: st.createdAt }, await readCountSchedule(), sekarang);
+            if (!countState.openStocktakeId || (countState.status !== "DUE" && countState.status !== "OVERDUE")) return null;
+            return {
+              overdue: countState.status === "OVERDUE",
+              dueLabel: new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Jakarta" }).format(
+                countState.dueAt,
+              ),
+            };
+          }),
+        null,
+        "jadwal hitung konsinyasi",
+      );
+      countDue = status;
     }
 
-    return (
-      <SpgHomeShell
-        userName={userName}
-        store={{
-          id: store.id,
-          name: store.name,
-          code: store.code,
-          address: store.address,
-          termsType: store.termsType,
-          lat: store.lat,
-          lng: store.lng,
-        }}
-        activeVisit={
-          activeAtThisStore
-            ? {
-                id: activeAtThisStore.id,
-                checkinAt: activeAtThisStore.checkinAt.toISOString(),
-                checkinOutOfRadius: activeAtThisStore.checkinOutOfRadius,
-                checkinDistanceMeters: activeAtThisStore.checkinDistanceMeters,
-              }
-            : null
-        }
-        autoCloseStoreName={activeAtOtherStoreName}
-        countDue={countDue}
-      />
-    );
+    const data: DataBerandaSpg = {
+      toko: {
+        id: toko.id,
+        name: toko.name,
+        code: toko.code,
+        address: toko.address,
+        mapsUrl: toko.lat !== null && toko.lng !== null ? `https://www.google.com/maps?q=${toko.lat},${toko.lng}` : null,
+        termsType: toko.termsType,
+      },
+      kunjungan:
+        disini && masuk
+          ? {
+              id: disini.id,
+              // Check-in yang dibiarkan terbuka dari hari lain menyebut tanggalnya —
+              // "Masuk pukul 15.59" saja terbaca seperti hari ini.
+              lama: labelMasukUntuk(masuk, hariIniKunci).lama,
+              jamMasuk: labelMasukUntuk(masuk, hariIniKunci).teks,
+              masuk,
+              diLuarRadius: disini.checkinOutOfRadius,
+              jarak: disini.checkinDistanceMeters,
+            }
+          : null,
+      hariKunci: hariIniKunci,
+      tokoLainTerbuka: active && active.storeId !== toko.id ? active.store.name : null,
+      hariIniLabel: new Intl.DateTimeFormat("id-ID", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Jakarta" }).format(sekarang),
+      hariIni: r.hariIni,
+      bulanIni: {
+        total: r.bulanIni.total,
+        target: r.bulanIni.target,
+        persen: r.bulanIni.target ? Math.round((r.bulanIni.total / r.bulanIni.target) * 100) : null,
+      },
+      hariMasuk: r.hariMasukBulanIni,
+      terlaris: r.terlaris.map((b) => ({ kunci: `${b.itemId}::${b.variantSku}`, nama: b.nama, qty: b.qty })),
+      hampirHabis: r.hampirHabis.length,
+      stokDilacak: r.stokDilacak,
+      kirimanMenunggu: r.kirimanMenunggu,
+      kirimanMenungguKunci: r.kirimanMenungguKunci,
+      pesananDiproses,
+      notaHariIni: r.notaHariIni.map((n) => ({ id: n.id, docNo: n.docNo, jam: jam(n.waktu), total: n.total, jumlahBarang: n.jumlahBarang })),
+      gaji: {
+        perkiraan: r.gajiKomisi.perkiraan ? { totalToko: r.gajiKomisi.perkiraan.totalToko, bagianSaya: r.gajiKomisi.perkiraan.bagianSaya } : null,
+        terakhir: resmi ? { periode: resmi.periode, total: resmi.total, dibayar: resmi.dibayar !== null } : null,
+      },
+      pengumuman,
+      shift,
+      titipDatang: titip,
+      tukarMasuk,
+      tutupPerlu: r.hariIni.nota > 0 && !sudahTutup && jamWib >= 17,
+      pengunjung,
+      userId: session.user.id,
+      countDue,
+    };
+
+    return <SpgHomeShell userName={userName} data={data} kembali={kembali} />;
   }
 
-  const [active, stores, recentVisits] = await Promise.all([
-    getActiveVisit(session.user.id),
-    listActiveStoresForPwa(),
-    listRecentVisitsForUser(session.user.id, 20),
+  const hariIni = new Date();
+  const salesmanId = session.user.id;
+  const [active, jual, pesanan, toko, atur] = await Promise.all([
+    getActiveVisit(salesmanId),
+    // "Bulan ini" + grafik 60 hari untuk HP: rupiah putus + van, konsinyasi
+    // hanya pcs. Rupiah konsi tidak pernah dikirim ke HP (aturan mutlak pemilik).
+    berandaPenjualanHp(salesmanId, hariIni),
+    pesananSaya(salesmanId, hariIni),
+    // Toko menurun dinilai atas "toko saya" yang sama dengan rencana kunjungan,
+    // jadi menunggu daftar itu — tetap sejalan dengan kueri lainnya. Bentuk HP:
+    // tanpa rupiah; rasionya hanya untuk toko tanpa nilai konsinyasi (rasio total yang
+    // memuat konsi membukanya begitu jendela lain berisi rupiah yang salesman tahu).
+    tokoSaya(salesmanId, hariIni).then(async (t) => ({
+      ...t,
+      menurun: await tokoMenurunHp(t.rencana.map((r) => ({ storeId: r.storeId, nama: r.nama })), hariIni),
+    })),
+    pengaturanSalesman(salesmanId, hariIni),
   ]);
 
-  const recentMap = new Map<string, string>();
-  for (const v of recentVisits) {
-    if (!recentMap.has(v.storeId)) recentMap.set(v.storeId, v.store.name);
-  }
-  const recentStores = Array.from(recentMap.entries())
-    .slice(0, 3)
-    .map(([storeId, storeName]) => ({ storeId, storeName }));
+  const bulan = bulanWib(hariIni);
+  const { bulanIni, tren } = jual;
+
+  // Perkiraan komisi memakai omzet dan target yang SAMA dengan kartu "Bulan ini"
+  // di atasnya (putus + van), supaya kedua kartu tidak pernah berbeda angka dan
+  // tidak ada angka turunan yang membuka rupiah konsi. Kartu sekunder: kalau
+  // kuerinya gagal, beranda tetap tampil tanpa kartu ini.
+  const [komisi, absen, tugasTagih, jumlahTarget, jadwal, pengumuman] = await Promise.all([
+    komisiUntukHp(salesmanId, bulan, { omzet: bulanIni, target: atur.target }).catch((e) => {
+      console.error("[beranda] perkiraan komisi gagal dimuat", e);
+      return null;
+    }),
+    // Kartu absen: null kalau absensi dimatikan kantor dan hari ini belum ada catatan.
+    absenBeranda(salesmanId, hariIni).catch((e) => {
+      console.error("[beranda] kartu absen gagal dimuat", e);
+      return null;
+    }),
+    // Tugas tagih dari kantor: baris di "Tugas hari ini"; kalau gagal dimuat, barisnya tidak tampil.
+    ringkasTugasTagihSaya(salesmanId).catch((e) => {
+      console.error("[beranda] tugas tagih gagal dimuat", e);
+      return { perluDitagih: 0, terlambat: 0 };
+    }),
+    jumlahTargetRinci(salesmanId, bulan).catch(() => 0),
+    // Jadwal kantor hari ini: paling atas di "Rencana kunjungan". Gagal → kartu tampil tanpanya.
+    jadwalHariIniSales(salesmanId, hariIni).catch((e) => {
+      console.error("[beranda] jadwal kantor gagal dimuat", e);
+      return [];
+    }),
+    kartuPengumumanBeranda(salesmanId, hariIni).catch((e) => {
+      console.error("[beranda] pengumuman gagal dimuat", e);
+      return null;
+    }),
+  ]);
+  // Catatan tersemat (mis. "pemilik hanya ada sore hari") di baris rencana kunjungan.
+  const tersemat = await catatanTersematPerToko([...toko.rencana.map((r) => r.storeId), ...jadwal.map((j) => j.storeId)]).catch(
+    () => new Map<string, { teks: string }>(),
+  );
 
   return (
     <HomeShell
       userName={userName}
+      dimuatPada={hariIni.toISOString()}
       activeVisit={active ? {
         id: active.id,
         storeId: active.storeId,
@@ -129,8 +255,42 @@ export default async function PwaHome() {
         storeTermsType: active.store.termsType,
         checkinAt: active.checkinAt.toISOString(),
       } : null}
-      stores={stores.map(s => ({ id: s.id, name: s.name, lat: s.lat, lng: s.lng }))}
-      recentStores={recentStores}
+      data={{
+        bulanIni,
+        // Capaian atas putus + van: capaian dengan konsi × target − putus − van = konsi.
+        kemajuan: kemajuanTarget(atur.target, bulanIni.total, hariIni),
+        tren,
+        pesanan,
+        rencana: toko.rencana.map((x) => ({
+          ...x,
+          kunjunganTerakhir: x.kunjunganTerakhir ? x.kunjunganTerakhir.toISOString() : null,
+        })),
+        tagih: toko.tagih,
+        menurun: toko.menurun,
+        batas: atur.batas,
+        insentif:
+          komisi && komisi.hasil.aktif
+            ? {
+                komisi: komisi.hasil.komisi,
+                dasar: komisi.hasil.dasar,
+                dasarNilai: komisi.hasil.dasarNilai,
+                tarifDipakai: komisi.hasil.tarifDipakai,
+                tingkatBerikut: komisi.hasil.tingkatBerikut,
+                // Kalimat "final bisa lebih tinggi" hanya bila konsi memang bisa mengubah komisinya.
+                konsiBelumDihitung: komisiBisaNaikOlehKonsi({
+                  pcsKonsi: bulanIni.pcsKonsi,
+                  dasar: komisi.hasil.dasar,
+                  tingkatBerikut: komisi.hasil.tingkatBerikut,
+                }),
+              }
+            : null,
+        absen,
+        tugasTagih,
+        adaTargetRinci: jumlahTarget > 0,
+        jadwal: jadwal.map((j) => ({ storeId: j.storeId, nama: j.nama, catatan: j.catatan, lat: j.lat, lng: j.lng, dikunjungi: j.dikunjungi })),
+        pengumuman,
+        catatanTersemat: Object.fromEntries([...tersemat].map(([id, c]) => [id, c.teks])),
+      }}
       canCollect={canCollect}
       canCompletePod={canCompletePod}
       canViewAmplop={canViewAmplop}

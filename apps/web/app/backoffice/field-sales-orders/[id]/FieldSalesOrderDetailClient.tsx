@@ -15,6 +15,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import {
   Table,
   TableBody,
@@ -24,15 +25,23 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApproveRejectCard, type AppealedLine, type LineRef, type OverCommittedLine } from "./ApproveRejectCard";
+import { barisBanding } from "./baris-banding";
 import { DeliveriesCard } from "./DeliveriesCard";
 import { KonsiShipmentsCard } from "./KonsiShipmentsCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
+import { KreditPanel } from "./KreditPanel";
+import type { PanelKredit } from "@/lib/field-sales/kredit-panel";
 import type { DeliverableLine } from "./DeliveryFormDialog";
 import type { OrderShipmentSummary } from "@/lib/delivery/shipment-queries";
+import type { FakturKreditTampil, PiutangKiriman } from "./tautan-pesanan";
 import { logPrint } from "@/app/actions/audit";
 import { buildSuratKeluarPrintHtml } from "@/lib/print/konsi-surat-keluar-html";
 import { printHtmlInIframe } from "@/lib/print/print-html-in-iframe";
 import { buildSuratKeluarLabels } from "./surat-keluar-labels";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { LencanaJarakJauh } from "@/app/pwa/orders/[id]/LencanaJarakJauh";
+import { LencanaInden } from "../LencanaInden";
 
 type Props = {
   order: FieldSalesOrderDetail;
@@ -45,6 +54,16 @@ type Props = {
   konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
   creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
   shipments: OrderShipmentSummary[];
+  /** Panel kredit toko (PUTUS saja); null = konsinyasi atau gagal dimuat. */
+  kredit: PanelKredit | null;
+  /** Faktur panel kredit dengan janji bayar + keadaan per jatuh tempo; null = gagal dimuat (kolom lama). */
+  fakturKredit?: FakturKreditTampil[] | null;
+  /** Piutang tiap nota pengiriman (per `deliveryId`), hanya untuk yang boleh membaca piutang. */
+  piutangKiriman?: Record<string, PiutangKiriman>;
+  bolehBukaPiutang?: boolean;
+  bolehBukaFakturPajak?: boolean;
+  /** Kredit ditahan saat dibuat — persetujuan butuh centang "sudah memeriksa tagihan". */
+  kreditDitahan: boolean;
 };
 
 const STATUS_BADGE_VARIANT: Record<FieldSalesOrderStatus, "secondary" | "default" | "destructive"> = {
@@ -59,13 +78,6 @@ const STATUS_LABEL_KEY: Record<FieldSalesOrderStatus, "statusPending" | "statusA
   REJECTED: "statusRejected",
 };
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 export function FieldSalesOrderDetailClient({
   order,
@@ -78,8 +90,16 @@ export function FieldSalesOrderDetailClient({
   konsiAssortmentGaps,
   creditCheck,
   shipments,
+  kredit,
+  fakturKredit = null,
+  kreditDitahan,
+  piutangKiriman = {},
+  bolehBukaPiutang = false,
+  bolehBukaFakturPajak = false,
 }: Props) {
   const t = useTranslations("fieldSalesOrders");
+  const tBonus = useTranslations("promoBonus");
+  const tInden = useTranslations("fieldSalesOrders.inden");
   const locale = useLocale();
   const [stagedAdditions, setStagedAdditions] = useState<StagedAddition[]>([]);
   const isKonsi = order.orderType === "KONSI";
@@ -123,17 +143,8 @@ export function FieldSalesOrderDetailClient({
     outstanding: line.outstanding,
     onHand: line.onHand,
   }));
-  const appealedLines: AppealedLine[] = order.lines
-    .filter((line) => line.requestedUnitPrice != null)
-    .map((line) => ({
-      id: line.id,
-      productName: line.productName,
-      variantLabel: line.variantLabel,
-      variantSku: line.variantSku,
-      unitPrice: line.unitPrice,
-      requestedUnitPrice: line.requestedUnitPrice as number,
-      appealReason: line.appealReason,
-    }));
+  // Membawa potongan + nama promo baris: tanpanya peringatan "promo gugur" tidak pernah tampil.
+  const appealedLines: AppealedLine[] = barisBanding(order.lines);
   /*
    * Lets ApproveRejectCard resolve a short-stock line back to a product name for the
    * INSUFFICIENT_STOCK toast — the writer's ShortLine only carries (itemId, variantSku, available).
@@ -145,14 +156,7 @@ export function FieldSalesOrderDetailClient({
     variantLabel: line.variantLabel,
   }));
 
-  const formatDate = (date: Date) =>
-    new Intl.DateTimeFormat(locale, {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+  const formatDate = (date: Date) => formatDisplayDateTime(date, locale);
 
   const legacyKonsiTransfer = order.legacyKonsiTransfer;
   /**
@@ -202,12 +206,23 @@ export function FieldSalesOrderDetailClient({
             {t("back")}
           </Link>
         </Button>
-        <h1 className="text-2xl font-semibold font-mono">{order.orderNo}</h1>
-        <Badge variant={STATUS_BADGE_VARIANT[order.status]}>
-          {t(STATUS_LABEL_KEY[order.status])}
-        </Badge>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-semibold font-mono">{order.orderNo}</h1>
+          <TombolBantuan judul={order.orderNo} />
+        </div>
+        {order.dibatalkan ? (
+          <Badge variant="outline" className="bg-muted text-muted-foreground">
+            {t("batal.lencana")}
+          </Badge>
+        ) : (
+          <Badge variant={STATUS_BADGE_VARIANT[order.status]}>
+            {t(STATUS_LABEL_KEY[order.status])}
+          </Badge>
+        )}
         {order.origin === "ADMIN" && <Badge variant="secondary">{t("originAdmin")}</Badge>}
         <Badge variant="outline">{isKonsi ? t("typeKonsi") : t("typePutus")}</Badge>
+        <LencanaJarakJauh saluran={order.remoteChannel} />
+        <LencanaInden preorder={order.preorder} tautan />
         {/**
          * Putus notas print per-delivery from DeliveriesCard; a konsi order with a real transfer
          * prints per shipment from KonsiShipmentsCard. This header button covers only the legacy
@@ -223,6 +238,58 @@ export function FieldSalesOrderDetailClient({
         )}
       </div>
 
+      {/*
+        Dibatalkan salesman sendiri (status tetap REJECTED). Kartu persetujuan tidak
+        muncul untuk status ini; yang perlu kantor tahu: siapa, kapan, kenapa, dan
+        pesanan mana yang menggantikannya bila ia mengubah pesanannya.
+      */}
+      {order.dibatalkan && (
+        <div className="rounded-lg border bg-muted/50 px-4 py-3 text-sm">
+          <p className="font-medium">
+            {order.digantiDengan
+              ? t("batal.judulDiganti", { nama: order.cancelledByName ?? "—" })
+              : t("batal.judul", { nama: order.cancelledByName ?? "—" })}
+            {order.cancelledAt ? <span className="font-normal text-muted-foreground"> · {formatDate(order.cancelledAt)}</span> : null}
+          </p>
+          {order.digantiDengan ? (
+            <p className="text-muted-foreground">
+              {t("batal.digantiDengan")}{" "}
+              <Link href={`/backoffice/field-sales-orders/${order.digantiDengan.id}`} className="font-mono text-foreground underline underline-offset-2">
+                {order.digantiDengan.orderNo}
+              </Link>
+            </p>
+          ) : order.rejectReason ? (
+            <p className="text-muted-foreground">{t("batal.alasan", { alasan: order.rejectReason })}</p>
+          ) : null}
+        </div>
+      )}
+      {order.menggantikan && (
+        <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm">
+          <p>
+            {t("batal.menggantikan")}{" "}
+            <Link href={`/backoffice/field-sales-orders/${order.menggantikan.id}`} className="font-mono font-medium underline underline-offset-2">
+              {order.menggantikan.orderNo}
+            </Link>
+          </p>
+          {/* Perintah memutuskan hanya untuk pesanan yang memang masih menunggu keputusan. */}
+          {order.status === "PENDING_APPROVAL" && <p className="text-muted-foreground">{t("batal.menggantikanIsi")}</p>}
+        </div>
+      )}
+
+      {/*
+        Pre-order yang belum dirilis: stoknya belum dicadangkan, jadi pengiriman ditolak
+        (INDEN_BELUM_RILIS) sampai barangnya datang dan jendelanya dirilis. Dikatakan di
+        sini, sebelum orang mencoba mengirim dan baru tahu dari toast.
+      */}
+      {order.preorder && !order.preorder.dirilis && order.status !== "REJECTED" && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
+          <p className="font-medium text-amber-900 dark:text-amber-200">
+            {tInden("belumRilisJudul", { nama: order.preorder.name ?? "—" })}
+          </p>
+          <p className="text-muted-foreground">{tInden("belumRilisIsi")}</p>
+        </div>
+      )}
+
       {showKonsiSuggestions && (
         <KonsiSuggestionsCard
           suggestions={konsiSuggestions}
@@ -232,6 +299,26 @@ export function FieldSalesOrderDetailClient({
           onStagedChange={setStagedAdditions}
         />
       )}
+
+      {kredit &&
+        (order.status === "REJECTED" ? (
+          // Ditolak kantor atau dibatalkan salesman: tidak ada keputusan kredit lagi — panelnya dilipat.
+          <details className="rounded-xl border bg-card px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-medium">
+              {order.dibatalkan ? t("kredit.dilipatDibatalkan") : t("kredit.dilipatDitolak")}
+            </summary>
+            <div className="mt-3">
+              <KreditPanel kredit={kredit} fakturTampil={fakturKredit} menunggu={false} bolehBukaPiutang={bolehBukaPiutang} />
+            </div>
+          </details>
+        ) : (
+          <KreditPanel
+            kredit={kredit}
+            fakturTampil={fakturKredit}
+            menunggu={order.status === "PENDING_APPROVAL"}
+            bolehBukaPiutang={bolehBukaPiutang}
+          />
+        ))}
 
       {canApprove && (
         <ApproveRejectCard
@@ -247,6 +334,8 @@ export function FieldSalesOrderDetailClient({
           creditCheck={creditCheck}
           creditHoldAtCreate={order.creditHoldAtCreate}
           overCommittedLines={overCommittedLines}
+          kreditDitahan={kreditDitahan}
+          preorder={order.preorder ? { dirilis: order.preorder.dirilis } : null}
         />
       )}
 
@@ -280,6 +369,12 @@ export function FieldSalesOrderDetailClient({
           paymentTempo={order.paymentTempo}
           canDeliver={canDeliver}
           canShipShipment={canShipShipment}
+          // Bukti terima boleh dicatat/dikoreksi penyetuju juga — sama dengan penulisnya.
+          canRecordReceipt={canDeliver || canApprove}
+          indenBelumRilis={!!order.preorder && !order.preorder.dirilis}
+          piutangKiriman={piutangKiriman}
+          bolehBukaPiutang={bolehBukaPiutang}
+          bolehBukaFakturPajak={bolehBukaFakturPajak}
         />
       )}
 
@@ -289,12 +384,16 @@ export function FieldSalesOrderDetailClient({
         <Field label={t("salesman")} value={order.salesmanName} />
         <Field label={t("createdAt")} value={formatDate(order.createdAt)} />
         <Field label={t("approvedAt")} value={order.approvedAt ? formatDate(order.approvedAt) : null} />
-        <Field label={t("rejectedAt")} value={order.rejectedAt ? formatDate(order.rejectedAt) : null} />
+        {order.dibatalkan ? (
+          <Field label={t("batal.dibatalkanPada")} value={order.cancelledAt ? formatDate(order.cancelledAt) : null} />
+        ) : (
+          <Field label={t("rejectedAt")} value={order.rejectedAt ? formatDate(order.rejectedAt) : null} />
+        )}
         <Field label={t("delivery.closedAt")} value={order.closedAt ? formatDate(order.closedAt) : null} />
         <Field label={t("note")} value={order.note} />
         {order.status === "REJECTED" && order.rejectReason && (
           <div className="pt-2 border-t">
-            <div className="text-sm text-muted-foreground mb-1">{t("rejectReason")}</div>
+            <div className="text-sm text-muted-foreground mb-1">{order.dibatalkan ? t("batal.alasanLabel") : t("rejectReason")}</div>
             <div className="text-sm">{order.rejectReason}</div>
           </div>
         )}
@@ -331,10 +430,17 @@ export function FieldSalesOrderDetailClient({
             </TableRow>
           </TableHeader>
           <TableBody>
+            {order.lines.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={lineColumnCount} className="py-6 text-center text-muted-foreground">
+                  {t("barisKosong")}
+                </TableCell>
+              </TableRow>
+            )}
             {order.lines.map((line) => (
               <Fragment key={line.id}>
                 <TableRow>
-                  <TableCell>
+                  <TableCell className="min-w-[12rem] whitespace-normal">
                     {line.productName}
                     {line.addedById != null && (
                       <Badge
@@ -343,6 +449,19 @@ export function FieldSalesOrderDetailClient({
                       >
                         {t("konsiSuggestions.addedByAdminBadge")}
                       </Badge>
+                    )}
+                    {line.isBonus && (
+                      <>
+                        <Badge
+                          variant="outline"
+                          className="ml-2 border-emerald-500/40 text-emerald-700 dark:text-emerald-400 align-middle"
+                        >
+                          {tBonus("lencana")}
+                        </Badge>
+                        {line.bonusPromoName && (
+                          <div className="text-xs text-muted-foreground">{line.bonusPromoName}</div>
+                        )}
+                      </>
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-sm">{line.variantSku || "—"}</TableCell>

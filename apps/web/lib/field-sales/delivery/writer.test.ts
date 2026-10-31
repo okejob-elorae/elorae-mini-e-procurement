@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
-import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "./writer";
+import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder, CadanganTidakCocokError } from "./writer";
 import { approveFieldSalesOrder } from "../writer";
 import { DeliveryError } from "../errors";
 import { deliveredGoodsValue } from "./undelivered-residual";
@@ -92,6 +92,8 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -148,6 +150,24 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(err.code).toBe("OVER_DELIVER");
     const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
     expect(Number(inv.qtyOnHand)).toBe(10);
+  });
+
+  it("cadangan yang sudah habis dikonsumsi (balapan deploy) punya kode sendiri, bukan OVER_DELIVER, dan stok tidak bergerak", async () => {
+    // Pesanan disetujui oleh image lama: stoknya sudah keluar, cadangannya CONSUMED, tapi sisa tetap penuh.
+    await prisma.stockReservation.update({ where: { fieldSalesLineId: lineAId }, data: { state: "CONSUMED", consumedQty: 5 } });
+    const err = await recordFieldSalesDelivery({
+      orderId,
+      deliveredById: userId,
+      lines: [{ orderLineId: lineAId, qty: 2 }],
+      invoiceDate: defaultInvoiceDate,
+      dueDate: defaultDueDate,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(CadanganTidakCocokError);
+    expect(err.code).toBe("RESERVATION_MISMATCH");
+    expect(err).toBeInstanceOf(DeliveryError);
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.qtyOnHand)).toBe(10);
+    expect(await prisma.fieldSalesDelivery.count({ where: { orderId: seededId(orderId) } })).toBe(0);
   });
 
   it("hard-blocks when on-hand is short and names every short line", async () => {
@@ -639,6 +659,8 @@ d("recordFieldSalesDelivery — two distinct items in one call (test bed only)",
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: [seededId(itemAId), seededId(itemBId)] } } });
@@ -751,6 +773,8 @@ d("recordFieldSalesDelivery — discount allocation across two deliveries (test 
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -893,6 +917,8 @@ d("recordFieldSalesDelivery — residue on a line that finishes before the order
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.receivable.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
     await prisma.taxInvoice.deleteMany({ where: { delivery: { orderId: seededId(orderId) } } });
+    // Nota = piutang: hapus piutangnya SEBELUM notanya (emulasi relasi 1:1 Prisma gagal pada deleteMany banyak nota).
+    await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });

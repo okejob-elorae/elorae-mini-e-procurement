@@ -31,6 +31,11 @@ const {
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: mockFanOut }));
+/* Kabar ke salesman memuat Firebase Admin lewat `recipients`; tidak ada tes di sini yang menguji kabarnya. */
+vi.mock("@/lib/notifications/kabar-pengguna", () => ({
+  JENIS_KABAR: { PESANAN_DIKIRIM: "PESANAN_DIKIRIM", PESANAN_DITUTUP: "PESANAN_DITUTUP" },
+  kabariPengguna: vi.fn(),
+}));
 vi.mock("./audit", () => ({ logPrint: mockLogAudit }));
 vi.mock("@/lib/finance/ar/post-ar-journal-safely", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/finance/ar/post-ar-journal-safely")>();

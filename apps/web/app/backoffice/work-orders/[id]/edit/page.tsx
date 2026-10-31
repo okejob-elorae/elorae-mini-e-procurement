@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   getWorkOrderById,
@@ -51,12 +51,18 @@ import { getPOs, getPOById } from '@/app/actions/purchase-orders';
 import { getFinishedGoodVariantStock } from "@/app/actions/work-order-variant-stock";
 import { ColorSizeRatio } from "@/components/work-orders/ColorSizeRatio";
 import { ItemType } from '@/lib/constants/enums';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { alasanSimpanWo } from '@/lib/production/rencana-wo';
+import { KeteranganSimpanWo } from '../../RencanaBahanWo';
+import { WoTidakDitemukan } from '../../WoTidakDitemukan';
 
 interface TailorSupplier {
   id: string;
   code: string;
   name: string;
   type?: { id: string; code: string; name: string } | null;
+  /** Vendor yang sudah tercatat di WO tetapi tidak (lagi) di daftar pemasok disetujui. */
+  belumDisetujui?: boolean;
 }
 
 interface FinishedGood {
@@ -112,6 +118,10 @@ export default function EditWorkOrderPage() {
   const id = typeof params.id === 'string' ? params.id : '';
   const t = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
+  const tF = useTranslations('workOrders.form');
+  const tR = useTranslations('workOrders.formulir');
+  const tTolak = useTranslations('productionErrors');
+  const locale = useLocale();
   const router = useRouter();
   const { data: session } = useSession();
   const [wo, setWO] = useState<WO>(null);
@@ -238,7 +248,7 @@ export default function EditWorkOrderPage() {
   }, [wo, purchaseOrders]);
 
   useEffect(() => {
-    if (!wo || wo.status !== 'DRAFT' || !tailors.length || !finishedGoods.length) return;
+    if (!wo || wo.status !== 'DRAFT' || isLoadingSuppliers || !finishedGoods.length) return;
     if (prefillDoneRef.current) return;
     prefillDoneRef.current = true;
 
@@ -271,7 +281,25 @@ export default function EditWorkOrderPage() {
     })).sort((a: WorkOrderStepForm, b: WorkOrderStepForm) => a.sequence - b.sequence));
 
     // Variant (SKU) selection is applied after variants load (see variants effect) so options exist first
-  }, [wo, tailors.length, finishedGoods.length]);
+  }, [wo, isLoadingSuppliers, finishedGoods.length]);
+
+  // Pilihan vendor = pemasok disetujui + vendor yang SUDAH tercatat di WO (dan
+  // di tahapnya) walau belum/tidak lagi disetujui. Dulu vendor itu hilang dari
+  // pilihan, kotak jadi kosong, dan orang terpaksa memilih vendor lain.
+  const pilihanVendor = useMemo<TailorSupplier[]>(() => {
+    const w = wo as { vendor?: { id?: string; name?: string; code?: string } | null; steps?: Array<{ supplier?: { id?: string; name?: string; code?: string } | null }> } | null;
+    const tambahan: TailorSupplier[] = [];
+    const ada = new Set(tailors.map((x) => x.id));
+    const calon = [w?.vendor, ...(Array.isArray(w?.steps) ? w.steps.map((st) => st.supplier) : [])];
+    for (const v of calon) {
+      if (!v?.id || ada.has(v.id)) continue;
+      ada.add(v.id);
+      tambahan.push({ id: v.id, name: v.name ?? v.id, code: v.code ?? '', belumDisetujui: true });
+    }
+    return [...tailors, ...tambahan];
+  }, [tailors, wo]);
+  const labelVendor = (v: TailorSupplier) =>
+    `${v.name}${v.code ? ` (${v.code})` : ''}${v.belumDisetujui ? ` · ${tF('vendorBelumDisetujui')}` : ''}`;
 
   useEffect(() => {
     if (!finishedGoodId) {
@@ -462,7 +490,7 @@ export default function EditWorkOrderPage() {
             setTargetPreview(null);
             return;
           }
-          const vendor = tailors.find((x) => x.id === vendorId);
+          const vendor = pilihanVendor.find((x) => x.id === vendorId);
           const suggested = new Date(preview.suggestedEta);
           setTargetPreview({
             totalDays: preview.totalDays,
@@ -478,7 +506,7 @@ export default function EditWorkOrderPage() {
       })();
     }, 400);
     return () => clearTimeout(handle);
-  }, [vendorId, plannedNum, tailors, targetTouched, targetDate]);
+  }, [vendorId, plannedNum, pilihanVendor, targetTouched, targetDate]);
 
   const hasShortage = materialPlan.some((m) => m.shortage > 0);
   // Rolls per material and per finished-good colour of the plan (#437, #410); a section left
@@ -493,24 +521,41 @@ export default function EditWorkOrderPage() {
       (finishedGoodVariants.length > 1
         ? variantRatios.length > 0 && Math.abs(variantRatioSum - 100) < 0.01
         : selectedVariantSku.length > 0));
-  const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
+  const noVariantsForSku = outputMode === 'SKU' && !!finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
+  // Satu aturan untuk tombol simpan dan kalimat di bawahnya (lib/production/rencana-wo.ts), sama dengan formulir baru.
+  // Stok kurang tidak menghalangi: WO tetap DRAFT sampai stok menutup BOM.
+  const alasan = alasanSimpanWo({
+    vendor: !!vendorId,
+    barangJadi: !!finishedGoodId,
+    modeSku: outputMode === 'SKU',
+    tanpaVarian: noVariantsForSku,
+    pakaiRasio: finishedGoodVariants.length > 1,
+    totalRasio: variantRatios.length > 0 ? variantRatioSum : 0,
+    varianTerpilih: selectedVariantSku.length > 0,
+    adaBom: consumptionRules.length > 0,
+    bahanUtama: !!consumptionMaterialId,
+    caraIsi: 'bahan',
+    pcs: 0,
+    jumlahBahan: Number(consumptionInput) || 0,
+    menghitung: isComputingConsumption,
+    adaHasil: consumptionResult != null,
+    jumlahRencana: plannedNum,
+    stokKurang: false,
+    rollCukup: rollValid,
+  });
   const canSubmit =
-    session?.user?.id &&
-    vendorId &&
-    finishedGoodId &&
-    consumptionResult &&
-    plannedNum > 0 &&
-    rollValid &&
-    skuVariantValid &&
-    !noVariantsForSku &&
-    !isSubmitting;
+    !!session?.user?.id &&
+    !isSubmitting &&
+    alasan === null &&
+    skuVariantValid;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit || !session?.user?.id || !id) return;
     setIsSubmitting(true);
     try {
-      await updateWorkOrder(
+      // Penolakan datang sebagai kode (pesan lemparan disamarkan di produksi).
+      const hasil = await updateWorkOrder(
         id,
         {
           vendorId,
@@ -548,22 +593,41 @@ export default function EditWorkOrderPage() {
         },
         session.user.id
       );
-      toast.success('Work order updated');
+      if (!hasil.ok) {
+        if (hasil.code === 'STOK_RENCANA_KURANG') {
+          const angka = new Intl.NumberFormat(locale === 'en' ? 'en-GB' : 'id-ID', { maximumFractionDigits: 2 });
+          toast.error(
+            tTolak.has('STOK_RENCANA_KURANG')
+              ? tTolak('STOK_RENCANA_KURANG', {
+                  daftar: hasil.kurang.map((k) => `${k.barang} (${angka.format(k.qty)} ${k.satuan})`).join(', '),
+                })
+              : tF('updateFailed')
+          );
+          return;
+        }
+        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tF('updateFailed'));
+        // WO sudah bukan draf / sudah tidak ada: layar ubah tidak berlaku lagi.
+        if (hasil.code === 'WO_BUKAN_DRAF') router.push(`/backoffice/work-orders/${id}`);
+        if (hasil.code === 'WO_TIDAK_DITEMUKAN') router.push('/backoffice/work-orders');
+        return;
+      }
+      toast.success(tF('updated'));
       router.push(`/backoffice/work-orders/${id}`);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update work order');
+    } catch {
+      toast.error(tF('updateFailed'));
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  if (isLoadingWO || !wo) {
+  if (isLoadingWO) {
     return (
       <div className="flex justify-center items-center min-h-[200px]">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     );
   }
+  if (!wo) return <WoTidakDitemukan />;
 
   if (wo.status !== 'DRAFT') {
     return null;
@@ -572,15 +636,18 @@ export default function EditWorkOrderPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href={`/backoffice/work-orders/${id}`}>
-          <Button variant="ghost" size="icon">
+        <Button asChild variant="ghost" size="icon">
+          <Link href={`/backoffice/work-orders/${id}`} aria-label={tWO('recon.backToWO')} title={tWO('recon.backToWO')}>
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
+          </Link>
+        </Button>
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Edit Work Order</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{tR('judulUbah')}</h1>
+            <TombolBantuan judul={tR('judulUbah')} />
+          </div>
           <p className="text-muted-foreground">
-            {(wo as any).docNumber} · Update draft details
+            {tF('editDescription', { docNumber: String((wo as any).docNumber ?? '') })}
           </p>
         </div>
       </div>
@@ -588,31 +655,27 @@ export default function EditWorkOrderPage() {
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Work Order</CardTitle>
-            <CardDescription>
-              Select vendor (tailor) and finished good. Material needs are
-              calculated from BOM.
-            </CardDescription>
+            <CardTitle>{tF('cardTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Vendor (Tailor)</Label>
+                <Label>{tR('labelVendor')}</Label>
                 <SearchableCombobox
-                  options={tailors.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
+                  options={pilihanVendor.map((v) => ({ value: v.id, label: labelVendor(v) }))}
                   value={vendorId}
                   onValueChange={setVendorId}
-                  placeholder="Select vendor"
+                  placeholder={tF('selectVendor')}
                   disabled={isLoadingSuppliers}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Finished Good</Label>
+                <Label>{tR('labelBarangJadi')}</Label>
                 <SearchableCombobox
                   options={finishedGoods.map((fg) => ({ value: fg.id, label: `${fg.nameId} (${fg.sku})` }))}
                   value={finishedGoodId}
                   onValueChange={setFinishedGoodId}
-                  placeholder="Select finished good"
+                  placeholder={tF('selectFinishedGood')}
                   disabled={isLoadingFG}
                 />
               </div>
@@ -620,7 +683,7 @@ export default function EditWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>{tWO('outputMode')}</Label>
+                <Label>{tR('labelModeHasil')}</Label>
                 <Select
                   value={outputMode}
                   onValueChange={(v) => setOutputMode(v as 'GENERIC' | 'SKU')}
@@ -672,7 +735,7 @@ export default function EditWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="targetDate">Target Date</Label>
+                <Label htmlFor="targetDate">{tR('labelTanggalTarget')}</Label>
                 <DatePicker
                   id="targetDate"
                   value={parseDateOnly(targetDate)}
@@ -695,31 +758,31 @@ export default function EditWorkOrderPage() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label>PO Reference (optional)</Label>
+                <Label>{tF('poRefLabel')}</Label>
                 <SearchableCombobox
                   options={[
-                    { value: '__none__', label: 'None' },
+                    { value: '__none__', label: tF('none') },
                     ...purchaseOrders.map((po) => ({ value: po.id, label: po.docNumber })),
                   ]}
                   value={poId || '__none__'}
                   onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
-                  placeholder="None"
+                  placeholder={tF('none')}
                   disabled={isLoadingPOs}
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Notes</Label>
+              <Label>{tWO('notes')}</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional notes"
+                placeholder={tF('notesPlaceholder')}
                 rows={2}
               />
             </div>
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between">
-                <Label>Production Steps (optional)</Label>
+                <Label>{tR('labelTahap')}</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -739,13 +802,13 @@ export default function EditWorkOrderPage() {
                     ])
                   }
                 >
-                  + Add step
+                  {tF('addStep')}
                 </Button>
               </div>
               {steps.map((step, index) => (
                 <div key={index} className="grid gap-2 rounded border p-2 sm:grid-cols-5">
                   <Input
-                    placeholder="Step name"
+                    placeholder={tF('stepNamePlaceholder')}
                     value={step.stepName}
                     onChange={(e) =>
                       setSteps((prev) =>
@@ -755,8 +818,8 @@ export default function EditWorkOrderPage() {
                   />
                   <SearchableCombobox
                     options={[
-                      { value: '__none__', label: 'Select supplier' },
-                      ...tailors.map((supplier) => ({ value: supplier.id, label: `${supplier.name} (${supplier.code})` })),
+                      { value: '__none__', label: tF('selectSupplier') },
+                      ...pilihanVendor.map((supplier) => ({ value: supplier.id, label: labelVendor(supplier) })),
                     ]}
                     value={step.supplierId || '__none__'}
                     onValueChange={(v) =>
@@ -764,12 +827,12 @@ export default function EditWorkOrderPage() {
                         prev.map((s, i) => (i === index ? { ...s, supplierId: v === '__none__' ? '' : v } : s))
                       )
                     }
-                    placeholder="Select supplier"
+                    placeholder={tF('selectSupplier')}
                   />
                   <Input
                     type="number"
                     min={0}
-                    placeholder="Service price"
+                    placeholder={tF('servicePricePlaceholder')}
                     value={step.servicePrice || ''}
                     onChange={(e) =>
                       setSteps((prev) =>
@@ -793,8 +856,8 @@ export default function EditWorkOrderPage() {
                       <SelectValue placeholder="PPN" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="exclude">Exclude PPN</SelectItem>
-                      <SelectItem value="include">Include PPN</SelectItem>
+                      <SelectItem value="exclude">{tF('ppnExclude')}</SelectItem>
+                      <SelectItem value="include">{tF('ppnInclude')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -802,7 +865,7 @@ export default function EditWorkOrderPage() {
                     variant="ghost"
                     onClick={() => setSteps((prev) => prev.filter((_, i) => i !== index))}
                   >
-                    Remove
+                    {tF('remove')}
                   </Button>
                 </div>
               ))}
@@ -813,7 +876,7 @@ export default function EditWorkOrderPage() {
         {finishedGoodId && (
           <Card>
             <CardHeader>
-              <CardTitle>Material Plan</CardTitle>
+              <CardTitle>{tF('materialPlanTitle')}</CardTitle>
               <CardDescription>
                 Required materials from BOM. If stock is short, the WO is saved as DRAFT and cannot be issued until stock covers it.
               </CardDescription>
@@ -868,7 +931,7 @@ export default function EditWorkOrderPage() {
                           {isComputingConsumption ? (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
-                              <span className="text-muted-foreground">Calculating…</span>
+                              <span className="text-muted-foreground">{tF('calculating')}</span>
                             </>
                           ) : (
                             <span>{plannedNum} pcs</span>
@@ -892,19 +955,19 @@ export default function EditWorkOrderPage() {
                     <>
                       {isLoadingPlan ? (
                         <div className="py-8 text-center text-muted-foreground">
-                          Loading plan...
+                          {tF('loadingPlan')}
                         </div>
                       ) : (
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Material</TableHead>
+                                <TableHead>{tWO('material')}</TableHead>
                                 <TableHead className="text-right">
-                                  {tWO('estimatedConsumptionPerPcs')} (waste %)
+                                  {tWO('kebutuhanTotalRencana')} {tF('wasteSuffix')}
                                 </TableHead>
-                                <TableHead className="text-right">Available</TableHead>
-                                <TableHead className="text-right">Shortage</TableHead>
+                                <TableHead className="text-right">{tF('colAvailable')}</TableHead>
+                                <TableHead className="text-right">{tF('colShortage')}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -959,15 +1022,17 @@ export default function EditWorkOrderPage() {
           </Card>
         )}
 
-        <div className="flex gap-4">
-          <Button type="submit" disabled={!canSubmit}>
-            {isSubmitting ? 'Updating...' : 'Update Work Order'}
-          </Button>
-          <Link href={`/backoffice/work-orders/${id}`}>
-            <Button type="button" variant="outline">
-              Cancel
+        <div className="space-y-2">
+          <div className="flex gap-4">
+            <Button type="submit" disabled={!canSubmit}>
+              {isSubmitting ? tF('updating') : tR('tombolSimpan')}
             </Button>
-          </Link>
+            <Button asChild variant="outline">
+              <Link href={`/backoffice/work-orders/${id}`}>{tF('cancel')}</Link>
+            </Button>
+          </div>
+          {/* Tombol mati menyebut kekurangan pertamanya. */}
+          <KeteranganSimpanWo alasan={isSubmitting ? null : alasan} />
         </div>
       </form>
     </div>

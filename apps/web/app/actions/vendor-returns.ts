@@ -5,20 +5,49 @@ import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import type { StockLedgerRefType } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import { generateDocNumber } from '@/lib/docNumber';
-import { findExistingInventoryValueRow, reverseInventoryValue } from '@/lib/inventory/costing';
+import { cariBarisStok, reverseInventoryValue } from '@/lib/inventory/costing';
 import { notifyVendorReturnCreated, notifyVendorReturnStatusUpdated } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
 import { getEffectiveHPPForItem } from '@/app/actions/hpp';
 import { auth } from '@/lib/auth';
 import { assertActor } from "@/lib/auth/assert-actor";
-import { PERMISSIONS, requirePermission } from '@/lib/rbac';
+import { hasPermission, PERMISSIONS, requirePermission } from '@/lib/rbac';
+import { runSerializable } from '@/lib/db/tx-retry';
+import { catatKreditReturPo } from '@/lib/purchase-orders/kredit-retur-writer';
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { kaitReturPemasok } from "@/lib/finance/operasional/kait";
+import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
 
 async function requireSession() {
   const session = await auth();
-  if (!session?.user) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   return session;
 }
+
+/** Penjaga baca: sesi + salah satu izin (melempar seperti `requirePermission`). */
+async function wajibSalahSatuIzin(...codes: string[]) {
+  const session = await requireSession();
+  const perms = session.user.permissions ?? [];
+  if (!codes.some((c) => hasPermission(perms, c))) {
+    requirePermission(perms, codes[0]);
+  }
+  return session;
+}
+
+/** Kolom pemasok yang aman dikirim ke browser — tanpa `bankAccountEnc`. */
+const PEMASOK_AMAN = {
+  id: true,
+  code: true,
+  name: true,
+  typeId: true,
+  address: true,
+  phone: true,
+  email: true,
+  isActive: true,
+  status: true,
+} as const;
 
 function parseGrnStoredItems(raw: unknown): Array<{ itemId?: string; qty?: unknown }> {
   if (raw == null) return [];
@@ -128,6 +157,7 @@ export type CreateVendorReturnInput = z.infer<typeof returnSchema>;
 
 // Returnable fabric rolls for a given item (open rolls with remaining length)
 export async function getReturnableFabricRolls(itemId: string) {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW, PERMISSIONS.INVENTORY_VIEW);
   const rolls = await prisma.fabricRoll.findMany({
     where: { itemId, isClosed: false, remainingLength: { gt: 0 } },
     select: { id: true, rollRef: true, remainingLength: true },
@@ -140,8 +170,8 @@ export async function getReturnableFabricRolls(itemId: string) {
   }));
 }
 
-/** Available reject qty for an item (sum of RejectedGoodsLedger rows for that itemId). */
-export async function getAvailableRejectQtyByItem(itemId: string): Promise<number> {
+/** Sum of RejectedGoodsLedger rows for an item — internal, callers guard themselves. */
+async function hitungRejectTersedia(itemId: string): Promise<number> {
   const rows = await prisma.rejectedGoodsLedger.findMany({
     where: { itemId },
     select: { qty: true },
@@ -149,19 +179,27 @@ export async function getAvailableRejectQtyByItem(itemId: string): Promise<numbe
   return rows.reduce((s, r) => s + Number(r.qty), 0);
 }
 
+/** Available reject qty for an item (sum of RejectedGoodsLedger rows for that itemId). */
+export async function getAvailableRejectQtyByItem(itemId: string): Promise<number> {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW, PERMISSIONS.INVENTORY_VIEW);
+  return hitungRejectTersedia(itemId);
+}
+
 export async function createVendorReturn(
   data: CreateVendorReturnInput,
-  userId: string
+  claimedUserId?: string
 ) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_CREATE);
-  assertActor(session.user.id, userId);
+  if (claimedUserId) assertActor(session.user.id, claimedUserId);
+  // Pembuat selalu pengguna sesi, bukan id kiriman klien.
+  const userId = session.user.id;
 
   returnSchema.parse(data);
 
   for (const line of data.lines) {
     if (line.type === 'FG_REJECT') {
-      const available = await getAvailableRejectQtyByItem(line.itemId);
+      const available = await hitungRejectTersedia(line.itemId);
       if (line.qty > available) {
         throw new Error(
           `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
@@ -192,10 +230,13 @@ export async function createVendorReturn(
         let costValue: number;
         if (line.type === 'FG_REJECT') {
           const hpp = await getEffectiveHPPForItem(line.itemId);
-          const avgCost = hpp?.avgCostPerUnit ?? 0;
+          // Barang jadi cacat dinilai biaya BAHAN per pcs: ongkos jahit (kini
+          // bagian HPP) tidak dibayar untuk barang cacat.
+          const avgCost = hpp?.materialCostPerUnit ?? hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
-          const inventory = await findExistingInventoryValueRow(tx, line.itemId, line.variantSku);
+          // Toleran null/"": baris bahan tanpa varian disimpan ber-NULL.
+          const inventory = await cariBarisStok(tx, line.itemId, line.variantSku ?? null);
           const avgCost = inventory
             ? new Decimal(inventory.avgCost.toString())
             : new Decimal(0);
@@ -267,7 +308,7 @@ export async function updateVendorReturn(
 
   for (const line of data.lines) {
     if (line.type === 'FG_REJECT') {
-      const available = await getAvailableRejectQtyByItem(line.itemId);
+      const available = await hitungRejectTersedia(line.itemId);
       if (line.qty > available) {
         throw new Error(
           `Reject qty for item exceeds available rejects (max ${available}). Reduce qty or check reject ledger.`
@@ -290,23 +331,30 @@ export async function updateVendorReturn(
     }
   }
 
-  const existing = await prisma.vendorReturn.findUnique({
-    where: { id }
-  });
-  if (!existing || existing.status !== 'DRAFT') {
-    throw new Error('Can only edit draft returns');
-  }
+  // Penjaga DRAFT di dalam transaksi serializable yang sama dengan pembaruannya:
+  // dulu dibaca di luar, jadi baris bisa diubah sesudah `processReturn`
+  // mengeluarkan stok sesuai baris lama.
+  const updated = await runSerializable(async (tx) => {
+    const existing = await tx.vendorReturn.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!existing || existing.status !== 'DRAFT') {
+      throw new Error('Can only edit draft returns');
+    }
 
-  return await prisma.$transaction(async (tx) => {
     const linesWithValue = await Promise.all(
       data.lines.map(async (line) => {
         let costValue: number;
         if (line.type === 'FG_REJECT') {
           const hpp = await getEffectiveHPPForItem(line.itemId);
-          const avgCost = hpp?.avgCostPerUnit ?? 0;
+          // Barang jadi cacat dinilai biaya BAHAN per pcs: ongkos jahit (kini
+          // bagian HPP) tidak dibayar untuk barang cacat.
+          const avgCost = hpp?.materialCostPerUnit ?? hpp?.avgCostPerUnit ?? 0;
           costValue = avgCost * line.qty;
         } else {
-          const inventory = await findExistingInventoryValueRow(tx, line.itemId, line.variantSku);
+          // Toleran null/"": baris bahan tanpa varian disimpan ber-NULL.
+          const inventory = await cariBarisStok(tx, line.itemId, line.variantSku ?? null);
           const avgCost = inventory
             ? new Decimal(inventory.avgCost.toString())
             : new Decimal(0);
@@ -338,7 +386,7 @@ export async function updateVendorReturn(
       new Decimal(0)
     );
 
-    const updated = await tx.vendorReturn.update({
+    return tx.vendorReturn.update({
       where: { id },
       data: {
         woId: data.woId ?? null,
@@ -352,11 +400,11 @@ export async function updateVendorReturn(
           : null
       }
     });
-
-    revalidatePath('/backoffice/vendor-returns');
-    revalidatePath(`/backoffice/vendor-returns/${id}`);
-    return updated;
   });
+
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${id}`);
+  return updated;
 }
 
 export async function deleteVendorReturn(id: string, _userId: string) {
@@ -364,79 +412,225 @@ export async function deleteVendorReturn(id: string, _userId: string) {
   const session = await requireSession();
   requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
 
-  const existing = await prisma.vendorReturn.findUnique({
-    where: { id }
+  // Penjaga DRAFT + hapus dalam satu transaksi serializable, supaya retur yang
+  // sedang diproses (stoknya sudah keluar) tidak ikut terhapus.
+  await runSerializable(async (tx) => {
+    const existing = await tx.vendorReturn.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!existing || existing.status !== 'DRAFT') {
+      throw new Error('Can only delete draft returns');
+    }
+    await tx.vendorReturn.delete({ where: { id } });
   });
-  if (!existing || existing.status !== 'DRAFT') {
-    throw new Error('Can only delete draft returns');
-  }
-  await prisma.vendorReturn.delete({ where: { id } });
   revalidatePath('/backoffice/vendor-returns');
 }
 
-type VendorReturnLineRow = {
-  type: string;
-  itemId: string;
-  variantSku?: string | null;
-  rollId?: string;
-  qty: number | string;
-  costValue: number | string;
-};
+export type HapusReturPemasokResult =
+  | { ok: true }
+  | { ok: false; code: 'TANPA_AKSES' | 'TIDAK_DITEMUKAN' | 'BUKAN_DRAF' | 'GAGAL' };
 
-function parseVendorReturnLines(raw: unknown): VendorReturnLineRow[] {
-  if (raw == null) return [];
-  if (typeof raw === 'string') {
-    try {
-      const p = JSON.parse(raw) as unknown;
-      return Array.isArray(p) ? (p as VendorReturnLineRow[]) : [];
-    } catch {
-      return [];
-    }
+/**
+ * Hapus retur draf untuk layar, dengan penolakan sebagai KODE
+ * (`vendorReturnsList.err.<kode>`) — `deleteVendorReturn` melempar, dan di
+ * build produksi pesan lemparan disamarkan. Penjaga DRAFT + hapus tetap dalam
+ * satu transaksi serializable.
+ */
+export async function hapusReturPemasok(id: string): Promise<HapusReturPemasokResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
   }
-  if (Array.isArray(raw)) return raw as VendorReturnLineRow[];
-  return [];
+  try {
+    const hasil = await runSerializable(async (tx): Promise<HapusReturPemasokResult> => {
+      const ada = await tx.vendorReturn.findUnique({ where: { id }, select: { status: true } });
+      if (!ada) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+      if (ada.status !== 'DRAFT') return { ok: false, code: 'BUKAN_DRAF' };
+      await tx.vendorReturn.delete({ where: { id } });
+      return { ok: true };
+    });
+    if (hasil.ok) revalidatePath('/backoffice/vendor-returns');
+    return hasil;
+  } catch (e) {
+    console.error('[hapusReturPemasok]', e);
+    return { ok: false, code: 'GAGAL' };
+  }
 }
 
-export async function processReturn(id: string, userId: string) {
-  const session = await requireSession();
-  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
-  assertActor(session.user.id, userId);
+/**
+ * Nomor PO untuk retur yang mengkredit PO (`VendorReturn.poId` tanpa relasi
+ * Prisma), dan `poCreditAmount` sebagai angka — Decimal tidak bisa dikirim ke
+ * browser lewat aksi server.
+ */
+async function denganPo<T extends { poId: string | null; poCreditAmount: unknown }>(
+  rows: T[]
+): Promise<Array<Omit<T, 'poCreditAmount'> & { poCreditAmount: number | null; po: { id: string; docNumber: string } | null }>> {
+  const ids = [...new Set(rows.map((r) => r.poId).filter((v): v is string => typeof v === 'string' && v !== ''))];
+  const pos = ids.length
+    ? await prisma.purchaseOrder.findMany({ where: { id: { in: ids } }, select: { id: true, docNumber: true } })
+    : [];
+  const per = new Map(pos.map((p) => [p.id, p]));
+  return rows.map((r) => ({
+    ...r,
+    poCreditAmount: r.poCreditAmount == null ? null : Number(r.poCreditAmount),
+    po: r.poId ? per.get(r.poId) ?? null : null,
+  }));
+}
 
-  const result = await prisma.$transaction(async (tx) => {
+/*
+ * Penolakan proses/selesai retur DIKEMBALIKAN sebagai `{ ok:false, code }`:
+ * di build produksi Next menyamarkan pesan galat yang dilempar aksi server,
+ * jadi layar hanya bisa menjelaskan alasannya lewat kode
+ * (`vendorReturnsList.err.<kode>` di i18n). Di dalam transaksi penolakan tetap
+ * DILEMPAR (supaya semua tulisan dibatalkan), lalu diterjemahkan di luar.
+ */
+export type KodeTolakProsesRetur =
+  | 'TANPA_AKSES'
+  | 'TIDAK_DITEMUKAN'
+  | 'SUDAH_DIPROSES'
+  | 'TANPA_BARIS'
+  | 'BARIS_TIDAK_VALID'
+  | 'STOK_KURANG'
+  | 'GAGAL';
+type RincianTolakRetur = { barang?: string; perlu?: number; ada?: number };
+export type ProsesReturResult =
+  | { ok: true; id: string; docNumber: string }
+  | ({ ok: false; code: KodeTolakProsesRetur } & RincianTolakRetur);
+
+export type KodeTolakSelesaiRetur =
+  | 'TANPA_AKSES'
+  | 'BUKTI_TIDAK_LENGKAP'
+  | 'TIDAK_DITEMUKAN'
+  | 'BELUM_DIPROSES'
+  | 'SUDAH_SELESAI'
+  | 'GAGAL';
+export type SelesaikanReturResult = { ok: true } | { ok: false; code: KodeTolakSelesaiRetur };
+
+class ReturDitolak extends Error {
+  constructor(
+    readonly code: Exclude<KodeTolakProsesRetur | KodeTolakSelesaiRetur, 'TANPA_AKSES' | 'GAGAL'>,
+    readonly rincian: RincianTolakRetur = {}
+  ) {
+    super(code);
+    this.name = 'ReturDitolak';
+  }
+}
+
+/** Pesan pasti `reverseInventoryValue` (lib/inventory/costing.ts) untuk stok kurang / tanpa catatan stok. */
+const PESAN_STOK_KURANG = new Set(['Insufficient stock', 'No inventory record found']);
+
+/** Nama barang untuk pesan penolakan (SKU bila nama kosong, id bila barangnya hilang). */
+async function namaBarang(tx: Pick<typeof prisma, 'item'>, itemId: string): Promise<string> {
+  const item = await tx.item.findUnique({ where: { id: itemId }, select: { nameId: true, sku: true } });
+  return item?.nameId || item?.sku || itemId;
+}
+
+/**
+ * DRAFT → PROCESSED: stok keluar. Butuh `vendor_returns:manage`; pelaku dari
+ * sesi (`claimedUserId`, kalau dikirim, harus sama). Penjaga DRAFT di `runSerializable` — proses ganda
+ * serentak dulu sama-sama lolos dan mengeluarkan stok dua kali.
+ */
+export async function processReturn(id: string, claimedUserId?: string): Promise<ProsesReturResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  if (claimedUserId) assertActor(session.user.id, claimedUserId);
+  const userId = session.user.id;
+
+  let result: Awaited<ReturnType<typeof prosesReturDalamTransaksi>>;
+  try {
+    result = await prosesReturDalamTransaksi(id, userId);
+  } catch (error) {
+    if (error instanceof ReturDitolak) {
+      return { ok: false, code: error.code as KodeTolakProsesRetur, ...error.rincian };
+    }
+    console.error('[processReturn]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
+
+  // Sesudah commit: langkah sampingan tidak boleh mengubah hasil — stok sudah keluar.
+  try {
+    // Baris kain/aksesori mengurangi stok gudang. Barang tanpa pemetaan
+    // Jubelio dilewati penolong; FG_REJECT tidak menyentuh stok jual.
+    await antrekanPushStok(
+      parseVendorReturnLines(result.ret.lines)
+        .filter((l) => l.type === "FABRIC" || l.type === "ACCESSORIES")
+        .map((l) => l.itemId),
+      { sumber: "ADJUSTMENT", ref: `retur pemasok ${result.ret.docNumber}`, userId },
+    );
+  } catch (error) {
+    console.error('[processReturn] antre push stok', error);
+  }
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyVendorReturnStatusUpdated(
+        id,
+        result.ret.docNumber,
+        'DRAFT',
+        'PROCESSED',
+        triggeredByName
+      )
+    )
+    .catch(() => {});
+
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${result.ret.id}`);
+  if (result.poIdToRevalidate) {
+    revalidatePath(`/backoffice/purchase-orders/${result.poIdToRevalidate}`);
+  }
+  return { ok: true, id: result.ret.id, docNumber: result.ret.docNumber };
+}
+
+async function prosesReturDalamTransaksi(id: string, userId: string) {
+  return runSerializable(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
 
-    if (!ret || ret.status !== 'DRAFT') {
-      throw new Error('Return tidak valid atau sudah diproses');
-    }
+    if (!ret) throw new ReturDitolak('TIDAK_DITEMUKAN');
+    if (ret.status !== 'DRAFT') throw new ReturDitolak('SUDAH_DIPROSES');
 
     const lines = parseVendorReturnLines(ret.lines);
-    if (lines.length === 0) {
-      throw new Error('Return has no valid line items to process');
-    }
+    if (lines.length === 0) throw new ReturDitolak('TANPA_BARIS');
 
     for (const line of lines) {
       if (line.type === 'FABRIC' || line.type === 'ACCESSORIES') {
         const parsedQty = Number(line.qty);
         const parsedCostValue = Number(line.costValue);
-        if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
-          throw new Error(`Invalid return qty for item ${line.itemId}`);
-        }
-        if (!Number.isFinite(parsedCostValue) || parsedCostValue < 0) {
-          throw new Error(`Invalid return cost for item ${line.itemId}`);
+        if (
+          !Number.isFinite(parsedQty) || parsedQty <= 0 ||
+          !Number.isFinite(parsedCostValue) || parsedCostValue < 0
+        ) {
+          throw new ReturDitolak('BARIS_TIDAK_VALID', { barang: await namaBarang(tx, line.itemId) });
         }
         const variantKey = line.variantSku ?? null;
         const qty = new Decimal(parsedQty);
         const unitCost = parsedQty === 0 ? new Decimal(0) : new Decimal(parsedCostValue).div(parsedQty);
-        await reverseInventoryValue(
-          line.itemId,
-          qty,
-          unitCost,
-          tx,
-          variantKey,
-          { refType: 'VendorReturn' satisfies StockLedgerRefType, refId: ret.id, refDocNumber: ret.docNumber, createdById: userId }
-        );
+        // Buku stok mencatat nilai yang BENAR-BENAR keluar (rata-rata saat diproses), bukan
+        // perkiraan saat retur dibuat: jurnal retur mengkredit persediaan sebesar nilai itu.
+        try {
+          await reverseInventoryValue(
+            line.itemId,
+            qty,
+            unitCost,
+            tx,
+            variantKey,
+            { refType: 'VendorReturn' satisfies StockLedgerRefType, refId: ret.id, refDocNumber: ret.docNumber, createdById: userId }
+          );
+        } catch (error) {
+          // Hanya penolakan stok yang diterjemahkan; galat basis data (mis. konflik
+          // serializable) dilempar apa adanya supaya transaksinya diulang.
+          if (!(error instanceof Error) || !PESAN_STOK_KURANG.has(error.message)) throw error;
+          const stok = await cariBarisStok(tx, line.itemId, variantKey);
+          throw new ReturDitolak('STOK_KURANG', {
+            barang: await namaBarang(tx, line.itemId),
+            perlu: parsedQty,
+            ada: stok ? Number(stok.qtyOnHand) : 0,
+          });
+        }
         if (line.type === 'FABRIC' && line.rollId) {
           await tx.fabricRoll.update({
             where: { id: line.rollId },
@@ -446,7 +640,7 @@ export async function processReturn(id: string, userId: string) {
       } else if (line.type === 'FG_REJECT') {
         const parsedQty = Number(line.qty);
         if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
-          throw new Error(`Invalid reject return qty for item ${line.itemId}`);
+          throw new ReturDitolak('BARIS_TIDAK_VALID', { barang: await namaBarang(tx, line.itemId) });
         }
         await tx.rejectedGoodsLedger.create({
           data: {
@@ -501,25 +695,6 @@ export async function processReturn(id: string, userId: string) {
 
     return { ret, poIdToRevalidate };
   });
-
-  getActorName(userId)
-    .then((triggeredByName) =>
-      notifyVendorReturnStatusUpdated(
-        id,
-        result.ret.docNumber,
-        'DRAFT',
-        'PROCESSED',
-        triggeredByName
-      )
-    )
-    .catch(() => {});
-
-  revalidatePath('/backoffice/vendor-returns');
-  revalidatePath(`/backoffice/vendor-returns/${result.ret.id}`);
-  if (result.poIdToRevalidate) {
-    revalidatePath(`/backoffice/purchase-orders/${result.poIdToRevalidate}`);
-  }
-  return result.ret;
 }
 
 const completeReturnSchema = z.object({
@@ -529,45 +704,112 @@ const completeReturnSchema = z.object({
 
 export type CompleteReturnInput = z.infer<typeof completeReturnSchema>;
 
+/**
+ * PROCESSED → COMPLETED. Butuh `vendor_returns:manage`; penutup dari sesi
+ * (`claimedUserId`, kalau dikirim, harus sama). Penjaga PROCESSED di `runSerializable` supaya
+ * `returnedQty` rencana WO tidak bertambah dua kali.
+ */
 export async function completeReturn(
   id: string,
-  userId: string,
+  claimedUserId: string | undefined,
   data: CompleteReturnInput
-) {
-  const session = await requireSession();
-  requirePermission(session.user.permissions, PERMISSIONS.VENDOR_RETURNS_MANAGE);
-  assertActor(session.user.id, userId);
+): Promise<SelesaikanReturResult> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.VENDOR_RETURNS_MANAGE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  if (claimedUserId) assertActor(session.user.id, claimedUserId);
+  const userId = session.user.id;
+  if (!completeReturnSchema.safeParse(data).success) return { ok: false, code: 'BUKTI_TIDAK_LENGKAP' };
 
-  completeReturnSchema.parse(data);
+  let completeResult: Awaited<ReturnType<typeof selesaikanReturDalamTransaksi>>;
+  try {
+    completeResult = await selesaikanReturDalamTransaksi(id, userId, data);
+  } catch (error) {
+    if (error instanceof ReturDitolak) return { ok: false, code: error.code as KodeTolakSelesaiRetur };
+    console.error('[completeReturn]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
 
-  const completeResult = await prisma.$transaction(async (tx) => {
+  // Retur selesai: hutang PO berkurang, persediaan keluar → jurnalnya (sesudah commit, tidak pernah melempar).
+  await kaitReturPemasok(id, userId);
+  revalidatePath('/backoffice/vendor-returns');
+  revalidatePath(`/backoffice/vendor-returns/${id}`);
+  if (completeResult.woId) {
+    revalidatePath(`/backoffice/work-orders/${completeResult.woId}`);
+  }
+  if (completeResult.kreditPo.poId) {
+    revalidatePath(`/backoffice/purchase-orders/${completeResult.kreditPo.poId}`);
+    revalidatePath('/backoffice/supplier-payments');
+  }
+
+  getActorName(userId)
+    .then((triggeredByName) =>
+      notifyVendorReturnStatusUpdated(
+        id,
+        completeResult.docNumber,
+        'PROCESSED',
+        'COMPLETED',
+        triggeredByName
+      )
+    )
+    .catch(() => {});
+  return { ok: true };
+}
+
+async function selesaikanReturDalamTransaksi(id: string, userId: string, data: CompleteReturnInput) {
+  return runSerializable(async (tx) => {
     const ret = await tx.vendorReturn.findUnique({
       where: { id }
     });
 
-    if (!ret || ret.status !== 'PROCESSED') {
-      throw new Error('Return must be in PROCESSED status to complete');
-    }
+    if (!ret) throw new ReturDitolak('TIDAK_DITEMUKAN');
+    if (ret.status === 'COMPLETED') throw new ReturDitolak('SUDAH_SELESAI');
+    if (ret.status !== 'PROCESSED') throw new ReturDitolak('BELUM_DIPROSES');
 
-    const lines = (ret.lines as any[]) || [];
+    // Baris retur dan rencana WO tersimpan sebagai STRING JSON. Dulu diulang
+    // sebagai `any[]` (per huruf), jadi `returnedQty` WO tidak pernah bertambah.
+    // Qty dijumlah per barang dengan Decimal (bisa teks, kain bisa pecahan),
+    // lalu rencana dibaca dan ditulis SEKALI. Penjaga PROCESSED di atas, di
+    // transaksi serializable yang sama, membuat penambahan ini sekali per retur.
+    if (ret.woId) {
+      const kembaliPerBarang = new Map<string, Decimal>();
+      for (const line of parseVendorReturnLines(ret.lines)) {
+        if (line.type !== 'FABRIC' && line.type !== 'ACCESSORIES') continue;
+        const qty = Number(line.qty);
+        if (!Number.isFinite(qty) || qty <= 0) continue;
+        kembaliPerBarang.set(line.itemId, (kembaliPerBarang.get(line.itemId) ?? new Decimal(0)).plus(qty));
+      }
 
-    for (const line of lines) {
-      if ((line.type === 'FABRIC' || line.type === 'ACCESSORIES') && ret.woId) {
+      if (kembaliPerBarang.size > 0) {
         const wo = await tx.workOrder.findUnique({
           where: { id: ret.woId },
           select: { consumptionPlan: true }
         });
-
-        if (wo) {
-          const plan = (wo.consumptionPlan as any[]) || [];
-          const planItem = plan.find((p: any) => p.itemId === line.itemId);
-          if (planItem) {
-            planItem.returnedQty = (planItem.returnedQty || 0) + line.qty;
+        let plan: unknown = wo?.consumptionPlan ?? null;
+        if (typeof plan === 'string') {
+          try {
+            plan = JSON.parse(plan);
+          } catch {
+            plan = null;
           }
-          await tx.workOrder.update({
-            where: { id: ret.woId },
-            data: { consumptionPlan: JSON.stringify(plan) }
-          });
+        }
+        // Rencana yang tak terbaca dibiarkan apa adanya — jangan ditimpa "[]".
+        if (Array.isArray(plan)) {
+          const baris = plan as Array<{ itemId?: unknown; returnedQty?: unknown }>;
+          let berubah = false;
+          for (const [itemId, qty] of kembaliPerBarang) {
+            const planItem = baris.find((p) => p?.itemId === itemId);
+            if (!planItem) continue;
+            planItem.returnedQty = new Decimal(Number(planItem.returnedQty) || 0).plus(qty).toNumber();
+            berubah = true;
+          }
+          if (berubah) {
+            await tx.workOrder.update({
+              where: { id: ret.woId },
+              data: { consumptionPlan: JSON.stringify(baris) }
+            });
+          }
         }
       }
     }
@@ -584,26 +826,12 @@ export async function completeReturn(
       }
     });
 
-    revalidatePath('/backoffice/vendor-returns');
-    revalidatePath(`/backoffice/vendor-returns/${id}`);
-    if (ret.woId) {
-      revalidatePath(`/backoffice/work-orders/${ret.woId}`);
-    }
-    return ret;
-  });
+    // Retur yang terkait GRN sebuah PO mengurangi utang PO itu (harga beli PO),
+    // di transaksi yang sama. Tanpa jurnal — GL belum dipersenjatai.
+    const kreditPo = await catatKreditReturPo(tx, { returnId: id, userId });
 
-  getActorName(userId)
-    .then((triggeredByName) =>
-      notifyVendorReturnStatusUpdated(
-        id,
-        completeResult.docNumber,
-        'PROCESSED',
-        'COMPLETED',
-        triggeredByName
-      )
-    )
-    .catch(() => {});
-  return completeResult;
+    return { ...ret, kreditPo };
+  });
 }
 
 export async function getVendorReturns(
@@ -615,6 +843,7 @@ export async function getVendorReturns(
   },
   opts?: { page: number; pageSize: number }
 ) {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW);
   const andParts: Array<Record<string, unknown>> = [];
   if (filters?.status) andParts.push({ status: filters.status });
   if (filters?.vendorId) andParts.push({ vendorId: filters.vendorId });
@@ -623,9 +852,9 @@ export async function getVendorReturns(
   if (searchTrim) {
     andParts.push({
       OR: [
-        { docNumber: { contains: searchTrim } },
-        { vendor: { name: { contains: searchTrim } } },
-        { vendor: { code: { contains: searchTrim } } }
+        { docNumber: cariTeks(searchTrim) },
+        { vendor: { name: cariTeks(searchTrim) } },
+        { vendor: { code: cariTeks(searchTrim) } }
       ]
     });
   }
@@ -654,10 +883,12 @@ export async function getVendorReturns(
       }),
       prisma.vendorReturn.count({ where }),
     ]);
-    const items = rows.map((r) => ({
-      ...r,
-      totalValue: Number(r.totalValue)
-    }));
+    const items = await denganPo(
+      rows.map((r) => ({
+        ...r,
+        totalValue: Number(r.totalValue)
+      }))
+    );
     return { items, totalCount };
   }
 
@@ -667,24 +898,25 @@ export async function getVendorReturns(
     orderBy: { createdAt: 'desc' }
   });
 
-  return rows.map((r) => ({
-    ...r,
-    totalValue: Number(r.totalValue)
-  }));
+  return denganPo(
+    rows.map((r) => ({
+      ...r,
+      totalValue: Number(r.totalValue)
+    }))
+  );
 }
 
 export async function getVendorReturnById(id: string) {
+  await wajibSalahSatuIzin(PERMISSIONS.VENDOR_RETURNS_VIEW);
   const ret = await prisma.vendorReturn.findUnique({
     where: { id },
     include: {
-      vendor: true,
+      vendor: { select: PEMASOK_AMAN },
       wo: { select: { id: true, docNumber: true } },
       grn: { select: { id: true, docNumber: true } }
     }
   });
   if (!ret) return null;
-  return {
-    ...ret,
-    totalValue: Number(ret.totalValue)
-  };
+  const [denganNomorPo] = await denganPo([{ ...ret, totalValue: Number(ret.totalValue) }]);
+  return denganNomorPo;
 }

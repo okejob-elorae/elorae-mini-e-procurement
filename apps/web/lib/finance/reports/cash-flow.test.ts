@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCashFlow } from "./cash-flow";
+import { buildCashFlow, ID_PENYESUAIAN_PELEPASAN_ASET } from "./cash-flow";
 import type { CashFlowSection } from "./cash-flow-classify";
 import type { BalanceRow } from "./balances";
 import { signedDelta } from "@/lib/finance/journals/normal-side";
@@ -306,5 +306,98 @@ describe("buildCashFlow", () => {
 
     expect(cf.netChange).toBe(0);
     expect(cf.isReconciled).toBe(false);
+  });
+
+  describe("pelepasan aset tetap (uji akuntansi gelombang 2, bug 7)", () => {
+    const bagian = sections([
+      ["kas", "KAS"],
+      ["fa", "INVESTASI"],
+      ["accdep", "OPERASIONAL"],
+    ]);
+
+    it("rugi pelepasan ditambahkan kembali di operasional; investasi = hasil jual, bukan harga perolehan yang dikredit", () => {
+      /*
+       * Obras dibeli 3.600.000 (dan mesin lain 6.500.000) lalu dijual 3.300.000 di periode yang sama:
+       * DR Aset tetap 10.100.000 / CR Kas 10.100.000
+       * DR Kas 3.300.000 + DR Rugi pelepasan 300.000 / CR Aset tetap 3.600.000
+       */
+      const rows = [
+        row("kas", "1102", "ASET", 3_300_000, 10_100_000),
+        row("fa", "1501", "ASET", 10_100_000, 3_600_000),
+        row("rugi", "7201", "BEBAN", 300_000, 0),
+      ];
+      const cf = buildCashFlow({
+        rows,
+        sectionByAccountId: bagian,
+        kasAwal: 20_000_000,
+        pelepasanAset: [
+          { accountId: "kas", type: "ASET", debit: 3_300_000, credit: 0 },
+          { accountId: "rugi", type: "BEBAN", debit: 300_000, credit: 0 },
+          { accountId: "fa", type: "ASET", debit: 0, credit: 3_600_000 },
+        ],
+      });
+      expect(cf.labaBersih).toBe(-300_000);
+      expect(cf.totalOperasional).toBe(0);
+      expect(cf.totalInvestasi).toBe(-6_800_000);
+      expect(cf.operasional.find((l) => l.accountId === ID_PENYESUAIAN_PELEPASAN_ASET)?.amount).toBe(300_000);
+      expect(cf.investasi.find((l) => l.accountId === ID_PENYESUAIAN_PELEPASAN_ASET)?.amount).toBe(-300_000);
+      expect(cf.netChange).toBe(-6_800_000);
+      expect(cf.kasAkhir).toBe(13_200_000);
+      expect(cf.isReconciled).toBe(true);
+    });
+
+    it("akumulasi penyusutan yang dihapus saat pelepasan pindah ke investasi; penyusutan periode tetap ditambahkan kembali", () => {
+      /*
+       * Penyusutan periode 200.000 (DR Beban / CR Akumulasi), lalu dilepas:
+       * DR Kas 3.300.000 + DR Akumulasi 200.000 + DR Rugi 100.000 / CR Aset tetap 3.600.000
+       */
+      const rows = [
+        row("kas", "1102", "ASET", 3_300_000, 0),
+        row("fa", "1501", "ASET", 0, 3_600_000),
+        row("accdep", "1599", "ASET", 200_000, 200_000),
+        row("dep", "6300", "BEBAN", 200_000, 0),
+        row("rugi", "7201", "BEBAN", 100_000, 0),
+      ];
+      const cf = buildCashFlow({
+        rows,
+        sectionByAccountId: bagian,
+        kasAwal: 0,
+        pelepasanAset: [
+          { accountId: "kas", type: "ASET", debit: 3_300_000, credit: 0 },
+          { accountId: "accdep", type: "ASET", debit: 200_000, credit: 0 },
+          { accountId: "rugi", type: "BEBAN", debit: 100_000, credit: 0 },
+          { accountId: "fa", type: "ASET", debit: 0, credit: 3_600_000 },
+        ],
+      });
+      expect(cf.totalOperasional).toBe(0);
+      expect(cf.totalInvestasi).toBe(3_300_000);
+      expect(cf.netChange).toBe(3_300_000);
+      expect(cf.isReconciled).toBe(true);
+    });
+
+    it("laba pelepasan dikeluarkan dari operasional; tanpa pelepasan tidak ada baris penyesuaian", () => {
+      const rows = [
+        row("kas", "1102", "ASET", 4_000_000, 0),
+        row("fa", "1501", "ASET", 0, 3_600_000),
+        row("laba", "7101", "PENDAPATAN", 0, 400_000),
+      ];
+      const cf = buildCashFlow({
+        rows,
+        sectionByAccountId: bagian,
+        kasAwal: 0,
+        pelepasanAset: [
+          { accountId: "kas", type: "ASET", debit: 4_000_000, credit: 0 },
+          { accountId: "fa", type: "ASET", debit: 0, credit: 3_600_000 },
+          { accountId: "laba", type: "PENDAPATAN", debit: 0, credit: 400_000 },
+        ],
+      });
+      expect(cf.totalOperasional).toBe(0);
+      expect(cf.totalInvestasi).toBe(4_000_000);
+      expect(cf.operasional.find((l) => l.accountId === ID_PENYESUAIAN_PELEPASAN_ASET)?.amount).toBe(-400_000);
+
+      const tanpa = buildCashFlow({ rows, sectionByAccountId: bagian, kasAwal: 0 });
+      expect(tanpa.operasional.some((l) => l.accountId === ID_PENYESUAIAN_PELEPASAN_ASET)).toBe(false);
+      expect(tanpa.totalInvestasi).toBe(3_600_000);
+    });
   });
 });

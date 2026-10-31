@@ -10,6 +10,7 @@ function makeTx(overrides: any = {}) {
     },
     inventoryValue: {
       findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "10", reservedQty: "0" }),
+      findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
       update: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3" }),
       ...overrides.inventoryValue,
     },
@@ -56,6 +57,7 @@ describe("reserveOrder", () => {
     const tx = makeTx({
       inventoryValue: {
         findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "2", reservedQty: "0" }),
+        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({ qtyOnHand: "2", reservedQty: "3" }),
       },
     });
@@ -74,7 +76,7 @@ describe("reserveOrder", () => {
 
   it("throws InventoryValueMissingError when no InventoryValue row exists for the line", async () => {
     const tx = makeTx({
-      inventoryValue: { findFirst: jest.fn().mockResolvedValue(null) },
+      inventoryValue: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
     });
     await expect(
       reserveOrder(tx, {
@@ -97,6 +99,7 @@ describe("consumeOrder", () => {
       },
       inventoryValue: {
         findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "10", reservedQty: "3", avgCost: "2" }),
+        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "2", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({ qtyOnHand: "7" }),
       },
       stockAdjustment: { create: jest.fn().mockResolvedValue({ id: "a1" }) },
@@ -142,6 +145,7 @@ describe("consumeOrder", () => {
       },
       inventoryValue: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
       stockAdjustment: { create: jest.fn() },
@@ -182,6 +186,7 @@ describe("releaseOrder", () => {
       },
       inventoryValue: {
         findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "10", reservedQty: "3" }),
+        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({}),
       },
     };

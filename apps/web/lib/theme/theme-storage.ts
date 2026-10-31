@@ -18,6 +18,9 @@ export const DEVICE_THEME_PALETTE_KEY = 'elorae:theme-palette';
 /** @deprecated Legacy preset base key */
 export const DEVICE_THEME_BASE_KEY = 'elorae:theme-base';
 
+/** Huruf pilihan pengguna — id dari `lib/theme/fonts.ts`, bukan nama huruf. */
+export const DEVICE_THEME_FONT_KEY = 'elorae:theme-font';
+
 export type CachedThemePreference = {
   primary: string;
   pantoneTcx: string | null;

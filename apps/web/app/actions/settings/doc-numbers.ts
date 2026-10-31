@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import type { DocNumberConfig, DocType } from "@elorae/db";
-import { requirePermission, PERMISSIONS } from "@/lib/rbac";
+import { hasPermission, requirePermission, PERMISSIONS } from "@/lib/rbac";
 import { auth } from "@/lib/auth";
 import { notifyDocNumberAltered } from "@/lib/notifications/events";
 import { getActorName } from "@/lib/notifications/actor-name";
@@ -14,8 +14,10 @@ import {
 } from "@/lib/doc-numbers/validate";
 import { docNumberPeriod } from "@/lib/doc-numbers/period";
 import { DOC_TYPE_GROUP, type DocTypeGroup } from "@/lib/doc-numbers/doc-type-groups";
+import { periksaIsianNomor, type GalatIsianNomor } from "@/app/backoffice/settings/documents/jenis-dokumen";
 
 export type DocNumberConfigRow = {
+  /** Kosong bila barisnya belum tersimpan — layar menampilkan bawaan generator. */
   id: string;
   docType: DocType;
   prefix: string;
@@ -55,7 +57,14 @@ const DEFAULT_CONFIGS: Record<
   ITEMREQ: { prefix: "REQ/", resetPeriod: "MONTHLY", padding: 4 },
   VENDOR_BILL: { prefix: "BILL/", resetPeriod: "MONTHLY", padding: 4 },
   VENDOR_PAYMENT: { prefix: "VPAY/", resetPeriod: "MONTHLY", padding: 4 },
+  CASHOUT: { prefix: "BKK/", resetPeriod: "MONTHLY", padding: 4 },
+  CASHIN: { prefix: "BKMK/", resetPeriod: "MONTHLY", padding: 4 },
+  CASHTRF: { prefix: "TRF/", resetPeriod: "MONTHLY", padding: 4 },
+  SUPPAY: { prefix: "BYR/", resetPeriod: "MONTHLY", padding: 4 },
+  ASSET: { prefix: "AT/", resetPeriod: "YEARLY", padding: 4 },
 };
+
+const PERIODE_SAH = ["YEARLY", "MONTHLY", "NEVER"] as const;
 
 /* Compile-time pin: a Prisma `DocType` member missing from the settings grouping is a type error here. */
 const DOC_TYPE_GROUP_COVERS_PRISMA: Record<DocType, DocTypeGroup> = DOC_TYPE_GROUP;
@@ -159,4 +168,73 @@ export async function updateDocNumberConfig(
 
   revalidatePath("/backoffice/settings/documents");
   return { ok: true };
+}
+
+export type IsianNomorDokumen = {
+  docType: DocType;
+  prefix: string;
+  resetPeriod: "YEARLY" | "MONTHLY" | "NEVER";
+  padding: number;
+};
+
+export type HasilSimpanNomor =
+  | { ok: true; diubah: number }
+  | { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" | "JENIS_TIDAK_DIKENAL" | "PERIODE_TIDAK_SAH" | GalatIsianNomor; docType?: DocType };
+
+/**
+ * Simpan beberapa baris sekaligus (satu tombol Simpan di layar). Semua baris
+ * diperiksa dulu; satu yang salah membatalkan semuanya, jadi tidak ada simpan
+ * setengah jalan. Penghitung (`lastNumber`) tidak disentuh.
+ */
+export async function simpanNomorDokumenAction(isian: IsianNomorDokumen[]): Promise<HasilSimpanNomor> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_DOCUMENTS_MANAGE)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+  if (!Array.isArray(isian)) return { ok: false, code: "JENIS_TIDAK_DIKENAL" };
+  for (const b of isian) {
+    if (!b || typeof b.docType !== "string" || !Object.prototype.hasOwnProperty.call(DEFAULT_CONFIGS, b.docType)) {
+      return { ok: false, code: "JENIS_TIDAK_DIKENAL" };
+    }
+    if (!(PERIODE_SAH as readonly string[]).includes(b.resetPeriod)) {
+      return { ok: false, code: "PERIODE_TIDAK_SAH", docType: b.docType };
+    }
+    const galat = periksaIsianNomor({ prefix: typeof b.prefix === "string" ? b.prefix : "", padding: b.padding });
+    if (galat) return { ok: false, code: galat, docType: b.docType };
+  }
+  if (isian.length === 0) return { ok: true, diubah: 0 };
+
+  const now = new Date();
+  await prisma.$transaction(
+    isian.map((b) =>
+      prisma.docNumberConfig.upsert({
+        where: { docType: b.docType },
+        create: {
+          docType: b.docType,
+          prefix: b.prefix.trim(),
+          resetPeriod: b.resetPeriod,
+          // Sudah diperiksa periksaIsianNomor (angka bulat 1–8); "4" dari pemanggil lain jadi 4.
+          padding: Number(b.padding),
+          lastNumber: 0,
+          ...docNumberPeriod(now),
+        },
+        update: {
+          prefix: b.prefix.trim(),
+          resetPeriod: b.resetPeriod,
+          padding: Number(b.padding),
+        },
+      }),
+    ),
+  );
+
+  const userId = session.user.id;
+  getActorName(userId)
+    .then((triggeredByName) =>
+      Promise.all(isian.map((b) => notifyDocNumberAltered(b.docType, triggeredByName))),
+    )
+    .catch(() => {});
+
+  revalidatePath("/backoffice/settings/documents");
+  return { ok: true, diubah: isian.length };
 }

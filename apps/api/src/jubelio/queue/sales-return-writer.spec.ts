@@ -8,6 +8,9 @@ describe("sales-return-writer", () => {
       stockAdjustment: { create: jest.fn() },
       inventoryValue: {
         findFirst: jest.fn(),
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+        count: jest.fn(),
         update: jest.fn(),
         /* moveMainStock's pinned path: a guarded updateMany, a re-read, then the ledger append. */
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -34,14 +37,11 @@ describe("sales-return-writer", () => {
         decision: "PENDING",
         salesReturn: { pushOutboxRowId: null },
       });
-      tx.inventoryValue.findFirst.mockResolvedValue({
-        id: "iv1",
-        qtyOnHand: "10.00",
-        avgCost: "100.00",
-      });
+      // Barang tanpa varian: baris gabungan null/"" (aturan barisStokPesanan).
+      tx.inventoryValue.findMany.mockResolvedValue([{ id: "iv1", avgCost: "100.00", variantSku: null }]);
       tx.stockAdjustment.create.mockResolvedValue({ id: "sa1" });
       tx.salesReturnItem.update.mockResolvedValue({});
-      tx.inventoryValue.update.mockResolvedValue({});
+      tx.inventoryValue.update.mockResolvedValue({ qtyOnHand: "12.00" });
 
       const result = await acceptReturnItem(tx, {
         returnItemId: "ri1",
@@ -50,11 +50,21 @@ describe("sales-return-writer", () => {
       });
 
       expect(result).toEqual({ applied: true, stockAdjustmentId: "sa1" });
+      // Increment atom, bukan angka mutlak dari bacaan sebelumnya.
+      expect(tx.inventoryValue.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: "iv1" },
+        data: expect.objectContaining({
+          qtyOnHand: { increment: 2 },
+          totalValue: { increment: 200 },
+        }),
+      }));
       expect(tx.stockAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({
           itemId: "i1",
           type: "POSITIVE",
           qtyChange: 2,
+          prevQty: 10,
+          newQty: 12,
           source: "ERP_RETURN_ACCEPT",
           docNumber: "RET-ri1",
           idempotencyKey: "return-accept:ri1",
@@ -284,7 +294,7 @@ describe("sales-return-writer", () => {
         qty: "1.00",
         salesReturn: { pushOutboxRowId: null },
       });
-      tx.inventoryValue.findFirst.mockResolvedValue(null);
+      tx.inventoryValue.findMany.mockResolvedValue([]);
 
       const r = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "x", changedById: "u1" });
       expect(r).toEqual({ applied: false, skipped: "no_inventory_row" });

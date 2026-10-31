@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { approveFieldSalesOrder, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
+import { approveFieldSalesOrder, HargaFinalTidakSahError, rejectFieldSalesOrder } from "@/lib/field-sales/writer";
 import { getItemAvailabilityBySku } from "@/lib/field-sales/queries";
 import { createKonsiPushOrder, type CreateKonsiPushOrderInput, type KonsiPushLine } from "@/lib/field-sales/konsi-push-writer";
 import {
@@ -17,6 +17,9 @@ import {
   type ShortLine,
   type KonsiPushErrorCode,
 } from "@/lib/field-sales/errors";
+import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
+import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
+import { kaitPesananKonsiDisetujui } from "@/lib/finance/operasional/kait";
 
 export type ActionResult =
   | { ok: true }
@@ -30,7 +33,9 @@ export type ActionResult =
         | "INVALID_FINAL_PRICE"
         | "INVALID_ADDED_LINE"
         | "CREDIT_LIMIT_EXCEEDED"
-        | "REASON_REQUIRED";
+        | "REASON_REQUIRED"
+        /* Pesanan yang kreditnya ditahan saat dibuat butuh pernyataan "sudah memeriksa tagihan". */
+        | "KREDIT_BELUM_DIPERIKSA";
       /* Only ever present on INSUFFICIENT_STOCK. Optional because rejectFieldSalesOrderAction shares this type. */
       shortLines?: ShortLine[];
       /* Only ever present on INVALID_ADDED_LINE. */
@@ -87,6 +92,7 @@ export async function approveFieldSalesOrderAction(
   finalPrices?: Array<{ lineId: string; finalUnitPrice: number }>,
   addedLines?: Array<{ itemId: string; variantSku: string; qty: number }>,
   creditOverrideReason?: string,
+  opsi?: { kreditDiperiksa?: boolean },
 ): Promise<ActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
@@ -98,8 +104,17 @@ export async function approveFieldSalesOrderAction(
       return { ok: false, reason: "FORBIDDEN" };
     }
   }
+  // Hanya `true` yang dihitung sebagai pernyataan; nilai lain dari klien dianggap belum memeriksa.
+  const kreditDiperiksa = opsi?.kreditDiperiksa === true;
   try {
-    await approveFieldSalesOrder({ orderId, approvedById: g.userId, finalPrices, addedLines, creditOverrideReason });
+    await approveFieldSalesOrder({
+      orderId,
+      approvedById: g.userId,
+      finalPrices,
+      addedLines,
+      creditOverrideReason,
+      kreditDiperiksa,
+    });
   } catch (e) {
     if (e instanceof CreditLimitExceededError) {
       return {
@@ -107,6 +122,9 @@ export async function approveFieldSalesOrderAction(
         reason: "CREDIT_LIMIT_EXCEEDED",
         credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal },
       };
+    }
+    if (e instanceof KreditBelumDiperiksaError) {
+      return { ok: false, reason: "KREDIT_BELUM_DIPERIKSA" };
     }
     if (e instanceof InsufficientStockError) {
       return { ok: false, reason: "INSUFFICIENT_STOCK", shortLines: e.shortLines };
@@ -120,10 +138,21 @@ export async function approveFieldSalesOrderAction(
     if (e instanceof InvalidOrderTransitionError) {
       return { ok: false, reason: e.from === "MISSING" ? "NOT_FOUND" : "INVALID_TRANSITION" };
     }
+    // Cadangan saringan bentuk di atas: penolakan harga final dari penulis dijawab dengan kode
+    // yang dipahami kartu persetujuan, bukan galat yang di produksi tertutup digest.
+    if (e instanceof HargaFinalTidakSahError) {
+      return { ok: false, reason: "INVALID_FINAL_PRICE" };
+    }
     throw e;
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  // Pesanan konsi yang disetujui langsung berangkat ke toko → SPG toko itu dikabari, sekali per
+  // pesanan. Pesanan putus tidak (barangnya berangkat saat pengiriman); penyaringnya di sana.
+  void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: orderId, pelakuId: g.userId });
+  // Pesanan konsinyasi: stok gudang pindah ke persediaan konsinyasi → jurnalnya (sesudah commit,
+  // tidak pernah melempar). Pesanan putus disaring penulisnya — jurnalnya di nota tagihan.
+  await kaitPesananKonsiDisetujui(orderId, g.userId);
   return { ok: true };
 }
 

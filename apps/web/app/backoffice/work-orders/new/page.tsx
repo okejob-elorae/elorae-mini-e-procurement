@@ -46,6 +46,10 @@ import { getPOs } from '@/app/actions/purchase-orders';
 import { getFinishedGoodVariantStock } from "@/app/actions/work-order-variant-stock";
 import { ColorSizeRatio } from "@/components/work-orders/ColorSizeRatio";
 import { ItemType } from '@/lib/constants/enums';
+import { itemHasSkuVariants } from '@/lib/items/variants';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { alasanSimpanWo } from '@/lib/production/rencana-wo';
+import { KeteranganSimpanWo } from '../RencanaBahanWo';
 
 interface TailorSupplier {
   id: string;
@@ -103,6 +107,8 @@ interface WorkOrderStepForm {
 export default function NewWorkOrderPage() {
   const t = useTranslations('toasts');
   const tWO = useTranslations('workOrders');
+  const tF = useTranslations('workOrders.form');
+  const tR = useTranslations('workOrders.formulir');
   const router = useRouter();
   const { data: session } = useSession();
   const [tailors, setTailors] = useState<TailorSupplier[]>([]);
@@ -147,6 +153,14 @@ export default function NewWorkOrderPage() {
   const [steps, setSteps] = useState<WorkOrderStepForm[]>([]);
 
   const plannedNum = consumptionResult?.plannedQty ?? 0;
+
+  // Barang jadi bervarian → bawaan "SKU (per varian)": stok hasil produksi
+  // masuk per ukuran, bukan ke baris gabungan yang tidak terlihat per ukuran.
+  const pilihBarangJadi = (id: string) => {
+    setFinishedGoodId(id);
+    const fg = finishedGoods.find((f) => f.id === id);
+    setOutputMode(fg && itemHasSkuVariants(fg.variants) ? 'SKU' : 'GENERIC');
+  };
 
   // The material plan follows the variant ratio: colour/size-scoped BOM rules only count the
   // pieces of the variants they cover (#437). Passed as a JSON key so effects re-run on change.
@@ -386,17 +400,33 @@ export default function NewWorkOrderPage() {
       (finishedGoodVariants.length > 1
         ? variantRatios.length > 0 && Math.abs(variantRatioSum - 100) < 0.01
         : selectedVariantSku.length > 0));
-  const noVariantsForSku = outputMode === 'SKU' && finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
+  const noVariantsForSku = outputMode === 'SKU' && !!finishedGoodId && !isLoadingVariants && finishedGoodVariants.length === 0;
+  // Satu aturan untuk tombol simpan dan kalimat di bawahnya (lib/production/rencana-wo.ts).
+  // Stok kurang tidak menghalangi: WO tersimpan sebagai DRAFT sampai stok menutup BOM.
+  const alasan = alasanSimpanWo({
+    vendor: !!vendorId,
+    barangJadi: !!finishedGoodId,
+    modeSku: outputMode === 'SKU',
+    tanpaVarian: noVariantsForSku,
+    pakaiRasio: finishedGoodVariants.length > 1,
+    totalRasio: variantRatios.length > 0 ? variantRatioSum : 0,
+    varianTerpilih: selectedVariantSku.length > 0,
+    adaBom: consumptionRules.length > 0,
+    bahanUtama: !!consumptionMaterialId,
+    caraIsi: 'bahan',
+    pcs: 0,
+    jumlahBahan: Number(consumptionInput) || 0,
+    menghitung: isComputingConsumption,
+    adaHasil: consumptionResult != null,
+    jumlahRencana: plannedNum,
+    stokKurang: false,
+    rollCukup: rollValid,
+  });
   const canSubmit =
-    session?.user?.id &&
-    vendorId &&
-    finishedGoodId &&
-    consumptionResult &&
-    plannedNum > 0 &&
-    rollValid &&
-    skuVariantValid &&
-    !noVariantsForSku &&
-    !isSubmitting;
+    !!session?.user?.id &&
+    !isSubmitting &&
+    alasan === null &&
+    skuVariantValid;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -452,47 +482,41 @@ export default function NewWorkOrderPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Link href="/backoffice/work-orders">
-          <Button variant="ghost" size="icon">
+        <Button asChild variant="ghost" size="icon">
+          <Link href="/backoffice/work-orders" aria-label={tWO('detail.backToList')} title={tWO('detail.backToList')}>
             <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">New Work Order</h1>
-          <p className="text-muted-foreground">
-            Create a work order for production
-          </p>
+          </Link>
+        </Button>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{tR('judulBaru')}</h1>
+          <TombolBantuan judul={tR('judulBaru')} />
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Work Order</CardTitle>
-            <CardDescription>
-              Select vendor (tailor) and finished good. Material needs are
-              calculated from BOM.
-            </CardDescription>
+            <CardTitle>{tF('cardTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Vendor (Tailor)</Label>
+                <Label>{tR('labelVendor')}</Label>
                 <SearchableCombobox
                   options={tailors.map((t) => ({ value: t.id, label: `${t.name} (${t.code})` }))}
                   value={vendorId}
                   onValueChange={setVendorId}
-                  placeholder="Select vendor"
+                  placeholder={tF('selectVendor')}
                   disabled={isLoadingSuppliers}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Finished Good</Label>
+                <Label>{tR('labelBarangJadi')}</Label>
                 <SearchableCombobox
                   options={finishedGoods.map((fg) => ({ value: fg.id, label: `${fg.nameId} (${fg.sku})` }))}
                   value={finishedGoodId}
-                  onValueChange={setFinishedGoodId}
-                  placeholder="Select finished good"
+                  onValueChange={pilihBarangJadi}
+                  placeholder={tF('selectFinishedGood')}
                   disabled={isLoadingFG}
                 />
               </div>
@@ -500,7 +524,7 @@ export default function NewWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>{tWO('outputMode')}</Label>
+                <Label>{tR('labelModeHasil')}</Label>
                 <Select
                   value={outputMode}
                   onValueChange={(v) => setOutputMode(v as 'GENERIC' | 'SKU')}
@@ -555,7 +579,7 @@ export default function NewWorkOrderPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="targetDate">Target Date</Label>
+                <Label htmlFor="targetDate">{tR('labelTanggalTarget')}</Label>
                 <DatePicker
                   id="targetDate"
                   value={parseDateOnly(targetDate)}
@@ -578,32 +602,32 @@ export default function NewWorkOrderPage() {
                 )}
               </div>
               <div className="space-y-2">
-                <Label>PO Reference (optional)</Label>
+                <Label>{tF('poRefLabel')}</Label>
                 <SearchableCombobox
                   options={[
-                    { value: '__none__', label: 'None' },
+                    { value: '__none__', label: tF('none') },
                     ...purchaseOrders.map((po) => ({ value: po.id, label: po.docNumber })),
                   ]}
                   value={poId || '__none__'}
                   onValueChange={(v) => setPoId(v === '__none__' ? '' : v)}
-                  placeholder="None"
+                  placeholder={tF('none')}
                   disabled={isLoadingPOs}
                 />
-                <p className="text-xs text-muted-foreground">Link this WO to a purchase order for vendor return tracking</p>
+                <p className="text-xs text-muted-foreground">{tF('poRefHint')}</p>
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Notes</Label>
+              <Label>{tWO('notes')}</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Optional notes"
+                placeholder={tF('notesPlaceholder')}
                 rows={2}
               />
             </div>
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between">
-                <Label>Production Steps (optional)</Label>
+                <Label>{tR('labelTahap')}</Label>
                 <Button
                   type="button"
                   variant="outline"
@@ -623,13 +647,13 @@ export default function NewWorkOrderPage() {
                     ])
                   }
                 >
-                  + Add step
+                  {tF('addStep')}
                 </Button>
               </div>
               {steps.map((step, index) => (
                 <div key={index} className="grid gap-2 rounded border p-2 sm:grid-cols-5">
                   <Input
-                    placeholder="Step name"
+                    placeholder={tF('stepNamePlaceholder')}
                     value={step.stepName}
                     onChange={(e) =>
                       setSteps((prev) =>
@@ -639,7 +663,7 @@ export default function NewWorkOrderPage() {
                   />
                   <SearchableCombobox
                     options={[
-                      { value: '__none__', label: 'Select supplier' },
+                      { value: '__none__', label: tF('selectSupplier') },
                       ...tailors.map((supplier) => ({ value: supplier.id, label: `${supplier.name} (${supplier.code})` })),
                     ]}
                     value={step.supplierId || '__none__'}
@@ -648,12 +672,12 @@ export default function NewWorkOrderPage() {
                         prev.map((s, i) => (i === index ? { ...s, supplierId: v === '__none__' ? '' : v } : s))
                       )
                     }
-                    placeholder="Select supplier"
+                    placeholder={tF('selectSupplier')}
                   />
                   <Input
                     type="number"
                     min={0}
-                    placeholder="Service price"
+                    placeholder={tF('servicePricePlaceholder')}
                     value={step.servicePrice || ''}
                     onChange={(e) =>
                       setSteps((prev) =>
@@ -677,8 +701,8 @@ export default function NewWorkOrderPage() {
                       <SelectValue placeholder="PPN" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="exclude">Exclude PPN</SelectItem>
-                      <SelectItem value="include">Include PPN</SelectItem>
+                      <SelectItem value="exclude">{tF('ppnExclude')}</SelectItem>
+                      <SelectItem value="include">{tF('ppnInclude')}</SelectItem>
                     </SelectContent>
                   </Select>
                   <Button
@@ -686,7 +710,7 @@ export default function NewWorkOrderPage() {
                     variant="ghost"
                     onClick={() => setSteps((prev) => prev.filter((_, i) => i !== index))}
                   >
-                    Remove
+                    {tF('remove')}
                   </Button>
                 </div>
               ))}
@@ -697,7 +721,7 @@ export default function NewWorkOrderPage() {
         {finishedGoodId && (
           <Card>
             <CardHeader>
-              <CardTitle>Material Plan</CardTitle>
+              <CardTitle>{tF('materialPlanTitle')}</CardTitle>
               <CardDescription>
                 Required materials from BOM. If stock is short, the WO is saved as DRAFT and cannot be issued until stock covers it.
               </CardDescription>
@@ -752,7 +776,7 @@ export default function NewWorkOrderPage() {
                           {isComputingConsumption ? (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden />
-                              <span className="text-muted-foreground">Calculating…</span>
+                              <span className="text-muted-foreground">{tF('calculating')}</span>
                             </>
                           ) : (
                               <span>{plannedNum} pcs</span>
@@ -779,19 +803,19 @@ export default function NewWorkOrderPage() {
                     <>
                       {isLoadingPlan ? (
                         <div className="py-8 text-center text-muted-foreground">
-                          Loading plan...
+                          {tF('loadingPlan')}
                         </div>
                       ) : (
                         <div className="overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Material</TableHead>
+                                <TableHead>{tWO('material')}</TableHead>
                                 <TableHead className="text-right">
-                                  {tWO('estimatedConsumptionPerPcs')} (waste %)
+                                  {tWO('kebutuhanTotalRencana')} {tF('wasteSuffix')}
                                 </TableHead>
-                                <TableHead className="text-right">Available</TableHead>
-                                <TableHead className="text-right">Shortage</TableHead>
+                                <TableHead className="text-right">{tF('colAvailable')}</TableHead>
+                                <TableHead className="text-right">{tF('colShortage')}</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -846,15 +870,17 @@ export default function NewWorkOrderPage() {
           </Card>
         )}
 
-        <div className="flex gap-4">
-          <Button type="submit" disabled={!canSubmit}>
-            {isSubmitting ? 'Creating...' : 'Create Work Order'}
-          </Button>
-          <Link href="/backoffice/work-orders">
-            <Button type="button" variant="outline">
-              Cancel
+        <div className="space-y-2">
+          <div className="flex gap-4">
+            <Button type="submit" disabled={!canSubmit}>
+              {isSubmitting ? tF('creating') : tR('tombolBuat')}
             </Button>
-          </Link>
+            <Button asChild variant="outline">
+              <Link href="/backoffice/work-orders">{tF('cancel')}</Link>
+            </Button>
+          </div>
+          {/* Tombol mati menyebut kekurangan pertamanya. */}
+          <KeteranganSimpanWo alasan={isSubmitting ? null : alasan} />
         </div>
       </form>
     </div>

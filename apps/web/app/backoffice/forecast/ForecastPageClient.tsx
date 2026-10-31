@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/ui/page-header';
 import {
   Select,
   SelectContent,
@@ -28,13 +29,10 @@ import {
   type ForecastConfigDetail,
   type ForecastResultDetail,
 } from '@/app/actions/forecast';
+import { pilihanTahunForecast, tahunForecastDariUrl } from './tahun-forecast';
 
 const TABS = ['overview', 'articles', 'abc', 'plan-bridge'] as const;
 
-function yearOptions(): number[] {
-  const current = new Date().getFullYear();
-  return [current - 2, current - 1, current];
-}
 
 export function ForecastPageClient() {
   const t = useTranslations('forecast');
@@ -44,8 +42,8 @@ export function ForecastPageClient() {
 
   const tabParam = searchParams.get('tab') ?? 'overview';
   const activeTab = TABS.includes(tabParam as (typeof TABS)[number]) ? tabParam : 'overview';
-  const yearParam = searchParams.get('year');
-  const initialYear = yearParam ? Number(yearParam) : new Date().getFullYear();
+  // Tahun berjalan − 2 … + 2; bawaan tahun depan mulai Juli (tahun-forecast.ts).
+  const initialYear = tahunForecastDariUrl(searchParams.get('year'));
 
   const [year, setYear] = useState(initialYear);
   const [results, setResults] = useState<ForecastResultDetail[]>([]);
@@ -70,9 +68,9 @@ export function ForecastPageClient() {
       setCoverage(coverage);
       setSources(demandSources);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load forecast');
+      toast.error(err instanceof Error ? err.message : t('loadFailed'));
     }
-  }, [year]);
+  }, [year, t]);
 
   useEffect(() => {
     refresh();
@@ -95,37 +93,40 @@ export function ForecastPageClient() {
 
   const configSummary =
     config ?
-      `Lookback ${config.lookbackMonths} mo · Growth ${config.growthFactorPercent}% · Decay ${config.weightDecay}`
-    : 'Default config (run forecast to create)';
+      t('config.summary', {
+        lookback: config.lookbackMonths,
+        growth: config.growthFactorPercent,
+        decay: config.weightDecay,
+      })
+    : t('config.defaultSummary');
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">{t('title')}</h1>
-          <p className="text-muted-foreground">{t('subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{t('config.year')}</span>
-          <Select value={String(year)} onValueChange={handleYearChange}>
-            <SelectTrigger className="w-[120px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {yearOptions().map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title={t('title')}
+        actions={
+          <>
+            <span className="text-sm text-muted-foreground">{t('config.year')}</span>
+            <Select value={String(year)} onValueChange={handleYearChange}>
+              <SelectTrigger className="w-[120px]" aria-label={t('config.year')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {pilihanTahunForecast().map((y) => (
+                  <SelectItem key={y} value={String(y)}>
+                    {y}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+      />
 
       <Tabs value={activeTab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">{t('tabs.overview')}</TabsTrigger>
-          <TabsTrigger value="articles">{t('tabs.articles')}</TabsTrigger>
+          <TabsTrigger value="articles">{t('tabs.perArtikel')}</TabsTrigger>
           <TabsTrigger value="abc">{t('tabs.abc')}</TabsTrigger>
           <TabsTrigger value="plan-bridge">{t('tabs.planBridge')}</TabsTrigger>
         </TabsList>

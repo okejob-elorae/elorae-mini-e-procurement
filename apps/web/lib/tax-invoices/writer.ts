@@ -15,6 +15,75 @@ type TransitionData = Partial<{
   markedById: string | null;
 }>;
 
+/**
+ * Nomor Seri Faktur Pajak (NSFP) yang diterima, setelah spasi dan tanda baca
+ * dibuang — sengaja longgar, yang ditolak hanya yang jelas bukan NSFP:
+ *  - 16 digit, e-Faktur lama: `010.000-24.00000001` = 2 digit kode transaksi,
+ *    1 digit status (0 normal, 1 pengganti), lalu 13 digit NSFP alokasi DJP
+ *    (3 kode cabang, 2 tahun, 8 nomor urut);
+ *  - 13 digit, NSFP alokasi itu sendiri tanpa kode transaksi: `000-24.00000001`;
+ *  - 17 digit, nomor faktur Coretax (2025+);
+ *  - 14–15 digit ikut diterima karena tidak ada alasan kuat menolaknya.
+ * Huruf, kurang dari 13 digit, atau lebih dari 17 digit ditolak.
+ */
+const PANJANG_MIN_NSFP = 13;
+const PANJANG_MAKS_NSFP = 17;
+
+export function normalisasiNomorFaktur(nomor: string): string {
+  return nomor.replace(/[\s.,\-/_]/g, "");
+}
+
+export function periksaFormatNomorFaktur(nomor: string): boolean {
+  const n = normalisasiNomorFaktur(nomor);
+  return /^[0-9]+$/.test(n) && n.length >= PANJANG_MIN_NSFP && n.length <= PANJANG_MAKS_NSFP;
+}
+
+/**
+ * Kunci pembanding "NSFP yang sama". Untuk 16 digit, 3 digit depan (kode
+ * transaksi + status) dibuang: faktur pengganti `011.` memakai NSFP yang sama
+ * dengan `010.`, dan 13 digit sisanya sama dengan NSFP alokasi. Panjang lain
+ * (termasuk Coretax 17 digit) dibandingkan utuh.
+ */
+export function kunciNomorFaktur(nomor: string): string {
+  const n = normalisasiNomorFaktur(nomor);
+  return n.length === 16 ? n.slice(3) : n;
+}
+
+/**
+ * Nomor faktur ditolak. `code` tetap `INVALID_REQUEST` agar aksi dan layar yang
+ * ada memetakannya tanpa diubah; `sebab` membedakan format vs ganda.
+ */
+export class NomorFakturError extends TaxInvoiceError {
+  constructor(
+    readonly sebab: "FORMAT" | "GANDA",
+    readonly dipakai: { taxInvoiceId: string; deliveryId: string | null; sellThroughId: string | null; invoiceNo: string } | null = null,
+  ) {
+    super("INVALID_REQUEST");
+    this.name = "NomorFakturError";
+  }
+}
+
+/** Tolak NSFP yang sudah menempel di TaxInvoice lain berstatus CREATED (atau sudah dikirim ke toko). Dipanggil di dalam transaksi serializable. */
+async function tolakNomorGanda(tx: Prisma.TransactionClient, taxInvoiceId: string, invoiceNo: string): Promise<void> {
+  const kunci = kunciNomorFaktur(invoiceNo);
+  // Semua nomor CREATED dibandingkan setelah dinormalisasi di JS. Jangan menyempit
+  // dengan `contains` potongan nomor: nomor tersimpan apa adanya, jadi tanda baca
+  // yang memotong potongan itu (`…000000.01`) meloloskan nomor yang sama.
+  const calon = await tx.taxInvoice.findMany({
+    where: { status: { in: ["CREATED", "SENT_TO_STORE"] }, id: { not: taxInvoiceId }, invoiceNo: { not: null } },
+    select: { id: true, deliveryId: true, sellThroughId: true, invoiceNo: true },
+  });
+  const sama = calon.find((c) => c.invoiceNo !== null && kunciNomorFaktur(c.invoiceNo) === kunci);
+  if (sama && sama.invoiceNo !== null) {
+    throw new NomorFakturError("GANDA", {
+      taxInvoiceId: sama.id,
+      deliveryId: sama.deliveryId,
+      sellThroughId: sama.sellThroughId,
+      invoiceNo: sama.invoiceNo,
+    });
+  }
+}
+
 type Transition = {
   taxInvoiceId: string;
   userId: string;
@@ -22,6 +91,8 @@ type Transition = {
   to: Status;
   data: TransitionData;
   action: string;
+  /** Pemeriksaan tambahan di dalam transaksi yang sama, sebelum baris diubah. */
+  periksa?: (tx: Prisma.TransactionClient) => Promise<void>;
 };
 
 /**
@@ -48,6 +119,7 @@ async function transition(t: Transition): Promise<{ ok: true }> {
     });
     if (!row) throw new TaxInvoiceError("NOT_FOUND");
     if (!t.from.includes(row.status as Status)) throw new TaxInvoiceError("INVALID_STATE");
+    if (t.periksa) await t.periksa(tx);
 
     const swapped = await tx.taxInvoice.updateMany({
       where: { id: t.taxInvoiceId, status: row.status },
@@ -131,6 +203,7 @@ export async function markTaxInvoiceCreated(input: {
   if (buyerNpwp === "") throw new TaxInvoiceError("INVALID_REQUEST");
   if (!Number.isFinite(input.taxableAmount) || input.taxableAmount < 0) throw new TaxInvoiceError("INVALID_REQUEST");
   if (!Number.isFinite(input.ppnAmount) || input.ppnAmount < 0) throw new TaxInvoiceError("INVALID_REQUEST");
+  if (!periksaFormatNomorFaktur(invoiceNo)) throw new NomorFakturError("FORMAT");
 
   return transition({
     taxInvoiceId: input.taxInvoiceId,
@@ -147,6 +220,8 @@ export async function markTaxInvoiceCreated(input: {
       markedById: input.userId,
     },
     action: "TAX_INVOICE_CREATED",
+    // NSFP tidak unik di skema: penjaganya di sini, di transaksi serializable yang sama dengan penulisannya.
+    periksa: (tx) => tolakNomorGanda(tx, input.taxInvoiceId, invoiceNo),
   });
 }
 

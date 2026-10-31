@@ -1,13 +1,9 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { Decimal } from 'decimal.js';
 import { prisma } from '@elorae/db';
 import { relinkPoItems, releaseLinesOfCancelledPo, unlinkPoItems } from '@/lib/item-requests/mutations';
-import { generateDocNumber } from '@/lib/docNumber';
-import { POStatus } from '@elorae/db';
-import { poSchema } from '@/lib/validations';
-import { verifyPin } from '@/lib/security/pin';
+import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { assertActor } from "@/lib/auth/assert-actor";
@@ -15,6 +11,7 @@ import { z } from 'zod';
 import { notifyPOCreated, notifyPOStatusUpdated, notifyPOPaymentToggled } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
 import { createPurchaseOrder, type POFormData } from '@/lib/purchase-orders/mutations';
+import { pastikanTahapAda, tahapKiriman, TahapTidakAdaError } from '@/lib/purchase-orders/tahap';
 import { listPOs, getPOById as getPOByIdQuery } from '@/lib/purchase-orders/queries';
 import { assertLinesVariantSkusMatchItemDefinitions } from '@/lib/items/validate-variant-lines';
 import { resolvePoLeadTimeFields } from '@/lib/leadtime/po-snapshot';
@@ -39,22 +36,56 @@ import {
   type ReceiptBlockedMarkCode,
   type SupplierPaymentDirection,
 } from "@/lib/purchasing/supplier-payment-journal-message";
+import { adaPembayaranDokumenUntukPo, selaraskanCerminTandaiLunas } from '@/lib/purchasing/pembayaran-tandai-lunas';
+import { tandaiJurnalTertundaSelesai, type SumberNotifikasiJurnal } from '@/lib/finance/jurnal-tertunda';
 import { runSerializable } from '@/lib/db/tx-retry';
+import { tanggalBayarSah } from '@/app/backoffice/supplier-payments/tanggal-bayar';
+import { keadaanPemilikGrn } from '@/app/backoffice/inventory/grn/[id]/rincian-grn';
+import { hitungTotalPo } from '@/lib/purchase-orders/ppn';
+import {
+  PESAN_TOLAK_TUTUP_PO,
+  tutupPurchaseOrder,
+  type HasilTutupPo,
+} from '@/lib/purchase-orders/tutup';
+import {
+  PESAN_TOLAK_BATAL_PO,
+  batalkanPurchaseOrder,
+  type KodeTolakBatalPo,
+} from '@/lib/purchase-orders/batal';
 
 function poReceiptLineKey(itemId: string, variantSku?: string | null) {
   return `${itemId}\n${variantSku ?? ''}`;
 }
 
-export async function createPO(data: POFormData, userId: string) {
+/*
+ * Pelaku setiap tulisan PO (`createdById`, `changedById`, nama di notifikasi)
+ * diambil dari SESI. Argumen `claimedUserId` di aksi-aksi di bawah dipertahankan
+ * supaya pemanggil lama tidak berubah; kalau dikirim, harus sama dengan pengguna
+ * sesi (`assertActor`). Dulu nilainya ditulis apa adanya, jadi pemegang izin PO
+ * bisa mencatat persetujuan atau pembatalan atas nama orang lain di riwayat status.
+ */
+/**
+ * Hasil `createPO`. Penolakan tahap DIKEMBALIKAN sebagai kode (pesan lemparan
+ * aksi server disamarkan di build produksi); galat lama (izin, validasi) masih
+ * dilempar seperti sebelumnya.
+ */
+export type CreatePOResult =
+  | { ok: true; id: string; docNumber: string }
+  /** `planStageId` menunjuk tahap produksi yang sudah tidak ada. */
+  | { ok: false; code: 'TAHAP_TIDAK_ADA' };
+
+export async function createPO(data: POFormData, claimedUserId?: string): Promise<CreatePOResult> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_CREATE);
-  assertActor(session.user.id, userId);
+  if (claimedUserId) assertActor(session.user.id, claimedUserId);
+  const userId = session.user.id;
 
   let po;
   try {
     po = await createPurchaseOrder(data, userId);
   } catch (error) {
+    if (error instanceof TahapTidakAdaError) return { ok: false, code: 'TAHAP_TIDAK_ADA' };
     if (error instanceof z.ZodError) {
       throw new Error(error.issues[0]?.message ?? 'Invalid purchase order data');
     }
@@ -65,81 +96,195 @@ export async function createPO(data: POFormData, userId: string) {
     .then((triggeredByName) => notifyPOCreated(po.id, po.docNumber, triggeredByName))
     .catch(() => {});
 
-  return { id: po.id, docNumber: po.docNumber };
+  if (po.planStageId) revalidatePath(`/backoffice/production/planning/tahap/${po.planStageId}`);
+  return { ok: true, id: po.id, docNumber: po.docNumber };
 }
 
+/*
+ * Penolakan edit PO DIKEMBALIKAN sebagai `{ ok:false, code }`: di build
+ * produksi Next menyamarkan pesan lemparan aksi server, jadi layar edit PO
+ * hanya bisa menjelaskan alasannya lewat kode (`purchaseOrders.edit.err.*`).
+ * Di dalam transaksi penolakan tetap DILEMPAR (`EditPoDitolak`) supaya semua
+ * tulisan batal, lalu diterjemahkan di luar.
+ */
+export type KodeTolakEditPo =
+  | 'TIDAK_DITEMUKAN'
+  | 'PO_TERTUTUP'
+  | 'PIN_WAJIB'
+  | 'TAHAP_TIDAK_ADA'
+  /** Termin pembayaran bukan bilangan bulat 0–365 hari. */
+  | 'TERMIN_TIDAK_SAH'
+  /** PO sudah dibayar: terminnya tidak bisa diubah lagi. */
+  | 'TERMIN_SUDAH_LUNAS'
+  /** PO sudah ditagih lewat Vendor Billing: batalkan tagihannya dulu sebelum mengubah PO. */
+  | 'SUDAH_DITAGIH';
+
+export type UpdatePOResult =
+  | { ok: true; id: string }
+  | { ok: false; code: KodeTolakEditPo | 'TANPA_AKSES' | 'GAGAL' }
+  /** `barang` = SKU (atau id) dari pemeriksa varian. */
+  | { ok: false; code: 'VARIAN_TIDAK_VALID'; barang: string }
+  /** Baris dengan barang sudah diterima dihapus atau qty-nya di bawah `diterima`. */
+  | { ok: false; code: 'QTY_DI_BAWAH_DITERIMA'; barang: string; diterima: number }
+  /** `kunciPesan` = kunci `security.*` dari pemeriksa PIN (mis. `pinIncorrect`). */
+  | { ok: false; code: 'PIN_DITOLAK'; kunciPesan: string };
+
+type TolakEditPo = Exclude<Extract<UpdatePOResult, { ok: false }>, { code: 'TANPA_AKSES' | 'GAGAL' | 'PIN_DITOLAK' }>;
+
+class EditPoDitolak extends Error {
+  constructor(readonly hasil: TolakEditPo) {
+    super(hasil.code);
+    this.name = 'EditPoDitolak';
+  }
+}
+
+/*
+ * Pesan pasti `assertLinesVariantSkusMatchItemDefinitions` (lib/items/
+ * validate-variant-lines.ts) → SKU/id barangnya. Galat lain (mis. konflik
+ * serializable) tidak cocok dan dilempar apa adanya.
+ */
+const POLA_TOLAK_VARIAN = [
+  /^Select a valid variant for item (.+)$/,
+  /^Item (.+) has no variants; clear variant selection$/,
+  /^Item not found: (.+)$/,
+];
+
+function barangVarianDitolak(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  for (const pola of POLA_TOLAK_VARIAN) {
+    const m = error.message.match(pola);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** CLOSED (lengkap atau "Tutup PO") dan CANCELLED tidak bisa diedit. */
+const STATUS_TIDAK_BISA_DIEDIT: ReadonlySet<string> = new Set(['CLOSED', 'CANCELLED']);
+const STATUS_JAGA_DITERIMA: ReadonlySet<string> = new Set(['SUBMITTED', 'PARTIAL', 'OVER']);
+
+/*
+ * Edit PO. Baca status + tulis berada dalam SATU `runSerializable` dengan
+ * penjaga status: dulu status dibaca di luar transaksi dan ditulis di
+ * `$transaction` biasa, jadi edit yang kalah cepat dari "Tutup PO", pembatalan
+ * atau GRN menulis ulang baris/total PO yang sudah ditutup/batal (atau menimpa
+ * qty diterima). Sekarang yang kalah konflik, diulang, dan melihat keadaan baru.
+ *
+ * Baca awal di luar transaksi HANYA untuk memutuskan perlu PIN: pemeriksa PIN
+ * mencatat percobaan, jadi tidak boleh ikut diulang transaksi.
+ */
 export async function updatePO(
   id: string,
   data: POFormData,
-  userId: string,
+  claimedUserId?: string,
   pin?: string
-) {
+): Promise<UpdatePOResult> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
-  assertActor(session.user.id, userId);
-
-  const existing = await prisma.purchaseOrder.findUnique({
-    where: { id },
-    select: { status: true, paidAt: true, paymentTermsDays: true }
-  });
-
-  if (existing?.status === 'CLOSED' || existing?.status === 'CANCELLED') {
-    throw new Error('Cannot edit closed or cancelled PO');
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.PURCHASE_ORDERS_EDIT)) {
+    return { ok: false, code: 'TANPA_AKSES' };
   }
+  if (claimedUserId) assertActor(session.user.id, claimedUserId);
+  const userId = session.user.id;
 
-  if (existing?.status !== 'DRAFT') {
-    if (!pin) {
-      throw new Error('PIN required to edit a posted PO');
+  try {
+    const awal = await prisma.purchaseOrder.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!awal) return { ok: false, code: 'TIDAK_DITEMUKAN' };
+    if (STATUS_TIDAK_BISA_DIEDIT.has(awal.status)) return { ok: false, code: 'PO_TERTUTUP' };
+
+    let pinTerverifikasi = false;
+    if (awal.status !== 'DRAFT') {
+      if (!pin) return { ok: false, code: 'PIN_WAJIB' };
+      const pinResult = await verifyPinForAction(userId, pin, 'EDIT_POSTED_PO');
+      if (!pinResult.success) {
+        return { ok: false, code: 'PIN_DITOLAK', kunciPesan: pinResult.messageKey ?? 'pinInvalid' };
+      }
+      pinTerverifikasi = true;
     }
-    const pinResult = await verifyPin(session.user.id, pin, 'EDIT_POSTED_PO');
-    if (!pinResult.success) {
-      throw new Error(pinResult.messageKey ?? pinResult.message);
+
+    let termsPatch: { paymentTermsDays?: number | null } = {};
+    if (data.paymentTermsDays !== undefined) {
+      const parsedTerms = parsePaymentTermsDays(data.paymentTermsDays);
+      if (!parsedTerms.ok) return { ok: false, code: 'TERMIN_TIDAK_SAH' };
+      termsPatch = { paymentTermsDays: parsedTerms.value };
     }
+
+    await tulisEditPo(id, data, userId, pinTerverifikasi, termsPatch);
+  } catch (error) {
+    if (error instanceof EditPoDitolak) return error.hasil;
+    console.error('[updatePO]', error);
+    return { ok: false, code: 'GAGAL' };
   }
 
-  let termsPatch: { paymentTermsDays?: number | null } = {};
-  if (data.paymentTermsDays !== undefined) {
-    const parsedTerms = parsePaymentTermsDays(data.paymentTermsDays);
-    if (!parsedTerms.ok) {
-      throw new Error("Payment terms must be a whole number of days from 0 to 365");
-    }
-    termsPatch = { paymentTermsDays: parsedTerms.value };
-  }
-  if (
-    existing?.paidAt != null &&
-    termsPatch.paymentTermsDays !== undefined &&
-    termsPatch.paymentTermsDays !== existing.paymentTermsDays
-  ) {
-    throw new Error("This PO is already paid — its payment terms can no longer change");
-  }
+  revalidatePath('/backoffice/purchase-orders');
+  revalidatePath(`/backoffice/purchase-orders/${id}`);
+  return { ok: true, id };
+}
 
-  const receivedPreservingStatuses = ['SUBMITTED', 'PARTIAL', 'OVER'] as const;
-  const preserveReceived =
-    existing?.status &&
-    receivedPreservingStatuses.includes(
-      existing.status as (typeof receivedPreservingStatuses)[number]
-    );
-
-  const po = await prisma.$transaction(async (tx) => {
+async function tulisEditPo(
+  id: string,
+  data: POFormData,
+  userId: string,
+  pinTerverifikasi: boolean,
+  termsPatch: { paymentTermsDays?: number | null }
+) {
+  return runSerializable(async (tx) => {
     // The items are rebuilt below, which would orphan the lines of a vendor bill on them. The PO
     // row lock is the one createVendorBill takes, so a bill cannot commit between check and rebuild.
     await tx.$queryRaw`SELECT \`id\` FROM \`PurchaseOrder\` WHERE \`id\` = ${id} FOR UPDATE`;
-    const billed = await tx.vendorBillLine.count({ where: { poItem: { poId: id }, bill: { status: { not: 'VOID' } } } });
-    if (billed > 0) {
-      throw new Error('PO ini sudah ditagih lewat Vendor Billing; batalkan tagihannya dulu sebelum mengubah PO.');
+    const existing = await tx.purchaseOrder.findUnique({
+      where: { id },
+      select: { status: true, ppnRatePercent: true, planStageId: true, paidAt: true, paymentTermsDays: true },
+    });
+    if (!existing) throw new EditPoDitolak({ ok: false, code: 'TIDAK_DITEMUKAN' });
+    if (STATUS_TIDAK_BISA_DIEDIT.has(existing.status)) throw new EditPoDitolak({ ok: false, code: 'PO_TERTUTUP' });
+    // DRAFT yang dikirim ke pemasok di tengah edit tanpa PIN: tetap butuh PIN.
+    if (existing.status !== 'DRAFT' && !pinTerverifikasi) throw new EditPoDitolak({ ok: false, code: 'PIN_WAJIB' });
+    if (
+      existing.paidAt != null &&
+      termsPatch.paymentTermsDays !== undefined &&
+      termsPatch.paymentTermsDays !== existing.paymentTermsDays
+    ) {
+      throw new EditPoDitolak({ ok: false, code: 'TERMIN_SUDAH_LUNAS' });
     }
-    await assertLinesVariantSkusMatchItemDefinitions(tx.item, data.items);
+    const billed = await tx.vendorBillLine.count({ where: { poItem: { poId: id }, bill: { status: { not: 'VOID' } } } });
+    if (billed > 0) throw new EditPoDitolak({ ok: false, code: 'SUDAH_DITAGIH' });
+    const preserveReceived = STATUS_JAGA_DITERIMA.has(existing.status);
+
+    try {
+      await assertLinesVariantSkusMatchItemDefinitions(tx.item, data.items);
+    } catch (error) {
+      const barang = barangVarianDitolak(error);
+      if (barang == null) throw error;
+      throw new EditPoDitolak({ ok: false, code: 'VARIAN_TIDAK_VALID', barang });
+    }
+
+    // Tahap produksi: `undefined` = tidak disentuh, `null`/'' = dilepas. Tahap
+    // yang sama dengan yang tersimpan tidak diperiksa ulang — edit biasa tidak
+    // boleh gagal karena tahapnya; tahap BARU harus ada.
+    const tahapBaru = tahapKiriman(data.planStageId);
+    if (tahapBaru && tahapBaru !== existing.planStageId) {
+      try {
+        await pastikanTahapAda(tx, tahapBaru);
+      } catch (error) {
+        if (error instanceof TahapTidakAdaError) throw new EditPoDitolak({ ok: false, code: 'TAHAP_TIDAK_ADA' });
+        throw error;
+      }
+    }
 
     const oldItems = await tx.pOItem.findMany({
       where: { poId: id },
-      select: { itemId: true, variantSku: true, receivedQty: true },
+      select: { itemId: true, variantSku: true, receivedQty: true, item: { select: { nameId: true, sku: true } } },
     });
     const receivedByLine = new Map<string, number>();
+    const namaByLine = new Map<string, string>();
     for (const o of oldItems) {
       const r = Number(o.receivedQty);
       const k = poReceiptLineKey(o.itemId, o.variantSku);
       receivedByLine.set(k, (receivedByLine.get(k) ?? 0) + r);
+      const nama = o.item?.nameId || o.item?.sku || o.itemId;
+      namaByLine.set(k, o.variantSku ? `${nama} (${o.variantSku})` : nama);
     }
 
     if (preserveReceived) {
@@ -150,16 +295,19 @@ export async function updatePO(
         );
         const totalNewQty = lines.reduce((s, i) => s + i.qty, 0);
         if (lines.length === 0 || totalNewQty < recv) {
-          throw new Error(
-            `Cannot edit: a line has ${recv} received — keep that line and qty ≥ ${recv}, or remove only zero-received lines.`
-          );
+          throw new EditPoDitolak({
+            ok: false,
+            code: 'QTY_DI_BAWAH_DITERIMA',
+            barang: namaByLine.get(key) ?? key,
+            diterima: recv,
+          });
         }
       }
     }
-
-    const totalAmount = data.items.reduce((sum, item) => {
-      return sum.plus(new Decimal(item.qty).mul(item.price));
-    }, new Decimal(0));
+    // Tarif PPN yang tersimpan di PO, bukan tarif Pengaturan hari ini; PO lama
+    // (tarif kosong) tetap tanpa PPN — nilainya tidak berubah karena diedit.
+    const tarifPo = existing.ppnRatePercent == null ? null : Number(existing.ppnRatePercent);
+    const total = hitungTotalPo(data.items, tarifPo);
 
     await unlinkPoItems(tx, id);
     await tx.pOItem.deleteMany({ where: { poId: id } });
@@ -187,7 +335,7 @@ export async function updatePO(
       chainTotalDays?: number | null;
       etaDate?: Date | null;
     } = {};
-    if (existing?.status === "DRAFT") {
+    if (existing.status === "DRAFT") {
       const lt = await resolvePoLeadTimeFields(
         tx,
         data.supplierId,
@@ -219,9 +367,11 @@ export async function updatePO(
         paymentDueDate: resolveManualPaymentDueDate(effectiveTerms, data.paymentDueDate),
         notes: data.notes,
         terms: data.terms,
-        totalAmount: totalAmount.toNumber(),
-        grandTotal: totalAmount.toNumber(),
-        ...(existing?.status === "DRAFT"
+        ...(tahapBaru !== undefined ? { planStageId: tahapBaru } : {}),
+        totalAmount: total.subtotal,
+        taxAmount: total.taxAmount,
+        grandTotal: total.grandTotal,
+        ...(existing.status === "DRAFT"
           ? {
               chainSnapshot: leadTimePatch.chainSnapshot ?? undefined,
               chainTotalDays: leadTimePatch.chainTotalDays ?? undefined,
@@ -236,7 +386,7 @@ export async function updatePO(
     });
     await relinkPoItems(tx, id);
 
-    if (existing?.status && existing.status !== 'DRAFT') {
+    if (existing.status !== 'DRAFT') {
       await tx.pOStatusHistory.create({
         data: {
           poId: id,
@@ -251,10 +401,6 @@ export async function updatePO(
 
     return po;
   });
-
-  revalidatePath('/backoffice/purchase-orders');
-  revalidatePath(`/backoffice/purchase-orders/${id}`);
-  return { id };
 }
 
 export async function setPOPaymentTerms(
@@ -274,7 +420,7 @@ export async function setPOPaymentTerms(
 
   if (existing.status !== "DRAFT") {
     if (!pin) return { ok: false, code: "PIN", message: "PIN required" };
-    const pinResult = await verifyPin(session.user.id, pin, "EDIT_POSTED_PO");
+    const pinResult = await verifyPinForAction(session.user.id, pin, "EDIT_POSTED_PO");
     if (!pinResult.success) {
       return { ok: false, code: "PIN", message: pinResult.messageKey ?? pinResult.message };
     }
@@ -291,63 +437,81 @@ export async function setPOPaymentTerms(
 export async function changePOStatus(
   id: string,
   newStatus: 'SUBMITTED' | 'CANCELLED' | 'CLOSED',
-  userId: string,
+  claimedUserId?: string,
   notes?: string,
   pin?: string
 ) {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  if (newStatus === 'SUBMITTED') {
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  const userId = session.user.id;
+  // Mengirim ke pemasok dan menutup PO sama-sama keputusan approver; dulu
+  // CLOSED cukup `edit` dan tanpa alasan — pintu belakang "Tutup PO".
+  if (newStatus === 'SUBMITTED' || newStatus === 'CLOSED') {
     requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_APPROVE);
   } else {
     requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
   }
-  assertActor(session.user.id, userId);
+  if (claimedUserId) assertActor(session.user.id, claimedUserId);
+
+  if (newStatus === 'CLOSED') {
+    // Satu jalur penutupan: alasan wajib, jejak AuditLog, runSerializable.
+    const hasil = await tutupPurchaseOrder({ poId: id, userId, alasan: notes ?? '' });
+    if (!hasil.ok) throw new Error(PESAN_TOLAK_TUTUP_PO[hasil.code]);
+    kabariPoDitutup(id, hasil.docNumber, hasil.statusSebelum, userId);
+    revalidatePath('/backoffice/purchase-orders');
+    revalidatePath(`/backoffice/purchase-orders/${id}`);
+    return { id, status: 'CLOSED' as const };
+  }
 
   if (newStatus === 'CANCELLED') {
     if (!pin) {
       throw new Error('PIN required to void/cancel a PO');
     }
-    const pinResult = await verifyPin(session.user.id, pin, 'VOID_DOCUMENT');
+    const pinResult = await verifyPinForAction(session.user.id, pin, 'VOID_DOCUMENT');
     if (!pinResult.success) {
       throw new Error(pinResult.messageKey ?? pinResult.message);
     }
-
-    // Block cancellation if any receipts exist (or GRNs are linked).
-    const poWithReceipts = await prisma.purchaseOrder.findUnique({
-      where: { id },
-      include: { grns: { select: { id: true } }, items: { select: { receivedQty: true } } },
+    // Penjaga "belum ada GRN" + tulis CANCELLED dalam satu transaksi serializable.
+    const hasil = await batalkanPurchaseOrder({
+      poId: id,
+      userId,
+      alasan: notes || 'Status changed to CANCELLED',
     });
-    if (!poWithReceipts) throw new Error('PO not found');
-    const anyReceived = (poWithReceipts.items ?? []).some((it) => Number(it.receivedQty) > 0);
-    if ((poWithReceipts.grns ?? []).length > 0 || anyReceived) {
-      throw new Error('Cannot cancel PO with GRNs');
-    }
+    if (!hasil.ok) throw galatTolakBatalPo(hasil.code);
+    await lepasBarisPermintaanPoBatal(id);
+    kabariPoDibatalkan(id, hasil.docNumber, hasil.statusSebelum, userId);
+    revalidatePath('/backoffice/purchase-orders');
+    revalidatePath(`/backoffice/purchase-orders/${id}`);
+    return { id, status: 'CANCELLED' as const };
   }
 
-  const existing = await prisma.purchaseOrder.findUnique({
-    where: { id },
-    select: { status: true, docNumber: true },
-  });
-  if (!existing) throw new Error('PO not found');
+  // Penjaga DRAFT dan tulisnya satu transaksi serializable: "kirim" yang membaca
+  // DRAFT lalu kalah cepat dari pembatalan tidak boleh menghidupkan PO batal.
+  const { existing, po } = await runSerializable(async (tx) => {
+    const existing = await tx.purchaseOrder.findUnique({
+      where: { id },
+      select: { status: true, docNumber: true },
+    });
+    if (!existing) throw new Error('PO not found');
+    // PO tertutup (lengkap atau "Tutup PO") tidak boleh dibuka lagi lewat "kirim".
+    if (newStatus === 'SUBMITTED' && existing.status !== 'DRAFT') {
+      throw new Error('Hanya PO draf yang bisa dikirim ke pemasok.');
+    }
 
-  const po = await prisma.$transaction(async (tx) => {
-    const updated = await tx.purchaseOrder.update({
+    const po = await tx.purchaseOrder.update({
       where: { id },
       data: { status: newStatus }
     });
-    // A voided PO hands its Request Item lines back to purchasing.
-    if (newStatus === 'CANCELLED') await releaseLinesOfCancelledPo(tx, id);
-    return updated;
-  });
-  
-  await prisma.pOStatusHistory.create({
-    data: {
-      poId: id,
-      status: newStatus,
-      changedById: userId,
-      notes: notes || `Status changed to ${newStatus}`
-    }
+
+    await tx.pOStatusHistory.create({
+      data: {
+        poId: id,
+        status: newStatus,
+        changedById: userId,
+        notes: notes || `Status changed to ${newStatus}`
+      }
+    });
+    return { existing, po };
   });
 
   getActorName(userId)
@@ -361,55 +525,152 @@ export async function changePOStatus(
   return { id: po.id, status: po.status };
 }
 
-export async function submitPO(id: string, userId: string) {
-  return changePOStatus(id, 'SUBMITTED', userId, 'PO Submitted to supplier');
+function kabariPoDitutup(id: string, docNumber: string, statusSebelum: string, userId: string) {
+  getActorName(userId)
+    .then((triggeredByName) => notifyPOStatusUpdated(id, docNumber, statusSebelum, 'CLOSED', triggeredByName))
+    .catch(() => {});
 }
 
-export async function cancelPO(id: string, userId: string, reason?: string, pin?: string) {
+function kabariPoDibatalkan(id: string, docNumber: string, statusSebelum: string, userId: string) {
+  getActorName(userId)
+    .then((triggeredByName) => notifyPOStatusUpdated(id, docNumber, statusSebelum, 'CANCELLED', triggeredByName))
+    .catch(() => {});
+}
+
+/** A voided PO hands its Request Item lines back to purchasing. */
+async function lepasBarisPermintaanPoBatal(id: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await releaseLinesOfCancelledPo(tx, id);
+  });
+}
+
+/** Untuk layar lama yang hanya menangkap lemparan: pesan terbaca + `code`. */
+function galatTolakBatalPo(code: KodeTolakBatalPo): Error & { code: KodeTolakBatalPo } {
+  return Object.assign(new Error(PESAN_TOLAK_BATAL_PO[code]), { code });
+}
+
+export type TutupPOResult = HasilTutupPo | { ok: false; code: 'TANPA_AKSES' | 'GAGAL' };
+
+/**
+ * "Tutup PO" untuk PO kurang kirim. Butuh `purchase_orders:approve`; pelaku dari
+ * sesi. Penolakan dikembalikan sebagai `{ ok:false, code }` (lihat
+ * `KodeTolakTutupPo`), tidak dilempar.
+ */
+export async function tutupPO(id: string, alasan: string): Promise<TutupPOResult> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) return { ok: false, code: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_APPROVE)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  const userId = session.user.id;
+  let hasil: HasilTutupPo;
+  try {
+    hasil = await tutupPurchaseOrder({ poId: id, userId, alasan });
+  } catch (error) {
+    console.error('[tutupPO]', error);
+    return { ok: false, code: 'GAGAL' };
+  }
+  if (hasil.ok) {
+    kabariPoDitutup(id, hasil.docNumber, hasil.statusSebelum, userId);
+    revalidatePath('/backoffice/purchase-orders');
+    revalidatePath(`/backoffice/purchase-orders/${id}`);
+  }
+  return hasil;
+}
+
+export async function submitPO(id: string, claimedUserId?: string) {
+  // Pelakunya dibaca `changePOStatus` dari sesi; `claimedUserId` hanya diperiksa di sana.
+  return changePOStatus(id, 'SUBMITTED', claimedUserId, 'PO Submitted to supplier');
+}
+
+export async function cancelPO(id: string, claimedUserId?: string, reason?: string, pin?: string) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT);
-  assertActor(session.user.id, userId);
+  if (claimedUserId) assertActor(session.user.id, claimedUserId);
+  const userId = session.user.id;
 
   if (!pin) {
     throw new Error('PIN required to cancel/void a PO');
   }
-  const pinResult = await verifyPin(session.user.id, pin, 'VOID_DOCUMENT');
+  const pinResult = await verifyPinForAction(session.user.id, pin, 'VOID_DOCUMENT');
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }
 
-  const po = await prisma.purchaseOrder.findUnique({
-    where: { id },
-    include: { grns: { select: { id: true } }, items: { select: { receivedQty: true } } }
-  });
+  // Penjaga "belum ada GRN" + tulis CANCELLED dalam satu transaksi serializable.
+  const hasil = await batalkanPurchaseOrder({ poId: id, userId, alasan: reason || 'PO Cancelled' });
+  if (!hasil.ok) throw galatTolakBatalPo(hasil.code);
+  await lepasBarisPermintaanPoBatal(id);
+  kabariPoDibatalkan(id, hasil.docNumber, hasil.statusSebelum, userId);
 
-  if (!po) throw new Error('PO not found');
+  revalidatePath('/backoffice/purchase-orders');
+  revalidatePath(`/backoffice/purchase-orders/${id}`);
+}
 
-  // Safety: block cancelling if anything was received (even if GRN rows aren't linked via poId).
-  const anyReceived = (po.items ?? []).some((it) => Number(it.receivedQty) > 0);
-  if (po.grns.length > 0 || anyReceived) {
-    throw new Error('Cannot cancel PO with GRNs');
+export type BatalkanPOResult =
+  | { ok: true }
+  | { ok: false; code: KodeTolakBatalPo | 'TANPA_AKSES' | 'ALASAN_WAJIB' | 'PIN_WAJIB' | 'GAGAL' }
+  /** `kunciPesan` = kunci `security.*` dari pemeriksa PIN (mis. `pinInvalid`). */
+  | { ok: false; code: 'PIN_DITOLAK'; kunciPesan: string };
+
+/**
+ * Batalkan PO (PIN wajib) dengan penolakan sebagai `{ ok:false, code }`, bukan
+ * lemparan — di build produksi Next menyamarkan pesan lemparan aksi server,
+ * jadi layar hanya bisa menjelaskan penolakan lewat kode. Butuh
+ * `purchase_orders:edit`; pelaku dari sesi.
+ */
+export async function batalkanPO(id: string, alasan: string, pin: string): Promise<BatalkanPOResult> {
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, code: 'TANPA_AKSES' };
+  if (!hasPermission(session.user.permissions, PERMISSIONS.PURCHASE_ORDERS_EDIT)) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  const userId = session.user.id;
+  // Alasan wajib: dulu daftar PO mengirim teks Inggris tetap tanpa bertanya.
+  const alasanBersih = (alasan ?? '').trim();
+  if (!alasanBersih) return { ok: false, code: 'ALASAN_WAJIB' };
+  if (!pin) return { ok: false, code: 'PIN_WAJIB' };
+
+  try {
+    const pinResult = await verifyPinForAction(userId, pin, 'VOID_DOCUMENT');
+    if (!pinResult.success) {
+      return { ok: false, code: 'PIN_DITOLAK', kunciPesan: pinResult.messageKey ?? 'pinInvalid' };
+    }
+    const hasil = await batalkanPurchaseOrder({ poId: id, userId, alasan: alasanBersih });
+    if (!hasil.ok) return hasil;
+    await lepasBarisPermintaanPoBatal(id);
+    kabariPoDibatalkan(id, hasil.docNumber, hasil.statusSebelum, userId);
+  } catch (error) {
+    console.error('[batalkanPO]', error);
+    return { ok: false, code: 'GAGAL' };
   }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.purchaseOrder.update({
-      where: { id },
-      data: { status: 'CANCELLED' }
-    });
-    
-    await tx.pOStatusHistory.create({
-      data: {
-        poId: id,
-        status: 'CANCELLED',
-        changedById: userId,
-        notes: reason || 'PO Cancelled'
-      }
-    });
-    await releaseLinesOfCancelledPo(tx, id);
-  });
-  
   revalidatePath('/backoffice/purchase-orders');
+  revalidatePath(`/backoffice/purchase-orders/${id}`);
+  return { ok: true };
+}
+
+/**
+ * Siapa yang sah membaca PO, menurut halaman pemanggilnya: halaman PO
+ * (`purchase_orders:view`), pembayaran pemasok (`supplier_payments:view`),
+ * formulir GRN (`inventory:manage`), dan formulir WO baru/ubah
+ * (`work_orders:create` / `work_orders:manage`).
+ */
+const IZIN_BACA_PO = [
+  PERMISSIONS.PURCHASE_ORDERS_VIEW,
+  PERMISSIONS.SUPPLIER_PAYMENTS_VIEW,
+  PERMISSIONS.INVENTORY_MANAGE,
+  PERMISSIONS.WORK_ORDERS_CREATE,
+  PERMISSIONS.WORK_ORDERS_MANAGE,
+];
+
+/** Penjaga baca: sesi + salah satu izin (melempar seperti `requirePermission`). */
+async function wajibSalahSatuIzin(codes: string[]) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  const perms = session.user.permissions ?? [];
+  if (!codes.some((c) => hasPermission(perms, c))) requirePermission(perms, codes[0]);
 }
 
 export async function getPOs(
@@ -417,15 +678,68 @@ export async function getPOs(
   opts?: Parameters<typeof listPOs>[1],
   extras?: Parameters<typeof listPOs>[2]
 ) {
+  await wajibSalahSatuIzin(IZIN_BACA_PO);
   return listPOs(filters, opts, extras);
 }
 
 export async function getPOById(id: string) {
-  return getPOByIdQuery(id);
+  await wajibSalahSatuIzin(IZIN_BACA_PO);
+  const po = await getPOByIdQuery(id);
+  if (!po) return null;
+  // Rekening pemasok terenkripsi tidak pernah dikirim ke browser.
+  const { bankAccountEnc: _rekening, ...supplier } = po.supplier;
+  void _rekening;
+  // Keadaan terima-lebih tiap GRN untuk kartu "Penerimaan barang": GRN yang
+  // ditolak pemilik sudah dibalik dan tidak boleh tampil seperti penerimaan biasa.
+  const keadaanGrn = po.grns.length
+    ? await prisma.gRN.findMany({
+        where: { id: { in: po.grns.map((g) => g.id) } },
+        select: { id: true, requiresOwnerApproval: true, ownerApprovedAt: true, ownerDeclinedAt: true },
+      })
+    : [];
+  const perGrn = new Map(keadaanGrn.map((g) => [g.id, keadaanPemilikGrn(g)]));
+  const grns = po.grns.map((g) => ({ ...g, keadaanPemilik: perGrn.get(g.id) ?? null }));
+  return { ...po, grns, supplier };
+}
+
+/** Pemasok untuk pemilih di formulir dokumen lama dan saringan (bukan PO baru). */
+export type PemasokPilihan = { id: string; code: string; name: string; disetujui: boolean };
+
+/**
+ * Pemilih pemasok untuk saringan dan dokumen yang SUDAH ada (GRN, register
+ * pembayaran, ubah retur, ubah PO): pemasok yang disetujui ATAU yang punya
+ * dokumen (PO, GRN, retur pemasok), ditambah `sertakanId` (pemasok dokumen
+ * yang sedang diubah). `approvedOnly` dulu dipakai di sini juga, jadi saringan
+ * tidak bisa memilih pemasok PO yang belum dibayar dan formulir ubah retur
+ * kehilangan pemasoknya sendiri. PO BARU tetap hanya untuk pemasok disetujui.
+ */
+export async function getPemasokPilihan(sertakanId?: string[]): Promise<PemasokPilihan[]> {
+  await wajibSalahSatuIzin([
+    ...IZIN_BACA_PO,
+    PERMISSIONS.PURCHASE_ORDERS_EDIT,
+    PERMISSIONS.INVENTORY_VIEW,
+    PERMISSIONS.VENDOR_RETURNS_VIEW,
+  ]);
+  const sertakan = (sertakanId ?? []).filter((id) => typeof id === 'string' && id.length > 0).slice(0, 50);
+  const rows = await prisma.supplier.findMany({
+    where: {
+      OR: [
+        { status: 'ACTIVE' },
+        { purchaseOrders: { some: {} } },
+        { grns: { some: {} } },
+        { vendorReturns: { some: {} } },
+        ...(sertakan.length > 0 ? [{ id: { in: sertakan } }] : []),
+      ],
+    },
+    select: { id: true, code: true, name: true, status: true },
+    orderBy: [{ name: 'asc' }, { code: 'asc' }],
+  });
+  return rows.map((r) => ({ id: r.id, code: r.code, name: r.name, disetujui: r.status === 'ACTIVE' }));
 }
 
 // Get PO statistics for dashboard
 export async function getPOStats() {
+  await wajibSalahSatuIzin([PERMISSIONS.PURCHASE_ORDERS_VIEW]);
   const [
     totalPOs,
     draftPOs,
@@ -508,7 +822,25 @@ export async function getPOStats() {
  * from here rather than inferred by the caller from the button it pressed, so the
  * sentence describes the post that actually ran.
  */
-export type SetPOPaidAtRefusal = "STANDING_PAYMENT_JOURNAL" | "BILLED_VIA_VENDOR_BILL" | ReceiptBlockedMarkCode;
+/**
+ * `TANGGAL_TIDAK_SAH`: tanggal bayar sesudah hari ini (WIB). Jurnal pembayaran
+ * diberi tanggal `paidAt`, jadi tanggal di masa depan menaruh kas keluar di
+ * periode yang belum terjadi. Tidak ada yang ditulis.
+ */
+/**
+ * `ADA_PEMBAYARAN_DOKUMEN`: PO ini sudah (sebagian) dibayar lewat dokumen
+ * pembayaran pemasok (Pembayaran pemasok → Bayar). Tombol ini membayar SELURUH
+ * hutang PO dari buku besar, jadi bagian yang sudah dibayar akan terbayar dua
+ * kali; membuka tanda lunasnya pun tidak membatalkan pembayaran dokumen itu.
+ * Lunasi sisanya / batalkan pembayarannya dari halaman Pembayaran pemasok.
+ * Tidak ada yang ditulis.
+ */
+export type SetPOPaidAtRefusal =
+  | "STANDING_PAYMENT_JOURNAL"
+  | "BILLED_VIA_VENDOR_BILL"
+  | ReceiptBlockedMarkCode
+  | "TANGGAL_TIDAK_SAH"
+  | "ADA_PEMBAYARAN_DOKUMEN";
 
 export type SetPOPaidAtResult = {
   changed: boolean;
@@ -557,7 +889,13 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
   const actorId = session.user?.id;
   if (!actorId) throw new Error('Unauthorized');
 
+  if (paidAt != null && !tanggalBayarSah(paidAt)) {
+    return { changed: false, refusal: 'TANGGAL_TIDAK_SAH', journalFailure: null };
+  }
+
   const direction: SupplierPaymentDirection = paidAt != null ? 'payment' : 'reversal';
+  // Batas tanda "Jurnal gagal" yang boleh diselesaikan toggle ini (lihat sesudah commit).
+  const mulaiToggle = new Date();
 
   /**
    * The toggle and its journal in ONE serializable transaction, so a concurrent
@@ -654,6 +992,17 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
         return { changed: false, refusal: 'BILLED_VIA_VENDOR_BILL', failure: null };
       }
 
+      /*
+       * Pembayaran pemasok sebagian (dokumen BYR/…): kedua arah ditolak bila PO
+       * ini sudah punya alokasi pembayaran dokumen — lihat `ADA_PEMBAYARAN_DOKUMEN`.
+       * Di dalam transaksi yang sama, sebelum CAS, karena alasan yang sama dengan
+       * penjaga di atas: pembayaran dokumen yang di-commit di antara keduanya
+       * akan basi bila diperiksa di luar.
+       */
+      if (await adaPembayaranDokumenUntukPo(poId, tx)) {
+        return { changed: false, refusal: 'ADA_PEMBAYARAN_DOKUMEN', failure: null };
+      }
+
       const toggled = await tx.purchaseOrder.updateMany({
         where: { id: poId, paidAt: paidAt != null ? null : { not: null } },
         data: { paidAt },
@@ -700,6 +1049,19 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
      */
     if (outcome.failure) {
       await notifySupplierPaymentJournalFailure(direction, poId, outcome.failure);
+    } else {
+      /*
+       * Tidak ada yang tertunda lagi untuk PO ini, jadi tanda "Jurnal gagal"-nya
+       * diselesaikan (Beranda). Tandai bayar berhasil = jurnal pembayaran
+       * berdiri. Batal bayar berhasil = PO belum dibayar tanpa jurnal
+       * pembayaran tertinggal (dibalik, atau memang tidak pernah ada), jadi tanda
+       * "PO ditandai bayar tapi jurnal belum ada" juga tidak berlaku lagi. Hanya
+       * tanda yang ditulis sebelum toggle ini: toggle berikutnya yang gagal
+       * menulis tandanya sendiri dan tidak boleh ikut terhapus.
+       */
+      const selesai: SumberNotifikasiJurnal[] = [{ tipe: 'pembayaranPemasok', arah: 'payment', poId }];
+      if (direction === 'reversal') selesai.push({ tipe: 'pembayaranPemasok', arah: 'reversal', poId });
+      await tandaiJurnalTertundaSelesai(selesai, { dibuatSebelum: mulaiToggle });
     }
 
     /**
@@ -740,6 +1102,14 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
         notifyPOPaymentToggled(poId, po.docNumber, paidAt != null, triggeredByName)
       )
       .catch(() => {});
+
+    /*
+     * Cermin tombol ini di daftar Pembayaran pemasok (satu pembayaran penuh
+     * BYR/…, atau pembatalannya). Sesudah commit dan tidak pernah melempar: angka
+     * hutang dibaca dari jurnal tombol ini, jadi cermin yang gagal dibuat hanya
+     * berarti barisnya belum tampil di daftar pembayaran.
+     */
+    await selaraskanCerminTandaiLunas(poId, actorId);
   }
 
   revalidatePath('/backoffice/purchase-orders');
@@ -832,6 +1202,7 @@ export async function postSupplierPaymentReversalJournalAction(
     return { ok: false, code: 'FORBIDDEN' };
   }
   const postedById = session.user.id;
+  const mulai = new Date();
 
   let result: PostSupplierPaymentReversalActionResult;
   try {
@@ -854,6 +1225,18 @@ export async function postSupplierPaymentReversalJournalAction(
       e,
     );
     result = { ok: false, code: 'ERROR' };
+  }
+
+  // Pembalikan berdiri → PO belum dibayar tanpa jurnal tertinggal: tanda "Jurnal gagal"-nya selesai.
+  if (result.ok) {
+    await selaraskanCerminTandaiLunas(poId, postedById);
+    await tandaiJurnalTertundaSelesai(
+      [
+        { tipe: 'pembayaranPemasok', arah: 'reversal', poId },
+        { tipe: 'pembayaranPemasok', arah: 'payment', poId },
+      ],
+      { dibuatSebelum: mulai },
+    );
   }
 
   revalidatePath('/backoffice/purchase-orders');

@@ -22,6 +22,7 @@ import {
   recordDeliveryAction,
   type DeliveryActionResult,
 } from "@/app/actions/field-sales-deliveries";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 
 export type DeliverableLine = {
   id: string;
@@ -310,9 +311,8 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
               <Label htmlFor="delivery-invoice-date" className="text-xs text-muted-foreground">
                 {t("delivery.invoiceDate")}
               </Label>
-              <Input
+              <TanggalInput
                 id="delivery-invoice-date"
-                type="date"
                 className="h-10"
                 value={invoiceDate}
                 disabled={isPending}
@@ -326,9 +326,8 @@ export function DeliveryFormDialog({ orderId, lines, paymentTempo, open, onOpenC
               <Label htmlFor="delivery-due-date" className="text-xs text-muted-foreground">
                 {t("delivery.dueDate")}
               </Label>
-              <Input
+              <TanggalInput
                 id="delivery-due-date"
-                type="date"
                 className="h-10"
                 value={dueDate}
                 min={invoiceDate || undefined}

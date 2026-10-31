@@ -3,7 +3,7 @@
  * Uses upsert for master data; creates transactional data only when count is 0 (guard) to avoid duplicates on re-run.
  */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import {
   PrismaClient,
   Role,
@@ -38,7 +38,7 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-const adapter = new PrismaMariaDb(databaseUrl);
+const adapter = createDbAdapter(databaseUrl);
 const prisma = new PrismaClient({ adapter });
 
 const now = new Date();
@@ -149,6 +149,7 @@ async function main() {
     { code: 'nota_register:view', module: 'nota_register', action: 'view', description: 'View nota register' },
     // Production Colors (Pantone TCX)
     { code: 'production_colors:view', module: 'production_colors', action: 'view', description: 'View production Pantone colors' },
+    { code: 'production_colors:manage', module: 'production_colors', action: 'manage', description: 'Save colour palettes and the team base inks used for print mix recipes' },
     // Production Planning (Plan Kerja)
     { code: 'production_planning:view', module: 'production_planning', action: 'view', description: 'View Plan Kerja' },
     { code: 'production_planning:manage', module: 'production_planning', action: 'manage', description: 'Manage Plan Kerja' },
@@ -398,7 +399,7 @@ async function main() {
     'work_orders:view', 'work_orders:create', 'work_orders:manage',
     'item_requests:view', 'item_requests:manage',
     'nota_register:view',
-    'production_colors:view',
+    'production_colors:view', 'production_colors:manage',
     'production_planning:view',
     'forecast:view',
     'inventory_opname:view',

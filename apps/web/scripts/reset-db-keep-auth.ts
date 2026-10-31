@@ -25,7 +25,26 @@ const PRESERVE_TABLES = new Set([
   '_prisma_migrations',
 ]);
 
+
+/*
+ * MySQL-only. The truncate path below relies on `SET FOREIGN_KEY_CHECKS`,
+ * `DATABASE()` and backtick quoting — none of which exist in PostgreSQL, where
+ * the equivalent is `TRUNCATE ... CASCADE`. Rather than port a destructive
+ * script that nothing currently needs, refuse to run against Postgres: a
+ * half-applied truncate on Supabase is far worse than a clear stop.
+ */
+function assertMysql(): void {
+  const url = process.env.DATABASE_URL ?? "";
+  if (/^postgres(ql)?:\/\//i.test(url.trim())) {
+    throw new Error(
+      "This script is MySQL-only and DATABASE_URL points at PostgreSQL. " +
+        "Refusing to run — see packages/db/prisma/postgres/README.md.",
+    );
+  }
+}
+
 async function truncateBusinessTables() {
+  assertMysql();
   const tables = await prisma.$queryRaw<Array<{ TABLE_NAME: string }>>`
     SELECT TABLE_NAME
     FROM information_schema.tables

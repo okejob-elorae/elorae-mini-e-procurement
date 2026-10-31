@@ -115,6 +115,33 @@ model User {
   itemRequestsCreated ItemRequest[] @relation("ItemRequestCreatedBy")
   vendorBillsCreated  VendorBill[]    @relation("VendorBillCreatedBy")
   vendorPaymentsCreated VendorPayment[] @relation("VendorPaymentCreatedBy")
+  themeFontId      String?
+  chartColors      String?   @db.Text
+  storesHandled Store[]   @relation("StoreSalesman")
+  receivablesAsSalesman  Receivable[]     @relation("ReceivableSalesman")
+  collectionNotes        CollectionNote[] @relation("CollectionNoteSalesman")
+  paymentClaimsAsSalesman PaymentClaim[]  @relation("PaymentClaimSalesman")
+  paymentClaimsVerified  PaymentClaim[]   @relation("PaymentClaimVerifier")
+  paymentClaimsCreated   PaymentClaim[]   @relation("PaymentClaimCreator")
+  storeReturnsAsSalesman StoreReturn[]     @relation("StoreReturnSalesman")
+  warehouseReturnsCounted WarehouseReturn[] @relation("WarehouseReturnCounter")
+  returnChargesBorne     ReturnCharge[]    @relation("ReturnChargeBearer")
+  returnChargesDecided   ReturnCharge[]    @relation("ReturnChargeDecider")
+  fotoDiunggah           Foto[]            @relation("FotoUploader")
+  konsiDikunci           ConsignmentCycle[] @relation("KonsiLocker")
+  konsiDilaporkan        ConsignmentReport[] @relation("KonsiReporter")
+  konsiKomisiSaya        ConsignmentCommission[] @relation("KonsiSpg")
+  konsiKomisiDibayar     ConsignmentCommission[] @relation("KonsiPayer")
+  kolsCreated       Kol[]         @relation("KolCreator")
+  kolBriefsCreated  KolBrief[]    @relation("KolBriefCreator")
+  contentsAssigned  ContentPlan[] @relation("ContentAssignee")
+  contentsCreated   ContentPlan[] @relation("ContentCreator")
+  colorPalettesCreated ColorPalette[] @relation("ColorPaletteCreator")
+  kolCampaignsCreated  KolCampaign[]  @relation("KolCampaignCreator")
+  kolBriefsPic         KolBrief[]     @relation("KolBriefPic")
+  kolContentsApproved  KolContent[]   @relation("KolContentApprover")
+  kolNotesWritten      KolNote[]      @relation("KolNoteAuthor")
+  kolAgendasOwned      KolAgenda[]    @relation("KolAgendaOwner")
   @@index([roleId])
   @@index([themePantoneTcx])
   @@index([assignedStoreId])
@@ -174,6 +201,10 @@ model SupplierType {
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   suppliers Supplier[]
+  color     String?
+  colorTcx  String?
+  colorPantone PantoneColor? @relation(fields: [colorTcx], references: [tcx], onDelete: SetNull, onUpdate: NoAction)
+  @@index([colorTcx])
 }
 
 model Supplier {
@@ -207,6 +238,15 @@ model Supplier {
   planCmtAllocations PlanCmtAllocation[]
   planStages       PlanStage[]      @relation("PlanStageSupplier")
   processChain     SupplierProcess[]
+  taxWithholding   String?
+  isPkp            Boolean?
+  hasNpwp          Boolean          @default(true)
+  npwpEnc          String?          @db.Text
+  npwpLast4        String?
+  skbNumber        String?
+  skbValidUntil    DateTime?
+  skbPhotoUrl      String?
+  planStageSteps   PlanStageStep[]  @relation("PlanStageStepSupplier")
   @@index([typeId])
   @@index([code])
   @@index([status])
@@ -357,8 +397,32 @@ model Store {
   storeTransfersFrom StoreTransfer[] @relation("StoreTransferFromStore")
   storeTransfersTo   StoreTransfer[] @relation("StoreTransferToStore")
   sellThroughs   KonsiSellThrough[]
+  maxOpenInvoices Int?
+  storeClass     String?
+  isPkp          Boolean        @default(false)
+  nitku          String?
+  consignmentVat Boolean        @default(false)
+  groupId        String?
+  salesmanId     String?
+  group          StoreGroup?    @relation(fields: [groupId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  salesman       User?          @relation("StoreSalesman", fields: [salesmanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collectionNotes CollectionNote[]
+  paymentClaims  PaymentClaim[]
+  storeReturns   StoreReturn[]
+  warehouseReturns WarehouseReturn[]
+  returnCharges  ReturnCharge[]
+  konsiCycles    ConsignmentCycle[]
+  konsiShipments ConsignmentShipment[]
+  stockMovements StoreStockMovement[]
+  receipts       StoreReceipt[]
+  opnames        StoreOpname[]
+  stockRequests  StockRequest[]
+  recommendations StoreRecommendation[]
+  lostSales      LostSale[]
 
   @@index([isActive, name])
+  @@index([groupId])
+  @@index([salesmanId])
 }
 
 model StoreVisit {
@@ -381,6 +445,13 @@ model StoreVisit {
   fieldReturns FieldReturn[]
   photos       VisitPhoto[]
   storeChangeRequests StoreChangeRequest[]
+  checkinAccuracyMeters Int?
+  checkinFlags Json?
+  outcome      String?
+  outcomeNote  String?   @db.Text
+  clientId     String?   @unique
+  capturedOffline Boolean @default(false)
+  syncedAt     DateTime?
 
   @@index([userId, checkoutAt])
   @@index([storeId, checkinAt])
@@ -396,6 +467,7 @@ model VisitPhoto {
   capturedAt DateTime
   createdAt  DateTime @default(now())
   visit      StoreVisit @relation(fields: [visitId], references: [id])
+  displayGuideId String?
 
   @@index([visitId])
 }
@@ -480,9 +552,18 @@ model FieldSalesOrder {
   deliveries    FieldSalesDelivery[]
   konsiTransfers KonsiTransfer[]
   shipments      DeliveryShipment[]
+  kreditDitahan Boolean               @default(false)
+  kreditCatatan String?               @db.Text
+  remoteChannel String?
+  preorderWindowId String?
+  cancelledById String?
+  cancelledAt   DateTime?
+  replacesOrderId String?
   @@index([status, createdAt])
   @@index([storeId, createdAt])
   @@index([salesmanId, createdAt])
+  @@index([replacesOrderId])
+  @@index([preorderWindowId])
 }
 
 model FieldSalesOrderLine {
@@ -497,7 +578,7 @@ model FieldSalesOrderLine {
   discountAmount Decimal       @default(0) @db.Decimal(15, 2)
   appliedPromoId String?
   requestedUnitPrice Decimal?  @db.Decimal(15, 2)
-  appealReason String?
+  appealReason String?  @db.Text
   deliveredQty Int @default(0)
   cancelledQty Int @default(0)
   addedById    String?
@@ -505,6 +586,8 @@ model FieldSalesOrderLine {
   order        FieldSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
   item         Item            @relation(fields: [itemId], references: [id])
   deliveryLines FieldSalesDeliveryLine[]
+  isBonus        Boolean         @default(false)
+  bonusPromoId   String?
   @@index([orderId])
   @@index([itemId])
 }
@@ -530,6 +613,9 @@ model FieldSalesDelivery {
   taxInvoice     TaxInvoice?
   receivable     Receivable?
   shipment       DeliveryShipment?
+  receivedByName String?
+  receivedAt     DateTime?
+  podPhotoUrl    String?
   @@index([orderId])
   @@index([deliveredAt])
 }
@@ -640,9 +726,9 @@ model Receivable {
   storeId           String
   invoiceDate       DateTime
   dueDate           DateTime
-  originalAmount    Decimal                   @db.Decimal(15, 2)
+  originalAmount    Decimal                   @default(0) @db.Decimal(15, 2)
   paidAmount        Decimal                   @default(0) @db.Decimal(15, 2)
-  outstandingAmount Decimal                   @db.Decimal(15, 2)
+  outstandingAmount Decimal                   @default(0) @db.Decimal(15, 2)
   status            ReceivableStatus          @default(OUTSTANDING)
   collectorId       String?
   createdAt         DateTime                  @default(now())
@@ -654,11 +740,25 @@ model Receivable {
   submissions        CollectionSubmission[]
   allocations       PaymentAllocation[]
   settlementInvoices StoreSettlementInvoice[]
+  invoiceNo         String                    @unique @default(cuid())
+  amount            Decimal                   @default(0) @db.Decimal(15, 2)
+  outstanding       Decimal                   @default(0) @db.Decimal(15, 2)
+  paidBeforeImport Decimal @default(0) @db.Decimal(15, 2)
+  settledAt      DateTime?
+  source         ReceivableSource @default(DELIVERY)
+  salesmanId     String?
+  note           String?   @db.Text
+  salesman       User?     @relation("ReceivableSalesman", fields: [salesmanId], references: [id])
+  collectionLinks CollectionNoteReceivable[]
+  claimLinks     PaymentClaimReceivable[]
+  items          ReceivableItem[]
 
   @@index([storeId, status])
   @@index([status, dueDate])
   @@index([dueDate])
   @@index([collectorId, status])
+  @@index([storeId, outstanding])
+  @@index([salesmanId])
 }
 
 enum ReceivableStatus {
@@ -980,6 +1080,13 @@ enum StoreTransferStatus {
   PENDING
   APPROVED
   CANCELLED
+  DIAJUKAN
+  DISETUJUI
+  DIKIRIM
+  DITERIMA
+  DITOLAK
+  DIBATALKAN
+  DIKEMBALIKAN
 }
 
 model StoreTransfer {
@@ -989,7 +1096,7 @@ model StoreTransfer {
   toStoreId    String
   status       StoreTransferStatus @default(PENDING)
   note         String?             @db.Text
-  movedAt      DateTime
+  movedAt      DateTime              @default(now())
   createdById  String
   createdAt    DateTime            @default(now())
   approvedById String?
@@ -999,10 +1106,23 @@ model StoreTransfer {
   createdBy    User                @relation("StoreTransferCreatedBy", fields: [createdById], references: [id])
   approvedBy   User?               @relation("StoreTransferApprovedBy", fields: [approvedById], references: [id])
   lines        StoreTransferLine[]
+  reason         String               @default("") @db.VarChar(1000)
+  reviewNote     String?              @db.Text
+  shippedById    String?
+  shippedAt      DateTime?
+  cancelledById  String?
+  cancelledAt    DateTime?
+  selisihStatus  StoreTransferSelisih?
+  selisihNote    String?              @db.Text
+  idempotencyKey String               @unique @default(cuid())
+  updatedAt      DateTime             @updatedAt
 
   @@index([fromStoreId, createdAt])
   @@index([toStoreId, createdAt])
   @@index([status])
+  @@index([fromStoreId, status])
+  @@index([toStoreId, status])
+  @@index([status, createdAt])
 }
 
 model StoreTransferLine {
@@ -1011,8 +1131,8 @@ model StoreTransferLine {
   itemId      String
   variantSku  String        @default("")
   productName String
-  qty         Decimal       @db.Decimal(10, 2)
-  unitCost    Decimal       @db.Decimal(15, 2)
+  qty         Int
+  unitCost    Decimal       @default(0) @db.Decimal(15, 2)
   transfer    StoreTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
   item        Item          @relation(fields: [itemId], references: [id])
 
@@ -1226,6 +1346,7 @@ enum PromoType {
   PERCENT
   FIXED
   TIERED
+  BONUS
 }
 
 enum PromoLevel {
@@ -1253,6 +1374,9 @@ model Promo {
   items            PromoItem[]
   stores           PromoStore[]
   tiers            PromoTier[]
+  bonusBuyQty      Int?
+  bonusFreeQty     Int?
+  bonusItemId      String?
   @@index([isActive, level])
 }
 
@@ -1345,6 +1469,15 @@ model Item {
   storeTransferLines StoreTransferLine[]
   sellThroughLines KonsiSellThroughLine[]
   itemRequestLines ItemRequestLine[]
+  storeStockMovements StoreStockMovement[]
+  commissionPerPcs Decimal @default(0) @db.Decimal(15, 2)
+  material         String?
+  careInstructions String?  @db.Text
+  sizeChartId      String?
+  kgPerRoll        Decimal?  @db.Decimal(10, 2)
+  kolBriefItems     KolBriefItem[]
+  contentPlans      ContentPlan[]
+  kolShipmentLines  KolShipmentLine[]
   @@index([type, isActive])
   @@index([sku])
   @@index([uomId])
@@ -1453,11 +1586,18 @@ model PurchaseOrder {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   itemRequestLines ItemRequestLine[]
+  ppnRatePercent          Decimal?        @db.Decimal(5,2)
+  closedAt                DateTime?
+  closedById              String?
+  closeReason             String?         @db.Text
+  planStageId             String?
+  planStage               PlanStage?      @relation("PurchaseOrderPlanStage", fields: [planStageId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   @@index([supplierId])
   @@index([createdById])
   @@index([status])
   @@index([etaDate])
   @@index([docNumber])
+  @@index([planStageId])
 }
 
 model POItem {
@@ -1538,6 +1678,8 @@ model GRN {
   createdAt     DateTime  @default(now())
   fabricRolls   FabricRoll[]
   vendorReturns VendorReturn[]
+  ppnAmount     Decimal?  @db.Decimal(15,2)
+  idempotencyKey String?  @unique
   @@index([poId])
   @@index([supplierId])
   @@index([grnDate])
@@ -1830,6 +1972,7 @@ model MaterialIssue {
   ackPhotoUrl   String?
   syncStatus    SyncStatus @default(SYNCED)
   notes         String?   @db.Text
+  idempotencyKey String?  @unique
   @@index([woId])
   @@index([issuedById])
   @@index([issuedAt])
@@ -1856,6 +1999,8 @@ model FGReceipt {
   receivedAt     DateTime  @default(now())
   syncStatus     SyncStatus @default(SYNCED)
   priceChangeLogs ItemPriceChangeLog[]
+  serviceCost    Decimal?  @db.Decimal(15,2)
+  additionalCost Decimal?  @db.Decimal(15,2)
   @@index([woId])
   @@index([receivedById])
   @@index([receivedAt])
@@ -1907,12 +2052,15 @@ model VendorReturn {
   createdById      String
   createdBy        User         @relation(fields: [createdById], references: [id], onDelete: NoAction, onUpdate: NoAction)
   createdAt        DateTime     @default(now())
+  poId             String?
+  poCreditAmount   Decimal?     @db.Decimal(15,2)
   @@index([woId])
   @@index([vendorId])
   @@index([grnId])
   @@index([status])
   @@index([createdById])
   @@index([completedById])
+  @@index([poId])
 }
 
 // ==========================================
@@ -1998,6 +2146,10 @@ model PlanStage {
   sortOrder             Int                 @default(0)
   createdAt             DateTime            @default(now())
   updatedAt             DateTime            @updatedAt
+  scheduleStart         DateTime?
+  deadline              DateTime?
+  steps                 PlanStageStep[]
+  purchaseOrders        PurchaseOrder[]     @relation("PurchaseOrderPlanStage")
 
   @@index([planCategoryId])
   @@index([supplierId])
@@ -2239,7 +2391,7 @@ model AuditLog {
   changes               Json?
   metadata              Json?
   sensitiveDataAccessed String?
-  reason                String?
+  reason                String?  @db.Text
   ipAddress             String?
   userAgent             String?
   createdAt             DateTime @default(now())
@@ -2270,7 +2422,6 @@ model SystemSetting {
 // ==========================================
 // JUBELIO INTEGRATION
 // ==========================================
-
 
 model NotificationQueue {
   id        String    @id @default(cuid())
@@ -2571,8 +2722,24 @@ model SpgSale {
   createdBy      User          @relation("SpgSaleCreatedBy", fields: [createdById], references: [id])
   store          Store         @relation(fields: [storeId], references: [id])
   lines          SpgSaleLine[]
+  discountTotal        Decimal   @default(0) @db.Decimal(15, 2)
+  orderPromoId         String?
+  orderPromoName       String?
+  orderDiscount        Decimal   @default(0) @db.Decimal(15, 2)
+  manualDiscount       Decimal   @default(0) @db.Decimal(15, 2)
+  manualDiscountReason String?   @db.Text
+  customerId           String?
+  visitId              String?
+  capturedOffline      Boolean   @default(false)
+  syncedAt             DateTime?
+  memberId             String?
+  memberTier           String?
+  memberDiscount       Decimal   @default(0) @db.Decimal(15, 2)
+  returns        SpgSaleReturn[]
   @@index([salesmanId, createdAt])
   @@index([storeId])
+  @@index([customerId])
+  @@index([memberId])
 }
 
 model SpgSaleLine {
@@ -2586,6 +2753,12 @@ model SpgSaleLine {
   lineTotal   Decimal @db.Decimal(15, 2)
   spgSale     SpgSale @relation(fields: [spgSaleId], references: [id], onDelete: Cascade)
   item        Item    @relation(fields: [itemId], references: [id])
+  returnedQty Int     @default(0)
+  discount       Decimal @default(0) @db.Decimal(15, 2)
+  storeDiscount  Decimal @default(0) @db.Decimal(15, 2)
+  counterPromoId String?
+  promoName      String?
+  returnLines SpgSaleReturnLine[]
   @@index([spgSaleId])
 }
 
@@ -2627,6 +2800,11 @@ enum DocType {
   ITEMREQ
   VENDOR_BILL
   VENDOR_PAYMENT
+  CASHOUT
+  CASHIN
+  CASHTRF
+  SUPPAY
+  ASSET
 }
 
 enum OpnameScope {
@@ -2691,6 +2869,7 @@ model PantoneColor {
   items       Item[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  supplierTypes SupplierType[]
 
   @@index([name])
   @@index([groupName])
@@ -3198,10 +3377,19 @@ model Journal {
   postedById  String
   createdAt   DateTime      @default(now())
   lines       JournalLine[]
+  status       String        @default("POSTED")
+  approvedById String?
+  approvedAt   DateTime?
+  rejectedById String?
+  rejectedAt   DateTime?
+  rejectReason String?       @db.Text
+  reversalOfId String?       @unique
+  originalDate DateTime?
 
   @@unique([sourceType, sourceId])
   @@index([date])
   @@index([sourceType, sourceId])
+  @@index([status, date])
 }
 
 model JournalLine {
@@ -3213,9 +3401,13 @@ model JournalLine {
   memo           String?
   journal        Journal      @relation(fields: [journalId], references: [id], onDelete: Cascade)
   account        ChartAccount @relation(fields: [chartAccountId], references: [id])
+  channel        String?
+  storeId        String?
 
   @@index([journalId])
   @@index([chartAccountId])
+  @@index([channel])
+  @@index([storeId])
 }
 
 model JournalAccountMapping {
@@ -3496,4 +3688,2479 @@ enum VendorBillLineType {
 enum VendorPaymentMethod {
   BANK
   CASH
+}
+
+model StoreGroup {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stores    Store[]
+}
+
+enum PlanStepStatus {
+  BELUM
+  PROSES
+  SELESAI
+}
+
+model PlanStageStep {
+  id                String         @id @default(cuid())
+  planStageId       String
+  planStage         PlanStage      @relation(fields: [planStageId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sequence          Int
+  name              String
+  processTemplateId String?
+  supplierId        String?
+  supplier          Supplier?      @relation("PlanStageStepSupplier", fields: [supplierId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  durationDays      Int
+  targetDate        DateTime
+  doneDate          DateTime?
+  status            PlanStepStatus @default(BELUM)
+  note              String?        @db.Text
+  createdById       String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([planStageId])
+  @@index([status, targetDate])
+  @@index([supplierId])
+}
+
+model SpgSaleReturn {
+  id             String   @id @default(cuid())
+  spgSaleId      String
+  storeId        String
+  createdById    String
+  reason         String   @db.Text
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+
+  spgSale        SpgSale  @relation(fields: [spgSaleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines          SpgSaleReturnLine[]
+
+  @@index([spgSaleId])
+  @@index([storeId, createdAt])
+}
+
+model SpgSaleReturnLine {
+  id            String              @id @default(cuid())
+  returnId      String
+  spgSaleLineId String
+  itemId        String
+  variantSku    String              @default("")
+  qty           Int
+  condition     ReturnItemCondition @default(LAYAK)
+
+  saleReturn    SpgSaleReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  saleLine      SpgSaleLine   @relation(fields: [spgSaleLineId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([returnId])
+  @@index([spgSaleLineId])
+}
+
+// ==========================================
+// FINANCE — PERIODS, ASSETS, CASH & BANK, TAX, BUDGET
+// ==========================================
+model AccountingPeriod {
+  id           String    @id @default(cuid())
+  year         Int
+  month        Int
+  status       String    @default("OPEN")
+  closedAt     DateTime?
+  closedById   String?
+  closeNote    String?   @db.Text
+  reopenedAt   DateTime?
+  reopenedById String?
+  reopenReason String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([year, month])
+  @@index([status])
+}
+
+model AccountingYear {
+  id               String    @id @default(cuid())
+  year             Int       @unique
+  status           String    @default("OPEN")
+  closedAt         DateTime?
+  closedById       String?
+  closingJournalId String?
+  reopenedAt       DateTime?
+  reopenedById     String?
+  reopenReason     String?   @db.Text
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model FixedAsset {
+  id                           String                   @id @default(cuid())
+  code                         String                   @unique
+  name                         String
+  category                     String
+  acquisitionDate              DateTime
+  cost                         Decimal                  @db.Decimal(18, 2)
+  residualValue                Decimal                  @default(0) @db.Decimal(18, 2)
+  usefulLifeMonths             Int
+  method                       String                   @default("STRAIGHT_LINE")
+  decliningRatePercent         Decimal?                 @db.Decimal(5, 2)
+  depreciationStartDate        DateTime
+  accumulatedAtStart           Decimal                  @default(0) @db.Decimal(18, 2)
+  assetAccountId               String?
+  accumDepreciationAccountId   String?
+  depreciationExpenseAccountId String?
+  supplierId                   String?
+  location                     String?
+  status                       String                   @default("ACTIVE")
+  disposedAt                   DateTime?
+  disposalProceeds             Decimal?                 @db.Decimal(18, 2)
+  disposalNote                 String?                  @db.Text
+  disposedById                 String?
+  notes                        String?                  @db.Text
+  createdById                  String
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
+  depreciations                FixedAssetDepreciation[]
+
+  @@index([status])
+  @@index([category])
+  @@index([acquisitionDate])
+}
+
+model FixedAssetDepreciation {
+  id        String     @id @default(cuid())
+  assetId   String
+  period    String
+  amount    Decimal    @db.Decimal(18, 2)
+  journalId String?
+  createdAt DateTime   @default(now())
+  asset     FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, period])
+  @@index([period])
+}
+
+model RecurringJournal {
+  id            String                 @id @default(cuid())
+  name          String
+  description   String?                @db.Text
+  frequency     String                 @default("MONTHLY")
+  dayOfMonth    Int                    @default(1)
+  startDate     DateTime
+  endDate       DateTime?
+  autoReverse   Boolean                @default(false)
+  active        Boolean                @default(true)
+  lastRunPeriod String?
+  createdById   String
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+  lines         RecurringJournalLine[]
+
+  @@index([active])
+}
+
+model RecurringJournalLine {
+  id                 String           @id @default(cuid())
+  recurringJournalId String
+  chartAccountId     String
+  debit              Decimal          @default(0) @db.Decimal(18, 2)
+  credit             Decimal          @default(0) @db.Decimal(18, 2)
+  memo               String?
+  channel            String?
+  storeId            String?
+  sortOrder          Int              @default(0)
+  recurringJournal   RecurringJournal @relation(fields: [recurringJournalId], references: [id], onDelete: Cascade)
+
+  @@index([recurringJournalId])
+  @@index([chartAccountId])
+}
+
+model CashCategory {
+  id              String   @id @default(cuid())
+  name            String   @unique
+  type            String   @default("OUT")
+  chartAccountId  String
+  withholdingType String?
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([type, isActive])
+  @@index([chartAccountId])
+}
+
+model CashVoucher {
+  id                String            @id @default(cuid())
+  docNumber         String            @unique
+  type              String
+  date              DateTime
+  cashAccountId     String
+  transferAccountId String?
+  counterpart       String?
+  supplierId        String?
+  description       String?           @db.Text
+  totalAmount       Decimal           @default(0) @db.Decimal(18, 2)
+  withholdingType   String?
+  withholdingAmount Decimal           @default(0) @db.Decimal(18, 2)
+  netAmount         Decimal           @default(0) @db.Decimal(18, 2)
+  status            String            @default("POSTED")
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?           @db.Text
+  photoUrl          String?
+  idempotencyKey    String?           @unique
+  createdById       String
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  lines             CashVoucherLine[]
+
+  @@index([type, date])
+  @@index([cashAccountId, date])
+  @@index([status])
+  @@index([supplierId])
+}
+
+model CashVoucherLine {
+  id             String      @id @default(cuid())
+  voucherId      String
+  categoryId     String?
+  chartAccountId String
+  amount         Decimal     @db.Decimal(18, 2)
+  memo           String?
+  channel        String?
+  storeId        String?
+  sortOrder      Int         @default(0)
+  voucher        CashVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  @@index([voucherId])
+  @@index([chartAccountId])
+}
+
+model BankStatementImport {
+  id              String              @id @default(cuid())
+  chartAccountId  String
+  bankFormat      String?
+  fileName        String
+  periodFrom      DateTime?
+  periodTo        DateTime?
+  openingBalance  Decimal?            @db.Decimal(18, 2)
+  closingBalance  Decimal?            @db.Decimal(18, 2)
+  lineCount       Int                 @default(0)
+  importedById    String
+  createdAt       DateTime            @default(now())
+  lines           BankStatementLine[]
+
+  @@index([chartAccountId, periodFrom])
+}
+
+model BankStatementLine {
+  id                   String              @id @default(cuid())
+  importId             String
+  chartAccountId       String
+  date                 DateTime
+  description          String              @db.Text
+  amount               Decimal             @db.Decimal(18, 2)
+  balance              Decimal?            @db.Decimal(18, 2)
+  externalRef          String?
+  fingerprint          String?
+  status               String              @default("UNMATCHED")
+  matchedJournalLineId String?             @unique
+  matchedAt            DateTime?
+  matchedById          String?
+  createdJournalId     String?
+  note                 String?             @db.Text
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  statementImport      BankStatementImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+
+  @@unique([chartAccountId, fingerprint])
+  @@index([importId])
+  @@index([chartAccountId, date])
+  @@index([status])
+}
+
+model SupplierPayment {
+  id                String                      @id @default(cuid())
+  docNumber         String                      @unique
+  supplierId        String
+  date              DateTime
+  method            String                      @default("TRANSFER")
+  cashAccountId     String?
+  reference         String?
+  giroDueDate       DateTime?
+  grossAmount       Decimal                     @db.Decimal(18, 2)
+  withholdingType   String?
+  withholdingAmount Decimal                     @default(0) @db.Decimal(18, 2)
+  netAmount         Decimal                     @db.Decimal(18, 2)
+  isAdvance         Boolean                     @default(false)
+  status            String                      @default("POSTED")
+  cancelledAt       DateTime?
+  cancelledById     String?
+  cancelReason      String?                     @db.Text
+  note              String?                     @db.Text
+  proofPhotoUrl     String?
+  idempotencyKey    String?                     @unique
+  createdById       String
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  allocations       SupplierPaymentAllocation[]
+
+  @@index([supplierId, date])
+  @@index([status])
+  @@index([date])
+}
+
+model SupplierPaymentAllocation {
+  id         String          @id @default(cuid())
+  paymentId  String
+  targetType String
+  targetId   String?
+  amount     Decimal         @db.Decimal(18, 2)
+  note       String?
+  createdAt  DateTime        @default(now())
+  payment    SupplierPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+  @@index([targetType, targetId])
+}
+
+model Budget {
+  id             String   @id @default(cuid())
+  chartAccountId String
+  year           Int
+  month          Int
+  amount         Decimal  @db.Decimal(18, 2)
+  note           String?
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([chartAccountId, year, month])
+  @@index([year, month])
+}
+
+model TaxPayment {
+  id             String    @id @default(cuid())
+  type           String
+  period         String
+  amount         Decimal   @db.Decimal(18, 2)
+  paidAt         DateTime
+  ntpn           String?
+  billingCode    String?
+  cashAccountId  String?
+  status         String    @default("POSTED")
+  cancelledAt    DateTime?
+  cancelledById  String?
+  cancelReason   String?   @db.Text
+  note           String?   @db.Text
+  proofPhotoUrl  String?
+  idempotencyKey String?   @unique
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([type, period])
+  @@index([paidAt])
+  @@index([status])
+}
+
+model TaxPeriodRecap {
+  id            String    @id @default(cuid())
+  type          String
+  period        String
+  outputDpp     Decimal   @default(0) @db.Decimal(18, 2)
+  outputTax     Decimal   @default(0) @db.Decimal(18, 2)
+  inputDpp      Decimal   @default(0) @db.Decimal(18, 2)
+  inputTax      Decimal   @default(0) @db.Decimal(18, 2)
+  compensation  Decimal   @default(0) @db.Decimal(18, 2)
+  balance       Decimal   @default(0) @db.Decimal(18, 2)
+  status        String    @default("DRAFT")
+  finalizedAt   DateTime?
+  finalizedById String?
+  journalId     String?
+  note          String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([type, period])
+  @@index([status])
+}
+
+model OpeningBalanceImport {
+  id          String    @id @default(cuid())
+  kind        String
+  cutoverDate DateTime
+  fileName    String?
+  entries     Json
+  totalAmount Decimal   @default(0) @db.Decimal(18, 2)
+  status      String    @default("DRAFT")
+  journalId   String?
+  postedAt    DateTime?
+  postedById  String?
+  note        String?   @db.Text
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([kind, status])
+}
+
+// ==========================================
+// PIUTANG & PELUNASAN
+// Lapisan penagihan di atas penjualan yang sudah ada. Sebelum ini Elorae tidak
+// punya satu pun catatan piutang: nota tagihan terbit, lalu tidak ada yang tahu
+// apakah uangnya masuk.
+//
+// Dua aturan uang yang tidak boleh dilonggarkan:
+//   1. Klaim bukan lunas. Piutang hanya berkurang setelah admin mencocokkan
+//      klaim pembayaran dengan mutasi bank.
+//   2. Retur diakui sebesar barang fisik yang diterima gudang, bukan sebesar
+//      yang diklaim toko.
+// ==========================================
+
+enum ReceivableSource {
+  DELIVERY
+  IMPORT
+  MANUAL
+}
+
+enum CollectionNoteStatus {
+  BERJALAN
+  SELESAI
+  BATAL
+}
+
+model CollectionNote {
+  id             String   @id @default(cuid())
+  docNo          String   @unique
+  storeId        String
+  salesmanId     String
+  handoverDate   DateTime
+  promisedDate   DateTime
+  receivedBy     String?
+  amount         Decimal  @default(0) @db.Decimal(15, 2)
+  photoUrl       String?
+  note           String?  @db.Text
+  status         CollectionNoteStatus @default(BERJALAN)
+  source         String   @default("OFFICE")
+  confirmedAt    DateTime?
+  confirmedById  String?
+  idempotencyKey String?  @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  store          Store    @relation(fields: [storeId], references: [id])
+  salesman       User     @relation("CollectionNoteSalesman", fields: [salesmanId], references: [id])
+  receivableLinks CollectionNoteReceivable[]
+  claims         PaymentClaim[]
+
+  @@index([storeId, status])
+  @@index([promisedDate])
+}
+
+model CollectionNoteReceivable {
+  collectionNoteId String
+  receivableId     String
+  amount           Decimal @db.Decimal(15, 2)
+
+  collectionNote   CollectionNote @relation(fields: [collectionNoteId], references: [id], onDelete: Cascade)
+  receivable       Receivable     @relation(fields: [receivableId], references: [id])
+
+  @@id([collectionNoteId, receivableId])
+  @@index([receivableId])
+}
+
+enum PaymentClaimStatus {
+  DIKIRIM
+  TERVERIFIKASI
+  DITOLAK
+  DIBATALKAN
+}
+
+model PaymentClaim {
+  id                String   @id @default(cuid())
+  docNo             String   @unique
+  storeId           String
+  salesmanId        String
+  collectionNoteId  String?
+  claimedTransferAt DateTime
+  method            String   @default("transfer")
+  invoiceAmount     Decimal  @default(0) @db.Decimal(15, 2)
+  deductionTotal    Decimal  @default(0) @db.Decimal(15, 2)
+  receivedAmount    Decimal  @default(0) @db.Decimal(15, 2)
+  transferPhotoUrl  String?
+  breakdownPhotoUrl String?
+  giroNo            String?
+  giroBank          String?
+  giroIssueDate     DateTime?
+  giroEffectiveDate DateTime?
+  giroStatus        String?
+  giroSettledAt     DateTime?
+  idempotencyKey    String?  @unique
+  replacesClaimId   String?  @unique
+  status            PaymentClaimStatus @default(DIKIRIM)
+  verifiedById      String?
+  verifiedAt        DateTime?
+  verifyNote        String?  @db.Text
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  store             Store    @relation(fields: [storeId], references: [id])
+  salesman          User     @relation("PaymentClaimSalesman", fields: [salesmanId], references: [id])
+  verifiedBy        User?    @relation("PaymentClaimVerifier", fields: [verifiedById], references: [id])
+  createdBy         User     @relation("PaymentClaimCreator", fields: [createdById], references: [id])
+  collectionNote    CollectionNote? @relation(fields: [collectionNoteId], references: [id])
+  receivableLinks   PaymentClaimReceivable[]
+  deductions        PaymentClaimDeduction[]
+
+  @@index([storeId, status])
+  @@index([status, createdAt])
+  @@index([giroStatus, giroEffectiveDate])
+}
+
+model PaymentClaimReceivable {
+  paymentClaimId String
+  receivableId   String
+  settledAmount  Decimal @db.Decimal(15, 2)
+
+  paymentClaim   PaymentClaim @relation(fields: [paymentClaimId], references: [id], onDelete: Cascade)
+  receivable     Receivable   @relation(fields: [receivableId], references: [id])
+
+  @@id([paymentClaimId, receivableId])
+  @@index([receivableId])
+}
+
+model ReceivableItem {
+  id           String  @id @default(cuid())
+  receivableId String
+  itemId       String?
+  itemName     String
+  qty          Int
+  price        Decimal @db.Decimal(15, 2)
+  amount       Decimal @db.Decimal(15, 2)
+
+  receivable   Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+
+  @@index([receivableId])
+  @@index([itemId])
+}
+
+enum ConsignmentReportSource {
+  SPG
+  TOKO
+}
+
+model ConsignmentCycle {
+  id            String    @id @default(cuid())
+  noKonsi       String    @unique
+  storeId       String
+  periodYear    Int
+  periodMonth   Int
+  spgDueDate    DateTime?
+  noNota        String?
+  notaAt        DateTime?
+  noFakturPajak String?
+  fakturPajakAt DateTime?
+  lockedAt      DateTime?
+  lockedById    String?
+  promoBorneByElorae Decimal @default(0) @db.Decimal(15, 2)
+  lossChargedToStore Decimal @default(0) @db.Decimal(15, 2)
+  vatApplied    Boolean?
+  note          String?   @db.MediumText
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  store         Store @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  lockedBy      User? @relation("KonsiLocker", fields: [lockedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shipments     ConsignmentShipment[]
+  reports       ConsignmentReport[]
+  sold          ConsignmentSold[]
+  commissions   ConsignmentCommission[]
+  payments      ConsignmentPayment[]
+
+  @@unique([storeId, periodYear, periodMonth])
+  @@index([storeId])
+  @@index([periodYear, periodMonth])
+}
+
+model ConsignmentShipment {
+  id         String   @id @default(cuid())
+  noKirim    String   @unique
+  cycleId    String?
+  storeId    String
+  shippedAt  DateTime
+  note       String?  @db.MediumText
+  createdAt  DateTime @default(now())
+
+  cycle      ConsignmentCycle? @relation(fields: [cycleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store      Store @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items      ConsignmentShipmentItem[]
+
+  @@index([cycleId])
+  @@index([storeId])
+}
+
+model ConsignmentShipmentItem {
+  id         String  @id @default(cuid())
+  shipmentId String
+  itemId     String?
+  variantSku String?
+  itemName   String
+  qty        Int
+  price      Decimal @db.Decimal(15, 2)
+  amount     Decimal @db.Decimal(15, 2)
+
+  shipment   ConsignmentShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
+  @@index([shipmentId])
+  @@index([itemId])
+}
+
+model ConsignmentReport {
+  id           String   @id @default(cuid())
+  cycleId      String
+  source       ConsignmentReportSource
+  reportedAt   DateTime
+  reportedById String?
+  note         String?  @db.MediumText
+  createdAt    DateTime @default(now())
+
+  cycle        ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  reportedBy   User? @relation("KonsiReporter", fields: [reportedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items        ConsignmentReportItem[]
+
+  @@unique([cycleId, source])
+  @@index([cycleId])
+}
+
+model ConsignmentReportItem {
+  id       String  @id @default(cuid())
+  reportId String
+  itemId   String?
+  itemName String
+  qty      Int
+
+  report   ConsignmentReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([itemId])
+}
+
+model ConsignmentSold {
+  id               String  @id @default(cuid())
+  cycleId          String
+  itemId           String?
+  itemName         String
+  qty              Int
+  price            Decimal @db.Decimal(15, 2)
+  amount           Decimal @db.Decimal(15, 2)
+  commissionPerPcs Decimal @default(0) @db.Decimal(15, 2)
+
+  cycle            ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+
+  @@index([cycleId])
+  @@index([itemId])
+}
+
+model ConsignmentPayment {
+  id            String    @id @default(cuid())
+  cycleId       String
+  amount        Decimal   @db.Decimal(15, 2)
+  paidOn        DateTime
+  method        String    @default("transfer")
+  note          String?   @db.Text
+  recordedById  String
+  cancelledAt   DateTime?
+  cancelledById String?
+  cancelReason  String?   @db.Text
+  idempotencyKey String?  @unique
+  createdAt     DateTime  @default(now())
+
+  cycle         ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([cycleId])
+}
+
+model ConsignmentCommission {
+  id         String    @id @default(cuid())
+  cycleId    String
+  spgUserId  String
+  baseSalary Decimal   @default(0) @db.Decimal(15, 2)
+  commission Decimal   @default(0) @db.Decimal(15, 2)
+  total      Decimal   @default(0) @db.Decimal(15, 2)
+  deduction  Decimal   @default(0) @db.Decimal(15, 2)
+  paidAt     DateTime?
+  paidById   String?
+  note       String?   @db.MediumText
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  cycle      ConsignmentCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  spgUser    User @relation("KonsiSpg", fields: [spgUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  paidBy     User? @relation("KonsiPayer", fields: [paidById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([cycleId, spgUserId])
+  @@index([cycleId])
+  @@index([spgUserId])
+}
+
+model Foto {
+  id           String   @id @default(cuid())
+  mime         String
+  bytes        Bytes    @db.LongBlob
+  sizeBytes    Int
+  caption      String?
+  uploadedById String?
+  sha256       String?
+  createdAt    DateTime @default(now())
+
+  uploadedBy   User? @relation("FotoUploader", fields: [uploadedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([uploadedById])
+  @@index([createdAt])
+  @@index([sha256])
+}
+
+enum ReturnDeliveryMethod {
+  SALES
+  TOKO
+  EKSPEDISI
+}
+
+enum StoreReturnStatus {
+  MENUNGGU
+  COCOK
+  SELISIH
+  BATAL
+}
+
+enum WarehouseReturnStatus {
+  DRAFT
+  FINAL
+}
+
+enum ReturnItemCondition {
+  LAYAK
+  RUSAK
+  EXPIRED
+}
+
+enum ReturnBearer {
+  TOKO
+  SALES
+  GUDANG
+  PERUSAHAAN
+}
+
+enum ReturnChargeStatus {
+  TERBUKA
+  DITETAPKAN
+  LUNAS
+}
+
+model StoreReturn {
+  id             String    @id @default(cuid())
+  noNrt          String
+  storeId        String
+  salesmanId     String?
+  claimDate      DateTime
+  deliveryMethod ReturnDeliveryMethod @default(SALES)
+  claimedAmount  Decimal   @db.Decimal(15, 2)
+  photoUrl       String?
+  note           String?   @db.MediumText
+  idempotencyKey String?   @unique
+  replacesReturnId String?  @unique
+  reportedBySpg  Boolean   @default(false)
+  status         StoreReturnStatus @default(MENUNGGU)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  store          Store @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  salesman       User? @relation("StoreReturnSalesman", fields: [salesmanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items          StoreReturnItem[]
+  warehouseReturn WarehouseReturn?
+  charges        ReturnCharge[]
+  deductions     PaymentClaimDeduction[]
+
+  @@unique([storeId, noNrt])
+  @@index([storeId, status])
+  @@index([status])
+  @@index([claimDate])
+}
+
+model StoreReturnItem {
+  id            String  @id @default(cuid())
+  storeReturnId String
+  itemId        String?
+  variantSku    String  @default("")
+  itemName      String
+  qty           Int
+  price         Decimal @db.Decimal(15, 2)
+  amount        Decimal @db.Decimal(15, 2)
+  condition     ReturnItemCondition @default(LAYAK)
+  storeReceiptLineId String?
+  spgSaleReturnLineId String?
+
+  storeReturn   StoreReturn @relation(fields: [storeReturnId], references: [id], onDelete: Cascade)
+
+  @@index([storeReturnId])
+  @@index([itemId])
+}
+
+model WarehouseReturn {
+  id              String    @id @default(cuid())
+  noNri           String    @unique
+  storeId         String?
+  storeReturnId   String?   @unique
+  warehouseUserId String
+  receivedAt      DateTime
+  deliveryMethod  ReturnDeliveryMethod @default(SALES)
+  physicalAmount  Decimal   @db.Decimal(15, 2)
+  claimedAmount   Decimal   @default(0) @db.Decimal(15, 2)
+  note            String?   @db.MediumText
+  status          WarehouseReturnStatus @default(DRAFT)
+  finalisedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  store           Store? @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  storeReturn     StoreReturn? @relation(fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouseUser   User @relation("WarehouseReturnCounter", fields: [warehouseUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items           WarehouseReturnItem[]
+  charges         ReturnCharge[]
+
+  @@index([storeId, status])
+  @@index([status])
+  @@index([receivedAt])
+}
+
+model WarehouseReturnItem {
+  id                String  @id @default(cuid())
+  warehouseReturnId String
+  itemId            String?
+  variantSku        String  @default("")
+  itemName          String
+  qtyClaim          Int     @default(0)
+  qty               Int
+  price             Decimal @db.Decimal(15, 2)
+  amount            Decimal @db.Decimal(15, 2)
+  condition         ReturnItemCondition @default(LAYAK)
+
+  warehouseReturn   WarehouseReturn @relation(fields: [warehouseReturnId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseReturnId])
+  @@index([itemId])
+}
+
+model ReturnCharge {
+  id                String    @id @default(cuid())
+  storeReturnId     String?
+  warehouseReturnId String?
+  storeId           String?
+  amount            Decimal   @db.Decimal(15, 2)
+  bearer            ReturnBearer?
+  bearerUserId      String?
+  status            ReturnChargeStatus @default(TERBUKA)
+  note              String?   @db.MediumText
+  decidedById       String?
+  decidedAt         DateTime?
+  settledAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  storeReturn       StoreReturn? @relation(fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  warehouseReturn   WarehouseReturn? @relation(fields: [warehouseReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  store             Store? @relation(fields: [storeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  bearerUser        User? @relation("ReturnChargeBearer", fields: [bearerUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  decidedBy         User? @relation("ReturnChargeDecider", fields: [decidedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status])
+  @@index([storeId, status])
+  @@index([bearerUserId, status])
+  @@index([storeReturnId])
+  @@index([warehouseReturnId])
+}
+
+enum DeductionMethod {
+  NOMINAL
+  PERSEN
+  DARI_RETUR
+}
+
+model DeductionType {
+  id            String  @id @default(cuid())
+  name          String  @unique
+  method        DeductionMethod @default(NOMINAL)
+  allowManual   Boolean @default(true)
+  pkpOnly       Boolean @default(false)
+  noteRequired  Boolean @default(false)
+  postingRole   String?
+  isActive      Boolean @default(true)
+
+  deductions    PaymentClaimDeduction[]
+}
+
+model PaymentClaimDeduction {
+  id             String  @id @default(cuid())
+  paymentClaimId String
+  deductionTypeId String?
+  name           String
+  note           String?
+  amount         Decimal @db.Decimal(15, 2)
+  storeReturnId  String?
+
+  paymentClaim   PaymentClaim   @relation(fields: [paymentClaimId], references: [id], onDelete: Cascade)
+  deductionType  DeductionType? @relation(fields: [deductionTypeId], references: [id])
+  storeReturn    StoreReturn?   @relation(fields: [storeReturnId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([paymentClaimId])
+  @@index([storeReturnId])
+}
+
+enum KolPlatform {
+  INSTAGRAM
+  TIKTOK
+  YOUTUBE
+  LAINNYA
+  SHOPEE
+}
+
+enum KolTahap {
+  PROSPEK
+  DIHUBUNGI
+  NEGO
+  DEAL
+  BRIEF_DIKIRIM
+  SAMPEL_DIKIRIM
+  SAMPEL_DITERIMA
+  DRAF
+  DRAF_DISETUJUI
+  TAYANG
+  ANGKA_MASUK
+  DIBAYAR
+  SELESAI
+  DITOLAK
+  GHOSTING
+  BATAL
+}
+
+enum KolJenisKerjaSama {
+  BARTER
+  BAYAR
+  CAMPURAN
+  KOMISI
+}
+
+enum KolStatusBayar {
+  TIDAK_PERLU
+  BELUM
+  SEBAGIAN
+  LUNAS
+}
+
+enum KolStatusDraf {
+  MENUNGGU
+  REVISI
+  DISETUJUI
+}
+
+enum KolJenisAgenda {
+  TUGAS
+  MEETING
+  DEADLINE
+  KIRIM
+  KONTEN
+  BAYAR
+  LAINNYA
+}
+
+enum KolJenisPajak {
+  ORANG_PRIBADI
+  BADAN
+  TIDAK_DIPOTONG
+}
+
+enum KolModePajak {
+  DIPOTONG
+  GROSS_UP
+}
+
+enum KolJenisBrand {
+  BERBAYAR
+  KOLABORASI
+  TAG
+}
+
+enum KolStatusCampaign {
+  DRAFT
+  BERJALAN
+  SELESAI
+  BATAL
+}
+
+enum KolPemicuTermin {
+  DEAL
+  TAYANG
+  TANGGAL
+}
+
+enum KolStatusTermin {
+  BELUM
+  DIBAYAR
+  BATAL
+}
+
+enum ContentFormat {
+  FEED
+  REELS
+  STORY
+  VIDEO
+  LIVE
+  CAROUSEL
+}
+
+enum ContentStatus {
+  IDE
+  DRAFT
+  REVIEW
+  DIJADWALKAN
+  TAYANG
+  BATAL
+}
+
+model Kol {
+  id          String   @id @default(cuid())
+  name        String
+  niche       String?
+  city        String?
+  phone       String?
+  email       String?
+  rateCard    Decimal? @db.Decimal(15, 2)
+  rateNote    String?  @db.Text
+  rateFormat  String?  @db.Text
+  note        String?  @db.Text
+  isActive    Boolean  @default(true)
+  label          String?   @db.Text
+  waNormal       String?
+  recipientName  String?
+  address        String?   @db.Text
+  province       String?
+  postalCode     String?
+  sizeProfile    String?   @db.Text
+  engagementRate Decimal?  @db.Decimal(6, 2)
+  avgViews       Int?
+  blockedAt      DateTime?
+  blockReason    String?   @db.Text
+  lastContactAt  DateTime?
+  jenisPajak          KolJenisPajak @default(ORANG_PRIBADI)
+  alasanTidakDipotong String?       @db.Text
+  adaNpwp             Boolean       @default(false)
+  grossUpBawaan       Boolean       @default(false)
+  bankNameEnc         String?       @db.Text
+  bankAccountEnc      String?       @db.Text
+  bankHolderEnc       String?       @db.Text
+  nikEnc              String?       @db.Text
+  npwpEnc             String?       @db.Text
+  bankLast4           String?
+  nikLast4            String?
+  dataPajakLengkap    Boolean       @default(false)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User?    @relation("KolCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  accounts    KolAccount[]
+  briefs      KolBrief[]
+  notes       KolNote[]
+  agendas     KolAgenda[]
+  brandCollabs KolBrandCollab[]
+
+  @@index([isActive, name])
+  @@index([createdById])
+  @@index([waNormal])
+}
+
+model KolAccount {
+  id        String      @id @default(cuid())
+  kolId     String
+  platform  KolPlatform
+  handle    String
+  followers Int         @default(0)
+  url       String?
+  er             Decimal?  @db.Decimal(6, 2)
+  avgViews       Int?
+  erUpdatedAt    DateTime?
+  platformUserId String?
+  lastCheckedAt  DateTime?
+  checkStatus    String?
+  updatedAt DateTime    @default(now()) @updatedAt
+
+  kol         Kol @relation(fields: [kolId], references: [id], onDelete: Cascade)
+  snapshots   KolFollowerSnapshot[]
+  tugasPantau KolTugasPantau[]
+
+  @@unique([kolId, platform, handle])
+  @@index([kolId])
+}
+
+model KolFollowerSnapshot {
+  id         String   @id @default(cuid())
+  accountId  String
+  followers  Int
+  recordedAt DateTime @default(now())
+  source     String?
+  er           Decimal? @db.Decimal(6, 2)
+  avgViews     Int?
+  postsCounted Int?
+  perangkatId  String?
+
+  account    KolAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([recordedAt])
+}
+
+model KolCampaign {
+  id            String    @id @default(cuid())
+  name          String
+  brand         String?
+  product       String?
+  objective     String?   @db.Text
+  startDate     DateTime?
+  endDate       DateTime?
+  budget        Decimal?  @db.Decimal(15, 2)
+  targetKol     Int?
+  targetContent Int?
+  targetViews   Int?
+  status        KolStatusCampaign @default(BERJALAN)
+  brief         String?   @db.Text
+  note          String?   @db.Text
+  archivedAt    DateTime?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  createdBy     User?     @relation("KolCampaignCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  collabs       KolBrief[]
+  agendas       KolAgenda[]
+
+  @@index([archivedAt])
+  @@index([status])
+  @@index([name])
+  @@index([createdById])
+}
+
+model KolBrief {
+  id            String            @id @default(cuid())
+  docNo         String            @unique
+  kolId         String
+  tahap         KolTahap          @default(PROSPEK)
+  tahapAt       DateTime          @default(now())
+  campaignId    String?
+  jenis         KolJenisKerjaSama @default(BARTER)
+  fee           Decimal           @default(0) @db.Decimal(15, 2)
+  commissionPct Decimal?          @db.Decimal(5, 2)
+  picId         String?
+  briefText     String?           @db.Text
+  doList        String?           @db.Text
+  dontList      String?           @db.Text
+  startDate     DateTime?
+  dueDate       DateTime?
+  outreachAt    DateTime?
+  dealAt        DateTime?
+  lastContactAt DateTime?
+  plannedLiveAt DateTime?
+  sentAt        DateTime?
+  liveAt        DateTime?
+  stockIssuedAt DateTime?
+  boostCost     Decimal           @default(0) @db.Decimal(15, 2)
+  payStatus     KolStatusBayar    @default(TIDAK_PERLU)
+  paidAmount    Decimal           @default(0) @db.Decimal(15, 2)
+  paidAt        DateTime?
+  payNote       String?           @db.Text
+  rating        Int?
+  modePajak     KolModePajak      @default(DIPOTONG)
+  jurnalOtomatis Boolean          @default(true)
+  cancelReason  String?           @db.Text
+  createdById   String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  kol           Kol          @relation(fields: [kolId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  campaign      KolCampaign? @relation(fields: [campaignId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  pic           User?        @relation("KolBriefPic", fields: [picId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy     User?        @relation("KolBriefCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  deliverables  KolBriefDeliverable[]
+  items         KolBriefItem[]
+  contents      ContentPlan[]
+  shipments     KolShipment[]
+  kolContents   KolContent[]
+  sales         KolSale[]
+  notes         KolNote[]
+  agendas       KolAgenda[]
+  terms         KolPaymentTerm[]
+
+  @@index([kolId])
+  @@index([tahap])
+  @@index([campaignId])
+  @@index([picId])
+  @@index([createdById])
+}
+
+model KolBriefDeliverable {
+  id       String        @id @default(cuid())
+  briefId  String
+  platform KolPlatform
+  format   ContentFormat
+  qty      Int           @default(1)
+  dueDate  DateTime?
+
+  brief    KolBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  @@index([briefId])
+}
+
+model KolBriefItem {
+  id        String  @id @default(cuid())
+  briefId   String
+  itemId    String
+  itemName  String
+  variantSku String?
+  qty       Int     @default(1)
+
+  brief     KolBrief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([briefId])
+  @@index([itemId])
+}
+
+model KolPaymentTerm {
+  id               String          @id @default(cuid())
+  collabId         String
+  urutan           Int             @default(1)
+  label            String
+  persen           Decimal?        @db.Decimal(5, 2)
+  neto             Decimal         @default(0) @db.Decimal(15, 2)
+  bruto            Decimal         @default(0) @db.Decimal(15, 2)
+  pph              Decimal         @default(0) @db.Decimal(15, 2)
+  dpp              Decimal         @default(0) @db.Decimal(15, 2)
+  jenisPajak       KolJenisPajak   @default(ORANG_PRIBADI)
+  grossUp          Boolean         @default(false)
+  tarifInfo        String?         @db.Text
+  pemicu           KolPemicuTermin @default(TAYANG)
+  hariSesudah      Int             @default(0)
+  jatuhTempo       DateTime?
+  status           KolStatusTermin @default(BELUM)
+  bayarKe          Int             @default(0)
+  dibayarAt        DateTime?
+  dibayarOlehId    String?
+  buktiTransferUrl String?
+  nomorBuktiPotong String?
+  buktiPotongAt    DateTime?
+  setorAt          DateTime?
+  ntpn             String?
+  catatan          String?         @db.Text
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  collab           KolBrief        @relation(fields: [collabId], references: [id], onDelete: Cascade)
+
+  @@index([collabId])
+  @@index([status])
+  @@index([dibayarAt])
+}
+
+model KolShipment {
+  id            String    @id @default(cuid())
+  collabId      String
+  courier       String?
+  trackingNo    String?
+  sentAt        DateTime?
+  receivedAt    DateTime?
+  shippingCost  Decimal   @default(0) @db.Decimal(15, 2)
+  stockIssuedAt DateTime?
+  note          String?   @db.Text
+  createdById   String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  collab        KolBrief  @relation(fields: [collabId], references: [id], onDelete: Cascade)
+  lines         KolShipmentLine[]
+
+  @@index([collabId])
+  @@index([trackingNo])
+}
+
+model KolShipmentLine {
+  id         String  @id @default(cuid())
+  shipmentId String
+  itemId     String
+  itemName   String
+  variantSku String?
+  qty        Int
+  unitCost   Decimal @default(0) @db.Decimal(15, 2)
+
+  shipment   KolShipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  item       Item        @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([shipmentId])
+  @@index([itemId])
+}
+
+model KolContent {
+  id           String         @id @default(cuid())
+  collabId     String
+  platform     KolPlatform
+  format       ContentFormat
+  link         String?        @db.Text
+  liveAt       DateTime?
+  plannedAt    DateTime?
+  draftLink    String?        @db.Text
+  draftStatus  KolStatusDraf?
+  draftNote    String?        @db.Text
+  draftAt      DateTime?
+  approvedById String?
+  approvedAt   DateTime?
+  adCode       String?
+  adCodeUntil  DateTime?
+  createdById  String?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  collab       KolBrief       @relation(fields: [collabId], references: [id], onDelete: Cascade)
+  approvedBy   User?          @relation("KolContentApprover", fields: [approvedById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  metrics      KolContentMetric[]
+  tugasPantau  KolTugasPantau[]
+
+  @@index([collabId])
+  @@index([liveAt])
+  @@index([plannedAt])
+  @@index([approvedById])
+}
+
+model KolContentMetric {
+  id          String   @id @default(cuid())
+  contentId   String
+  recordedAt  DateTime @default(now())
+  views       Int      @default(0)
+  likes       Int      @default(0)
+  comments    Int      @default(0)
+  shares      Int      @default(0)
+  saves       Int      @default(0)
+  source      String?
+  note        String?  @db.Text
+  createdById String?
+  perangkatId String?
+
+  content     KolContent @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@index([contentId])
+  @@index([recordedAt])
+}
+
+model KolSale {
+  id          String   @id @default(cuid())
+  collabId    String
+  date        DateTime
+  orders      Int      @default(0)
+  gmv         Decimal  @default(0) @db.Decimal(15, 2)
+  commission  Decimal  @default(0) @db.Decimal(15, 2)
+  source      String?
+  note        String?  @db.Text
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  collab      KolBrief @relation(fields: [collabId], references: [id], onDelete: Cascade)
+
+  @@index([collabId])
+  @@index([date])
+}
+
+model KolNote {
+  id          String    @id @default(cuid())
+  kolId       String?
+  collabId    String?
+  body        String    @db.Text
+  createdById String?
+  createdAt   DateTime  @default(now())
+
+  kol         Kol?      @relation(fields: [kolId], references: [id], onDelete: Cascade)
+  collab      KolBrief? @relation(fields: [collabId], references: [id], onDelete: Cascade)
+  createdBy   User?     @relation("KolNoteAuthor", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([kolId])
+  @@index([collabId])
+  @@index([createdById])
+}
+
+model KolAgenda {
+  id               String         @id @default(cuid())
+  title            String
+  date             DateTime
+  time             String?
+  kind             KolJenisAgenda @default(TUGAS)
+  checklist        String?        @db.Text
+  note             String?        @db.Text
+  campaignId       String?
+  kolId            String?
+  collabId         String?
+  remindDaysBefore Int            @default(0)
+  doneAt           DateTime?
+  ownerId          String
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  owner            User           @relation("KolAgendaOwner", fields: [ownerId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  campaign         KolCampaign?   @relation(fields: [campaignId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  kol              Kol?           @relation(fields: [kolId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+  collab           KolBrief?      @relation(fields: [collabId], references: [id], onDelete: SetNull, onUpdate: Restrict)
+
+  @@index([date])
+  @@index([ownerId])
+  @@index([campaignId])
+  @@index([kolId])
+  @@index([collabId])
+}
+
+model KolPerangkat {
+  id                String    @id @default(cuid())
+  nama              String
+  dibuatOlehId      String
+  kodeHash          String?   @unique
+  kodeBerlakuSampai DateTime?
+  tokenHash         String?   @unique
+  tersambungAt      DateTime?
+  terakhirLaporAt   DateTime?
+  dicabutAt         DateTime?
+  dijedaSampai      DateTime?
+  alasanJeda        String?   @db.Text
+  versiEkstensi     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([dibuatOlehId])
+}
+
+model KolFormLink {
+  id          String    @id @default(cuid())
+  kolId       String
+  tokenHash   String    @unique
+  createdById String
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([kolId])
+}
+
+model KolBrandCollab {
+  id          String        @id @default(cuid())
+  kunci       String        @unique
+  kolId       String
+  accountId   String?
+  platform    KolPlatform
+  brandHandle String
+  brandName   String?
+  jenis       KolJenisBrand
+  postId      String?
+  postUrl     String?       @db.Text
+  postedAt    DateTime?
+  caption     String?       @db.Text
+  views       Int?
+  sumber      String
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  kol         Kol           @relation(fields: [kolId], references: [id], onDelete: Cascade)
+
+  @@index([kolId, postedAt])
+  @@index([brandHandle])
+  @@index([accountId])
+}
+
+model KolCalendarFeed {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model KolFormSubmission {
+  id           String    @id @default(cuid())
+  linkId       String
+  kolId        String
+  submittedAt  DateTime  @default(now())
+  changes      String    @db.Text
+  replacedCount Int      @default(0)
+  reviewedAt   DateTime?
+  reviewedById String?
+
+  @@index([kolId])
+  @@index([reviewedAt])
+}
+
+model KolTugasPantau {
+  id            String      @id @default(cuid())
+  jenis         String
+  platform      KolPlatform
+  accountId     String?
+  contentId     String?
+  url           String      @db.Text
+  titikH        Int?
+  prioritas     Int         @default(0)
+  jatuhAt       DateTime
+  status        String      @default("ANTRE")
+  perangkatId   String?
+  pinjamSampai  DateTime?
+  percobaan     Int         @default(0)
+  galatTerakhir String?     @db.Text
+  selesaiAt     DateTime?
+  kunci         String      @unique
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  account       KolAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  content       KolContent? @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@index([status, jatuhAt])
+  @@index([perangkatId])
+  @@index([accountId])
+  @@index([contentId])
+}
+
+model KolLogPantau {
+  id          String   @id @default(cuid())
+  perangkatId String?
+  tugasId     String?
+  jenis       String
+  kode        String?
+  pesan       String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([perangkatId])
+}
+
+model ContentPlan {
+  id          String        @id @default(cuid())
+  title       String
+  platform    KolPlatform
+  format      ContentFormat
+  status      ContentStatus @default(IDE)
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  postUrl     String?
+  /**
+   * Mockup/aset kontennya — inilah yang membuat grid feed berguna.
+   *
+   * Bertipe URL, bukan id, supaya pemanggilnya tidak perlu tahu fotonya
+   * disimpan di mana. Hari ini `/api/foto/<id>` (bytes di basis data, tidak
+   * keluar dari mesin); kalau nanti pindah ke penyimpanan objek, kolomnya tidak
+   * ikut berubah.
+   */
+  imageUrl    String?
+  caption     String?       @db.Text
+  note        String?       @db.Text
+  itemId      String?
+  assigneeId  String?
+  briefId     String?
+  createdById String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  item        Item?     @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  assignee    User?     @relation("ContentAssignee", fields: [assigneeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  createdBy   User?     @relation("ContentCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  brief       KolBrief? @relation(fields: [briefId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([status, scheduledAt])
+  @@index([briefId])
+  @@index([itemId])
+  @@index([assigneeId])
+  @@index([createdById])
+}
+
+model ColorPalette {
+  id          String   @id @default(cuid())
+  name        String
+  harmony     String
+  colors      Json
+  fabricHex   String?
+  portions    Json?
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  createdBy   User?    @relation("ColorPaletteCreator", fields: [createdById], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([createdAt])
+  @@index([createdById])
+}
+
+enum StoreStockKind {
+  TERIMA
+  JUAL
+  OPNAME
+  MUTASI_KELUAR
+  MUTASI_MASUK
+  RETUR_KELUAR
+  RETUR_PEMBELI
+  HILANG
+}
+
+enum StoreRecommendationStatus {
+  TERKIRIM
+  DITERIMA
+  DITOLAK
+  SELESAI
+  DIBATALKAN
+}
+
+model StoreRecommendation {
+  id                String                    @id @default(cuid())
+  storeId           String
+  salesmanId        String
+  status            StoreRecommendationStatus @default(TERKIRIM)
+  note              String?                   @db.Text
+  respondedById     String?
+  respondedAt       DateTime?
+  responseNote      String?                   @db.Text
+  fieldSalesOrderId String?
+  idempotencyKey    String                    @unique
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  store             Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines             StoreRecommendationLine[]
+
+  @@index([storeId, status])
+  @@index([salesmanId, createdAt])
+}
+
+model StoreRecommendationLine {
+  id               String @id @default(cuid())
+  recommendationId String
+  itemId           String
+  variantSku       String @default("")
+  productName      String
+  qty              Int
+  alasan           String?
+
+  recommendation   StoreRecommendation @relation(fields: [recommendationId], references: [id], onDelete: Cascade)
+
+  @@index([recommendationId])
+}
+
+enum StoreTransferSelisih {
+  TERBUKA
+  HILANG
+  KEMBALI
+}
+
+enum StockRequestStatus {
+  BARU
+  DIPROSES
+  SELESAI
+  DITOLAK
+}
+
+model StoreStockMovement {
+  id          String         @id @default(cuid())
+  storeId     String
+  itemId      String
+  variantSku  String         @default("")
+  qty         Int
+  kind        StoreStockKind
+  refType     String?
+  refId       String?
+  createdById String
+  createdAt   DateTime       @default(now())
+
+  store       Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  item        Item  @relation(fields: [itemId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([storeId, itemId, variantSku])
+  @@index([storeId, createdAt])
+  @@index([refType, refId])
+}
+
+model StoreReceipt {
+  id           String   @id @default(cuid())
+  storeId      String
+  sourceType   String
+  sourceId     String
+  sourceDocNo  String
+  receivedById String
+  receivedAt   DateTime @default(now())
+  idempotencyKey String? @unique
+  note         String?  @db.MediumText
+
+  store        Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines        StoreReceiptLine[]
+
+  @@unique([sourceType, sourceId])
+  @@index([storeId, receivedAt])
+}
+
+model StoreReceiptLine {
+  id          String  @id @default(cuid())
+  receiptId   String
+  itemId      String?
+  variantSku  String  @default("")
+  productName String
+  qtySent     Int
+  qtyReceived Int
+  qtyDamaged         Int       @default(0)
+  damageNote         String?   @db.Text
+  damagePhotoUrl     String?
+  damageStatus       String?
+  damageDecidedById  String?
+  damageDecidedAt    DateTime?
+  damageDecisionNote String?   @db.Text
+
+  receipt     StoreReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId])
+}
+
+model StoreOpname {
+  id          String   @id @default(cuid())
+  storeId     String
+  countedById String
+  countedAt   DateTime @default(now())
+  idempotencyKey String? @unique
+  note        String?  @db.MediumText
+
+  store       Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines       StoreOpnameLine[]
+
+  @@index([storeId, countedAt])
+}
+
+model StoreOpnameLine {
+  id          String @id @default(cuid())
+  opnameId    String
+  itemId      String
+  variantSku  String @default("")
+  productName String
+  qtySystem   Int
+  qtyCounted  Int
+  countedAt   DateTime?
+
+  opname      StoreOpname @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+
+  @@index([opnameId])
+}
+
+model StockRequest {
+  id            String             @id @default(cuid())
+  storeId       String
+  requestedById String
+  status        StockRequestStatus @default(BARU)
+  note          String?            @db.MediumText
+  handledById   String?
+  handledAt     DateTime?
+  handleNote    String?            @db.MediumText
+  fieldSalesOrderId String?
+  idempotencyKey String?           @unique
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  store         Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines         StockRequestLine[]
+
+  @@index([storeId, status])
+  @@index([status, createdAt])
+  @@index([fieldSalesOrderId])
+}
+
+model StockRequestLine {
+  id          String @id @default(cuid())
+  requestId   String
+  itemId      String
+  variantSku  String @default("")
+  productName String
+  qty         Int
+  alasan      String?
+
+  request     StockRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model LostSale {
+  id          String   @id @default(cuid())
+  storeId     String
+  userId      String
+  itemId      String?
+  variantSku  String   @default("")
+  description String   @db.Text
+  qty         Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  store       Store @relation(fields: [storeId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([storeId, createdAt])
+  @@index([createdAt])
+}
+
+model StoreProposal {
+  id             String         @id @default(cuid())
+  name           String
+  address        String         @db.Text
+  phone          String?
+  contactName    String?
+  termsType      StoreTermsType?
+  groupId        String?
+  lat            Decimal?       @db.Decimal(10, 7)
+  lng            Decimal?       @db.Decimal(10, 7)
+  photoUrl       String?
+  note           String?        @db.Text
+  proposedById   String
+  status         String         @default("PENDING")
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?        @db.Text
+  storeId        String?
+  idempotencyKey String?        @unique
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@index([status, createdAt])
+  @@index([proposedById])
+}
+
+model StoreStockTarget {
+  id          String   @id @default(cuid())
+  storeId     String
+  itemId      String
+  variantSku  String   @default("")
+  minQty      Int
+  maxQty      Int
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([storeId, itemId, variantSku])
+  @@index([storeId])
+}
+
+model ExpenseClaim {
+  id             String    @id @default(cuid())
+  userId         String
+  spentAt        DateTime
+  category       String
+  amount         Decimal   @db.Decimal(15, 2)
+  photoUrl       String?
+  note           String?   @db.Text
+  visitId        String?
+  status         String    @default("DIAJUKAN")
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?   @db.Text
+  paidById       String?
+  paidAt         DateTime?
+  paidAccountId  String?
+  idempotencyKey String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId, spentAt])
+  @@index([status, createdAt])
+}
+
+model Attendance {
+  id              String    @id @default(cuid())
+  userId          String
+  dayKey          String
+  clockInAt       DateTime
+  clockInLat      Decimal?  @db.Decimal(10, 7)
+  clockInLng      Decimal?  @db.Decimal(10, 7)
+  clockInAccuracy Int?
+  selfieUrl       String?
+  clockOutAt      DateTime?
+  clockOutLat     Decimal?  @db.Decimal(10, 7)
+  clockOutLng     Decimal?  @db.Decimal(10, 7)
+  note            String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, dayKey])
+  @@index([dayKey])
+}
+
+model PreorderWindow {
+  id          String    @id @default(cuid())
+  name        String
+  note        String?   @db.Text
+  opensAt     DateTime
+  closesAt    DateTime
+  shipFrom    DateTime?
+  shipTo      DateTime?
+  isActive    Boolean   @default(true)
+  releasedAt  DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isActive, closesAt])
+}
+
+model PreorderWindowItem {
+  id         String @id @default(cuid())
+  windowId   String
+  itemId     String
+  plannedQty Int?
+
+  @@unique([windowId, itemId])
+  @@index([itemId])
+}
+
+model VisitChecklistTemplate {
+  id        String          @id @default(cuid())
+  name      String
+  termsType StoreTermsType?
+  questions Json
+  isActive  Boolean         @default(true)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model VisitChecklistResult {
+  id          String   @id @default(cuid())
+  visitId     String
+  templateId  String
+  answers     Json
+  score       Int
+  maxScore    Int
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@unique([visitId, templateId])
+  @@index([templateId])
+}
+
+model CompetitorPrice {
+  id          String   @id @default(cuid())
+  storeId     String
+  visitId     String?
+  brand       String
+  productName String
+  category    String?
+  price       Decimal  @db.Decimal(15, 2)
+  photoUrl    String?
+  note        String?  @db.Text
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([storeId, createdAt])
+  @@index([brand])
+}
+
+model DisplayGuide {
+  id          String          @id @default(cuid())
+  title       String
+  body        String          @db.Text
+  imageUrl    String?
+  termsType   StoreTermsType?
+  groupId     String?
+  activeFrom  DateTime?
+  activeTo    DateTime?
+  isActive    Boolean         @default(true)
+  createdById String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model CollectionTask {
+  id            String    @id @default(cuid())
+  assigneeId    String
+  storeId       String
+  receivableIds Json
+  note          String?   @db.Text
+  dueDate       DateTime?
+  status        String    @default("TERBUKA")
+  createdById   String
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([assigneeId, status])
+  @@index([storeId])
+}
+
+model StoreExchange {
+  id             String    @id @default(cuid())
+  docNo          String    @unique
+  storeId        String
+  salesmanId     String
+  visitId        String?
+  status         String    @default("DIAJUKAN")
+  note           String?   @db.Text
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?   @db.Text
+  completedAt    DateTime?
+  idempotencyKey String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([storeId, createdAt])
+  @@index([status, createdAt])
+}
+
+model StoreExchangeLine {
+  id          String @id @default(cuid())
+  exchangeId  String
+  direction   String
+  itemId      String
+  variantSku  String @default("")
+  productName String
+  qty         Int
+
+  @@index([exchangeId])
+}
+
+model StorePortalLink {
+  id          String    @id @default(cuid())
+  storeId     String
+  tokenHash   String    @unique
+  label       String?
+  createdById String
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([storeId])
+}
+
+model VisitSchedule {
+  id          String   @id @default(cuid())
+  salesmanId  String
+  storeId     String
+  dayKey      String
+  note        String?  @db.Text
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([salesmanId, storeId, dayKey])
+  @@index([dayKey])
+  @@index([storeId])
+}
+
+model Announcement {
+  id          String    @id @default(cuid())
+  title       String
+  body        String    @db.Text
+  audience    String    @default("SEMUA")
+  requireAck  Boolean   @default(false)
+  pinned      Boolean   @default(false)
+  publishedAt DateTime  @default(now())
+  expiresAt   DateTime?
+  archivedAt  DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([publishedAt])
+}
+
+model AnnouncementRead {
+  id             String    @id @default(cuid())
+  announcementId String
+  userId         String
+  readAt         DateTime  @default(now())
+  ackAt          DateTime?
+
+  @@unique([announcementId, userId])
+  @@index([userId])
+}
+
+model LeaveRequest {
+  id             String    @id @default(cuid())
+  userId         String
+  type           String
+  startDay       String
+  endDay         String
+  reason         String    @db.Text
+  photoUrl       String?
+  status         String    @default("DIAJUKAN")
+  reviewedById   String?
+  reviewedAt     DateTime?
+  reviewNote     String?   @db.Text
+  idempotencyKey String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([userId, startDay])
+  @@index([status])
+}
+
+model SalesTarget {
+  id          String   @id @default(cuid())
+  salesmanId  String
+  month       String
+  scope       String
+  refId       String
+  measure     String   @default("NILAI")
+  value       Decimal  @db.Decimal(15, 2)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([salesmanId, month, scope, refId])
+  @@index([month])
+}
+
+model StoreNote {
+  id        String    @id @default(cuid())
+  storeId   String
+  authorId  String
+  body      String    @db.Text
+  pinned    Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([storeId, deletedAt])
+}
+
+model CounterPromo {
+  id          String    @id @default(cuid())
+  name        String
+  type        String
+  value       Decimal?  @db.Decimal(15, 2)
+  buyQty      Int?
+  freeQty     Int?
+  minSubtotal Decimal?  @db.Decimal(15, 2)
+  allItems    Boolean   @default(true)
+  allStores   Boolean   @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  priority    Int       @default(0)
+  isActive    Boolean   @default(true)
+  memberOnly  Boolean   @default(false)
+  note        String?   @db.Text
+  storeSharePercent Decimal @default(0) @db.Decimal(5, 2)
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  targets     CounterPromoTarget[]
+
+  @@index([isActive])
+}
+
+model CounterPromoTarget {
+  id      String @id @default(cuid())
+  promoId String
+  kind    String
+  refId   String
+  qty     Int?
+
+  promo   CounterPromo @relation(fields: [promoId], references: [id], onDelete: Cascade)
+
+  @@unique([promoId, kind, refId])
+  @@index([kind, refId])
+}
+
+model StoreCustomer {
+  id          String   @id @default(cuid())
+  storeId     String
+  name        String
+  phone       String
+  note        String?  @db.Text
+  consentAt   DateTime
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([storeId, phone])
+  @@index([storeId, name])
+}
+
+model Member {
+  id              String    @id @default(cuid())
+  phone           String    @unique
+  name            String
+  consentAt       DateTime
+  joinedAt        DateTime  @default(now())
+  joinedStoreId   String
+  joinedById      String
+  isActive        Boolean   @default(true)
+  deactivatedAt   DateTime?
+  deactivatedById String?
+  note            String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([joinedStoreId])
+  @@index([isActive])
+}
+
+model SpgSalePromo {
+  id            String   @id @default(cuid())
+  spgSaleId     String
+  spgSaleLineId String?
+  promoId       String?
+  promoName     String
+  kind          String
+  qty           Int      @default(0)
+  discount      Decimal  @default(0) @db.Decimal(15, 2)
+  storeDiscount Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt     DateTime @default(now())
+
+  @@index([spgSaleId])
+  @@index([promoId])
+}
+
+model CustomerRequest {
+  id             String    @id @default(cuid())
+  storeId        String
+  customerId     String
+  itemId         String?
+  variantSku     String    @default("")
+  description    String    @db.Text
+  qty            Int       @default(1)
+  status         String    @default("MENUNGGU")
+  holdUntil      String?
+  availableAt    DateTime?
+  notifiedAt     DateTime?
+  notifiedById   String?
+  closedAt       DateTime?
+  closedById     String?
+  closeReason    String?   @db.Text
+  spgSaleId      String?
+  lostSaleId     String?
+  createdById    String
+  idempotencyKey String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([storeId, status])
+  @@index([customerId])
+  @@index([itemId, variantSku])
+}
+
+model SpgDailyClose {
+  id            String   @id @default(cuid())
+  storeId       String
+  day           String
+  closedById    String
+  notaCount     Int
+  pcs           Int
+  returnPcs     Int      @default(0)
+  grossTotal    Decimal  @db.Decimal(15, 2)
+  discountTotal Decimal  @default(0) @db.Decimal(15, 2)
+  netTotal      Decimal  @db.Decimal(15, 2)
+  visitorCount  Int?
+  cashierTotal  Decimal? @db.Decimal(15, 2)
+  note          String?  @db.Text
+  photoUrls     Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([storeId, day])
+  @@index([day])
+}
+
+model SpgShift {
+  id          String   @id @default(cuid())
+  userId      String
+  storeId     String
+  day         String
+  kind        String
+  shiftCode   String?
+  startTime   String?
+  endTime     String?
+  note        String?
+  createdById String
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, day])
+  @@index([storeId, day])
+}
+
+model SpgShiftSwap {
+  id                String    @id @default(cuid())
+  storeId           String
+  requesterId       String
+  partnerId         String
+  day               String
+  partnerDay        String?
+  reason            String?   @db.Text
+  status            String    @default("MENUNGGU_REKAN")
+  partnerAnsweredAt DateTime?
+  decidedById       String?
+  decidedAt         DateTime?
+  decisionNote      String?   @db.Text
+  idempotencyKey    String?   @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([storeId, status])
+  @@index([requesterId])
+  @@index([partnerId])
+}
+
+model SizeChart {
+  id         String   @id @default(cuid())
+  name       String
+  categoryId String?
+  unit       String   @default("cm")
+  columns    Json
+  rows       Json
+  note       String?  @db.Text
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([categoryId])
+}
+
+model SpgCommission {
+  id          String    @id @default(cuid())
+  userId      String
+  storeId     String
+  period      String
+  unitsSold   Int
+  commission  Decimal   @db.Decimal(15, 2)
+  deduction   Decimal   @default(0) @db.Decimal(15, 2)
+  basis       String
+  lockedById  String
+  lockedAt    DateTime  @default(now())
+  paidAt      DateTime?
+  paidById    String?
+  note        String?   @db.Text
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, storeId, period])
+  @@index([period])
+}
+
+model DamagedStockMovement {
+  id          String   @id @default(cuid())
+  itemId      String
+  variantSku  String   @default("")
+  productName String
+  qty         Int
+  kind        String
+  refType     String?
+  refId       String?
+  value       Decimal? @db.Decimal(15, 2)
+  note        String?  @db.Text
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([itemId, variantSku])
+  @@index([refType, refId])
+  @@index([createdAt])
+}
+
+model StockLoss {
+  id             String    @id @default(cuid())
+  storeId        String?
+  source         String
+  sourceId       String?
+  sourceDocNo    String?
+  totalQty       Int
+  totalAmount    Decimal   @db.Decimal(15, 2)
+  valueBasis     String
+  status         String    @default("TERBUKA")
+  note           String?   @db.Text
+  decidedById    String?
+  decidedAt      DateTime?
+  decisionNote   String?   @db.Text
+  createdById    String
+  idempotencyKey String?   @unique
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  lines          StockLossLine[]
+  shares         StockLossShare[]
+
+  @@index([storeId, status])
+  @@index([source, sourceId])
+  @@index([status, createdAt])
+}
+
+model StockLossLine {
+  id          String  @id @default(cuid())
+  lossId      String
+  itemId      String?
+  variantSku  String  @default("")
+  productName String
+  qty         Int
+  unitValue   Decimal @db.Decimal(15, 2)
+  amount      Decimal @db.Decimal(15, 2)
+
+  loss        StockLoss @relation(fields: [lossId], references: [id], onDelete: Cascade)
+
+  @@index([lossId])
+}
+
+model StockLossShare {
+  id           String    @id @default(cuid())
+  lossId       String
+  bearer       String
+  bearerUserId String?
+  amount       Decimal   @db.Decimal(15, 2)
+  settledAmount Decimal  @default(0) @db.Decimal(15, 2)
+  settledAt    DateTime?
+  settledById  String?
+  settleNote   String?   @db.Text
+
+  loss         StockLoss @relation(fields: [lossId], references: [id], onDelete: Cascade)
+
+  @@index([lossId])
+  @@index([bearerUserId, settledAt])
+  @@index([bearer, settledAt])
+}
+
+model SpgVisitorCount {
+  id              String   @id @default(cuid())
+  storeId         String
+  userId          String
+  day             String
+  count           Int
+  clientUpdatedAt DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([storeId, userId, day])
+  @@index([storeId, day])
+}
+
+model StockLossDeduction {
+  id         String   @id @default(cuid())
+  shareId    String
+  amount     Decimal  @db.Decimal(15, 2)
+  refType    String
+  refId      String
+  note       String?
+  createdById String
+  createdAt  DateTime @default(now())
+
+  @@index([shareId])
+  @@index([refType, refId])
 }

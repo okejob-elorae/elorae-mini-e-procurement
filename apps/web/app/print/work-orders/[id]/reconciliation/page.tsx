@@ -248,23 +248,23 @@ export default function PrintReconciliationPage() {
                     </span>
                   </td>
                   <td className="border border-gray-300 px-1.5 py-1.5 text-right text-black">
-                    {line.plannedQty.toLocaleString()} {line.uomCode}
+                    {line.plannedQty.toLocaleString('id-ID')} {line.uomCode}
                   </td>
                   <td className="border border-gray-300 px-1.5 py-1.5 text-right text-black">
-                    {line.issuedQty.toLocaleString()} {line.uomCode}
+                    {line.issuedQty.toLocaleString('id-ID')} {line.uomCode}
                   </td>
                   <td className="border border-gray-300 px-1.5 py-1.5 text-right text-black">
-                    {line.returnedQty.toLocaleString()} {line.uomCode}
+                    {line.returnedQty.toLocaleString('id-ID')} {line.uomCode}
                   </td>
                   <td className="border border-gray-300 px-1.5 py-1.5 text-right text-black">
-                    {line.actualUsed.toLocaleString()} {line.uomCode}
+                    {line.actualUsed.toLocaleString('id-ID')} {line.uomCode}
                   </td>
                   <td className="border border-gray-300 px-1.5 py-1.5 text-right text-black">
-                    {line.theoreticalUsage.toLocaleString()} {line.uomCode}
+                    {line.theoreticalUsage.toLocaleString('id-ID')} {line.uomCode}
                   </td>
                   <td className="border border-gray-300 px-1.5 py-1.5 text-right text-black">
                     {line.variance >= 0 ? '+' : ''}
-                    {line.variance.toLocaleString()} {line.uomCode}
+                    {line.variance.toLocaleString('id-ID')} {line.uomCode}
                   </td>
                   <td className="border border-gray-300 px-1 py-1.5 text-right text-black">
                     {line.variancePercent >= 0 ? '+' : ''}

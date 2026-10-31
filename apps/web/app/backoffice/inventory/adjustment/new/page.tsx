@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
@@ -19,13 +20,16 @@ import { PinAuthModal } from '@/components/security/PinAuthModal';
 import { createStockAdjustment, getInventoryValue } from '@/app/actions/inventory';
 import { getCurrentStockSummary, getItemVariantOptions } from '@/app/actions/stock-card';
 import { getItemUomAndConversions } from '@/app/actions/uom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSession } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
 
 export default function NewAdjustmentPage() {
   const router = useRouter();
   const { data: session } = useSession();
+  const t = useTranslations('inventory.adjNew');
+  const tToasts = useTranslations('toasts');
   const [itemId, setItemId] = useState('');
   const [variantSku, setVariantSku] = useState('');
   const [variantOptions, setVariantOptions] = useState<string[]>([]);
@@ -33,6 +37,7 @@ export default function NewAdjustmentPage() {
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const inputBuktiRef = useRef<HTMLInputElement>(null);
   const [pinOpen, setPinOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<{
@@ -97,19 +102,19 @@ export default function NewAdjustmentPage() {
     e.preventDefault();
     setErrors({});
     if (!session?.user?.id) {
-      toast.error('You must be logged in');
+      toast.error(tToasts('youMustBeLoggedIn'));
       return;
     }
     const nextErrors: typeof errors = {};
-    if (!itemId) nextErrors.itemId = 'Select an item';
-    if (variantOptions.length > 0 && !variantSku) nextErrors.variantSku = 'Select a variant';
+    if (!itemId) nextErrors.itemId = t('errSelectItem');
+    if (variantOptions.length > 0 && !variantSku) nextErrors.variantSku = t('errSelectVariant');
     const qtyNum = parseFloat(qty);
-    if (isNaN(qtyNum) || qtyNum <= 0) nextErrors.qty = 'Enter a valid quantity';
-    if (reason.trim().length < 5) nextErrors.reason = 'Alasan minimal 5 karakter';
-    if (type === 'NEGATIVE' && !evidenceFile) nextErrors.evidence = 'Photo evidence is required for negative adjustments';
+    if (isNaN(qtyNum) || qtyNum <= 0) nextErrors.qty = t('errQty');
+    if (reason.trim().length < 5) nextErrors.reason = t('errReason');
+    if (type === 'NEGATIVE' && !evidenceFile) nextErrors.evidence = t('errEvidence');
     if (Object.keys(nextErrors).length > 0) {
       setErrors(nextErrors);
-      toast.error('Please fix the errors below');
+      toast.error(tToasts('pleaseFixErrorsBelow'));
       return;
     }
     setPinOpen(true);
@@ -129,12 +134,12 @@ export default function NewAdjustmentPage() {
           evidenceUrl = data.urls?.[0];
         }
       } catch {
-        toast.error('Photo upload failed');
-        throw new Error('Photo upload failed');
+        toast.error(tToasts('photoUploadFailed'));
+        throw new Error(tToasts('photoUploadFailed'));
       }
     }
     if (type === 'NEGATIVE' && !evidenceUrl) {
-      throw new Error('Photo evidence required');
+      throw new Error(t('errEvidence'));
     }
     setSubmitting(true);
     try {
@@ -151,7 +156,7 @@ export default function NewAdjustmentPage() {
         pin,
         session.user.id
       );
-      toast.success('Adjustment created');
+      toast.success(tToasts('adjustmentCreated'));
       router.push(`/backoffice/inventory/adjustment/${adjustment.id}`);
       router.refresh();
     } finally {
@@ -163,26 +168,24 @@ export default function NewAdjustmentPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild className="shrink-0">
-          <Link href="/backoffice/inventory">
+          <Link href="/backoffice/inventory" aria-label={t('backToInventory')} title={t('backToInventory')}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Stock Adjustment</h1>
-          <p className="text-muted-foreground">
-            Adjust quantity with PIN confirmation (reason and photo for negative)
-          </p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t('title')}</h1>
+          <TombolBantuan judul={t('title')} />
         </div>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>New adjustment</CardTitle>
+          <CardTitle>{t('cardTitle')}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="itemId">Item *</Label>
+              <Label htmlFor="itemId">{t('item')} *</Label>
               <SearchableCombobox
                 id="itemId"
                 options={summary.map((s) => ({
@@ -191,7 +194,8 @@ export default function NewAdjustmentPage() {
                 }))}
                 value={itemId}
                 onValueChange={(v) => { setItemId(v); setErrors((e) => ({ ...e, itemId: undefined })); }}
-                placeholder="Select item"
+                placeholder={t('selectItem')}
+                searchPlaceholder={t('cariBarang')}
                 aria-invalid={!!errors.itemId}
                 className={errors.itemId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                 triggerClassName="min-h-[44px]"
@@ -205,13 +209,13 @@ export default function NewAdjustmentPage() {
 
             {variantOptions.length > 0 && (
               <div className="space-y-2">
-                <Label htmlFor="variantSku">Variant *</Label>
+                <Label htmlFor="variantSku">{t('variant')} *</Label>
                 <Select
                   value={variantSku}
                   onValueChange={(v) => { setVariantSku(v); setErrors((e) => ({ ...e, variantSku: undefined })); }}
                 >
                   <SelectTrigger id="variantSku" className={`min-h-[44px] ${errors.variantSku ? 'border-destructive' : ''}`}>
-                    <SelectValue placeholder="Select variant" />
+                    <SelectValue placeholder={t('selectVariant')} />
                   </SelectTrigger>
                   <SelectContent>
                     {variantOptions.map((sku) => (
@@ -231,17 +235,19 @@ export default function NewAdjustmentPage() {
 
             {currentStock != null && (
               <div className="rounded-md border p-3 text-sm">
-                <p className="font-medium">Current stock</p>
+                <p className="font-medium">{t('currentStock')}</p>
                 <p>
-                  Qty: {currentStock.qtyOnHand.toLocaleString()} | Avg cost: Rp{' '}
-                  {currentStock.avgCost.toLocaleString()} | Value: Rp{' '}
-                  {currentStock.totalValue.toLocaleString()}
+                  {t('currentStockLine', {
+                    qty: currentStock.qtyOnHand.toLocaleString('id-ID'),
+                    avgCost: currentStock.avgCost.toLocaleString('id-ID'),
+                    value: currentStock.totalValue.toLocaleString('id-ID'),
+                  })}
                 </p>
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="type">Type *</Label>
+              <Label htmlFor="type">{t('type')} *</Label>
               <Select
                 value={type}
                 onValueChange={(v) => setType(v as 'POSITIVE' | 'NEGATIVE')}
@@ -250,41 +256,41 @@ export default function NewAdjustmentPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="POSITIVE">Penambahan (Stok lebih)</SelectItem>
-                  <SelectItem value="NEGATIVE">Pengurangan (Stok hilang/rusak)</SelectItem>
+                  <SelectItem value="POSITIVE">{t('typePositive')}</SelectItem>
+                  <SelectItem value="NEGATIVE">{t('typeNegative')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             {uomData && (
               <div className="space-y-2">
-                <Label htmlFor="uomId">UOM (quantity will be converted to base if different)</Label>
+                <Label htmlFor="uomId">{t('uomLabel')}</Label>
                 <SearchableCombobox
                   id="uomId"
                   options={[
                     {
                       value: uomData.baseUom.id,
-                      label: `${uomData.baseUom.code} (${uomData.baseUom.nameId}) — base`,
+                      label: `${uomData.baseUom.code} (${uomData.baseUom.nameId}) — ${t('base')}`,
                     },
                     ...uomData.conversions.map((c) => {
                       const other = c.fromUomId === uomData.baseUom.id ? c.toUom : c.fromUom;
                       const isToBase = c.toUomId === uomData.baseUom.id;
                       return {
                         value: other.id,
-                        label: `${other.code} (${other.nameId}) — 1 = ${isToBase ? c.factor : (1 / c.factor).toFixed(4)} base`,
+                        label: `${other.code} (${other.nameId}) — 1 = ${isToBase ? c.factor : (1 / c.factor).toFixed(4)} ${t('base')}`,
                       };
                     }),
                   ]}
                   value={selectedUomId}
                   onValueChange={setSelectedUomId}
-                  placeholder="UOM"
+                  placeholder={t('uomPlaceholder')}
                   triggerClassName="min-h-[44px]"
                 />
               </div>
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="qty">Quantity * (in selected UOM)</Label>
+              <Label htmlFor="qty">{t('qtyLabel')}</Label>
               <Input
                 id="qty"
                 type="number"
@@ -308,7 +314,7 @@ export default function NewAdjustmentPage() {
                     if (!conv) return '—';
                     const q = parseFloat(qty);
                     const toBase = conv.toUomId === uomData.baseUom.id ? q * conv.factor : q / conv.factor;
-                    return `${toBase.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${uomData.baseUom.code} (base)`;
+                    return `${toBase.toLocaleString('id-ID', { maximumFractionDigits: 4 })} ${uomData.baseUom.code} (${t('base')})`;
                   })()}
                 </p>
               )}
@@ -320,12 +326,12 @@ export default function NewAdjustmentPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="reason">Reason * (min 5 characters)</Label>
+              <Label htmlFor="reason">{t('reasonLabel')}</Label>
               <Input
                 id="reason"
                 value={reason}
                 onChange={(e) => { setReason(e.target.value); setErrors((err) => ({ ...err, reason: undefined })); }}
-                placeholder="Alasan penyesuaian"
+                placeholder={t('reasonPlaceholder')}
                 className={`min-h-[44px] ${errors.reason ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
                 aria-invalid={!!errors.reason}
               />
@@ -337,15 +343,32 @@ export default function NewAdjustmentPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="evidence">Photo evidence {type === 'NEGATIVE' && '*'}</Label>
-              <Input
+              <Label htmlFor="evidence">{t('evidenceLabel')} {type === 'NEGATIVE' && '*'}</Label>
+              {/* Tombol sendiri: input berkas bawaan peramban berbahasa Inggris ("Choose File"). */}
+              <input
+                ref={inputBuktiRef}
                 id="evidence"
                 type="file"
                 accept="image/*"
-                className={`min-h-[44px] ${errors.evidence ? 'border-destructive focus-visible:ring-destructive/20' : ''}`}
-                aria-invalid={!!errors.evidence}
+                className="sr-only"
+                tabIndex={-1}
                 onChange={(e) => { setEvidenceFile(e.target.files?.[0] ?? null); setErrors((err) => ({ ...err, evidence: undefined })); }}
               />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className={`min-h-[44px] ${errors.evidence ? 'border-destructive' : ''}`}
+                  aria-invalid={!!errors.evidence}
+                  onClick={() => inputBuktiRef.current?.click()}
+                >
+                  <ImagePlus className="mr-2 h-4 w-4" />
+                  {evidenceFile ? t('gantiFoto') : t('pilihFoto')}
+                </Button>
+                <span className="min-w-0 truncate text-sm text-muted-foreground">
+                  {evidenceFile ? evidenceFile.name : t('belumAdaFoto')}
+                </span>
+              </div>
               {errors.evidence && (
                 <p className="text-sm text-destructive" role="alert">
                   {errors.evidence}
@@ -357,7 +380,7 @@ export default function NewAdjustmentPage() {
               {submitting ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              Confirm (PIN required)
+              {t('confirmButton')}
             </Button>
           </form>
         </CardContent>
@@ -367,7 +390,7 @@ export default function NewAdjustmentPage() {
         isOpen={pinOpen}
         onClose={() => setPinOpen(false)}
         onConfirm={handlePinConfirm}
-        action="konfirmasi penyesuaian stok"
+        action={t('pinAction')}
       />
     </div>
   );

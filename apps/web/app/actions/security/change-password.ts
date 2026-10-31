@@ -1,30 +1,39 @@
-'use server';
+"use server";
 
-import { prisma } from '@elorae/db';
-import bcrypt from 'bcryptjs';
-import { auth } from '@/lib/auth';
+import { prisma } from "@elorae/db";
+import bcrypt from "bcryptjs";
+import { auth } from "@/lib/auth";
 import { CHANGE_PASSWORD_ACTION, throttledCompare } from "@/lib/security/attempt-throttle";
+import { SANDI_MIN } from "@/lib/users/validasi";
 
+/**
+ * Ganti kata sandi pengguna yang sedang masuk — hanya untuk diri sendiri.
+ *
+ * Pengguna diambil dari sesi, tidak pernah dari argumen: dulu id dikirim
+ * pemanggil, jadi siapa pun yang masuk bisa menebak sandi orang lain tanpa
+ * batas lewat aksi ini. Tebakan "sandi saat ini" dibatasi lewat
+ * `throttledCompare` (dicatat di basis data, berlaku lintas proses).
+ */
 export type ChangePasswordResult =
   | { success: true }
   | { success: false; messageKey: string };
 
 export async function changePassword(
   currentPassword: string,
-  newPassword: string
+  newPassword: string,
 ): Promise<ChangePasswordResult> {
   const session = await auth();
   if (!session?.user?.id) return { success: false, messageKey: "unauthorized" };
   const userId = session.user.id;
 
-  if (!currentPassword?.trim()) {
-    return { success: false, messageKey: 'currentPasswordRequired' };
+  if (typeof currentPassword !== "string" || !currentPassword.trim()) {
+    return { success: false, messageKey: "currentPasswordRequired" };
   }
-  if (!newPassword?.trim()) {
-    return { success: false, messageKey: 'newPasswordRequired' };
+  if (typeof newPassword !== "string" || !newPassword.trim()) {
+    return { success: false, messageKey: "newPasswordRequired" };
   }
-  if (newPassword.length < 6) {
-    return { success: false, messageKey: 'passwordMinLength' };
+  if (newPassword.length < SANDI_MIN) {
+    return { success: false, messageKey: "passwordMinLength8" };
   }
 
   const user = await prisma.user.findUnique({
@@ -33,10 +42,10 @@ export async function changePassword(
   });
 
   if (!user) {
-    return { success: false, messageKey: 'userNotFound' };
+    return { success: false, messageKey: "userNotFound" };
   }
   if (!user.passwordHash) {
-    return { success: false, messageKey: 'noPasswordSet' };
+    return { success: false, messageKey: "noPasswordSet" };
   }
 
   const passwordHash = user.passwordHash;
@@ -50,7 +59,7 @@ export async function changePassword(
     return { success: false, messageKey: "tooManyAttempts" };
   }
   if (outcome === "mismatch") {
-    return { success: false, messageKey: 'currentPasswordIncorrect' };
+    return { success: false, messageKey: "currentPasswordIncorrect" };
   }
 
   const newHash = await bcrypt.hash(newPassword, 10);

@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { toast } from "sonner";
+import { kunciGalatOpname } from "@/lib/inventory/galat-opname";
 import { AlertTriangle, ArrowLeft, BookText, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -17,6 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { OpnameDetailReviewTable } from "@/components/inventory/OpnameDetailReviewTable";
+import { TabelHitunganButa } from "./TabelHitunganButa";
+import { barisButa } from "../angka-sistem";
 import {
   approveOpname,
   cancelOpname,
@@ -34,10 +39,9 @@ import { useSession } from "next-auth/react";
 
 type OpnameDetail = NonNullable<Awaited<ReturnType<typeof getOpnameById>>>;
 
-function formatWhen(value: unknown): string {
+function formatWhen(value: unknown, locale: string): string {
   if (!value) return "—";
-  const d = new Date(String(value));
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return formatDisplayDateTime(String(value), locale);
 }
 
 function StatCard({ label, value }: { label: string; value: number }) {
@@ -45,7 +49,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
     <Card>
       <CardContent className="pt-6">
         <p className="text-sm text-muted-foreground">{label}</p>
-        <p className="text-2xl font-semibold tabular-nums mt-1">{value.toLocaleString()}</p>
+        <p className="text-2xl font-semibold tabular-nums mt-1">{value.toLocaleString('id-ID')}</p>
       </CardContent>
     </Card>
   );
@@ -53,6 +57,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
 
 export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   const t = useTranslations("stockOpname");
+  const locale = useLocale();
   const { data: session } = useSession();
   const perms = session?.user?.permissions ?? [];
   const [opname, setOpname] = useState<OpnameDetail | null>(null);
@@ -82,7 +87,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
     setBusy(true);
     try {
       const r = await submitOpname(opnameId);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("submitted"));
         await load();
@@ -108,7 +113,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
         return;
       }
       if (!r.success) {
-        toast.error(r.error ?? t("selfApprovalError"));
+        toast.error(t(kunciGalatOpname(r.code)));
         return;
       }
       toast.success(t("approved"));
@@ -123,7 +128,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
     setBusy(true);
     try {
       const r = await cancelOpname(opnameId);
-      if (!r.success) toast.error(r.error);
+      if (!r.success) toast.error(t(kunciGalatOpname(r.code)));
       else {
         toast.success(t("cancelled"));
         await load();
@@ -170,9 +175,12 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
   };
 
   const isFabric = opname?.scope === "FABRIC";
+  // Hitungan buta: muatan tanpa angka sistem selama menghitung (dan bagi yang
+  // belum boleh melihatnya) — layar memakai tabel tanpa snapshot/selisih.
+  const tampil = opname?.angkaSistemTampil === true;
 
   const lines = useMemo(() => {
-    if (!opname) return [];
+    if (!opname || !tampil) return [];
     if (isFabric && Array.isArray(opname.rolls)) {
       // serializeForClient already coerced Decimal → number at runtime; TS still
       // sees Decimal on the Prisma type, so route through `unknown` to accept.
@@ -201,12 +209,31 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
       );
     }
     return [];
-  }, [isFabric, opname]);
+  }, [isFabric, opname, tampil]);
 
-  const summary = useMemo(() => summarizeLines(lines), [lines]);
+  const linesButa = useMemo(
+    () =>
+      opname && !tampil
+        ? // serializeForClient sudah mengubah Decimal → number; tipe Prisma belum tahu.
+          barisButa(opname as unknown as Parameters<typeof barisButa>[0])
+        : [],
+    [opname, tampil],
+  );
+
+  const summary = useMemo(() => {
+    if (tampil) return summarizeLines(lines);
+    const countedLines = linesButa.filter((l) => l.counted !== null).length;
+    return {
+      totalLines: linesButa.length,
+      countedLines,
+      pendingLines: linesButa.length - countedLines,
+      varianceLines: 0,
+      matchLines: 0,
+    };
+  }, [lines, linesButa, tampil]);
 
   if (loading || !opname) {
-    return <p className="text-muted-foreground py-8">{loading ? "Loading..." : "Not found"}</p>;
+    return <p className="text-muted-foreground py-8">{loading ? t("loading") : t("notFound")}</p>;
   }
 
   const status = String(opname.status);
@@ -230,9 +257,9 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
             <ArrowLeft className="h-4 w-4 mr-1" />
             {t("backToList")}
           </Link>
-          <div>
+          <div className="flex items-center gap-1">
             <h1 className="text-2xl font-bold">{String(opname.docNumber)}</h1>
-            <p className="text-muted-foreground text-sm mt-1">{t("detailSubtitle")}</p>
+            <TombolBantuan judul={String(opname.docNumber)} />
           </div>
           <div className="flex flex-wrap gap-2">
             <Badge>{t(`scopes.${scope}`)}</Badge>
@@ -287,11 +314,11 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={`grid gap-4 sm:grid-cols-2 ${tampil ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <StatCard label={t("statTotal")} value={summary.totalLines} />
         <StatCard label={t("statCounted")} value={summary.countedLines} />
         <StatCard label={t("statPending")} value={summary.pendingLines} />
-        <StatCard label={t("statVariance")} value={summary.varianceLines} />
+        {tampil ? <StatCard label={t("statVariance")} value={summary.varianceLines} /> : null}
       </div>
 
       <Card>
@@ -311,8 +338,19 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               style={{ width: `${countProgress}%` }}
             />
           </div>
-          {status === "SUBMITTED" && summary.varianceLines > 0 ? (
+          {tampil && status === "SUBMITTED" && summary.varianceLines > 0 ? (
             <p className="text-sm text-amber-700">{t("varianceReviewHint")}</p>
+          ) : null}
+          {!tampil ? (
+            <p className="text-sm text-muted-foreground">
+              {t(
+                status === "CREATED" || status === "COUNTING"
+                  ? "blind.counting"
+                  : status === "CANCELLED"
+                    ? "blind.cancelled"
+                    : "blind.waitingApproval",
+              )}
+            </p>
           ) : null}
         </CardContent>
       </Card>
@@ -325,12 +363,12 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
           <dl className="grid gap-3 sm:grid-cols-2 text-sm">
             <div>
               <dt className="text-muted-foreground">{t("snapshotAt")}</dt>
-              <dd className="font-medium">{formatWhen(opname.snapshotAt)}</dd>
+              <dd className="font-medium">{formatWhen(opname.snapshotAt, locale)}</dd>
             </div>
             <div>
               <dt className="text-muted-foreground">{t("created")}</dt>
               <dd className="font-medium">
-                {formatWhen(opname.createdAt)}
+                {formatWhen(opname.createdAt, locale)}
                 {opname.createdByName ? ` · ${String(opname.createdByName)}` : ""}
               </dd>
             </div>
@@ -344,7 +382,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               <div>
                 <dt className="text-muted-foreground">{t("submittedAt")}</dt>
                 <dd className="font-medium">
-                  {formatWhen(opname.submittedAt)}
+                  {formatWhen(opname.submittedAt, locale)}
                   {opname.submittedByName ? ` · ${String(opname.submittedByName)}` : ""}
                 </dd>
               </div>
@@ -353,7 +391,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
               <div>
                 <dt className="text-muted-foreground">{t("approvedAt")}</dt>
                 <dd className="font-medium">
-                  {formatWhen(opname.approvedAt)}
+                  {formatWhen(opname.approvedAt, locale)}
                   {opname.approvedByName ? ` · ${String(opname.approvedByName)}` : ""}
                 </dd>
               </div>
@@ -361,7 +399,7 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
             {opname.cancelledAt ? (
               <div>
                 <dt className="text-muted-foreground">{t("cancelledAt")}</dt>
-                <dd className="font-medium">{formatWhen(opname.cancelledAt)}</dd>
+                <dd className="font-medium">{formatWhen(opname.cancelledAt, locale)}</dd>
               </div>
             ) : null}
           </dl>
@@ -374,7 +412,11 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
         </CardContent>
       </Card>
 
-      <OpnameDetailReviewTable lines={lines} isFabric={isFabric} />
+      {tampil ? (
+        <OpnameDetailReviewTable lines={lines} isFabric={isFabric} />
+      ) : (
+        <TabelHitunganButa lines={linesButa} isFabric={isFabric} />
+      )}
 
       <Dialog open={driftOpen} onOpenChange={setDriftOpen}>
         <DialogContent>
@@ -385,16 +427,16 @@ export function StockOpnameDetailClient({ opnameId }: { opnameId: string }) {
           <ul className="text-sm space-y-2 max-h-60 overflow-auto">
             {driftRows.map((d, i) => (
               <li key={i}>
-                <strong>{d.label}</strong>: snapshot {d.snapshotQty} → current {d.currentQty}
+                <strong>{d.label}</strong>: {t("driftLine", { snapshot: d.snapshotQty, current: d.currentQty })}
               </li>
             ))}
           </ul>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDriftOpen(false)}>
-              Cancel
+              {t("closeDialog")}
             </Button>
             <Button onClick={() => handleApprove(true)} disabled={busy}>
-              Confirm & Approve
+              {t("confirmApprove")}
             </Button>
           </DialogFooter>
         </DialogContent>

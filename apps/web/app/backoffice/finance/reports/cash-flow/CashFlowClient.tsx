@@ -1,15 +1,15 @@
 "use client";
 
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Info, Wallet } from "lucide-react";
 import type { getCashFlowReport } from "@/app/actions/finance-reports";
 import type { CashFlowComparisonLine } from "@/lib/finance/reports/cash-flow-compare";
-import type { CashFlowLine } from "@/lib/finance/reports/cash-flow";
+import { ID_PENYESUAIAN_PELEPASAN_ASET, type CashFlowLine } from "@/lib/finance/reports/cash-flow";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -21,6 +21,14 @@ import {
 } from "@/components/ui/table";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportCashFlowExcel } from "@/app/actions/finance-reports";
+import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { LabelPeriode } from "../LabelPeriode";
+import { CASH_FLOW_COVERAGE_BODY } from "@/lib/finance/reports/disclosures";
+import { SpandukBukuBesar } from "../../_kesiapan/SpandukBukuBesar";
+import { periodeLaporan, type KesiapanBukuBesar } from "../../_kesiapan/kesiapan";
+import type { AksesSpanduk } from "../../_kesiapan/baca";
 
 type Report = Awaited<ReturnType<typeof getCashFlowReport>>;
 
@@ -35,19 +43,34 @@ type Props = {
    * each state names the fix, so a reader still learns what is wrong.
    */
   canManageJournals: boolean;
+  hariIni: string;
+  kesiapan: KesiapanBukuBesar | null;
+  akses: AksesSpanduk;
 };
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+/** Satu format angka laporan keuangan: negatif dalam kurung (`format-laporan.ts`). */
+const formatRupiah = rupiahLaporan;
+
+/**
+ * The server builds the period label with machine dates ("2026-07-01 — 2026-07-31")
+ * because the Excel export shares it; on screen each date reads in the one display format.
+ */
+function displayPeriodLabel(label: string, locale: string): string {
+  return label.replace(/\d{4}-\d{2}-\d{2}/g, (iso) => formatDisplayDate(parseDateOnly(iso), locale));
 }
 
-export function CashFlowClient({ report, filters, canManageJournals }: Props) {
+export function CashFlowClient({ report, filters, canManageJournals, hariIni, kesiapan, akses }: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("financeReports");
+  const tt = useTranslations("tanggalInput");
+  const locale = useLocale();
   const [isPending, startTransition] = useTransition();
 
   const cmp = report.comparison;
+  const periode = periodeLaporan({ dari: filters.from, sampai: filters.to }, hariIni);
+  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`disclosures.ts`).
+  const cakupan = locale.toLowerCase().startsWith("id") ? CASH_FLOW_COVERAGE_BODY : t("cashFlow.coverageBody");
   const columns = cmp ? 4 : 2;
 
   /* Computed server-side, where an open end is defaulted to today in WIB. */
@@ -61,10 +84,12 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
    */
   const canExport = report.hasCashAccount && !invalidRange;
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     startTransition(() =>
       router.push(`/backoffice/finance/reports/cash-flow?${params.toString()}`),
     );
@@ -82,10 +107,12 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
     ));
   }
 
-  function labelCell(code: string, name: string) {
+  function labelCell(code: string, name: string, accountId?: string) {
+    // Baris penyesuaian pelepasan aset tetap bukan akun: namanya diterjemahkan di layar.
+    const tampil = accountId === ID_PENYESUAIAN_PELEPASAN_ASET ? t("cashFlow.penyesuaianPelepasanAset") : name;
     return (
-      <TableCell className="pl-6">
-        <span className="font-mono text-xs text-muted-foreground">{code}</span> {name}
+      <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)]">
+        <span className="font-mono text-xs text-muted-foreground">{code}</span> {tampil}
       </TableCell>
     );
   }
@@ -93,7 +120,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
   function emptyRow() {
     return (
       <TableRow>
-        <TableCell colSpan={columns} className="pl-6 text-muted-foreground">
+        <TableCell colSpan={columns} className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)] text-muted-foreground">
           {t("cashFlow.sectionEmpty")}
         </TableCell>
       </TableRow>
@@ -110,7 +137,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
       if (paired.length === 0) return emptyRow();
       return paired.map((row) => (
         <TableRow key={row.accountId}>
-          {labelCell(row.code, row.name)}
+          {labelCell(row.code, row.name, row.accountId)}
           {amountCells([row.current, row.previous, row.delta])}
         </TableRow>
       ));
@@ -118,7 +145,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
     if (lines.length === 0) return emptyRow();
     return lines.map((row) => (
       <TableRow key={row.accountId}>
-        {labelCell(row.code, row.name)}
+        {labelCell(row.code, row.name, row.accountId)}
         {amountCells([row.amount])}
       </TableRow>
     ));
@@ -154,8 +181,11 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("cashFlow.pageTitle")}</h1>
-          <p className="text-muted-foreground">{t("cashFlow.subtitle")}</p>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t("cashFlow.pageTitle")}</h1>
+            <TombolBantuan judul={t("cashFlow.pageTitle")} />
+          </div>
+          <LabelPeriode jenis="rentang" dari={periode.dari} sampai={periode.sampai} />
         </div>
         {canExport && (
           <ReportExportButtons
@@ -165,26 +195,17 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
         )}
       </div>
 
+      <SpandukBukuBesar kesiapan={kesiapan} akses={akses} />
+
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">
-              {t("filter.dateFrom")}
-            </label>
-            <Input
-              type="date"
-              value={filters.from}
-              onChange={(e) => pushParam("from", e.target.value || undefined)}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">
-              {t("filter.dateTo")}
-            </label>
-            <Input
-              type="date"
-              value={filters.to}
-              onChange={(e) => pushParam("to", e.target.value || undefined)}
+            <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
+            <RentangTanggalInput
+              id="periode"
+              dari={filters.from}
+              sampai={filters.to}
+              onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
             />
           </div>
           <div className="flex items-end">
@@ -225,7 +246,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
             <Table className="min-w-[360px]">
               <TableBody>
                 <TableRow>
-                  <TableCell className="pl-6">{t("cashFlow.kasAwal")}</TableCell>
+                  <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)]">{t("cashFlow.kasAwal")}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {formatRupiah(report.kasAwal)}
                   </TableCell>
@@ -270,7 +291,9 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
               </CardTitle>
               {report.previousPeriodLabel && (
                 <p className="text-sm text-muted-foreground">
-                  {t("cashFlow.comparisonHint", { period: report.previousPeriodLabel })}
+                  {t("cashFlow.comparisonHint", {
+                    period: displayPeriodLabel(report.previousPeriodLabel, locale),
+                  })}
                 </p>
               )}
             </CardHeader>
@@ -290,7 +313,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
                   <TableBody>
                     {sectionHeader(t("cashFlow.sectionOperasional"))}
                     <TableRow>
-                      <TableCell className="pl-6">{t("cashFlow.labaBersih")}</TableCell>
+                      <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)]">{t("cashFlow.labaBersih")}</TableCell>
                       {cmp
                         ? amountCells([
                             cmp.labaBersih.current,
@@ -336,7 +359,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
 
                     {totalRow(t("cashFlow.netChange"), report.netChange, cmp?.netChange, true)}
                     <TableRow>
-                      <TableCell className="pl-6">{t("cashFlow.kasAwal")}</TableCell>
+                      <TableCell className="ps-[calc(var(--tabel-tepi,0.5rem)+1rem)]">{t("cashFlow.kasAwal")}</TableCell>
                       {cmp
                         ? amountCells([cmp.kasAwal.current, cmp.kasAwal.previous, cmp.kasAwal.delta])
                         : amountCells([report.kasAwal])}
@@ -365,7 +388,7 @@ export function CashFlowClient({ report, filters, canManageJournals }: Props) {
                 <Info className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="font-medium">{t("cashFlow.coverageTitle")}</p>
-                  <p className="text-muted-foreground">{t("cashFlow.coverageBody")}</p>
+                  <p className="text-muted-foreground">{cakupan}</p>
                   <p className="mt-2 text-muted-foreground">{t("cashFlow.nonCashNote")}</p>
                 </div>
               </div>

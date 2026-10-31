@@ -1,8 +1,10 @@
 import { Prisma } from '@elorae/db';
-import { prisma } from '@elorae/db';
+import { prisma, usePostgres as pakaiPostgres } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import type { FilterTags } from "@elorae/db/pantone";
 import { DEFAULT_FILTER_OPTIONS, FILTER_DIMENSIONS } from "@elorae/db/pantone";
 import { COLOR_PAGE_SIZE } from '@/lib/production-colors/constants';
+import { hueEfektif, whereHueNetral } from '@/lib/production-colors/hue-netral';
 import type { FilterFacetCounts } from '@/components/production-colors/ColorsFilterBar';
 
 export { COLOR_PAGE_SIZE };
@@ -38,17 +40,71 @@ function buildTagWhere(filters: ListPantoneFilters): Prisma.PantoneColorWhereInp
     const values = filters[dim];
     if (!values?.length) continue;
     and.push({
-      OR: values.map((v) => ({
-        filterTags: {
-          path: `$.${dim}`,
-          array_contains: v,
-        },
-      })),
+      /*
+       * Prisma's JSON `path` is dialect-specific and the two spellings are not
+       * interchangeable: MySQL takes a JSONPath string ("$.tone"), PostgreSQL
+       * takes an array of keys (["tone"]). Passing the MySQL form to Postgres
+       * fails at query time with PrismaClientValidationError, not at build, so
+       * it only surfaces the moment someone clicks the filter.
+       */
+      OR: values.flatMap((v): Prisma.PantoneColorWhereInput[] => {
+        const tag = {
+          filterTags: {
+            path: pakaiPostgres() ? [dim] : `$.${dim}`,
+            array_contains: v,
+          },
+        } as Prisma.PantoneColorWhereInput;
+        // Hitam/putih juga dari L*a*b* (lib/production-colors/hue-netral.ts).
+        const netral = dim === 'hue' ? whereHueNetral(v) : null;
+        return netral ? [tag, netral] : [tag];
+      }),
     });
   }
   return and;
 }
 
+/**
+ * Fan-deck order: the sequence the physical TCX book is bound in.
+ *
+ * The grid used to sort by groupName then name — alphabetically — which is why
+ * it looked shuffled: a swatch book is arranged so neighbouring colours are
+ * neighbouring hues, and no colour library is ever read alphabetically.
+ * 2,624 of 2,800 colours carry real book coordinates, and the sequence opens on
+ * the whites exactly as the printed deck does.
+ *
+ * The 176 without coordinates sort last by lightness, so the tail still reads
+ * as a gradient rather than a jumble.
+ *
+ * `nulls` is a PostgreSQL-only ordering option in Prisma. MySQL has no
+ * equivalent and sorts NULLs first, which would hoist those 176 to the very
+ * top — so the legacy dialect keeps the alphabetical order it always had
+ * rather than silently getting a worse one.
+ */
+function buildBookOrder(): Prisma.PantoneColorOrderByWithRelationInput[] {
+  if (!pakaiPostgres()) {
+    return [{ groupName: 'asc' }, { name: 'asc' }];
+  }
+  const asc = { sort: 'asc', nulls: 'last' } as const;
+  return [
+    { bookSection: asc },
+    { bookPage: asc },
+    { bookColumn: asc },
+    { bookRow: asc },
+    { labL: { sort: 'desc', nulls: 'last' } },
+    { name: 'asc' },
+  ];
+}
+
+/**
+ * Pencarian memakai `cariTeks` (lib/db/cari-teks.ts), bukan `contains` polos.
+ *
+ * Tanpa opsi abai-huruf, `contains` menjadi `LIKE`, yang di PostgreSQL peka
+ * huruf besar-kecil — mengetik "lime" tidak menemukan satu pun dari 23 warna
+ * bernama "Lime …". Opsi itu hanya ada di klien Prisma PostgreSQL; MariaDB
+ * (produksi) tidak mengenalnya tetapi collation bawaannya sudah abai huruf.
+ * `cariTeks` bercabang per dialek saat jalan, jadi kode yang sama benar di
+ * keduanya dan lolos type-check terhadap klien mana pun.
+ */
 export async function listPantoneColors(
   filters: ListPantoneFilters,
   opts: { page: number; pageSize: number }
@@ -63,9 +119,9 @@ export async function listPantoneColors(
         ? [
             {
               OR: [
-                { name: { contains: search } },
-                { tcx: { contains: search } },
-                { hex: { contains: search.replace('#', '') } },
+                { name: cariTeks(search) },
+                { tcx: cariTeks(search) },
+                { hex: cariTeks(search.replace('#', '')) },
               ],
             },
           ]
@@ -76,7 +132,7 @@ export async function listPantoneColors(
   const [rows, totalCount] = await Promise.all([
     prisma.pantoneColor.findMany({
       where,
-      orderBy: [{ groupName: 'asc' }, { name: 'asc' }],
+      orderBy: buildBookOrder(),
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {
@@ -134,8 +190,8 @@ export async function listFavoriteColors(
         ? [
             {
               OR: [
-                { name: { contains: search } },
-                { tcx: { contains: search } },
+                { name: cariTeks(search) },
+                { tcx: cariTeks(search) },
               ],
             },
           ]
@@ -235,16 +291,18 @@ export async function getPantoneFilterFacetCounts(opts?: {
         where: {
           favorites: { some: { userId: opts.userId } },
         },
-        select: { filterTags: true },
+        select: { filterTags: true, labL: true, labA: true, labB: true },
       })
     : await prisma.pantoneColor.findMany({
-        select: { filterTags: true },
+        select: { filterTags: true, labL: true, labA: true, labB: true },
       });
 
   for (const row of rows) {
     const tags = row.filterTags as FilterTags;
     for (const dim of FILTER_DIMENSIONS) {
-      for (const value of tags[dim] ?? []) {
+      // Hitungan cip memakai aturan yang sama dengan saringannya.
+      const nilai = dim === 'hue' ? hueEfektif(tags.hue, row) : (tags[dim] ?? []);
+      for (const value of nilai) {
         if (value in counts[dim]) {
           counts[dim][value] += 1;
         }

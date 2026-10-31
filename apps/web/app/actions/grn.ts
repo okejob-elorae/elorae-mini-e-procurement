@@ -4,6 +4,7 @@ import { Decimal } from 'decimal.js';
 import { z } from 'zod';
 import { prisma } from '@elorae/db';
 import type { StockLedgerRefType } from '@elorae/db';
+import { cariTeks } from "@/lib/db/cari-teks";
 import { calculateMovingAverage, reverseMovingAverage, findExistingInventoryValueRow } from '@/lib/inventory/costing';
 import { revalidatePath } from 'next/cache';
 import { notifyGRNCreated, notifyMaterialArrivedForPo } from '@/lib/notifications/events';
@@ -14,19 +15,101 @@ import { auth } from '@/lib/auth';
 import { assertActor } from "@/lib/auth/assert-actor";
 import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
+import { hitungPpnMasukanGrn, kunciBarisPpn } from "@/lib/finance/pajak/grn-ppn";
+import { hitungPpnKapitalisasiGrn } from "@/lib/finance/operasional/grn-kapitalisasi-queries";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { computeActualLeadDays } from '@/lib/leadtime/calculations';
 import { fanOutAdminNotification } from '@/lib/notifications/admin-fanout';
 import { docNumberPeriod } from "@/lib/doc-numbers/period";
 import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
-import { toReceiptRefusal, type ReceiptRefusal } from "@/lib/inventory/receipt-refusal";
+import { toReceiptRefusal, type ReceiptRefusal, type ReceiptRefusalCode } from "@/lib/inventory/receipt-refusal";
 import { ReceiptLineError } from "@/lib/inventory/receipt-errors";
-import { grnSchema } from "@/lib/grn/schema";
+import { grnSchema as baseGrnSchema } from "@/lib/grn/schema";
 import { fabricRollCode } from "@/lib/grn/roll-code";
 import { overReceiveBy, sumRollLengths } from "@/lib/grn/over-receive";
 import { billedQtyByPoItem } from "@/lib/vendor-billing/billable";
+import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { alasanTolakPenerimaanPo } from "@/lib/purchase-orders/penerimaan";
+import { syaratCariGrn } from "@/lib/inventory/cari-grn";
+import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
+import {
+  PESAN_PEMILIK_GRN,
+  kodeTolakPemilikGrn,
+  type KodeTolakPemilikGrn,
+} from "@/app/backoffice/inventory/grn/kode-pemilik";
+import {
+  fotoGrn,
+  keadaanPemilikGrn,
+  susunBarisGrn,
+  type BarangGrn,
+  type BarisRincianGrn,
+} from "@/app/backoffice/inventory/grn/[id]/rincian-grn";
+
+const grnSchema = baseGrnSchema.extend({
+  /** Kunci kiriman: dibuat formulir SEKALI per isian (disimpan bersama draf GRN). */
+  idempotencyKey: z.string().trim().min(8).max(100).optional(),
+});
 
 export type GRNFormData = z.infer<typeof grnSchema>;
+
+/** Hasil `createGRN`. `ulang` = kiriman ulang berkunci sama; GRN yang sudah ada dikembalikan. */
+export type HasilCreateGRN = {
+  id: string;
+  docNumber: string;
+  poId: string | null;
+  supplierId: string;
+  receivedBy: string;
+  totalAmount: number;
+  photoUrls: string | null;
+  items: unknown;
+  notes: string | null;
+  grnDate: Date;
+  createdAt: Date;
+  ulang: boolean;
+};
+
+const KOLOM_HASIL_GRN = {
+  id: true,
+  docNumber: true,
+  poId: true,
+  supplierId: true,
+  receivedBy: true,
+  totalAmount: true,
+  photoUrls: true,
+  items: true,
+  notes: true,
+  grnDate: true,
+  createdAt: true,
+} as const;
+
+type BarisHasilGrn = {
+  id: string;
+  docNumber: string;
+  poId: string | null;
+  supplierId: string;
+  receivedBy: string;
+  totalAmount: { toString(): string } | number;
+  photoUrls: string | null;
+  items: unknown;
+  notes: string | null;
+  grnDate: Date;
+  createdAt: Date;
+};
+
+function hasilGrn(grn: BarisHasilGrn, ulang: boolean): HasilCreateGRN {
+  return { ...grn, totalAmount: Number(grn.totalAmount), ulang };
+}
+
+/** GRN yang sudah tercatat dengan kunci kiriman ini (di luar atau di dalam transaksi). */
+async function grnDenganKunci(
+  db: Pick<typeof prisma, 'gRN'>,
+  kunci: string,
+): Promise<HasilCreateGRN | null> {
+  const lama = await db.gRN.findUnique({ where: { idempotencyKey: kunci }, select: KOLOM_HASIL_GRN });
+  return lama ? hasilGrn(lama, true) : null;
+}
 
 function grnPoLineKey(itemId: string, variantSku?: string | null) {
   const v = variantSku?.trim() ?? '';
@@ -56,11 +139,32 @@ function parseGrnStoredLines(raw: unknown): StoredGrnLine[] {
   return arr as StoredGrnLine[];
 }
 
+/**
+ * Penolakan GRN berkode. `createGRN` melemparnya (pemanggil lama + tes);
+ * formulir GRN memakai `simpanGRN`, yang mengembalikannya sebagai `{ ok:false, code }`.
+ */
+const PESAN_TOLAK_GRN = {
+  PO_TIDAK_DITEMUKAN: "PO tidak ditemukan.",
+  PO_DIBATALKAN: "PO ini sudah dibatalkan, jadi barang tidak bisa diterima ke PO ini.",
+  PO_BELUM_DISETUJUI: "PO ini masih draf dan belum disetujui. Setujui dan kirim PO dulu sebelum menerima barang.",
+  PO_DITUTUP: "PO ini sudah ditutup, jadi barang tidak bisa diterima ke PO ini lagi.",
+} as const;
+
+class GrnDitolakError extends Error {
+  readonly code: keyof typeof PESAN_TOLAK_GRN;
+
+  constructor(code: keyof typeof PESAN_TOLAK_GRN) {
+    super(PESAN_TOLAK_GRN[code]);
+    this.name = "GrnDitolakError";
+    this.code = code;
+  }
+}
+
 export type CreateGRNResult =
-  | { success: true; grn: Awaited<ReturnType<typeof createGRNInner>> }
+  | { success: true; grn: HasilCreateGRN }
   | ReceiptRefusal;
 
-export async function createGRN(data: z.infer<typeof grnSchema>, userId: string): Promise<CreateGRNResult> {
+export async function createGRN(data: z.infer<typeof grnSchema>, userId?: string): Promise<CreateGRNResult> {
   try {
     return { success: true, grn: await createGRNInner(data, userId) };
   } catch (error) {
@@ -70,17 +174,72 @@ export async function createGRN(data: z.infer<typeof grnSchema>, userId: string)
   }
 }
 
-async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
+/**
+ * Penerima GRN selalu pengguna sesi; `claimedUserId`, kalau dikirim, harus sama
+ * dengannya (`assertActor`).
+ *
+ * Status PO dibaca DI DALAM transaksi serializable sebelum stok disentuh, dan
+ * baris PO selalu ditulis transaksi ini: pembatalan atau "Tutup PO" yang commit
+ * di tengah GRN membuat GRN konflik, diulang, lalu ditolak (`PO_DIBATALKAN` /
+ * `PO_DITUTUP`).
+ *
+ * CLOSED punya dua arti: lengkap lewat GRN (`closedAt` kosong, semua baris
+ * diterima penuh) atau ditutup sebelum lengkap — lewat "Tutup PO" (`closedAt`
+ * terisi) atau jalur tutup lama yang belum menulis `closedAt` (barang kurang).
+ * Hanya yang lengkap boleh menerima terima-lebih yang sah (lewat ambang /
+ * persetujuan pemilik), sama seperti PO berstatus OVER; sisanya `PO_DITUTUP`.
+ *
+ * `idempotencyKey` (dibuat formulir SEKALI per isian) diperiksa PALING DULU —
+ * sebelum penjaga status PO, karena GRN pertama bisa sudah menutup PO-nya — lalu
+ * sekali lagi DI DALAM transaksi: kiriman ulang sesudah jawaban hilang, klik
+ * ganda, atau percobaan ulang `runSerializable` sesudah balapan mendapat GRN
+ * yang sama (`ulang: true`) tanpa menyentuh stok, harga rata-rata, status PO,
+ * maupun jurnal hutang lagi.
+ */
+async function createGRNInner(data: z.infer<typeof grnSchema>, claimedUserId?: string): Promise<HasilCreateGRN> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
+  if (!session?.user?.id) throw new Error('Unauthorized');
   requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
-  assertActor(session.user.id, userId);
+  if (claimedUserId !== undefined) assertActor(session.user.id, claimedUserId);
+  const userId = session.user.id;
 
   const validated = grnSchema.parse(data);
+  const kunci = validated.idempotencyKey ?? null;
+  if (kunci) {
+    const lama = await grnDenganKunci(prisma, kunci);
+    if (lama) return lama;
+  }
   await assertLinesVariantSkusMatchItemDefinitions(prisma.item, validated.items);
 
-  const result = await prisma.$transaction(async (tx) => {
-    const { year, month } = docNumberPeriod(new Date());
+  const terima = () => runSerializable(async (tx): Promise<HasilCreateGRN> => {
+    // Lagi, di dalam transaksi: percobaan ulang sesudah konflik melihat GRN pemenangnya.
+    if (kunci) {
+      const lama = await grnDenganKunci(tx, kunci);
+      if (lama) return lama;
+    }
+
+    if (validated.poId) {
+      const po = await tx.purchaseOrder.findUnique({
+        where: { id: validated.poId },
+        select: { status: true, closedAt: true, items: { select: { qty: true, receivedQty: true } } },
+      });
+      if (!po) throw new GrnDitolakError("PO_TIDAK_DITEMUKAN");
+      const tolak = alasanTolakPenerimaanPo(po.status);
+      // CLOSED tanpa `closedAt` DAN semua baris diterima penuh = lengkap lewat GRN:
+      // terima-lebih tetap boleh. CLOSED tanpa `closedAt` yang barangnya kurang =
+      // ditutup lewat jalur lama (sebelum `closedAt` ada) → tetap ditolak.
+      const lengkapNormal =
+        tolak === "PO_DITUTUP" &&
+        po.closedAt == null &&
+        po.items.every((l) => new Decimal(l.receivedQty.toString()).gte(l.qty.toString()));
+      if (tolak && !lengkapNormal) throw new GrnDitolakError(tolak);
+      // Tulis baris PO sekarang juga (terima-lebih bisa melewatkan pembaruan status):
+      // perubahan PO oleh transaksi lain sesudah pembacaan di atas jadi konflik serialisasi.
+      await tx.purchaseOrder.update({ where: { id: validated.poId }, data: { updatedAt: new Date() } });
+    }
+
+    const now = new Date();
+    const { year, month } = docNumberPeriod(now);
     const prefix = `GRN/${year}/${String(month).padStart(2, "0")}/`;
     const existing = await tx.gRN.findMany({
       where: { docNumber: { startsWith: prefix } },
@@ -95,11 +254,35 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
 
     let totalAmount = new Decimal(0);
 
+    // PPN pembelian saat Elorae BUKAN PKP (baris PO "Exclude PPN"): bagian dari harga
+    // perolehan — masuk nilai kartu stok dan hutang bruto (`lib/finance/operasional/grn-kapitalisasi.ts`).
+    // Dihitung SEBELUM stok bergerak, dari qty yang sama dengan baris stoknya.
+    const tipeBarangAwal = new Map(
+      (
+        await tx.item.findMany({ where: { id: { in: [...new Set(validated.items.map((i) => i.itemId))] } }, select: { id: true, type: true } })
+      ).map((i) => [i.id, i.type as string]),
+    );
+    const qtyBarisAwal = validated.items.map((item) => {
+      const rolls = item.rolls ?? [];
+      return tipeBarangAwal.get(item.itemId) === 'FABRIC' && rolls.length > 0 ? sumRollLengths(rolls.map((roll) => roll.length)) : item.qty;
+    });
+    const ppnModal = await hitungPpnKapitalisasiGrn(tx, {
+      poId: validated.poId ?? null,
+      baris: validated.items.map((item, i) => ({
+        itemId: item.itemId,
+        variantSku: item.variantSku?.trim() || null,
+        nilai: new Decimal(qtyBarisAwal[i]).mul(item.unitCost).toNumber(),
+      })),
+      tanggal: now,
+    });
+
     // Pass 1: resolve item metadata and derive quantities/costs without touching InventoryValue.
     // calculateMovingAverage needs the GRN's own id as the ledger ref, so it can only run once
     // the GRN row exists — see the cost pass below, after tx.gRN.create.
+    // Unit cost per line as an exact Decimal (PO price + capitalised PPN share), for the cost pass.
+    const unitCostPerLine: Decimal[] = [];
     const baseItems = await Promise.all(
-      validated.items.map(async (item) => {
+      validated.items.map(async (item, idxBaris) => {
         const itemRow = await tx.item.findUnique({
           where: { id: item.itemId },
           select: { type: true, uomId: true, overReceiveThreshold: true },
@@ -113,10 +296,13 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
           ? sumRollLengths(rolls.map((roll) => roll.length))
           : item.qty;
         const qty = new Decimal(derivedQty);
-        const unitCost = new Decimal(item.unitCost);
-        const lineTotal = qty.mul(unitCost);
+        const ppnBaris = new Decimal(ppnModal[idxBaris] ?? 0);
+        const lineTotal = qty.mul(item.unitCost).plus(ppnBaris);
+        // Harga per unit di kartu stok = harga PO + bagian PPN yang dikapitalisasi.
+        const unitCost = ppnBaris.gt(0) && qty.gt(0) ? lineTotal.div(qty) : new Decimal(item.unitCost);
         totalAmount = totalAmount.plus(lineTotal);
 
+        unitCostPerLine[idxBaris] = unitCost;
         return {
           itemId: item.itemId,
           // Raw (untrimmed) key used for the cost calc / stock movement; kept separate from the
@@ -124,7 +310,10 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
           variantKey: item.variantSku ?? null,
           variantSku: item.variantSku?.trim() || null,
           qty: derivedQty,
-          unitCost: item.unitCost,
+          unitCost: unitCost.toNumber(),
+          // Harga PO dan PPN yang ikut dikapitalisasi (bukan PKP) — supaya harga per unit di atas terjelaskan.
+          hargaPo: ppnBaris.gt(0) ? item.unitCost : undefined,
+          ppnDikapitalisasi: ppnBaris.gt(0) ? ppnBaris.toNumber() : undefined,
           itemType: itemRow.type,
           uomId: item.uomId || itemRow.uomId,
           overReceiveThreshold: itemRow.overReceiveThreshold != null ? Number(itemRow.overReceiveThreshold) : null,
@@ -162,6 +351,15 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
       }
     }
 
+    // PPN masukan (hanya PKP, baris PO "Exclude PPN") dihitung SEKALI di sini dan
+    // disimpan; jurnal penerimaan membaca angka tersimpan ini, bukan pengaturan
+    // hari ini (`lib/finance/pajak/grn-ppn.ts`). Nilai stok tidak berubah.
+    const ppnMasukan = await hitungPpnMasukanGrn(tx, {
+      poId: validated.poId ?? null,
+      baris: baseItems.map((p) => ({ itemId: p.itemId, variantSku: p.variantSku, nilai: p.totalCost })),
+      tanggal: now,
+    });
+
     const grn = await tx.gRN.create({
       data: {
         docNumber,
@@ -169,11 +367,13 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
         supplierId: validated.supplierId,
         receivedBy: userId,
         totalAmount: totalAmount.toNumber(),
+        ppnAmount: ppnMasukan.ppn,
         requiresOwnerApproval,
         photoUrls: validated.photoUrls ? JSON.stringify(validated.photoUrls) : null,
         // Placeholder — patched below with the cost-calc results once grn.id exists to ref.
         items: JSON.stringify(baseItems),
         notes: validated.notes ?? null,
+        idempotencyKey: kunci,
       },
     });
 
@@ -192,14 +392,16 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
       overReceiveThreshold: number | null;
       rolls: (typeof baseItems)[number]["rolls"];
       totalCost: number;
+      hargaPo?: number;
+      ppnDikapitalisasi?: number;
       prevAvgCost: number;
       newAvgCost: number;
       prevQty: number;
       newQty: number;
     }> = [];
-    for (const item of baseItems) {
+    for (const [idxBaris, item] of baseItems.entries()) {
       const qty = new Decimal(item.qty);
-      const unitCost = new Decimal(item.unitCost);
+      const unitCost = unitCostPerLine[idxBaris] ?? new Decimal(item.unitCost);
       const costCalc = await calculateMovingAverage(
         item.itemId,
         qty,
@@ -219,6 +421,9 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
         overReceiveThreshold: item.overReceiveThreshold,
         rolls: item.rolls,
         totalCost: item.totalCost,
+        ...(item.ppnDikapitalisasi !== undefined
+          ? { hargaPo: item.hargaPo, ppnDikapitalisasi: item.ppnDikapitalisasi }
+          : {}),
         prevAvgCost: costCalc.previousAvgCost.toNumber(),
         newAvgCost: costCalc.newAvgCost.toNumber(),
         prevQty: costCalc.previousQty.toNumber(),
@@ -226,9 +431,13 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
       });
     }
 
+    const itemsTersimpan = processedItems.map((p) =>
+      ppnMasukan.kenaPpn.has(kunciBarisPpn(p.itemId, p.variantSku)) ? { ...p, ppnIncluded: false } : p,
+    );
+    const itemsJson = JSON.stringify(itemsTersimpan);
     await tx.gRN.update({
       where: { id: grn.id },
-      data: { items: JSON.stringify(processedItems) },
+      data: { items: itemsJson },
     });
 
     const totalRolls = processedItems.reduce(
@@ -345,22 +554,20 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
     }
 
     revalidatePath('/backoffice/inventory');
-    return {
-      id: grn.id,
-      docNumber: grn.docNumber,
-      poId: grn.poId,
-      supplierId: grn.supplierId,
-      receivedBy: grn.receivedBy,
-      totalAmount: Number(grn.totalAmount),
-      photoUrls: grn.photoUrls,
-      // grn.items (from the create call) is the pre-cost-calc placeholder — the real value was
-      // patched into the row by tx.gRN.update above once processedItems carried the cost fields.
-      items: JSON.stringify(processedItems),
-      notes: grn.notes,
-      grnDate: grn.grnDate,
-      createdAt: grn.createdAt,
-    };
+    return hasilGrn({ ...grn, items: itemsJson }, false);
   });
+
+  let result: HasilCreateGRN;
+  try {
+    result = await terima();
+  } catch (err) {
+    // Kiriman kembarnya commit lebih dulu dan bentrok di kolom kunci (tidak
+    // diulang runSerializable): percobaan ini membaca kunci yang kini tercatat.
+    if (!kunci || !bentrokKunciKiriman(err)) throw err;
+    result = await terima();
+  }
+  // Ulangan: barang tidak masuk lagi — notifikasi, push stok, dan jurnal tidak dikirim lagi.
+  if (result.ulang) return result;
 
   getActorName(userId)
     .then((triggeredByName) => notifyGRNCreated(result.id, result.docNumber, triggeredByName))
@@ -379,6 +586,12 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, userId: string) {
     entityId: result.id,
     changes: { after: { docNumber: result.docNumber } },
   }).catch(() => {});
+
+  // Sesudah commit: kirim stok baru ke Jubelio (best-effort, tidak pernah melempar).
+  await antrekanPushStok(
+    validated.items.map((i) => i.itemId),
+    { sumber: 'GRN', ref: result.docNumber, userId },
+  );
 
   try {
     const jr = await postGrnJournal(result.id, userId);
@@ -419,6 +632,48 @@ async function requireGrnRead(extra: string[] = []): Promise<void> {
   requireAnyPermission(session?.user?.permissions ?? [], [PERMISSIONS.INVENTORY_VIEW, ...extra]);
 }
 
+export type KodeTolakGrn = keyof typeof PESAN_TOLAK_GRN;
+
+export type SimpanGRNResult =
+  /** `ulang: true` hanya pada kiriman ulang berkunci sama (GRN yang sudah ada). */
+  | { ok: true; id: string; docNumber: string; ulang?: true }
+  | { ok: false; code: KodeTolakGrn | ReceiptRefusalCode; detail?: string };
+
+/**
+ * `createGRN` untuk formulir GRN: penolakan berkode DIKEMBALIKAN, bukan
+ * dilempar — di build produksi Next menyamarkan pesan lemparan aksi server,
+ * jadi layar hanya bisa menjelaskan "PO sudah dibatalkan" lewat kodenya.
+ * Galat lain (izin, validasi) tetap dilempar seperti `createGRN`.
+ */
+export async function simpanGRN(data: GRNFormData): Promise<SimpanGRNResult> {
+  try {
+    const hasil = await createGRN(data);
+    if (!hasil.success) return { ok: false, code: hasil.code, ...(hasil.detail ? { detail: hasil.detail } : {}) };
+    const grn = hasil.grn;
+    return { ok: true, id: grn.id, docNumber: grn.docNumber, ...(grn.ulang ? { ulang: true as const } : {}) };
+  } catch (error) {
+    if (error instanceof GrnDitolakError) return { ok: false, code: error.code };
+    throw error;
+  }
+}
+
+/** Kolom pemasok yang aman dikirim ke browser — tanpa `bankAccountEnc`. */
+const PEMASOK_AMAN = {
+  id: true,
+  code: true,
+  name: true,
+  typeId: true,
+  address: true,
+  phone: true,
+  email: true,
+  isActive: true,
+  status: true,
+} as const;
+
+/**
+ * Daftar GRN: halaman inventori (`inventory:view`) dan formulir retur pemasok
+ * (`vendor_returns:view`).
+ */
 export async function getGRNs(
   filters?: {
     supplierId?: string;
@@ -426,6 +681,8 @@ export async function getGRNs(
     dateTo?: Date;
     poId?: string;
     search?: string;
+    /** Kata kunci (nomor GRN, pemasok, nomor PO) — disaring di server, lihat `syaratCariGrn`. */
+    cari?: string;
   },
   opts?: { page: number; pageSize: number }
 ) {
@@ -433,6 +690,8 @@ export async function getGRNs(
   const where: Record<string, unknown> = {};
   if (filters?.supplierId) where.supplierId = filters.supplierId;
   if (filters?.poId) where.poId = filters.poId;
+  const cari = syaratCariGrn(filters?.cari);
+  if (cari) where.AND = [cari];
   if (filters?.dateFrom || filters?.dateTo) {
     where.grnDate = {};
     if (filters.dateFrom) (where.grnDate as Record<string, Date>).gte = filters.dateFrom;
@@ -448,8 +707,8 @@ export async function getGRNs(
   }
 
   const include = {
-    supplier: true,
-    po: { select: { docNumber: true } },
+    supplier: { select: PEMASOK_AMAN },
+    po: { select: { id: true, docNumber: true } },
   };
 
   if (opts?.page != null && opts?.pageSize != null && opts.pageSize > 0) {
@@ -466,6 +725,7 @@ export async function getGRNs(
     const items = rows.map((r) => ({
       ...r,
       totalAmount: Number(r.totalAmount),
+      ppnAmount: r.ppnAmount == null ? null : Number(r.ppnAmount),
     }));
     return { items, totalCount };
   }
@@ -478,17 +738,18 @@ export async function getGRNs(
   return rows.map((r) => ({
     ...r,
     totalAmount: Number(r.totalAmount),
+    ppnAmount: r.ppnAmount == null ? null : Number(r.ppnAmount),
   }));
 }
 
 export async function getGRNById(id: string) {
-  await requireGrnRead();
+  await requireGrnRead([PERMISSIONS.VENDOR_RETURNS_VIEW]);
   const grn = await prisma.gRN.findUnique({
     where: { id },
     include: {
-      supplier: true,
+      supplier: { select: PEMASOK_AMAN },
       po: {
-        include: { supplier: true },
+        include: { supplier: { select: PEMASOK_AMAN } },
       },
     },
   });
@@ -496,6 +757,7 @@ export async function getGRNById(id: string) {
   return {
     ...grn,
     totalAmount: Number(grn.totalAmount),
+    ppnAmount: grn.ppnAmount == null ? null : Number(grn.ppnAmount),
   };
 }
 
@@ -560,11 +822,11 @@ export async function getFabricRolls(opts?: {
   const search = opts?.search?.trim();
   if (search && search.length > 0) {
     where.OR = [
-      { rollCode: { contains: search } },
-      { rollRef: { contains: search } },
-      { item: { sku: { contains: search } } },
-      { item: { nameId: { contains: search } } },
-      { grn: { docNumber: { contains: search } } },
+      { rollCode: cariTeks(search) },
+      { rollRef: cariTeks(search) },
+      { item: { sku: cariTeks(search) } },
+      { item: { nameId: cariTeks(search) } },
+      { grn: { docNumber: cariTeks(search) } },
     ];
   }
 
@@ -622,94 +884,118 @@ export async function getFabricRolls(opts?: {
   }));
 }
 
-export async function approveGRNByOwner(id: string, userId: string) {
+/**
+ * Pemilik = admin sistem: izin wildcard `*` yang diberikan `lib/auth.ts` untuk
+ * `RoleDefinition.isSystem`. Tidak ada izin "pemilik" tersendiri, dan kolom lama
+ * `User.role` tidak dipakai lagi. Pengguna SELALU dari sesi — dulu id yang
+ * dikirim klien yang diperiksa, jadi siapa pun dengan `inventory:manage` cukup
+ * mengirim id admin.
+ */
+async function wajibPemilik(tindakan: 'approve' | 'decline', claimedUserId?: string): Promise<string> {
   const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
-  assertActor(session.user.id, userId);
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { role: true },
-  });
-  if (!user || user.role !== 'ADMIN') {
-    throw new Error('Only owner/admin can approve over-receive GRN');
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  const perms = session.user.permissions ?? [];
+  requirePermission(perms, PERMISSIONS.INVENTORY_MANAGE);
+  if (claimedUserId !== undefined) assertActor(session.user.id, claimedUserId);
+  if (!perms.includes('*')) {
+    throw new Error(`Only owner/admin can ${tindakan} over-receive GRN`);
   }
-  const grn = await prisma.gRN.update({
-    where: { id },
-    data: {
-      requiresOwnerApproval: false,
-      ownerApprovedAt: new Date(),
-      ownerApprovedById: userId,
-    },
-  });
+  return session.user.id;
+}
 
-  // Recompute PO status now that GRN is approved (deferred transition to CLOSED/OVER)
-  if (grn.poId) {
-    const poItems = await prisma.pOItem.findMany({
-      where: { poId: grn.poId },
-    });
-    const allFullyReceived = poItems.every((poItem) =>
-      new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
-    );
-    const anyOverReceived = poItems.some((poItem) =>
-      new Decimal(poItem.receivedQty.toString()).gt(poItem.qty.toString())
-    );
-    const anyReceived = poItems.some((poItem) =>
-      new Decimal(poItem.receivedQty.toString()).gt(0)
-    );
-    let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER' = 'SUBMITTED';
-    if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
-    else if (anyReceived) newStatus = 'PARTIAL';
+type GrnPoStatus = 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER';
 
-    await prisma.purchaseOrder.update({
-      where: { id: grn.poId },
-      data: { status: newStatus },
-    });
-    await prisma.pOStatusHistory.create({
+function statusPoDariBaris(poItems: Array<{ qty: unknown; receivedQty: unknown }>): GrnPoStatus {
+  const allFullyReceived = poItems.every((poItem) =>
+    new Decimal(String(poItem.receivedQty)).gte(String(poItem.qty))
+  );
+  const anyOverReceived = poItems.some((poItem) =>
+    new Decimal(String(poItem.receivedQty)).gt(String(poItem.qty))
+  );
+  const anyReceived = poItems.some((poItem) => new Decimal(String(poItem.receivedQty)).gt(0));
+  if (allFullyReceived) return anyOverReceived ? 'OVER' : 'CLOSED';
+  if (anyReceived) return 'PARTIAL';
+  return 'SUBMITTED';
+}
+
+/**
+ * Pemilik menyetujui GRN terima-lebih. Pengguna dari sesi; `claimedUserId`, kalau dikirim, harus sama (lihat `wajibPemilik`).
+ * Penjaga keadaan + pembaruan + status PO berjalan dalam satu transaksi
+ * serializable: GRN yang sudah disetujui/ditolak tidak bisa disetujui lagi, dan
+ * setuju-vs-tolak serentak hanya menghasilkan satu pemenang.
+ */
+export async function approveGRNByOwner(id: string, claimedUserId?: string) {
+  const userId = await wajibPemilik('approve', claimedUserId);
+
+  const grn = await runSerializable(async (tx) => {
+    const cur = await tx.gRN.findUnique({ where: { id } });
+    if (!cur) throw new Error(PESAN_PEMILIK_GRN.TIDAK_DITEMUKAN);
+    if (cur.ownerDeclinedAt != null) throw new Error(PESAN_PEMILIK_GRN.SUDAH_DITOLAK);
+    if (cur.ownerApprovedAt != null) throw new Error(PESAN_PEMILIK_GRN.SUDAH_DISETUJUI);
+    if (!cur.requiresOwnerApproval) throw new Error(PESAN_PEMILIK_GRN.TIDAK_MENUNGGU);
+
+    const updated = await tx.gRN.update({
+      where: { id },
       data: {
-        poId: grn.poId,
-        status: newStatus,
-        changedById: userId,
-        notes: `GRN owner-approved: ${grn.docNumber}`,
+        requiresOwnerApproval: false,
+        ownerApprovedAt: new Date(),
+        ownerApprovedById: userId,
       },
     });
-    revalidatePath(`/backoffice/purchase-orders/${grn.poId}`);
-  }
 
+    // Recompute PO status now that GRN is approved (deferred transition to CLOSED/OVER)
+    if (updated.poId) {
+      const poItems = await tx.pOItem.findMany({ where: { poId: updated.poId } });
+      const newStatus = statusPoDariBaris(poItems);
+      await tx.purchaseOrder.update({
+        where: { id: updated.poId },
+        data: { status: newStatus },
+      });
+      await tx.pOStatusHistory.create({
+        data: {
+          poId: updated.poId,
+          status: newStatus,
+          changedById: userId,
+          notes: `GRN owner-approved: ${updated.docNumber}`,
+        },
+      });
+    }
+    return updated;
+  });
+
+  if (grn.poId) revalidatePath(`/backoffice/purchase-orders/${grn.poId}`);
   revalidatePath('/backoffice/inventory');
-  return grn;
+  return { ...grn, totalAmount: Number(grn.totalAmount), ppnAmount: grn.ppnAmount == null ? null : Number(grn.ppnAmount) };
 }
 
 /**
  * Owner declines an over-receive GRN: reverse inventory and PO received qty, remove fabric rolls, record decline.
  * Fails if fabric rolls from this GRN were partially consumed or on-hand qty is insufficient.
  */
-export async function declineGRNByOwner(id: string, userId: string) {
-  const session = await auth();
-  if (!session) throw new Error('Unauthorized');
-  requirePermission(session.user.permissions, PERMISSIONS.INVENTORY_MANAGE);
-  assertActor(session.user.id, userId);
-
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { role: true },
-  });
-  if (!user || user.role !== 'ADMIN') {
-    throw new Error('Only owner/admin can decline over-receive GRN');
-  }
+export async function declineGRNByOwner(id: string, claimedUserId?: string) {
+  const userId = await wajibPemilik('decline', claimedUserId);
 
   let poIdForRevalidate: string | null = null;
+  // Untuk push stok ke Jubelio sesudah commit; diisi ulang tiap percobaan.
+  let barangDibalik: string[] = [];
+  let nomorGrn = '';
 
-  await prisma.$transaction(async (tx) => {
+  // Serializable + diulang: dua tolak serentak dulu sama-sama lolos penjaga dan
+  // membalik stok dua kali. Sekarang yang kalah diulang, melihat GRN sudah
+  // ditolak, lalu berhenti sebelum menyentuh stok.
+  await runSerializable(async (tx) => {
+    poIdForRevalidate = null;
+    barangDibalik = [];
+    nomorGrn = '';
     const grn = await tx.gRN.findUnique({ where: { id } });
-    if (!grn) throw new Error('GRN not found');
+    if (!grn) throw new Error(PESAN_PEMILIK_GRN.TIDAK_DITEMUKAN);
     poIdForRevalidate = grn.poId ?? null;
-    if (!grn.requiresOwnerApproval || grn.ownerApprovedAt != null) {
-      throw new Error('This GRN is not awaiting owner approval');
-    }
+    nomorGrn = grn.docNumber;
     if (grn.ownerDeclinedAt != null) {
-      throw new Error('This GRN was already declined');
+      throw new Error(PESAN_PEMILIK_GRN.SUDAH_DITOLAK);
+    }
+    if (!grn.requiresOwnerApproval || grn.ownerApprovedAt != null) {
+      throw new Error(PESAN_PEMILIK_GRN.TIDAK_MENUNGGU);
     }
 
     const lines = parseGrnStoredLines(grn.items);
@@ -717,9 +1003,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
     const rolls = await tx.fabricRoll.findMany({ where: { grnId: id } });
     for (const r of rolls) {
       if (Number(r.remainingLength) !== Number(r.initialLength)) {
-        throw new Error(
-          'Cannot decline: fabric rolls from this GRN have been consumed. Adjust stock or contact support.'
-        );
+        throw new Error(PESAN_PEMILIK_GRN.ROL_SUDAH_DIPAKAI);
       }
     }
 
@@ -730,7 +1014,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
       if (!Number.isFinite(qty) || qty <= 0) continue;
       const unitCost = typeof line.unitCost === 'number' ? line.unitCost : Number(line.unitCost);
       if (!Number.isFinite(unitCost) || unitCost < 0) {
-        throw new Error(`Invalid unit cost on GRN line for item ${itemId}`);
+        throw new Error(`${PESAN_PEMILIK_GRN.HARGA_TIDAK_SAH} ${itemId}`);
       }
       const variantKey = line.variantSku?.trim() ? line.variantSku.trim() : null;
 
@@ -741,9 +1025,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
       const inv = await findExistingInventoryValueRow(tx, itemId, variantKey);
       const onHand = inv ? new Decimal(inv.qtyOnHand.toString()) : new Decimal(0);
       if (onHand.lt(qty)) {
-        throw new Error(
-          'Cannot decline: insufficient on-hand stock (goods may have been issued or consumed).'
-        );
+        throw new Error(PESAN_PEMILIK_GRN.STOK_KURANG);
       }
 
       await reverseMovingAverage(
@@ -756,10 +1038,11 @@ export async function declineGRNByOwner(id: string, userId: string) {
       );
 
       reversedLines += 1;
+      barangDibalik.push(itemId);
     }
 
     if (reversedLines === 0) {
-      throw new Error('No valid GRN lines to reverse');
+      throw new Error(PESAN_PEMILIK_GRN.TANPA_BARIS);
     }
 
     if (rolls.length > 0) {
@@ -785,7 +1068,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
         const cur = Number(poItem.receivedQty);
         const next = cur - qty;
         if (next < 0) {
-          throw new Error('PO received quantity would become negative; data may be inconsistent.');
+          throw new Error(PESAN_PEMILIK_GRN.QTY_PO_NEGATIF);
         }
         await tx.pOItem.update({
           where: { id: poItem.id },
@@ -799,18 +1082,7 @@ export async function declineGRNByOwner(id: string, userId: string) {
       if (poItems.some((p) => Number(p.receivedQty) < (billed.get(p.id) ?? 0) - 0.005)) {
         throw new Error('Cannot decline: vendor bills already charge for more than would stay received. Void those bills first.');
       }
-      const allFullyReceived = poItems.every((poItem) =>
-        new Decimal(poItem.receivedQty.toString()).gte(poItem.qty.toString())
-      );
-      const anyOverReceived = poItems.some((poItem) =>
-        new Decimal(poItem.receivedQty.toString()).gt(poItem.qty.toString())
-      );
-      const anyReceived = poItems.some((poItem) =>
-        new Decimal(poItem.receivedQty.toString()).gt(0)
-      );
-      let newStatus: 'SUBMITTED' | 'PARTIAL' | 'CLOSED' | 'OVER' = 'SUBMITTED';
-      if (allFullyReceived) newStatus = anyOverReceived ? 'OVER' : 'CLOSED';
-      else if (anyReceived) newStatus = 'PARTIAL';
+      const newStatus = statusPoDariBaris(poItems);
 
       await tx.purchaseOrder.update({
         where: { id: grn.poId },
@@ -839,6 +1111,9 @@ export async function declineGRNByOwner(id: string, userId: string) {
       await recomputePaymentDueDate(tx, grn.poId);
     }
   });
+
+  // Sesudah commit: stok yang dibalik dikirim ke Jubelio (best-effort).
+  await antrekanPushStok(barangDibalik, { sumber: 'GRN_DECLINE', ref: nomorGrn, userId });
 
   try {
     const jr = await postGrnReversalJournal(id, userId);
@@ -912,7 +1187,7 @@ export async function getGrnJournalState(grnId: string): Promise<{
 
 export async function postGrnReceiptJournalAction(
   grnId: string,
-): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }> {
+): Promise<GenerateAutoJournalResult | { ok: false; code: "FORBIDDEN" | "BAD_STATE" | "DITOLAK_PEMILIK" }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
     return { ok: false, code: "FORBIDDEN" };
@@ -920,16 +1195,22 @@ export async function postGrnReceiptJournalAction(
 
   const grn = await prisma.gRN.findUnique({ where: { id: grnId }, select: { id: true, ownerDeclinedAt: true } });
   if (!grn) return { ok: false, code: "BAD_STATE" };
-  /* Same rule as `getGrnJournalState`: a declined receipt is postable only to net off a stray reversal. */
+  /*
+   * Same rule as `getGrnJournalState`: a declined receipt is postable only to net off a stray
+   * reversal. Otherwise its goods were already reversed out of inventory, and a receipt journal
+   * would book a payable for goods never kept — and hold the PO payment at `GRN_REVERSAL_MISSING`.
+   */
   if (grn.ownerDeclinedAt != null) {
     const reversal = await prisma.journal.findUnique({
       where: { sourceType_sourceId: { sourceType: "GRN_REVERSAL", sourceId: grnId } },
       select: { id: true },
     });
-    if (!reversal) return { ok: false, code: "BAD_STATE" };
+    if (!reversal) return { ok: false, code: "DITOLAK_PEMILIK" };
   }
 
   const r = await postGrnJournal(grnId, session.user.id);
+  // Jurnal berdiri → tanda "Jurnal gagal" dokumen ini selesai (Beranda).
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("GRN", grnId)]);
   revalidatePath("/backoffice/inventory");
   return r;
 }
@@ -946,6 +1227,125 @@ export async function postGrnReversalJournalAction(
   if (!grn || grn.ownerDeclinedAt == null) return { ok: false, code: "BAD_STATE" };
 
   const r = await postGrnReversalJournal(grnId, session.user.id);
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("GRN_REVERSAL", grnId)]);
   revalidatePath("/backoffice/inventory");
   return r;
+}
+
+export type PutuskanGRNPemilikResult = { ok: true } | { ok: false; code: KodeTolakPemilikGrn };
+
+/**
+ * Setuju/tolak terima-lebih untuk layar, dengan penolakan sebagai KODE
+ * (`inventory.grnPemilik.err.<kode>`): di build produksi Next menyamarkan
+ * pesan lemparan aksi server, jadi layar dulu hanya bisa berkata "gagal".
+ * Penjaga dan penulisnya tetap `approveGRNByOwner` / `declineGRNByOwner`.
+ */
+export async function putuskanGRNPemilik(
+  id: string,
+  keputusan: 'setuju' | 'tolak'
+): Promise<PutuskanGRNPemilikResult> {
+  const session = await auth();
+  const perms = session?.user?.permissions ?? [];
+  if (!session?.user?.id || !hasPermission(perms, PERMISSIONS.INVENTORY_MANAGE) || !perms.includes('*')) {
+    return { ok: false, code: 'TANPA_AKSES' };
+  }
+  try {
+    if (keputusan === 'setuju') await approveGRNByOwner(id);
+    else await declineGRNByOwner(id);
+    return { ok: true };
+  } catch (e) {
+    const code = kodeTolakPemilikGrn(e);
+    if (code === 'GAGAL') console.error('[putuskanGRNPemilik]', e);
+    return { ok: false, code };
+  }
+}
+
+export type RincianGRN = {
+  id: string;
+  docNumber: string;
+  grnDate: string;
+  createdAt: string;
+  supplier: { id: string; code: string; name: string };
+  po: { id: string; docNumber: string; status: string } | null;
+  penerima: string | null;
+  totalAmount: number;
+  /** PPN masukan tersimpan (`lib/finance/pajak/grn-ppn.ts`); null/0 = tanpa PPN dipisah. */
+  ppnAmount: number | null;
+  notes: string | null;
+  foto: string[];
+  baris: BarisRincianGrn[];
+  pemilik: {
+    keadaan: 'menunggu' | 'disetujui' | 'ditolak' | null;
+    waktu: string | null;
+    oleh: string | null;
+  };
+  rolls: Awaited<ReturnType<typeof getRollsByGrnId>>;
+  returPemasok: Array<{ id: string; docNumber: string; status: string }>;
+};
+
+/**
+ * Rincian satu GRN untuk halaman `/backoffice/inventory/grn/[id]`: barang,
+ * qty, harga, foto, keadaan terima-lebih, roll kain, retur pemasok terkait.
+ * Dulu baris GRN di tab Penerimaan Barang hanya bisa dibuka untuk roll kain.
+ */
+export async function getRincianGRN(id: string): Promise<RincianGRN | null> {
+  await requireGrnRead();
+  const grn = await prisma.gRN.findUnique({
+    where: { id },
+    include: {
+      supplier: { select: { id: true, code: true, name: true } },
+      po: { select: { id: true, docNumber: true, status: true } },
+      ownerApprovedBy: { select: { name: true, email: true } },
+      ownerDeclinedBy: { select: { name: true, email: true } },
+      vendorReturns: { select: { id: true, docNumber: true, status: true }, orderBy: { createdAt: 'asc' } },
+    },
+  });
+  if (!grn) return null;
+
+  const mentah = parseGrnStoredLines(grn.items);
+  const idBarang = [...new Set(mentah.map((l) => l.itemId).filter((v): v is string => typeof v === 'string' && v !== ''))];
+  const [barangRows, penerima, rolls] = await Promise.all([
+    idBarang.length
+      ? prisma.item.findMany({
+          where: { id: { in: idBarang } },
+          select: { id: true, sku: true, nameId: true, variants: true, uom: { select: { code: true } } },
+        })
+      : Promise.resolve([]),
+    grn.receivedBy
+      ? prisma.user.findUnique({ where: { id: grn.receivedBy }, select: { name: true, email: true } })
+      : Promise.resolve(null),
+    getRollsByGrnId(id),
+  ]);
+  const barang = new Map<string, BarangGrn>(
+    barangRows.map((b) => [b.id, { sku: b.sku, nameId: b.nameId, uomCode: b.uom?.code ?? '', variants: b.variants }])
+  );
+  const keadaan = keadaanPemilikGrn(grn);
+  const pemutus = keadaan === 'ditolak' ? grn.ownerDeclinedBy : keadaan === 'disetujui' ? grn.ownerApprovedBy : null;
+
+  return {
+    id: grn.id,
+    docNumber: grn.docNumber,
+    grnDate: grn.grnDate.toISOString(),
+    createdAt: grn.createdAt.toISOString(),
+    supplier: grn.supplier,
+    po: grn.po,
+    penerima: penerima ? penerima.name || penerima.email || null : null,
+    totalAmount: Number(grn.totalAmount),
+    ppnAmount: grn.ppnAmount == null ? null : Number(grn.ppnAmount),
+    notes: grn.notes,
+    foto: fotoGrn(grn.photoUrls),
+    baris: susunBarisGrn(grn.items, barang),
+    pemilik: {
+      keadaan,
+      waktu:
+        keadaan === 'ditolak'
+          ? grn.ownerDeclinedAt?.toISOString() ?? null
+          : keadaan === 'disetujui'
+            ? grn.ownerApprovedAt?.toISOString() ?? null
+            : null,
+      oleh: pemutus ? pemutus.name || pemutus.email || null : null,
+    },
+    rolls,
+    returPemasok: grn.vendorReturns,
+  };
 }

@@ -2,11 +2,11 @@
 
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Receipt, X } from "lucide-react";
 import type { VanSaleListRow } from "@/lib/canvassing/sale-queries";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
@@ -24,6 +24,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 type Props = {
   sales: VanSaleListRow[];
@@ -38,23 +41,9 @@ type Props = {
 
 const ALL_SALESMEN = "__all__";
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
+/** Pager disembunyikan selama semua baris muat di satu halaman terkecil. */
+const PAGER_MIN = 10;
 
 export function VanSalesListClient({
   sales,
@@ -67,7 +56,9 @@ export function VanSalesListClient({
   pageSize,
 }: Props) {
   const t = useTranslations("vanSale.backoffice.list");
+  const tt = useTranslations("tanggalInput");
   const tTable = useTranslations("vanSale.backoffice.list.table");
+  const locale = useLocale();
   const router = useRouter();
   const sp = useSearchParams();
   const [, startTransition] = useTransition();
@@ -86,10 +77,7 @@ export function VanSalesListClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <PageHeader title={t("judulKanvas")} />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-2 w-full sm:w-56">
@@ -107,28 +95,15 @@ export function VanSalesListClient({
             triggerClassName="h-9 w-full"
           />
         </div>
-        <div className="space-y-2 w-full sm:w-40">
-          <Label htmlFor="van-sale-from" className="text-muted-foreground">
-            {t("filters.fromLabel")}
+        <div className="space-y-2 w-full sm:w-64">
+          <Label htmlFor="van-sale-periode" className="text-muted-foreground">
+            {tt("periode")}
           </Label>
-          <Input
-            id="van-sale-from"
-            type="date"
-            value={from}
-            onChange={(e) => pushParams({ from: e.target.value || undefined })}
-            className="h-9"
-          />
-        </div>
-        <div className="space-y-2 w-full sm:w-40">
-          <Label htmlFor="van-sale-to" className="text-muted-foreground">
-            {t("filters.toLabel")}
-          </Label>
-          <Input
-            id="van-sale-to"
-            type="date"
-            value={to}
-            onChange={(e) => pushParams({ to: e.target.value || undefined })}
-            className="h-9"
+          <RentangTanggalInput
+            id="van-sale-periode"
+            dari={from}
+            sampai={to}
+            onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
           />
         </div>
         {hasFilters && (
@@ -149,9 +124,12 @@ export function VanSalesListClient({
           <CardTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5" />
             {t("cardTitle")}
-            <span className="text-sm font-normal text-muted-foreground ml-2">
-              ({t("count", { count: totalCount })})
-            </span>
+            {/* Kosong: keterangan kosong cukup sekali, di badan kartu. */}
+            {totalCount > 0 ? (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                ({t("count", { count: totalCount })})
+              </span>
+            ) : null}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -161,6 +139,18 @@ export function VanSalesListClient({
               <p className="text-muted-foreground">
                 {hasFilters ? t("noResults") : t("empty")}
               </p>
+              {/* Dari mana nota datang, seperti keadaan kosong lain di grup ini. */}
+              {!hasFilters ? <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{t("emptySumber")}</p> : null}
+              {hasFilters && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => pushParams({ salesmanId: undefined, from: undefined, to: undefined })}
+                >
+                  {t("clearFilters")}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -184,11 +174,11 @@ export function VanSalesListClient({
                       }
                     >
                       <TableCell className="font-mono text-xs">{s.docNo}</TableCell>
-                      <TableCell className="font-medium">{s.salesmanLabel}</TableCell>
-                      <TableCell className="text-muted-foreground">{s.buyerLabel}</TableCell>
+                      <TableCell className="min-w-[8rem] whitespace-normal font-medium">{s.salesmanLabel}</TableCell>
+                      <TableCell className="min-w-[8rem] whitespace-normal text-muted-foreground">{s.buyerLabel}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatRupiah(s.total)}</TableCell>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDateTime(s.createdAtIso)}
+                        {formatDisplayDateTime(s.createdAtIso, locale)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -199,22 +189,25 @@ export function VanSalesListClient({
         </CardContent>
       </Card>
 
-      <Pager
-        page={page}
-        pageSize={pageSize}
-        total={totalCount}
-        onPageChange={(p) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("page", String(p));
-          startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
-        }}
-        onPageSizeChange={(size) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("pageSize", String(size));
-          params.delete("page");
-          startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
-        }}
-      />
+      {/* Satu halaman pendek tidak butuh pager. */}
+      {totalCount > PAGER_MIN || page > 1 ? (
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={(p) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("page", String(p));
+            startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
+          }}
+          onPageSizeChange={(size) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("pageSize", String(size));
+            params.delete("page");
+            startTransition(() => router.push(`/backoffice/van-sales?${params.toString()}`));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

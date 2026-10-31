@@ -1,3 +1,12 @@
+/*
+ * SENGAJA tanpa 'use server'. Berkas ini hanya dipanggil kode server (aksi
+ * lain, rute API, cron). Dengan 'use server', setiap ekspornya menjadi titik
+ * panggil publik tanpa sesi: siapa pun bisa mengirim notifikasi berteks bebas
+ * ke semua pemegang izin, menjalankan pemeriksaan cron, atau membaca nama dan
+ * email pengguna lewat `getActorName`. Jangan ditambahkan kembali — dijaga
+ * notifications-penjaga.spec.ts. Komponen klien tidak boleh mengimpornya.
+ */
+
 import { prisma } from '@elorae/db';
 import { messaging } from '@/lib/firebase/admin';
 import { getActorName } from '@/lib/notifications/actor-name';
@@ -188,7 +197,6 @@ export async function checkAndSendWoOverdueNotifications(): Promise<{ sent: numb
   const targetUsers = await getUsersWithPermission('purchase_orders:view');
   if (targetUsers.length === 0) return { sent: 0 };
 
-  const userMap = new Map(targetUsers.map((u) => [u.id, u]));
   let sent = 0;
 
   const sentToday = await prisma.notificationQueue.findMany({

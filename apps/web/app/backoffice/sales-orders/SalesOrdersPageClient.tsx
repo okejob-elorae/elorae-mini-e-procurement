@@ -1,12 +1,15 @@
 "use client";
 
+import Link from "next/link";
+import { TAUTAN_DOKUMEN } from "@/app/backoffice/purchase-orders/tautan-dokumen";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { SALES_CHANNEL_VALUES, SALES_ORDER_STATUS_VALUES } from "@/lib/constants/enums";
 import type { SalesOrderListRow, SalesOrdersListKpi } from "@/lib/sales-orders/queries";
 import { CHANNEL_BADGE, STATUS_BADGE } from "@/lib/sales-orders/badges";
-import { formatIDR, formatDateTime } from "@/lib/sales-orders/format";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { formatDisplayDateTime } from "@/lib/date-only";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -16,7 +19,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ShoppingBag } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -26,6 +31,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 type Props = {
   orders: SalesOrderListRow[];
@@ -57,12 +63,18 @@ export function SalesOrdersPageClient(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     params.delete("page");
     startTransition(() => router.push(`/backoffice/sales-orders?${params.toString()}`));
+  }
+
+  function pushParam(key: string, value: string | undefined) {
+    pushParams({ [key]: value });
   }
 
   function reset() {
@@ -77,13 +89,12 @@ export function SalesOrdersPageClient(props: Props) {
     props.dateFrom ||
     props.dateTo
   );
+  // Tanpa rentang tanggal, angka KPI mencakup semua pesanan — jangan menyebut "rentang terpilih".
+  const adaRentang = !!(props.dateFrom || props.dateTo);
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("pageSubtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       <div className="space-y-3">
         <Card className="py-4">
@@ -95,7 +106,9 @@ export function SalesOrdersPageClient(props: Props) {
                   {props.kpi.totalCount.toLocaleString(locale)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {t("kpi.totalValue", { value: formatIDR(props.kpi.totalValue) })}
+                  {adaRentang
+                    ? t("kpi.totalValue", { value: formatIDR(props.kpi.totalValue) })
+                    : t("kpi.totalValueAll", { value: formatIDR(props.kpi.totalValue) })}
                 </p>
               </div>
               <div className="sm:border-l sm:pl-4">
@@ -108,9 +121,14 @@ export function SalesOrdersPageClient(props: Props) {
                     count: Number(props.kpi.averageDailyCount.toFixed(1)).toLocaleString(locale),
                   })}
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  {t("kpi.avgDailySalesDesc", { days: props.kpi.dayCount })}
-                </p>
+                {/* Tanpa rentang dan tanpa pesanan, "dari pesanan pertama sampai terakhir" tidak ada. */}
+                {adaRentang || props.kpi.totalCount > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {adaRentang
+                      ? t("kpi.avgDailySalesDesc", { days: props.kpi.dayCount })
+                      : t("kpi.avgDailySalesDescAll", { days: props.kpi.dayCount })}
+                  </p>
+                ) : null}
               </div>
             </div>
             {props.kpi.byChannel.length > 0 && (
@@ -148,7 +166,7 @@ export function SalesOrdersPageClient(props: Props) {
           <CardContent className="px-4">
             <div className="mb-2 text-xs font-medium text-muted-foreground">{t("kpi.byStatus")}</div>
             {props.kpi.byStatus.length === 0 ? (
-              <p className="text-sm text-muted-foreground">—</p>
+              <p className="text-sm text-muted-foreground">{t("kpi.byStatusEmpty")}</p>
             ) : (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                 {props.kpi.byStatus.map((row) => {
@@ -180,16 +198,16 @@ export function SalesOrdersPageClient(props: Props) {
       </div>
 
       <Card className="p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-7">
-          <div className="lg:col-span-2">
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.searchPlaceholder")}</label>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[16rem] flex-[1_1_24rem]">
+            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.search")}</label>
             <Input
               placeholder={t("filter.searchPlaceholder")}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.channel")}</label>
             <Select
               value={props.channel || "ALL"}
@@ -208,7 +226,7 @@ export function SalesOrdersPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
+          <div className="w-full sm:w-40">
             <label className="text-xs text-muted-foreground mb-1 block">{t("filter.status")}</label>
             <Select
               value={props.status || "ALL"}
@@ -227,94 +245,112 @@ export function SalesOrdersPageClient(props: Props) {
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("filter.dateRange")}</label>
-            <Input
-              type="date"
-              value={props.dateFrom}
-              onChange={(e) => pushParam("dateFrom", e.target.value || undefined)}
+          <div className="w-full sm:w-auto">
+            <label htmlFor="rentang-tanggal" className="text-xs text-muted-foreground mb-1 block">
+              {t("filter.dateRange")}
+            </label>
+            <RentangTanggalInput
+              id="rentang-tanggal"
+              className="sm:w-64"
+              dari={props.dateFrom}
+              sampai={props.dateTo}
+              onChange={({ dari, sampai }) => pushParams({ dateFrom: dari || undefined, dateTo: sampai || undefined })}
             />
           </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">&nbsp;</label>
-            <Input
-              type="date"
-              value={props.dateTo}
-              onChange={(e) => pushParam("dateTo", e.target.value || undefined)}
-            />
-          </div>
-          <div className="flex flex-col justify-end">
-            <Button variant="outline" onClick={reset} className="w-full">
-              {t("filter.reset")}
-            </Button>
-          </div>
+          <Button variant="outline" onClick={reset} className="shrink-0">
+            {t("filter.reset")}
+          </Button>
         </div>
       </Card>
 
       <Card>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("table.orderNo")}</TableHead>
-              <TableHead>{t("table.channel")}</TableHead>
-              <TableHead>{t("table.trackingNumber")}</TableHead>
-              <TableHead>{t("table.buyer")}</TableHead>
-              <TableHead className="text-right">{t("table.total")}</TableHead>
-              <TableHead>{t("table.status")}</TableHead>
-              <TableHead>{t("table.date")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {props.orders.length === 0 ? (
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShoppingBag className="h-5 w-5" />
+            {t("listTitle")}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                  {hasFilter ? t("emptyFiltered") : t("empty")}
-                </TableCell>
+                <TableHead>{t("table.orderNo")}</TableHead>
+                <TableHead>{t("table.channel")}</TableHead>
+                <TableHead>{t("table.trackingNumber")}</TableHead>
+                <TableHead>{t("table.buyer")}</TableHead>
+                <TableHead className="text-right">{t("table.total")}</TableHead>
+                <TableHead>{t("table.status")}</TableHead>
+                <TableHead>{t("table.date")}</TableHead>
               </TableRow>
-            ) : (
-              props.orders.map((o) => (
-                <TableRow
-                  key={o.id}
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() =>
-                    startTransition(() => router.push(`/backoffice/sales-orders/${o.id}`))
-                  }
-                >
-                  <TableCell className="font-mono text-sm">
-                    {o.salesorderNo}
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[o.channel].tailwindClass}`}
-                    >
-                      {t(`channel.${CHANNEL_BADGE[o.channel].labelKey}` as never)}
-                    </span>
-                  </TableCell>
-                  <TableCell
-                    className="max-w-[180px] truncate font-mono text-sm"
-                    title={o.trackingNumber || undefined}
-                  >
-                    {o.trackingNumber || <span className="font-sans text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate">
-                    {o.customerName ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right">{formatIDR(o.grandTotal)}</TableCell>
-                  <TableCell>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${STATUS_BADGE[o.status].tailwindClass}`}
-                    >
-                      {t(`status.${o.status}` as never)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {formatDateTime(o.transactionDate, locale)}
+            </TableHeader>
+            <TableBody>
+              {props.orders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="whitespace-normal py-8 text-center text-muted-foreground">
+                    {hasFilter ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <span>{t("emptyFiltered")}</span>
+                        <Button variant="outline" size="sm" onClick={reset}>
+                          {t("clearFilters")}
+                        </Button>
+                      </div>
+                    ) : (
+                      t("empty")
+                    )}
                   </TableCell>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              ) : (
+                props.orders.map((o) => (
+                  <TableRow
+                    key={o.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() =>
+                      startTransition(() => router.push(`/backoffice/sales-orders/${o.id}`))
+                    }
+                  >
+                    <TableCell className="font-mono text-sm">
+                      {/* Tautan sungguhan: bisa difokus papan ketik dan dibuka di tab baru; baris tetap bisa diklik. */}
+                      <Link
+                        href={`/backoffice/sales-orders/${o.id}`}
+                        className={TAUTAN_DOKUMEN}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {o.salesorderNo}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${CHANNEL_BADGE[o.channel].tailwindClass}`}
+                      >
+                        {t(`channel.${CHANNEL_BADGE[o.channel].labelKey}` as never)}
+                      </span>
+                    </TableCell>
+                    <TableCell
+                      className="max-w-[180px] truncate font-mono text-sm"
+                      title={o.trackingNumber || undefined}
+                    >
+                      {o.trackingNumber || <span className="font-sans text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate">
+                      {o.customerName ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-right">{formatIDR(o.grandTotal)}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs ${STATUS_BADGE[o.status].tailwindClass}`}
+                      >
+                        {t(`status.${o.status}` as never)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDisplayDateTime(o.transactionDate, locale)}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
       </Card>
 
       <Pager

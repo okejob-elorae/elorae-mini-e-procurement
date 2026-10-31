@@ -49,13 +49,19 @@ d("recordSpgSale (test bed only)", () => {
 
   afterEach(async () => {
     const storeIds = [storeId, putusStoreId, discountStoreId];
+    const itemIds = [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)];
+    const saleIds = (
+      await prisma.spgSale.findMany({ where: { salesmanId: seededId(salesmanId), storeId: { in: storeIds.map(seededId) } }, select: { id: true } })
+    ).map((x) => x.id);
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds.map(seededId) } } });
-    await prisma.salesHistory.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
-    await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
+    await prisma.storeStockMovement.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: saleIds } } });
     await prisma.spgSale.deleteMany({ where: { salesmanId: seededId(salesmanId), storeId: { in: storeIds.map(seededId) } } });
-    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(shortItemId), seededId(neverHeldItemId)] } } });
+    await prisma.item.deleteMany({ where: { id: { in: itemIds } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.store.deleteMany({ where: { id: { in: storeIds.map(seededId) } } });
   });
@@ -110,7 +116,28 @@ d("recordSpgSale (test bed only)", () => {
     expect(Number(sale!.subtotal)).toBe(Number(sale!.total));
   });
 
-  it("does not touch VanStock, InventoryValue, or write a StockAdjustment (record-only)", async () => {
+  it("cuts the STORE's stock: one JUAL movement per line, in the same sale", async () => {
+    // Barang di toko sudah bukan stok gudang — yang terpotong adalah buku stok
+    // toko, supaya SPG dan kantor tahu sisa barang di rak.
+    const res = await recordSpgSale({ salesmanId, storeId, lines: [line(3)] });
+    if (!res.ok) throw new Error("expected ok");
+    const gerak = await prisma.storeStockMovement.findMany({ where: { storeId: seededId(storeId), itemId: seededId(itemId) } });
+    expect(gerak).toHaveLength(1);
+    expect(gerak[0]).toMatchObject({ qty: -3, kind: "JUAL", refType: "SpgSale", refId: res.spgSaleId, variantSku: "" });
+  });
+
+  it("a replayed sale (same idempotency key) does not cut the store's stock twice", async () => {
+    const key = `${tag}-kunci`;
+    await recordSpgSale({ salesmanId, storeId, lines: [line(2)], idempotencyKey: key });
+    await recordSpgSale({ salesmanId, storeId, lines: [line(2)], idempotencyKey: key });
+    const total = await prisma.storeStockMovement.aggregate({
+      where: { storeId: seededId(storeId), itemId: seededId(itemId) },
+      _sum: { qty: true },
+    });
+    expect(total._sum.qty).toBe(-2);
+  });
+
+  it("does not touch warehouse stock: VanStock, InventoryValue, StockAdjustment", async () => {
     const invBefore = await prisma.inventoryValue.findUnique({ where: { itemId_variantSku: { itemId, variantSku: "" } } });
     const adjBefore = await prisma.stockAdjustment.count({ where: { itemId } });
     const vanBefore = await prisma.vanStock.count({ where: { userId: salesmanId, itemId } });
@@ -234,8 +261,10 @@ d("recordSpgSale (test bed only)", () => {
     const sh = await prisma.salesHistory.findFirst({ where: { itemId: vItem.id, orderId: res.docNo } });
     expect(sh!.productName).toBe("Kaos — size: M");
 
+    await prisma.storeStockMovement.deleteMany({ where: { itemId: seededId(vItem.id) } });
     await prisma.salesHistory.deleteMany({ where: { itemId: vItem.id } });
     await prisma.spgSaleLine.deleteMany({ where: { itemId: vItem.id } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: res.spgSaleId }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: res.spgSaleId } });
     await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId), itemId: seededId(vItem.id) } });
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(vItem.id) } });

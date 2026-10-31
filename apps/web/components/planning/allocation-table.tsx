@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, Trash2 } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
@@ -36,7 +37,7 @@ export function AllocationTable({
   primaryLabel,
   secondaryLabel,
   qtyLabel,
-  notesLabel = "Notes",
+  notesLabel: notesLabelProp,
   primaryPlaceholder,
   primaryOptions,
   disabled,
@@ -45,6 +46,9 @@ export function AllocationTable({
   onSave,
   saveLabel = "Simpan",
 }: AllocationTableProps) {
+  const tf = useTranslations("planning.fields");
+  const ta = useTranslations("planning.actions");
+  const notesLabel = notesLabelProp ?? tf("notes");
   const total = rows.reduce((sum, row) => sum + Number(row.readOnlyQty ?? (row.qty || 0)), 0);
 
   const updateRow = (key: string, patch: Partial<AllocationRow>) => {
@@ -123,6 +127,8 @@ export function AllocationTable({
                       type="button"
                       variant="ghost"
                       size="icon"
+                      aria-label={ta("delete")}
+                      title={ta("delete")}
                       onClick={() => onChange(rows.filter((r) => r.key !== row.key))}
                     >
                       <Trash2 className="h-4 w-4" />
@@ -133,7 +139,7 @@ export function AllocationTable({
             ))}
             <tr className="bg-muted/30 font-medium">
               <td colSpan={secondaryLabel ? 2 : 1} className="px-3 py-2">
-                Total
+                {tf("total")}
               </td>
               <td className="px-3 py-2">{formatPlanNumber(total)}</td>
               {notesLabel && <td />}

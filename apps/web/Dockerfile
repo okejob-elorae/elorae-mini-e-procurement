@@ -69,6 +69,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --chown=elorae:elorae --from=builder /repo/apps/web/.next/standalone ./
 COPY --chown=elorae:elorae --from=builder /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --chown=elorae:elorae --from=builder /repo/apps/web/public ./apps/web/public
+# Model bahasa OCR. Dibundel supaya server TIDAK mengambilnya dari CDN saat
+# jalan — pembacaan nota tidak boleh bergantung jaringan keluar.
+COPY --chown=elorae:elorae --from=builder /repo/apps/web/tessdata ./apps/web/tessdata
 USER elorae
 EXPOSE 3000
 WORKDIR /app/apps/web

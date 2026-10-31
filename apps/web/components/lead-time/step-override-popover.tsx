@@ -42,6 +42,7 @@ export function StepOverridePopover({
   trigger,
 }: Props) {
   const t = useTranslations("leadTime.papan");
+  const tc = useTranslations("leadTime.common");
   const [overrideDays, setOverrideDays] = useState("");
   const [overrideRateQty, setOverrideRateQty] = useState("");
   const [notes, setNotes] = useState("");
@@ -63,10 +64,10 @@ export function StepOverridePopover({
       notes: clear ? null : notes.trim() || null,
     });
     if (!result.success) {
-      toast.error(result.error ?? "Failed");
+      toast.error(result.error ?? tc("failed"));
       return;
     }
-    toast.success("OK");
+    toast.success(tc("saved"));
     onOpenChange(false);
     onSaved();
   }
@@ -76,7 +77,7 @@ export function StepOverridePopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent className="w-64 space-y-2" align="end">
         <div className="space-y-1">
-          <Label>{t("overrideDays")}</Label>
+          <Label>{t("overrideDaysV2")}</Label>
           <Input
             type="number"
             min={1}
@@ -87,7 +88,7 @@ export function StepOverridePopover({
         </div>
         {step.processTemplate.leadTimeType === "PER_QTY" && (
           <div className="space-y-1">
-            <Label>{t("overrideRateQty")}</Label>
+            <Label>{t("overrideRateQtyV2")}</Label>
             <Input
               type="number"
               min={1}
@@ -98,12 +99,12 @@ export function StepOverridePopover({
           </div>
         )}
         <div className="space-y-1">
-          <Label>Notes</Label>
+          <Label>{t("notes")}</Label>
           <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" onClick={() => void save(true)}>
-            {t("resetDefault")}
+            {t("resetDefaultV2")}
           </Button>
           <Button size="sm" onClick={() => void save(false)}>
             {t("save")}

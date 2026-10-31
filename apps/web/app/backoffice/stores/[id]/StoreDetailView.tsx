@@ -18,8 +18,10 @@ import {
   Phone,
   Receipt,
   Send,
+  ShieldAlert,
   ShoppingBag,
   Store,
+  Target,
   Undo2,
   User as UserIcon,
 } from "lucide-react";
@@ -32,8 +34,11 @@ import { AGING_BUCKETS, AGING_BUCKET_LABELS, isOverdue } from "@/lib/finance/ar/
 import { createAction as createStocktakeAction } from "@/app/actions/store-stocktakes";
 import { raiseAdminReturnAction, type RaiseAdminReturnActionResult } from "@/app/actions/field-returns";
 import { FIELD_RETURN_REASONS, type FieldReturnLineInput, type FieldReturnReasonInput } from "@/lib/field-sales/retur/types";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDateOnlyJakarta, formatDisplayDateTime } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
+import type { DetailKunjungan } from "@/lib/stores/visit-queries";
+import type { TandaCheckin } from "@/lib/salesman/checkin-janggal";
+import { ringkasHasil, type KodeRingkasan } from "@/lib/salesman/hasil-kunjungan";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Pagination } from "@/components/ui/pagination";
@@ -74,6 +79,25 @@ import { StoreStockCard, type SerializedStockMovement } from "./StoreStockCard";
 import { StoreAssortmentCard, type AssortmentLineViewModel } from "./StoreAssortmentCard";
 import type { StoreStockCardData } from "@/lib/inventory/store-stock-card";
 import type { AssortmentGapRow } from "@/lib/stores/assortment/queries";
+import { StokTokoCard, type GerakanStokTampil } from "./StokTokoCard";
+import { TautanPortalCard } from "./TautanPortalCard";
+import { CatatanTokoCard } from "./CatatanTokoCard";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import type { CatatanTampil } from "@/lib/stores/catatan-queries";
+import type { BarisStok } from "@/lib/spg/queries";
+import { formatRupiah } from "@/lib/format/rupiah";
+import type { KeadaanTagihan } from "@/lib/salesman/kredit";
+import { formatJarak, type BatasBerlaku } from "./ringkasan-toko";
+
+/**
+ * Kredit toko PUTUS di rincian toko. `piutang`: keadaan tagihan, "GAGAL" bila
+ * tidak terbaca, "TERSEMBUNYI" bila penonton tidak boleh membaca piutang.
+ */
+export type KreditTokoTampil = {
+  batasNilai: BatasBerlaku;
+  batasFaktur: BatasBerlaku;
+  piutang: KeadaanTagihan | "GAGAL" | "TERSEMBUNYI";
+};
 
 let lastMapsOpenAt = 0;
 
@@ -117,6 +141,11 @@ type Visit = {
   checkinOutOfRadius: boolean;
   checkinDistanceMeters: number | null;
   photos: Array<{ id: string; url: string; caption: string | null; capturedAtIso: string }>;
+  /**
+   * Hasil kunjungan + tanda check-in (`detailKunjunganToko`). Opsional: tanpa
+   * ini kolom hasil menampilkan "—" dan ringkasan hasil tidak ditampilkan.
+   */
+  hasil?: DetailKunjungan | null;
 };
 
 type StockCardProps = {
@@ -182,6 +211,13 @@ type Props = {
   countSchedule: CountScheduleProps | null;
   /** Only populated for a user with `stores:manage` — the card is gated, not just its controls. */
   assortment: { lines: AssortmentLineViewModel[] } | null;
+  catatan: CatatanTampil[];
+  /** null untuk toko konsinyasi. */
+  kredit: KreditTokoTampil | null;
+  /** Buku stok toko dari gerakan SPG; waktu gerakan sudah diformat di server. */
+  stokToko: { stok: BarisStok[]; gerakan: GerakanStokTampil[] };
+  /** Area dan sales pemegang, sudah dalam bentuk label. */
+  pembagian: { area: string | null; pemegang: string | null };
   pendingChange: {
     requestId: string;
     requestedByLabel: string;
@@ -223,37 +259,26 @@ const COUNT_STATUS_BADGE_CLASS: Record<CountStatus, string> = {
   OVERDUE: "",
 };
 
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString([], {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
 
 const ORDER_STATUS_LABEL: Record<"PENDING_APPROVAL" | "APPROVED", "statusPending" | "statusApproved"> = {
   PENDING_APPROVAL: "statusPending",
   APPROVED: "statusApproved",
 };
 
-function formatDuration(startIso: string, endIso: string | null): string {
+function formatDuration(
+  startIso: string,
+  endIso: string | null,
+  t: ReturnType<typeof useTranslations>,
+): string {
   if (!endIso) return "—";
   const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
   const mins = Math.round(ms / 60_000);
-  if (mins < 60) return `${mins}m`;
+  if (mins < 60) return t("durationMinutes", { minutes: mins });
   const hours = Math.floor(mins / 60);
   const rem = mins % 60;
-  return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
+  return rem === 0
+    ? t("durationHours", { hours })
+    : t("durationHoursMinutes", { hours, minutes: rem });
 }
 
 function groupSentItemsByArticle(
@@ -308,6 +333,45 @@ const RAISE_ADMIN_RETURN_ERR_KEY: Record<RaiseAdminReturnErrorCode, string> = {
   ERROR: "err.ERROR",
 };
 
+const VARIAN_HASIL: Record<KodeRingkasan, "default" | "secondary" | "outline"> = {
+  TRANSAKSI: "default",
+  TRANSAKSI_TERTUNDA: "secondary",
+  TOKO_TUTUP: "outline",
+  PEMILIK_TIDAK_ADA: "outline",
+  STOK_MASIH_BANYAK: "outline",
+  HARGA: "outline",
+  PESAING: "outline",
+  MASALAH_BAYAR: "outline",
+  PESAN_LEWAT_WA: "outline",
+  KUNJUNGAN_RUTIN: "outline",
+  LAINNYA: "outline",
+  KOSONG: "outline",
+};
+
+/** Satu kalimat per tanda check-in janggal, untuk dibaca admin tanpa tooltip. */
+function kalimatTanda(
+  tanda: TandaCheckin,
+  t: ReturnType<typeof useTranslations>,
+  formatDateTime: (iso: string) => string,
+): string {
+  switch (tanda.kode) {
+    case "AKURASI_BURUK":
+      return t("AKURASI_BURUK", { akurasi: tanda.akurasiMeter, batas: tanda.batasMeter });
+    case "AKURASI_TIDAK_ADA":
+      return t("AKURASI_TIDAK_ADA");
+    case "LOMPATAN_MUSTAHIL": {
+      const jarak = Math.round(tanda.jarakMeter / 100) / 10;
+      return tanda.kecepatanKmj === null
+        ? t("LOMPATAN_SEKETIKA", { jarak })
+        : t("LOMPATAN_MUSTAHIL", { jarak, menit: tanda.menit, kecepatan: tanda.kecepatanKmj });
+    }
+    case "KOORDINAT_KEMBAR":
+      return tanda.namaToko
+        ? t("KOORDINAT_KEMBAR", { toko: tanda.namaToko, waktu: formatDateTime(tanda.waktu) })
+        : t("KOORDINAT_KEMBAR_TANPA_NAMA", { waktu: formatDateTime(tanda.waktu) });
+  }
+}
+
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
@@ -322,6 +386,8 @@ export function StoreDetailView({
   canEdit,
   canManageFieldReturns,
   canPush,
+  catatan,
+  kredit,
   visits,
   orders,
   sentItems,
@@ -331,6 +397,8 @@ export function StoreDetailView({
   stocktakes,
   countSchedule,
   assortment,
+  stokToko,
+  pembagian,
   pendingChange,
   creditExposure,
   piutang,
@@ -350,7 +418,16 @@ export function StoreDetailView({
   const tCommon = useTranslations("common");
   const tST = useTranslations("storeStocktakes");
   const tFso = useTranslations("fieldSalesOrders");
+  const tHasil = useTranslations("pwa.hasilKunjungan");
+  const tTanda = useTranslations("stores.detail.tanda");
+  const tKredit = useTranslations("stores.detail.kredit");
+  const tKelas = useTranslations("kelasToko.daftar");
+  const teksBatas = (b: BatasBerlaku, format: (n: number) => string) =>
+    b.sumber === "TANPA"
+      ? tKredit("noLimit")
+      : tKredit(b.sumber === "TOKO" ? "fromStore" : "fromDefault", { nilai: format(b.nilai) });
   const locale = useLocale();
+  const formatDateTime = (iso: string) => formatDisplayDateTime(iso, locale);
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [creatingStocktake, startCreateStocktakeTransition] = useTransition();
@@ -384,6 +461,10 @@ export function StoreDetailView({
     });
   }
   const sentItemGroups = groupSentItemsByArticle(sentItems);
+  const adaDetailHasil = visits.some((v) => v.hasil !== undefined);
+  const ringkasan = ringkasHasil(
+    visits.map((v) => ({ outcome: v.hasil?.outcome ?? null, selesai: v.checkoutAtIso !== null, spg: v.hasil?.spg ?? false })),
+  );
 
   function handleStartStocktake(): void {
     startCreateStocktakeTransition(async () => {
@@ -518,7 +599,10 @@ export function StoreDetailView({
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div className="flex-1 min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{store.name}</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold tracking-tight">{store.name}</h1>
+              <TombolBantuan judul={store.name} />
+            </div>
             <Badge variant={store.isActive ? "default" : "outline"}>
               {store.isActive ? tTable("active") : tBadge("inactive")}
             </Badge>
@@ -529,12 +613,22 @@ export function StoreDetailView({
           <p className="text-sm text-muted-foreground font-mono">{store.code}</p>
         </div>
         {canEdit && (
-          <Button asChild>
-            <Link href={`/backoffice/stores/${store.id}/edit`}>
-              <Pencil className="h-4 w-4" />
-              {tDetail("editButton")}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {store.termsType === "KONSI" || stokToko.stok.length > 0 ? (
+              <Button asChild variant="outline">
+                <Link href={`/backoffice/stores/${store.id}/target-stok`}>
+                  <Target className="h-4 w-4" />
+                  {tDetail("targetStokButton")}
+                </Link>
+              </Button>
+            ) : null}
+            <Button asChild>
+              <Link href={`/backoffice/stores/${store.id}/edit`}>
+                <Pencil className="h-4 w-4" />
+                {tDetail("editButton")}
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 
@@ -557,6 +651,22 @@ export function StoreDetailView({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {tForm("sections.assignment")}
+            </h3>
+            <dl className="grid gap-4 sm:grid-cols-2">
+              <DetailField label={tForm("area")}>{pembagian.area ?? "—"}</DetailField>
+              <DetailField label={tForm("salesman")}>
+                {pembagian.pemegang ?? (
+                  <span className="text-amber-700 dark:text-amber-400">{tTable("noSales")}</span>
+                )}
+              </DetailField>
+            </dl>
+          </section>
+
+          <Separator />
+
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {tForm("sections.contact")}
@@ -639,7 +749,7 @@ export function StoreDetailView({
               <DetailField label={tForm("termsType")}>
                 {store.termsType === "PUTUS" ? tForm("termsPutus") : tForm("termsKonsi")}
               </DetailField>
-              <DetailField label={tForm("paymentTempo")}>{store.paymentTempo}</DetailField>
+              <DetailField label={tForm("paymentTempo")}>{tTable("tempoDays", { days: store.paymentTempo })}</DetailField>
               <DetailField label={tForm("markupPercent")}>
                 {store.markupPercent !== null ? `${store.markupPercent}%` : "—"}
               </DetailField>
@@ -653,6 +763,13 @@ export function StoreDetailView({
                     : t("sellThroughMethod.notSet")}
                 </DetailField>
               )}
+              <DetailField label={tKredit("storeClass")}>
+                {store.storeClass ? tKelas("kelas", { kelas: store.storeClass }) : tKelas("tanpa")}
+              </DetailField>
+              <DetailField label={tKredit("pkp")}>{store.isPkp ? tKredit("pkpYes") : tKredit("pkpNo")}</DetailField>
+              {store.termsType === "KONSI" ? (
+                <DetailField label={tKredit("ppnKonsi")}>{store.consignmentVat ? tKredit("ppnKonsiYa") : tKredit("ppnKonsiTidak")}</DetailField>
+              ) : null}
               <DetailField label={tForm("creditLimit")}>
                 {store.creditLimit !== null ? formatRupiah(store.creditLimit) : tDetail("creditLimitUnlimited")}
               </DetailField>
@@ -673,6 +790,55 @@ export function StoreDetailView({
 
           <Separator />
 
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{tKredit("title")}</h3>
+            {kredit === null ? (
+              <p className="text-sm text-muted-foreground">{tKredit("notApplicableKonsi")}</p>
+            ) : (
+              <>
+                <dl className="grid gap-4 sm:grid-cols-3">
+                  <DetailField label={tKredit("maxInvoices")}>
+                    {teksBatas(kredit.batasFaktur, (n) => tKredit("invoiceCount", { n }))}
+                  </DetailField>
+                </dl>
+                {kredit.piutang === "TERSEMBUNYI" ? null : kredit.piutang === "GAGAL" ? (
+                  <p className="text-sm text-amber-700 dark:text-amber-400">{tKredit("receivablesFailed")}</p>
+                ) : (
+                  <div className="flex flex-wrap items-end justify-between gap-4 rounded-md border bg-muted/30 p-3">
+                    <dl className="grid flex-1 gap-4 sm:grid-cols-3">
+                      <DetailField label={tKredit("outstanding")}>
+                        <span className="font-semibold tabular-nums">{formatRupiah(kredit.piutang.sisa)}</span>
+                      </DetailField>
+                      <DetailField label={tKredit("openInvoices")}>
+                        <span className="tabular-nums">{tKredit("invoiceCount", { n: kredit.piutang.fakturTerbuka })}</span>
+                      </DetailField>
+                      <DetailField label={tKredit("overdue")}>
+                        <span
+                          className={
+                            kredit.piutang.fakturLewatJanji > 0
+                              ? "tabular-nums font-medium text-red-600 dark:text-red-400"
+                              : "tabular-nums text-muted-foreground"
+                          }
+                        >
+                          {kredit.piutang.fakturLewatJanji > 0
+                            ? `${formatRupiah(kredit.piutang.lewatJanji)} · ${tKredit("invoiceCount", { n: kredit.piutang.fakturLewatJanji })}`
+                            : tKredit("overdueNone")}
+                        </span>
+                      </DetailField>
+                    </dl>
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/backoffice/piutang?cari=${encodeURIComponent(store.name)}`}>
+                        {tKredit("viewReceivables")}
+                      </Link>
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </section>
+
+          <Separator />
+
           <dl className="grid gap-4 sm:grid-cols-3">
             <DetailField label={tDetail("stats.totalVisits")}>
               <span className="font-semibold tabular-nums">{totalVisits}</span>
@@ -680,14 +846,19 @@ export function StoreDetailView({
             <DetailField label={tDetail("stats.lastVisit")}>
               {lastVisitAtIso ? formatDateTime(lastVisitAtIso) : tDetail("noVisits")}
             </DetailField>
-            <DetailField label={tDetail("stats.terms")}>
-              <span className="tabular-nums">
-                {store.paymentTempo}d · {store.markupPercent ?? "—"}%
-              </span>
-            </DetailField>
           </dl>
         </CardContent>
       </Card>
+
+      <CatatanTokoCard storeId={store.id} catatan={catatan} />
+
+      <StokTokoCard
+        stok={stokToko.stok}
+        gerakan={stokToko.gerakan}
+        tautanTitipan={store.termsType === "KONSI" && canEdit ? `/backoffice/stores/${store.id}/target-stok` : null}
+      />
+
+      <TautanPortalCard storeId={store.id} namaToko={store.name} teleponToko={store.phone} bolehKelola={canEdit} />
 
       <Card>
         <CardHeader>
@@ -704,74 +875,133 @@ export function StoreDetailView({
               <p className="text-sm text-muted-foreground">{tDetail("noVisits")}</p>
             </div>
           ) : (
-            <div className={cn("overflow-auto rounded-md border", visitsPending && "opacity-60 transition-opacity")} aria-busy={visitsPending}>
-              <Table>
-                <TableHeader className="bg-background">
-                  <TableRow>
-                    <TableHead>{tDetail("visitTable.checkin")}</TableHead>
-                    <TableHead>{tDetail("visitTable.checkout")}</TableHead>
-                    <TableHead>{tDetail("visitTable.duration")}</TableHead>
-                    <TableHead>{tDetail("visitTable.user")}</TableHead>
-                    <TableHead>{tDetail("visitTable.coords")}</TableHead>
-                    <TableHead>{tDetail("photos.column")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visits.map((v) => (
-                    <TableRow key={v.id}>
-                      <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {v.checkoutAtIso ? (
-                          formatDateTime(v.checkoutAtIso)
-                        ) : (
-                          <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
-                        )}
-                        {v.autoClosed && (
-                          <Badge variant="outline" className="ml-2">
-                            {tDetail("autoClosed")}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="tabular-nums text-muted-foreground">
-                        {formatDuration(v.checkinAtIso, v.checkoutAtIso)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
-                      <TableCell>
-                        <a
-                          href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
-                        >
-                          <MapPin className="h-3 w-3" />
-                          {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
-                        </a>
-                        {v.checkinOutOfRadius && (
-                          <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
-                            {tDetail("visitTable.outOfRadius")}
-                            {v.checkinDistanceMeters !== null ? ` · ${v.checkinDistanceMeters} m` : ""}
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {v.photos.length > 0 ? (
-                          <Button
-                            variant="outline"
-                            className="gap-1.5"
-                            onClick={() =>
-                              setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })
-                            }
-                          >
-                            <Images className="h-4 w-4" /> {tDetail("photos.count", { count: v.photos.length })}
-                          </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
+            <div className="space-y-4">
+              {adaDetailHasil && (
+                <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+                  <p className="text-sm">
+                    {ringkasan.total > 0
+                      ? tDetail("hasilRingkas.isi", { transaksi: ringkasan.transaksi, total: ringkasan.total })
+                      : tDetail("hasilRingkas.kosong")}
+                  </p>
+                  {ringkasan.perKode.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {ringkasan.perKode.map((k) => (
+                        <Badge key={k.kode} variant={VARIAN_HASIL[k.kode]} className="gap-1.5">
+                          {tHasil(`kode.${k.kode}`)}
+                          <span className="tabular-nums opacity-80">{k.jumlah}</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {ringkasan.total > 0 ? (
+                    <p className="text-xs text-muted-foreground">{tDetail("hasilRingkas.cakupan", { n: ringkasan.total })}</p>
+                  ) : null}
+                </div>
+              )}
+              <div className={cn("overflow-auto rounded-md border", visitsPending && "opacity-60 transition-opacity")} aria-busy={visitsPending}>
+                <Table>
+                  <TableHeader className="bg-background">
+                    <TableRow>
+                      <TableHead>{tDetail("visitTable.checkin")}</TableHead>
+                      <TableHead>{tDetail("visitTable.checkout")}</TableHead>
+                      <TableHead>{tDetail("visitTable.duration")}</TableHead>
+                      <TableHead>{tDetail("visitTable.user")}</TableHead>
+                      <TableHead>{tDetail("visitTable.outcome")}</TableHead>
+                      <TableHead>{tDetail("visitTable.coords")}</TableHead>
+                      <TableHead>{tDetail("photos.column")}</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {visits.map((v) => (
+                      <TableRow key={v.id}>
+                        <TableCell className="whitespace-nowrap">{formatDateTime(v.checkinAtIso)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          {v.checkoutAtIso ? (
+                            formatDateTime(v.checkoutAtIso)
+                          ) : (
+                            <Badge variant="secondary">{tDetail("stillOpen")}</Badge>
+                          )}
+                          {v.autoClosed && (
+                            <Badge variant="outline" className="ml-2">
+                              {tDetail("autoClosed")}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="tabular-nums text-muted-foreground">
+                          {formatDuration(v.checkinAtIso, v.checkoutAtIso, tDetail)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{v.userLabel}</TableCell>
+                        <TableCell className="min-w-40 max-w-64 whitespace-normal">
+                          {v.hasil?.spg ? (
+                            <span className="text-xs text-muted-foreground">{tDetail("hasilAbsensiSpg")}</span>
+                          ) : v.hasil?.outcome ? (
+                            <div className="space-y-1">
+                              <Badge variant={VARIAN_HASIL[v.hasil.outcome]}>{tHasil(`kode.${v.hasil.outcome}`)}</Badge>
+                              {v.hasil.outcomeNote && (
+                                <p className="text-xs text-muted-foreground break-words">{v.hasil.outcomeNote}</p>
+                              )}
+                            </div>
+                          ) : v.hasil && v.checkoutAtIso ? (
+                            <span className="text-xs text-muted-foreground">{tHasil("kode.KOSONG")}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="min-w-48 whitespace-normal">
+                          <a
+                            href={`https://www.google.com/maps?q=${v.checkinLat},${v.checkinLng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+                          >
+                            <MapPin className="h-3 w-3" />
+                            {v.checkinLat.toFixed(4)}, {v.checkinLng.toFixed(4)}
+                          </a>
+                          {v.checkinOutOfRadius && (
+                            <Badge variant="outline" className="ml-2 border-amber-500/40 text-amber-700">
+                              {tDetail("visitTable.outOfRadius")}
+                              {v.checkinDistanceMeters !== null ? ` · ${formatJarak(v.checkinDistanceMeters)}` : ""}
+                            </Badge>
+                          )}
+                          {v.hasil?.akurasiMeter != null && (
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {tDetail("akurasi", { meter: v.hasil.akurasiMeter })}
+                            </p>
+                          )}
+                          {v.hasil && v.hasil.tanda.length > 0 && (
+                            <div className="mt-1 space-y-1">
+                              <Badge variant="outline" className="gap-1 border-red-500/40 text-red-700 dark:text-red-400">
+                                <ShieldAlert className="h-3 w-3" />
+                                {tDetail("mencurigakan")}
+                              </Badge>
+                              <ul className="space-y-0.5 text-xs text-red-700 dark:text-red-400">
+                                {v.hasil.tanda.map((tanda, i) => (
+                                  <li key={`${tanda.kode}-${i}`}>{kalimatTanda(tanda, tTanda, formatDateTime)}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {v.photos.length > 0 ? (
+                            <Button
+                              variant="outline"
+                              className="gap-1.5"
+                              onClick={() =>
+                                setGallery({ label: formatDateTime(v.checkinAtIso), photos: v.photos })
+                              }
+                            >
+                              <Images className="h-4 w-4" /> {tDetail("photos.count", { count: v.photos.length })}
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
           {visitsPaging.total > 0 && (

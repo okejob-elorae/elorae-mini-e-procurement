@@ -12,7 +12,17 @@ import { getInTransitAdminReturnQty } from "@/lib/field-sales/retur/queries";
 import { listAssortmentGaps, listAssortmentLines } from "@/lib/stores/assortment/queries";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
 import { getStorePiutangSummary, type StorePiutangSummary } from "@/lib/finance/ar/queries";
+import { detailKunjunganToko } from "@/lib/stores/visit-queries";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { stokToko } from "@/lib/spg/queries";
+import { gerakanStokToko } from "@/lib/spg/kantor-queries";
 import { StoreDetailView } from "./StoreDetailView";
+import { catatanTokoUntuk } from "@/lib/stores/catatan-queries";
+import { muatKreditToko } from "@/lib/field-sales/kredit-toko";
+import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
+import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { batasBerlaku } from "./ringkasan-toko";
+import type { KreditTokoTampil } from "./StoreDetailView";
 
 const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
 const DETAIL_CARD_PAGE_SIZE = 10;
@@ -54,7 +64,10 @@ export default async function StoreDetailPage({
       : null;
   const visitsPage = await listVisitsForStorePage(store.id, { page: parsePageParam(query.visitsPage), pageSize: DETAIL_CARD_PAGE_SIZE });
   const visits = visitsPage.rows;
-  const photosByVisit = await listVisitPhotosForVisits(visits.map((v) => v.id));
+  const [photosByVisit, detailKunjungan] = await Promise.all([
+    listVisitPhotosForVisits(visits.map((v) => v.id)),
+    detailKunjunganToko(visits.map((v) => v.id)),
+  ]);
   const pending = await getPendingStoreChangeRequest(store.id);
   const orders = await getStoreOrderSummary(store.id);
   const sentItemsPage = await getStoreSentItemsPage(store.id, { page: parsePageParam(query.sentPage), pageSize: DETAIL_CARD_PAGE_SIZE });
@@ -89,6 +102,32 @@ export default async function StoreDetailPage({
     stocktakes && stocktakes.rows[0] && OPEN_STOCKTAKE_STATUSES.has(stocktakes.rows[0].status)
       ? stocktakes.rows[0].id
       : null;
+
+  const [area, pemegang, stok, gerakan] = await Promise.all([
+    store.groupId ? prisma.storeGroup.findUnique({ where: { id: store.groupId }, select: { code: true, name: true } }) : null,
+    store.salesmanId ? prisma.user.findUnique({ where: { id: store.salesmanId }, select: { name: true, email: true } }) : null,
+    // Buku stok toko (gerakan SPG). Toko tanpa SPG hanya mendapat keterangan kosong.
+    stokToko(store.id),
+    gerakanStokToko(store.id, 30),
+  ]);
+
+  // stores:view (dijaga di atas) = baca & tambah catatan; stores:manage = kelola semua catatan.
+  const catatan = await catatanTokoUntuk(store.id, { userId: session.user.id ?? "", kelolaSemua: canEdit });
+
+  // Kredit & piutang hanya untuk toko PUTUS (konsinyasi tidak punya piutang).
+  // Batasnya data toko (boleh dilihat pemegang stores:view); ringkasan piutang
+  // hanya untuk yang boleh membaca piutang.
+  let kredit: KreditTokoTampil | null = null;
+  if (store.termsType === "PUTUS") {
+    const bolehPiutang = bolehMembacaPiutang(perms);
+    const muat = bolehPiutang ? await muatKreditToko(store.id) : null;
+    const aturan = muat?.aturan ?? (await bacaAturanKreditDb());
+    kredit = {
+      batasNilai: batasBerlaku(store.creditLimit, aturan.batasNilai),
+      batasFaktur: batasBerlaku(store.maxOpenInvoices, aturan.batasFaktur),
+      piutang: !bolehPiutang ? "TERSEMBUNYI" : muat?.keadaan ?? "GAGAL",
+    };
+  }
 
   return (
     <StoreDetailView
@@ -162,6 +201,17 @@ export default async function StoreDetailPage({
         pageSize: DETAIL_CARD_PAGE_SIZE,
         latestCheckinAtIso: visitsPage.latestCheckinAt ? visitsPage.latestCheckinAt.toISOString() : null,
       }}
+      catatan={catatan}
+      kredit={kredit}
+      stokToko={{
+        stok,
+        // Waktu diformat di server: format tanggal browser dan Node bisa berbeda.
+        gerakan: gerakan.map((g) => ({ ...g, waktu: formatDisplayDateTime(g.waktu) })),
+      }}
+      pembagian={{
+        area: area ? `${area.code} — ${area.name}` : null,
+        pemegang: pemegang ? pemegang.name ?? pemegang.email : null,
+      }}
       visits={visits.map(v => ({
         id: v.id,
         checkinAtIso: v.checkinAt.toISOString(),
@@ -172,6 +222,7 @@ export default async function StoreDetailPage({
         userLabel: v.user.name ?? v.user.email,
         checkinOutOfRadius: v.checkinOutOfRadius,
         checkinDistanceMeters: v.checkinDistanceMeters,
+        hasil: detailKunjungan.get(v.id) ?? null,
         photos: (photosByVisit.get(v.id) ?? []).map(p => ({
           id: p.id, url: p.url, caption: p.caption, capturedAtIso: p.capturedAt.toISOString(),
         })),

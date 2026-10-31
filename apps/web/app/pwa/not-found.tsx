@@ -5,31 +5,34 @@ import { useTranslations } from "next-intl";
 import { SearchX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { TautanKembali } from "@/app/pwa/TautanKembali";
 
 /**
- * Segment-scoped 404 for everything under `/pwa`. Before this file existed, every PWA route's
- * `notFound()` call — `/pwa/bkm/[settlementId]`'s missing-or-not-yours branch included — fell
- * through to Next's bare default 404. In an installed PWA there is no browser chrome, so a
- * salesman who mistaps has no back button and no URL bar: a dead end standing at the counter with
- * the store owner watching. This gives every one of those routes a real way out instead of just
- * this task's own.
+ * Data yang dibuka dari layar HP tidak ada (`notFound()` di halaman /pwa —
+ * toko, pesanan, nota yang sudah dihapus atau milik orang lain). Tampil di
+ * dalam kerangka HP. Alamat /pwa yang sama sekali tidak dikenal ditangani
+ * `app/not-found.tsx`.
  */
-export default function PwaNotFound() {
-  const t = useTranslations("pwa.notFound");
-
+export default function TidakDitemukanHp() {
+  const t = useTranslations("halamanGalat");
   return (
-    <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4 p-4">
-      <Card className="w-full max-w-sm">
-        <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
+    <div className="flex min-h-dvh flex-col gap-3 p-4">
+      <header className="-ml-2">
+        <Button asChild variant="ghost" size="sm">
+          <TautanKembali cadangan="/pwa" />
+        </Button>
+      </header>
+      <Card className="py-0">
+        <CardContent className="flex flex-col items-center gap-4 p-6 text-center">
           <div className="rounded-full bg-muted p-3">
-            <SearchX className="h-8 w-8 text-muted-foreground" />
+            <SearchX className="h-6 w-6 text-muted-foreground" aria-hidden />
           </div>
-          <div>
-            <p className="text-lg font-semibold">{t("title")}</p>
-            <p className="mt-1 text-sm text-muted-foreground">{t("message")}</p>
+          <div className="space-y-1">
+            <h1 className="text-lg font-semibold">{t("tidakDitemukan")}</h1>
+            <p className="text-sm text-muted-foreground">{t("tidakDitemukanPesan")}</p>
           </div>
           <Button asChild size="lg" className="w-full">
-            <Link href="/pwa">{t("backHome")}</Link>
+            <Link href="/pwa">{t("keBeranda")}</Link>
           </Button>
         </CardContent>
       </Card>

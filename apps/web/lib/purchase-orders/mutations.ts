@@ -1,4 +1,3 @@
-import { Decimal } from "decimal.js";
 import { prisma, type Prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { poSchema } from "@/lib/validations";
@@ -6,6 +5,9 @@ import { assertLinesVariantSkusMatchItemDefinitions } from "@/lib/items/validate
 import { resolvePoLeadTimeFields } from "@/lib/leadtime/po-snapshot";
 import { resolveCreatePaymentTerms } from "@/lib/purchase-orders/payment-terms";
 import { recomputePaymentDueDate } from "@/lib/purchase-orders/payment-due";
+import { getPpnRatePercent } from "@/app/actions/settings/ppn";
+import { bulatkanTarifPpn, hitungTotalPo } from "@/lib/purchase-orders/ppn";
+import { pastikanTahapAda } from "@/lib/purchase-orders/tahap";
 import type { z } from "zod";
 
 export type POFormData = z.infer<typeof poSchema>;
@@ -17,6 +19,8 @@ export type OfflinePOCreatePayload = {
   paymentTermsDays?: number | null;
   notes?: string;
   terms?: string;
+  /** Tahap produksi PO ini, bila dibuat dari ruang kerja tahap. */
+  planStageId?: string | null;
   items: Array<{
     itemId: string;
     variantSku?: string | null;
@@ -28,11 +32,6 @@ export type OfflinePOCreatePayload = {
   }>;
 };
 
-function parseDate(val: Date | string | null | undefined): Date | undefined {
-  if (val == null || val === "") return undefined;
-  return val instanceof Date ? val : new Date(val);
-}
-
 /** Full PO create (backoffice) — matches createPO action transaction */
 export async function createPurchaseOrder(
   data: POFormData,
@@ -41,16 +40,17 @@ export async function createPurchaseOrder(
 ) {
   const validated = poSchema.parse(data);
   const applyLeadTime = options?.applyLeadTime !== false;
+  // Tarif dibekukan di PO: ganti tarif di Pengaturan tidak mengubah PO yang sudah ada.
+  // Dibulatkan ke presisi kolom supaya PPN yang disimpan = PPN yang dihitung ulang saat PO disunting.
+  const ppnRatePercent = bulatkanTarifPpn(await getPpnRatePercent());
 
   // `tx` lets a caller (Request Item → PO) create the PO inside its own transaction.
   const run = async (tx: Prisma.TransactionClient) => {
     await assertLinesVariantSkusMatchItemDefinitions(tx.item, validated.items);
+    if (validated.planStageId) await pastikanTahapAda(tx, validated.planStageId);
 
     const docNumber = await generateDocNumber("PO", tx);
-    const totalAmount = validated.items.reduce(
-      (sum, item) => sum.plus(new Decimal(item.qty).mul(item.price)),
-      new Decimal(0)
-    );
+    const total = hitungTotalPo(validated.items, ppnRatePercent);
 
     let etaDate = validated.etaDate ?? null;
     let chainSnapshot: object | null = null;
@@ -86,8 +86,11 @@ export async function createPurchaseOrder(
         paymentDueDate: paymentTermsDays == null ? validated.paymentDueDate ?? undefined : null,
         notes: validated.notes,
         terms: validated.terms,
-        totalAmount: totalAmount.toNumber(),
-        grandTotal: totalAmount.toNumber(),
+        planStageId: validated.planStageId ?? null,
+        totalAmount: total.subtotal,
+        taxAmount: total.taxAmount,
+        grandTotal: total.grandTotal,
+        ppnRatePercent,
         createdById: userId,
         chainSnapshot: chainSnapshot ?? undefined,
         chainTotalDays: chainTotalDays ?? undefined,
@@ -122,6 +125,11 @@ export async function createPurchaseOrder(
   return options?.tx ? run(options.tx) : prisma.$transaction(run);
 }
 
+function parseDate(val: Date | string | null | undefined): Date | undefined {
+  if (val == null || val === "") return undefined;
+  return val instanceof Date ? val : new Date(val);
+}
+
 /** Offline sync — lead-time columns stay null (no chain load offline). */
 export async function createPurchaseOrderFromOfflinePayload(
   payload: OfflinePOCreatePayload,
@@ -129,12 +137,12 @@ export async function createPurchaseOrderFromOfflinePayload(
 ) {
   const items = payload.items.map((item) => ({
     itemId: item.itemId,
-    variantSku: item.variantSku?.trim() || null,
+    variantSku: item.variantSku?.trim() || undefined,
     qty: item.qty,
     price: item.price,
     ppnIncluded: item.ppnIncluded ?? false,
     uomId: item.uomId ?? "",
-    notes: item.notes ?? null,
+    notes: item.notes ?? undefined,
   }));
 
   if (items.some((i) => !i.uomId)) {
@@ -156,6 +164,7 @@ export async function createPurchaseOrderFromOfflinePayload(
     ...(payload.paymentTermsDays !== undefined ? { paymentTermsDays: payload.paymentTermsDays } : {}),
     notes: payload.notes,
     terms: payload.terms,
+    ...(payload.planStageId ? { planStageId: payload.planStageId } : {}),
     items: items as POFormData["items"],
   };
 

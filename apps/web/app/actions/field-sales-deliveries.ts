@@ -4,12 +4,21 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { recordFieldSalesDelivery, closeFieldSalesOrderRemainder } from "@/lib/field-sales/delivery/writer";
+import {
+  recordFieldSalesDelivery,
+  closeFieldSalesOrderRemainder,
+  type NomorPiutangDipakaiError,
+} from "@/lib/field-sales/delivery/writer";
 import { DeliveryError } from "@/lib/field-sales/errors";
 import { serializeReplay, type SerializedReplay } from "@/lib/field-sales/replay-detail";
+import { IndenBelumRilisError } from "@/lib/field-sales/inden";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { JENIS_KABAR, kabariPengguna } from "@/lib/notifications/kabar-pengguna";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
+import { kaitNotaTerbit } from "@/lib/finance/lapangan/kait";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { isArJournalRetryable } from "@/lib/finance/ar/journal-pending";
@@ -35,10 +44,54 @@ export type DeliveryActionResult =
         | "RECEIVABLE_HAS_PAYMENTS"
         | "SHIPMENT_IN_FLIGHT"
         | "REPLAY_MISMATCH"
+        /** Pesanan pre-order yang jendelanya belum dirilis: stoknya belum dicadangkan. */
+        | "INDEN_BELUM_RILIS"
+        /**
+         * Nomor nota sudah dipegang piutang lain (impor/faktur manual), jadi nota tidak bisa
+         * menjadi piutang dan pengirimannya dibatalkan. `invoiceNo` menyebut nomornya.
+         */
+        | "NOMOR_PIUTANG_DIPAKAI"
+        /**
+         * Sisa pesanan cukup tetapi cadangan stoknya sudah habis dikonsumsi atau tidak ada
+         * (pesanan yang disetujui image lama di jendela deploy). Bukan "melebihi sisa".
+         */
         | "RESERVATION_MISMATCH";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number; available: number }>;
       replay?: SerializedReplay;
+      invoiceNo?: string;
     };
+
+/**
+ * Dikenali dari namanya, bukan `instanceof`: tiruan modul penulis di spesifikasi aksi tidak
+ * membawa kelas galatnya, dan mengakses ekspor yang tidak ada di tiruan itu melempar.
+ */
+function nomorPiutangDipakai(e: unknown): e is NomorPiutangDipakaiError {
+  return e instanceof Error && e.name === "NomorPiutangDipakaiError";
+}
+
+/** `CadanganTidakCocokError` dari penulis — dikenali dari namanya, sama dengan di atas. */
+function cadanganTidakCocok(e: unknown): boolean {
+  return e instanceof Error && e.name === "CadanganTidakCocokError";
+}
+
+/**
+ * Bentuk baris kiriman: `orderLineId` teks tak kosong, `qty` bilangan bulat positif. Aksi server
+ * adalah titik jaringan — isian yang rusak dijawab INVALID_REQUEST, bukan "melebihi sisa".
+ */
+function barisKirimanSah(lines: unknown): lines is Array<{ orderLineId: string; qty: number }> {
+  return (
+    Array.isArray(lines) &&
+    lines.every(
+      (l) =>
+        typeof l === "object" &&
+        l !== null &&
+        typeof (l as { orderLineId?: unknown }).orderLineId === "string" &&
+        (l as { orderLineId: string }).orderLineId !== "" &&
+        Number.isInteger((l as { qty?: unknown }).qty) &&
+        (l as { qty: number }).qty > 0,
+    )
+  );
+}
 
 /**
  * A `YYYY-MM-DD` calendar day at WIB midnight, or null for anything that is not one.
@@ -64,6 +117,73 @@ function parseCalendarDay(value: unknown): Date | null {
   const parsed = parseDateOnly(trimmed);
   if (!parsed) return null;
   return formatDateOnlyJakarta(parsed) === trimmed ? parsed : null;
+}
+
+/**
+ * Kabar ke salesman pemilik pesanan bahwa sebagian/seluruh pesanannya sudah dikirim.
+ *
+ * Dipanggil SESUDAH transaksi pengiriman selesai dan tidak pernah melempar: pengiriman sudah
+ * tercatat, dan kabar yang gagal tidak boleh membuatnya tampak gagal. Kiriman ulang dengan kunci
+ * idempoten yang sama (respons pertama hilang di jalan) tidak dikabarkan dua kali — pemanggil
+ * yang tahu itu ulangan tidak memanggil ini sama sekali.
+ */
+async function kabarPesananDikirim(deliveryId: string, pelakuId: string): Promise<void> {
+  try {
+    const kiriman = await prisma.fieldSalesDelivery.findUnique({
+      where: { id: deliveryId },
+      select: {
+        docNo: true,
+        total: true,
+        order: {
+          select: { id: true, orderNo: true, salesmanId: true, deliveryStatus: true, store: { select: { name: true } } },
+        },
+      },
+    });
+    if (!kiriman || kiriman.order.salesmanId === pelakuId) return;
+    const { order } = kiriman;
+    const lengkap = order.deliveryStatus === "DELIVERED";
+    await kabariPengguna(order.salesmanId, {
+      jenis: JENIS_KABAR.PESANAN_DIKIRIM,
+      judul: lengkap ? `Pesanan ${order.orderNo} sudah dikirim` : `Pesanan ${order.orderNo} dikirim sebagian`,
+      isi: `${order.store.name} · nota ${kiriman.docNo} · ${formatIDR(kiriman.total.toString())}`,
+      data: { orderId: order.id, deliveryId },
+    });
+  } catch (err) {
+    console.error("[kabar] pesanan dikirim gagal", deliveryId, err);
+  }
+}
+
+/** Kabar bahwa sisa pesanan ditutup (tidak akan dikirim), dengan alasannya. Tidak pernah melempar. */
+async function kabarPesananDitutup(orderId: string, alasan: string, pelakuId: string): Promise<void> {
+  try {
+    const order = await prisma.fieldSalesOrder.findUnique({
+      where: { id: orderId },
+      select: { orderNo: true, salesmanId: true, store: { select: { name: true } } },
+    });
+    if (!order || order.salesmanId === pelakuId) return;
+    await kabariPengguna(order.salesmanId, {
+      jenis: JENIS_KABAR.PESANAN_DITUTUP,
+      judul: `Sisa pesanan ${order.orderNo} ditutup`,
+      isi: `${order.store.name} · sisa barang tidak dikirim. Alasan: ${alasan}`,
+      data: { orderId },
+    });
+  } catch (err) {
+    console.error("[kabar] pesanan ditutup gagal", orderId, err);
+  }
+}
+
+/**
+ * Apakah kunci idempoten ini sudah pernah menghasilkan pengiriman. Dibaca SEBELUM penulis berjalan:
+ * sesudahnya, kiriman baru dan kiriman ulang tampak sama persis. Kalau pembacaan ini sendiri gagal,
+ * anggap bukan ulangan — kabar ganda lebih ringan daripada kabar yang hilang.
+ */
+async function sudahTercatat(idempotencyKey: string): Promise<boolean> {
+  try {
+    const ada = await prisma.fieldSalesDelivery.findUnique({ where: { idempotencyKey }, select: { id: true } });
+    return ada !== null;
+  } catch {
+    return false;
+  }
 }
 
 async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
@@ -111,10 +231,7 @@ export async function recordDeliveryAction(input: {
   if (typeof idempotencyKey !== "string" || idempotencyKey.trim() === "" || idempotencyKey.length > 64) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
-  if (
-    !Array.isArray(lines) ||
-    lines.some((l) => typeof l !== "object" || l === null || typeof l.orderLineId !== "string" || !Number.isInteger(l.qty) || l.qty <= 0)
-  ) {
+  if (typeof orderId !== "string" || orderId === "" || !barisKirimanSah(lines)) {
     return { ok: false, reason: "INVALID_REQUEST" };
   }
   const parsedInvoiceDate = parseCalendarDay(invoiceDate);
@@ -125,9 +242,10 @@ export async function recordDeliveryAction(input: {
   if (parsedDueDate.getTime() < parsedInvoiceDate.getTime()) {
     return { ok: false, reason: "INVALID_DATES" };
   }
-  let res: { deliveryId: string; docNo: string };
+  const ulangan = await sudahTercatat(idempotencyKey);
+  let deliveryId: string;
   try {
-    res = await recordFieldSalesDelivery({
+    ({ deliveryId } = await recordFieldSalesDelivery({
       orderId,
       deliveredById: g.userId,
       lines,
@@ -135,7 +253,7 @@ export async function recordDeliveryAction(input: {
       invoiceDate: parsedInvoiceDate,
       dueDate: parsedDueDate,
       idempotencyKey,
-    });
+    }));
   } catch (e) {
     if (e instanceof DeliveryError) {
       if (e.code === "REPLAY_MISMATCH" && e.replay) {
@@ -156,6 +274,9 @@ export async function recordDeliveryAction(input: {
         replay: e.replay ? serializeReplay(e.replay) : undefined,
       };
     }
+    if (e instanceof IndenBelumRilisError) return { ok: false, reason: "INDEN_BELUM_RILIS" };
+    if (nomorPiutangDipakai(e)) return { ok: false, reason: "NOMOR_PIUTANG_DIPAKAI", invoiceNo: e.invoiceNo };
+    if (cadanganTidakCocok(e)) return { ok: false, reason: "RESERVATION_MISMATCH" };
     throw e;
   }
 
@@ -165,10 +286,16 @@ export async function recordDeliveryAction(input: {
    * inside would only stretch an already long serializable window — it holds the delivery, the
    * stock consume, the order-line updates and the SalesHistory rows — for no correctness gain.
    */
-  await postDeliveryJournals(res.deliveryId, g.userId);
-
+  await postDeliveryJournals(deliveryId, g.userId);
+  // Jurnal nota tagihan (piutang toko, pendapatan, PPN, HPP) — sesudah commit, idempoten,
+  // tidak pernah menggagalkan pengiriman (gagal → JOURNAL_PENDING).
+  await kaitNotaTerbit(deliveryId, g.userId);
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  if (!ulangan) void kabarPesananDikirim(deliveryId, g.userId);
+  // Barang berangkat ke toko → SPG toko itu dikabari. Sekali per nota: penandanya ada di
+  // `kabarkanKirimanBerangkat`, jadi kiriman ulang (juga yang lolos `sudahTercatat`) tidak menggandakan.
+  void kabarkanKirimanBerangkat({ sourceType: "PUTUS_DELIVERY", sourceId: deliveryId, pelakuId: g.userId });
   return { ok: true };
 }
 
@@ -254,7 +381,7 @@ export async function updateDeliveryDatesAction(input: {
      */
     const receivable = await tx.receivable.findUnique({
       where: { deliveryId: before.id },
-      select: { paidAmount: true },
+      select: { id: true, paidAmount: true },
     });
     if (receivable && Number(receivable.paidAmount) > 0) return { kind: "HAS_PAYMENTS" };
 
@@ -323,6 +450,7 @@ export async function updateDeliveryDatesAction(input: {
           journalsRedated: journalRedate.count,
           journalsPreviousDate: before.invoiceDate.toISOString(),
         },
+        metadata: { receivableId: receivable?.id ?? null },
         reason,
       },
     });
@@ -403,7 +531,10 @@ export async function postFieldDeliveryJournalsAction(deliveryId: string): Promi
 export async function closeRemainderAction(orderId: string, reason: string): Promise<DeliveryActionResult> {
   const g = await guard();
   if ("ok" in g) return g;
-  if (typeof reason !== "string" || reason.trim() === "") return { ok: false, reason: "INVALID_REQUEST" };
+  // Alasan wajib; isian yang bukan teks atau kosong adalah permintaan rusak, bukan keadaan pesanan.
+  if (typeof orderId !== "string" || orderId === "" || typeof reason !== "string" || reason.trim() === "") {
+    return { ok: false, reason: "INVALID_REQUEST" };
+  }
   try {
     await closeFieldSalesOrderRemainder({ orderId, closedById: g.userId, reason: reason.trim() });
   } catch (e) {
@@ -412,6 +543,7 @@ export async function closeRemainderAction(orderId: string, reason: string): Pro
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
+  void kabarPesananDitutup(orderId, reason.trim(), g.userId);
   return { ok: true };
 }
 

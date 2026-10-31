@@ -2,6 +2,7 @@ import {
   consumeFieldSalesOrderPartial,
   releaseFieldSalesOrder,
   PartialConsumeError,
+  prisma,
   type Prisma,
   type PrismaClient,
 } from "@elorae/db";
@@ -9,8 +10,286 @@ import { buildOfflineSalesHistoryRows } from "@elorae/db/field-sales";
 import { roundCents, roundToWholeRupiah } from "@elorae/db/pricing";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { DeliveryError, type DeliveryErrorCode, type DeliveryReplayDetail } from "../errors";
+import { IndenBelumRilisError } from "../inden";
 import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
+
+/**
+ * Nomor nota sudah dipegang piutang lain (impor atau faktur manual), jadi piutang nota ini tidak
+ * bisa dibuat dengan nomornya sendiri. Pengiriman ikut DIBATALKAN: nota yang tercatat tanpa
+ * piutang justru keadaan yang dicegah aturan ini, dan dua tagihan tidak ditumpuk pada satu nomor.
+ * Pengiriman baru hampir tidak pernah sampai ke sini — `nomorNotaBebas` melompati nomor yang
+ * dipegang piutang; yang tersisa adalah backfill nota lama (dilaporkan, tidak dibuat).
+ */
+export class NomorPiutangDipakaiError extends Error {
+  constructor(readonly invoiceNo: string, readonly receivableId: string) {
+    super(`Nomor ${invoiceNo} sudah dipakai piutang ${receivableId}`);
+    this.name = "NomorPiutangDipakaiError";
+  }
+}
+
+/**
+ * Cadangan stok baris pesanan tidak bisa dikonsumsi sebanyak yang diminta walau sisa pesanannya
+ * cukup (`PartialConsumeError` OVER_CONSUME): cadangannya sudah CONSUMED atau tidak ada. Bentuk
+ * nyatanya: pesanan yang disetujui image lama sesudah migrasi backfill (stok sudah keluar saat
+ * disetujui, tanpa pengiriman `bf_`). Kode sendiri — bukan OVER_DELIVER ("melebihi sisa"), yang
+ * tidak benar dan menyembunyikan jalan keluarnya (backfill pesanan itu dengan tangan).
+ */
+export class CadanganTidakCocokError extends DeliveryError {
+  constructor() {
+    super("RESERVATION_MISMATCH");
+    this.name = "CadanganTidakCocokError";
+  }
+}
+
+/** Rupiah → sen bulat; kolom uang 2 desimal. */
+const sen = (n: number) => Math.round(n * 100);
+
+/**
+ * Piutang untuk satu nota tagihan pengiriman putus (keputusan pemilik: setiap nota tagihan
+ * otomatis menjadi piutang). Dipanggil DI DALAM transaksi pengiriman, jadi nota dan piutangnya
+ * lahir atau batal bersama.
+ *
+ * - Nota bernilai 0 atau kurang (hanya barang bonus) tidak menjadi piutang: tidak ada yang ditagih.
+ * - Nota yang sudah punya piutang dilewati (`deliveryId` unik) — aman dipanggil ulang oleh backfill.
+ * - `outstanding` = `amount`: piutang baru belum disentuh klaim apa pun. Kolom itu cache; sisa
+ *   yang benar selalu dihitung ulang dari klaim oleh pembacanya (`hitungUlangPiutang`).
+ * - `salesmanId` = sales pemilik pesanan, bukan orang yang mencatat pengiriman.
+ * - Konsinyasi tidak pernah sampai ke sini: pengiriman hanya ada untuk pesanan PUTUS.
+ */
+export async function buatPiutangNota(
+  tx: Prisma.TransactionClient,
+  nota: {
+    deliveryId: string;
+    docNo: string;
+    storeId: string;
+    salesmanId: string | null;
+    invoiceDate: Date;
+    dueDate: Date;
+    total: number;
+  },
+): Promise<{ dibuat: true; receivableId: string } | { dibuat: false; alasan: "NOL" | "SUDAH_ADA" }> {
+  // Dibandingkan dalam sen: sisa pembulatan float (mis. 1e-11) bukan tagihan, dan kolomnya 2 desimal.
+  if (!(sen(nota.total) > 0)) return { dibuat: false, alasan: "NOL" };
+
+  const sudah = await tx.receivable.findUnique({ where: { deliveryId: nota.deliveryId }, select: { id: true } });
+  if (sudah) return { dibuat: false, alasan: "SUDAH_ADA" };
+
+  const bentrok = await tx.receivable.findUnique({ where: { invoiceNo: nota.docNo }, select: { id: true } });
+  if (bentrok) throw new NomorPiutangDipakaiError(nota.docNo, bentrok.id);
+
+  const piutang = await tx.receivable.create({
+    data: {
+      invoiceNo: nota.docNo,
+      storeId: nota.storeId,
+      salesmanId: nota.salesmanId,
+      invoiceDate: nota.invoiceDate,
+      dueDate: nota.dueDate,
+      amount: nota.total,
+      outstanding: nota.total,
+      originalAmount: nota.total,
+      outstandingAmount: nota.total,
+      source: "DELIVERY",
+      deliveryId: nota.deliveryId,
+    },
+    select: { id: true },
+  });
+  return { dibuat: true, receivableId: piutang.id };
+}
+
+/**
+ * Nomor nota juga nomor piutangnya, jadi nomor yang sudah dipegang piutang lain (faktur manual
+ * atau impor yang kebetulan berformat DLV) ikut dilompati — `generateDocNumber` hanya tahu nomor
+ * yang dipakai NOTA. Tanpa ini nota tersebut ditolak, penghitung ikut ter-rollback, dan setiap
+ * pengiriman sesudahnya di bulan itu ditolak dengan nomor yang sama: tidak ada layar untuk
+ * mengganti nomor piutang. Kalau sampai batas masih bentrok, `buatPiutangNota` yang menolak.
+ */
+const BATAS_LOMPAT_NOMOR_PIUTANG = 20;
+
+async function nomorNotaBebas(tx: Prisma.TransactionClient): Promise<string> {
+  let docNo = await generateDocNumber("DELIVERY", tx);
+  for (let i = 0; i < BATAS_LOMPAT_NOMOR_PIUTANG; i++) {
+    const dipegang = await tx.receivable.findUnique({ where: { invoiceNo: docNo }, select: { id: true } });
+    if (!dipegang) return docNo;
+    docNo = await generateDocNumber("DELIVERY", tx);
+  }
+  return docNo;
+}
+
+export type LaporanPiutangNotaLama = {
+  /** Nota yang diperiksa (dalam cakupan). */
+  diperiksa: number;
+  /** Sudah punya piutang — tidak disentuh. */
+  sudahPunya: number;
+  /** Akan dibuat (mode kering) / dicoba dibuat (mode terapkan). */
+  akanDibuat: number;
+  nilaiAkanDibuat: number;
+  /** Benar-benar dibuat (hanya mode terapkan). */
+  dibuat: number;
+  nilaiDibuat: number;
+  /** Bernilai 0 atau kurang: tidak ada yang ditagih. */
+  nol: Array<{ docNo: string; total: number }>;
+  /** Pesanannya bukan PUTUS — seharusnya tidak pernah ada; dilaporkan, tidak dibuat. */
+  bukanPutus: Array<{ docNo: string; orderType: string }>;
+  /** Nomornya sudah dipegang piutang lain — butuh keputusan orang, tidak dibuat. */
+  nomorDipakai: Array<{ docNo: string; receivableId: string; source: string }>;
+  /**
+   * Mungkin sudah ditagih dengan nomor lain: ada piutang impor/manual tanpa nota di toko yang sama,
+   * bernilai sama persis, bertanggal berdekatan. Tidak dibuat kecuali `sertakanDugaanGanda`.
+   */
+  dugaanGanda: Array<{ docNo: string; total: number; receivableId: string; invoiceNo: string; source: string }>;
+};
+
+/** Jarak tanggal faktur (hari) yang masih dianggap "tagihan yang sama" untuk dugaan ganda. */
+const JENDELA_DUGAAN_GANDA_HARI = 31;
+
+/**
+ * Backfill: piutang untuk nota tagihan yang tercatat sebelum aturan "nota = piutang" ada.
+ * Mode kering (`terapkan: false`) tidak menulis apa pun. Mode terapkan membuat tiap piutang di
+ * transaksinya sendiri dengan aturan yang sama persis dengan penulis pengiriman
+ * (`buatPiutangNota`), jadi aman dijalankan ulang.
+ *
+ * Sebelum aturan ini kantor mencatat nota ke piutang dengan tangan atau lewat impor SSG, dengan
+ * nomor LAIN — tidak bisa dicocokkan lewat nomor. Nota yang punya pasangan seperti itu (toko sama,
+ * nilai sama sampai sen, tanggal faktur ≤ 31 hari) dilaporkan sebagai dugaan ganda dan TIDAK
+ * dibuat: menagih toko dua kali lebih buruk daripada satu nota yang belum menjadi piutang. Setiap
+ * piutang lain hanya bisa "menjelaskan" satu nota. Setelah diperiksa orang, `sertakanDugaanGanda`
+ * membuatnya juga.
+ *
+ * `deliveryIds` membatasi cakupan — tes WAJIB memakainya (basis data uji dipakai bersama data
+ * dev sungguhan; fungsi selebar basis data tidak boleh dipanggil tes tanpa batas).
+ */
+export async function isiPiutangNotaLama(opsi: {
+  terapkan: boolean;
+  deliveryIds?: string[];
+  sertakanDugaanGanda?: boolean;
+}): Promise<LaporanPiutangNotaLama> {
+  const laporan: LaporanPiutangNotaLama = {
+    diperiksa: 0,
+    sudahPunya: 0,
+    akanDibuat: 0,
+    nilaiAkanDibuat: 0,
+    dibuat: 0,
+    nilaiDibuat: 0,
+    nol: [],
+    bukanPutus: [],
+    nomorDipakai: [],
+    dugaanGanda: [],
+  };
+
+  const nota = await prisma.fieldSalesDelivery.findMany({
+    where: opsi.deliveryIds ? { id: { in: opsi.deliveryIds } } : {},
+    orderBy: { deliveredAt: "asc" },
+    select: {
+      id: true,
+      docNo: true,
+      invoiceDate: true,
+      dueDate: true,
+      total: true,
+      receivable: { select: { id: true } },
+      order: { select: { storeId: true, salesmanId: true, orderType: true } },
+    },
+  });
+
+  const nomorSemua = nota.map((n) => n.docNo);
+  const pemegangNomor = new Map(
+    (
+      await prisma.receivable.findMany({
+        where: { invoiceNo: { in: nomorSemua } },
+        select: { id: true, invoiceNo: true, deliveryId: true, source: true },
+      })
+    ).map((r) => [r.invoiceNo, r]),
+  );
+
+  // Calon pasangan dugaan ganda: piutang impor/manual tanpa nota di toko-toko dalam cakupan,
+  // kecuali yang memegang nomor nota itu sendiri (sudah dilaporkan sebagai `nomorDipakai`).
+  const idPemegang = new Set([...pemegangNomor.values()].map((r) => r.id));
+  const calonGanda = (
+    await prisma.receivable.findMany({
+      where: {
+        storeId: { in: [...new Set(nota.map((n) => n.order.storeId))] },
+        source: { in: ["IMPORT", "MANUAL"] },
+        deliveryId: null,
+      },
+      select: { id: true, storeId: true, invoiceNo: true, invoiceDate: true, amount: true, source: true },
+    })
+  ).filter((r) => !idPemegang.has(r.id));
+  const sudahDipasangkan = new Set<string>();
+  const jendelaMs = JENDELA_DUGAAN_GANDA_HARI * 24 * 60 * 60 * 1000;
+  const cariPasanganGanda = (n: (typeof nota)[number], total: number) => {
+    let terbaik: (typeof calonGanda)[number] | null = null;
+    for (const r of calonGanda) {
+      if (sudahDipasangkan.has(r.id) || r.storeId !== n.order.storeId) continue;
+      if (sen(Number(r.amount)) !== sen(total)) continue;
+      const jarak = Math.abs(r.invoiceDate.getTime() - n.invoiceDate.getTime());
+      if (jarak > jendelaMs) continue;
+      if (!terbaik || jarak < Math.abs(terbaik.invoiceDate.getTime() - n.invoiceDate.getTime())) terbaik = r;
+    }
+    return terbaik;
+  };
+
+  for (const n of nota) {
+    laporan.diperiksa += 1;
+    if (n.receivable) {
+      laporan.sudahPunya += 1;
+      continue;
+    }
+    const total = Number(n.total);
+    if (n.order.orderType !== "PUTUS") {
+      laporan.bukanPutus.push({ docNo: n.docNo, orderType: n.order.orderType });
+      continue;
+    }
+    if (!(sen(total) > 0)) {
+      laporan.nol.push({ docNo: n.docNo, total });
+      continue;
+    }
+    const pemegang = pemegangNomor.get(n.docNo);
+    if (pemegang && pemegang.deliveryId !== n.id) {
+      laporan.nomorDipakai.push({ docNo: n.docNo, receivableId: pemegang.id, source: pemegang.source });
+      continue;
+    }
+    const ganda = cariPasanganGanda(n, total);
+    if (ganda) {
+      sudahDipasangkan.add(ganda.id);
+      laporan.dugaanGanda.push({ docNo: n.docNo, total, receivableId: ganda.id, invoiceNo: ganda.invoiceNo, source: ganda.source });
+      if (!opsi.sertakanDugaanGanda) continue;
+    }
+
+    laporan.akanDibuat += 1;
+    laporan.nilaiAkanDibuat += total;
+    if (!opsi.terapkan) continue;
+
+    try {
+      const hasil = await runSerializable((tx) =>
+        buatPiutangNota(tx, {
+          deliveryId: n.id,
+          docNo: n.docNo,
+          storeId: n.order.storeId,
+          salesmanId: n.order.salesmanId,
+          invoiceDate: n.invoiceDate,
+          dueDate: n.dueDate,
+          total,
+        }),
+      );
+      if (hasil.dibuat) {
+        laporan.dibuat += 1;
+        laporan.nilaiDibuat += total;
+      } else if (hasil.alasan === "SUDAH_ADA") {
+        laporan.sudahPunya += 1;
+      }
+    } catch (e) {
+      // Nomor baru saja dipakai orang lain di antara pembacaan dan penulisan.
+      if (e instanceof NomorPiutangDipakaiError) {
+        laporan.nomorDipakai.push({ docNo: n.docNo, receivableId: e.receivableId, source: "?" });
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  return laporan;
+}
 
 /**
  * Every `PartialConsumeError` code mapped by construction: a code added to that union without an
@@ -95,7 +374,11 @@ export async function recordFieldSalesDelivery(input: {
     throw new DeliveryError("INVALID_DATES");
   }
 
-  return runSerializable(async (tx) => {
+  // Barang yang stoknya keluar di percobaan yang COMMIT (diulang dari nol tiap percobaan;
+  // kiriman ulang dengan kunci yang sama tidak menggerakkan apa pun).
+  let barangKeluar: string[] = [];
+  const hasil = await runSerializable(async (tx) => {
+    barangKeluar = [];
     if (input.idempotencyKey) {
       const recorded = await findRecordedDelivery(tx, input.idempotencyKey, input.orderId);
       if (recorded) {
@@ -123,6 +406,18 @@ export async function recordFieldSalesDelivery(input: {
     });
     if (!order) throw new DeliveryError("NOT_FOUND");
     if (order.status !== "APPROVED" || order.orderType !== "PUTUS") throw new DeliveryError("INVALID_STATE");
+
+    /*
+     * Pre-order: stoknya baru dicadangkan saat jendela dirilis (barang datang).
+     * Sebelum itu tidak ada reservasi untuk dikonsumsi — tanpa penjaga ini
+     * pengiriman jatuh ke OVER_DELIVER, pesan yang keliru dan tidak menunjukkan
+     * jalan keluarnya. Jendela yang hilang dianggap belum dirilis (tidak ada
+     * yang pernah mencadangkan pesanan itu).
+     */
+    if (order.preorderWindowId) {
+      const jendela = await tx.preorderWindow.findUnique({ where: { id: order.preorderWindowId }, select: { releasedAt: true } });
+      if (!jendela?.releasedAt) throw new IndenBelumRilisError(order.id);
+    }
 
     const lineById = new Map(order.lines.map((l) => [l.id, l]));
     const requested = new Map<string, number>();
@@ -197,7 +492,7 @@ export async function recordFieldSalesDelivery(input: {
     const lineDiscountTotal = allocation.lineDiscounts.reduce((s, l) => s + l.discountAmount, 0);
     const total = roundToWholeRupiah(roundCents(subtotal - lineDiscountTotal - allocation.orderDiscountAmount));
 
-    const docNo = await generateDocNumber("DELIVERY", tx);
+    const docNo = await nomorNotaBebas(tx);
     const now = input.deliveredAt ?? new Date();
 
     const delivery = await tx.fieldSalesDelivery.create({
@@ -233,15 +528,19 @@ export async function recordFieldSalesDelivery(input: {
       data: { deliveryId: delivery.id },
     });
 
-    await tx.receivable.create({
-      data: {
-        deliveryId: delivery.id,
-        storeId: order.storeId,
-        invoiceDate: input.invoiceDate,
-        dueDate: input.dueDate,
-        originalAmount: total,
-        outstandingAmount: total,
-      },
+    /*
+     * Nota tagihan = piutang, di transaksi yang sama: cek kredit toko membaca piutang, jadi nota
+     * yang keluar tanpa piutang membuat toko tampak bersih padahal sudah berutang. Kiriman ulang
+     * dengan kunci idempoten yang sama sudah kembali di atas sebelum sampai ke sini.
+     */
+    await buatPiutangNota(tx, {
+      deliveryId: delivery.id,
+      docNo: delivery.docNo,
+      storeId: order.storeId,
+      salesmanId: order.salesmanId,
+      invoiceDate: input.invoiceDate,
+      dueDate: input.dueDate,
+      total,
     });
 
     /**
@@ -272,6 +571,7 @@ export async function recordFieldSalesDelivery(input: {
       });
     } catch (e) {
       if (e instanceof PartialConsumeError) {
+        if (e.code === "OVER_CONSUME") throw new CadanganTidakCocokError();
         throw new DeliveryError(
           PARTIAL_CONSUME_CODE[e.code],
           e.shortLines.map((s) => ({ orderLineId: s.fieldSalesLineId, requested: s.requested, onHand: s.onHand, available: s.available })),
@@ -291,6 +591,7 @@ export async function recordFieldSalesDelivery(input: {
         where: { id: d.ol.id },
         data: { deliveredQty: { increment: d.qty } },
       });
+      barangKeluar.push(d.ol.itemId);
     }
 
     const settled = order.lines.map((ol) => ({
@@ -330,6 +631,17 @@ export async function recordFieldSalesDelivery(input: {
 
     return { deliveryId: delivery.id, docNo: delivery.docNo };
   });
+
+  /*
+   * Sesudah commit. Selama cadangannya cukup, onHand dan reserved turun bersama
+   * sehingga available tetap — tapi pesanan yang dicadangkan kurang (oversell
+   * diperingatkan, tidak ditolak) memang menurunkan available. Push mengirim
+   * angka mutlak, jadi mengirimnya pada setiap pengiriman selalu aman.
+   */
+  if (barangKeluar.length > 0) {
+    await antrekanPushStok(barangKeluar, { sumber: "ADJUSTMENT", ref: `kirim putus ${hasil.docNo}`, userId: input.deliveredById });
+  }
+  return hasil;
 }
 
 export async function closeFieldSalesOrderRemainder(input: {
@@ -337,7 +649,10 @@ export async function closeFieldSalesOrderRemainder(input: {
   closedById: string;
   reason: string;
 }): Promise<{ ok: true }> {
-  return runSerializable(async (tx) => {
+  let barangDilepas: string[] = [];
+  let nomorPesanan = "";
+  const hasil = await runSerializable(async (tx) => {
+    barangDilepas = [];
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: { lines: true },
@@ -368,6 +683,8 @@ export async function closeFieldSalesOrderRemainder(input: {
     }
 
     await releaseFieldSalesOrder(tx, { fieldSalesLineIds: openLines.map((l) => l.id) });
+    barangDilepas = openLines.map((l) => l.itemId);
+    nomorPesanan = order.orderNo;
 
     const settled = order.lines.map((l) => ({
       orderLineId: l.id,
@@ -390,6 +707,10 @@ export async function closeFieldSalesOrderRemainder(input: {
       },
     });
 
-    return { ok: true };
+    return { ok: true as const };
   });
+
+  // Sesudah commit: sisa cadangan dilepas, available naik — teruskan ke Jubelio.
+  await antrekanPushStok(barangDilepas, { sumber: "ADJUSTMENT", ref: `tutup sisa pesanan putus ${nomorPesanan}`, userId: input.closedById });
+  return hasil;
 }

@@ -1,10 +1,17 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Receipt, Search, AlertCircle } from "lucide-react";
+import { Receipt, Search, AlertCircle, MoreHorizontal } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,7 +37,7 @@ import {
 } from "@/components/ui/dialog";
 import { Pagination } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
-import { formatDateOnlyJakarta } from "@/lib/date-only";
+import { formatDisplayDate } from "@/lib/date-only";
 import type { TaxInvoiceRow, TaxInvoiceStatusFilter } from "@/lib/tax-invoices/queries";
 import {
   markNotRequiredAction,
@@ -42,6 +49,8 @@ import {
 import { STATUS_BADGE_VARIANT, STATUS_LABEL_KEY } from "@/lib/tax-invoices/status-display";
 import { MAX_TAX_INVOICE_REASON_LENGTH } from "@/lib/tax-invoices/errors";
 import { MarkCreatedDialog } from "./MarkCreatedDialog";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type StatusFilter = TaxInvoiceStatusFilter | "ALL";
 
@@ -54,6 +63,8 @@ type Props = {
   page: number;
   pageSize: number;
   canManage: boolean;
+  /** No. Nota menjadi tautan ke pesanan (tempat nota & isi barangnya) hanya bila boleh membukanya. */
+  canViewOrder: boolean;
   loadError: boolean;
   ppnRatePercent: number;
 };
@@ -64,20 +75,13 @@ type SelectedRow = { id: string; docNo: string };
 
 const BASE_PATH = "/backoffice/finance/faktur-pajak";
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
 export function FakturPajakPageClient(props: Props) {
   const router = useRouter();
   const sp = useSearchParams();
   const t = useTranslations("fakturPajak");
   const tStatus = useTranslations("fakturPajakStatus");
   const tCommon = useTranslations("common");
+  const locale = useLocale();
   const [isNavPending, startNavTransition] = useTransition();
   const [isActionPending, startActionTransition] = useTransition();
 
@@ -217,9 +221,15 @@ export function FakturPajakPageClient(props: Props) {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("judulHalaman")}</h1>
+          <TombolBantuan judul={t("judulHalaman")} />
+        </div>
+        {/* Ekspor XML impor Coretax dari nota yang menunggu faktur (lib/finance/pajak/coretax.ts). */}
+        <Button asChild variant="outline" size="sm">
+          <Link href="/backoffice/finance/pajak/faktur-keluaran">{t("eksporCoretax")}</Link>
+        </Button>
       </div>
 
       {props.loadError ? (
@@ -241,7 +251,8 @@ export function FakturPajakPageClient(props: Props) {
             value={props.status}
             onValueChange={(v) => pushParam("status", v === "ALL" ? undefined : v)}
           >
-            <TabsList>
+            {/* Turun baris di layar sempit: di HP 390 px keenam tab tidak muat satu baris. */}
+            <TabsList className="h-auto max-w-full flex-wrap justify-start">
               <TabsTrigger value="ALL">
                 {t("statusAll")} ({totalCount})
               </TabsTrigger>
@@ -302,7 +313,7 @@ export function FakturPajakPageClient(props: Props) {
                           <TableHead>{t("colInvoiceDate")}</TableHead>
                           <TableHead>{t("colDueDate")}</TableHead>
                           <TableHead className="text-right">{t("colTotal")}</TableHead>
-                          <TableHead>{t("colPrinted")}</TableHead>
+                          <TableHead className="hidden 2xl:table-cell">{t("colPrinted")}</TableHead>
                           <TableHead>{t("colStatus")}</TableHead>
                           {props.canManage && <TableHead>{tCommon("actions")}</TableHead>}
                         </TableRow>
@@ -312,18 +323,29 @@ export function FakturPajakPageClient(props: Props) {
                           const status = row.status as TaxInvoiceStatusFilter;
                           return (
                             <TableRow key={row.id}>
-                              <TableCell className="font-medium whitespace-nowrap">{row.docNo}</TableCell>
+                              <TableCell className="font-medium whitespace-nowrap">
+                                {props.canViewOrder && row.orderId ? (
+                                  <Link
+                                    href={`/backoffice/field-sales-orders/${encodeURIComponent(row.orderId)}`}
+                                    className="underline underline-offset-4"
+                                  >
+                                    {row.docNo}
+                                  </Link>
+                                ) : (
+                                  row.docNo
+                                )}
+                              </TableCell>
                               <TableCell className="max-w-[180px] truncate">{row.storeName}</TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {row.invoiceDate ? (
-                                  formatDateOnlyJakarta(row.invoiceDate)
+                                  formatDisplayDate(row.invoiceDate, locale)
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
                                 )}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
                                 {row.dueDate ? (
-                                  formatDateOnlyJakarta(row.dueDate)
+                                  formatDisplayDate(row.dueDate, locale)
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
                                 )}
@@ -335,9 +357,9 @@ export function FakturPajakPageClient(props: Props) {
                                   <span className="text-muted-foreground">—</span>
                                 )}
                               </TableCell>
-                              <TableCell className="whitespace-nowrap">
+                              <TableCell className="hidden 2xl:table-cell whitespace-nowrap">
                                 {row.notaPrintedAt ? (
-                                  formatDateOnlyJakarta(row.notaPrintedAt)
+                                  formatDisplayDate(row.notaPrintedAt, locale)
                                 ) : (
                                   <span className="text-muted-foreground">—</span>
                                 )}
@@ -367,32 +389,42 @@ export function FakturPajakPageClient(props: Props) {
                               </TableCell>
                               {props.canManage && (
                                 <TableCell>
-                                  <div className="flex flex-wrap items-center gap-2">
+                                  <div className="flex flex-nowrap items-center gap-1">
                                     {status === "PENDING" ? (
                                       <>
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="h-10"
+                                          className="h-10 whitespace-nowrap"
                                           onClick={() => openMarkCreatedDialog(row)}
                                         >
                                           {t("actionMarkCreated")}
                                         </Button>
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-10"
-                                          onClick={() => openDialog("notRequired", row)}
-                                        >
-                                          {t("actionNotRequired")}
-                                        </Button>
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-10 w-10"
+                                              aria-label={t("actionMore")}
+                                              title={t("actionMore")}
+                                            >
+                                              <MoreHorizontal className="h-4 w-4" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onClick={() => openDialog("notRequired", row)}>
+                                              {t("actionNotRequired")}
+                                            </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
                                       </>
                                     ) : status === "CREATED" ? (
                                       <>
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="h-10"
+                                          className="h-10 whitespace-nowrap"
                                           onClick={() => openDialog("sentToStore", row)}
                                         >
                                           {t("actionMarkSentToStore")}
@@ -400,7 +432,7 @@ export function FakturPajakPageClient(props: Props) {
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="h-10"
+                                          className="h-10 whitespace-nowrap"
                                           onClick={() => openDialog("revertToPending", row)}
                                         >
                                           {t("actionRevert")}
@@ -411,7 +443,7 @@ export function FakturPajakPageClient(props: Props) {
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="h-10"
+                                          className="h-10 whitespace-nowrap"
                                           onClick={() => openDialog("revertToCreated", row)}
                                         >
                                           {t("actionRevertToCreated")}
@@ -419,7 +451,7 @@ export function FakturPajakPageClient(props: Props) {
                                         <Button
                                           variant="outline"
                                           size="sm"
-                                          className="h-10"
+                                          className="h-10 whitespace-nowrap"
                                           onClick={() => openDialog("revertToPending", row)}
                                         >
                                           {t("actionRevert")}
@@ -429,7 +461,7 @@ export function FakturPajakPageClient(props: Props) {
                                       <Button
                                         variant="outline"
                                         size="sm"
-                                        className="h-10"
+                                        className="h-10 whitespace-nowrap"
                                         onClick={() => openDialog("revertToPending", row)}
                                       >
                                         {t("actionRevert")}

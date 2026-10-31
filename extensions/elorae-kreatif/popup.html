@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Elorae Kreatif</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <strong>Elorae Kreatif</strong>
+      <span class="redup">Pantau KOL TikTok · Instagram · YouTube</span>
+    </header>
+
+    <section id="bagianSambung" hidden>
+      <p id="pesanTerputus" class="peringatan" hidden></p>
+      <form id="formSambung" novalidate>
+        <label for="alamat">Alamat Elorae</label>
+        <input id="alamat" name="alamat" type="url" list="pilihanAlamat" value="http://localhost:3000" autocomplete="off" required />
+        <datalist id="pilihanAlamat">
+          <option value="http://localhost:3000"></option>
+          <option value="https://elorae.cloud"></option>
+        </datalist>
+
+        <label for="kode">Kode sambung</label>
+        <input id="kode" name="kode" type="text" maxlength="32" autocomplete="off" spellcheck="false" required />
+        <p class="petunjuk">Buat kodenya di Elorae → Kreatif → Pemantauan → Sambungkan perangkat. Berlaku 15 menit.</p>
+
+        <button type="submit" id="tombolSambung" class="utama">Sambungkan</button>
+        <p id="pesanSambung" class="galat" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section id="bagianTersambung" hidden>
+      <div class="kartu">
+        <div class="baris">
+          <span class="redup">Perangkat</span>
+          <strong id="namaPerangkat">—</strong>
+        </div>
+        <div class="baris">
+          <span class="redup">Elorae</span>
+          <span id="alamatElorae">—</span>
+        </div>
+      </div>
+
+      <div class="kartu angka">
+        <div><span id="hariSelesai">—</span><small>Selesai</small></div>
+        <div><span id="hariGagal">—</span><small>Gagal</small></div>
+        <div><span id="hariKuota">—</span><small>Kuota</small></div>
+        <div><span id="hariSisa">—</span><small>Sisa</small></div>
+      </div>
+
+      <label class="sakelar">
+        <input id="otomatis" type="checkbox" role="switch" />
+        <span class="jalur" aria-hidden="true"></span>
+        <span>Pemantauan otomatis</span>
+      </label>
+
+      <label class="sakelar">
+        <input id="kirimOtomatis" type="checkbox" role="switch" aria-describedby="petunjukKirimOtomatis" />
+        <span class="jalur" aria-hidden="true"></span>
+        <span>Kirim otomatis saat membuka TikTok, Instagram, atau YouTube</span>
+      </label>
+      <p class="petunjuk" id="petunjukKirimOtomatis">
+        Profil atau video TikTok, Instagram, atau YouTube yang Anda buka sendiri dikirim ke Elorae tanpa menekan tombol,
+        paling sering sekali per 6 jam untuk akun atau video yang sama. Elorae hanya menyimpan akun yang sudah ada di Elorae dan video yang
+        menandai Elorae; sisanya diabaikan.
+      </p>
+
+      <div class="kartu">
+        <div class="baris kolom">
+          <span class="redup">Keadaan</span>
+          <span id="keadaan">—</span>
+        </div>
+        <div class="baris">
+          <span class="redup">Pemeriksaan berikutnya</span>
+          <span id="berikutnya">—</span>
+        </div>
+        <div class="baris kolom">
+          <span class="redup">Cek cepat</span>
+          <span id="cekCepat">—</span>
+        </div>
+        <div class="baris kolom">
+          <span class="redup">Instagram</span>
+          <span id="cekInstagram">—</span>
+        </div>
+        <div class="baris kolom" id="barisKirimTerakhir" hidden>
+          <span class="redup">Kiriman otomatis terakhir</span>
+          <span id="kirimTerakhir"></span>
+        </div>
+        <div class="baris kolom" id="barisGalat" hidden>
+          <span class="redup">Masalah terakhir</span>
+          <span id="galatTerakhir"></span>
+        </div>
+      </div>
+
+      <button type="button" id="tombolPutuskan" class="bahaya">Putuskan</button>
+      <p class="petunjuk">Memutuskan juga mencabut perangkat ini di Elorae. Untuk memakainya lagi, buat kode sambung baru.</p>
+    </section>
+
+    <details id="bagianTampilan" class="kartu tampilan">
+      <summary>Tampilan panel</summary>
+      <div class="pilihan">
+        <span class="redup">Tema</span>
+        <div class="segmen" role="radiogroup" aria-label="Tema" data-kunci="tema">
+          <button type="button" role="radio" data-nilai="otomatis">Otomatis</button>
+          <button type="button" role="radio" data-nilai="terang">Terang</button>
+          <button type="button" role="radio" data-nilai="gelap">Gelap</button>
+        </div>
+      </div>
+      <div class="pilihan">
+        <span class="redup">Warna</span>
+        <div class="warna" id="pilihWarna" role="radiogroup" aria-label="Warna aksen"></div>
+      </div>
+      <div class="pilihan">
+        <span class="redup">Ukuran</span>
+        <div class="segmen" role="radiogroup" aria-label="Ukuran" data-kunci="ukuran">
+          <button type="button" role="radio" data-nilai="lengkap">Lengkap</button>
+          <button type="button" role="radio" data-nilai="ringkas">Ringkas</button>
+        </div>
+      </div>
+      <div class="pilihan">
+        <span class="redup">Posisi</span>
+        <div class="segmen" role="radiogroup" aria-label="Posisi" data-kunci="posisi">
+          <button type="button" role="radio" data-nilai="kiri">Kiri bawah</button>
+          <button type="button" role="radio" data-nilai="kanan">Kanan bawah</button>
+        </div>
+      </div>
+    </details>
+
+    <footer class="redup" id="versi"></footer>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

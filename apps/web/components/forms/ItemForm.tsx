@@ -49,8 +49,8 @@ import {
   slugVariantAttributeValue,
   unknownVariantColors,
 } from "@/lib/items/normalize-variants";
-import { useTranslations } from 'next-intl';
-import type { z } from 'zod';
+import { useLocale, useTranslations } from 'next-intl';
+import { z } from 'zod';
 import {
   buildVariantBarcode,
   type VariantBarcodeFormatConfig,
@@ -71,8 +71,30 @@ import {
   resolveGridRows,
   setRowValueAt,
 } from '@/lib/items/variant-grid';
+import Link from "next/link";
+import { pilihanTabelUkuranAction } from "@/app/actions/size-charts";
+import { BATAS_INFO_PRODUK } from "@/lib/items/info-produk";
+import type { PilihanTabelUkuran } from "@/lib/items/size-chart-queries";
+import { rapikanNamaBarang } from "@/app/backoffice/items/nama-barang";
+import { labelJenisBarang } from "@/app/backoffice/items/tampilan-barang";
+import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
+import { bacaKomisiPerPcs } from "@/lib/items/komisi-spg";
+import type { HppBarang } from "@/lib/items/hpp-barang";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { formatDisplayDate } from "@/lib/date-only";
 
 type ItemFormData = z.infer<typeof itemSchema>;
+/** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
+type InfoProdukIsian = {
+  material?: string | null;
+  careInstructions?: string | null;
+  sizeChartId?: string | null;
+  kgPerRoll?: number | null;
+  /** Komisi SPG per pcs (barang jadi); bahan/aksesori selalu 0. */
+  commissionPerPcs?: number | null;
+};
+/** Nilai pilihan "ikut bawaan kategori" di pemilih tabel ukuran. */
+const IKUT_KATEGORI = "__kategori__";
 type ConsumptionRuleData = z.infer<typeof consumptionRuleSchema>;
 
 type ConsumptionRuleRow = ConsumptionRuleData & { qtyInput?: string };
@@ -144,6 +166,13 @@ interface ItemFormProps {
     targetMarginPercent?: number;
     additionalCost?: number;
     pantone?: PantoneThemeSelection | null;
+    material?: string | null;
+    careInstructions?: string | null;
+    sizeChartId?: string | null;
+    /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). */
+    kgPerRoll?: number | null;
+    /** Komisi SPG per pcs (barang jadi). */
+    commissionPerPcs?: number | null;
     consumptionRules?: Array<{
       materialId: string;
       material: {
@@ -159,14 +188,27 @@ interface ItemFormProps {
       size?: string | null;
     }>;
   };
-  onSubmit: (data: ItemFormData, consumptionRules?: ConsumptionRuleData[]) => Promise<void>;
+  onSubmit: (data: ItemFormData & InfoProdukIsian, consumptionRules?: ConsumptionRuleData[]) => Promise<void>;
   isLoading?: boolean;
+  /** HPP per pcs barang jadi (hanya dibaca, di samping harga jual). Tidak ada di barang baru. */
+  hpp?: HppBarang | null;
 }
 
-export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormProps) {
+export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null }: ItemFormProps) {
   const tValidation = useTranslations('validation');
   const tToasts = useTranslations('toasts');
-  const itemSchemaT = useMemo(() => createItemSchema((k) => tValidation(k)), [tValidation]);
+  const tInfo = useTranslations("itemProductInfo");
+  const tForm = useTranslations('itemForm');
+  const locale = useLocale();
+  // Nama Inggris tidak wajib: kosong diisi nama Indonesia saat disimpan (rapikanNamaBarang).
+  // Pesan galat memakai istilah "barang" dan bahasa Indonesia, bukan teks bawaan zod.
+  const itemSchemaT = useMemo(() => {
+    const tidakNegatif = tForm('errTidakNegatif');
+    return createItemSchema((k) => (k === 'itemNameIdRequired' ? tForm('errNamaWajib') : tValidation(k))).extend({
+      nameEn: z.string().optional(),
+      sellingPrice: z.number(tidakNegatif).min(0, tidakNegatif).optional(),
+    });
+  }, [tValidation, tForm]);
   const [uoms, setUOMs] = useState<UOM[]>([]);
   const [materials, setMaterials] = useState<Item[]>([]);
   const [itemCategories, setItemCategories] = useState<ItemCategoryOption[]>([]);
@@ -188,7 +230,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const [colorOptions, setColorOptions] = useState<VariantColorOption[] | null>(null);
   const [colorLoadFailed, setColorLoadFailed] = useState(false);
 
-  const normalizedVariants = useMemo((): Array<Record<string, string>> => {
+  const savedVariantsRaw = useMemo((): Array<Record<string, string>> => {
     const raw = initialData?.variants;
     if (Array.isArray(raw)) return raw as Array<Record<string, string>>;
     if (typeof raw === 'string') {
@@ -201,6 +243,19 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     }
     return [];
   }, [initialData?.variants]);
+
+  // `pantone` = kode Pantone warna bahan (ditambah dari formulir PO), bukan dimensi kombinasi;
+  // dibuang dari varian tersimpan sebelum dipakai tabel varian, dan dibawa lagi saat menyimpan.
+  const normalizedVariants = useMemo(
+    () =>
+      savedVariantsRaw.map((variant) => {
+        if (!('pantone' in variant)) return variant;
+        const rest = { ...variant };
+        delete rest.pantone;
+        return rest;
+      }),
+    [savedVariantsRaw]
+  );
 
   const initialAttributes = useMemo(
     () => attributesFromSavedVariants(normalizedVariants),
@@ -251,6 +306,14 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     null
   );
   const [itemTypeMasters, setItemTypeMasters] = useState<Awaited<ReturnType<typeof getItemTypeMasters>>>([]);
+  const [material, setMaterial] = useState(initialData?.material ?? "");
+  const [careInstructions, setCareInstructions] = useState(initialData?.careInstructions ?? "");
+  const [sizeChartId, setSizeChartId] = useState(initialData?.sizeChartId ?? "");
+  const [kgPerRoll, setKgPerRoll] = useState(initialData?.kgPerRoll != null ? String(initialData.kgPerRoll) : "");
+  const [komisiSpg, setKomisiSpg] = useState(
+    initialData?.commissionPerPcs != null && initialData.commissionPerPcs > 0 ? String(initialData.commissionPerPcs) : "",
+  );
+  const [pilihanTabel, setPilihanTabel] = useState<PilihanTabelUkuran[]>([]);
 
   const {
     register,
@@ -271,12 +334,14 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       reorderPoint: initialData?.reorderPoint ?? 0,
       overReceiveThreshold: initialData?.overReceiveThreshold ?? 0,
       sellingPrice: initialData?.sellingPrice,
-      targetMarginPercent: initialData?.targetMarginPercent,
-      additionalCost: initialData?.additionalCost,
     },
   });
 
   const itemType = watch('type');
+  const watchedUomId = watch('uomId');
+  // Kg per roll hanya untuk bahan (bukan barang jadi) yang satuannya kg.
+  const tampilKgPerRoll =
+    itemType !== ItemType.FINISHED_GOOD && satuanKg(uoms.find((u) => u.id === watchedUomId)?.code);
   const watchedCategoryId = watch('categoryId');
 
   const categoryCodePrefix = useMemo(() => {
@@ -288,11 +353,16 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   useEffect(() => {
     // Load UOMs
-    getUOMs().then(setUOMs).catch(() => toast.error(tToasts('failedToLoadUOMs')));
+    getUOMs().then(setUOMs).catch(() => toast.error(tForm('errMuatSatuan')));
     getItemTypeMasters().then(setItemTypeMasters).catch(() => {});
     getItemCategories(true).then((rows) => setItemCategories(rows as ItemCategoryOption[])).catch(() => {});
     getVariantBarcodeFormatConfig()
       .then(setBarcodeFormatConfig)
+      .catch(() => {});
+    pilihanTabelUkuranAction(initialData?.sizeChartId ?? null)
+      .then((h) => {
+        if (h.ok) setPilihanTabel(h.data);
+      })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount only
   }, []);
@@ -301,7 +371,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     if (itemType === ItemType.FINISHED_GOOD) {
       getItems({ type: 'raw', isActive: true })
         .then((result) => setMaterials(Array.isArray(result) ? (result as unknown as Item[]) : []))
-        .catch(() => toast.error(tToasts('failedToLoadMaterials')));
+        .catch(() => toast.error(tForm('errMuatBahan')));
       setColorLoadFailed(false);
       // Stays null on failure: an empty list would flag every colour as missing from the master.
       getVariantColorOptions()
@@ -317,7 +387,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   const handleGenerateSKU = async () => {
     if (!itemType) {
-      toast.error(tToasts('pleaseSelectItemTypeFirst'));
+      toast.error(tForm('pilihJenisDulu'));
       return;
     }
     setIsGeneratingSKU(true);
@@ -325,7 +395,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       const newSku = await generateSKU(itemType);
       setSku(newSku);
     } catch {
-      toast.error(tToasts('failedToGenerateSKU'));
+      toast.error(tForm('errBuatSku'));
     } finally {
       setIsGeneratingSKU(false);
     }
@@ -449,6 +519,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     });
   };
 
+  const tabelBawaan = useMemo(() => {
+    const kat = (watchedCategoryId ?? "").trim();
+    return kat ? (pilihanTabel.find((p) => p.isActive && p.categoryId === kat) ?? null) : null;
+  }, [watchedCategoryId, pilihanTabel]);
+
   const parentSku = (initialData?.sku ?? sku) || '';
   const variantSkuBasePrefix = parentSku.trim();
 
@@ -462,7 +537,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
   const applyVariantSkuCodeAt = (idx: number) => {
     if (!variantSkuBasePrefix) {
-      toast.error(tToasts('setParentSkuBeforeVariantCode'));
+      toast.error(tForm('variantSkuNoPrefix'));
       return;
     }
     setGrid((prev) =>
@@ -475,7 +550,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   const applyVariantBarcodeAt = (idx: number) => {
     if (!barcodeFormatConfig) return;
     if (!categoryCodePrefix && !parentSku.trim()) {
-      toast.error(tToasts('setParentSkuBeforeBarcode'));
+      toast.error(tForm('barcodeTanpaAwalan'));
       return;
     }
     const formatConfig = barcodeFormatConfig;
@@ -531,10 +606,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
   };
 
   const onFormSubmit = async (data: ItemFormData) => {
-    const dataWithSku: ItemFormData = {
+    const dataWithSku: ItemFormData = rapikanNamaBarang({
       ...data,
       sku: sku || undefined,
-    };
+    });
 
     const hasAttributes =
       attributes.length > 0 &&
@@ -543,7 +618,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
     if (hasAttributes) {
       const incomplete = attributes.find((attr) => !attr.key.trim() || attr.values.length === 0);
       if (incomplete) {
-        toast.error(tToasts('provideNameAndAttributeValues'));
+        toast.error(tForm('lengkapiAtribut'));
         return;
       }
       const collidingNames = findCollidingAttributeNames(attributes);
@@ -602,11 +677,16 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 variantSku = `${autoBase}-${bare}`;
               }
             }
+            // Kode Pantone warna bahan (kunci cadangan) ikut varian lama yang sama.
+            const pantoneVarian = savedVariantsRaw
+              .find((v) => Object.keys(combo).every((k) => v[k] === combo[k]))
+              ?.pantone?.trim();
             return [
               {
                 ...combo,
                 ...(variantSku ? { sku: variantSku } : {}),
                 ...(variantBarcode ? { barcode: variantBarcode } : {}),
+                ...(pantoneVarian ? { pantone: pantoneVarian } : {}),
               },
             ];
           })
@@ -618,29 +698,62 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         r => !r.materialId || r.qtyRequired <= 0
       );
       if (invalidRules.length > 0) {
-        toast.error(tToasts('fillConsumptionRuleFields'));
+        toast.error(tForm('lengkapiBahan'));
         return;
       }
     }
 
+    // Kg per roll: bahan bersatuan kg saja; selain itu dikosongkan (bahan) atau tidak disentuh (barang jadi).
+    let kgRoll: number | null = null;
+    if (tampilKgPerRoll && kgPerRoll.trim()) {
+      kgRoll = bacaAngkaIsian(kgPerRoll);
+      if (kgRoll == null || kgRoll <= 0) {
+        toast.error(tForm('kgPerRollTidakSah'));
+        return;
+      }
+    }
+
+    // Komisi SPG per pcs: barang jadi saja; kosong = 0. Bahan/aksesori selalu 0 (tidak dijual SPG).
+    const komisi = itemType === ItemType.FINISHED_GOOD ? bacaKomisiPerPcs(komisiSpg) : 0;
+    if (komisi === undefined || !Number.isFinite(komisi) || komisi < 0) {
+      toast.error(tForm('komisiSpgTidakSah'));
+      return;
+    }
+
+    // Info produk hanya untuk barang jadi; jenis lain tidak menyentuh kolomnya.
+    const infoProduk: InfoProdukIsian =
+      itemType === ItemType.FINISHED_GOOD
+        ? {
+            material: material.trim() || null,
+            careInstructions: careInstructions.trim() || null,
+            sizeChartId: sizeChartId || null,
+            commissionPerPcs: komisi,
+          }
+        : { kgPerRoll: kgRoll, commissionPerPcs: 0 };
+
     await onSubmit(
       // Finished goods carry colour per variant; only a material gets a Pantone (#410).
-      { ...dataWithSku, variants, pantoneTcx: itemType === ItemType.FINISHED_GOOD ? null : pantone?.tcx ?? null },
+      {
+        ...dataWithSku,
+        variants,
+        ...infoProduk,
+        pantoneTcx: itemType === ItemType.FINISHED_GOOD ? null : pantone?.tcx ?? null,
+      },
       itemType === ItemType.FINISHED_GOOD ? stripConsumptionRuleRows(consumptionRules) : undefined
     );
   };
 
   return (
     <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
-      {/* Basic Information */}
+      {/* Informasi dasar */}
       <Card>
         <CardHeader>
-          <CardTitle>Basic Information</CardTitle>
+          <CardTitle>{tForm('basicInfo')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* SKU */}
           <div className="space-y-2">
-            <Label htmlFor="sku">SKU</Label>
+            <Label htmlFor="sku">{tForm('sku')}</Label>
             <div className="flex gap-2">
               <Input
                 id="sku"
@@ -659,7 +772,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   {isGeneratingSKU ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    'Generate'
+                    tForm('skuGenerate')
                   )}
                 </Button>
               )}
@@ -669,11 +782,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           {/* Bilingual Names */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="nameId">Nama (Indonesia) *</Label>
+              <Label htmlFor="nameId">{tForm('nameId')} *</Label>
               <Input
                 id="nameId"
                 {...register('nameId')}
-                placeholder="Kain Katun Merah"
+                placeholder={tForm('nameIdPlaceholder')}
                 aria-invalid={!!errors.nameId}
                 className={errors.nameId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
@@ -684,11 +797,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="nameEn">Name (English) *</Label>
+              <Label htmlFor="nameEn">
+                {tForm('nameEn')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
+              </Label>
               <Input
                 id="nameEn"
                 {...register('nameEn')}
-                placeholder="Red Cotton Fabric"
+                placeholder={tForm('nameEnPlaceholder')}
                 aria-invalid={!!errors.nameEn}
                 className={errors.nameEn ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
@@ -703,7 +818,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           {/* Type and UOM */}
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="type">Type *</Label>
+              <Label htmlFor="type">{tForm('type')} *</Label>
               <Controller
                 name="type"
                 control={control}
@@ -712,16 +827,19 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     id="type"
                     options={
                       itemTypeMasters.length > 0
-                        ? itemTypeMasters.map((m) => ({ value: m.code, label: m.nameEn }))
+                        ? itemTypeMasters.map((m) => ({
+                            value: m.code,
+                            label: labelJenisBarang(m, locale, (code) => tForm(`typeName.${code}`)),
+                          }))
                         : [
-                            { value: ItemType.FABRIC, label: 'Fabric' },
-                            { value: ItemType.ACCESSORIES, label: 'Accessories' },
-                            { value: ItemType.FINISHED_GOOD, label: 'Finished Good' },
+                            { value: ItemType.FABRIC, label: tForm('typeName.FABRIC') },
+                            { value: ItemType.ACCESSORIES, label: tForm('typeName.ACCESSORIES') },
+                            { value: ItemType.FINISHED_GOOD, label: tForm('typeName.FINISHED_GOOD') },
                           ]
                     }
                     value={field.value}
                     onValueChange={field.onChange}
-                    placeholder="Select type"
+                    placeholder={tForm('typePlaceholder')}
                     aria-invalid={!!errors.type}
                     className={errors.type ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                   />
@@ -734,7 +852,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="uomId">Unit of Measure *</Label>
+              <Label htmlFor="uomId">{tForm('uom')} *</Label>
               <Controller
                 name="uomId"
                 control={control}
@@ -743,11 +861,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     id="uomId"
                     options={uoms.map((uom) => ({
                       value: uom.id,
-                      label: `${uom.code} - ${uom.nameId}`,
+                      label: `${uom.code} - ${locale === 'en' ? uom.nameEn : uom.nameId}`,
                     }))}
                     value={field.value}
                     onValueChange={field.onChange}
-                    placeholder="Select UOM"
+                    placeholder={tForm('uomPlaceholder')}
                     aria-invalid={!!errors.uomId}
                     className={errors.uomId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                   />
@@ -763,7 +881,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="categoryId">Category</Label>
+              <Label htmlFor="categoryId">{tForm('category')}</Label>
               <Controller
                 name="categoryId"
                 control={control}
@@ -771,7 +889,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   <SearchableCombobox
                     id="categoryId"
                     options={[
-                      { value: '__none__', label: 'No category' },
+                      { value: '__none__', label: tForm('noCategory') },
                       ...itemCategories.map((category) => ({
                         value: category.id,
                         label: (category.code ? `${category.code} - ` : '') + category.name,
@@ -779,13 +897,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     ]}
                     value={field.value || '__none__'}
                     onValueChange={(value) => field.onChange(value === '__none__' ? '' : value)}
-                    placeholder="Select category"
+                    placeholder={tForm('categoryPlaceholder')}
                   />
                 )}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="overReceiveThreshold">Over-receive threshold</Label>
+              <Label htmlFor="overReceiveThreshold">{tForm('overReceive')}</Label>
               <Input
                 id="overReceiveThreshold"
                 type="number"
@@ -794,7 +912,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 {...register('overReceiveThreshold', {
                   setValueAs: parseNumberFieldDefaultZero,
                 })}
-                placeholder="0.00"
+                placeholder="0"
                 aria-invalid={!!errors.overReceiveThreshold}
                 className={errors.overReceiveThreshold ? 'border-destructive focus-visible:ring-destructive/20' : ''}
               />
@@ -840,11 +958,11 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
           {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
+            <Label htmlFor="description">{tForm('description')}</Label>
             <Textarea
               id="description"
               {...register('description')}
-              placeholder="Item description..."
+              placeholder={tForm('descriptionPlaceholder')}
               rows={3}
               aria-invalid={!!errors.description}
               className={errors.description ? 'border-destructive focus-visible:ring-destructive/20' : ''}
@@ -858,7 +976,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
 
           {/* Reorder Point */}
           <div className="space-y-2">
-            <Label htmlFor="reorderPoint">Reorder Point</Label>
+            <Label htmlFor="reorderPoint">{tForm('reorderPoint')}</Label>
             <Input
               id="reorderPoint"
               type="number"
@@ -867,7 +985,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
               {...register('reorderPoint', {
                 setValueAs: parseNumberFieldDefaultZero,
               })}
-              placeholder="0.00"
+              placeholder="0"
               aria-invalid={!!errors.reorderPoint}
               className={errors.reorderPoint ? 'border-destructive focus-visible:ring-destructive/20' : ''}
             />
@@ -878,86 +996,136 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             )}
           </div>
 
-          {/* Pricing (Finished goods only) */}
+          {tampilKgPerRoll && (
+            <div className="space-y-2">
+              <Label htmlFor="kgPerRoll">{tForm('kgPerRoll')}</Label>
+              <Input
+                id="kgPerRoll"
+                inputMode="decimal"
+                autoComplete="off"
+                value={kgPerRoll}
+                onChange={(e) => setKgPerRoll(e.target.value)}
+                placeholder={tForm('kgPerRollContoh')}
+                className="max-w-[12rem] tabular-nums"
+              />
+            </div>
+          )}
+
+          {/* Harga (barang jadi saja): harga jual diisi manual pemilik; HPP per pcs hanya dibaca. */}
           {itemType === ItemType.FINISHED_GOOD && (
             <div className="space-y-4 border-t pt-4">
-              <div className="space-y-2">
-                <Label htmlFor="sellingPrice">Harga Jual (Selling price)</Label>
-                <Input
-                  id="sellingPrice"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  {...register('sellingPrice', { valueAsNumber: true })}
-                  placeholder="0.00"
-                  aria-invalid={!!errors.sellingPrice}
-                  className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.sellingPrice && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.sellingPrice.message}
-                  </p>
-                )}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="sellingPrice">{tForm('sellingPrice')}</Label>
+                  <Input
+                    id="sellingPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    {...register('sellingPrice', {
+                      // Kosong = belum ada harga (bukan NaN, yang ditolak dengan pesan bahasa Inggris).
+                      setValueAs: (v) => (v === '' || v == null ? undefined : Number(v)),
+                    })}
+                    placeholder="0"
+                    aria-invalid={!!errors.sellingPrice}
+                    className={errors.sellingPrice ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
+                  {errors.sellingPrice && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.sellingPrice.message}
+                    </p>
+                  )}
+                </div>
+
+                {initialData?.id && <HppPerPcs hpp={hpp} locale={locale} />}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="targetMarginPercent">
-                  Target Margin (%) <span className="text-xs text-muted-foreground">(optional)</span>
+                <Label htmlFor="commissionPerPcs">
+                  {tForm('komisiSpg')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
                 </Label>
                 <Input
-                  id="targetMarginPercent"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  {...register("targetMarginPercent", {
-                    setValueAs: (v) => (v === "" || v == null ? undefined : Number(v)),
-                  })}
-                  aria-invalid={!!errors.targetMarginPercent}
-                  className={errors.targetMarginPercent ? "border-destructive focus-visible:ring-destructive/20" : ""}
+                  id="commissionPerPcs"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={komisiSpg}
+                  onChange={(e) => setKomisiSpg(e.target.value)}
+                  placeholder="0"
+                  className="max-w-[12rem] tabular-nums"
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Leave blank to use the default from Jubelio push settings.
-                </p>
-                {errors.targetMarginPercent && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.targetMarginPercent.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="additionalCost">
-                  Additional Cost per pcs (Rp) <span className="text-xs text-muted-foreground">(optional)</span>
-                </Label>
-                <Input
-                  id="additionalCost"
-                  type="number"
-                  step="0.01"
-                  min={0}
-                  {...register("additionalCost", {
-                    setValueAs: (v) => (v === "" || v == null ? undefined : Number(v)),
-                  })}
-                  aria-invalid={!!errors.additionalCost}
-                  className={errors.additionalCost ? "border-destructive focus-visible:ring-destructive/20" : ""}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Flat add-on per unit (packaging, etc).
-                </p>
-                {errors.additionalCost && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.additionalCost.message}
-                  </p>
-                )}
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
+      {/* Info produk untuk pembeli — dibaca SPG di HP (Info produk). */}
+      {itemType === ItemType.FINISHED_GOOD && (
+        <Card>
+          <CardHeader>
+            <CardTitle>{tInfo("title")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="material">{tInfo("material")}</Label>
+              <Input
+                id="material"
+                value={material}
+                onChange={(e) => setMaterial(e.target.value)}
+                placeholder={tInfo("materialPlaceholder")}
+                maxLength={BATAS_INFO_PRODUK.material}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="careInstructions">{tInfo("care")}</Label>
+              <Textarea
+                id="careInstructions"
+                value={careInstructions}
+                onChange={(e) => setCareInstructions(e.target.value)}
+                placeholder={tInfo("carePlaceholder")}
+                maxLength={BATAS_INFO_PRODUK.careInstructions}
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sizeChartId">{tInfo("sizeChart")}</Label>
+              <SearchableCombobox
+                id="sizeChartId"
+                options={[
+                  {
+                    value: IKUT_KATEGORI,
+                    label: tabelBawaan
+                      ? tInfo("followCategoryNamed", { name: tabelBawaan.name })
+                      : tInfo("followCategory"),
+                  },
+                  ...pilihanTabel.map((p) => ({
+                    value: p.id,
+                    label: p.isActive ? p.name : tInfo("inactiveChart", { name: p.name }),
+                  })),
+                ]}
+                value={sizeChartId || IKUT_KATEGORI}
+                onValueChange={(v) => setSizeChartId(v === IKUT_KATEGORI ? "" : v)}
+                placeholder={tInfo("followCategory")}
+              />
+              <p className="text-xs text-muted-foreground">
+                {sizeChartId
+                  ? tInfo("ownChartHelp")
+                  : tabelBawaan
+                    ? tInfo("categoryChartHelp", { name: tabelBawaan.name })
+                    : tInfo("noCategoryChartHelp")}{" "}
+                <Link href="/backoffice/items/size-charts" className="font-medium text-primary underline-offset-4 hover:underline">
+                  {tInfo("manageLink")}
+                </Link>
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Variants */}
       <Card>
         <CardHeader>
-          <CardTitle>Variants (Optional)</CardTitle>
+          <CardTitle>{tForm('variantsTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {itemType === ItemType.FINISHED_GOOD ? (
@@ -1008,36 +1176,34 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
           ) : (
             <>
               <div className="flex items-start justify-between gap-4">
-                <p className="text-sm text-muted-foreground">
-                  Define attributes (e.g., Color, Size) and their values to generate variant combinations.
-                </p>
+                {attributes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{tForm('noAttributes')}</p>
+                ) : (
+                  <span />
+                )}
                 <Button type="button" variant="outline" onClick={addAttribute}>
                   <Plus className="h-4 w-4 mr-2" />
-                  Add Attribute
+                  {tForm('addAttribute')}
                 </Button>
               </div>
-
-              {attributes.length === 0 && (
-                <p className="text-sm text-muted-foreground">No attributes added yet.</p>
-              )}
 
               {attributes.map((attr, index) => (
                 <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
                   <div className="space-y-2">
-                    <Label>Attribute Name</Label>
+                    <Label>{tForm('attributeName')}</Label>
                     <Input
                       value={attr.key}
                       onChange={(e) => updateAttributeKey(index, e.target.value)}
-                      placeholder="Color"
+                      placeholder={tForm('attributeNamePlaceholder')}
                     />
                   </div>
                   <div className="space-y-2 md:col-span-2">
-                    <Label>Values (comma separated)</Label>
+                    <Label>{tForm('attributeValues')}</Label>
                     <div className="flex gap-2">
                       <TagsInput
                         value={attr.values}
                         onChange={(values) => updateAttributeValues(index, values)}
-                        placeholder="Red, Blue, Green"
+                        placeholder={tForm('attributeValuesPlaceholder')}
                         separator={[',', '\n']}
                       />
                       <Button
@@ -1045,6 +1211,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                         variant="ghost"
                         size="icon"
                         onClick={() => removeAttribute(index)}
+                        aria-label={tForm('removeAttribute')}
+                        title={tForm('removeAttribute')}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -1059,21 +1227,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
             <div className="space-y-2 pt-2 border-t">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <p className="text-sm text-muted-foreground">
-                  Variant SKU must start with the parent item SKU
-                  {parentSku ? ` (${parentSku})` : ''} or the category code
-                  {categoryCodePrefix ? ` (${categoryCodePrefix})` : ' (when the category has one)'}. Leave empty to save and the server will auto-fill using the same
-                  base. Use <span className="font-medium text-foreground">Generate code</span> for{' '}
-                  <code className="rounded bg-muted px-1 py-0.5 text-xs">{`{base}-{attr1}-…-{attrN}`}</code>
-                  {variantSkuBasePrefix ? (
-                    <>
-                      {' '}
-                      (e.g. {variantSkuBasePrefix}-RED-S).
-                    </>
-                  ) : (
-                    <> (set the item SKU first).</>
-                  )}
-                  {' '}Barcodes follow the format in{' '}
-                  <span className="font-medium text-foreground">Settings → Item codes</span>.
+                  {variantSkuBasePrefix
+                    ? tForm('variantSkuHint', { contoh: `${variantSkuBasePrefix}-MERAH-S` })
+                    : tForm('variantSkuNoPrefix')}
                 </p>
                 <Button
                   type="button"
@@ -1084,7 +1240,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   disabled={!variantSkuBasePrefix && !canGenerateVariantBarcodes}
                 >
                   <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                  Generate all
+                  {tForm('generateAll')}
                 </Button>
               </div>
               <p className="text-sm text-muted-foreground">
@@ -1097,8 +1253,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                     {gridRows.keys.map((attrKey, keyIndex) => (
                       <TableHead key={`${keyIndex}-${attrKey}`}>{attrKey}</TableHead>
                     ))}
-                    <TableHead className="min-w-56">Variant SKU</TableHead>
-                    <TableHead className="min-w-56">Barcode</TableHead>
+                    <TableHead className="min-w-56">{tForm('colVariantSku')}</TableHead>
+                    <TableHead className="min-w-56">{tForm('colBarcode')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1140,7 +1296,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               value={gridRows.skus[idx] ?? ''}
                               disabled={excluded}
                               onChange={(e) => setVariantSkuAt(idx, e.target.value)}
-                              placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : 'e.g. OUTERWEAR-RED'}
+                              placeholder={variantSkuBasePrefix ? `${variantSkuBasePrefix}-…` : tForm('variantSkuPlaceholder')}
                             />
                             <Button
                               type="button"
@@ -1151,12 +1307,12 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               disabled={excluded || !variantSkuBasePrefix}
                               title={
                                 variantSkuBasePrefix
-                                  ? `Build ${variantSkuBasePrefix}-{values}`
-                                  : 'Set the item SKU first'
+                                  ? tForm('skuButtonTitle', { awalan: variantSkuBasePrefix })
+                                  : tForm('variantSkuNoPrefix')
                               }
                             >
                               <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                              Generate code
+                              {tForm('generateCode')}
                             </Button>
                           </div>
                         </TableCell>
@@ -1167,7 +1323,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               value={gridRows.barcodes[idx] ?? ''}
                               disabled={excluded}
                               onChange={(e) => setVariantBarcodeAt(idx, e.target.value)}
-                              placeholder="e.g. 0224000016T03"
+                              placeholder={tForm('barcodePlaceholder')}
                             />
                             <Button
                               type="button"
@@ -1176,10 +1332,10 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               className="shrink-0"
                               onClick={() => applyVariantBarcodeAt(idx)}
                               disabled={excluded || !barcodeFormatConfig}
-                              title="Build barcode from global format template"
+                              title={tForm('barcodeButtonTitle')}
                             >
                               <Wand2 className="mr-1.5 h-3.5 w-3.5" />
-                              Generate code
+                              {tForm('generateCode')}
                             </Button>
                           </div>
                         </TableCell>
@@ -1198,7 +1354,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
       {itemType === ItemType.FINISHED_GOOD && (
         <Card>
           <CardHeader>
-            <CardTitle>Consumption Rules (BOM)</CardTitle>
+            <CardTitle>{tForm('bomTitle')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center">
@@ -1207,6 +1363,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                   Define materials required to produce this finished good. A rule limited to a colour
                   and/or size applies only to those variants.
                 </p>
+                {consumptionRules.length === 0 && (
+                  <p className="text-sm text-muted-foreground">{tForm('noBom')}</p>
+                )}
                 {bomScope.unknownColors.length > 0 && (
                   <p className="text-sm text-amber-600">
                     Colours not in the colour master (Production → Colors): {bomScope.unknownColors.join(', ')}
@@ -1220,25 +1379,23 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                 onClick={addConsumptionRule}
               >
                 <Plus className="h-4 w-4 mr-2" />
-                Add Material
+                {tForm('addMaterial')}
               </Button>
             </div>
 
-            {consumptionRules.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No consumption rules added yet
-              </p>
-            ) : (
+            {consumptionRules.length === 0 ? null : (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Material</TableHead>
+                    <TableHead>{tForm('colMaterial')}</TableHead>
                     <TableHead>Colour</TableHead>
                     <TableHead>Size</TableHead>
-                    <TableHead>Qty Required</TableHead>
-                    <TableHead>Waste %</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead>{tForm('colQtyRequired')}</TableHead>
+                    <TableHead>{tForm('colWaste')}</TableHead>
+                    <TableHead>{tForm('colNotes')}</TableHead>
+                    <TableHead className="w-12">
+                      <span className="sr-only">{tForm('removeMaterial')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1248,13 +1405,13 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                         <SearchableCombobox
                           options={materials.map((material) => ({
                             value: material.id,
-                            label: `${material.sku} - ${material.nameId}`,
+                            label: `${material.sku} - ${locale === 'en' ? material.nameEn : material.nameId}`,
                           }))}
                           value={rule.materialId}
                           onValueChange={(value) =>
                             updateConsumptionRule(index, 'materialId', value)
                           }
-                          placeholder="Select material"
+                          placeholder={tForm('selectMaterial')}
                           triggerClassName="max-w-[16rem] min-w-0"
                         />
                       </TableCell>
@@ -1336,7 +1493,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                             }
                             setConsumptionRules(updated);
                           }}
-                          placeholder="0.0000"
+                          placeholder="0"
                         />
                       </TableCell>
                       <TableCell>
@@ -1353,7 +1510,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                               parseFloat(e.target.value) || 0
                             )
                           }
-                          placeholder="0.00"
+                          placeholder="0"
                         />
                       </TableCell>
                       <TableCell>
@@ -1362,7 +1519,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                           onChange={(e) =>
                             updateConsumptionRule(index, 'notes', e.target.value)
                           }
-                          placeholder="Optional notes"
+                          placeholder={tForm('notesPlaceholder')}
                         />
                       </TableCell>
                       <TableCell>
@@ -1371,6 +1528,8 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
                           variant="ghost"
                           size="icon"
                           onClick={() => removeConsumptionRule(index)}
+                          aria-label={tForm('removeMaterial')}
+                          title={tForm('removeMaterial')}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -1384,13 +1543,47 @@ export function ItemForm({ initialData, onSubmit, isLoading = false }: ItemFormP
         </Card>
       )}
 
-      {/* Submit Button */}
+      {/* Tombol simpan */}
       <div className="flex justify-end gap-2">
         <Button type="submit" disabled={isLoading}>
           {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-          {initialData ? 'Update Item' : 'Create Item'}
+          {initialData ? tForm('submitUpdate') : tForm('submitCreate')}
         </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * HPP per pcs barang jadi — hanya dibaca, di samping harga jual. Pemilik
+ * menetapkan harga jual sendiri dari angka ini (keputusan pemilik 2026-10-08),
+ * jadi tidak ada saran harga atau margin di sini. Penjelasan HPP ada di Bantuan.
+ */
+function HppPerPcs({ hpp, locale }: { hpp: HppBarang | null; locale: string }) {
+  const tForm = useTranslations("itemForm");
+  const r = hpp?.rincian ?? null;
+  const bagian = r
+    ? [
+        tForm("hppBahan", { nilai: formatRupiah(r.bahanPerPcs) }),
+        ...(r.jahitPerPcs ? [tForm("hppJahit", { nilai: formatRupiah(r.jahitPerPcs) })] : []),
+        ...(r.tambahanPerPcs ? [tForm("hppTambahan", { nilai: formatRupiah(r.tambahanPerPcs) })] : []),
+      ].join(" · ")
+    : null;
+  return (
+    <div className="space-y-2">
+      <p className="text-sm leading-none font-medium">{tForm("hppPerPcs")}</p>
+      <p className="flex h-9 items-center text-base font-semibold tabular-nums">
+        {hpp?.perPcs != null ? (
+          formatRupiah(hpp.perPcs)
+        ) : (
+          <span className="text-sm font-normal text-muted-foreground">{tForm("hppBelumAda")}</span>
+        )}
+      </p>
+      {r && bagian && (
+        <p className="text-xs text-muted-foreground">
+          {tForm("hppDari", { wo: r.wo, tanggal: formatDisplayDate(r.tanggal, locale) })} {bagian}
+        </p>
+      )}
+    </div>
   );
 }

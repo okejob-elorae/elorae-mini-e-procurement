@@ -17,7 +17,7 @@ type PageProps = {
 };
 
 const ALLOWED_PAGE_SIZES = [10, 25, 50, 100];
-const PROMO_TYPE_VALUES = ["PERCENT", "FIXED", "TIERED"] as const;
+const PROMO_TYPE_VALUES = ["PERCENT", "FIXED", "TIERED", "BONUS"] as const;
 type PromoType = (typeof PROMO_TYPE_VALUES)[number];
 
 function parsePageSize(raw: string | undefined): number {

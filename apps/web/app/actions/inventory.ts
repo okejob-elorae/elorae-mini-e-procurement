@@ -14,12 +14,35 @@ import {
 } from "@/lib/inventory/stock-status";
 import { buildVariantStockChips } from "@/lib/inventory/variant-stock-label";
 import { variantDetailForSku } from '@/lib/items/variants';
-import { verifyPin } from '@/lib/security/pin';
-import { requirePermission, PERMISSIONS } from '@/lib/rbac';
+import { cariTeks } from '@/lib/db/cari-teks';
+import { whereSaringanSumber } from '@/lib/inventory/jenis-gerakan-stok';
+import { itemDecimalsToNumbers } from '@/lib/items/queries';
+import { verifyPinForAction } from '@/app/actions/security/pin-auth';
+import { requirePermission, hasPermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 import { notifyStockAdjustmentCreated } from '@/lib/notifications/events';
 import { getActorName } from "@/lib/notifications/actor-name";
-import { docNumberPeriod } from "@/lib/doc-numbers/period";
+import { generateDocNumber } from "@/lib/docNumber";
+import { runSerializable } from "@/lib/db/tx-retry";
+import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
+import { kaitStokManual } from "@/lib/finance/operasional/kait";
+
+/**
+ * Penjaga aksi baca inventori: butuh sesi dan `inventory:view` — atau salah
+ * satu izin lain yang disebut pemanggil. Melempar seperti `requirePermission`
+ * (pola file ini), jadi bentuk kembalian aksi baca tidak berubah; halamannya
+ * sudah digerbangi proxy, sehingga pengguna sah tidak pernah tertolak di sini.
+ */
+async function wajibBolehLihatInventori(...izinLain: string[]) {
+  const session = await auth();
+  if (!session?.user?.id) throw new Error("Unauthorized");
+  const izin = session.user.permissions ?? [];
+  if (izinLain.some((kode) => hasPermission(izin, kode))) return;
+  requirePermission(izin, PERMISSIONS.INVENTORY_VIEW);
+}
+
+// Id pengguna mentah tidak dikirim ke klien; nama ada di relasi approvedBy/createdBy.
+const tanpaIdPengguna = { approvedById: true, createdById: true } as const;
 
 const adjustmentSchema = z.object({
   itemId: z.string().min(1, 'Item is required'),
@@ -50,21 +73,23 @@ export async function createStockAdjustment(
   
   adjustmentSchema.parse(data);
 
-  const pinResult = await verifyPin(session.user.id, userPin, "STOCK_ADJUSTMENT", { ipAddress });
+  const pinResult = await verifyPinForAction(session.user.id, userPin, "STOCK_ADJUSTMENT", undefined, ipAddress);
   if (!pinResult.success) {
     throw new Error(pinResult.messageKey ?? pinResult.message);
   }
   const actorId = session.user.id;
 
-  const adjustmentResult = await prisma.$transaction(async (tx) => {
+  // Serializable + ulang: qty dibaca lalu ditulis sebagai angka mutlak, jadi dua
+  // penyesuaian paralel (atau penulis stok lain) tanpa ini saling menimpa. Dulu
+  // tabrakan nomor ADJ kebetulan menggagalkan yang kedua; kini nomornya berbeda.
+  const adjustmentResult = await runSerializable(async (tx) => {
 
-    // Keep variantSku consistent with inventory costing helpers:
-    // compound keys use '' for non-variant items (no nulls).
+    // Kunci gerakan stok memakai '' untuk barang tanpa varian.
     const variantKey = data.variantSku ?? '';
 
     // Get item (for base UOM) and current inventory for (itemId, variantSku). The inventory
     // lookup is OR-tolerant on the pooled "" bucket -- ERP-created rows are spelled null, so a
-    // strict compound-key lookup on '' would miss them.
+    // strict compound-key lookup on '' would miss them. Never creates a row.
     const [item, current] = await Promise.all([
       tx.item.findUnique({
         where: { id: data.itemId },
@@ -118,19 +143,10 @@ export async function createStockAdjustment(
       throw new Error('Adjustment would result in negative stock');
     }
 
-    /* Next ADJ doc number from the max existing in the same WIB period (avoids the unique constraint). */
-    const { year, month } = docNumberPeriod(new Date());
-    const prefix = `ADJ/${year}/${String(month).padStart(2, "0")}/`;
-    const existing = await tx.stockAdjustment.findMany({
-      where: { docNumber: { startsWith: prefix } },
-      select: { docNumber: true },
-      orderBy: { docNumber: 'desc' },
-      take: 1,
-    });
-    const nextNum = existing.length
-      ? (parseInt(existing[0].docNumber.slice(prefix.length), 10) || 0) + 1
-      : 1;
-    const docNumber = `${prefix}${String(nextNum).padStart(4, '0')}`;
+    // Penghitung bersama ADJ (sama dengan muat van, opname, NRI, tukar…). Dulu
+    // "nomor terbesar + 1" sendiri: penghitung lalu membagikan nomor yang sudah
+    // dipakai di sini dan penulis lain gagal unik sampai bulan berganti.
+    const docNumber = await generateDocNumber("ADJ", tx);
     
     // Create adjustment document
     const adjustment = await tx.stockAdjustment.create({
@@ -194,9 +210,18 @@ export async function createStockAdjustment(
       },
     });
 
-    revalidatePath('/backoffice/inventory');
     return adjustment;
   });
+  revalidatePath("/backoffice/inventory");
+
+  // Sesudah commit: kirim stok baru ke Jubelio (best-effort, tidak pernah melempar).
+  await antrekanPushStok([data.itemId], {
+    sumber: 'ADJUSTMENT',
+    ref: adjustmentResult.docNumber,
+    userId: actorId,
+  });
+  // Perubahan nilai kartu stok ke buku besar: persediaan vs selisih persediaan (tidak pernah melempar).
+  await kaitStokManual(adjustmentResult.id, actorId);
 
   getActorName(actorId)
     .then((triggeredByName) =>
@@ -218,31 +243,41 @@ function serializeItemForClient(item: {
   if (!item) return null;
   return {
     ...item,
-    reorderPoint: item.reorderPoint != null ? toNum(item.reorderPoint) : null,
-    overReceiveThreshold: item.overReceiveThreshold != null ? toNum(item.overReceiveThreshold) : null,
-    sellingPrice: item.sellingPrice != null ? toNum(item.sellingPrice) : null,
+    ...itemDecimalsToNumbers(item),
   };
 }
 
+/** Panjang maksimal teks cari daftar penyesuaian (lebih dari ini dipotong). */
+const CARI_PENYESUAIAN_MAKS = 100;
+
+/**
+ * Daftar penyesuaian stok. Saringan sumber dan pencarian dijalankan di SERVER,
+ * jadi `totalCount` dan halaman mengikuti saringan:
+ *  - `sumber`: "manual" (bawaan — menyembunyikan sumber otomatis seperti webhook
+ *    Jubelio dan penjualan marketplace), "semua", "otomatis", atau satu kode sumber;
+ *  - `cari`: nomor dokumen, alasan, SKU/nama barang, atau rujukan luar (abai huruf).
+ */
 export async function getStockAdjustments(
   itemId?: string,
-  opts?: { page: number; pageSize: number; search?: string }
+  opts?: { page: number; pageSize: number; sumber?: string; cari?: string; search?: string }
 ) {
-  await requireInventoryView();
-  const where: any = {};
-
-  if (itemId) {
-    where.itemId = itemId;
-  }
-  const search = opts?.search?.trim();
-  if (search) {
-    where.OR = [
-      { docNumber: { contains: search } },
-      { item: { sku: { contains: search } } },
-      { item: { nameId: { contains: search } } },
-      { reason: { contains: search } },
-    ];
-  }
+  await wajibBolehLihatInventori();
+  const cari = (opts?.cari ?? opts?.search ?? '').trim().slice(0, CARI_PENYESUAIAN_MAKS);
+  const where: Prisma.StockAdjustmentWhereInput = {
+    ...(itemId ? { itemId } : {}),
+    ...whereSaringanSumber(opts?.sumber),
+    ...(cari
+      ? {
+          OR: [
+            { docNumber: cariTeks(cari) },
+            { reason: cariTeks(cari) },
+            { externalRef: cariTeks(cari) },
+            { item: { sku: cariTeks(cari) } },
+            { item: { nameId: cariTeks(cari) } },
+          ],
+        }
+      : {}),
+  };
 
   const include = {
     item: true,
@@ -257,6 +292,7 @@ export async function getStockAdjustments(
         skip: (opts.page - 1) * opts.pageSize,
         take: opts.pageSize,
         include,
+        omit: tanpaIdPengguna,
         orderBy: { createdAt: 'desc' },
       }),
       prisma.stockAdjustment.count({ where }),
@@ -276,6 +312,7 @@ export async function getStockAdjustments(
   const rows = await prisma.stockAdjustment.findMany({
     where,
     include,
+    omit: tanpaIdPengguna,
     orderBy: { createdAt: 'desc' },
   });
   return rows.map((r) => ({
@@ -290,7 +327,7 @@ export async function getStockAdjustments(
 }
 
 export async function getStockAdjustmentById(id: string) {
-  await requireInventoryView();
+  await wajibBolehLihatInventori();
   const row = await prisma.stockAdjustment.findUnique({
     where: { id },
     include: {
@@ -298,6 +335,7 @@ export async function getStockAdjustmentById(id: string) {
       approvedBy: { select: { name: true } },
       createdBy: { select: { name: true, email: true } },
     },
+    omit: tanpaIdPengguna,
   });
   if (!row) return null;
   return {
@@ -315,6 +353,8 @@ export async function getStockAdjustmentById(id: string) {
 export async function getItemAvgCosts(
   itemIds: string[]
 ): Promise<Record<string, number>> {
+  // Halaman keluarkan bahan WO (`work_orders:view`) juga memakai rata-rata HPP ini.
+  await wajibBolehLihatInventori(PERMISSIONS.WORK_ORDERS_VIEW);
   if (itemIds.length === 0) return {};
   const rows = await prisma.inventoryValue.findMany({
     where: { itemId: { in: itemIds } },
@@ -562,6 +602,8 @@ export type RejectedGoodsRecapRow = {
   refType: string;
   refDocNumber: string;
   woId: string | null;
+  /** Nomor perintah kerja (`woId` saja tidak terbaca orang); null bila WO-nya tidak ada lagi. */
+  woDocNumber: string | null;
   receivedAt: Date;
   notes: string | null;
   createdAt: Date;
@@ -577,7 +619,7 @@ export async function getRejectedGoodsRecap(filters?: {
   page?: number;
   pageSize?: number;
 }): Promise<{ items: RejectedGoodsRecapRow[]; totalCount: number }> {
-  await requireInventoryView();
+  await wajibBolehLihatInventori();
   const where: Record<string, unknown> = {};
   if (filters?.itemId) where.itemId = filters.itemId;
   if (filters?.woId) where.woId = filters.woId;
@@ -600,6 +642,15 @@ export async function getRejectedGoodsRecap(filters?: {
     }),
     prisma.rejectedGoodsLedger.count({ where }),
   ]);
+  // Satu kueri untuk seluruh halaman: nomor WO menggantikan id mentah di layar.
+  const woIds = [...new Set(rows.map((r) => r.woId).filter((v): v is string => Boolean(v)))];
+  const nomorWo = new Map(
+    woIds.length
+      ? (await prisma.workOrder.findMany({ where: { id: { in: woIds } }, select: { id: true, docNumber: true } })).map(
+          (w) => [w.id, w.docNumber] as const,
+        )
+      : [],
+  );
 
   const items = rows.map((r) => {
     const variantSku = r.variantSku ?? null;
@@ -612,6 +663,7 @@ export async function getRejectedGoodsRecap(filters?: {
       refType: r.refType,
       refDocNumber: r.refDocNumber,
       woId: r.woId,
+      woDocNumber: r.woId ? nomorWo.get(r.woId) ?? null : null,
       receivedAt: r.receivedAt,
       notes: r.notes,
       createdAt: r.createdAt,

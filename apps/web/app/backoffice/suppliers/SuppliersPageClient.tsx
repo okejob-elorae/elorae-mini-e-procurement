@@ -1,39 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, useWatch, Controller } from 'react-hook-form';
 import * as z from 'zod';
 import {
   Plus,
   Search,
-  MoreHorizontal,
-  Edit,
-  Trash2,
-  Eye,
   Building2,
-  Phone,
-  Mail,
-  MapPin,
   CreditCard,
   Lock,
   Loader2,
-  CheckCircle,
-  XCircle,
 } from 'lucide-react';
-import { Role } from '@/lib/constants/enums';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -43,11 +27,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Select,
   SelectContent,
@@ -56,13 +44,37 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
+import { TanggalInput } from '@/components/ui/tanggal-input';
+import { UnggahBukti } from '@/app/backoffice/finance/kas/_bersama/UnggahBukti';
+import { formatDateOnlyJakarta } from '@/lib/date-only';
 import { useTranslations } from 'next-intl';
+import { PageHeader } from '@/components/ui/page-header';
+import { EmptyState } from '@/components/ui/empty-state';
 import { PinAuthModal } from '@/components/security/PinAuthModal';
+import { useSorotBaris } from '@/components/gerak/useSorotBaris';
 import { toast } from 'sonner';
 import { queueOperation } from '@/lib/offline/db';
 import { isOnline } from '@/lib/offline/sync';
-import { Pagination } from '@/components/ui/pagination';
-import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
+import { Pager } from '@/components/Pager';
+import { PilihTampilan } from '@/components/tampilan/PilihTampilan';
+import {
+  ambilTampilanTersimpan,
+  ingatTampilan,
+  JENIS_TAMPILAN,
+  kunciSimpanTampilan,
+  type JenisTampilan,
+} from '@/lib/tampilan/tampilan';
+import { TampilanPemasok } from './TampilanPemasok';
+import {
+  aksiPemasok,
+  alamatSaringPemasok,
+  bisaDipilihDiPo,
+  isActiveDariSaring,
+  UKURAN_PAPAN_PEMASOK,
+  type SaringPemasok,
+  type StatusPersetujuanPemasok,
+} from './status-pemasok';
 
 interface SupplierTypeOption {
   id: string;
@@ -71,8 +83,6 @@ interface SupplierTypeOption {
   isActive: boolean;
   sortOrder: number | null;
 }
-
-type SupplierStatus = 'PENDING_APPROVAL' | 'ACTIVE' | 'REJECTED';
 
 interface Supplier {
   id: string;
@@ -86,38 +96,141 @@ interface Supplier {
   bankName: string | null;
   bankAccountEnc: string | null;
   bankAccountName: string | null;
+  paymentTermsDays?: number | null;
+  isPkp?: boolean | null;
+  taxWithholding?: string | null;
+  hasNpwp?: boolean;
+  skbNumber?: string | null;
+  skbValidUntil?: Date | string | null;
+  skbPhotoUrl?: string | null;
   isActive: boolean;
-  status?: SupplierStatus;
+  status?: StatusPersetujuanPemasok;
 }
 
-const supplierSchema = z.object({
-  code: z.string().optional(),
-  name: z.string().min(1, 'Name is required'),
-  typeId: z.string().min(1, 'Supplier type is required'),
-  address: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().email('Invalid email').optional().or(z.literal('')),
-  bankName: z.string().optional(),
-  bankAccount: z.string().optional(),
-  bankAccountName: z.string().optional(),
-});
+/** Tanggal berlaku SKB tersimpan (Date / teks ISO) → isian "YYYY-MM-DD" hari WIB. */
+function isianTanggalSkb(v: Date | string | null | undefined): string {
+  if (!v) return '';
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? '' : formatDateOnlyJakarta(d);
+}
 
-type SupplierForm = z.infer<typeof supplierSchema>;
+type Translate = ReturnType<typeof useTranslations>;
 
-export default function SuppliersPage() {
+function makeSupplierSchema(t: Translate) {
+  return z
+    .object({
+      code: z.string().optional(),
+      name: z.string().min(1, t('nameRequired')),
+      typeId: z.string().min(1, t('typeRequired')),
+      address: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().email(t('invalidEmail')).optional().or(z.literal('')),
+      bankName: z.string().optional(),
+      bankAccount: z.string().optional(),
+      bankAccountName: z.string().optional(),
+      paymentTermsDays: z.number().int().min(0, "Must be 0 or more").max(365, "Must be 365 or less").nullable().optional(),
+      // Data pajak: 'belum' = status PKP belum diisi (Select tidak menerima string kosong).
+      isPkp: z.enum(['belum', 'ya', 'tidak']),
+      taxWithholding: z.enum(['TANPA', 'PPH23', 'PPH21', 'PPH4_2']),
+      hasNpwp: z.boolean(),
+      npwp: z
+        .string()
+        .optional()
+        .refine((v) => {
+          const angka = (v ?? '').replace(/\D/g, '');
+          return !angka || angka.length === 15 || angka.length === 16;
+        }, t('npwpTidakSah')),
+      // SKB bebas potong PPh: nomor terisi → tanggal berlaku sampai wajib.
+      skbNumber: z.string().max(191).optional(),
+      skbValidUntil: z.string().optional(),
+      skbPhotoUrl: z.string().nullable().optional(),
+    })
+    .refine((v) => !v.skbNumber?.trim() || Boolean(v.skbValidUntil), { message: t('skbTanggalWajib'), path: ['skbValidUntil'] });
+}
+
+type SupplierForm = z.infer<ReturnType<typeof makeSupplierSchema>>;
+
+/** Nilai formulir → isian aksi pemasok (status PKP null = belum diisi; NPWP kosong = tidak diubah). */
+function keIsianPemasok(data: SupplierForm) {
+  const { isPkp, taxWithholding, hasNpwp, npwp, skbNumber, skbValidUntil, skbPhotoUrl, ...lain } = data;
+  const nomorSkb = skbNumber?.trim() ?? '';
+  return {
+    ...lain,
+    isPkp: isPkp === 'ya' ? true : isPkp === 'tidak' ? false : null,
+    taxWithholding: taxWithholding === 'TANPA' ? null : taxWithholding,
+    hasNpwp,
+    ...(hasNpwp && npwp?.trim() ? { npwp: npwp.trim() } : {}),
+    // Nomor SKB dikosongkan = SKB dihapus seluruhnya (tanggal dan foto ikut kosong).
+    skbNumber: nomorSkb || null,
+    skbValidUntil: nomorSkb ? skbValidUntil || null : null,
+    skbPhotoUrl: nomorSkb ? skbPhotoUrl || null : null,
+  };
+}
+
+/** Nilai Select untuk "semua" — Select tidak menerima string kosong. */
+const SEMUA = 'all';
+const PATH = '/backoffice/suppliers';
+
+/** Lencana persetujuan: satu tempat untuk tabel dan rincian. */
+function LencanaPersetujuan({ status, t }: { status?: StatusPersetujuanPemasok; t: Translate }) {
+  if (!status) return <span className="text-muted-foreground">—</span>;
+  if (status === 'ACTIVE') {
+    return (
+      <Badge
+        variant="outline"
+        className="bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-700"
+      >
+        {t('approvalApproved')}
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant={status === 'PENDING_APPROVAL' ? 'secondary' : 'destructive'}>
+      {status === 'PENDING_APPROVAL' ? t('statusPendingApproval') : t('statusRejected')}
+    </Badge>
+  );
+}
+
+export function SuppliersPageClient({
+  awal,
+  izin,
+  tampilanDariAlamat,
+  userId,
+}: {
+  awal: SaringPemasok;
+  izin: string[];
+  /** Alamat membawa `?tampilan=` sendiri — pilihan tersimpan di perangkat tidak dipakai. */
+  tampilanDariAlamat: boolean;
+  userId: string;
+}) {
   const t = useTranslations('toasts');
   const tSecurity = useTranslations('security');
-  const _tSupplier = useTranslations('supplier');
-  const _tCommon = useTranslations('common');
-  void _tSupplier;
-  void _tCommon;
+  const tSupplier = useTranslations('supplier');
+  const tUi = useTranslations('ui');
+  const supplierSchema = useMemo(() => makeSupplierSchema(tSupplier), [tSupplier]);
+  const aksi = aksiPemasok(izin);
   const { data: session } = useSession();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  // Pemasok yang baru disetujui/ditolak menyala sebentar di barisnya.
+  const { sorot, tandai } = useSorotBaris(
+    'pemasok',
+    suppliers.map((s) => ({ id: s.id, tanda: s.status ?? '' })),
+  );
   const [supplierTypes, setSupplierTypes] = useState<SupplierTypeOption[]>([]);
-  const [typeFilter, setTypeFilter] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [saring, setSaring] = useState<SaringPemasok>(awal);
+  const [searchInput, setSearchInput] = useState(awal.cari);
+  // Navigasi ke alamat lain di halaman yang sama (mis. menu samping ke daftar
+  // tanpa saringan) membawa `awal` baru; ikuti alamatnya, jangan saringan lama.
+  const alamatAwal = alamatSaringPemasok(PATH, awal);
+  const [alamatAwalTerakhir, setAlamatAwalTerakhir] = useState(alamatAwal);
+  if (alamatAwal !== alamatAwalTerakhir) {
+    setAlamatAwalTerakhir(alamatAwal);
+    if (alamatAwal !== alamatSaringPemasok(PATH, saring)) {
+      setSaring(awal);
+      setSearchInput(awal.cari);
+    }
+  }
   const [isLoading, setIsLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [supplierDialogMode, setSupplierDialogMode] = useState<'create' | 'edit' | null>(null);
   const [editSupplier, setEditSupplier] = useState<Supplier | null>(null);
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -125,14 +238,15 @@ export default function SuppliersPage() {
   const [decryptedBankAccount, setDecryptedBankAccount] = useState<string>('');
   const [isDecrypting, setIsDecrypting] = useState(false);
   const [bankPinModalOpen, setBankPinModalOpen] = useState(false);
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<Supplier | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deletePinModalOpen, setDeletePinModalOpen] = useState(false);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [isApproving, setIsApproving] = useState(false);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(DEFAULT_PAGE_SIZE);
   const [totalCount, setTotalCount] = useState(0);
+  const kunciTampilan = kunciSimpanTampilan('pemasok', userId);
+  const modePapan = saring.tampilan === 'papan';
 
   const {
     register,
@@ -146,35 +260,50 @@ export default function SuppliersPage() {
     resolver: zodResolver(supplierSchema),
     defaultValues: {
       typeId: '',
+      isPkp: 'belum',
+      taxWithholding: 'TANPA',
+      hasNpwp: true,
+      npwp: '',
+      skbNumber: '',
+      skbValidUntil: '',
+      skbPhotoUrl: null,
     },
   });
+  const skbNumberIsian = useWatch({ control, name: 'skbNumber' });
+  const isPkpIsian = useWatch({ control, name: 'isPkp' });
+  const hasNpwpIsian = useWatch({ control, name: 'hasNpwp' });
+
+  /** Ubah saringan dan tulis ke alamat, supaya daftar tersaring bisa dibagikan. */
+  const ubahSaring = (patch: Partial<SaringPemasok>) => {
+    const baru = { ...saring, ...patch };
+    setSaring(baru);
+    try {
+      window.history.replaceState(window.history.state, '', alamatSaringPemasok(PATH, baru));
+    } catch {
+      // Alamat hanya kenyamanan; daftar tetap tersaring.
+    }
+  };
 
   const fetchSuppliers = async () => {
     setIsLoading(true);
     try {
-      const params = new URLSearchParams();
-      params.set('page', String(page));
-      params.set('pageSize', String(pageSize));
-      if (searchQuery.trim()) params.set('search', searchQuery.trim());
-      if (typeFilter) params.set('typeId', typeFilter);
-      if (statusFilter) params.set('status', statusFilter);
       const { getSuppliers } = await import('@/app/actions/suppliers');
+      const status = (saring.status || undefined) as import('@/lib/constants/enums').SupplierStatus | undefined;
+      const search = saring.cari.trim() || undefined;
       const json = await getSuppliers(
-        {
-          search: searchQuery.trim() || undefined,
-          typeId: typeFilter || undefined,
-          status: (statusFilter || undefined) as import('@/lib/constants/enums').SupplierStatus | undefined,
-        },
-        { page, pageSize }
+        { search, typeId: saring.jenis || undefined, status, isActive: isActiveDariSaring(saring.aktif) },
+        // Papan menampilkan semua pemasok per jenis sekaligus, tidak per halaman.
+        modePapan ? { page: 1, pageSize: UKURAN_PAPAN_PEMASOK } : { page: saring.page, pageSize: saring.pageSize },
       );
+      let daftar: Supplier[];
       if (json != null && typeof json === 'object' && 'data' in json && 'totalCount' in json) {
-        setSuppliers((Array.isArray(json.data) ? json.data : []) as Supplier[]);
+        daftar = (Array.isArray(json.data) ? json.data : []) as Supplier[];
         setTotalCount(Number(json.totalCount) || 0);
       } else {
-        const list = Array.isArray(json) ? json : [];
-        setSuppliers(list as Supplier[]);
-        setTotalCount(list.length);
+        daftar = (Array.isArray(json) ? json : []) as Supplier[];
+        setTotalCount(daftar.length);
       }
+      setSuppliers(daftar);
     } catch (error) {
       console.error('Failed to fetch suppliers:', error);
       toast.error(t('failedToLoadSuppliers'));
@@ -198,16 +327,46 @@ export default function SuppliersPage() {
     fetchSupplierTypes();
   }, []);
 
+  // Kotak cari ditunda sebentar supaya tidak memuat ulang di setiap ketukan.
   useEffect(() => {
-    setPage(1);
-  }, [searchQuery, typeFilter, statusFilter]);
+    if (searchInput === saring.cari) return;
+    const timer = setTimeout(() => ubahSaring({ cari: searchInput, page: 1 }), 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ubahSaring stabil secara makna
+  }, [searchInput, saring.cari]);
 
   useEffect(() => {
     fetchSuppliers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSuppliers depends on filters
-  }, [page, pageSize, searchQuery, typeFilter, statusFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchSuppliers depends on filters; Tabel↔Galeri tidak memuat ulang
+  }, [saring.cari, saring.jenis, saring.status, saring.aktif, saring.page, saring.pageSize, modePapan]);
+
+  // Tampilan yang tersimpan di perangkat ini, kecuali alamat sudah memilih sendiri.
+  useEffect(() => {
+    if (tampilanDariAlamat) return;
+    let simpanan: Storage | null = null;
+    try {
+      simpanan = window.localStorage;
+    } catch {
+      simpanan = null;
+    }
+    const tersimpan = ambilTampilanTersimpan(simpanan, kunciTampilan, JENIS_TAMPILAN);
+    if (tersimpan && tersimpan !== saring.tampilan) ubahSaring({ tampilan: tersimpan });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sekali saat halaman dibuka
+  }, []);
+
+  const ubahTampilan = (v: JenisTampilan) => {
+    let simpanan: Storage | null = null;
+    try {
+      simpanan = window.localStorage;
+    } catch {
+      simpanan = null;
+    }
+    ingatTampilan(simpanan, kunciTampilan, v);
+    ubahSaring({ tampilan: v, page: v === 'papan' ? 1 : saring.page });
+  };
 
   const isSupplierFormOpen = supplierDialogMode !== null;
+  const adaSaringan = Boolean(saring.cari.trim() || saring.jenis || saring.status || saring.aktif);
 
   useEffect(() => {
     if (supplierDialogMode === 'create') {
@@ -221,6 +380,14 @@ export default function SuppliersPage() {
         bankName: '',
         bankAccount: '',
         bankAccountName: '',
+        paymentTermsDays: null,
+        isPkp: 'belum',
+        taxWithholding: 'TANPA',
+        hasNpwp: true,
+        npwp: '',
+        skbNumber: '',
+        skbValidUntil: '',
+        skbPhotoUrl: null,
       });
       clearErrors();
     } else if (supplierDialogMode === 'edit' && editSupplier) {
@@ -232,15 +399,29 @@ export default function SuppliersPage() {
         phone: editSupplier.phone ?? '',
         email: editSupplier.email ?? '',
         bankName: editSupplier.bankName ?? '',
-        bankAccount: '', // Encrypted; leave blank or user re-enters to change
+        bankAccount: '', // Terenkripsi; kosongkan atau ketik ulang untuk mengganti
         bankAccountName: editSupplier.bankAccountName ?? '',
+        paymentTermsDays: editSupplier.paymentTermsDays ?? null,
+        isPkp: editSupplier.isPkp === true ? 'ya' : editSupplier.isPkp === false ? 'tidak' : 'belum',
+        taxWithholding:
+          editSupplier.taxWithholding === 'PPH23' ||
+          editSupplier.taxWithholding === 'PPH21' ||
+          editSupplier.taxWithholding === 'PPH4_2'
+            ? editSupplier.taxWithholding
+            : 'TANPA',
+        hasNpwp: editSupplier.hasNpwp ?? true,
+        npwp: '', // Terenkripsi; kosongkan untuk mempertahankan, ketik untuk mengganti
+        skbNumber: editSupplier.skbNumber ?? '',
+        skbValidUntil: isianTanggalSkb(editSupplier.skbValidUntil),
+        skbPhotoUrl: editSupplier.skbPhotoUrl ?? null,
       });
       clearErrors();
     }
   }, [supplierDialogMode, editSupplier, supplierTypes, reset, clearErrors]);
 
-  const onSubmit = async (data: SupplierForm) => {
+  const onSubmit = async (nilai: SupplierForm) => {
     const isEdit = !!editSupplier;
+    const data = keIsianPemasok(nilai);
     try {
       if (!isOnline()) {
         if (isEdit) {
@@ -279,7 +460,9 @@ export default function SuppliersPage() {
         const details = error?.details as Array<{ path: (string | number)[]; message: string }> | undefined;
         const formKeys: (keyof SupplierForm)[] = [
           'code', 'name', 'typeId', 'address', 'phone', 'email',
-          'bankName', 'bankAccount', 'bankAccountName',
+          'bankName', 'bankAccount', 'bankAccountName', 'paymentTermsDays',
+          'isPkp', 'taxWithholding', 'hasNpwp', 'npwp',
+          'skbNumber', 'skbValidUntil', 'skbPhotoUrl',
         ];
         if (Array.isArray(details) && details.length > 0) {
           details.forEach((issue) => {
@@ -301,23 +484,16 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleDeleteClick = (id: string) => {
-    if (!confirm('Are you sure you want to delete this supplier?')) return;
-    setDeleteTargetId(id);
-    setDeletePinModalOpen(true);
-  };
-
   const handleDeletePinConfirm = async (pin: string) => {
     if (!session?.user?.id || !deleteTargetId) return;
 
+    // PIN diperiksa di server oleh aksi hapus itu sendiri.
     const { deleteSupplierAction } = await import('@/app/actions/suppliers');
     const deleteResult = await deleteSupplierAction(deleteTargetId, pin);
     if (!deleteResult.success) {
       const msg =
-        deleteResult.reason === 'PIN'
-          ? deleteResult.messageKey
-            ? tSecurity(deleteResult.messageKey)
-            : (deleteResult.message ?? t('failedToDeleteSupplier'))
+        'securityMessageKey' in deleteResult
+          ? tSecurity(deleteResult.securityMessageKey)
           : t(deleteResult.messageKey);
       toast.error(msg);
       throw new Error(msg);
@@ -343,250 +519,418 @@ export default function SuppliersPage() {
     }
   };
 
+  const setujui = async (supplier: Supplier) => {
+    setIsApproving(true);
+    try {
+      const { approveSupplierAction } = await import('@/app/actions/suppliers');
+      await approveSupplierAction(supplier.id);
+      toast.success(tSupplier('approvedToast'));
+      tandai(supplier.id);
+      fetchSuppliers();
+    } catch {
+      toast.error(tSupplier('approveFailed'));
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const bukaRincian = (supplier: Supplier) => {
+    setSelectedSupplier(supplier);
+    setDecryptedBankAccount('');
+    setIsViewDialogOpen(true);
+  };
+
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Suppliers</h1>
-          <p className="text-muted-foreground">
-            Manage your fabric, accessories, and production vendors
-          </p>
-        </div>
-        <Dialog
-          open={isSupplierFormOpen}
-          onOpenChange={(open) => {
-            if (open) {
-              setSupplierDialogMode('create');
-            } else {
-              setSupplierDialogMode(null);
-              setEditSupplier(null);
-            }
-          }}
-        >
-          <Button onClick={() => setSupplierDialogMode('create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Supplier
-          </Button>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>
-                {supplierDialogMode === 'edit' ? 'Edit Supplier' : 'Create New Supplier'}
-              </DialogTitle>
-              <DialogDescription>
-                {supplierDialogMode === 'edit'
-                  ? 'Update supplier details'
-                  : 'Add a new supplier to your database'}
-              </DialogDescription>
-            </DialogHeader>
-            <form
-              onSubmit={(e) => {
-                clearErrors();
-                handleSubmit(onSubmit)(e);
-              }}
-              className="space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="code">Supplier Code (optional)</Label>
-                <Input
-                  id="code"
-                  {...register('code')}
-                  placeholder="Leave blank to auto-generate"
-                  aria-invalid={!!errors.code}
-                  className={errors.code ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.code && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.code.message}
-                  </p>
-                )}
-              </div>
+      <PageHeader
+        title={tSupplier('pageTitle')}
+        actions={
+          <Dialog
+            open={isSupplierFormOpen}
+            onOpenChange={(open) => {
+              if (open) {
+                setSupplierDialogMode('create');
+              } else {
+                setSupplierDialogMode(null);
+                setEditSupplier(null);
+              }
+            }}
+          >
+            {aksi.tambah ? (
+              <Button onClick={() => setSupplierDialogMode('create')}>
+                <Plus className="mr-2 h-4 w-4" />
+                {tSupplier('newSupplier')}
+              </Button>
+            ) : null}
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {supplierDialogMode === 'edit' ? tSupplier('editSupplier') : tSupplier('createSupplier')}
+                </DialogTitle>
+                <DialogDescription>
+                  {supplierDialogMode === 'edit'
+                    ? tSupplier('editDescription')
+                    : tSupplier('createDescription')}
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                onSubmit={(e) => {
+                  clearErrors();
+                  handleSubmit(onSubmit)(e);
+                }}
+                className="space-y-4"
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="code">{tSupplier('codeOptional')}</Label>
+                  <Input
+                    id="code"
+                    {...register('code')}
+                    placeholder={tSupplier('codePlaceholder')}
+                    aria-invalid={!!errors.code}
+                    className={errors.code ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
+                  {errors.code && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.code.message}
+                    </p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="name">Supplier Name *</Label>
-                <Input
-                  id="name"
-                  {...register('name')}
-                  aria-invalid={!!errors.name}
-                  className={errors.name ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.name && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.name.message}
-                  </p>
-                )}
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="name">{tSupplier('name')} *</Label>
+                  <Input
+                    id="name"
+                    {...register('name')}
+                    aria-invalid={!!errors.name}
+                    className={errors.name ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                  />
+                  {errors.name && (
+                    <p className="text-sm text-destructive" role="alert">
+                      {errors.name.message}
+                    </p>
+                  )}
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="typeId">Supplier Type *</Label>
-                <Controller
-                  name="typeId"
-                  control={control}
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <SelectTrigger
-                        id="typeId"
-                        aria-invalid={!!errors.typeId}
-                        className={errors.typeId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                <div className="space-y-2">
+                  <Label htmlFor="typeId">{tSupplier('type')} *</Label>
+                  <Controller
+                    name="typeId"
+                    control={control}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
                       >
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {supplierTypes.map((st) => (
-                          <SelectItem key={st.id} value={st.id}>
-                            {st.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.typeId && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.typeId.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Address</Label>
-                <Input
-                  id="address"
-                  {...register('address')}
-                  aria-invalid={!!errors.address}
-                  className={errors.address ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                />
-                {errors.address && (
-                  <p className="text-sm text-destructive" role="alert">
-                    {errors.address.message}
-                  </p>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    {...register('phone')}
-                    aria-invalid={!!errors.phone}
-                    className={errors.phone ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                        <SelectTrigger
+                          id="typeId"
+                          aria-invalid={!!errors.typeId}
+                          className={errors.typeId ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                        >
+                          <SelectValue placeholder={tSupplier('selectType')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {supplierTypes.map((st) => (
+                            <SelectItem key={st.id} value={st.id}>
+                              {st.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   />
-                  {errors.phone && (
+                  {errors.typeId && (
                     <p className="text-sm text-destructive" role="alert">
-                      {errors.phone.message}
+                      {errors.typeId.message}
                     </p>
                   )}
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                  <Label htmlFor="address">{tSupplier('address')}</Label>
                   <Input
-                    id="email"
-                    type="email"
-                    {...register('email')}
-                    aria-invalid={!!errors.email}
-                    className={errors.email ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                    id="address"
+                    {...register('address')}
+                    aria-invalid={!!errors.address}
+                    className={errors.address ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                   />
-                  {errors.email && (
+                  {errors.address && (
                     <p className="text-sm text-destructive" role="alert">
-                      {errors.email.message}
+                      {errors.address.message}
                     </p>
                   )}
                 </div>
-              </div>
 
-              <div className="border-t pt-4">
-                <h4 className="text-sm font-medium mb-3">Bank Information</h4>
-                <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="bankName">Bank Name</Label>
+                    <Label htmlFor="phone">{tSupplier('phone')}</Label>
                     <Input
-                      id="bankName"
-                      {...register('bankName')}
-                      aria-invalid={!!errors.bankName}
-                      className={errors.bankName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      id="phone"
+                      {...register('phone')}
+                      aria-invalid={!!errors.phone}
+                      className={errors.phone ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                     />
-                    {errors.bankName && (
+                    {errors.phone && (
                       <p className="text-sm text-destructive" role="alert">
-                        {errors.bankName.message}
+                        {errors.phone.message}
                       </p>
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="bankAccount">Account Number</Label>
+                    <Label htmlFor="email">{tSupplier('email')}</Label>
                     <Input
-                      id="bankAccount"
-                      {...register('bankAccount')}
-                      aria-invalid={!!errors.bankAccount}
-                      className={errors.bankAccount ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      id="email"
+                      type="email"
+                      {...register('email')}
+                      aria-invalid={!!errors.email}
+                      className={errors.email ? 'border-destructive focus-visible:ring-destructive/20' : ''}
                     />
-                    {errors.bankAccount && (
+                    {errors.email && (
                       <p className="text-sm text-destructive" role="alert">
-                        {errors.bankAccount.message}
-                      </p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="bankAccountName">Account Holder Name</Label>
-                    <Input
-                      id="bankAccountName"
-                      {...register('bankAccountName')}
-                      aria-invalid={!!errors.bankAccountName}
-                      className={errors.bankAccountName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
-                    />
-                    {errors.bankAccountName && (
-                      <p className="text-sm text-destructive" role="alert">
-                        {errors.bankAccountName.message}
+                        {errors.email.message}
                       </p>
                     )}
                   </div>
                 </div>
-              </div>
 
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    setSupplierDialogMode(null);
-                    setEditSupplier(null);
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isSubmitting}>
-                  {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {supplierDialogMode === 'edit' ? 'Update Supplier' : 'Create Supplier'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium mb-3">{tSupplier('bankInfo')}</h4>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="bankName">{tSupplier('bankName')}</Label>
+                      <Input
+                        id="bankName"
+                        {...register('bankName')}
+                        aria-invalid={!!errors.bankName}
+                        className={errors.bankName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      />
+                      {errors.bankName && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {errors.bankName.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bankAccount">{tSupplier('accountNumber')}</Label>
+                      <Input
+                        id="bankAccount"
+                        {...register('bankAccount')}
+                        aria-invalid={!!errors.bankAccount}
+                        className={errors.bankAccount ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      />
+                      {errors.bankAccount && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {errors.bankAccount.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="bankAccountName">{tSupplier('bankAccountName')}</Label>
+                      <Input
+                        id="bankAccountName"
+                        {...register('bankAccountName')}
+                        aria-invalid={!!errors.bankAccountName}
+                        className={errors.bankAccountName ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      />
+                      {errors.bankAccountName && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {errors.bankAccountName.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="paymentTermsDays">Payment terms (days)</Label>
+                      <Input
+                        id="paymentTermsDays"
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        max={365}
+                        step={1}
+                        placeholder="e.g. 30 — leave blank if none"
+                        {...register('paymentTermsDays', {
+                          setValueAs: (v) => (v === '' || v == null ? null : Number(v)),
+                        })}
+                        aria-invalid={!!errors.paymentTermsDays}
+                        className={errors.paymentTermsDays ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                      />
+                      {errors.paymentTermsDays && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {errors.paymentTermsDays.message}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
-      {/* Search and filters */}
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium mb-3">{tSupplier('pajakJudul')}</h4>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="isPkp">{tSupplier('pajakStatusPkp')}</Label>
+                      <Controller
+                        name="isPkp"
+                        control={control}
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger id="isPkp">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="belum">{tSupplier('pajakPkpBelumPilih')}</SelectItem>
+                              <SelectItem value="ya">{tSupplier('pajakPkp')}</SelectItem>
+                              <SelectItem value="tidak">{tSupplier('pajakNonPkp')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {isPkpIsian === 'belum' ? (
+                        <p className="text-sm text-amber-700 dark:text-amber-400" role="status">
+                          {tSupplier('pajakPkpBelumPeringatan')}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="taxWithholding">{tSupplier('pajakPotongLabel')}</Label>
+                      <Controller
+                        name="taxWithholding"
+                        control={control}
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger id="taxWithholding">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="TANPA">{tSupplier('pajakPotongTanpa')}</SelectItem>
+                              <SelectItem value="PPH23">{tSupplier('pajakPotongPph23')}</SelectItem>
+                              <SelectItem value="PPH21">{tSupplier('pajakPotongPph21')}</SelectItem>
+                              <SelectItem value="PPH4_2">{tSupplier('pajakPotongPph42')}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Controller
+                        name="hasNpwp"
+                        control={control}
+                        render={({ field }) => (
+                          <Checkbox
+                            id="hasNpwp"
+                            checked={field.value}
+                            onCheckedChange={(v) => field.onChange(v === true)}
+                          />
+                        )}
+                      />
+                      <Label htmlFor="hasNpwp" className="font-normal">
+                        {tSupplier('pajakPunyaNpwp')}
+                      </Label>
+                    </div>
+                    {hasNpwpIsian ? (
+                      <div className="space-y-2">
+                        <Label htmlFor="npwp">{tSupplier('pajakNpwp')}</Label>
+                        <Input
+                          id="npwp"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          {...register('npwp')}
+                          placeholder={
+                            supplierDialogMode === 'edit' ? tSupplier('pajakNpwpTetap') : undefined
+                          }
+                          aria-invalid={!!errors.npwp}
+                          className={errors.npwp ? 'border-destructive focus-visible:ring-destructive/20' : ''}
+                        />
+                        {errors.npwp && (
+                          <p className="text-sm text-destructive" role="alert">
+                            {errors.npwp.message}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">{tSupplier('pajakTanpaNpwpCatatan')}</p>
+                    )}
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="skbNumber">{tSupplier('skbNomor')}</Label>
+                        <Input id="skbNumber" autoComplete="off" maxLength={191} {...register('skbNumber')} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="skbValidUntil">{tSupplier('skbBerlakuSampai')}</Label>
+                        <Controller
+                          name="skbValidUntil"
+                          control={control}
+                          render={({ field }) => (
+                            <TanggalInput
+                              id="skbValidUntil"
+                              value={field.value ?? ''}
+                              disabled={!skbNumberIsian?.trim()}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              aria-invalid={!!errors.skbValidUntil}
+                            />
+                          )}
+                        />
+                        {errors.skbValidUntil && (
+                          <p className="text-sm text-destructive" role="alert">
+                            {errors.skbValidUntil.message}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {skbNumberIsian?.trim() ? (
+                      <div className="space-y-2">
+                        <Label>{tSupplier('skbFoto')}</Label>
+                        <Controller
+                          name="skbPhotoUrl"
+                          control={control}
+                          render={({ field }) => <UnggahBukti value={field.value ?? null} onChange={field.onChange} disabled={isSubmitting} />}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setSupplierDialogMode(null);
+                      setEditSupplier(null);
+                    }}
+                  >
+                    {tUi('cancel')}
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {supplierDialogMode === 'edit' ? tSupplier('updateButton') : tSupplier('createButton')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
+
+      {/* Cari dan saringan — tersimpan di alamat */}
       <div className="flex flex-wrap items-center gap-4">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
+        <div className="relative flex-1 min-w-[16rem] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search suppliers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={tSupplier('searchPlaceholder')}
+            aria-label={tSupplier('searchPlaceholder')}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="pl-9"
           />
         </div>
         <Select
-          value={typeFilter ?? 'all'}
-          onValueChange={(v) => setTypeFilter(v === 'all' ? null : v)}
+          value={saring.jenis || SEMUA}
+          onValueChange={(v) => ubahSaring({ jenis: v === SEMUA ? '' : v, page: 1 })}
         >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Type" />
+          <SelectTrigger className="w-[200px]" aria-label={tSupplier('typeFilter')}>
+            <SelectValue placeholder={tSupplier('typeFilter')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All types</SelectItem>
+            <SelectItem value={SEMUA}>{tSupplier('allTypes')}</SelectItem>
             {supplierTypes.map((st) => (
               <SelectItem key={st.id} value={st.id}>
                 {st.name}
@@ -595,189 +939,111 @@ export default function SuppliersPage() {
           </SelectContent>
         </Select>
         <Select
-          value={statusFilter ?? 'all'}
-          onValueChange={(v) => setStatusFilter(v === 'all' ? null : v)}
+          value={saring.status || SEMUA}
+          onValueChange={(v) =>
+            ubahSaring({ status: v === SEMUA ? '' : (v as StatusPersetujuanPemasok), page: 1 })
+          }
         >
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Status" />
+          <SelectTrigger className="w-[220px]" aria-label={tSupplier('approvalFilter')}>
+            <SelectValue placeholder={tSupplier('approvalFilter')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="PENDING_APPROVAL">Pending approval</SelectItem>
-            <SelectItem value="ACTIVE">Active</SelectItem>
-            <SelectItem value="REJECTED">Rejected</SelectItem>
+            <SelectItem value={SEMUA}>{tSupplier('allStatuses')}</SelectItem>
+            <SelectItem value="PENDING_APPROVAL">{tSupplier('statusPendingApproval')}</SelectItem>
+            <SelectItem value="ACTIVE">{tSupplier('approvalApproved')}</SelectItem>
+            <SelectItem value="REJECTED">{tSupplier('statusRejected')}</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={saring.aktif || SEMUA}
+          onValueChange={(v) => ubahSaring({ aktif: v === 'aktif' || v === 'nonaktif' ? v : '', page: 1 })}
+        >
+          <SelectTrigger className="w-[200px]" aria-label={tSupplier('aktifFilter')}>
+            <SelectValue placeholder={tSupplier('aktifFilter')} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={SEMUA}>{tSupplier('aktifSemua')}</SelectItem>
+            <SelectItem value="aktif">{tSupplier('aktifSaja')}</SelectItem>
+            <SelectItem value="nonaktif">{tSupplier('nonaktifSaja')}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {/* Suppliers List */}
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      ) : suppliers.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Building2 className="h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No suppliers found</p>
-            <Button
-              variant="outline"
-              className="mt-4"
-              onClick={() => setSupplierDialogMode('create')}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add your first supplier
-            </Button>
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+          <CardTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            {tSupplier('listTitle')}
+            <span className="ml-2 text-sm font-normal text-muted-foreground">
+              ({tSupplier('count', { count: totalCount })})
+            </span>
+          </CardTitle>
+          <PilihTampilan nilai={saring.tampilan} pilihan={JENIS_TAMPILAN} onUbah={ubahTampilan} />
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+          ) : suppliers.length === 0 ? (
+            <EmptyState
+              icon={Building2}
+              title={adaSaringan ? tSupplier('emptyFilteredTitle') : tSupplier('emptyTitle')}
+              description={adaSaringan ? tSupplier('emptyFilteredDescriptionV2') : tSupplier('emptyDescription')}
+              action={
+                aksi.tambah ? (
+                  <Button variant="outline" onClick={() => setSupplierDialogMode('create')}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {tSupplier('newSupplier')}
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <TampilanPemasok
+              tampilan={saring.tampilan}
+              pemasok={suppliers}
+              jenis={supplierTypes}
+              izin={izin}
+              sibuk={isApproving}
+              sorot={sorot}
+              aksi={{
+                buka: (s) => bukaRincian(s as Supplier),
+                setujui: (s) => void setujui(s as Supplier),
+                tolak: (s) => {
+                  setRejectTargetId(s.id);
+                  setRejectReason('');
+                },
+                ubah: aksi.ubah
+                  ? (s) => {
+                      setEditSupplier(s as Supplier);
+                      setSupplierDialogMode('edit');
+                    }
+                  : null,
+                hapus: aksi.hapus ? (s) => setDeleteConfirmTarget(s as Supplier) : null,
+              }}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {modePapan ? (
+        totalCount > UKURAN_PAPAN_PEMASOK ? (
+          <p className="text-sm text-muted-foreground">
+            {tSupplier('boardTruncated', { shown: UKURAN_PAPAN_PEMASOK, total: totalCount })}
+          </p>
+        ) : null
       ) : (
-        <>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {suppliers.map((supplier) => (
-            <Card key={supplier.id} className="group">
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{supplier.name}</CardTitle>
-                    <CardDescription>{supplier.code}</CardDescription>
-                  </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setSelectedSupplier(supplier);
-                          setDecryptedBankAccount('');
-                          setIsViewDialogOpen(true);
-                        }}
-                      >
-                        <Eye className="mr-2 h-4 w-4" />
-                        View Details
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setEditSupplier(supplier);
-                          setSupplierDialogMode('edit');
-                        }}
-                      >
-                        <Edit className="mr-2 h-4 w-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      {supplier.status === 'PENDING_APPROVAL' &&
-                        (session?.user as { role?: string })?.role === Role.ADMIN && (
-                          <>
-                            <DropdownMenuItem
-                              onClick={async () => {
-                                setIsApproving(true);
-                                try {
-                                  const { approveSupplierAction } = await import('@/app/actions/suppliers');
-                                  await approveSupplierAction(supplier.id);
-                                  toast.success('Supplier approved');
-                                  fetchSuppliers();
-                                } finally {
-                                  setIsApproving(false);
-                                }
-                              }}
-                              disabled={isApproving}
-                            >
-                              <CheckCircle className="mr-2 h-4 w-4" />
-                              Approve
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              className="text-destructive"
-                              onClick={() => {
-                                setRejectTargetId(supplier.id);
-                                setRejectReason('');
-                              }}
-                            >
-                              <XCircle className="mr-2 h-4 w-4" />
-                              Reject
-                            </DropdownMenuItem>
-                          </>
-                        )}
-                      <DropdownMenuItem
-                        className="text-destructive"
-                        onClick={() => handleDeleteClick(supplier.id)}
-                      >
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  <Badge variant={supplier.isActive ? 'default' : 'secondary'}>
-                    {supplier.type?.name ?? '—'}
-                  </Badge>
-                  {supplier.status && (
-                    <Badge
-                      variant={
-                        supplier.status === 'ACTIVE'
-                          ? 'outline'
-                          : supplier.status === 'PENDING_APPROVAL'
-                            ? 'secondary'
-                            : 'destructive'
-                      }
-                      className={
-                        supplier.status === 'ACTIVE'
-                          ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-700'
-                          : undefined
-                      }
-                    >
-                      {supplier.status === 'PENDING_APPROVAL'
-                        ? 'Pending'
-                        : supplier.status === 'ACTIVE'
-                          ? 'Active'
-                          : 'Rejected'}
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {supplier.phone && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Phone className="h-4 w-4" />
-                    {supplier.phone}
-                  </div>
-                )}
-                {supplier.email && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Mail className="h-4 w-4" />
-                    {supplier.email}
-                  </div>
-                )}
-                {supplier.address && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <MapPin className="h-4 w-4" />
-                    {supplier.address}
-                  </div>
-                )}
-                {supplier.bankAccountEnc && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <CreditCard className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-muted-foreground">••••••••••</span>
-                    <Lock className="h-3 w-3 text-muted-foreground" />
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <Pagination
-          page={page}
-          totalPages={Math.max(1, Math.ceil(totalCount / pageSize))}
-          onPageChange={setPage}
-          totalCount={totalCount}
-          pageSize={pageSize}
+        <Pager
+          page={saring.page}
+          pageSize={saring.pageSize}
+          total={totalCount}
+          onPageChange={(p) => ubahSaring({ page: p })}
+          onPageSizeChange={(size) => ubahSaring({ pageSize: size, page: 1 })}
         />
-        </>
       )}
 
-      {/* View Supplier Dialog */}
+      {/* Rincian pemasok */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -787,43 +1053,68 @@ export default function SuppliersPage() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-muted-foreground">Type</Label>
+                <Label className="text-muted-foreground">{tSupplier('typeFilter')}</Label>
                 <p className="font-medium">
                   {selectedSupplier?.type?.name ?? '—'}
                 </p>
               </div>
               <div>
-                <Label className="text-muted-foreground">Status</Label>
+                <Label className="text-muted-foreground">{tSupplier('approvalLabel')}</Label>
+                <div className="mt-1">
+                  <LencanaPersetujuan status={selectedSupplier?.status} t={tSupplier} />
+                </div>
+              </div>
+              <div className="col-span-2">
+                <Label className="text-muted-foreground">{tSupplier('keaktifanLabel')}</Label>
                 <p className="font-medium">
-                  {selectedSupplier?.isActive ? 'Active' : 'Inactive'}
+                  {selectedSupplier?.isActive === false ? tSupplier('keaktifanNonaktif') : tSupplier('keaktifanAktif')}
+                </p>
+              </div>
+              <div className="col-span-2">
+                <Label className="text-muted-foreground">{tSupplier('inPoLabel')}</Label>
+                <p className="font-medium">
+                  {bisaDipilihDiPo(selectedSupplier?.status, selectedSupplier?.isActive)
+                    ? tSupplier('inPoYes')
+                    : selectedSupplier?.isActive === false
+                      ? tSupplier('notInPoNonaktif')
+                      : tSupplier('notInPo')}
                 </p>
               </div>
             </div>
 
             {selectedSupplier?.phone && (
               <div>
-                <Label className="text-muted-foreground">Phone</Label>
+                <Label className="text-muted-foreground">{tSupplier('phone')}</Label>
                 <p className="font-medium">{selectedSupplier.phone}</p>
               </div>
             )}
 
             {selectedSupplier?.email && (
               <div>
-                <Label className="text-muted-foreground">Email</Label>
+                <Label className="text-muted-foreground">{tSupplier('email')}</Label>
                 <p className="font-medium">{selectedSupplier.email}</p>
               </div>
             )}
 
             {selectedSupplier?.address && (
               <div>
-                <Label className="text-muted-foreground">Address</Label>
+                <Label className="text-muted-foreground">{tSupplier('address')}</Label>
                 <p className="font-medium">{selectedSupplier.address}</p>
               </div>
             )}
 
+            <div>
+              <Label className="text-muted-foreground">Payment terms</Label>
+              <p className="font-medium">
+                {selectedSupplier?.paymentTermsDays != null
+                  ? `${selectedSupplier.paymentTermsDays} days`
+                  : "-"}
+              </p>
+            </div>
+
             {selectedSupplier?.bankAccountEnc && (
               <div className="border-t pt-4">
-                <Label className="text-muted-foreground">Bank Account</Label>
+                <Label className="text-muted-foreground">{tSupplier('bankAccount')}</Label>
                 <div className="mt-2 space-y-3">
                   <p className="font-medium">{selectedSupplier.bankName}</p>
                   <p className="font-medium">{selectedSupplier.bankAccountName}</p>
@@ -843,7 +1134,7 @@ export default function SuppliersPage() {
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       )}
                       <Lock className="mr-2 h-4 w-4" />
-                      View Account Number
+                      {tSupplier('viewAccountNumber')}
                     </Button>
                   )}
                 </div>
@@ -857,8 +1148,37 @@ export default function SuppliersPage() {
         isOpen={bankPinModalOpen}
         onClose={() => setBankPinModalOpen(false)}
         onConfirm={handleViewBankAccountConfirm}
-        action="melihat nomor rekening bank"
+        action={tSupplier('pinActionViewBank')}
       />
+
+      <AlertDialog
+        open={deleteConfirmTarget !== null}
+        onOpenChange={(o) => !o && setDeleteConfirmTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{tSupplier('deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteConfirmTarget ? tSupplier('deleteBody', { name: deleteConfirmTarget.name }) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{tUi('cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (!deleteConfirmTarget) return;
+                setDeleteTargetId(deleteConfirmTarget.id);
+                setDeleteConfirmTarget(null);
+                setDeletePinModalOpen(true);
+              }}
+            >
+              {tUi('delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <PinAuthModal
         isOpen={deletePinModalOpen}
         onClose={() => {
@@ -866,7 +1186,7 @@ export default function SuppliersPage() {
           setDeleteTargetId(null);
         }}
         onConfirm={handleDeletePinConfirm}
-        action="menghapus supplier"
+        action={tSupplier('pinActionDelete')}
       />
 
       <Dialog
@@ -880,22 +1200,25 @@ export default function SuppliersPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Reject supplier</DialogTitle>
-            <DialogDescription>Provide a reason for rejection. The supplier status will be set to Rejected.</DialogDescription>
+            <DialogTitle>{tSupplier('rejectTitle')}</DialogTitle>
+            <DialogDescription>{tSupplier('rejectDescription')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label htmlFor="reject-reason">Reason *</Label>
+              <Label htmlFor="reject-reason">{tSupplier('rejectReason')} *</Label>
               <Textarea
                 id="reject-reason"
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Reason for rejection..."
+                placeholder={tSupplier('rejectReasonPlaceholder')}
                 rows={3}
               />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="items-center">
+            {!rejectReason.trim() ? (
+              <p className="mr-auto text-xs text-muted-foreground">{tSupplier('rejectNeedsReason')}</p>
+            ) : null}
             <Button
               variant="outline"
               onClick={() => {
@@ -903,7 +1226,7 @@ export default function SuppliersPage() {
                 setRejectReason('');
               }}
             >
-              Cancel
+              {tUi('cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -914,16 +1237,19 @@ export default function SuppliersPage() {
                 try {
                   const { rejectSupplierAction } = await import('@/app/actions/suppliers');
                   await rejectSupplierAction(rejectTargetId, rejectReason.trim());
-                  toast.success('Supplier rejected');
+                  toast.success(tSupplier('rejectedToast'));
+                  tandai(rejectTargetId);
                   setRejectTargetId(null);
                   setRejectReason('');
                   fetchSuppliers();
+                } catch {
+                  toast.error(tSupplier('rejectFailed'));
                 } finally {
                   setIsApproving(false);
                 }
               }}
             >
-              Reject
+              {tSupplier('reject')}
             </Button>
           </DialogFooter>
         </DialogContent>

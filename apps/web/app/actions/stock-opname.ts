@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { prisma, type OpnameScope, type OpnameStatus } from "@elorae/db";
+import { prisma, type OpnameScope, type OpnameStatus, type Prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -28,10 +28,35 @@ import { freezeFabricRollSnapshot, freezeItemSnapshot } from "@/lib/inventory/op
 import { postOpnameJournal, probeOpnameNetDelta } from "@/lib/inventory/opname-journal";
 import { serializeForClient } from "@/lib/serialize-for-client";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { capNotificationText } from "@/lib/notifications/text";
+import {
+  angkaSistemTampil,
+  barangTanpaAngka,
+  masihMenghitung,
+  rolTanpaAngka,
+  STATUS_MENGHITUNG,
+} from "@/app/backoffice/inventory/stock-opname/angka-sistem";
+import { runSerializable } from "@/lib/db/tx-retry";
+import { kodeGalatOpname, type KodeGalatOpname } from "@/lib/inventory/galat-opname";
 
 const OPNAME_PATH = "/backoffice/inventory/stock-opname";
+const HITUNGAN_DITUTUP = "Opname sudah dikirim untuk persetujuan; hitungan tidak dapat diubah lagi";
+
+/**
+ * Penjaga di DALAM transaksi serializable: hitungan hanya masuk selama opname
+ * masih menghitung, dan CREATED → COUNTING ditulis di sini juga. Tanpa ini
+ * simpanan yang berlomba dengan "Kirim" bisa mendarat sesudahnya dan
+ * mengembalikan status ke COUNTING (`updateMany` bukan CAS di luar serializable).
+ */
+async function bukaUntukHitung(tx: Prisma.TransactionClient, opnameId: string) {
+  const buka = await tx.stockOpname.updateMany({
+    where: { id: opnameId, status: { in: [...STATUS_MENGHITUNG] } },
+    data: { status: "COUNTING" },
+  });
+  if (buka.count !== 1) throw new Error(HITUNGAN_DITUTUP);
+}
 
 async function sessionUser() {
   const session = await auth();
@@ -48,7 +73,7 @@ export async function createOpname(data: {
   assignedToId?: string;
   itemIds?: string[];
   notes?: string;
-}): Promise<{ success: boolean; opnameId?: string; error?: string }> {
+}): Promise<{ success: boolean; opnameId?: string; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -93,14 +118,14 @@ export async function createOpname(data: {
     revalidatePath(OPNAME_PATH);
     return { success: true, opnameId: result.id };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to create opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
 export async function updateOpnameCounts(
   opnameId: string,
   counts: Array<{ opnameItemId: string; countedQty: number; notes?: string }>,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -110,8 +135,12 @@ export async function updateOpnameCounts(
     if (opname.status === "APPROVED" || opname.status === "CANCELLED") {
       throw new Error("Opname tidak dapat diubah");
     }
+    // Hitungan buta: sesudah dikirim, angka sistem sudah terlihat oleh penyetuju —
+    // hitungan tidak boleh diubah lagi (batalkan dan buat opname baru).
+    if (!masihMenghitung(opname.status)) throw new Error(HITUNGAN_DITUTUP);
 
-    await prisma.$transaction(async (tx) => {
+    await runSerializable(async (tx) => {
+      await bukaUntukHitung(tx, opnameId);
       for (const c of counts) {
         const row = await tx.stockOpnameItem.findFirst({
           where: { id: c.opnameItemId, opnameId },
@@ -127,26 +156,20 @@ export async function updateOpnameCounts(
           },
         });
       }
-      if (opname.status === "CREATED") {
-        await tx.stockOpname.update({
-          where: { id: opnameId },
-          data: { status: "COUNTING" },
-        });
-      }
     });
 
     revalidatePath(OPNAME_PATH);
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to update counts" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
 export async function updateOpnameRollCounts(
   opnameId: string,
   counts: Array<{ opnameRollId: string; countedLength: number; notes?: string }>,
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -157,8 +180,10 @@ export async function updateOpnameRollCounts(
     if (opname.status === "APPROVED" || opname.status === "CANCELLED") {
       throw new Error("Opname tidak dapat diubah");
     }
+    if (!masihMenghitung(opname.status)) throw new Error(HITUNGAN_DITUTUP);
 
-    await prisma.$transaction(async (tx) => {
+    await runSerializable(async (tx) => {
+      await bukaUntukHitung(tx, opnameId);
       for (const c of counts) {
         const row = await tx.stockOpnameRoll.findFirst({
           where: { id: c.opnameRollId, opnameId },
@@ -174,23 +199,17 @@ export async function updateOpnameRollCounts(
           },
         });
       }
-      if (opname.status === "CREATED") {
-        await tx.stockOpname.update({
-          where: { id: opnameId },
-          data: { status: "COUNTING" },
-        });
-      }
     });
 
     revalidatePath(OPNAME_PATH);
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to update roll counts" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
-export async function submitOpname(opnameId: string): Promise<{ success: boolean; error?: string }> {
+export async function submitOpname(opnameId: string): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     requirePermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
@@ -223,7 +242,7 @@ export async function submitOpname(opnameId: string): Promise<{ success: boolean
     revalidatePath(`${OPNAME_PATH}/${opnameId}`);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to submit opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
@@ -233,6 +252,7 @@ export async function approveOpname(
 ): Promise<{
   success: boolean;
   driftRows?: DriftRow[];
+  code?: KodeGalatOpname;
   error?: string;
 }> {
   try {
@@ -245,7 +265,7 @@ export async function approveOpname(
 
     const canApproveOwn = hasPermission(user.permissions ?? [], "inventory_opname:approve_own");
     if (isSelfApprovalBlocked(opname.submittedById, user.id, canApproveOwn)) {
-      return { success: false, error: SELF_APPROVAL_ERROR };
+      return { success: false, code: "SETUJUI_SENDIRI", error: SELF_APPROVAL_ERROR };
     }
 
     if (!confirmDrift) {
@@ -347,7 +367,7 @@ export async function approveOpname(
     revalidatePath("/backoffice/inventory");
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to approve opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
@@ -372,11 +392,13 @@ export async function postOpnameJournalAction(
     console.error(`[postOpnameJournalAction] post journal threw for opname ${opnameId}:`, err);
     return { ok: false, code: "ERROR" };
   }
+  // Jurnal berdiri → tanda "Jurnal gagal" opname ini selesai (Beranda).
+  if (r.ok) await tandaiJurnalTertundaSelesai([dokumenJurnal("OPNAME", opnameId)]);
   revalidatePath(`${OPNAME_PATH}/${opnameId}`);
   return r;
 }
 
-export async function cancelOpname(opnameId: string): Promise<{ success: boolean; error?: string }> {
+export async function cancelOpname(opnameId: string): Promise<{ success: boolean; code?: KodeGalatOpname; error?: string }> {
   try {
     const user = await sessionUser();
     const opname = await prisma.stockOpname.findUnique({ where: { id: opnameId } });
@@ -397,7 +419,7 @@ export async function cancelOpname(opnameId: string): Promise<{ success: boolean
     revalidatePath(OPNAME_PATH);
     return { success: true };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to cancel opname" };
+    return { success: false, code: kodeGalatOpname(err), error: err instanceof Error ? err.message : undefined };
   }
 }
 
@@ -464,8 +486,18 @@ export async function getOpnameById(opnameId: string) {
   // "nothing to post", which would hide the button on exactly the opnames that need it.
   const probe = j ? null : await probeOpnameNetDelta(opnameId, prisma);
 
+  // Hitungan buta: selama menghitung angka sistem dan selisih TIDAK ikut muatan
+  // (bukan sekadar disembunyikan di layar); sesudahnya lihat `angkaSistemTampil`.
+  const tampil = angkaSistemTampil(
+    opname.status,
+    hasPermission(user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_APPROVE),
+  );
+
   return serializeOpname({
     ...opname,
+    items: tampil ? opname.items : barangTanpaAngka(opname.items),
+    rolls: tampil ? opname.rolls : rolTanpaAngka(opname.rolls),
+    angkaSistemTampil: tampil,
     createdByName: userNames.get(opname.createdById) ?? null,
     submittedByName: opname.submittedById
       ? (userNames.get(opname.submittedById) ?? null)

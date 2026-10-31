@@ -177,7 +177,7 @@ async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
     // Items with many variants/consumption rules push updateItemLib past Prisma's
     // 5s default; helper adds a few more ops on top. 15s gives headroom.
 
-    const updated = await updateItemLib(tx, id, data);
+    const updated = await updateItemLib(tx, id, data, { olehUserId: userId });
 
     const toNumOrNull = (v: unknown): number | null => (v == null ? null : Number(v));
     const beforeMargin = toNumOrNull(beforeItem.targetMarginPercent);
@@ -218,7 +218,6 @@ async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
         },
       });
     }
-
     return { updated, outboxRowId };
   }, { timeout: 15000 });
 }

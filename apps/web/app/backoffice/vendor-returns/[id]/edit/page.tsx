@@ -4,6 +4,7 @@ import { Fragment, useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
+import { useTranslations } from 'next-intl';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,9 +12,8 @@ import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SearchableCombobox } from '@/components/ui/searchable-combobox';
@@ -42,13 +42,18 @@ import {
 import { getWorkOrders } from '@/app/actions/production';
 import { getItems } from '@/app/actions/items';
 import { getGRNs } from '@/app/actions/grn';
+import { BuktiRetur, PerkiraanNilaiRetur } from '../../BuktiDanNilaiRetur';
+import { pisahTautanBukti, type BarisPerkiraan } from '../../perkiraan-nilai';
+import { labelPemasok, urutPemasok } from '@/lib/suppliers/label-pemasok';
 import type { VendorReturnLineInput } from '@/app/actions/vendor-returns';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 
 interface Supplier {
   id: string;
   code: string;
   name: string;
-  type: string;
+  type?: string;
+  belumDisetujui?: boolean;
 }
 
 interface WorkOrderOption {
@@ -115,6 +120,16 @@ export default function EditVendorReturnPage() {
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
+  const t = useTranslations('vendorReturn');
+  const tList = useTranslations('vendorReturnsList');
+  const lineTypeLabel = (type: string) =>
+    type === 'FABRIC' || type === 'ACCESSORIES' || type === 'FG_REJECT'
+      ? t(`lineType.${type}`)
+      : type;
+  const conditionLabel = (condition: string) =>
+    condition === 'GOOD' || condition === 'DAMAGED' || condition === 'DEFECTIVE'
+      ? t(`condition.${condition}`)
+      : condition;
   const id = typeof params.id === 'string' ? params.id : '';
 
   const [vendors, setVendors] = useState<Supplier[]>([]);
@@ -151,7 +166,7 @@ export default function EditVendorReturnPage() {
         ]);
 
         if (!ret || ret.status !== 'DRAFT') {
-          toast.error('Return not found or cannot be edited');
+          toast.error(t('form.notEditable'));
           router.replace('/backoffice/vendor-returns');
           return;
         }
@@ -257,8 +272,14 @@ export default function EditVendorReturnPage() {
         }
         setEvidenceUrls(urlsStr);
 
-        const vendorList = Array.isArray(suppliersRes) ? suppliersRes : [];
-        setVendors(vendorList as unknown as Supplier[]);
+        const vendorList = (Array.isArray(suppliersRes) ? suppliersRes : []) as unknown as Supplier[];
+        // Pemasok retur ini sendiri tetap ada di pilihan walau belum/tidak lagi disetujui
+        // (dulu formulir ubah tampil "Pilih pemasok" kosong).
+        const sendiri = ret.vendor as { id: string; code: string; name: string } | null;
+        if (sendiri && !vendorList.some((v) => v.id === sendiri.id)) {
+          vendorList.unshift({ id: sendiri.id, code: sendiri.code, name: sendiri.name, belumDisetujui: true });
+        }
+        setVendors(vendorList);
         setWorkOrders(
           (woList as { id: string; docNumber: string }[]).map((w) => ({
             id: w.id,
@@ -297,14 +318,14 @@ export default function EditVendorReturnPage() {
           : [];
         setItems(itemList);
       } catch {
-        toast.error('Failed to load data');
+        toast.error(t('form.loadDataFailed'));
         router.replace('/backoffice/vendor-returns');
       } finally {
         setIsLoading(false);
       }
     };
     load();
-  }, [id, router]);
+  }, [id, router, t]);
 
   /** Filter items by line type: FABRIC → fabric items, ACCESSORIES → accessories, FG_REJECT → finished goods. */
   const itemOptionsForLineType = (lineType: LineType): ItemOption[] => {
@@ -364,13 +385,13 @@ export default function EditVendorReturnPage() {
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i];
       if (!l.itemId || (l.reason?.trim().length ?? 0) < 3) {
-        toast.error(`Line ${i + 1}: item and reason (min 3 chars) required`);
+        toast.error(t('form.lineItemReasonRequired', { line: i + 1 }));
         return;
       }
       if (l.type === 'FABRIC') {
         const rollIds = l.rollIds ?? [];
         if (rollIds.length === 0) {
-          toast.error(`Line ${i + 1}: select at least one roll for fabric item`);
+          toast.error(t('form.lineRollRequired', { line: i + 1 }));
           return;
         }
         const itemRollOpts = fabricRollOptions[l.itemId] ?? [];
@@ -392,18 +413,18 @@ export default function EditVendorReturnPage() {
       }
       const qty = Number(l.qty);
       if (!(qty > 0)) {
-        toast.error(`Line ${i + 1}: qty > 0 required`);
+        toast.error(t('form.lineQtyRequired', { line: i + 1 }));
         return;
       }
       if (l.type === 'FG_REJECT') {
         try {
           const available = await getAvailableRejectQtyByItem(l.itemId);
           if (qty > available) {
-            toast.error(`Line ${i + 1}: reject qty exceeds available rejects (max ${available})`);
+            toast.error(t('form.lineRejectExceeds', { line: i + 1, max: available }));
             return;
           }
         } catch {
-          toast.error(`Line ${i + 1}: could not check available reject qty`);
+          toast.error(t('form.lineRejectCheckFailed', { line: i + 1 }));
           return;
         }
       }
@@ -418,16 +439,13 @@ export default function EditVendorReturnPage() {
     }
 
     if (!vendorId) {
-      toast.error('Select a vendor');
+      toast.error(t('form.selectVendorToast'));
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const urls = evidenceUrls
-        .split(/[\n,]/)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
+      const urls = pisahTautanBukti(evidenceUrls);
       const invalidUrl = urls.find((u) => {
         try {
           new URL(u);
@@ -437,7 +455,7 @@ export default function EditVendorReturnPage() {
         }
       });
       if (invalidUrl) {
-        toast.error('Invalid evidence URL: ' + invalidUrl);
+        toast.error(t('form.invalidEvidenceUrl', { url: invalidUrl }));
         setIsSubmitting(false);
         return;
       }
@@ -453,14 +471,28 @@ export default function EditVendorReturnPage() {
         },
         session.user.id
       );
-      toast.success('Vendor return updated');
+      toast.success(t('form.updated'));
       router.replace('/backoffice/vendor-returns');
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update');
+    } catch {
+      // Pesan lemparan disamarkan di build produksi: selalu teks terjemahan.
+      toast.error(t('form.updateFailed'));
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Perkiraan nilai: kain = jumlah panjang roll yang dipilih, lainnya = qty yang diketik.
+  const barisPerkiraan: BarisPerkiraan[] = lines.map((l) => ({
+    type: l.type,
+    itemId: l.itemId,
+    qty:
+      l.type === 'FABRIC'
+        ? (l.rollIds ?? []).reduce(
+            (n, rid) => n + ((fabricRollOptions[l.itemId] ?? []).find((o) => o.value === rid)?.qty ?? 0),
+            0
+          )
+        : Number(l.qty) || 0,
+  }));
 
   if (isLoading) {
     return (
@@ -474,79 +506,84 @@ export default function EditVendorReturnPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Link href="/backoffice/vendor-returns">
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" aria-label={t('backToList')} title={t('backToList')}>
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <div>
-          <h1 className="text-2xl font-bold">Edit Vendor Return</h1>
-          <p className="text-muted-foreground">
-            Update draft return (vendor, work order, lines, evidence)
-          </p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t('form.judulUbah')}</h1>
+          <TombolBantuan judul={t('form.judulUbah')} />
         </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Vendor Return</CardTitle>
-            <CardDescription>Vendor and optional work order / GRN reference. Add line items below.</CardDescription>
+            <CardTitle>{t('form.judulKartu')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="space-y-2">
-                <Label>Vendor *</Label>
+                <Label>{t('form.vendorLabel')}</Label>
                 <SearchableCombobox
-                  options={vendors.map((v) => ({ value: v.id, label: `${v.code} – ${v.name}` }))}
+                  options={urutPemasok(vendors).map((v) => ({
+                    value: v.id,
+                    label: `${labelPemasok(v)}${v.belumDisetujui ? ` · ${tList('belumDisetujui')}` : ''}`,
+                  }))}
                   value={vendorId}
                   onValueChange={setVendorId}
-                  placeholder="Select vendor"
+                  placeholder={t('form.selectVendor')}
+                  searchPlaceholder={t('form.cariPemasok')}
                 />
               </div>
               <div className="space-y-2">
-                <Label>Work Order (optional)</Label>
+                <Label>{t('form.woLabel')}</Label>
                 <SearchableCombobox
                   options={[
-                    { value: '__none__', label: 'None' },
+                    { value: '__none__', label: t('form.none') },
                     ...workOrders.map((w) => ({ value: w.id, label: w.docNumber })),
                   ]}
                   value={woId}
                   onValueChange={setWoId}
-                  placeholder="None"
+                  placeholder={t('form.none')}
+                  searchPlaceholder={t('form.cariPerintahKerja')}
                 />
               </div>
               <div className="space-y-2">
-                <Label>GRN (optional)</Label>
+                <Label>{t('form.grnLabel')}</Label>
                 <SearchableCombobox
                   options={[
-                    { value: '__none__', label: 'None' },
+                    { value: '__none__', label: t('form.none') },
                     ...grns.map((grn) => ({ value: grn.id, label: grn.docNumber })),
                   ]}
                   value={grnId}
                   onValueChange={setGrnId}
-                  placeholder="Select GRN"
+                  placeholder={t('form.selectGrn')}
+                  searchPlaceholder={t('form.cariGrn')}
                 />
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 flex-wrap">
-                <Label>Line items</Label>
+                <Label>{t('form.lineItems')}</Label>
                 <Button type="button" variant="outline" size="sm" onClick={addLine}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Add line
+                  {t('form.addLine')}
                 </Button>
               </div>
             <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Item</TableHead>
-                    <TableHead className="w-24">Qty</TableHead>
-                    <TableHead>Condition</TableHead>
-                    <TableHead>Reason</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead>{t('colType')}</TableHead>
+                    <TableHead>{t('colItem')}</TableHead>
+                    <TableHead className="w-24">{t('colQty')}</TableHead>
+                    <TableHead>{t('colCondition')}</TableHead>
+                    <TableHead>{t('colReason')}</TableHead>
+                    <TableHead className="w-12">
+                      <span className="sr-only">{t('form.colActions')}</span>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -558,13 +595,13 @@ export default function EditVendorReturnPage() {
                             value={line.type}
                             onValueChange={(v) => updateLine(i, 'type', v)}
                           >
-                            <SelectTrigger className="w-[130px]">
+                            <SelectTrigger className="w-[150px]">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="FABRIC">FABRIC</SelectItem>
-                              <SelectItem value="ACCESSORIES">ACCESSORIES</SelectItem>
-                              <SelectItem value="FG_REJECT">FG_REJECT</SelectItem>
+                              <SelectItem value="FABRIC">{lineTypeLabel('FABRIC')}</SelectItem>
+                              <SelectItem value="ACCESSORIES">{lineTypeLabel('ACCESSORIES')}</SelectItem>
+                              <SelectItem value="FG_REJECT">{lineTypeLabel('FG_REJECT')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -576,7 +613,8 @@ export default function EditVendorReturnPage() {
                             }))}
                             value={line.itemId}
                             onValueChange={(v) => updateLine(i, 'itemId', v)}
-                            placeholder="Select item"
+                            placeholder={t('form.selectItem')}
+                            searchPlaceholder={t('form.cariBarang')}
                             triggerClassName="min-w-[180px]"
                           />
                         </TableCell>
@@ -597,7 +635,8 @@ export default function EditVendorReturnPage() {
                                   )
                                 );
                               }}
-                              placeholder="Select roll"
+                              placeholder={t('form.selectRoll')}
+                              searchPlaceholder={t('form.cariRoll')}
                               triggerClassName="min-w-[160px]"
                             />
                           ) : (
@@ -620,9 +659,9 @@ export default function EditVendorReturnPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="GOOD">GOOD</SelectItem>
-                              <SelectItem value="DAMAGED">DAMAGED</SelectItem>
-                              <SelectItem value="DEFECTIVE">DEFECTIVE</SelectItem>
+                              <SelectItem value="GOOD">{conditionLabel('GOOD')}</SelectItem>
+                              <SelectItem value="DAMAGED">{conditionLabel('DAMAGED')}</SelectItem>
+                              <SelectItem value="DEFECTIVE">{conditionLabel('DEFECTIVE')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </TableCell>
@@ -630,7 +669,7 @@ export default function EditVendorReturnPage() {
                           <Input
                             value={line.reason}
                             onChange={(e) => updateLine(i, 'reason', e.target.value)}
-                            placeholder="Reason (min 3 chars)"
+                            placeholder={t('form.reasonPlaceholder')}
                             className="min-w-[160px]"
                           />
                         </TableCell>
@@ -641,6 +680,8 @@ export default function EditVendorReturnPage() {
                             size="icon"
                             onClick={() => removeLine(i)}
                             disabled={lines.length <= 1}
+                            aria-label={t('form.removeLine', { line: i + 1 })}
+                            title={t('form.removeLine', { line: i + 1 })}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -650,7 +691,7 @@ export default function EditVendorReturnPage() {
                         <TableRow className="bg-muted/40">
                           <TableCell colSpan={6}>
                             <div className="flex flex-wrap items-center gap-2 text-xs">
-                              <span className="font-medium text-muted-foreground">Rolls:</span>
+                              <span className="font-medium text-muted-foreground">{t('form.rolls')}</span>
                               {(line.rollIds ?? []).map((rollId) => {
                                 const opts = fabricRollOptions[line.itemId] ?? [];
                                 const selected = opts.find((o) => o.value === rollId);
@@ -676,7 +717,7 @@ export default function EditVendorReturnPage() {
                                           )
                                         );
                                       }}
-                                      aria-label={`Remove roll ${label}`}
+                                      aria-label={t('form.removeRoll', { label })}
                                     >
                                       {label}
                                       <span
@@ -698,30 +739,20 @@ export default function EditVendorReturnPage() {
                 </TableBody>
               </Table>
             </div>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Total value is calculated on save from current average cost.
-            </p>
+            <PerkiraanNilaiRetur baris={barisPerkiraan} />
             </div>
 
-            <div className="space-y-2">
-              <Label>Evidence URLs (optional)</Label>
-              <textarea
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                value={evidenceUrls}
-                onChange={(e) => setEvidenceUrls(e.target.value)}
-                placeholder="One URL per line, or comma/newline separated (https://...)"
-              />
-            </div>
+            <BuktiRetur teks={evidenceUrls} onTeksChange={setEvidenceUrls} />
           </CardContent>
         </Card>
 
         <div className="flex gap-4">
           <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Saving...' : 'Save Changes'}
+            {isSubmitting ? t('form.saving') : t('form.tombolSimpan')}
           </Button>
           <Link href="/backoffice/vendor-returns">
             <Button type="button" variant="outline">
-              Cancel
+              {t('cancel')}
             </Button>
           </Link>
         </div>

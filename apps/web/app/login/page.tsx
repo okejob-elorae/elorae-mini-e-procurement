@@ -1,148 +1,26 @@
-'use client';
+import { prisma } from "@elorae/db";
+import { bacaWarnaPerusahaan, KUNCI_WARNA_PERUSAHAAN } from "@/lib/theme/warna-efektif";
+import { LoginClient } from "./LoginClient";
 
-import { useState } from 'react';
-import { signIn } from 'next-auth/react';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
-import * as z from 'zod';
-import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, Factory, Eye, EyeOff } from 'lucide-react';
-import { cn } from '@/lib/utils';
+/* Warna perusahaan bisa diganti kapan saja dari Pengaturan — dibaca tiap buka. */
+export const dynamic = "force-dynamic";
 
-export default function LoginPage() {
-  const t = useTranslations('auth');
-  const tApp = useTranslations('app');
-  const tValidation = useTranslations('validation');
-  const [error, setError] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-
-  const loginSchema = z.object({
-    email: z.string().email(tValidation('email')),
-    password: z.string().min(6, tValidation('passwordMinLength')),
-  });
-  type LoginForm = z.infer<typeof loginSchema>;
-
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<LoginForm>({
-    resolver: zodResolver(loginSchema),
-  });
-
-  const onSubmit = async (data: LoginForm) => {
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const result = await signIn('credentials', {
-        email: data.email,
-        password: data.password,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setError(t('invalidCredentials'));
-      } else {
-        window.location.href = '/login/redirect';
-      }
-    } catch {
-      setError(t('errorOccurred'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background to-muted p-4">
-      <Card className={cn('w-full max-w-md', Object.keys(errors).length > 0 && 'border-destructive border-2')}>
-        <CardHeader className="space-y-4 text-center">
-          <div className="flex justify-center">
-            <div className="w-16 h-16 bg-primary rounded-xl flex items-center justify-center">
-              <Factory className="w-8 h-8 text-primary-foreground" />
-            </div>
-          </div>
-          <div>
-            <CardTitle className="text-2xl font-bold">{tApp('name')}</CardTitle>
-            <CardDescription>
-              {tApp('tagline')}
-            </CardDescription>
-          </div>
-        </CardHeader>
-        <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <div className="space-y-2">
-              <Label htmlFor="email">{t('email')}</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder={t('emailPlaceholder')}
-                {...register('email')}
-                disabled={isLoading}
-              />
-              {errors.email && (
-                <p className="text-sm text-destructive">{errors.email.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">{t('password')}</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder={t('passwordPlaceholder')}
-                  className="pr-10"
-                  {...register('password')}
-                  disabled={isLoading}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-0 top-0 h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowPassword((p) => !p)}
-                  disabled={isLoading}
-                  aria-label={showPassword ? t('hidePassword') : t('showPassword')}
-                >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-              {errors.password && (
-                <p className="text-sm text-destructive">
-                  {errors.password.message}
-                </p>
-              )}
-            </div>
-          </CardContent>
-          <CardFooter className="pt-4">
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {t('signingIn')}
-                </>
-              ) : (
-                t('signIn')
-              )}
-            </Button>
-          </CardFooter>
-        </form>
-      </Card>
-    </div>
-  );
+/**
+ * Halaman masuk memakai warna PERUSAHAAN, bukan warna orang terakhir yang
+ * masuk di perangkat ini — lihat `LoginClient`. Warnanya dibaca di server supaya
+ * bingkai pertama sudah benar.
+ */
+export default async function LoginPage() {
+  let warnaPerusahaan: string | null = null;
+  try {
+    const baris = await prisma.systemSetting.findUnique({
+      where: { key: KUNCI_WARNA_PERUSAHAAN },
+      select: { value: true },
+    });
+    warnaPerusahaan = bacaWarnaPerusahaan(baris?.value)?.hex ?? null;
+  } catch {
+    // Basis data tidak terjangkau: pintu depan tetap harus terbuka, dengan
+    // warna bawaan. Kesalahannya sendiri akan terlihat begitu orang masuk.
+  }
+  return <LoginClient warnaPerusahaan={warnaPerusahaan} />;
 }

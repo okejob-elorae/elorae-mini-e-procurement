@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-app-sans);
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -22,7 +22,9 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
+  /* Utilitas `ring-ring`/`border-ring`/`outline-ring` = cincin fokus yang terbaca
+     (lihat `--cincin-fokus`); `--ring` mentah tetap warna tema. */
+  --color-ring: var(--cincin-fokus);
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
@@ -34,6 +36,7 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-tautan: var(--tautan);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -47,8 +50,18 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/*
+ * Huruf aplikasi — SATU saklar untuk seluruh antarmuka.
+ *
+ * `--font-sans` di Tailwind menunjuk ke sini, dan skrip tema menimpanya dengan
+ * variabel huruf yang dipilih pengguna sebelum halaman pertama dilukis. Kalau
+ * belum pernah memilih, ia jatuh ke Plus Jakarta Sans.
+ */
 :root {
-  --radius: 0.625rem;
+  --font-app-sans: var(--font-jakarta);
+}
+
+:root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.129 0.042 264.695);
   --card: oklch(1 0 0);
@@ -116,9 +129,69 @@
   --sidebar-ring: oklch(0.551 0.027 264.364);
 }
 
+/*
+ * Tautan & teks bernada merek — token `--tautan` (kelas `text-tautan`).
+ *
+ * Tema TERANG: warna tema dengan kecerahan oklch dibatasi 0,45; kroma dan rona
+ * tetap, jadi tautan masih terasa "warna merek" tetapi terbaca. Limau #c0db3a di
+ * atas krem #f9fcde: 1,49:1 → 6,74:1 (cadangan color-mix 7,83:1). Terburuk dari
+ * 1.158 warna tema di atas latar/kartu/muted/accent/secondary terang ≥ 4,5:1 —
+ * dikunci `app/kontras-tautan.spec.ts`. Tema GELAP: sama dengan --primary.
+ *
+ * Hanya warna TEKS. Latar tombol (`bg-primary`) dan `--primary` tidak berubah.
+ */
+:root {
+  --tautan: color-mix(in oklab, var(--primary) 50%, black);
+}
+@supports (color: oklch(from red l c h)) {
+  :root {
+    --tautan: oklch(from var(--primary) min(l, 0.45) c h);
+  }
+}
+:root.dark {
+  --tautan: var(--primary);
+}
+
+/*
+ * Cincin fokus papan ketik — token `--cincin-fokus`.
+ *
+ * Dulu `--ring` = warna tema apa adanya: limau #c0db3a di atas krem hanya
+ * 1,49:1, jadi pengguna papan ketik tidak tahu kontrol mana yang aktif (WCAG
+ * 1.4.11 meminta 3:1). Tema terang memakai warna tautan (kecerahan ≤ 0,45,
+ * ≥ 4,5:1 di atas semua latar terang — lihat `--tautan`); tema gelap memakai
+ * warna tema yang dicerahkan sampai ≥ 0,72 supaya tema bernada gelap tetap
+ * terlihat di latar gelap.
+ */
+:root {
+  --cincin-fokus: var(--tautan);
+}
+:root.dark {
+  --cincin-fokus: var(--ring);
+}
+@supports (color: oklch(from red l c h)) {
+  :root.dark {
+    --cincin-fokus: oklch(from var(--ring) max(l, 0.72) c h);
+  }
+}
+
+/*
+ * `text-primary` lama ikut terbaca di tema terang tanpa menyentuh setiap
+ * berkas. Di lapisan utilities (bukan di luar lapisan) supaya varian seperti
+ * `hover:`/`data-[…]:` di elemen yang sama tetap menang. Keping
+ * `bg-primary-foreground text-primary` (menu aktif di sidebar limau) dikecualikan:
+ * di sana limau di atas gelap justru sudah terbaca.
+ */
+@layer utilities {
+  :where(:root:not(.dark)) .text-primary:not(:where(.bg-primary-foreground, .bg-primary-foreground *)) {
+    color: var(--tautan);
+  }
+}
+
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+    /* Warna outline bawaan (tautan, kontrol tanpa data-slot) = cincin fokus yang terbaca. */
+    outline-color: var(--cincin-fokus);
   }
   body {
     @apply bg-background text-foreground;
@@ -145,15 +218,348 @@ html.backoffice-shell body {
   overflow: hidden;
 }
 
-@keyframes global-loading-bar {
-  0% {
-    transform: translateX(-100%);
+/* ==========================================================================
+   Motion layer
+   --------------------------------------------------------------------------
+   One entrance gesture reused everywhere, not a different flourish per screen.
+   Content rises 8px while fading in — enough to read as "this just arrived",
+   short enough that an operator opening the same page forty times a day never
+   waits on it. Durations stay under 300ms for that reason.
+
+   Everything here is opt-in via a class. Nothing animates unless a component
+   asks, so a dense table never inherits motion it does not want.
+   ========================================================================== */
+
+/* ==========================================================================
+   Interface themes
+   --------------------------------------------------------------------------
+   Shape, not colour — the Pantone seed still owns the accent. These tokens are
+   what makes "Padat" feel like a different product from "Lapang" rather than
+   the same screen in another hue: row height, corner radius, card weight, how
+   loud a column heading is.
+
+   Defaults below equal the Seimbang theme, so a document with no data-ui-theme
+   attribute (first load, or storage blocked) renders exactly like the theme
+   most people will keep.
+   ========================================================================== */
+:root {
+  --ui-radius: 0.5rem;
+  --ui-cell-py: 0.5rem;
+  --ui-cell-leading: 1.35;
+  --ui-head-h: 2.25rem;
+  --ui-head-size: 0.75rem;
+  --ui-head-tracking: 0.04em;
+  --ui-head-transform: uppercase;
+  --ui-card-pad: 1.25rem;
+  --ui-card-gap: 1.25rem;
+  --ui-card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+}
+
+html[data-ui-theme='padat'] {
+  --ui-radius: 0.25rem;
+  --ui-cell-py: 0.3125rem;
+  --ui-cell-leading: 1.25;
+  --ui-head-h: 1.9rem;
+  --ui-head-size: 0.7rem;
+  --ui-head-tracking: 0.05em;
+  --ui-card-pad: 0.875rem;
+  --ui-card-gap: 0.875rem;
+  --ui-card-shadow: none;
+}
+
+html[data-ui-theme='lapang'] {
+  --ui-radius: 0.875rem;
+  --ui-cell-py: 0.875rem;
+  --ui-cell-leading: 1.5;
+  --ui-head-h: 2.75rem;
+  --ui-head-size: 0.8rem;
+  --ui-head-tracking: 0.01em;
+  --ui-head-transform: none;
+  --ui-card-pad: 1.75rem;
+  --ui-card-gap: 1.5rem;
+  --ui-card-shadow: 0 4px 16px -6px rgb(0 0 0 / 0.16);
+}
+
+html[data-ui-theme='studio'] {
+  --ui-radius: 0.125rem;
+  --ui-cell-py: 0.625rem;
+  --ui-cell-leading: 1.4;
+  --ui-head-h: 2.5rem;
+  --ui-head-size: 0.7rem;
+  --ui-head-tracking: 0.12em;
+  --ui-card-pad: 1.5rem;
+  --ui-card-gap: 1.25rem;
+  --ui-card-shadow: none;
+}
+
+/* The shadcn radius scale derives from --radius; point it at the theme. */
+:root {
+  --radius: var(--ui-radius);
+}
+
+@keyframes elorae-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes elorae-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.anim-rise {
+  animation: elorae-rise 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--anim-delay, 0ms);
+}
+
+.anim-fade {
+  animation: elorae-fade 200ms ease-out both;
+  animation-delay: var(--anim-delay, 0ms);
+}
+
+/*
+ * Stagger for a grid of cards: each child starts 40ms after the one before it,
+ * capped at the 8th so a long list never makes the last card feel broken.
+ */
+.anim-stagger > * {
+  animation: elorae-rise 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.anim-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.anim-stagger > *:nth-child(2) { animation-delay: 40ms; }
+.anim-stagger > *:nth-child(3) { animation-delay: 80ms; }
+.anim-stagger > *:nth-child(4) { animation-delay: 120ms; }
+.anim-stagger > *:nth-child(5) { animation-delay: 160ms; }
+.anim-stagger > *:nth-child(6) { animation-delay: 200ms; }
+.anim-stagger > *:nth-child(7) { animation-delay: 240ms; }
+.anim-stagger > *:nth-child(n + 8) { animation-delay: 280ms; }
+
+/*
+ * Skeleton blocks (app/backoffice/loading.tsx). A soft sheen travelling across
+ * a muted block — the same idea as `animate-pulse`, but the sweep reads as
+ * "loading" rather than "blinking", and it is quieter on a dark theme.
+ */
+@keyframes skeleton-sheen {
+  from {
+    background-position: 100% 0;
   }
-  50% {
-    transform: translateX(200%);
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.skeleton-block {
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in oklab, var(--foreground) 6%, transparent) 50%,
+      transparent 100%
+    )
+    0 0 / 200% 100%,
+    var(--muted);
+  animation: skeleton-sheen 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+  }
+}
+
+/* A card that leads somewhere should say so before it is clicked. */
+.card-interactive {
+  transition:
+    transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 160ms ease-out,
+    border-color 160ms ease-out;
+}
+.card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px -8px rgb(0 0 0 / 0.28);
+}
+
+/*
+ * Respect the OS setting. This is not politeness — vestibular disorders make
+ * motion genuinely painful, and the setting exists to be honoured. Transitions
+ * collapse to 1ms rather than 0 so transitionend still fires and no component
+ * waiting on it hangs.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .anim-rise,
+  .anim-fade,
+  .anim-stagger > * {
+    animation: none !important;
+  }
+  .card-interactive {
+    transition: none;
+  }
+  .card-interactive:hover {
+    transform: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Headings carry weight contrast now that the face supports it. */
+h1, h2, h3 {
+  letter-spacing: -0.015em;
+}
+
+/* ==========================================================================
+   Shared surface layer
+   --------------------------------------------------------------------------
+   shadcn primitives all carry data-slot attributes, so the whole app can be
+   retuned from here instead of editing ninety-odd pages. Everything below is
+   scoped to the backoffice shell: print views and the PWA keep their own
+   geometry.
+   ========================================================================== */
+
+/* Every page arrives with the same gesture, without a single page editing
+   itself. main's direct child is each route's own wrapper. */
+html.backoffice-shell main > * {
+  animation: elorae-rise 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.backoffice-shell main > * {
+    animation: none !important;
+  }
+}
+
+/* Figures line up in columns. Without tabular figures the thousands separator
+   drifts row to row and the eye cannot compare two amounts by shape. */
+html.backoffice-shell [data-slot="table-cell"],
+html.backoffice-shell [data-slot="table-head"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Rows were 62px tall, so a 768px screen showed seven of them. Trimming the
+   cell padding and line height fits about a third more without crowding. */
+html.backoffice-shell [data-slot="table-cell"] {
+  padding-block: var(--ui-cell-py);
+  line-height: var(--ui-cell-leading);
+}
+
+html.backoffice-shell [data-slot="table-head"] {
+  height: var(--ui-head-h);
+  font-size: var(--ui-head-size);
+  letter-spacing: var(--ui-head-tracking);
+  text-transform: var(--ui-head-transform);
+  color: var(--muted-foreground);
+}
+
+/* Cards: slightly tighter than the stock 24px, and they lift under the cursor
+   when they lead somewhere. */
+html.backoffice-shell [data-slot="card"] {
+  box-shadow: var(--ui-card-shadow);
+  transition: border-color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+/*
+ * Kepadatan tema hanya menggantikan jarak BAWAAN kartu — kelas `gap-6`/`py-6`/
+ * `px-6` milik komponennya sendiri. Kelas yang ditulis pemanggil (`py-0`,
+ * `p-4`, `px-0`, `gap-2`…) menyingkirkan kelas bawaan itu lewat tailwind-merge,
+ * sehingga aturan di bawah tidak lagi cocok dan kelas pemanggil yang berlaku.
+ * Dulu aturan ini menimpa SEMUA kartu dari luar lapisan Tailwind, jadi aturan
+ * rumah "Card `py-0` bila CardContent berpadding sendiri" dan `px-0` pada
+ * CardContent diam-diam tidak berpengaruh di kantor (padding ganda).
+ */
+html.backoffice-shell [data-slot="card"].gap-6 {
+  gap: var(--ui-card-gap);
+}
+html.backoffice-shell [data-slot="card"].py-6 {
+  padding-block: var(--ui-card-pad);
+}
+
+html.backoffice-shell [data-slot="card-header"].px-6 {
+  padding-inline: var(--ui-card-pad);
+}
+
+html.backoffice-shell [data-slot="card-content"].px-6,
+html.backoffice-shell [data-slot="card-footer"].px-6 {
+  padding-inline: var(--ui-card-pad);
+}
+
+/* A card wrapping a table should let the table meet its own edges. */
+html.backoffice-shell [data-slot="card-content"]:has(> [data-slot="table-container"]),
+html.backoffice-shell [data-slot="card-content"]:has(> table) {
+  padding-inline: 0;
+}
+
+/* …and its first and last columns keep the card padding, so the first column
+   lines up with the card title instead of sitting 8px from the edge
+   (components/ui/table.tsx, lib/ui/tepi-tabel.ts). */
+html.backoffice-shell [data-slot="card-content"]:has(> [data-slot="table-container"]),
+html.backoffice-shell [data-slot="card-content"]:has(> table),
+html.backoffice-shell [data-slot="card-content"].px-0 {
+  --tabel-tepi: var(--ui-card-pad);
+}
+
+/* Section eyebrows, matching the uppercase labels used across the sidebar. */
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/*
+ * Page-change progress bar (components/GlobalLoadingBar.tsx).
+ *
+ * It creeps and never arrives: fast at first, so the click visibly registered,
+ * then slower and slower towards 90 % — it cannot know how long the server
+ * will take, and a bar that fills and then waits reads as frozen. The page
+ * arriving plays the short "done" run to the end, then it fades.
+ */
+@keyframes global-loading-creep {
+  0% {
+    transform: scaleX(0.04);
+  }
+  20% {
+    transform: scaleX(0.45);
+  }
+  60% {
+    transform: scaleX(0.75);
   }
   100% {
-    transform: translateX(-100%);
+    transform: scaleX(0.9);
+  }
+}
+
+@keyframes global-loading-done {
+  from {
+    transform: scaleX(0.9);
+    opacity: 1;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+.global-loading-bar {
+  transform-origin: left;
+  animation: global-loading-creep 8s cubic-bezier(0.1, 0.7, 0.2, 1) both;
+  box-shadow: 0 0 8px color-mix(in oklab, var(--primary) 60%, transparent);
+}
+
+.global-loading-bar-done {
+  transform-origin: left;
+  animation: global-loading-done 250ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-loading-bar,
+  .global-loading-bar-done {
+    animation: none;
+    transform: none;
+    opacity: 0.6;
   }
 }
 
@@ -284,5 +690,610 @@ html.backoffice-shell body {
     background: #f0fdf4 !important;
     border: 1px solid #15803d !important;
     color: #166534 !important;
+  }
+}
+/* ==========================================================================
+   KONTROL TANPA BAYANGAN
+   --------------------------------------------------------------------------
+   Permintaan tegas pemilik program yang di-port ke sini: "saya tidak suka
+   tombol widget ini ada shadow nya, membuat mata saya tidak enak."
+
+   Aturannya: KARTU boleh punya bayangan lembut, KONTROL tidak. Bayangan pada
+   kontrol membuat setiap tombol tampak melayang sedikit, dan pada layar penuh
+   formulir hasilnya bergetar.
+
+   Disasar lewat `data-slot` — atribut yang dipasang shadcn pada setiap
+   primitifnya — bukan lewat selektor elemen. `input[type=text]` tidak akan
+   kena: kebanyakan input di sini tidak menuliskan atribut `type`.
+
+   Popover, dropdown, dan dialog SENGAJA dikecualikan: ia lapisan melayang di
+   atas halaman, dan tanpa bayangan tepinya hilang ke dalam isi di bawahnya.
+   ========================================================================== */
+[data-slot="button"],
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="checkbox"],
+[data-slot="select-trigger"],
+[data-slot="switch"],
+[data-slot="toggle"],
+[data-slot="tabs-trigger"] {
+  box-shadow: none;
+}
+
+/*
+   Fokus keyboard dipulihkan lewat OUTLINE, bukan bayangan.
+   Aturan di atas mematikan bayangan kontrol, dan shadcn menggambar cincin
+   fokusnya justru dengan bayangan — jadi membuang yang hias ikut membuang yang
+   fungsional, dan halaman ini sempat tak bisa dipakai tanpa tetikus.
+
+   Outline juga pemisahan yang benar: ia memang milik keadaan fokus, tidak
+   diwarisi kontrol lain, dan tidak ikut hilang kalau aturan bayangan berubah.
+*/
+[data-slot="button"]:focus-visible,
+[data-slot="input"]:focus-visible,
+[data-slot="textarea"]:focus-visible,
+[data-slot="checkbox"]:focus-visible,
+[data-slot="select-trigger"]:focus-visible,
+[data-slot="switch"]:focus-visible,
+[data-slot="toggle"]:focus-visible,
+[data-slot="tabs-trigger"]:focus-visible {
+  outline: 2px solid var(--cincin-fokus);
+  outline-offset: 2px;
+}
+
+/*
+ * Menu samping kantor berlatar warna tema: cincin fokusnya memakai warna teks
+ * menu itu sendiri (`--primary-foreground`, dipilih kontras dengan latar), di
+ * dalam tepi tautan supaya tidak terpotong wadah gulir menu.
+ */
+[data-menu-samping] :is(a, button, input):focus-visible {
+  outline: 2px solid var(--primary-foreground);
+  outline-offset: -2px;
+}
+
+/*
+ * Ubin feed yang baru muncul.
+ *
+ * Perpindahan ubin lama ditangani FLIP lewat Web Animations API, tapi ubin yang
+ * BARU tidak punya posisi sebelumnya untuk digerakkan — tanpa ini ia muncul
+ * mendadak di tengah ubin lain yang sedang bergerak halus, dan justru kemunculan
+ * mendadak itu yang paling terlihat kasar.
+ */
+@keyframes ubin-masuk {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ubin-masuk {
+  animation: ubin-masuk 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ubin-masuk {
+    animation: none;
+  }
+}
+
+/*
+ * Teks berjalan di panel merek halaman masuk.
+ *
+ * Daftarnya digandakan di markup, jadi bergeser 50% membuatnya menyambung tanpa
+ * jeda. Menggeser 100% akan menampakkan ujungnya sebelum berulang.
+ */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee {
+  animation: marquee 26s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    animation: none;
+  }
+}
+
+/*
+ * Buka-tutup grup menu samping.
+ *
+ * Radix menyediakan tingginya lewat `--radix-collapsible-content-height`, tapi
+ * TIDAK menganimasikan apa pun sendiri — tanpa dua keyframe ini grupnya
+ * meloncat terbuka, dan meloncat adalah yang membuat menu terasa kasar.
+ */
+@keyframes collapsible-down {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+}
+
+@keyframes collapsible-up {
+  from {
+    height: var(--radix-collapsible-content-height);
+    opacity: 1;
+  }
+  to {
+    height: 0;
+    opacity: 0;
+  }
+}
+
+[data-slot='collapsible-content'] {
+  overflow: hidden;
+}
+
+[data-slot='collapsible-content'][data-state='open'] {
+  animation: collapsible-down 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-slot='collapsible-content'][data-state='closed'] {
+  animation: collapsible-up 180ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Menutup sedikit lebih cepat daripada membuka: menutup adalah membereskan,
+   dan orang tidak menunggu pembereskan. */
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot='collapsible-content'][data-state='open'],
+  [data-slot='collapsible-content'][data-state='closed'] {
+    animation: none;
+  }
+}
+
+/*
+ * Nada folder arsip.
+ *
+ * Diracik dari `--primary` dengan `color-mix`, jadi ia ikut tema apa pun tanpa
+ * satu warna pun ditulis tangan — dan tanpa membaca warna tema di JavaScript,
+ * yang berarti tidak ada kedipan saat halaman dimuat.
+ *
+ * `oklab`, bukan `srgb`: mencampur di sRGB membuat warna lewat abu-abu di
+ * tengah jalan, jadi lime yang digelapkan mendarat jadi zaitun kusam. Di oklab
+ * ronanya bertahan.
+ *
+ * Kenapa berlapis-lapis: warna tema BOLEH sepucat apa pun, dan yang pucat di
+ * atas kertas krem hilang kalau hanya diisi satu warna datar. Yang membuatnya
+ * tetap terbaca adalah gradiennya, lidah yang lebih gelap, dan terutama garis
+ * tepinya — siluet bergaris tepi kelihatan di atas latar seterang apa pun.
+ */
+:root {
+  --folder-kilau: color-mix(in oklab, var(--primary) 62%, white);
+  --folder-terang: color-mix(in oklab, var(--primary) 90%, white);
+  --folder-pekat: color-mix(in oklab, var(--primary) 90%, black);
+  --folder-gelap: color-mix(in oklab, var(--primary) 76%, black);
+  --folder-garis: color-mix(in oklab, var(--primary) 66%, black);
+  --folder-kosong: color-mix(in oklab, var(--muted-foreground) 26%, transparent);
+  --folder-kosong-gelap: color-mix(in oklab, var(--muted-foreground) 42%, transparent);
+}
+
+/*
+ * Di tema gelap arahnya dibalik: kertasnya gelap, jadi yang hilang justru nada
+ * pekat. Cahaya tetap datang dari atas — hanya jarak nadanya yang digeser.
+ */
+.dark {
+  --folder-kilau: color-mix(in oklab, var(--primary) 58%, white);
+  --folder-terang: color-mix(in oklab, var(--primary) 86%, white);
+  --folder-pekat: color-mix(in oklab, var(--primary) 92%, black);
+  --folder-gelap: color-mix(in oklab, var(--primary) 80%, black);
+  --folder-garis: color-mix(in oklab, var(--primary) 78%, white);
+}
+
+/*
+ * Nada kartu beranda (dipakai `.beranda-kartu` di bawah).
+ *
+ * Sebelumnya kartu putih di atas krem dengan garis abu tipis — dan warna tema
+ * hanya hidup di menu samping, tidak pernah masuk ke area kerja. Hasilnya
+ * hambar: dua belas ubin yang semuanya terlihat sama dan tidak satu pun terasa
+ * milik merek ini.
+ *
+ * Dua hal sekaligus, karena satu saja tidak cukup terlihat: permukaan yang
+ * bernada tema TIPIS (9% — cukup terasa, tidak sampai mengganggu keterbacaan
+ * angkanya) dan garis yang ikut bernada.
+ *
+ * Semuanya `color-mix` dari `--primary`, jadi ikut tema apa pun. `oklab` supaya
+ * rona bertahan saat dicampur — di sRGB lime yang digelapkan mendarat jadi
+ * zaitun kusam.
+ */
+:root {
+  --kpi-surface: color-mix(in oklab, var(--primary) 9%, var(--card));
+  --kpi-ring: color-mix(in oklab, var(--primary) 44%, var(--border));
+}
+
+/*
+ * Di tema gelap nadanya dikurangi. Permukaan gelap sudah kontras dengan
+ * kertasnya, jadi tint sebanyak mode terang justru membuat ubinnya menyala.
+ */
+.dark {
+  --kpi-surface: color-mix(in oklab, var(--primary) 6%, var(--card));
+  --kpi-ring: color-mix(in oklab, var(--primary) 28%, var(--border));
+}
+
+/* ==========================================================================
+   Beranda: kartu, judul, warna grafik
+   --------------------------------------------------------------------------
+   DI SINI, bukan di CSS module. Stylesheet module untuk komponen klien tidak
+   ikut dikirim di HTML server — di mode dev ia baru dipasang JavaScript
+   setelah halaman hidup. Ketika hidrasi gagal (Safari menulis "Rp0", server
+   "Rp 0"), React membangun ulang halaman dan stylesheet susulan itu hilang:
+   kartu tampil tanpa latar, judul tanpa gaya, grafik tanpa warna. Yang ada di
+   globals.css selalu terkirim bersama halaman.
+   ========================================================================== */
+
+/* Palet grafik KATEGORIS (garis tren per saluran, tahapan) — TIDAK mengikuti warna tema, dengan
+   sengaja: seri kategoris butuh beberapa rona yang bisa dibedakan, termasuk oleh mata buta warna.
+   Nilainya sudah divalidasi; mode gelap dilangkahkan ulang dari rona yang sama. Batang skala dan
+   komposisi memakai skala tema di bawahnya (--viz-tema-*). */
+.viz {
+  --viz-surface: #fcfcfb;
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-6: #008300;
+}
+
+.dark .viz {
+  --viz-surface: #1a1a19;
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-6: #008300;
+}
+
+/* Skala tema — UNTUK batang skala dan bagian-dari-satu-jumlah (umur piutang, komposisi nilai stok),
+   bukan untuk seri kategoris di atas. Pemilik (2026-10-09): merah muda, kuning, dan merah di beranda
+   "cukup mengganggu" — warnanya harus ikut tema tetapi tetap jelas berbeda. Jadi satu rona, yaitu rona
+   --primary, dengan TERANG yang ditetapkan per mode supaya kontrasnya terhadap kartu tidak
+   bergantung pada warna tema yang dipilih (tema terang dengan primary pucat tetap terbaca). Chroma
+   diambil dari primary × 2, paling tinggi 0,14: primary abu tetap abu, tidak berubah jadi merah muda
+   karena rona yang tak terdefinisi. Mode gelap: makin terang = makin menonjol; mode terang sebaliknya. Terang tiap nada dipilih supaya
+   yang paling lemah pun ≥ 3:1 terhadap kartu (diukur 2026-10-09 di tema gelap #bce3df dan tema terang).
+   Cadangan tanpa sintaks warna relatif: campuran primary dengan latar kartu. */
+.viz {
+  --viz-netral: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+  --viz-tema-kuat: var(--primary);
+  --viz-tema-sedang: color-mix(in oklab, var(--primary) 66%, var(--kpi-surface, var(--card)));
+  --viz-tema-lemah: color-mix(in oklab, var(--primary) 36%, var(--kpi-surface, var(--card)));
+}
+
+@supports (color: oklch(from red l c h)) {
+  .viz {
+    --viz-tema-kuat: oklch(from var(--primary) 0.4 min(calc(c * 2), 0.14) h);
+    --viz-tema-sedang: oklch(from var(--primary) 0.53 min(calc(c * 2), 0.12) h);
+    --viz-tema-lemah: oklch(from var(--primary) 0.63 min(calc(c * 2), 0.09) h);
+  }
+  .dark .viz {
+    --viz-tema-kuat: oklch(from var(--primary) 0.88 min(calc(c * 2), 0.14) h);
+    --viz-tema-sedang: oklch(from var(--primary) 0.73 min(calc(c * 2), 0.12) h);
+    --viz-tema-lemah: oklch(from var(--primary) 0.58 min(calc(c * 2), 0.09) h);
+  }
+}
+
+/* Warna kategori PILIHAN pemilik (lencana jenis pemasok, kartu galeri, papan) — satu warna --kat,
+   latar/teks/cincin diturunkan darinya. Teks diberi terang tetap per mode supaya terbaca di atas
+   latar tipisnya apa pun warna yang dipilih (≥ 4,5:1 di tema terang dan gelap). Lihat nadaKategori. */
+.kat-kustom {
+  background-color: color-mix(in oklab, var(--kat) 16%, transparent);
+  color: var(--kat);
+  --tw-ring-color: color-mix(in oklab, var(--kat) 40%, transparent);
+}
+
+@supports (color: oklch(from red l c h)) {
+  .kat-kustom {
+    color: oklch(from var(--kat) 0.42 min(c, 0.16) h);
+  }
+  .dark .kat-kustom {
+    color: oklch(from var(--kat) 0.86 min(c, 0.12) h);
+  }
+}
+
+/* SATU bentuk kartu untuk beranda backoffice dan aplikasi HP. Kartu shadcn di
+   dalam `.beranda-halaman` ditarik ke bentuk yang sama lewat pemilih di bawah,
+   jadi kartu laporan yang ditambahkan nanti otomatis ikut. */
+.beranda-kartu,
+html.backoffice-shell .beranda-halaman [data-slot='card'] {
+  background: var(--kpi-surface);
+  border: 1px solid var(--kpi-ring);
+  border-radius: 0.75rem;
+  box-shadow: none;
+}
+
+.beranda-kartu {
+  padding: 1rem;
+}
+
+html.backoffice-shell .beranda-halaman [data-slot='card'] {
+  gap: 0.75rem;
+  padding-block: 1rem;
+}
+
+html.backoffice-shell .beranda-halaman [data-slot='card-header'],
+html.backoffice-shell .beranda-halaman [data-slot='card-content'],
+html.backoffice-shell .beranda-halaman [data-slot='card-footer'] {
+  padding-inline: 1rem;
+}
+
+/* Kartu di dalam kartu (ringkasan posisi stok) tidak menumpuk nadanya. */
+html.backoffice-shell .beranda-halaman [data-slot='card'] [data-slot='card'] {
+  background: var(--card);
+}
+
+/* Satu gaya judul kartu: label kecil berhuruf besar, seperti judul bagian menu. */
+.beranda-judul,
+.beranda-halaman [data-slot='card-title'] {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.beranda-halaman [data-slot='card-description'] {
+  font-size: 12px;
+}
+
+/* Tab laporan: yang terpilih berwarna tema, sama seperti pilihan 7/30/90 hari. */
+.beranda-halaman [data-slot='tabs-trigger'][data-state='active'] {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* Kartu utama: SATU kartu penuh warna tema per layar. Isinya memakai warna
+   tulisan-di-atas-tema, bukan warna data, supaya terbaca di tema apa pun. */
+.beranda-kartu-utama {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.beranda-kartu-utama .beranda-judul {
+  color: color-mix(in oklab, var(--primary-foreground) 72%, transparent);
+}
+
+/* Batang komposisi tumbuh dari kiri ke proporsinya, sekali saat muncul. */
+.beranda-tumbuh {
+  animation: beranda-tumbuh 900ms cubic-bezier(0.22, 1, 0.36, 1) 150ms both;
+}
+
+@keyframes beranda-tumbuh {
+  from {
+    clip-path: inset(0 100% 0 0 round 999px);
+  }
+  to {
+    clip-path: inset(0 0 0 0 round 999px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beranda-tumbuh {
+    animation: none;
+  }
+}
+
+/* Kartu berisi daftar baris yang menempel ke tepinya (menu Lainnya, tombol
+   Keluar): barisnya yang membawa jarak sendiri, bukan kartunya. */
+.beranda-kartu.beranda-kartu-daftar {
+  padding: 0;
+  overflow: hidden;
+}
+
+/*
+ * PWA lapangan: sasaran sentuh minimal 44 px.
+ *
+ * Komponen bawaan (tombol 32–36 px, kolom isian 36 px) dirancang untuk tetikus
+ * di laptop. Di lapangan salesman mengetuk dengan satu jempol sambil berdiri,
+ * sering memakai sarung tangan motor — 44 px adalah batas Apple dan WCAG.
+ *
+ * `min-height`, bukan `height`: utilitas tinggi Tailwind tetap berlaku di
+ * backoffice dan sebagai ukuran dasar; aturan ini hanya menaikkan batas
+ * bawahnya. Cakupannya `body:has(.pwa-app)`, bukan `.pwa-app`, supaya dialog
+ * dan menu tarik-turun — yang dirender di luar pohon lewat portal — ikut kena.
+ * Pengecualian tunggal: `data-rapat` pada elemen yang tata letaknya memang
+ * butuh lebih kecil.
+ */
+body:has(.pwa-app)
+  :is(
+    [data-slot='button'],
+    [data-slot='input'],
+    [data-slot='select-trigger'],
+    [data-slot='textarea'],
+    [data-slot='select-item'],
+    [data-slot='dropdown-menu-item']
+  ) {
+  min-height: 44px;
+}
+
+body:has(.pwa-app) [data-slot='button']:is([data-size='icon'], [data-size='icon-sm'], [data-size='icon-xs']) {
+  min-width: 44px;
+}
+
+body:has(.pwa-app) [data-slot][data-rapat] {
+  min-height: 0;
+  min-width: 0;
+}
+
+/*
+ * Kalender di aplikasi HP: sel selebar sasaran sentuh 44 px. Tanpa ini tombol
+ * tanggal membesar oleh aturan di atas sementara kotaknya tetap dihitung 32 px,
+ * dan baris-barisnya meluber keluar kalender (terpotong di lembar bawah HP).
+ * 7 × 44 px + bantalan masih muat di layar 360 px.
+ */
+body:has(.pwa-app) [data-slot='calendar'] {
+  --cell-size: 2.75rem;
+}
+
+/*
+ * Keping kecil di samping kode master.
+ *
+ * Latarnya sangat tipis dan tulisannya pekat — keping penuh warna di setiap
+ * baris tabel membuat tabelnya jadi papan lampu, dan mata berhenti membaca
+ * teksnya. Warnanya datang dari `--kode-warna`, diturunkan dari teks kodenya
+ * sendiri di `lib/ui/warna-kode.ts`.
+ */
+.keping-kode {
+  background: color-mix(in oklab, var(--kode-warna) 14%, transparent);
+  color: color-mix(in oklab, var(--kode-warna) 78%, black);
+  border: 1px solid color-mix(in oklab, var(--kode-warna) 30%, transparent);
+}
+
+.dark .keping-kode {
+  background: color-mix(in oklab, var(--kode-warna-gelap) 20%, transparent);
+  color: color-mix(in oklab, var(--kode-warna-gelap) 72%, white);
+  border-color: color-mix(in oklab, var(--kode-warna-gelap) 38%, transparent);
+}
+
+/* ==========================================================================
+   Gerak kecil yang membantu kerja (lib/gerak, components/gerak)
+   --------------------------------------------------------------------------
+   Angka-angkanya juga tertulis di lib/gerak/kurva.ts dan lib/gerak/sorot.ts.
+   lib/gerak/gerak-statis.test.ts menjaga keduanya tetap sama, dan memastikan
+   setiap gerak di sini punya penawarnya di `prefers-reduced-motion` di bawah.
+   ========================================================================== */
+
+/* `ease-pegas` (dialog, popover, menu) melonjak ±1 % lalu diam;
+   `ease-lembar` (panel samping, lembar bawah HP) mengendap tanpa melonjak —
+   lembar yang melonjak membuka celah beberapa piksel di tepi layar. */
+@theme {
+  --ease-pegas: cubic-bezier(0.22, 1.2, 0.36, 1);
+  --ease-lembar: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/*
+ * Baris tabel muncul berurutan (`<TableBody className="baris-berurutan">`).
+ * Hanya baris yang BARU dipasang yang bergerak: baris yang sama setelah
+ * router.refresh tidak diputar ulang. Jeda berhenti di baris ke-12 — sisanya
+ * muncul bersamanya, jadi daftar panjang tidak terasa lambat. `backwards`,
+ * bukan `both`: setelah selesai tidak ada transform yang tertinggal di <tr>
+ * (transform yang menetap mengubah kolom sticky dan elemen fixed di dalamnya).
+ * Barisnya sudah bisa diklik sejak awal.
+ */
+@keyframes baris-masuk {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.baris-berurutan > tr {
+  animation: baris-masuk 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+.baris-berurutan > tr:nth-child(2) { animation-delay: 24ms; }
+.baris-berurutan > tr:nth-child(3) { animation-delay: 48ms; }
+.baris-berurutan > tr:nth-child(4) { animation-delay: 72ms; }
+.baris-berurutan > tr:nth-child(5) { animation-delay: 96ms; }
+.baris-berurutan > tr:nth-child(6) { animation-delay: 120ms; }
+.baris-berurutan > tr:nth-child(7) { animation-delay: 144ms; }
+.baris-berurutan > tr:nth-child(8) { animation-delay: 168ms; }
+.baris-berurutan > tr:nth-child(9) { animation-delay: 192ms; }
+.baris-berurutan > tr:nth-child(10) { animation-delay: 216ms; }
+.baris-berurutan > tr:nth-child(11) { animation-delay: 240ms; }
+.baris-berurutan > tr:nth-child(n + 12) { animation-delay: 264ms; }
+
+/*
+ * Sorot baris yang baru berubah (`useSorotBaris`): latar menyala sebentar lalu
+ * memudar ke latar selnya sendiri. Pada <tr> yang dianimasikan SEL-nya, bukan
+ * barisnya: kolom sticky `bg-card` tetap buram (warna sorot selalu pekat,
+ * bukan transparan), dan animasi masuk baris di <tr> tidak tertimpa.
+ */
+/* Warna sorot: rona merek dengan kecerahan TETAP per tema. Campuran dengan
+   --primary saja tidak terlihat bila merek seterang kartunya (limau di tema
+   terang, biru tua di tema gelap), dan pada merek gelap menurunkan kontras teks
+   redup di bawah 3:1. lib/gerak/sorot-kontras.test.ts mengukur keduanya. */
+:root {
+  --sorot-baru: color-mix(in oklab, var(--primary) 18%, var(--card));
+}
+.dark {
+  --sorot-baru: color-mix(in oklab, var(--primary) 22%, var(--card));
+}
+@supports (color: oklch(from red l c h)) {
+  :root {
+    --sorot-baru: oklch(from var(--primary) 0.88 min(c, 0.1) h);
+  }
+  .dark {
+    --sorot-baru: oklch(from var(--primary) 0.38 min(c, 0.1) h);
+  }
+}
+
+@keyframes sorot-baru {
+  0%,
+  30% {
+    background-color: var(--sorot-baru);
+  }
+}
+
+.sorot-baru:not(tr),
+[data-sorot="baru"]:not(tr),
+tr.sorot-baru > td,
+tr[data-sorot="baru"] > td {
+  animation: sorot-baru 1200ms ease-out;
+}
+
+@keyframes sorot-baru-diam {
+  from,
+  to {
+    background-color: var(--sorot-baru);
+  }
+}
+
+/*
+ * Transisi halaman (components/gerak/TransisiHalaman, dipasang lewat
+ * app/backoffice/template.tsx dan app/pwa/template.tsx): konten baru memudar
+ * masuk sementara yang lama memudar keluar. Klik tetap sampai ke halaman
+ * selama transisi — tanpa ini lapisan transisi menelan klik ±200 ms. Menu
+ * bawah HP diberi nama sendiri supaya digambar DI ATAS konten yang sedang
+ * masuk, bukan ikut berkedip di bawahnya.
+ */
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-group(*) {
+  animation-duration: 200ms;
+}
+.pwa-app > nav {
+  view-transition-name: menu-bawah;
+}
+/* Kapsul pulau status (components/pulau) melayang di atas konten; tanpa nama
+   sendiri ia ikut tertutup konten yang sedang masuk. Elemen bernama menjadi
+   "backdrop root": bila kapsulnya kelak memakai backdrop-blur, pindahkan nama
+   ini ke kapsul itu sendiri, bukan ke wadahnya. */
+[data-pulau-status] {
+  view-transition-name: pulau-status;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .baris-berurutan > tr {
+    animation: none !important;
+  }
+  /* Warna bukan gerak: sorotan tetap tampil, hanya tanpa memudar. */
+  .sorot-baru:not(tr),
+  [data-sorot="baru"]:not(tr),
+  tr.sorot-baru > td,
+  tr[data-sorot="baru"] > td {
+    animation: sorot-baru-diam 1200ms linear !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

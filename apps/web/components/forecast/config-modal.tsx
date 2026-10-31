@@ -58,14 +58,14 @@ export function ForecastConfigModal({
         payoutDelayDays: { SHOPEE: Number(shopeeDelay), TIKTOK: Number(tiktokDelay) },
       });
       if (!result.success) {
-        toast.error(result.error ?? 'Failed to save config');
+        toast.error(result.error ?? t('saveFailed'));
         return;
       }
-      toast.success('Config saved');
+      toast.success(t('saved'));
       onOpenChange(false);
       onSaved();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to save');
+      toast.error(err instanceof Error ? err.message : t('saveFailed'));
     } finally {
       setSaving(false);
     }
@@ -75,11 +75,11 @@ export function ForecastConfigModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('editConfig')} — {year}</DialogTitle>
+          <DialogTitle>{t('ubahKonfigurasi')} — {year}</DialogTitle>
         </DialogHeader>
         <div className="grid gap-4 py-2">
           <div className="grid gap-2">
-            <Label htmlFor="growth">{t('growth')}</Label>
+            <Label htmlFor="growth">{t('faktorPertumbuhan')}</Label>
             <Input id="growth" type="number" value={growth} onChange={(e) => setGrowth(e.target.value)} />
             <p className="text-xs text-muted-foreground">{t('growthHint')}</p>
           </div>
@@ -89,7 +89,7 @@ export function ForecastConfigModal({
             <p className="text-xs text-muted-foreground">{t('lookbackHint')}</p>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="decay">{t('decay')}</Label>
+            <Label htmlFor="decay">{t('peluruhanBobot')}</Label>
             <Input id="decay" type="number" step="0.01" value={decay} onChange={(e) => setDecay(e.target.value)} />
             <p className="text-xs text-muted-foreground">{t('decayHint')}</p>
           </div>
@@ -132,10 +132,10 @@ export function ForecastConfigModal({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t('cancel')}
           </Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? '...' : 'Save'}
+            {saving ? '...' : t('save')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,4 +1,4 @@
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "./adapter";
 import { Prisma, PrismaClient } from "../generated/prisma/client";
 import { getDatabaseUrl } from "./db-connection";
 
@@ -17,7 +17,7 @@ const SCHEMA_STAMP = Object.keys(Prisma.ModelName).sort().join(",");
 
 function createPrismaClient(): PrismaClient {
   const url = getDatabaseUrl() || process.env.DATABASE_URL || "";
-  const adapter = new PrismaMariaDb(url);
+  const adapter = createDbAdapter(url);
   return new PrismaClient({ adapter });
 }
 
@@ -44,6 +44,8 @@ export const prisma: PrismaClient = new Proxy({} as PrismaClient, {
 
 export * from "../generated/prisma/client";
 export { getDatabaseUrl } from "./db-connection";
+export { createDbAdapter, isPostgresUrl } from "./adapter";
+export { sqlId, nowMs, usePostgres } from "./sql-dialect";
 export {
   createItemFromIngest,
   updateItemFromIngest,
@@ -115,6 +117,13 @@ export {
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
   resolveReservedInventory,
+  transferKonsiStock,
+  transferKonsiFieldSalesOrder,
+  konsiTransferKeyForLine,
+  type KonsiTransferLine,
+  type KonsiTransferShortLine,
+  type KonsiTransferResult,
+  type KonsiTransferGuard,
   type ReservationLine,
   type OversellAlert,
   type ReserveOrderInput,
@@ -126,7 +135,7 @@ export {
   type PartialConsumeLine,
   type PartialConsumeShortLine,
 } from "./reservation-writer";
-export { seededId } from "./spec-teardown";
+export { seededId, seededIds } from "./spec-teardown";
 export * from "./variant-axes";
 export {
   classifyForBackfill,
@@ -177,3 +186,15 @@ export {
   effectiveOfflineReservedByKey,
   type OfflineReservedKey,
 } from "./jubelio-stock-contract";
+export {
+  STATUS_PERIODE,
+  wibYearMonth,
+  firstDayOfMonthWib,
+  nextYearMonth,
+  wibDayLabel,
+  lockPeriodForPosting,
+  ensurePeriodRows,
+  resolvePostingDate,
+  PeriodClosedError,
+  type ClosedPeriodMode,
+} from "./period-lock";

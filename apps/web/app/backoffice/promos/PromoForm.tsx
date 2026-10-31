@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Gift, Loader2, Plus, Trash2 } from "lucide-react";
 import { createPromoAction, updatePromoAction, type PromoFormInput } from "@/app/actions/promos";
 import type { PromoDetail } from "@/lib/promos/queries";
 import { Input } from "@/components/ui/input";
@@ -14,8 +15,10 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 
 export type ItemOption = { id: string; sku: string; nameId: string; isActive: boolean };
 export type StoreOption = { id: string; name: string; isActive: boolean };
@@ -24,7 +27,7 @@ type TierRow = { minQty: number | null; unitPrice: number | null };
 
 type FormState = {
   name: string;
-  type: "PERCENT" | "FIXED" | "TIERED";
+  type: "PERCENT" | "FIXED" | "TIERED" | "BONUS";
   level: "LINE" | "ORDER";
   value: number | null;
   minQty: number | null;
@@ -38,7 +41,14 @@ type FormState = {
   itemIds: string[];
   storeIds: string[];
   tiers: TierRow[];
+  bonusBuyQty: number | null;
+  bonusFreeQty: number | null;
+  /** "" = barang yang sama dengan yang dibeli. */
+  bonusItemId: string;
 };
+
+/** Kolom promo bonus — dibaca terpisah dari `PromoDetail` oleh halaman ubah. */
+export type BonusDefaults = { bonusBuyQty: number | null; bonusFreeQty: number | null; bonusItemId: string | null };
 
 type Props = {
   mode: "create" | "edit";
@@ -46,6 +56,7 @@ type Props = {
   itemOptions: ItemOption[];
   storeOptions: StoreOption[];
   defaults: PromoDetail | null;
+  defaultsBonus?: BonusDefaults | null;
 };
 
 function toDateInputValue(d: Date | null): string {
@@ -53,7 +64,7 @@ function toDateInputValue(d: Date | null): string {
   return d.toISOString().slice(0, 10);
 }
 
-function buildInitialState(defaults: PromoDetail | null): FormState {
+function buildInitialState(defaults: PromoDetail | null, bonus: BonusDefaults | null): FormState {
   if (!defaults) {
     return {
       name: "",
@@ -71,6 +82,9 @@ function buildInitialState(defaults: PromoDetail | null): FormState {
       itemIds: [],
       storeIds: [],
       tiers: [],
+      bonusBuyQty: null,
+      bonusFreeQty: null,
+      bonusItemId: "",
     };
   }
   return {
@@ -89,6 +103,9 @@ function buildInitialState(defaults: PromoDetail | null): FormState {
     itemIds: defaults.itemIds,
     storeIds: defaults.storeIds,
     tiers: defaults.tiers.map((t) => ({ minQty: t.minQty, unitPrice: t.unitPrice })),
+    bonusBuyQty: bonus?.bonusBuyQty ?? null,
+    bonusFreeQty: bonus?.bonusFreeQty ?? null,
+    bonusItemId: bonus?.bonusItemId ?? "",
   };
 }
 
@@ -104,13 +121,15 @@ function SectionHeader({ title }: { title: string }) {
   );
 }
 
-export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults }: Props) {
+export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults, defaultsBonus = null }: Props) {
   const t = useTranslations("promos");
+  const tBonus = useTranslations("promoBonus");
   const tCommon = useTranslations("common");
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [form, setForm] = useState<FormState>(() => buildInitialState(defaults));
+  const [form, setForm] = useState<FormState>(() => buildInitialState(defaults, defaultsBonus));
   const [itemSearch, setItemSearch] = useState("");
+  const [giftSearch, setGiftSearch] = useState("");
   const [storeSearch, setStoreSearch] = useState("");
 
   const readOnly = !canManage;
@@ -123,7 +142,8 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
     setForm((prev) => ({
       ...prev,
       type: next,
-      level: next === "TIERED" ? "LINE" : prev.level,
+      // Bertingkat dan bonus selalu per produk.
+      level: next === "TIERED" || next === "BONUS" ? "LINE" : prev.level,
       tiers: next === "TIERED" && prev.tiers.length === 0 ? [{ minQty: null, unitPrice: null }] : prev.tiers,
     }));
   }
@@ -169,6 +189,17 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
     );
   }, [itemOptions, itemSearch]);
 
+  const filteredGifts = useMemo(() => {
+    const q = giftSearch.trim().toLowerCase();
+    if (!q) return itemOptions;
+    return itemOptions.filter(
+      (it) => it.sku.toLowerCase().includes(q) || it.nameId.toLowerCase().includes(q)
+    );
+  }, [itemOptions, giftSearch]);
+  const giftName = form.bonusItemId
+    ? itemOptions.find((it) => it.id === form.bonusItemId)?.nameId ?? form.bonusItemId
+    : null;
+
   const filteredStores = useMemo(() => {
     const q = storeSearch.trim().toLowerCase();
     if (!q) return storeOptions;
@@ -177,7 +208,10 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
 
   function clientValidationError(): string | null {
     if (!form.name.trim()) return t("errInvalid");
-    if (form.type === "TIERED") {
+    if (form.type === "BONUS") {
+      const bulat = (n: number | null) => n !== null && Number.isInteger(n) && n >= 1;
+      if (!bulat(form.bonusBuyQty) || !bulat(form.bonusFreeQty)) return tBonus("errJumlah");
+    } else if (form.type === "TIERED") {
       if (form.tiers.length === 0) return t("errInvalid");
       if (form.tiers.some((row) => row.minQty === null || row.unitPrice === null)) return t("errInvalid");
       if (new Set(form.tiers.map((t) => t.minQty)).size !== form.tiers.length) return t("errInvalid");
@@ -204,8 +238,8 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
       name: form.name.trim(),
       type: form.type,
       level: form.level,
-      value: form.type === "TIERED" ? null : form.value,
-      minQty: form.level === "LINE" ? form.minQty : null,
+      value: form.type === "TIERED" || form.type === "BONUS" ? null : form.value,
+      minQty: form.level === "LINE" && form.type !== "BONUS" ? form.minQty : null,
       minOrderSubtotal: form.level === "ORDER" ? form.minOrderSubtotal : null,
       minOrderQty: form.level === "ORDER" ? form.minOrderQty : null,
       allStores: form.allStores,
@@ -221,6 +255,9 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
               .filter((row) => row.minQty !== null && row.unitPrice !== null)
               .map((row) => ({ minQty: row.minQty as number, unitPrice: row.unitPrice as number }))
           : [],
+      bonusBuyQty: form.type === "BONUS" ? form.bonusBuyQty : null,
+      bonusFreeQty: form.type === "BONUS" ? form.bonusFreeQty : null,
+      bonusItemId: form.type === "BONUS" && form.bonusItemId ? form.bonusItemId : null,
     };
 
     startTransition(async () => {
@@ -246,12 +283,20 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
 
   return (
     <div className="space-y-4">
+      <Button asChild variant="ghost" size="sm" className="-ml-2">
+        <Link href="/backoffice/promos">
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          {t("kembaliKePromo")}
+        </Link>
+      </Button>
+      <PageHeader title={mode === "create" ? t("new") : t("edit")} />
       <form onSubmit={onSubmit}>
         <Card>
-          <CardHeader>
-            <CardTitle>{mode === "create" ? t("new") : t("edit")}</CardTitle>
-            {readOnly && <CardDescription>{t("readOnlyBanner")}</CardDescription>}
-          </CardHeader>
+          {readOnly ? (
+            <CardHeader>
+              <CardDescription>{t("readOnlyBanner")}</CardDescription>
+            </CardHeader>
+          ) : null}
           <CardContent className="space-y-6">
             {/* Basic info */}
             <section className="space-y-4">
@@ -282,13 +327,14 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
                       <SelectItem value="PERCENT">{t("typePercent")}</SelectItem>
                       <SelectItem value="FIXED">{t("typeFixed")}</SelectItem>
                       <SelectItem value="TIERED">{t("typeTiered")}</SelectItem>
+                      <SelectItem value="BONUS">{tBonus("jenis")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="level">{t("level")}</Label>
                   <Select
-                    disabled={fieldsDisabled || form.type === "TIERED"}
+                    disabled={fieldsDisabled || form.type === "TIERED" || form.type === "BONUS"}
                     value={form.level}
                     onValueChange={(v) => update("level", v as FormState["level"])}
                   >
@@ -303,7 +349,93 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
                 </div>
               </div>
 
-              {form.type !== "TIERED" && (
+              {form.type === "BONUS" && (
+                <div className="space-y-4">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="bonusBuyQty">{tBonus("setiapBeli")}</Label>
+                      <Input
+                        id="bonusBuyQty"
+                        type="number"
+                        min={1}
+                        step={1}
+                        required
+                        disabled={fieldsDisabled}
+                        value={form.bonusBuyQty ?? ""}
+                        onChange={(e) => update("bonusBuyQty", numberOrNull(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="bonusFreeQty">{tBonus("gratis")}</Label>
+                      <Input
+                        id="bonusFreeQty"
+                        type="number"
+                        min={1}
+                        step={1}
+                        required
+                        disabled={fieldsDisabled}
+                        value={form.bonusFreeQty ?? ""}
+                        onChange={(e) => update("bonusFreeQty", numberOrNull(e.target.value))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>{tBonus("barangHadiah")}</Label>
+                    <p className="text-xs text-muted-foreground">{tBonus("barangHadiahIsi")}</p>
+                    <Input
+                      placeholder={tCommon("search")}
+                      value={giftSearch}
+                      disabled={fieldsDisabled}
+                      onChange={(e) => setGiftSearch(e.target.value)}
+                    />
+                    <ScrollArea className="h-40 rounded-md border p-2">
+                      <div role="radiogroup" aria-label={tBonus("barangHadiah")} className="space-y-1">
+                        <label className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50">
+                          <Checkbox
+                            role="radio"
+                            checked={form.bonusItemId === ""}
+                            disabled={fieldsDisabled}
+                            onCheckedChange={() => update("bonusItemId", "")}
+                          />
+                          <span className="font-medium">{tBonus("barangSama")}</span>
+                        </label>
+                        {filteredGifts.map((it) => (
+                          <label
+                            key={it.id}
+                            className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/50"
+                          >
+                            <Checkbox
+                              role="radio"
+                              checked={form.bonusItemId === it.id}
+                              disabled={fieldsDisabled}
+                              onCheckedChange={() => update("bonusItemId", form.bonusItemId === it.id ? "" : it.id)}
+                            />
+                            <span className="font-mono text-xs text-muted-foreground">{it.sku}</span>
+                            <span className="truncate">{it.nameId}</span>
+                            {!it.isActive && (
+                              <span className="ml-auto text-xs text-muted-foreground">
+                                ({tCommon("inactive")})
+                              </span>
+                            )}
+                          </label>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                  </div>
+
+                  {form.bonusBuyQty !== null && form.bonusFreeQty !== null && form.bonusBuyQty >= 1 && form.bonusFreeQty >= 1 && (
+                    <p className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-sm">
+                      <Gift className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700 dark:text-emerald-400" aria-hidden />
+                      {giftName
+                        ? tBonus("ringkasanLain", { beli: form.bonusBuyQty, gratis: form.bonusFreeQty, barang: giftName })
+                        : tBonus("ringkasanSama", { beli: form.bonusBuyQty, gratis: form.bonusFreeQty })}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {form.type !== "TIERED" && form.type !== "BONUS" && (
                 <div className="space-y-1.5 sm:w-1/2">
                   <Label htmlFor="value">{t("value")}</Label>
                   <Input
@@ -388,50 +520,55 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
             <Separator />
 
             {/* Conditions */}
-            <section className="space-y-4">
-              <SectionHeader title={t("sectionConditions")} />
-              {form.level === "LINE" && (
-                <div className="space-y-1.5 sm:w-1/2">
-                  <Label htmlFor="minQty">{t("minQty")}</Label>
-                  <Input
-                    id="minQty"
-                    type="number"
-                    min={0}
-                    disabled={fieldsDisabled}
-                    value={form.minQty ?? ""}
-                    onChange={(e) => update("minQty", numberOrNull(e.target.value))}
-                  />
-                </div>
-              )}
-              {form.level === "ORDER" && (
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="minOrderSubtotal">{t("minOrderSubtotal")}</Label>
-                    <Input
-                      id="minOrderSubtotal"
-                      type="number"
-                      min={0}
-                      disabled={fieldsDisabled}
-                      value={form.minOrderSubtotal ?? ""}
-                      onChange={(e) => update("minOrderSubtotal", numberOrNull(e.target.value))}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="minOrderQty">{t("minOrderQty")}</Label>
-                    <Input
-                      id="minOrderQty"
-                      type="number"
-                      min={0}
-                      disabled={fieldsDisabled}
-                      value={form.minOrderQty ?? ""}
-                      onChange={(e) => update("minOrderQty", numberOrNull(e.target.value))}
-                    />
-                  </div>
-                </div>
-              )}
-            </section>
+            {/* Bonus tidak punya syarat lain: jumlah belinya sudah ada di atas. */}
+            {form.type !== "BONUS" && (
+              <>
+                <section className="space-y-4">
+                  <SectionHeader title={t("sectionConditions")} />
+                  {form.level === "LINE" && (
+                    <div className="space-y-1.5 sm:w-1/2">
+                      <Label htmlFor="minQty">{t("minQty")}</Label>
+                      <Input
+                        id="minQty"
+                        type="number"
+                        min={0}
+                        disabled={fieldsDisabled}
+                        value={form.minQty ?? ""}
+                        onChange={(e) => update("minQty", numberOrNull(e.target.value))}
+                      />
+                    </div>
+                  )}
+                  {form.level === "ORDER" && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="minOrderSubtotal">{t("minOrderSubtotal")}</Label>
+                        <Input
+                          id="minOrderSubtotal"
+                          type="number"
+                          min={0}
+                          disabled={fieldsDisabled}
+                          value={form.minOrderSubtotal ?? ""}
+                          onChange={(e) => update("minOrderSubtotal", numberOrNull(e.target.value))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="minOrderQty">{t("minOrderQty")}</Label>
+                        <Input
+                          id="minOrderQty"
+                          type="number"
+                          min={0}
+                          disabled={fieldsDisabled}
+                          value={form.minOrderQty ?? ""}
+                          onChange={(e) => update("minOrderQty", numberOrNull(e.target.value))}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </section>
 
-            <Separator />
+                <Separator />
+              </>
+            )}
 
             {/* Scope */}
             <section className="space-y-4">
@@ -440,6 +577,9 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
               {form.level === "LINE" && (
                 <div className="space-y-1.5">
                   <Label>{t("items")}</Label>
+                  {form.type === "BONUS" && (
+                    <p className="text-xs text-muted-foreground">{tBonus("barangDibeliIsi")}</p>
+                  )}
                   <Input
                     placeholder={tCommon("search")}
                     value={itemSearch}
@@ -530,27 +670,17 @@ export function PromoForm({ mode, canManage, itemOptions, storeOptions, defaults
             {/* Schedule */}
             <section className="space-y-4">
               <SectionHeader title={t("sectionSchedule")} />
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="startsAt">{t("startsAt")}</Label>
-                  <Input
-                    id="startsAt"
-                    type="date"
-                    disabled={fieldsDisabled}
-                    value={form.startsAt}
-                    onChange={(e) => update("startsAt", e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="endsAt">{t("endsAt")}</Label>
-                  <Input
-                    id="endsAt"
-                    type="date"
-                    disabled={fieldsDisabled}
-                    value={form.endsAt}
-                    onChange={(e) => update("endsAt", e.target.value)}
-                  />
-                </div>
+              <div className="space-y-1.5 sm:max-w-sm">
+                <Label htmlFor="masaPromo">{t("masaBerlaku")}</Label>
+                <RentangTanggalInput
+                  id="masaPromo"
+                  disabled={fieldsDisabled}
+                  pilihanCepat={false}
+                  bolehTerbuka
+                  dari={form.startsAt}
+                  sampai={form.endsAt}
+                  onChange={({ dari, sampai }) => setForm((f) => ({ ...f, startsAt: dari, endsAt: sampai }))}
+                />
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">

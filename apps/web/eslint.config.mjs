@@ -63,6 +63,26 @@ const eslintConfig = defineConfig([
    * string-typed `key` or an order number that is never a fixture id) takes an
    * inline `eslint-disable-next-line no-restricted-syntax -- <reason>`.
    */
+  /*
+   * Isian tanggal/jam bawaan peramban dilarang: tampilannya beda di tiap
+   * peramban (Safari menampilkan kotak abu-abu kecil yang tidak cocok dengan
+   * aplikasi). Pakai `TanggalInput` / `TanggalJamInput` / `JamInput` dari
+   * `@/components/ui/tanggal-input` — nilai dan `onChange`-nya sama persis.
+   * Diletakkan SEBELUM blok tes: aturan yang sama di blok berikutnya menang.
+   */
+  {
+    files: ["app/**/*.tsx", "components/**/*.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "JSXAttribute[name.name='type'][value.value=/^(date|datetime-local|time|month|week)$/]",
+          message:
+            "Jangan pakai isian tanggal/jam bawaan peramban. Pakai TanggalInput, TanggalJamInput, atau JamInput dari @/components/ui/tanggal-input.",
+        },
+      ],
+    },
+  },
   {
     files: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
     rules: {

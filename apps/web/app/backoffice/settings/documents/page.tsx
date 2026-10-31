@@ -12,6 +12,7 @@ import {
 } from "@/app/actions/settings/doc-numbers";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,6 +25,9 @@ import {
   RESET_PERIODS,
   validateDocNumberConfigInput,
 } from "@/lib/doc-numbers/validate";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { contohNomorBerikutnya } from "./jenis-dokumen";
 
 type RowEdit = { prefix: string; resetPeriod: string; padding: string };
 
@@ -36,7 +40,7 @@ const baseline = (config: DocNumberConfigRow): RowEdit => ({
 export default function DocumentNumbersSettingsPage() {
   const t = useTranslations("documents");
   const tToasts = useTranslations("toasts");
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const router = useRouter();
   const [configs, setConfigs] = useState<DocNumberConfigRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -44,6 +48,10 @@ export default function DocumentNumbersSettingsPage() {
   const [isRetrying, setIsRetrying] = useState(false);
   const [savingType, setSavingType] = useState<DocTypeValue | null>(null);
   const [edits, setEdits] = useState<Partial<Record<DocTypeValue, RowEdit>>>({});
+  // Pratinjau memakai jam peramban; dibaca sekali saat halaman dibuka.
+  const [kini] = useState(() => new Date());
+
+  const bolehUbah = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SETTINGS_DOCUMENTS_MANAGE);
 
   /**
    * A failed load swaps the tables for the error card: editable rows built from defaults would
@@ -92,7 +100,22 @@ export default function DocumentNumbersSettingsPage() {
     setEdits((prev) => ({ ...prev, [docType]: { ...(prev[docType] ?? baseline(config)), [field]: value } }));
   };
 
+  /** Nomor yang akan dibagikan berikutnya bila baris ini disimpan, atau kode penolakan isiannya. */
+  const preview = (docType: DocTypeValue, config: DocNumberConfigRow): { contoh: string } | { code: string } => {
+    const e = current(docType, config);
+    const parsed = validateDocNumberConfigInput({ docType, prefix: e.prefix, resetPeriod: e.resetPeriod, padding: Number(e.padding) });
+    if (!parsed.ok) return { code: parsed.code };
+    const { prefix, resetPeriod, padding } = parsed.value;
+    return {
+      contoh: contohNomorBerikutnya(
+        { prefix, resetPeriod, padding, lastNumber: config.lastNumber, year: config.year, month: config.month },
+        kini,
+      ),
+    };
+  };
+
   const handleSave = async (docType: DocTypeValue, config: DocNumberConfigRow) => {
+    if (!bolehUbah) return;
     const e = current(docType, config);
     const input = { docType, prefix: e.prefix, resetPeriod: e.resetPeriod, padding: Number(e.padding) };
     const parsed = validateDocNumberConfigInput(input);
@@ -149,8 +172,12 @@ export default function DocumentNumbersSettingsPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
+          <TombolBantuan judul={t("pageTitle")} />
+        </div>
         <p className="text-muted-foreground">{t("pageDescription")}</p>
+        {!bolehUbah && <p className="text-sm text-muted-foreground">{t("readOnly")}</p>}
       </div>
 
       {loadFailed ? (
@@ -184,12 +211,13 @@ export default function DocumentNumbersSettingsPage() {
                       <TableHead>{t("resetPeriod")}</TableHead>
                       <TableHead>{t("padding")}</TableHead>
                       <TableHead className="w-[100px]">{t("lastNumber")}</TableHead>
+                      <TableHead>{t("nextExample")}</TableHead>
                       <TableHead className="w-[80px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {docTypesInGroup(group).map((docType) => {
-                      const label = t(`docTypes.${docType}`);
+                      const label = t.has(`docTypes.${docType}`) ? t(`docTypes.${docType}`) : docType;
                       const config = configs.find((x) => x.docType === docType);
                       /* The load seeds every type, so this row should not occur; never fabricate editable values for it. */
                       if (!config) {
@@ -199,17 +227,24 @@ export default function DocumentNumbersSettingsPage() {
                               {label}
                               <div className="text-xs text-muted-foreground">{docType}</div>
                             </TableCell>
-                            <TableCell colSpan={5} className="text-muted-foreground">
+                            <TableCell colSpan={6} className="text-muted-foreground">
                               {t("notConfigured")}
                             </TableCell>
                           </TableRow>
                         );
                       }
                       const e = current(docType, config);
+                      const dirty = isDirty(docType, config);
+                      const pratinjau = preview(docType, config);
                       return (
                         <TableRow key={docType}>
                           <TableCell className="font-medium">
                             {label}
+                            {dirty ? (
+                              <Badge variant="secondary" className="ml-2">
+                                {t("changed")}
+                              </Badge>
+                            ) : null}
                             <div className="text-xs text-muted-foreground">{docType}</div>
                           </TableCell>
                           <TableCell>
@@ -219,12 +254,14 @@ export default function DocumentNumbersSettingsPage() {
                               maxLength={PREFIX_MAX_LENGTH}
                               aria-label={`${label} ${t("prefix")}`}
                               className="max-w-[120px]"
+                              disabled={!bolehUbah}
                             />
                           </TableCell>
                           <TableCell>
                             <Select
                               value={e.resetPeriod}
                               onValueChange={(v) => setField(docType, config, "resetPeriod", v)}
+                              disabled={!bolehUbah}
                             >
                               <SelectTrigger
                                 aria-label={`${label} ${t("resetPeriod")}`}
@@ -250,16 +287,24 @@ export default function DocumentNumbersSettingsPage() {
                               onChange={(ev) => setField(docType, config, "padding", ev.target.value)}
                               aria-label={`${label} ${t("padding")}`}
                               className="w-20"
+                              disabled={!bolehUbah}
                             />
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {config.lastNumber > 0 ? config.lastNumber : t("notIssued")}
                           </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {"contoh" in pratinjau ? (
+                              pratinjau.contoh
+                            ) : (
+                              <span className="font-sans text-xs text-destructive">{errorMessage(pratinjau.code)}</span>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Button
                               size="sm"
                               onClick={() => handleSave(docType, config)}
-                              disabled={!isDirty(docType, config) || savingType !== null}
+                              disabled={!bolehUbah || !dirty || savingType !== null}
                             >
                               {savingType === docType ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

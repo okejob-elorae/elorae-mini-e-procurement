@@ -2,12 +2,11 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useTranslations, useLocale } from "next-intl";
 import { ArrowLeft, ScrollText } from "lucide-react";
 import type { AccountLedger } from "@/lib/finance/journals/queries";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -18,19 +17,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatDisplayDate } from "@/lib/date-only";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
+import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
+import { SearchableCombobox } from "@/components/ui/searchable-combobox";
+import { teksKeteranganJurnal } from "@/lib/finance/journals/keterangan-tampil";
+import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
+import { halamanBaris } from "../../_daftar/ukuran-halaman";
+import { UkuranHalaman } from "../../_daftar/UkuranHalaman";
 
 type Props = {
   accountId: string;
   ledger: AccountLedger;
   filters: { from: string; to: string };
+  pilihanAkun: { value: string; label: string; nonaktif: boolean }[];
 };
 
-function formatRupiah(value: number): string {
-  return `Rp ${Math.round(value).toLocaleString("id-ID")}`;
-}
+const formatRupiah = rupiahLaporan;
 
-export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
+export function AccountLedgerClient({ accountId, ledger, filters, pilihanAkun }: Props) {
   const t = useTranslations("financeJournals");
+  const tt = useTranslations("tanggalInput");
   const tCoa = useTranslations("finance.coa");
   const locale = useLocale();
   const router = useRouter();
@@ -39,15 +48,14 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
 
   const basePath = `/backoffice/finance/journals/ledger/${accountId}`;
 
-  const formatDate = (iso: string) =>
-    new Intl.DateTimeFormat(locale, { day: "2-digit", month: "short", year: "numeric" }).format(
-      new Date(iso),
-    );
+  const formatDate = (iso: string) => formatDisplayDate(iso, locale);
 
-  function pushParam(key: string, value: string | undefined) {
+  function pushParams(updates: Record<string, string | undefined>) {
     const params = new URLSearchParams(sp.toString());
-    if (!value) params.delete(key);
-    else params.set(key, value);
+    for (const [key, value] of Object.entries(updates)) {
+      if (!value) params.delete(key);
+      else params.set(key, value);
+    }
     startTransition(() => router.push(`${basePath}?${params.toString()}`));
   }
 
@@ -57,21 +65,56 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
 
   const hasFilter = !!(filters.from || filters.to);
 
+  /* Cari dan halaman di sisi klien: saldo berjalan butuh semua baris periode, jadi semuanya dimuat. */
+  const [cari, setCari] = useState("");
+  const [halaman, setHalaman] = useState(1);
+  const [per, setPer] = useState(100);
+  const barisTampil = useMemo(
+    () => ledger.rows.map((r) => ({ ...r, keterangan: teksKeteranganJurnal(t, r.description, { manual: r.isManual }) })),
+    [ledger.rows, t],
+  );
+  const tersaring = useMemo(() => {
+    const q = cari.trim().toLowerCase();
+    return q ? barisTampil.filter((r) => r.keterangan.toLowerCase().includes(q)) : barisTampil;
+  }, [barisTampil, cari]);
+  const potong = halamanBaris(tersaring, halaman, per);
+
+  function pindahAkun(id: string) {
+    if (!id || id === accountId) return;
+    const params = new URLSearchParams(sp.toString());
+    const qs = params.toString();
+    startTransition(() => router.push(`/backoffice/finance/journals/ledger/${id}${qs ? `?${qs}` : ""}`));
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3 flex-wrap">
         <Button variant="ghost" size="sm" asChild>
-          <Link href="/backoffice/finance/coa">
+          <Link href="/backoffice/finance/journals/ledger">
             <ArrowLeft className="h-4 w-4 mr-2" />
             {t("back")}
           </Link>
         </Button>
         <div className="min-w-0">
-          <h1 className="text-xl font-semibold">
-            <span className="font-mono mr-2">{ledger.accountCode}</span>
-            {ledger.accountName}
-          </h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-xl font-semibold">
+              <span className="font-mono mr-2">{ledger.accountCode}</span>
+              {ledger.accountName}
+            </h1>
+            <TombolBantuan judul={ledger.accountName} />
+          </div>
           <p className="text-sm text-muted-foreground">{tCoa(`type.${ledger.type}` as never)}</p>
+        </div>
+        <div className="ml-auto w-full sm:w-72">
+          <label htmlFor="pilih-akun" className="sr-only">{t("ledger.gantiAkun")}</label>
+          <SearchableCombobox
+            id="pilih-akun"
+            options={pilihanAkun.map((a) => ({ value: a.value, label: a.nonaktif ? `${a.label} (${t("ledger.nonaktif")})` : a.label }))}
+            value={accountId}
+            onValueChange={pindahAkun}
+            placeholder={t("ledger.gantiAkun")}
+            triggerClassName="w-full"
+          />
         </div>
       </div>
 
@@ -89,19 +132,24 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
       <Card className="p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("ledger.dateFrom")}</label>
-            <Input
-              type="date"
-              value={filters.from}
-              onChange={(e) => pushParam("from", e.target.value || undefined)}
+            <label htmlFor="periode" className="text-xs text-muted-foreground mb-1 block">{tt("periode")}</label>
+            <RentangTanggalInput
+              id="periode"
+              dari={filters.from}
+              sampai={filters.to}
+              onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
             />
           </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{t("ledger.dateTo")}</label>
+            <label htmlFor="cari-buku-besar" className="text-xs text-muted-foreground mb-1 block">{t("ledger.cari")}</label>
             <Input
-              type="date"
-              value={filters.to}
-              onChange={(e) => pushParam("to", e.target.value || undefined)}
+              id="cari-buku-besar"
+              value={cari}
+              placeholder={t("ledger.cariPlaceholder")}
+              onChange={(e) => {
+                setCari(e.target.value);
+                setHalaman(1);
+              }}
             />
           </div>
           <div className="flex items-end">
@@ -146,9 +194,9 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
                       {formatRupiah(ledger.opening)}
                     </TableCell>
                   </TableRow>
-                  {ledger.rows.map((row, idx) => (
+                  {potong.baris.map((row, idx) => (
                     <TableRow
-                      key={idx}
+                      key={`${row.journalId}-${idx}`}
                       className="cursor-pointer hover:bg-muted/50"
                       onClick={() =>
                         startTransition(() =>
@@ -157,7 +205,15 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
                       }
                     >
                       <TableCell className="whitespace-nowrap">{formatDate(row.date)}</TableCell>
-                      <TableCell className="max-w-[320px] truncate">{row.description}</TableCell>
+                      <TableCell className="max-w-[320px] truncate">
+                        <Link
+                          href={`/backoffice/finance/journals/${row.journalId}`}
+                          className="hover:underline underline-offset-4"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {row.keterangan}
+                        </Link>
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {row.debit > 0 ? formatRupiah(row.debit) : "—"}
                       </TableCell>
@@ -181,6 +237,29 @@ export function AccountLedgerClient({ accountId, ledger, filters }: Props) {
                   </TableRow>
                 </TableFooter>
               </Table>
+              {cari.trim() && tersaring.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">{t("ledger.cariKosong")}</p>
+              ) : null}
+              {tersaring.length > per ? (
+                <Pagination
+                  page={potong.halaman}
+                  totalPages={potong.jumlahHalaman}
+                  onPageChange={setHalaman}
+                  totalCount={tersaring.length}
+                  pageSize={per}
+                />
+              ) : null}
+              {ledger.rows.length > 25 ? (
+                <div className="mt-2 flex justify-end">
+                  <UkuranHalaman
+                    nilai={per}
+                    onUbah={(n) => {
+                      setPer(n);
+                      setHalaman(1);
+                    }}
+                  />
+                </div>
+              ) : null}
             </div>
           )}
         </CardContent>

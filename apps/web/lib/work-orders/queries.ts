@@ -1,10 +1,17 @@
 import { prisma } from '@elorae/db';
+import { cariTeks } from '@/lib/db/cari-teks';
+import { whereWoTerlambat } from '@/lib/production/terlambat';
+import { angkaSetoranWo } from '@/lib/production/setoran-wo';
 
 export type ListWorkOrdersFilters = {
   status?: string;
   vendorId?: string;
   fromDate?: Date;
   toDate?: Date;
+  /** Cari nomor WO, nama/kode vendor, atau nama/SKU barang jadi (server, seluruh data). */
+  q?: string;
+  /** Hanya WO aktif yang lewat tanggal target (lib/production/terlambat.ts). */
+  terlambat?: boolean;
 };
 
 export type ListWorkOrdersOpts = {
@@ -33,6 +40,14 @@ const workOrderListInclude = {
       receipts: true,
     },
   },
+  // Angka setoran di daftar dihitung dari dokumen penerimaan, sama dengan rincian WO.
+  receipts: {
+    select: {
+      qtyReceived: true,
+      qtyRejected: true,
+      qtyAccepted: true,
+    },
+  },
 } as const;
 
 function serializeWorkOrderRow(wo: {
@@ -58,6 +73,7 @@ function serializeWorkOrderRow(wo: {
   vendor: { name: string; code: string };
   finishedGood: { id: string; sku: string; nameId: string; nameEn: string };
   _count: { issues: number; receipts: number };
+  receipts?: Array<{ qtyReceived: unknown; qtyRejected: unknown; qtyAccepted: unknown }>;
 }) {
   return {
     id: wo.id,
@@ -82,6 +98,7 @@ function serializeWorkOrderRow(wo: {
     vendor: wo.vendor,
     finishedGood: wo.finishedGood,
     _count: wo._count,
+    setoran: angkaSetoranWo({ plannedQty: wo.plannedQty, actualQty: wo.actualQty, receipts: wo.receipts ?? [] }),
   };
 }
 
@@ -96,6 +113,26 @@ export async function listWorkOrders(
   }
   if (filters?.vendorId) {
     where.vendorId = filters.vendorId;
+  }
+  const q = filters?.q?.trim();
+  if (q) {
+    where.OR = [
+      { docNumber: cariTeks(q) },
+      { vendor: { name: cariTeks(q) } },
+      { vendor: { code: cariTeks(q) } },
+      { finishedGood: { nameId: cariTeks(q) } },
+      { finishedGood: { sku: cariTeks(q) } },
+    ];
+  }
+  if (filters?.terlambat) {
+    const telat = whereWoTerlambat();
+    // Saringan status yang dipilih tetap berlaku bila termasuk status aktif.
+    where.status = filters.status
+      ? (telat.status.in as string[]).includes(filters.status)
+        ? filters.status
+        : { in: [] }
+      : telat.status;
+    where.targetDate = telat.targetDate;
   }
   if (filters?.fromDate || filters?.toDate) {
     where.createdAt = {};

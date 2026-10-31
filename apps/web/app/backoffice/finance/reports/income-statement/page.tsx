@@ -5,11 +5,13 @@ import { parseDateOnly, parseDateOnlyEnd, endOfTodayJakarta } from "@/lib/date-o
 import { getAccountBalances } from "@/lib/finance/reports/balances";
 import { buildIncomeStatement } from "@/lib/finance/reports/income-statement";
 import { IncomeStatementClient } from "./IncomeStatementClient";
+import { aksesSpanduk, bacaKesiapanBukuBesar, hariIniWib } from "../../_kesiapan/baca";
+import { adaMutasiLabaRugi } from "../../_kesiapan/kesiapan";
 
 export const dynamic = "force-dynamic";
 
 type PageProps = {
-  searchParams: Promise<{ from?: string; to?: string; zero?: string }>;
+  searchParams: Promise<{ from?: string; to?: string; nol?: string; zero?: string }>;
 };
 
 export default async function IncomeStatementPage({ searchParams }: PageProps) {
@@ -25,15 +27,19 @@ export default async function IncomeStatementPage({ searchParams }: PageProps) {
   const to = parseDateOnlyEnd(sp.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(sp.from ?? "");
 
-  const includeZero = sp.zero === "1";
+  const nol = sp.nol === "1" || sp.zero === "1";
 
-  const balances = await getAccountBalances({ from, to });
-  const report = buildIncomeStatement(balances, { includeZero });
+  const [balances, kesiapan] = await Promise.all([getAccountBalances({ from, to }), bacaKesiapanBukuBesar()]);
+  const report = buildIncomeStatement(balances, { includeZero: nol });
 
   return (
     <IncomeStatementClient
       report={report}
-      filters={{ from: sp.from ?? "", to: sp.to ?? "", zero: includeZero }}
+      filters={{ from: sp.from ?? "", to: sp.to ?? "", nol }}
+      adaMutasi={adaMutasiLabaRugi(report)}
+      hariIni={hariIniWib()}
+      kesiapan={kesiapan}
+      akses={aksesSpanduk(permissions)}
     />
   );
 }

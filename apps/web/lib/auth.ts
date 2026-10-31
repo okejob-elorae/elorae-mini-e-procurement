@@ -6,79 +6,13 @@ import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@elorae/db";
 import { Role } from "@elorae/db";
-
-type RolePayload = {
-  role: Role;
-  roleId: string | null;
-  roleName: string;
-  permissions: string[];
-  permissionsVersion: number | undefined;
-  passwordFingerprint: string | null;
-};
-
-type UserWithRole = {
-  id: string;
-  role: Role;
-  roleId: string | null;
-  passwordHash: string | null;
-  roleDefinition: {
-    id: string;
-    name: string;
-    isSystem: boolean;
-    permissionsVersion: number;
-    permissions: Array<{ permission: { code: string } }>;
-  } | null;
-};
+import { ServerUnavailableSignin, TooManyAttemptsSignin } from "@/lib/auth/login-errors";
+import { loginThrottle, throttleKey } from "@/lib/auth/login-throttle";
+import { ingatIsiSesi, isiSesiDari, segarkanToken } from "@/lib/auth/segarkan-sesi";
 
 function fingerprintPassword(passwordHash: string | null | undefined): string | null {
   if (!passwordHash) return null;
   return createHash("sha256").update(passwordHash).digest("hex");
-}
-
-function rolePayloadFromUser(user: UserWithRole): RolePayload {
-  let permissions: string[] = [];
-  let roleId: string | null = null;
-  let roleName: string = user.role;
-  let permissionsVersion: number | undefined;
-
-  if (user.roleDefinition) {
-    roleId = user.roleDefinition.id;
-    roleName = user.roleDefinition.name;
-    permissionsVersion = user.roleDefinition.permissionsVersion;
-    if (user.roleDefinition.isSystem) {
-      permissions = ["*"];
-    } else {
-      permissions = user.roleDefinition.permissions.map((rp) => rp.permission.code);
-    }
-  }
-
-  return {
-    role: user.role,
-    roleId,
-    roleName,
-    permissions,
-    permissionsVersion,
-    passwordFingerprint: fingerprintPassword(user.passwordHash),
-  };
-}
-
-async function loadRolePayload(userId: string): Promise<RolePayload | null> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      roleDefinition: {
-        include: {
-          permissions: {
-            include: {
-              permission: true,
-            },
-          },
-        },
-      },
-    },
-  });
-  if (!user) return null;
-  return rolePayloadFromUser(user as UserWithRole);
 }
 
 /** Marker JWT for an invalidated session — proxy must treat as logged out and clear cookies. */
@@ -127,21 +61,47 @@ export const {
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-          include: {
-            roleDefinition: {
-              include: {
-                permissions: {
-                  include: {
-                    permission: true,
+        const key = throttleKey(credentials.email as string);
+        if (loginThrottle.retryAfterMs(key) > 0) {
+          throw new TooManyAttemptsSignin();
+        }
+
+        // A database that cannot be reached must not read as a wrong password:
+        // the form would tell the user to retype a password that was right.
+        let user;
+        try {
+          user = await prisma.user.findUnique({
+            where: { email: credentials.email as string },
+            include: {
+              roleDefinition: {
+                include: {
+                  permissions: {
+                    include: {
+                      permission: true,
+                    },
                   },
                 },
               },
             },
-          },
-        });
+          });
+        } catch (err) {
+          console.error("[auth] user lookup failed during sign-in", err);
+          throw new ServerUnavailableSignin();
+        }
 
+        // Percobaan ini dicatat DULU sebagai gagal, baru sandinya dicocokkan —
+        // pola `cobaPin` di app/actions/security/pin-auth.ts. Dulu gagal dicatat
+        // sesudah bcrypt, jadi tebakan serentak semuanya melihat nol gagal dan
+        // semuanya sampai ke bcrypt (terukur: 8 dari 8). Periksa-lalu-catat di
+        // bawah tidak punya `await` di antaranya, jadi atomik di satu proses:
+        // paling banyak lima per jendela yang sampai ke bcrypt. Sesudah pencarian
+        // pengguna, supaya basis data yang mati tidak dihitung sebagai salah.
+        if (loginThrottle.retryAfterMs(key) > 0) {
+          throw new TooManyAttemptsSignin();
+        }
+        loginThrottle.recordFailure(key);
+
+        // Email tak terdaftar ikut dihitung: responsnya sama dengan sandi salah.
         if (!user || !user.passwordHash) {
           return null;
         }
@@ -155,24 +115,24 @@ export const {
           return null;
         }
 
-        const payload = rolePayloadFromUser(user as UserWithRole);
+        loginThrottle.reset(key);
+
+        // Peran sistem (ADMIN) mendapat wildcard — aturan yang sama dengan penyegaran sesi.
+        const isi = isiSesiDari(user);
+        ingatIsiSesi(user.id, isi);
 
         return {
           id: user.id,
           email: user.email,
           name: user.name,
-          role: payload.role,
-          roleId: payload.roleId,
-          roleName: payload.roleName,
-          permissions: payload.permissions,
-          permissionsVersion: payload.permissionsVersion,
-          passwordFingerprint: payload.passwordFingerprint,
+          ...isi,
+          passwordFingerprint: fingerprintPassword(user.passwordHash),
         };
       },
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
         token.role = (user as any).role as Role;
@@ -182,9 +142,11 @@ export const {
         token.permissionsVersion = (user as any).permissionsVersion as
           | number
           | undefined;
+        token.assignedStoreId = ((user as any).assignedStoreId ?? null) as string | null;
         token.passwordFingerprint = (user as any).passwordFingerprint as
           | string
           | null;
+        token.disegarkanPada = Date.now();
         delete (token as { sessionInvalid?: boolean }).sessionInvalid;
         return token;
       }
@@ -195,18 +157,26 @@ export const {
 
       if (!token.id) return token;
 
-      // Cheap probe: role identity + password fingerprint + permissionsVersion.
-      const probe = await prisma.user.findUnique({
-        where: { id: token.id as string },
-        select: {
-          role: true,
-          roleId: true,
-          passwordHash: true,
-          roleDefinition: {
-            select: { name: true, permissionsVersion: true },
+      // Cheap probe: role identity + password fingerprint + permissionsVersion + SPG store.
+      let probe;
+      try {
+        probe = await prisma.user.findUnique({
+          where: { id: token.id as string },
+          select: {
+            role: true,
+            roleId: true,
+            passwordHash: true,
+            assignedStoreId: true,
+            roleDefinition: {
+              select: { permissionsVersion: true },
+            },
           },
-        },
-      });
+        });
+      } catch (err) {
+        // A momentary database outage must not log everyone out; the next request checks again.
+        console.error("[auth] session probe failed; keeping the current token", err);
+        return token;
+      }
       if (!probe) return invalidatedToken();
 
       const passwordFingerprint = fingerprintPassword(probe.passwordHash);
@@ -222,29 +192,18 @@ export const {
         return invalidatedToken();
       }
 
-      const permissionsVersion = probe.roleDefinition?.permissionsVersion;
       const roleChanged =
         token.role !== probe.role ||
         token.roleId !== probe.roleId ||
-        token.permissionsVersion !== permissionsVersion;
+        token.permissionsVersion !== probe.roleDefinition?.permissionsVersion ||
+        (token.assignedStoreId ?? null) !== (probe.assignedStoreId ?? null);
 
-      if (roleChanged) {
-        const payload = await loadRolePayload(token.id as string);
-        if (!payload) return invalidatedToken();
-        token.role = payload.role;
-        token.roleId = payload.roleId;
-        token.roleName = payload.roleName;
-        token.permissions = payload.permissions;
-        token.permissionsVersion = payload.permissionsVersion;
-        token.passwordFingerprint = payload.passwordFingerprint;
-        return token;
-      }
-
-      token.role = probe.role;
-      token.roleId = probe.roleId;
-      token.roleName = probe.roleDefinition?.name ?? probe.role;
-      token.passwordFingerprint = passwordFingerprint;
-      return token;
+      // Role, permissions and the SPG's fixed store are re-read through lib/auth/segarkan-sesi.ts:
+      // at once when the probe saw a change or the roles page called `update()`, otherwise at most
+      // once a minute. An account that no longer exists ends the session.
+      const refreshed = await segarkanToken(token, { paksa: trigger === "update" || roleChanged });
+      if (!refreshed) return invalidatedToken();
+      return refreshed;
     },
     async session({ session, token }) {
       if (
@@ -258,6 +217,7 @@ export const {
       session.user.roleId = token.roleId as string | null;
       session.user.roleName = token.roleName as string;
       session.user.permissions = (token.permissions || []) as string[];
+      session.user.assignedStoreId = (token.assignedStoreId ?? null) as string | null;
       return session;
     },
   },

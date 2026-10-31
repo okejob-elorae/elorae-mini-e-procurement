@@ -155,11 +155,11 @@ function renderSingleItemTable(
           <td>${esc(m.description)}</td>
           <td>${esc(m.notes?.trim() ? m.notes : '-')}</td>
           <td class="uom">${esc(m.variantSku ?? '-')}</td>
-          <td class="right">${m.in != null ? Number(m.in).toLocaleString() : '—'}</td>
-          <td class="right">${m.out != null ? Number(m.out).toLocaleString() : '—'}</td>
-          <td class="right">${Number(m.balance).toLocaleString()}</td>
-          <td class="right">${m.unitCost != null ? `Rp ${Number(m.unitCost).toLocaleString()}` : '—'}</td>
-          <td class="right">${m.balanceValue != null ? `Rp ${Number(m.balanceValue).toLocaleString()}` : '—'}</td>
+          <td class="right">${m.in != null ? Number(m.in).toLocaleString('id-ID') : '—'}</td>
+          <td class="right">${m.out != null ? Number(m.out).toLocaleString('id-ID') : '—'}</td>
+          <td class="right">${Number(m.balance).toLocaleString('id-ID')}</td>
+          <td class="right">${m.unitCost != null ? `Rp ${Number(m.unitCost).toLocaleString('id-ID')}` : '—'}</td>
+          <td class="right">${m.balanceValue != null ? `Rp ${Number(m.balanceValue).toLocaleString('id-ID')}` : '—'}</td>
         </tr>`
           )
           .join('');
@@ -196,9 +196,9 @@ function renderAggregateMovementTable(
           <td class="uom">${esc(m.docNumber ?? '')}</td>
           <td>${esc(m.description)}</td>
           <td>${esc(m.notes?.trim() ? m.notes : '-')}</td>
-          <td class="right">${m.in != null ? Number(m.in).toLocaleString() : '—'}</td>
-          <td class="right">${m.out != null ? Number(m.out).toLocaleString() : '—'}</td>
-          <td class="right">${Number(m.balance).toLocaleString()}</td>
+          <td class="right">${m.in != null ? Number(m.in).toLocaleString('id-ID') : '—'}</td>
+          <td class="right">${m.out != null ? Number(m.out).toLocaleString('id-ID') : '—'}</td>
+          <td class="right">${Number(m.balance).toLocaleString('id-ID')}</td>
         </tr>`
           )
           .join('');
@@ -246,19 +246,19 @@ export function buildStockCardPrintHtml(opts: BuildStockCardPrintHtmlOptions): s
   <div class="summary-strip">
     <div>
       <div class="sk">${esc(labels.openingBalance)}</div>
-      <div class="sv">${Number(opts.openingBalance).toLocaleString()} ${esc(opts.uomCode)}</div>
+      <div class="sv">${Number(opts.openingBalance).toLocaleString('id-ID')} ${esc(opts.uomCode)}</div>
     </div>
     <div>
       <div class="sk">${esc(labels.closingBalance)}</div>
-      <div class="sv">${Number(opts.closingBalance).toLocaleString()} ${esc(opts.uomCode)}</div>
+      <div class="sv">${Number(opts.closingBalance).toLocaleString('id-ID')} ${esc(opts.uomCode)}</div>
     </div>
     <div>
       <div class="sk">${esc(labels.openingValue)}</div>
-      <div class="sv">${opts.openingValue != null ? `Rp ${Number(opts.openingValue).toLocaleString()}` : '—'}</div>
+      <div class="sv">${opts.openingValue != null ? `Rp ${Number(opts.openingValue).toLocaleString('id-ID')}` : '—'}</div>
     </div>
     <div>
       <div class="sk">${esc(labels.closingValue)}</div>
-      <div class="sv">${opts.closingValue != null ? `Rp ${Number(opts.closingValue).toLocaleString()}` : '—'}</div>
+      <div class="sv">${opts.closingValue != null ? `Rp ${Number(opts.closingValue).toLocaleString('id-ID')}` : '—'}</div>
     </div>
   </div>
 
@@ -285,8 +285,8 @@ ${printPageLandscape}
         (it) => `<section class="item-block">
     <h2 class="item-heading">${esc(it.sku)} — ${esc(it.name)}</h2>
     <p class="item-meta">
-      ${esc(labels.openingBalance)}: ${Number(it.openingBalance).toLocaleString()} ${esc(it.uomCode)}
-      · ${esc(labels.closingBalance)}: ${Number(it.closingBalance).toLocaleString()} ${esc(it.uomCode)}
+      ${esc(labels.openingBalance)}: ${Number(it.openingBalance).toLocaleString('id-ID')} ${esc(it.uomCode)}
+      · ${esc(labels.closingBalance)}: ${Number(it.closingBalance).toLocaleString('id-ID')} ${esc(it.uomCode)}
     </p>
     ${renderAggregateMovementTable(it.movements, labels)}
   </section>`
@@ -328,8 +328,8 @@ ${printPageLandscape}
       (it) => `<section class="item-block">
     <h2 class="item-heading">${esc(it.sku)} — ${esc(it.name)}</h2>
     <p class="item-meta">
-      ${esc(labels.openingBalance)}: ${Number(it.openingBalance).toLocaleString()} ${esc(it.uomCode)}
-      · ${esc(labels.closingBalance)}: ${Number(it.closingBalance).toLocaleString()} ${esc(it.uomCode)}
+      ${esc(labels.openingBalance)}: ${Number(it.openingBalance).toLocaleString('id-ID')} ${esc(it.uomCode)}
+      · ${esc(labels.closingBalance)}: ${Number(it.closingBalance).toLocaleString('id-ID')} ${esc(it.uomCode)}
     </p>
     ${renderAggregateMovementTable(it.movements, labels)}
   </section>`

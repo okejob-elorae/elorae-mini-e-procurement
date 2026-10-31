@@ -71,7 +71,7 @@ export function StoreEditForm({ store, visitId }: Props) {
   }
 
   return (
-    <Card>
+    <Card className="py-0">
       <CardContent className="p-4 space-y-3">
         <p className="text-sm font-semibold">{t("title")}</p>
         <div className="space-y-1">

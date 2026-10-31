@@ -16,7 +16,7 @@
  * so re-running against an already-populated local DB is safe.
  */
 import "dotenv/config";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+import { createDbAdapter } from "../src/adapter";
 import { PrismaClient } from "../generated/prisma/client";
 import { appendSeedOpeningBalances } from "./seed-ledger";
 
@@ -69,8 +69,8 @@ async function main() {
   const destUrl = requireEnv("DEST_DATABASE_URL");
   assertNotProdTunnel(destUrl);
 
-  const src = new PrismaClient({ adapter: new PrismaMariaDb(withConnectTimeout(srcUrl)) });
-  const dst = new PrismaClient({ adapter: new PrismaMariaDb(destUrl) });
+  const src = new PrismaClient({ adapter: createDbAdapter(withConnectTimeout(srcUrl)) });
+  const dst = new PrismaClient({ adapter: createDbAdapter(destUrl) });
 
   try {
     // ---------- Prerequisite lookups (FKs referenced by Item) ----------

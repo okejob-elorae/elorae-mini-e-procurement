@@ -6,7 +6,20 @@ export type OpnameLineRow = {
   counted: number | null;
   variance: number | null;
   hadDriftWarning?: boolean;
+  /** Baris stok gabungan (tanpa varian) dari barang yang juga punya baris per varian. */
+  gabungan?: boolean;
 };
+
+/**
+ * Tandai baris tanpa varian milik barang yang di opname yang sama juga punya
+ * baris per varian: tanpa tanda, "Celana Jeans Kulot Nara 0 0 0" di samping
+ * baris -28/-30/-32 terbaca seperti barang ganda. Barang tanpa varian sama
+ * sekali tidak ditandai.
+ */
+export function tandaiGabungan<T extends { label: string; sublabel?: string }>(baris: T[]): Array<T & { gabungan?: boolean }> {
+  const punyaVarian = new Set(baris.filter((b) => b.sublabel).map((b) => b.label));
+  return baris.map((b) => (!b.sublabel && punyaVarian.has(b.label) ? { ...b, gabungan: true } : b));
+}
 
 export type OpnameSummary = {
   totalLines: number;
@@ -37,15 +50,17 @@ export function buildItemLines(
     hadDriftWarning?: boolean;
   }>,
 ): OpnameLineRow[] {
-  return items.map((row) => ({
-    id: row.id,
-    label: row.itemName,
-    sublabel: row.variantSku?.trim() || undefined,
-    snapshot: Number(row.snapshotQty),
-    counted: row.countedQty != null ? Number(row.countedQty) : null,
-    variance: row.variance != null ? Number(row.variance) : null,
-    hadDriftWarning: row.hadDriftWarning,
-  }));
+  return tandaiGabungan(
+    items.map((row) => ({
+      id: row.id,
+      label: row.itemName,
+      sublabel: row.variantSku?.trim() || undefined,
+      snapshot: Number(row.snapshotQty),
+      counted: row.countedQty != null ? Number(row.countedQty) : null,
+      variance: row.variance != null ? Number(row.variance) : null,
+      hadDriftWarning: row.hadDriftWarning,
+    })),
+  );
 }
 
 export function buildRollLines(

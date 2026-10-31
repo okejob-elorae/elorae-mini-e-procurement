@@ -1,20 +1,35 @@
 import type { NextConfig } from 'next';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import withPWA from 'next-pwa';
 import withSerwistInit from "@serwist/next";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const appVersion: string = JSON.parse(readFileSync(path.join(here, 'package.json'), 'utf8')).version;
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  // The login footer shows this instead of a hardcoded "v1.0.0" that never moved.
+  env: {
+    NEXT_PUBLIC_APP_VERSION: appVersion,
+  },
   typescript: {
     ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb"],
+  /*
+   * `tesseract.js` DIBIARKAN EKSTERNAL, tidak ikut dibundel.
+   *
+   * Ia memuat inti WASM-nya lewat `require` biasa lalu menjalankannya di worker
+   * thread dengan jalur berkas. Sebuah bundler yang memindahkan berkas-berkas
+   * itu memutus keduanya, dan putusnya baru ketahuan saat berjalan — bukan saat
+   * dibangun. Model bahasanya sendiri ada di `apps/web/tessdata` dan harus ikut
+   * disalin ke image (lihat Dockerfile).
+   */
+  serverExternalPackages: ["@prisma/client", "@prisma/adapter-mariadb", "mariadb", "@prisma/adapter-pg", "pg", "tesseract.js"],
   // Packer videos can be tens of MB. Default proxy body buffer is 10MB and
   // truncates multipart → "Failed to parse body as FormData".
   experimental: {

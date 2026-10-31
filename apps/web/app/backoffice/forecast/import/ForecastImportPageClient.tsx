@@ -1,13 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Info, Trash2 } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, Info, Trash2, Upload } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { EmptyState } from '@/components/ui/empty-state';
+import { labelBulanTahun, namaMarketplace } from '../label-marketplace';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -89,6 +101,8 @@ export function ForecastImportPageClient() {
   const [periodYear, setPeriodYear] = useState(String(new Date().getFullYear()));
   const [file, setFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
+  const inputBerkas = useRef<HTMLInputElement>(null);
+  const [akanDihapus, setAkanDihapus] = useState<SalesHistoryImportSummary | null>(null);
   const [uploading, setUploading] = useState(false);
   const [imports, setImports] = useState<SalesHistoryImportSummary[]>([]);
   const [coverage, setCoverage] = useState<DataCoverage | null>(null);
@@ -129,8 +143,8 @@ export function ForecastImportPageClient() {
   }, []);
 
   useEffect(() => {
-    refresh().catch((err) => toast.error(err instanceof Error ? err.message : 'Load failed'));
-  }, [refresh]);
+    refresh().catch((err) => toast.error(err instanceof Error ? err.message : t('import.loadFailed')));
+  }, [refresh, t]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(imports.length / historyPageSize));
@@ -148,7 +162,7 @@ export function ForecastImportPageClient() {
 
   const handleUpload = async () => {
     if (!file) {
-      toast.error('Select a file');
+      toast.error(t('import.selectFile'));
       return;
     }
     setUploading(true);
@@ -165,7 +179,7 @@ export function ForecastImportPageClient() {
       });
       const res = (await response.json()) as ImportApiResponse;
       if (!response.ok || !res.success) {
-        toast.error(res.error ?? 'Import failed');
+        toast.error(res.error ?? t('import.failed'));
         return;
       }
       toast.success(
@@ -179,31 +193,21 @@ export function ForecastImportPageClient() {
       setFileInputKey((k) => k + 1);
       await refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Import failed');
+      toast.error(err instanceof Error ? err.message : t('import.failed'));
     } finally {
       setUploading(false);
     }
   };
 
+  // Konfirmasi lewat AlertDialog aplikasi (dulu `confirm()` bawaan peramban).
   const handleDelete = async (row: SalesHistoryImportSummary) => {
-    const period = `${MONTHS.find((m) => m.value === row.periodMonth)?.label ?? row.periodMonth} ${row.periodYear}`;
-    if (
-      !confirm(
-        t('import.deleteConfirm', {
-          channel: row.channel,
-          period,
-          count: String(row.importedRows),
-        })
-      )
-    ) {
-      return;
-    }
+    setAkanDihapus(null);
     const res = await deleteSalesHistoryImport(row.id);
     if (!res.success) {
-      toast.error(res.error ?? 'Delete failed');
+      toast.error(res.error ?? t('import.deleteFailed'));
       return;
     }
-    toast.success('Import deleted');
+    toast.success(t('import.deleted'));
     await refresh();
   };
 
@@ -218,7 +222,7 @@ export function ForecastImportPageClient() {
       setSkippedRows(result.rows);
       setSkippedDetailAvailable(result.detailAvailable);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to load skipped rows');
+      toast.error(err instanceof Error ? err.message : t('import.skippedLoadFailed'));
       setSkippedModalOpen(false);
       setSkippedModalImport(null);
     } finally {
@@ -232,22 +236,22 @@ export function ForecastImportPageClient() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/backoffice/forecast">
+          <Link href="/backoffice/forecast" aria-label={t('backToForecast')} title={t('backToForecast')}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <div>
-          <h1 className="text-2xl font-bold">{t('import.title')}</h1>
-          <p className="text-muted-foreground">{t('subtitle')}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold">{t('import.judulKalimat')}</h1>
+          <TombolBantuan judul={t('import.judulKalimat')} />
         </div>
       </div>
 
       <Card className="py-4">
         <CardHeader>
-          <CardTitle>Upload</CardTitle>
+          <CardTitle>{t('import.uploadTitle')}</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 lg:grid-cols-12">
@@ -265,7 +269,7 @@ export function ForecastImportPageClient() {
             </div>
 
             <div className="grid gap-2 lg:col-span-2">
-              <Label>{t('import.period')} (bulan)</Label>
+              <Label>{t('import.periodMonth')}</Label>
               <Select value={periodMonth} onValueChange={setPeriodMonth}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -281,7 +285,7 @@ export function ForecastImportPageClient() {
             </div>
 
             <div className="grid gap-2 lg:col-span-2">
-              <Label>Tahun</Label>
+              <Label>{t('import.periodYear')}</Label>
               <Select value={periodYear} onValueChange={setPeriodYear}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
@@ -297,13 +301,26 @@ export function ForecastImportPageClient() {
             </div>
 
             <div className="grid gap-2 lg:col-span-4">
-              <Label>File (.xlsx)</Label>
-              <Input
+              <Label htmlFor="berkas-impor">{t('import.berkasLabel')}</Label>
+              {/* Tombol sendiri: kotak berkas bawaan peramban berteks Inggris ("Choose File"). */}
+              <input
+                id="berkas-impor"
+                ref={inputBerkas}
                 key={fileInputKey}
                 type="file"
+                hidden
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
+              <div className="flex min-w-0 items-center gap-2">
+                <Button type="button" variant="outline" onClick={() => inputBerkas.current?.click()}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  {t('import.pilihBerkas')}
+                </Button>
+                <span className="min-w-0 truncate text-sm text-muted-foreground">
+                  {file ? file.name : t('import.belumAdaBerkas')}
+                </span>
+              </div>
             </div>
 
             <div className="lg:col-span-2 flex items-end">
@@ -313,9 +330,7 @@ export function ForecastImportPageClient() {
             </div>
           </div>
 
-          {file && (
-            <p className="text-xs text-muted-foreground truncate">Selected: {file.name}</p>
-          )}
+
         </CardContent>
       </Card>
 
@@ -352,13 +367,17 @@ export function ForecastImportPageClient() {
           <CardTitle>{t('import.history')}</CardTitle>
         </CardHeader>
         <CardContent className="overflow-x-auto">
+          {imports.length === 0 ? (
+            <EmptyState icon={FileSpreadsheet} title={t('import.riwayatKosong')} />
+          ) : (
+          <>
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Channel</TableHead>
-                <TableHead>Periode</TableHead>
-                <TableHead>File</TableHead>
-                <TableHead className="text-right">Imported</TableHead>
+                <TableHead>{t('import.channel')}</TableHead>
+                <TableHead>{t('import.period')}</TableHead>
+                <TableHead>{t('import.file')}</TableHead>
+                <TableHead className="text-right">{t('import.importedColumn')}</TableHead>
                 <TableHead className="text-right">
                   <span className="inline-flex items-center justify-end gap-1">
                     {t('import.unmappedSkusColumn')}
@@ -407,12 +426,10 @@ export function ForecastImportPageClient() {
             <TableBody>
               {pagedImports.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>{row.channel}</TableCell>
-                  <TableCell>
-                    {row.periodMonth}/{row.periodYear}
-                  </TableCell>
+                  <TableCell>{namaMarketplace(row.channel)}</TableCell>
+                  <TableCell>{labelBulanTahun(row.periodMonth, row.periodYear)}</TableCell>
                   <TableCell className="max-w-[200px] truncate">{row.fileName}</TableCell>
-                  <TableCell className="text-right">{row.importedRows.toLocaleString()}</TableCell>
+                  <TableCell className="text-right">{row.importedRows.toLocaleString('id-ID')}</TableCell>
                   <TableCell className="text-right">
                     <span
                       className={
@@ -421,7 +438,7 @@ export function ForecastImportPageClient() {
                           : "tabular-nums text-muted-foreground"
                       }
                     >
-                      {row.unmappedSkuCount.toLocaleString()}
+                      {row.unmappedSkuCount.toLocaleString('id-ID')}
                     </span>
                   </TableCell>
                   <TableCell className="text-right">
@@ -432,14 +449,20 @@ export function ForecastImportPageClient() {
                         className="min-w-10 tabular-nums"
                         onClick={() => handleViewSkipped(row)}
                       >
-                        {row.skippedRows.toLocaleString()}
+                        {row.skippedRows.toLocaleString('id-ID')}
                       </Button>
                     ) : (
                       <span className="tabular-nums text-muted-foreground">0</span>
                     )}
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" onClick={() => handleDelete(row)}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setAkanDihapus(row)}
+                      aria-label={t('import.deleteImport')}
+                      title={t('import.deleteImport')}
+                    >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
                   </TableCell>
@@ -454,8 +477,38 @@ export function ForecastImportPageClient() {
             totalCount={imports.length}
             pageSize={historyPageSize}
           />
+          </>
+          )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={akanDihapus != null} onOpenChange={(buka) => !buka && setAkanDihapus(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('import.hapusJudul')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {akanDihapus
+                ? t('import.deleteConfirm', {
+                    channel: namaMarketplace(akanDihapus.channel),
+                    period: labelBulanTahun(akanDihapus.periodMonth, akanDihapus.periodYear),
+                    count: akanDihapus.importedRows.toLocaleString('id-ID'),
+                  })
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('import.jangan')}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (akanDihapus) void handleDelete(akanDihapus);
+              }}
+            >
+              {t('import.deleteImport')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog
         open={skippedModalOpen}
@@ -472,7 +525,7 @@ export function ForecastImportPageClient() {
             <DialogTitle>{t('import.skippedModalTitle')}</DialogTitle>
             <DialogDescription>
               {skippedModalImport
-                ? `${skippedModalImport.channel} · ${skippedModalImport.periodMonth}/${skippedModalImport.periodYear} · ${skippedModalImport.fileName}`
+                ? `${namaMarketplace(skippedModalImport.channel)} · ${labelBulanTahun(skippedModalImport.periodMonth, skippedModalImport.periodYear)} · ${skippedModalImport.fileName}`
                 : null}
             </DialogDescription>
           </DialogHeader>
@@ -538,8 +591,11 @@ export function ForecastImportPageClient() {
             )}
             <DataCoverageBar coverage={coverage} />
             <p className="mt-4 text-sm text-muted-foreground">
-              {coverage.totalArticles} articles · {coverage.totalMonthsCovered} months covered
-              · {coverage.mappingCoveragePercent}% SKU mapping
+              {t('import.coverageSummary', {
+                articles: coverage.totalArticles,
+                months: coverage.totalMonthsCovered,
+                mapping: coverage.mappingCoveragePercent,
+              })}
             </p>
           </CardContent>
         </Card>

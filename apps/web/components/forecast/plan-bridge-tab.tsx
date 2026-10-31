@@ -62,10 +62,10 @@ type EditableSuggestion = PlanTargetSuggestion & {
   overrideItemCategoryId: string | null;
 };
 
-function actionBadge(action: string) {
-  if (action === "CREATE") return <Badge className="bg-green-600">{action}</Badge>;
-  if (action === "UPDATE") return <Badge className="bg-yellow-600 text-black">{action}</Badge>;
-  return <Badge variant="secondary">{action}</Badge>;
+function actionBadge(action: string, label: string) {
+  if (action === "CREATE") return <Badge className="bg-green-600">{label}</Badge>;
+  if (action === "UPDATE") return <Badge className="bg-yellow-600 text-black">{label}</Badge>;
+  return <Badge variant="secondary">{label}</Badge>;
 }
 
 function sortSuggestions(rows: EditableSuggestion[]): EditableSuggestion[] {
@@ -109,8 +109,8 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
         setItemCategories(categories);
         setPlanYearId(pickDefaultPlanYearId(years, forecastYear));
       })
-      .catch((err) => toast.error(err instanceof Error ? err.message : "Failed to load"));
-  }, [forecastYear]);
+      .catch((err) => toast.error(err instanceof Error ? err.message : t("loadFailed")));
+  }, [forecastYear, t]);
 
   const handleGenerate = async () => {
     if (!planYearId) return;
@@ -118,7 +118,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
     try {
       const res = await suggestPlanTargets({ forecastYear, planYearId });
       if (!res.success || !res.suggestions) {
-        toast.error(res.error ?? "Failed to generate suggestions");
+        toast.error(res.error ?? t("generateFailed"));
         return;
       }
       setSuggestions(
@@ -130,7 +130,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
         }))
       );
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed");
+      toast.error(err instanceof Error ? err.message : t("generateFailed"));
     } finally {
       setLoading(false);
     }
@@ -153,7 +153,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
       .filter(Boolean) as Parameters<typeof applyPlanSuggestions>[0]["suggestions"];
 
     if (payload.length === 0) {
-      toast.error("No valid suggestions selected");
+      toast.error(t("noneSelected"));
       return;
     }
 
@@ -164,7 +164,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
       const count = (res.created ?? 0) + (res.updated ?? 0);
 
       if (!res.success && count === 0) {
-        toast.error(res.error ?? res.errors?.[0]?.message ?? "Apply failed");
+        toast.error(res.error ?? res.errors?.[0]?.message ?? t("applyFailed"));
         return;
       }
 
@@ -180,7 +180,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
 
       await handleGenerate();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Apply failed");
+      toast.error(err instanceof Error ? err.message : t("applyFailed"));
     } finally {
       setApplying(false);
     }
@@ -226,7 +226,12 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
             </SelectContent>
           </Select>
           {planYears.length === 0 && (
-            <p className="text-xs text-muted-foreground">{t("noPlanYears")}</p>
+            <p className="text-xs text-muted-foreground">
+              {t("noPlanYears")}{" "}
+              <Link href="/backoffice/production/planning" className="font-medium underline underline-offset-2">
+                {t("bukaPlanKerja")}
+              </Link>
+            </p>
           )}
           {planYears.length > 0 && editablePlanYears.length === 0 && (
             <p className="text-xs text-muted-foreground">{t("noEditablePlanYears")}</p>
@@ -239,8 +244,6 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
         )}
       </div>
 
-      <p className="text-sm text-muted-foreground">{t("note")}</p>
-
       <Card>
         <CardHeader>
           <CardTitle>{t("title")}</CardTitle>
@@ -250,8 +253,8 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
             <TableHeader>
               <TableRow>
                 <TableHead className="w-10" />
-                <TableHead>Article</TableHead>
-                <TableHead>Item Category</TableHead>
+                <TableHead>{t("article")}</TableHead>
+                <TableHead>{t("itemCategory")}</TableHead>
                 <TableHead className="text-right">{t("forecast")}</TableHead>
                 <TableHead className="text-right">{t("categoryTotal")}</TableHead>
                 <TableHead className="text-right">{t("planNow")}</TableHead>
@@ -288,7 +291,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
                         }}
                       />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="min-w-[180px] whitespace-normal">
                       <div className="font-medium">{s.productName}</div>
                       <div className="text-xs text-muted-foreground font-mono">{s.parentSku}</div>
                       {!rowEnabled && (
@@ -344,19 +347,25 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
                     </TableCell>
                     <TableCell className="text-right text-muted-foreground">
                       {s.categoryForecastTotal != null ?
-                        s.categoryForecastTotal.toLocaleString()
+                        s.categoryForecastTotal.toLocaleString('id-ID')
                       : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       {s.existingPlanTarget != null ?
-                        s.existingPlanTarget.toLocaleString()
+                        s.existingPlanTarget.toLocaleString('id-ID')
                       : "—"}
                     </TableCell>
                     <TableCell className="text-right">
-                      {(s.adjustedQty - (s.existingPlanTarget ?? 0)).toLocaleString()}
+                      {(s.adjustedQty - (s.existingPlanTarget ?? 0)).toLocaleString('id-ID')}
                     </TableCell>
                     <TableCell>
-                      {actionBadge(s.action)}
+                      {actionBadge(
+                        s.action,
+                        s.action === "CREATE" ? t("create")
+                        : s.action === "UPDATE" ? t("update")
+                        : s.action === "SKIP" ? t("skip")
+                        : s.action
+                      )}
                       {s.action === "CREATE" && !canApplyRow && (
                         <p className="text-xs text-destructive mt-1">{t("selectCategory")}</p>
                       )}
@@ -367,7 +376,7 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
               {suggestions.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
-                    Generate suggestions to review plan targets.
+                    {t("tabelKosong")}
                   </TableCell>
                 </TableRow>
               )}
@@ -386,7 +395,9 @@ export function ForecastPlanBridgeTab({ forecastYear, permissions }: PlanBridgeT
           </Button>
           {planYear && (
             <Button variant="link" asChild>
-              <Link href="/backoffice/production/planning">Open Plan Kerja {planYear.year}</Link>
+              <Link href="/backoffice/production/planning">
+                {t("openPlan", { year: planYear.year })}
+              </Link>
             </Button>
           )}
         </div>

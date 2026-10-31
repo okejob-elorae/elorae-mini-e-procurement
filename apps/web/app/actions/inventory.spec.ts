@@ -26,6 +26,11 @@ vi.mock("@/lib/notifications/actor-name", () => ({
 vi.mock("@/lib/notifications/events", () => ({
   notifyStockAdjustmentCreated: vi.fn(),
 }));
+vi.mock("@/lib/docNumber", () => ({ generateDocNumber: vi.fn() }));
+vi.mock("@/lib/db/tx-retry", () => ({ runSerializable: vi.fn() }));
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn() }));
+vi.mock("@/lib/finance/operasional/kait", () => ({ kaitStokManual: vi.fn() }));
+vi.mock("@/lib/items/queries", () => ({ itemDecimalsToNumbers: () => ({}) }));
 
 import { getInventorySnapshot, getInventoryValue, getStockAdjustments } from "./inventory";
 
@@ -112,9 +117,10 @@ describe("getInventoryValue row resolution", () => {
 describe("getStockAdjustments search", () => {
   const expectedOr = [
     { docNumber: { contains: "po-12" } },
+    { reason: { contains: "po-12" } },
+    { externalRef: { contains: "po-12" } },
     { item: { sku: { contains: "po-12" } } },
     { item: { nameId: { contains: "po-12" } } },
-    { reason: { contains: "po-12" } },
   ];
 
   beforeEach(() => {

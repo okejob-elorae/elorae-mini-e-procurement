@@ -8,9 +8,8 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle
+  CardTitle,
 } from '@/components/ui/card';
 import {
   Table,
@@ -22,11 +21,27 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatDisplayDate } from '@/lib/date-only';
 import { getWorkOrderById, getReconciliation } from '@/app/actions/production';
 import { buildReconciliationPrintHtml } from '@/lib/print/reconciliation-html';
 import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { logPrintQuietly } from '@/lib/audit/log-print-quietly';
+import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
+import { formatRupiah } from '@/lib/format/rupiah';
+import {
+  efisiensiBahan,
+  persenBertanda,
+  qtyBahan,
+  statusTampilRekon,
+  type StatusTampilRekon,
+} from '@/lib/production/rekonsiliasi-tampil';
+import { angkaSetoranWo } from '@/lib/production/setoran-wo';
+import { CatatanTanpaDokumen, RingkasSetoran } from '../../RingkasSetoran';
+import { WoTidakDitemukan } from '../../WoTidakDitemukan';
+
+/** Rupiah bertanda: "+Rp 3.031.250". */
+const rupiahBertanda = (n: number) => (n > 0 ? `+${formatRupiah(n)}` : formatRupiah(n));
 
 type ReconLine = {
   itemId: string;
@@ -56,7 +71,8 @@ export default function WorkOrderReconciliationPage() {
   const params = useParams();
   const t = useTranslations('production');
   const tWO = useTranslations('workOrders');
-  const tToasts = useTranslations('toasts');
+  const tR = useTranslations('workOrders.recon');
+  const locale = useLocale();
   const id = typeof params.id === 'string' ? params.id : '';
   const [wo, setWO] = useState<Awaited<ReturnType<typeof getWorkOrderById>>>(null);
   const [recon, setRecon] = useState<{
@@ -67,32 +83,31 @@ export default function WorkOrderReconciliationPage() {
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([getWorkOrderById(id), getReconciliation(id)])
+    // Rekonsiliasi untuk WO yang tidak ada melempar galat; yang menentukan
+    // "tidak ditemukan" adalah WO-nya, jadi galat rekonsiliasi ditangkap sendiri.
+    Promise.all([getWorkOrderById(id), getReconciliation(id).catch(() => null)])
       .then(([w, r]) => {
         setWO(w);
         setRecon(r);
+        if (w && !r) toast.error(tR('loadFailed'));
       })
-      .catch(() => toast.error('Failed to load reconciliation'))
+      .catch(() => toast.error(tR('loadFailed')))
       .finally(() => setIsLoading(false));
-  }, [id]);
+  }, [id, tR]);
 
-  const efficiencyPercent =
-    recon && recon.summary.totalIssuedValue > 0
-      ? (recon.summary.totalUsedValue / recon.summary.totalIssuedValue) * 100
-      : 0;
+  // Teoretis ÷ terpakai (lib/production/rekonsiliasi-tampil.ts); null = belum ada pemakaian.
+  const efficiencyPercent = recon ? efisiensiBahan(recon.lines) : null;
+  const labelStatus = (s: StatusTampilRekon) => tR(`status${s}`);
 
   const handleExportPDF = () => {
     if (!wo || !recon) return;
-    const printDate =
-      wo.updatedAt instanceof Date
-        ? wo.updatedAt.toLocaleDateString()
-        : wo.updatedAt
-          ? new Date(wo.updatedAt as string).toLocaleDateString()
-          : new Date().toLocaleDateString();
+    const printDate = formatDisplayDate(
+      (wo.updatedAt as Date | string | null | undefined) ?? new Date(),
+      locale
+    );
     const subtitle =
-      wo.finishedGood && typeof wo.finishedGood === 'object' && 'nameEn' in wo.finishedGood
-        ? (wo.finishedGood as { nameEn?: string; nameId?: string }).nameEn ??
-          (wo.finishedGood as { nameId?: string }).nameId
+      wo.finishedGood && typeof wo.finishedGood === 'object'
+        ? (wo.finishedGood as { nameId?: string }).nameId
         : undefined;
 
     const html = buildReconciliationPrintHtml({
@@ -103,67 +118,84 @@ export default function WorkOrderReconciliationPage() {
       efficiencyPercent,
       lines: recon.lines,
       labels: {
-        title: 'Work Order Reconciliation',
-        targetCutting: t('targetCutting'),
+        title: tR('cetak.judul'),
+        targetCutting: tWO('kebutuhanTotalRencana'),
         issuedToCmt: t('issuedToCmt'),
-        returned: 'Returned',
-        setoran: t('setoran'),
-        theoretical: 'Theoretical',
+        returned: tWO('returned'),
+        setoran: tR('terpakai'),
+        theoretical: tWO('theoretical'),
         selisih: t('selisih'),
-        value: 'Value',
-        status: 'Status',
-        varianceByMaterial: `${t('selisih')} by material`,
-        varianceByMaterialDesc: `${t('cuttingPlanned')} vs ${t('issuedToCmt')} vs ${t('setoran')}; ${t('selisihFromEstimate')} per line.`,
-        totalMaterialCost: 'Total Material Cost (Used)',
-        efficiencyPct: 'Efficiency %',
-        costVariance: 'Cost Variance',
-        usedVsIssued: 'Used vs issued value',
+        value: tWO('valueImpact'),
+        status: tWO('status'),
+        varianceByMaterial: tR('byMaterial', { selisih: t('selisih') }),
+        varianceByMaterialDesc: tR('cetak.keterangan'),
+        totalMaterialCost: tR('totalMaterialCost'),
+        efficiencyPct: tR('efficiency'),
+        costVariance: tR('costVariance'),
+        usedVsIssued: tR('cetak.efisiensiArti'),
+        wo: tR('cetak.wo'),
+        date: tR('cetak.tanggal'),
+        issuedBy: tR('cetak.dibuatOleh'),
+        material: tWO('material'),
+        statusLabels: {
+          OK: labelStatus('OK'),
+          OVER: labelStatus('OVER'),
+          UNDER: labelStatus('UNDER'),
+          BELUM_DIKIRIM: labelStatus('BELUM_DIKIRIM'),
+        },
       },
     });
 
-    printHtmlInIframe(html, 'Print reconciliation', { errorMessage: tToasts('failedToLoadForPrint') });
+    printHtmlInIframe(html, 'Print reconciliation', { errorMessage: tR('printViewFailed') });
     logPrintQuietly('WorkOrderReconciliation', String(wo.id));
   };
 
-  if (isLoading || !wo || !recon) {
+  if (isLoading) {
     return (
       <div className="flex min-h-[400px] items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
+  if (!wo) return <WoTidakDitemukan />;
+  if (!recon) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center text-sm text-muted-foreground">{tR('loadFailed')}</CardContent>
+      </Card>
+    );
+  }
+
+  const setoran = angkaSetoranWo({
+    plannedQty: wo.plannedQty,
+    actualQty: wo.actualQty,
+    receipts: ((wo as { receipts?: unknown }).receipts as Parameters<typeof angkaSetoranWo>[0]['receipts']) ?? [],
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <Link href={`/backoffice/work-orders/${id}`}>
-            <Button variant="ghost" size="icon">
+          <Button asChild variant="ghost" size="icon">
+            <Link href={`/backoffice/work-orders/${id}`} aria-label={tR('backToWO')} title={tR('backToWO')}>
               <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
+            </Link>
+          </Button>
           <div>
-            <h1 className="text-2xl font-bold">Reconciliation</h1>
+            <div className="flex items-center gap-1">
+              <h1 className="text-2xl font-bold">{tWO('reconciliationTitle')}</h1>
+              <TombolBantuan judul={tWO('reconciliationTitle')} />
+            </div>
             <p className="text-muted-foreground">{String(wo.docNumber ?? '')}</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {String(
-                Number(wo.actualQty ?? 0) < Number(wo.plannedQty)
-                  ? t('setoranSummary', {
-                      target: Number(wo.plannedQty).toLocaleString(),
-                      actual: Number(wo.actualQty ?? 0).toLocaleString(),
-                      shortfall: (Number(wo.plannedQty) - Number(wo.actualQty ?? 0)).toLocaleString(),
-                    })
-                  : t('setoranSummaryExact', {
-                      target: Number(wo.plannedQty).toLocaleString(),
-                      actual: Number(wo.actualQty ?? 0).toLocaleString(),
-                    })
-              )}
-            </p>
+            <div className="mt-1 space-y-1 text-sm text-muted-foreground">
+              <RingkasSetoran angkaWo={setoran} />
+              <CatatanTanpaDokumen angkaWo={setoran} />
+            </div>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={handleExportPDF}>
           <FileDown className="mr-2 h-4 w-4" />
-          Print / Export PDF
+          {tR('exportPdf')}
         </Button>
       </div>
 
@@ -171,36 +203,31 @@ export default function WorkOrderReconciliationPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Material Cost (Used)
+              {tR('totalMaterialCost')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{formatRupiah(recon.summary.totalUsedValue)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              {tR('efficiency')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold">
-              {recon.summary.totalUsedValue.toLocaleString(undefined, {
-                minimumFractionDigits: 2
-              })}
+              {efficiencyPercent == null
+                ? '—'
+                : `${efficiencyPercent.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Efficiency %
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">
-              {efficiencyPercent.toFixed(1)}%
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Used vs issued value
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Cost Variance
+              {tR('costVariance')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -213,10 +240,7 @@ export default function WorkOrderReconciliationPage() {
                     : ''
               }`}
             >
-              {recon.summary.netVarianceValue >= 0 ? '+' : ''}
-              {recon.summary.netVarianceValue.toLocaleString(undefined, {
-                minimumFractionDigits: 2
-              })}
+              {rupiahBertanda(recon.summary.netVarianceValue)}
             </p>
           </CardContent>
         </Card>
@@ -224,92 +248,73 @@ export default function WorkOrderReconciliationPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('selisih')} by material</CardTitle>
-          <CardDescription>
-            {t('cuttingPlanned')} vs {t('issuedToCmt')} vs {t('setoran')}; {t('selisihFromEstimate')} per line.
-          </CardDescription>
+          <CardTitle>{tR('byMaterial', { selisih: t('selisih') })}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Material</TableHead>
-                  <TableHead className="text-right" title={t('cuttingPlanned')}>{tWO('estimatedConsumptionPerPcs')}</TableHead>
-                  <TableHead className="text-right" title={t('issuedToCmt')}>{t('issuedToCmt')}</TableHead>
-                  <TableHead className="text-right">Returned</TableHead>
-                  <TableHead className="text-right">{t('setoran')}</TableHead>
-                  <TableHead className="text-right">Theoretical</TableHead>
-                  <TableHead className="text-right" title={t('selisihFromEstimate')}>{t('selisih')}</TableHead>
+                  <TableHead>{tWO('material')}</TableHead>
+                  <TableHead>{tWO('status')}</TableHead>
+                  <TableHead className="hidden text-right 2xl:table-cell">{tWO('kebutuhanTotalRencana')}</TableHead>
+                  <TableHead className="text-right">{t('issuedToCmt')}</TableHead>
+                  <TableHead className="hidden text-right 2xl:table-cell">{tWO('returned')}</TableHead>
+                  <TableHead className="text-right">{tR('terpakai')}</TableHead>
+                  <TableHead className="text-right">{tWO('theoretical')}</TableHead>
+                  <TableHead className="text-right">{t('selisih')}</TableHead>
                   <TableHead className="text-right">{t('selisih')} %</TableHead>
-                  <TableHead className="text-right">Value Impact</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">{tWO('valueImpact')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {recon.lines.map((line) => (
+                {recon.lines.map((line) => {
+                  const statusTampil = statusTampilRekon(line);
+                  return (
                   <TableRow
                     key={line.itemId}
-                    className={
-                      line.status === 'OVER'
-                        ? 'bg-amber-50 dark:bg-amber-950/20'
-                        : line.status === 'UNDER'
-                          ? 'bg-green-50 dark:bg-green-950/20'
-                          : undefined
-                    }
+                    className={statusTampil === 'OVER' ? 'bg-amber-50 dark:bg-amber-950/20' : undefined}
                   >
-                    <TableCell>
-                      <span className="font-medium">{line.itemName}</span>
-                      {line.itemSku && (
-                        <span className="ml-1 text-muted-foreground">
-                          ({line.itemSku})
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.plannedQty.toLocaleString()} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.issuedQty.toLocaleString()} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.returnedQty.toLocaleString()} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.actualUsed.toLocaleString()} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.theoreticalUsage.toLocaleString()} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.variance >= 0 ? '+' : ''}
-                      {line.variance.toLocaleString()} {line.uomCode}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.variancePercent >= 0 ? '+' : ''}
-                      {line.variancePercent.toFixed(1)}%
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {line.varianceValue >= 0 ? '+' : ''}
-                      {line.varianceValue.toLocaleString(undefined, {
-                        minimumFractionDigits: 2
-                      })}
+                    <TableCell className="min-w-[160px] whitespace-normal">
+                      <span className="block font-medium">{line.itemName}</span>
+                      {line.itemSku && <span className="block text-xs text-muted-foreground">{line.itemSku}</span>}
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant={
-                          line.status === 'OK'
-                            ? 'secondary'
-                            : line.status === 'OVER'
-                              ? 'destructive'
-                              : 'default'
+                        variant={statusTampil === 'OVER' ? 'destructive' : 'outline'}
+                        className={
+                          statusTampil === 'UNDER'
+                            ? 'border-amber-500 text-amber-700 dark:text-amber-400'
+                            : undefined
                         }
                       >
-                        {line.status}
+                        {labelStatus(statusTampil)}
                       </Badge>
                     </TableCell>
+                    <TableCell className="hidden text-right 2xl:table-cell">
+                      {qtyBahan(line.plannedQty)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {qtyBahan(line.issuedQty)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="hidden text-right 2xl:table-cell">
+                      {qtyBahan(line.returnedQty)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {qtyBahan(line.actualUsed)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {qtyBahan(line.theoreticalUsage)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {line.variance > 0 ? '+' : ''}
+                      {qtyBahan(line.variance)} {line.uomCode}
+                    </TableCell>
+                    <TableCell className="text-right">{persenBertanda(line.variancePercent)}</TableCell>
+                    <TableCell className="text-right">{rupiahBertanda(line.varianceValue)}</TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

@@ -45,19 +45,23 @@ export interface SupplierProcessWithTemplate {
 
 /**
  * FIXED  → days.
- * PER_QTY → ceil(qty / rateQty) × days, minimum 1 batch.
- *   qty null/0/negative → treat as 1 batch (minimum charge).
- *   rateQty null/0 on a PER_QTY step → data error; fall back to 1 batch (= days).
+ * PER_QTY → sebanding jumlah (keputusan pemilik 2026-10-07, sama dengan program
+ *   SSG): ceil(qty × days / rateQty), paling sedikit 1 hari. 12.000 pcs pada
+ *   "7 hari per 10.000 pcs" = 9 hari, bukan 14 (dulu dibulatkan per kelipatan).
+ *   Dikali dulu baru dibagi, supaya hasil yang bulat tetap bulat (3×10/10 = 3,
+ *   bukan 3,0000000004 → 4).
+ *   qty null/0/negative → hari langkah itu sendiri (= satu kapasitas penuh).
+ *   rateQty null/0 on a PER_QTY step → data error; fall back to days.
  */
 export function computeStepDays(step: ResolvedStep, qty: number | null): number {
   if (step.type === "FIXED") return step.days;
   const rate = step.rateQty && step.rateQty > 0 ? step.rateQty : null;
   if (!rate) {
-    console.warn("[leadtime] PER_QTY step missing rateQty; falling back to 1 batch", step.name);
+    console.warn("[leadtime] PER_QTY step missing rateQty; falling back to its days", step.name);
     return step.days;
   }
   const q = qty && qty > 0 ? qty : rate;
-  return Math.ceil(q / rate) * step.days;
+  return Math.max(1, Math.ceil((q * step.days) / rate));
 }
 
 /**

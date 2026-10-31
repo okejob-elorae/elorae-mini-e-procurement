@@ -1,8 +1,11 @@
 'use client';
 
+import { useLocale, useTranslations } from 'next-intl';
+import { namaMarketplace } from '@/app/backoffice/forecast/label-marketplace';
 import type { DataCoverage } from '@/app/actions/forecast';
+import { formatDisplayDate } from '@/lib/date-only';
 
-const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTH_NUMBERS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
 
 function buildYearRange(coverage: DataCoverage) {
   const years = new Set<number>();
@@ -21,6 +24,8 @@ function buildYearRange(coverage: DataCoverage) {
 }
 
 export function DataCoverageBar({ coverage }: { coverage: DataCoverage }) {
+  const t = useTranslations('forecast');
+  const locale = useLocale();
   const years = buildYearRange(coverage);
 
   return (
@@ -36,23 +41,25 @@ export function DataCoverageBar({ coverage }: { coverage: DataCoverage }) {
         return (
           <div key={ch.channel} className="space-y-3">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium">{ch.channel}</span>
+              <span className="font-medium">{namaMarketplace(ch.channel)}</span>
               <span className="text-muted-foreground">
-                {ch.totalRows.toLocaleString()} rows
+                {t('coverage.rows', { count: ch.totalRows.toLocaleString('id-ID') })}
                 {ch.earliestDate && ch.latestDate ?
-                  ` · ${ch.earliestDate.toLocaleDateString()} → ${ch.latestDate.toLocaleDateString()}`
+                  ` · ${formatDisplayDate(ch.earliestDate, locale)} → ${formatDisplayDate(ch.latestDate, locale)}`
                 : ''}
               </span>
             </div>
             <div className="text-xs text-muted-foreground">
-              {filled}/{totalSlots} months imported ({pct}%)
+              {t('coverage.monthsImported', { filled, total: totalSlots, pct })}
             </div>
             <div className="overflow-x-auto rounded-md border">
               <div
                 className="grid min-w-[620px] gap-1 p-2"
                 style={{ gridTemplateColumns: `64px repeat(${years.length}, minmax(84px, 1fr))` }}
               >
-                <div className="text-xs font-medium text-muted-foreground px-2 py-1">Month</div>
+                <div className="text-xs font-medium text-muted-foreground px-2 py-1">
+                  {t('monthly.month')}
+                </div>
                 {years.map((year) => (
                   <div
                     key={`${ch.channel}-year-${year}`}
@@ -61,31 +68,34 @@ export function DataCoverageBar({ coverage }: { coverage: DataCoverage }) {
                     {year}
                   </div>
                 ))}
-                {MONTH_LABELS.map((label, idx) => (
-                  <div key={`${ch.channel}-row-${label}`} className="contents">
-                    <div className="text-xs px-2 py-1 text-muted-foreground">{label}</div>
-                    {years.map((year) => {
-                      const has = monthSet.has(`${year}-${idx + 1}`);
-                      return (
-                        <div
-                          key={`${ch.channel}-${year}-${idx}`}
-                          title={`${label} ${year}${has ? ' · imported' : ' · missing'}`}
-                          className={`h-6 rounded border ${has ? activeClass : 'bg-muted/50 border-muted'}`}
-                        />
-                      );
-                    })}
-                  </div>
-                ))}
+                {MONTH_NUMBERS.map((month, idx) => {
+                  const label = t(`monthsShort.${month}`);
+                  return (
+                    <div key={`${ch.channel}-row-${month}`} className="contents">
+                      <div className="text-xs px-2 py-1 text-muted-foreground">{label}</div>
+                      {years.map((year) => {
+                        const has = monthSet.has(`${year}-${idx + 1}`);
+                        return (
+                          <div
+                            key={`${ch.channel}-${year}-${idx}`}
+                            title={`${label} ${year} · ${has ? t('coverage.imported') : t('coverage.missing')}`}
+                            className={`h-6 rounded border ${has ? activeClass : 'bg-muted/50 border-muted'}`}
+                          />
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="flex items-center gap-4 text-xs text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 <span className={`inline-block h-3 w-3 rounded border ${activeClass}`} />
-                Imported month
+                {t('coverage.importedLegend')}
               </span>
               <span className="inline-flex items-center gap-1">
                 <span className="inline-block h-3 w-3 rounded border border-muted bg-muted/50" />
-                Missing month
+                {t('coverage.missingLegend')}
               </span>
             </div>
           </div>

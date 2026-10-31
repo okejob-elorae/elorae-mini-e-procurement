@@ -4,6 +4,11 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import {
+  gagalJubelio,
+  jalankanAksiJubelio,
+  type HasilJubelio,
+} from "@/app/backoffice/jubelio/galat-jubelio";
 
 export type EligibleItem = {
   id: string;
@@ -71,61 +76,68 @@ export async function getEligibleItems(): Promise<EligibleItem[]> {
   });
 }
 
-export async function enqueueBulkMigration(itemIds: string[]): Promise<{ enqueued: number; skipped: number }> {
-  const session = await auth();
-  if (!session) throw new Error("Unauthorized");
-  requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
+export async function enqueueBulkMigration(
+  itemIds: string[],
+): Promise<HasilJubelio<{ enqueued: number; skipped: number }>> {
+  return jalankanAksiJubelio(async () => {
+    const session = await auth();
+    if (!session) return gagalJubelio("TANPA_AKSES");
+    requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-  if (itemIds.length === 0) {
-    throw new Error("No items selected");
-  }
+    if (itemIds.length === 0) {
+      return gagalJubelio("ISIAN_TIDAK_SAH", "No items selected");
+    }
 
-  const eligibleIds = new Set(
-    (await prisma.item.findMany({
-      where: {
-        id: { in: itemIds },
-        type: "FINISHED_GOOD",
-        source: "ERP",
-        jubelioProductMappings: { none: {} },
-      },
-      select: { id: true },
-    })).map((it) => it.id),
-  );
-
-  const invalid = itemIds.filter((id) => !eligibleIds.has(id));
-  if (invalid.length > 0) {
-    throw new Error(`${invalid.length} item(s) not eligible (already mapped or wrong type)`);
-  }
-
-  /* Same in-flight rule as the item page's "Buat di Jubelio" button: a push already PENDING or PROCESSING is not queued again. */
-  const inFlight = new Set(
-    (
-      await prisma.jubelioOutbox.findMany({
+    const eligibleIds = new Set(
+      (await prisma.item.findMany({
         where: {
-          entityType: "product_push",
-          entityId: { in: itemIds },
-          status: { in: ["PENDING", "PROCESSING"] },
+          id: { in: itemIds },
+          type: "FINISHED_GOOD",
+          source: "ERP",
+          jubelioProductMappings: { none: {} },
         },
-        select: { entityId: true },
-      })
-    ).map((row) => row.entityId),
-  );
-  const toEnqueue = itemIds.filter((id) => !inFlight.has(id));
-  const skipped = itemIds.length - toEnqueue.length;
+        select: { id: true },
+      })).map((it) => it.id),
+    );
 
-  if (toEnqueue.length > 0) {
-    await prisma.jubelioOutbox.createMany({
-      data: toEnqueue.map((id) => ({
-        entityType: "product_push",
-        entityId: id,
-        payload: {},
-        enqueuedById: session.user.id,
-      })),
-    });
-  }
+    const invalid = itemIds.filter((id) => !eligibleIds.has(id));
+    if (invalid.length > 0) {
+      return gagalJubelio(
+        "ISIAN_TIDAK_SAH",
+        `${invalid.length} item(s) not eligible (already mapped or wrong type)`,
+      );
+    }
 
-  revalidatePath("/backoffice/jubelio/migration");
-  return { enqueued: toEnqueue.length, skipped };
+    /* Same in-flight rule as the item page's "Buat di Jubelio" button: a push already PENDING or PROCESSING is not queued again. */
+    const inFlight = new Set(
+      (
+        await prisma.jubelioOutbox.findMany({
+          where: {
+            entityType: "product_push",
+            entityId: { in: itemIds },
+            status: { in: ["PENDING", "PROCESSING"] },
+          },
+          select: { entityId: true },
+        })
+      ).map((row) => row.entityId),
+    );
+    const toEnqueue = itemIds.filter((id) => !inFlight.has(id));
+    const skipped = itemIds.length - toEnqueue.length;
+
+    if (toEnqueue.length > 0) {
+      await prisma.jubelioOutbox.createMany({
+        data: toEnqueue.map((id) => ({
+          entityType: "product_push",
+          entityId: id,
+          payload: {},
+          enqueuedById: session.user.id,
+        })),
+      });
+    }
+
+    revalidatePath("/backoffice/jubelio/migration");
+    return { ok: true, data: { enqueued: toEnqueue.length, skipped } };
+  });
 }
 
 export async function getMigrationSummary(): Promise<MigrationSummary> {

@@ -1,0 +1,17 @@
+{
+  "_catatan": "TEBAKAN — nama kolom GraphQL lama Instagram (edge_followed_by, shortcode, taken_at_timestamp, edge_liked_by, edge_media_to_comment, video_view_count, owner).",
+  "graphql": {
+    "user": {
+      "username": "kol.dua",
+      "id": "222",
+      "edge_followed_by": { "count": 12000 },
+      "edge_owner_to_timeline_media": {
+        "count": 2,
+        "edges": [
+          { "node": { "shortcode": "Bxxxxxxxxx1", "taken_at_timestamp": 1600000000, "edge_liked_by": { "count": 10 }, "edge_media_to_comment": { "count": 2 }, "video_view_count": 300, "owner": { "id": "222" }, "edge_media_to_caption": { "edges": [{ "node": { "text": "hai @Elorae.Official" } }] } } },
+          { "node": { "shortcode": "Bxxxxxxxxx2", "taken_at_timestamp": 1590000000, "edge_media_preview_like": { "count": 5 }, "edge_media_to_comment": { "count": 0 }, "owner": { "id": "222", "username": "kol.dua" } } }
+        ]
+      }
+    }
+  }
+}

@@ -28,6 +28,7 @@ import {
 import { CASH_FLOW_SECTIONS, type CashFlowSection } from "@/lib/finance/reports/cash-flow-classify";
 import type { AccountSectionRow } from "@/lib/finance/reports/cash-flow-queries";
 import type { AccountType } from "@/lib/constants/enums";
+import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 
 type Props = {
   rows: AccountSectionRow[];
@@ -115,9 +116,9 @@ export function CashFlowSectionsClient({ rows, canManage }: Props) {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t("title")}</h1>
-          <p className="text-muted-foreground">{t("subtitle")}</p>
+        <div className="flex items-center gap-1">
+          <h1 className="text-2xl font-bold tracking-tight">{t("judulHalaman")}</h1>
+          <TombolBantuan judul={t("judulHalaman")} />
         </div>
       </div>
 
@@ -146,7 +147,7 @@ export function CashFlowSectionsClient({ rows, canManage }: Props) {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-28">{t("col.code")}</TableHead>
-                  <TableHead>{t("col.name")}</TableHead>
+                  <TableHead>{t("col.namaAkun")}</TableHead>
                   <TableHead className="w-32">{t("col.type")}</TableHead>
                   <TableHead className="w-80">{t("col.section")}</TableHead>
                 </TableRow>
@@ -213,13 +214,6 @@ export function CashFlowSectionsClient({ rows, canManage }: Props) {
                                 {t("unclassifiedBadge")}
                               </Badge>
                             </div>
-                          )}
-                          {row.override === null && row.derived !== null && (
-                            <p className="mt-1 text-xs text-muted-foreground">
-                              {t("derivedHint", {
-                                section: t(`section.${row.derived}` as never),
-                              })}
-                            </p>
                           )}
                         </TableCell>
                       </TableRow>

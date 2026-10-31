@@ -1,0 +1,55 @@
+/*
+ * Penutup polos sesudah masuk (lihat LayarMasuk.tsx). Warna latar dasbor, tanpa
+ * teks — layar hitam dengan wordmark dilepas atas permintaan pemilik (Oktober
+ * 2026). Lelucon harian dan story-nya juga sudah dilepas — jangan dikembalikan.
+ *
+ * Tahap:
+ *   tahan   halaman tujuan, bingkai pertama — menutup dasbor selagi
+ *           pertunjukan 3D (`HausElorae`) diunduh.
+ *   buka    memudar keluar (perangkat yang meminta gerak dikurangi, tanpa 3D).
+ */
+
+.layar {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: var(--background, #ffffff);
+  user-select: none;
+}
+
+/* Tirai lanjutan di halaman tujuan: ada di HTML server, tapi hanya tampil kalau
+   skrip <head> menemukan serah terima dari halaman masuk. */
+.lanjutan {
+  display: none;
+}
+
+:global(html[data-masuk]) .lanjutan {
+  display: grid;
+}
+
+.layar[data-tahap="buka"] {
+  pointer-events: none;
+  animation: pudarKeluar 300ms ease-out both;
+}
+
+@keyframes pudarKeluar {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lanjutan {
+    display: none !important;
+  }
+
+  .layar {
+    animation: none !important;
+  }
+}

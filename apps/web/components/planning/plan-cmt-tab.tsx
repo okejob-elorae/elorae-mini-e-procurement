@@ -55,8 +55,6 @@ export function PlanCmtTab({
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-muted-foreground">{t("subtitle")}</p>
-
       {canGenerateWo && detail.status === "ACTIVE" && onGenerateWorkOrders && (
         <div className="flex flex-wrap items-end gap-2 rounded-md border p-3">
           <div className="space-y-1">
@@ -107,7 +105,7 @@ export function PlanCmtTab({
               }
             }}
           >
-            {t("generateWorkOrders")}
+            {t("buatPerintahKerja")}
           </Button>
         </div>
       )}

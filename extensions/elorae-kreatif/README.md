@@ -1,0 +1,254 @@
+# Elorae Kreatif — Pantau KOL (ekstensi Chrome, uji coba)
+
+Ekstensi ini membuka halaman profil dan video TikTok KOL yang diminta Elorae, membaca angkanya
+(pengikut, total like, jumlah video, serta views/like/komentar/share/save per video), lalu
+mengirimkannya ke Elorae. Elorae yang menghitung ER dan menampilkannya di Kreatif → Pemantauan.
+Selain berjalan otomatis, ekstensi juga menampilkan panel kecil di pojok kanan bawah setiap
+halaman profil/video TikTok yang Anda buka sendiri, dengan tombol **Simpan ke Elorae**. Sejak
+v0.10.0 panel itu juga mengirim pembacaannya sendiri ke Elorae tanpa tombol (lihat
+"Kiriman otomatis saat Anda membuka TikTok").
+
+Sejak v0.11.0 panel, **Simpan ke Elorae**, dan kiriman otomatis juga bekerja di **Instagram** dan
+**YouTube** (lihat "Instagram dan YouTube" di bawah). Threads dan Facebook tidak didukung. Angka yang
+tidak terbaca tidak pernah dikirim sebagai 0 — pemeriksaan itu dicatat gagal (TIDAK TERBACA) dan
+dicoba lagi.
+
+## Risiko — baca dulu
+
+Syarat layanan TikTok melarang pengambilan data otomatis, jadi akun TikTok yang dipakai bisa
+dibatasi atau diblokir. Karena itu pakai **profil Chrome tersendiri** dan **akun TikTok
+tersendiri** (jangan akun pribadi atau akun toko), sebaiknya juga koneksi internet tersendiri.
+Pemeriksaan otomatis hanya berjalan selama komputer dan Chrome menyala pada jam kerja
+(bawaan 08.00–17.00 WIB). Bila TikTok mengubah halamannya, ekstensi bisa berhenti membaca angka
+sampai diperbarui.
+
+## Memasang
+
+1. Buat profil Chrome baru khusus untuk pemantauan (ikon profil di kanan atas Chrome → Tambah).
+   Di profil itu, masuk ke TikTok dengan akun TikTok khusus pemantauan.
+2. Di profil yang sama, buka `chrome://extensions`.
+3. Nyalakan **Mode pengembang** (kanan atas).
+4. Klik **Muat ekstensi yang belum dikemas**, lalu pilih folder `extensions/elorae-kreatif`.
+5. Klik ikon teka-teki di toolbar Chrome dan sematkan **Elorae Kreatif** supaya ikonnya selalu
+   terlihat.
+
+Setelah memperbarui berkas ekstensi, klik tombol muat ulang (panah melingkar) pada kartu ekstensi
+di `chrome://extensions`, lalu muat ulang tab TikTok yang terbuka.
+
+## Menyambungkan ke Elorae
+
+1. Di Elorae, buka **Kreatif → Pemantauan → Sambungkan perangkat**, lalu salin kode sambungnya
+   (8 huruf/angka, berlaku 15 menit, sekali pakai).
+2. Klik ikon Elorae Kreatif di Chrome. Isi **Alamat Elorae** (`http://localhost:3000` untuk uji
+   coba di komputer ini, atau `https://elorae.cloud`) dan **Kode sambung**, lalu klik
+   **Sambungkan**.
+3. Setelah tersambung, nyalakan **Pemantauan otomatis**.
+
+Popup menampilkan jumlah pemeriksaan hari ini (selesai, gagal, kuota, sisa), keadaan
+(berjalan, di luar jam kerja, dijeda, kuota habis, antrean kosong, istirahat), waktu pemeriksaan
+berikutnya, dan masalah terakhir. **Putuskan** menghapus sambungan di ekstensi sekaligus mencabut
+perangkatnya di Elorae. Kalau Elorae sedang tidak terjangkau, popup memberi tahu; cabut perangkatnya
+dari Elorae → Kreatif → Pemantauan.
+
+## Cara kerjanya
+
+**Cek cepat (v0.9.0) — biarkan satu tab tiktok.com terbuka di Chrome ini.** Bila ada tab
+www.tiktok.com yang Anda buka sendiri (boleh disematkan/pin, boleh tidak sedang dilihat), ekstensi
+mengambil halaman setiap tugas DARI tab itu tanpa membuka tab baru: sekitar 2 detik per video, dan
+satu putaran mengerjakan tugas terus-menerus (paling lama 10 menit, lalu dilanjutkan). 200 video
+selesai dalam beberapa menit. Tab yang Anda buka sudah lolos pemeriksaan keamanan TikTok, sedangkan
+tab latar baru tidak pernah lolos. Sesudah ekstensi diperbarui, muat ulang tab TikTok itu sekali.
+Bila tab itu sendiri kena pemeriksaan, pemantauan berhenti sebentar dengan alasan "Diblokir TikTok":
+muat ulang tab TikTok (selesaikan puzzle bila muncul), lalu tekan Cek sekarang di Elorae. Popup
+menyebut apakah cek cepat sedang aktif.
+
+Tanpa tab TikTok yang terbuka, ekstensi memakai cara lama di bawah.
+
+Setiap menit ekstensi bertanya ke Elorae apakah ada tugas. Bila ada, ekstensi membuka halaman
+TikTok itu di tab latar baru (tidak merebut layar Anda, suaranya dibisukan), menunggu angkanya
+terbaca, mengirim hasilnya, lalu menutup tab. Di antara tugas ada jeda acak (bawaan 15–40 detik)
+dan istirahat (bawaan 5–10 menit kira-kira setiap 45 menit). Kuota, jam kerja, jeda dan istirahat
+diatur di Elorae. Satu tugas dikerjakan satu per satu; bila Elorae sedang tidak terjangkau, hasil
+yang belum terkirim disimpan dan dikirim ulang (paling lama 30 menit).
+
+## Bila pemantauan berhenti
+
+- **Captcha** — TikTok meminta verifikasi. Buka TikTok di profil Chrome pemantauan ini,
+  selesaikan captcha-nya, lalu tekan **Lanjutkan** pada perangkat ini di Elorae → Kreatif →
+  Pemantauan. Ekstensi tidak melanjutkan sendiri sebelum Elorae melepas jedanya (Elorae juga
+  melepasnya otomatis setelah waktu jeda otomatis, bawaan 60 menit).
+- **Login** — TikTok meminta masuk. Masuk dengan akun TikTok khusus pemantauan di profil Chrome
+  ini, lalu tekan **Lanjutkan** di Elorae.
+- **Diblokir TikTok** — TikTok menjawab tab otomatis dengan halaman pemeriksaan keamanan, di
+  halaman video maupun profil. Tugasnya langsung gagal (tidak diulang tiga kali, karena mengulang
+  hanya memperdalam blokirnya) dan ekstensi berhenti selama jeda otomatis (bawaan 60 menit).
+  **Cek sekarang** di Performa video mencoba lagi saat itu juga. Angka video itu tetap bisa masuk
+  lewat panel: buka videonya di Chrome lalu tekan **Simpan ke Elorae**.
+- **Gagal berturut-turut** — halaman tiga kali berturut-turut tidak bisa dimuat atau dibaca.
+  Ekstensi berhenti 60 menit lalu mencoba lagi. Bila terus terjadi, kemungkinan TikTok mengubah
+  halamannya; hubungi pengembang.
+- **Elorae tidak terjangkau** — pastikan Elorae menyala; ekstensi mencoba lagi setiap menit.
+- **Sambungan dicabut** — popup kembali menampilkan formulir; buat kode sambung baru di Elorae.
+- Lencana merah **!** pada ikon ekstensi berarti ada yang perlu Anda tangani (captcha, login,
+  diblokir TikTok, atau sambungan dicabut).
+
+## Kiriman otomatis saat Anda membuka TikTok (v0.10.0)
+
+Begitu panel selesai membaca profil (beserta daftar videonya) atau video TikTok yang Anda buka
+sendiri, ekstensi langsung mengirim pembacaan itu ke Elorae — tanpa menekan tombol. Elorae yang
+memutuskan apa yang disimpan:
+
+- **Akun yang sudah ada di Elorae** — pengikut, ER, dan angka videonya disimpan, dan akun-akun
+  brand yang ditandai KOL di videonya dicatat di riwayat kerja sama brand.
+- **Video yang menandai Elorae** (akun Elorae ditandai, atau memakai tagar Elorae) — langsung
+  masuk **Performa video** beserta views/like/komentar/share/simpan-nya. KOL-nya dibuat sebagai
+  "@handle" bila belum ada (butuh izin mengelola Kreatif milik orang yang menyambungkan ekstensi).
+  Pembuatan otomatis ini bisa dimatikan di Elorae → Kreatif → Pengaturan.
+- **Selain itu** — diabaikan; tidak ada yang disimpan.
+
+Panel menulis satu baris kecil di atas tombol: "Tersimpan otomatis ke Elorae", atau
+"3 video baru masuk Performa video" dengan tautan **Buka**. Yang diabaikan tidak memunculkan
+apa-apa.
+
+Batasnya:
+
+- **Sekali per 6 jam untuk akun atau video yang sama** (dicatat di ekstensi). Membuka profil yang
+  sama lagi dalam 6 jam tidak mengirim ulang; panel menulis "Sudah tersimpan di Elorae · 10.05".
+  **Simpan ke Elorae** tetap bisa ditekan kapan saja dan selalu mengirim.
+- Kiriman yang tidak sampai (Elorae tidak terjangkau) dicoba lagi paling cepat 10 menit kemudian,
+  saat panel membaca ulang halaman itu. Bila Elorae menjawab "terlalu sering", semua kiriman
+  otomatis berhenti 15 menit.
+- Hanya dari tab yang Anda buka sendiri dan hanya selama ekstensi tersambung. Tab latar milik
+  pemeriksaan otomatis tidak ikut (tab itu melapor dengan caranya sendiri). Tidak memakan kuota
+  pemeriksaan harian.
+
+**Yang dikirim** sama dengan Simpan ke Elorae — pengikut, total like, jumlah video, dan
+views/like/komentar/share/simpan per video — ditambah, untuk setiap video: caption (paling panjang
+500 karakter), akun yang ditandai (handle asli dari data TikTok, mis. `elorae.official`, bukan nama
+tampilan "@Eloraé" yang tertulis di caption), tagar, tanda iklan TikTok, dan pembuat videonya.
+Data tambahan ini juga ikut pada pemeriksaan otomatis dan Simpan ke Elorae.
+
+**Mematikannya:** klik ikon Elorae Kreatif → matikan **Kirim otomatis saat membuka TikTok**.
+Berlaku seketika, juga untuk tab TikTok yang sedang terbuka. Menyalakannya lagi langsung mengirim
+halaman yang sedang terbuka (bila belum terkirim dalam 6 jam terakhir).
+
+## Kiriman otomatis terakhir (v0.11.1)
+
+Popup menampilkan keputusan kiriman otomatis terakhir dari panel: tersimpan, diabaikan Elorae,
+atau belum dikirim beserta alasannya (misalnya "daftar video belum tertangkap"). Kalau baris ini
+tidak pernah muncul sesudah membuka profil TikTok, muat ulang ekstensi lalu muat ulang tab TikTok.
+
+## Instagram dan YouTube (v0.11.0)
+
+Sesudah memperbarui ekstensi (Muat ulang di `chrome://extensions`), muat ulang juga tab Instagram
+dan YouTube yang sedang terbuka sekali.
+
+**YouTube** — tidak perlu masuk.
+- Panel tampil di halaman video (`youtube.com/watch?v=…`, `/shorts/…`) dan halaman kanal
+  (`youtube.com/@nama`). Video: views persis, like (dari tombol like), jumlah komentar (bila tampil),
+  tanggal tayang, @kanal dan #tagar di deskripsi, dan tanda promosi berbayar. Kanal: jumlah
+  subscriber, yang di YouTube hanya tampil dibulatkan (mis. "46,5 jt") — Elorae menyimpannya sebagai
+  **perkiraan**, dan ER kanal tidak dihitung.
+- Pemeriksaan otomatis video YouTube berjalan tanpa tab: ekstensi mengambil halaman videonya
+  langsung, tanpa kuki Anda. Bila YouTube meminta pemeriksaan robot, YouTube dijeda 60 menit di
+  ekstensi ini saja; TikTok jalan terus.
+- Share dan simpan tidak tampil di YouTube, jadi tidak dikirim (Elorae mencatatnya 0 dengan catatan).
+
+**Instagram** — harus masuk, dan BELUM teruji.
+- Tanpa masuk, Instagram hanya memperlihatkan jumlah pengikut sebuah profil (ini sudah diukur).
+  Posting dan angkanya (views reel, like, komentar) hanya dimuat untuk pengguna yang sudah masuk;
+  ekstensi menangkapnya dari data yang dimuat halaman itu sendiri, tidak membuat permintaan sendiri.
+  **Bentuk data Instagram untuk pengguna yang sudah masuk belum pernah diuji** — Anda yang
+  mengujinya pertama kali: masuk ke Instagram di profil Chrome ini, buka profil seorang KOL, gulir
+  sedikit, lalu lihat panel Elorae. Bila angkanya tidak terbaca, laporan masalahnya di Elorae
+  (Kreatif → Pemantauan) menyebut apa yang ditemukan di halaman.
+- Share dan simpan tidak pernah publik di Instagram; like bisa disembunyikan pemilik akun; posting
+  foto tidak punya views. Yang tidak tampil tidak dikirim. Karena itu ER Instagram lebih rendah
+  daripada ER TikTok dengan rumus yang sama — bandingkan di dalam satu platform saja.
+- Pemeriksaan otomatis reel/posting Instagram HANYA berjalan selama ada tab `instagram.com` yang
+  Anda buka sendiri dan sudah masuk. Ekstensi tidak pernah membuka tab Instagram sendiri (Instagram
+  lebih keras terhadap pembacaan otomatis daripada TikTok), dan memberi jeda 5–10 detik antar posting.
+  Tanpa tab itu, tugas Instagram menunggu di antrean tanpa menghalangi TikTok. Bila Instagram
+  meminta masuk atau pemeriksaan, Instagram dijeda 60 menit di ekstensi ini saja. Popup menyebut
+  keadaannya di baris "Instagram".
+- Syarat layanan Instagram juga melarang pengambilan otomatis: akun Instagram yang dipakai bisa
+  dibatasi. Pakai akun Instagram khusus, sama seperti akun TikTok.
+
+**Threads dan Facebook tidak didukung**: halamannya tidak memuat angka yang stabil untuk dibaca,
+dan Facebook mengacak susunan halamannya, jadi pembaca apa pun akan sering rusak tanpa tanda.
+
+## Mode manual
+
+Saat Anda membuka profil atau video TikTok sendiri, panel Elorae di kanan bawah menampilkan
+angka yang terbaca. **Simpan ke Elorae** mengirim angka itu ke KOL yang cocok ("Tersimpan untuk
+…"). Yang belum ada di Elorae langsung dibuat, tanpa isian: profil baru menjadi KOL bernama
+"@handle" dengan akun TikTok-nya; video baru masuk ke kolaborasi berjalan KOL itu (atau kolaborasi
+baru tanpa fee), sama seperti "Tempel link" di Performa video. Membuat KOL butuh izin mengelola
+Kreatif milik orang yang menyambungkan ekstensi. Simpan manual tidak memakai kuota.
+Bila Anda berpindah halaman di TikTok tanpa memuat ulang, panel meminta Anda menekan F5 dulu
+supaya angka yang dibaca memang milik halaman itu. Panel bisa dikecilkan dengan tombol –.
+
+Di profil, panel lengkap juga menampilkan:
+
+- **Median views, views/pengikut, video/minggu** — median tidak terangkat oleh satu video viral.
+- **Periode 7H / 30H / 90H / Atur** — video yang diunggah dalam periode itu (jumlah, total, rata-rata
+  dan median views, like, komentar, share, simpan, ER) dibanding periode yang sama sebelumnya, dengan
+  ▲/▼. Semua baris memakai video yang sama. 7H/30H/90H berakhir 48 jam lalu, karena video yang lebih
+  baru masih mengumpulkan views. **Atur** membuka kalender panel sendiri (warna mengikuti tema panel):
+  pilihan cepat, lalu ketuk tanggal awal dan akhir atau tekan dan tarik. Atur menghitung PERSIS tanggal
+  yang dipilih, termasuk video yang baru diunggah; panel menyebut berapa video yang berumur < 48 jam
+  (views-nya masih naik). Median views tidak terangkat satu video viral — bila total turun jauh tetapi
+  median tidak, penyebabnya satu video viral di periode pembanding. Grafik
+  di atas tabel menunjukkan views per hari unggah: garis warna = periode ini, garis putus = periode
+  sebelumnya. Bila video lama belum termuat, panel menggulir daftar video sendiri (lalu mengembalikan
+  posisi halaman) sampai periode pembanding tercakup; ekstensi menyimpan paling banyak 200 video per
+  profil, jadi 90H untuk akun yang sangat sering mengunggah bisa tetap tanpa pembanding.
+- **Harga per video** — dari data Elorae sendiri, bukan tebakan. Elorae menghitung harga per
+  1.000 views setiap kolaborasi berbayar yang sudah tayang (fee yang disepakati ÷ views video
+  TikTok-nya yang tercatat ≥ 7 hari sesudah tayang × 1.000), lalu panel memakai kuartil bawah–atas
+  angka itu: perkiraan = median views akun × rentang itu. Patokan baru muncul bila ada paling sedikit
+  5 kolaborasi seperti itu; sebelum itu panel hanya menghitung harga per 1.000 views dari harga yang
+  Anda ketik (mis. `15jt`), tanpa menilai murah atau mahal.
+
+**Tampilan** diatur di popup ekstensi → "Tampilan panel": tema (otomatis mengikuti
+TikTok, terang, gelap), warna, ukuran lengkap/ringkas, dan posisi kiri/kanan bawah. Tombol ⤡ di
+panel juga berganti lengkap/ringkas.
+
+## Untuk pengembang
+
+- JavaScript polos (modul ES), Manifest V3, tanpa dependensi dan tanpa langkah build. Folder ini
+  sengaja di luar workspace pnpm.
+- `lib/pengurai.js` — pengurai murni halaman TikTok (data `__UNIVERSAL_DATA_FOR_REHYDRATION__`,
+  respons `/api/post/item_list/`, deteksi captcha/login/tidak ditemukan/privat). Bila TikTok
+  mengubah halamannya, tanda-tanda halaman ada di SATU konstanta: `POLA_HALAMAN`.
+- `lib/aturan.js` — keputusan putaran otomatis (boleh mengambil tugas, jeda, istirahat,
+  menunggu halaman) dan kiriman otomatis panel (`putuskanKirimOtomatis`: bacaan lengkap, kunci
+  `PROFIL:<handle>` / `KONTEN:<id>`, 6 jam per kunci, riwayat di `chrome.storage.local`).
+  `background.js` hanya menjalankan keputusan itu. `konten.js` juga memuat modul ini, jadi ia ada
+  di `web_accessible_resources` (dijaga `test/manifest.test.js`).
+- Kolom opsional per posting/video (`teks`, `sebutan`, `tagar`, `iklan`, `penulis`) dibaca
+  `tandaPosting` di `lib/pengurai.js` dari `desc`, `textExtra` (type 0 = akun ditandai, type 1 =
+  tagar), `challenges[].title`, `isAd`, dan `author`. Kolom yang tidak ada di data TikTok tidak
+  dikirim. `rampingkanData` membuang kolom opsional dari posting terlama bila muatan mendekati batas
+  badan Elorae (256 KB).
+- `halaman-utama.js` — skrip dunia MAIN yang menangkap respons daftar video profil TikTok;
+  `halaman-utama-instagram.js` — skrip dunia MAIN yang meneruskan TEKS respons GraphQL/api/v1
+  Instagram yang memuat data profil/posting; `konten.js` — skrip dunia ISOLATED (pembaca halaman +
+  panel) di ketiga situs.
+- `lib/pengurai-instagram.js` dan `lib/pengurai-youtube.js` — pengurai murni dengan bentuk ekspor
+  yang sama dengan `lib/pengurai.js`; `lib/platform.js` memilih pengurai per alamat. Instagram
+  dibaca dengan menelusuri SEMUA objek JSON dan mengenali bentuknya dari nama kolom (pengguna =
+  `username` + `follower_count`/`edge_followed_by.count`; media = `code`/`shortcode` +
+  `taken_at`/`taken_at_timestamp` + like/komentar), karena jalurnya belum diukur. YouTube dibaca dari
+  `ytInitialData` dan `ytInitialPlayerResponse`; tanda-tanda halaman di `POLA_HALAMAN` masing-masing.
+- Muatan Instagram/YouTube membawa `platform` ("INSTAGRAM"/"YOUTUBE"); muatan tanpa `platform` =
+  TikTok, jadi Elorae lama dan baru sama-sama menerima muatan TikTok. Kunci kiriman otomatis
+  Instagram/YouTube berawalan platform (`INSTAGRAM:PROFIL:<akun>`, `YOUTUBE:KONTEN:<id>`).
+  `/tugas` dan `/status` menyebut platform yang sanggup dikerjakan saat itu.
+- Tes: `node --test extensions/elorae-kreatif/test/` dari akar repo (atau `npm test` di folder
+  ini). Contoh data di `test/fixtures/` dibuat tangan mengikuti struktur publik TikTok; fixture
+  YouTube dan profil Instagram tanpa masuk mengikuti bentuk yang diukur 2026-10-10 (dirampingkan),
+  fixture Instagram untuk pengguna yang sudah masuk adalah TEBAKAN (bertanda `_catatan`). Berkas tes
+  baru harus didaftarkan di `test/index.js`.
+- Kontrak API ada di `docs/superpowers/specs/2026-10-08-pantau-kol-ekstensi-design.md`; tambahan
+  kolom opsional dan POST `/otomatis` di `docs/superpowers/specs/2026-10-10-kol-manager-lengkap-design.md`.

@@ -2,11 +2,11 @@
 
 import { useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useTranslations } from "next-intl";
-import { Receipt, X } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
+import { CloudOff, Receipt, X } from "lucide-react";
 import type { SpgSaleListRow } from "@/lib/spg/sale-queries";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
@@ -24,9 +24,19 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Pager } from "@/components/Pager";
+import { PageHeader } from "@/components/ui/page-header";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { formatRupiah } from "@/lib/format/rupiah";
+import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
+
+/** Pager disembunyikan selama semua baris muat di satu halaman terkecil. */
+const PAGER_MIN = 10;
+
+/** Baris daftar + potongan dan tanda nota yang dicatat tanpa sinyal (dibaca di halaman server). */
+export type BarisDaftarNotaSpg = SpgSaleListRow & { discountTotal: number; capturedOffline: boolean };
 
 type Props = {
-  sales: SpgSaleListRow[];
+  sales: BarisDaftarNotaSpg[];
   totalCount: number;
   salesmen: Array<{ id: string; label: string }>;
   salesmanId: string;
@@ -38,23 +48,6 @@ type Props = {
 
 const ALL_SALESMEN = "__all__";
 
-function formatRupiah(value: number): string {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString("id-ID", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export function SpgSalesListClient({
   sales,
@@ -67,7 +60,9 @@ export function SpgSalesListClient({
   pageSize,
 }: Props) {
   const t = useTranslations("spgSale.backoffice.list");
+  const tt = useTranslations("tanggalInput");
   const tTable = useTranslations("spgSale.backoffice.list.table");
+  const locale = useLocale();
   const router = useRouter();
   const sp = useSearchParams();
   const [, startTransition] = useTransition();
@@ -86,10 +81,7 @@ export function SpgSalesListClient({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{t("pageTitle")}</h1>
-        <p className="text-muted-foreground">{t("subtitle")}</p>
-      </div>
+      <PageHeader title={t("pageTitle")} />
 
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-2 w-full sm:w-56">
@@ -107,28 +99,15 @@ export function SpgSalesListClient({
             triggerClassName="h-9 w-full"
           />
         </div>
-        <div className="space-y-2 w-full sm:w-40">
-          <Label htmlFor="spg-sale-from" className="text-muted-foreground">
-            {t("filters.fromLabel")}
+        <div className="space-y-2 w-full sm:w-64">
+          <Label htmlFor="spg-sale-periode" className="text-muted-foreground">
+            {tt("periode")}
           </Label>
-          <Input
-            id="spg-sale-from"
-            type="date"
-            value={from}
-            onChange={(e) => pushParams({ from: e.target.value || undefined })}
-            className="h-9"
-          />
-        </div>
-        <div className="space-y-2 w-full sm:w-40">
-          <Label htmlFor="spg-sale-to" className="text-muted-foreground">
-            {t("filters.toLabel")}
-          </Label>
-          <Input
-            id="spg-sale-to"
-            type="date"
-            value={to}
-            onChange={(e) => pushParams({ to: e.target.value || undefined })}
-            className="h-9"
+          <RentangTanggalInput
+            id="spg-sale-periode"
+            dari={from}
+            sampai={to}
+            onChange={({ dari, sampai }) => pushParams({ from: dari || undefined, to: sampai || undefined })}
           />
         </div>
         {hasFilters && (
@@ -149,9 +128,12 @@ export function SpgSalesListClient({
           <CardTitle className="flex items-center gap-2">
             <Receipt className="h-5 w-5" />
             {t("cardTitle")}
-            <span className="text-sm font-normal text-muted-foreground ml-2">
-              ({t("count", { count: totalCount })})
-            </span>
+            {/* Kosong: keterangan kosong cukup sekali, di badan kartu. */}
+            {totalCount > 0 ? (
+              <span className="text-sm font-normal text-muted-foreground ml-2">
+                ({t("count", { count: totalCount })})
+              </span>
+            ) : null}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -161,6 +143,18 @@ export function SpgSalesListClient({
               <p className="text-muted-foreground">
                 {hasFilters ? t("noResults") : t("empty")}
               </p>
+              {/* Dari mana nota datang, seperti keadaan kosong lain di grup ini. */}
+              {!hasFilters ? <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{t("emptySumber")}</p> : null}
+              {hasFilters && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => pushParams({ salesmanId: undefined, from: undefined, to: undefined })}
+                >
+                  {t("clearFilters")}
+                </Button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -171,6 +165,7 @@ export function SpgSalesListClient({
                     <TableHead>{tTable("date")}</TableHead>
                     <TableHead>{tTable("salesman")}</TableHead>
                     <TableHead>{tTable("store")}</TableHead>
+                    <TableHead className="text-right">{tTable("discount")}</TableHead>
                     <TableHead className="text-right">{tTable("total")}</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -183,12 +178,23 @@ export function SpgSalesListClient({
                         startTransition(() => router.push(`/backoffice/spg-sales/${s.id}`))
                       }
                     >
-                      <TableCell className="font-mono text-xs">{s.docNo}</TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDateTime(s.createdAtIso)}
+                      <TableCell className="whitespace-normal">
+                        <span className="font-mono text-xs">{s.docNo}</span>
+                        {s.capturedOffline ? (
+                          <Badge variant="secondary" className="ml-2 gap-1 align-middle" title={t("offlineHint")}>
+                            <CloudOff className="h-3 w-3" aria-hidden />
+                            {t("offlineBadge")}
+                          </Badge>
+                        ) : null}
                       </TableCell>
-                      <TableCell className="font-medium">{s.salesmanLabel}</TableCell>
-                      <TableCell className="text-muted-foreground">{s.storeName}</TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDisplayDateTime(s.createdAtIso, locale)}
+                      </TableCell>
+                      <TableCell className="min-w-[8rem] whitespace-normal font-medium">{s.salesmanLabel}</TableCell>
+                      <TableCell className="min-w-[8rem] whitespace-normal text-muted-foreground">{s.storeName}</TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                        {s.discountTotal > 0 ? `−${formatRupiah(s.discountTotal)}` : "—"}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">{formatRupiah(s.total)}</TableCell>
                     </TableRow>
                   ))}
@@ -199,22 +205,25 @@ export function SpgSalesListClient({
         </CardContent>
       </Card>
 
-      <Pager
-        page={page}
-        pageSize={pageSize}
-        total={totalCount}
-        onPageChange={(p) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("page", String(p));
-          startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
-        }}
-        onPageSizeChange={(size) => {
-          const params = new URLSearchParams(sp.toString());
-          params.set("pageSize", String(size));
-          params.delete("page");
-          startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
-        }}
-      />
+      {/* Satu halaman pendek tidak butuh pager. */}
+      {totalCount > PAGER_MIN || page > 1 ? (
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={totalCount}
+          onPageChange={(p) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("page", String(p));
+            startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
+          }}
+          onPageSizeChange={(size) => {
+            const params = new URLSearchParams(sp.toString());
+            params.set("pageSize", String(size));
+            params.delete("page");
+            startTransition(() => router.push(`/backoffice/spg-sales?${params.toString()}`));
+          }}
+        />
+      ) : null}
     </div>
   );
 }

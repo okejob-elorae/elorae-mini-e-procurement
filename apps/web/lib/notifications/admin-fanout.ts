@@ -22,6 +22,9 @@ import { SALES_RETURN_RECEIVED } from "@/lib/sales-returns/bell-copy";
  */
 const CATEGORY_PERMISSION: Record<string, string> = {
   JOURNAL_PENDING: PERMISSIONS.JOURNALS_MANAGE,
+  // Jurnal manual / pembalik yang menunggu persetujuan orang lain (maker-checker,
+  // lib/finance/jurnal-manual). Pembuatnya ikut menerima — penulisnya yang menolak ia menyetujui.
+  JOURNAL_APPROVAL: PERMISSIONS.JOURNALS_MANAGE,
   PENDING_ORDER_APPROVAL: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
   STORE_CHANGE_REQUEST: PERMISSIONS.STORES_MANAGE,
   TAX_INVOICE_PENDING: PERMISSIONS.TAX_INVOICES_MANAGE,
@@ -38,6 +41,55 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   [KONSI_REPORT_READY]: PERMISSIONS.STORES_MANAGE,
   [KONSI_REPORT_HELD]: PERMISSIONS.STORES_MANAGE,
   [KONSI_REPORT_BLOCKED]: PERMISSIONS.STORES_MANAGE,
+  /*
+   * Giro yang efektif hari ini atau lewat. Yang bisa bertindak adalah yang boleh
+   * memverifikasi klaim (`bolehMemverifikasi` di `lib/receivables/izin.ts`) —
+   * hanya mereka yang bisa menandai giro cair atau ditolak bank.
+   */
+  GIRO_JATUH_TEMPO: PERMISSIONS.JOURNALS_MANAGE,
+  /*
+   * Sales menarik laporannya sendiri (salah toko). Yang perlu tahu adalah yang
+   * memutuskan dokumen itu: keuangan untuk BKM, pengelola retur untuk NRT —
+   * supaya penarikan tidak pernah diam-diam.
+   */
+  KLAIM_DIBATALKAN_SALES: PERMISSIONS.JOURNALS_MANAGE,
+  RETUR_DIBATALKAN_SALES: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Sales meminta koreksi laporan yang sudah diproses — ke yang bisa membetulkannya.
+  KOREKSI_DIMINTA_BKM: PERMISSIONS.JOURNALS_MANAGE,
+  KOREKSI_DIMINTA_RETUR: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Calon toko baru dari lapangan — yang bisa menyetujui adalah pengelola master toko.
+  STORE_PROPOSAL: PERMISSIONS.STORES_MANAGE,
+  // Ringkasan harian tim lapangan (18.30 WIB) — untuk yang menyetujui pesanan lapangan.
+  RINGKASAN_SALES_HARIAN: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  // Biaya perjalanan: ajuan ke penyetuju (`bolehMenyetujuiBiaya`), yang sudah
+  // disetujui ke keuangan yang membayar (`bolehMembayarBiaya`).
+  EXPENSE_CLAIM_SUBMITTED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  EXPENSE_CLAIM_TO_PAY: PERMISSIONS.JOURNALS_MANAGE,
+  // Tukar barang: ajuan ke penyetuju (`bolehMenyetujuiTukar`), yang sudah
+  // disetujui ke gudang yang menyelesaikan (`bolehMenyelesaikanTukar`).
+  STORE_EXCHANGE_PROPOSED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  STORE_EXCHANGE_TO_COMPLETE: PERMISSIONS.INVENTORY_MANAGE,
+  // Pengajuan izin/sakit/cuti — yang memutuskan adalah penyetuju lapangan.
+  LEAVE_REQUEST_SUBMITTED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  // Mutasi antar toko oleh SPG: ajuan dan selisih ke penyetuju lapangan; yang
+  // harus diterima kantor (toko tujuan tanpa SPG) dan yang macet ke pengelola toko.
+  STORE_TRANSFER_PROPOSED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  STORE_TRANSFER_DISCREPANCY: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  STORE_TRANSFER_TO_RECEIVE: PERMISSIONS.STORES_MANAGE,
+  STORE_TRANSFER_STALE: PERMISSIONS.STORES_MANAGE,
+  // Barang rusak yang tiba di kiriman ke toko SPG — gudang yang memutuskan nasibnya.
+  STORE_RECEIPT_DAMAGED: PERMISSIONS.INVENTORY_MANAGE,
+  // Tukar shift SPG yang sudah disetujui rekannya — pengelola toko yang menyetujui.
+  SPG_SHIFT_SWAP: PERMISSIONS.STORES_MANAGE,
+  // Barang hilang yang perlu diputuskan penanggungnya — yang menetapkan beban
+  // adalah `receivables:manage` (pemisahan tugas di lib/receivables/izin.ts).
+  STOCK_LOSS_OPEN: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Permintaan stok SPG di toko tanpa salesman pemegang — tidak masuk kotak
+  // masuk HP siapa pun, jadi pengelola toko yang menanganinya.
+  SPG_STOCK_REQUEST_UNHELD: PERMISSIONS.STORES_MANAGE,
+  // Nota retur SPG di toko tanpa salesman pemegang — tidak ada orang lapangan
+  // yang menindaklanjutinya, jadi pengelola retur/piutang yang diberi tahu.
+  RETUR_SPG_TANPA_PEMEGANG: PERMISSIONS.RECEIVABLES_MANAGE,
 };
 
 /**
