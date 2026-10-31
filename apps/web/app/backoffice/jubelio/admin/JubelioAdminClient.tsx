@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   getJubelioApiCalls,
   getJubelioApiCallStats,
@@ -15,12 +15,15 @@ import {
 } from "@/app/actions/jubelio-webhooks";
 import {
   bulkPushAllStockToJubelio,
+  countBulkStockPushItems,
   getJubelioOutboxRows,
   getJubelioOutboxStats,
   retryJubelioOutboxRow,
   setJubelioStockPushEnabled,
 } from "@/app/actions/jubelio-outbox";
 import { toast } from "sonner";
+import { formatDisplayDateTime } from "@/lib/date-only";
+import { mulaiProses, selesaiProses } from "@/lib/pulau/pulau";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -48,7 +51,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ChevronDown, ChevronRight, Loader2, RefreshCw, Search, X } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Search, UploadCloud, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Pager } from "@/components/Pager";
 
@@ -70,8 +74,14 @@ function statusVariant(call: CallRow): "default" | "secondary" | "destructive" {
   return "default";
 }
 
+type WebhookStatus = "RECEIVED" | "PROCESSING" | "PROCESSED" | "SKIPPED" | "DEAD";
+type OutboxStatus = "PENDING" | "PROCESSING" | "DONE" | "SKIPPED" | "DEAD";
+
 export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled: boolean }) {
-  const t = useTranslations("jubelioStockPush");
+  const t = useTranslations("jubelio.admin");
+  const tPush = useTranslations("jubelioStockPush");
+  const tPulau = useTranslations("pulau.proses");
+  const locale = useLocale();
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -157,6 +167,10 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
   const [outboxStats, setOutboxStats] = useState<OutboxStats>(null);
   const [expandedOutboxId, setExpandedOutboxId] = useState<string | null>(null);
   const [bulkPushing, setBulkPushing] = useState(false);
+  // Dialog kirim massal: null = jumlah barang masih dihitung.
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkCount, setBulkCount] = useState<number | null>(null);
+  const [retryOutboxRow, setRetryOutboxRow] = useState<OutboxRow | null>(null);
   const [outboxSearch, setOutboxSearch] = useState(outboxQ);
   const [outboxLoading, setOutboxLoading] = useState(true);
   const outboxSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -187,7 +201,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
       whFilter === "DEAD"
         ? ("DEAD" as const)
         : whFilter === "errors"
-          ? (["DEAD", "SKIPPED"] as ("RECEIVED" | "PROCESSING" | "PROCESSED" | "SKIPPED" | "DEAD")[])
+          ? (["DEAD", "SKIPPED"] as WebhookStatus[])
           : undefined;
     const offset = (whPage - 1) * whSize;
     const [eventsRes, statsRes] = await Promise.all([
@@ -204,7 +218,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
       outboxFilter === "DEAD"
         ? ("DEAD" as const)
         : outboxFilter === "errors"
-          ? (["DEAD", "SKIPPED"] as ("PENDING" | "PROCESSING" | "DONE" | "SKIPPED" | "DEAD")[])
+          ? (["DEAD", "SKIPPED"] as OutboxStatus[])
           : undefined;
     const offset = (outboxPage - 1) * outboxSize;
     setOutboxLoading(true);
@@ -263,25 +277,45 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
   const handleRetry = async (id: string) => {
     const result = await retryJubelioWebhookEvent(id);
     if (result.ok) {
-      toast.success("Re-queued. Sweeper picks up within 10 min.");
+      toast.success(t("webhookRetryOk"));
       void loadWebhooks();
     } else {
-      toast.error("Retry not allowed (status must be DEAD or SKIPPED).");
+      toast.error(t("retryNotAllowed"));
+    }
+  };
+
+  const openBulkDialog = async () => {
+    setBulkCount(null);
+    setBulkDialogOpen(true);
+    try {
+      const r = await countBulkStockPushItems();
+      if (!r.ok) {
+        setBulkDialogOpen(false);
+        toast.error(tPush("bulkNotAdmin"));
+        return;
+      }
+      setBulkCount(r.count);
+    } catch {
+      setBulkDialogOpen(false);
+      toast.error(tPush("bulkFailed"));
     }
   };
 
   const handleBulkPush = async () => {
-    if (!confirm(t("bulkConfirm"))) return;
+    setBulkDialogOpen(false);
     setBulkPushing(true);
+    // Pulau status: tanpa persen — servernya mengantrekan sekaligus, tidak melapor kemajuan.
+    mulaiProses("jubelio-push-stok", tPulau("pushStokJubelio"));
     try {
       const r = await bulkPushAllStockToJubelio();
-      if (r.ok) toast.success(t("bulkQueued", { count: r.count }));
-      else if (r.reason === "push_disabled") toast.error(t("pushDisabledHint"));
-      else toast.error(t("bulkNotAdmin"));
+      if (r.ok) toast.success(t("bulkPushOk", { count: r.count }));
+      else if (r.reason === "push_disabled") toast.error(tPush("pushDisabledHint"));
+      else toast.error(tPush("bulkNotAdmin"));
       void loadOutbox();
     } catch {
-      toast.error(t("bulkFailed"));
+      toast.error(tPush("bulkFailed"));
     } finally {
+      selesaiProses("jubelio-push-stok");
       setBulkPushing(false);
     }
   };
@@ -292,12 +326,12 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
       const r = await setJubelioStockPushEnabled(enabled);
       if (r.ok) {
         setPushEnabled(enabled);
-        toast.success(enabled ? t("enabledToast") : t("disabledToast"));
+        toast.success(enabled ? tPush("enabledToast") : tPush("disabledToast"));
       } else {
-        toast.error(t("errorToast"));
+        toast.error(tPush("errorToast"));
       }
     } catch {
-      toast.error(t("errorToast"));
+      toast.error(tPush("errorToast"));
     } finally {
       setPushTogglePending(false);
     }
@@ -335,13 +369,13 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
   const outboxFiltered = outboxQ !== "" || outboxFilter !== "all";
 
   const handleOutboxRetry = async (id: string) => {
-    if (!confirm("Re-queue this row? Worker will re-push to Jubelio.")) return;
+    setRetryOutboxRow(null);
     const r = await retryJubelioOutboxRow(id);
     if (r.ok) {
-      toast.success("Re-queued. Poller picks up within ~5 seconds.");
+      toast.success(t("outboxRetryOk"));
       void loadOutbox();
     } else {
-      toast.error("Retry not allowed (status must be DEAD or SKIPPED).");
+      toast.error(t("retryNotAllowed"));
     }
   };
 
@@ -360,17 +394,43 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
 
   return (
     <div className="space-y-6">
+      <PageHeader
+        title={t("title")}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => void load()}>
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              {t("refresh")}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void openBulkDialog()}
+              disabled={bulkPushing || !pushEnabled}
+              title={pushEnabled ? undefined : tPush("pushDisabledHint")}
+            >
+              {bulkPushing ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <UploadCloud className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {bulkPushing ? t("bulkPushQueuing") : t("bulkPushButton")}
+            </Button>
+          </>
+        }
+      />
+
       {isAdmin && (
         <Card>
           <CardContent className="flex flex-col gap-4 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <p className="font-medium">{t("cardTitle")}</p>
+                <p className="font-medium">{tPush("cardTitle")}</p>
                 <Badge variant={pushEnabled ? "default" : "secondary"}>
-                  {pushEnabled ? t("statusEnabled") : t("statusDisabled")}
+                  {pushEnabled ? tPush("statusEnabled") : tPush("statusDisabled")}
                 </Badge>
               </div>
-              <p className="text-sm text-muted-foreground">{t("description")}</p>
+              <p className="text-sm text-muted-foreground">{tPush("description")}</p>
             </div>
             {pushEnabled ? (
               <Button
@@ -379,25 +439,25 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                 disabled={pushTogglePending}
               >
                 {pushTogglePending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                {t("disableButton")}
+                {tPush("disableButton")}
               </Button>
             ) : (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button disabled={pushTogglePending}>
                     {pushTogglePending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                    {t("enableButton")}
+                    {tPush("enableButton")}
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>{t("confirmEnableTitle")}</AlertDialogTitle>
-                    <AlertDialogDescription>{t("confirmEnableBody")}</AlertDialogDescription>
+                    <AlertDialogTitle>{tPush("confirmEnableTitle")}</AlertDialogTitle>
+                    <AlertDialogDescription>{tPush("confirmEnableBody")}</AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                    <AlertDialogCancel>{tPush("cancel")}</AlertDialogCancel>
                     <AlertDialogAction onClick={() => void handleTogglePush(true)}>
-                      {t("confirmEnableAction")}
+                      {tPush("confirmEnableAction")}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -407,68 +467,35 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
         </Card>
       )}
 
-      <Card>
-        <CardContent className="flex items-center justify-between gap-4 pt-6">
-          <div>
-            <p className="font-medium">Bulk push stock to Jubelio</p>
-            <p className="text-sm text-muted-foreground">
-              {pushEnabled
-                ? "Creates one outbox row per mapped item. Worker drains within minutes."
-                : t("pushDisabledHint")}
-            </p>
-          </div>
-          <Button
-            onClick={() => void handleBulkPush()}
-            disabled={bulkPushing || !pushEnabled}
-            title={pushEnabled ? undefined : t("pushDisabledHint")}
-          >
-            {bulkPushing ? t("bulkQueuing") : t("bulkButton")}
-          </Button>
-        </CardContent>
-      </Card>
-
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Jubelio API Calls</h1>
-          <p className="text-muted-foreground">
-            Outbound call log, latency, and rate-limit activity.
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => void load()}>
-          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-          Refresh
-        </Button>
-      </div>
-
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <div className="text-sm text-muted-foreground">
-              Total calls (last {stats?.windowHours ?? 24}h)
+              {t("kpiTotal", { hours: stats?.windowHours ?? 24 })}
             </div>
             <div className="text-3xl font-bold">{stats?.total ?? 0}</div>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <div className="text-sm text-muted-foreground">Error rate</div>
+            <div className="text-sm text-muted-foreground">{t("kpiErrorRate")}</div>
             <div className="text-3xl font-bold">
               {errorRate}%
               <span className="ml-2 text-sm font-normal text-muted-foreground">
-                ({stats?.errors ?? 0} failed)
+                {t("kpiFailed", { count: stats?.errors ?? 0 })}
               </span>
             </div>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <div className="text-sm text-muted-foreground">Rate-limited (429)</div>
+            <div className="text-sm text-muted-foreground">{t("kpiRateLimited")}</div>
             <div className="text-3xl font-bold">{stats?.rateLimited ?? 0}</div>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <div className="text-sm text-muted-foreground">Avg latency</div>
+            <div className="text-sm text-muted-foreground">{t("kpiLatency")}</div>
             <div className="text-3xl font-bold">{stats?.avgLatencyMs ?? 0}ms</div>
           </CardHeader>
         </Card>
@@ -476,8 +503,8 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Recent calls</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>{t("recentCalls")}</CardTitle>
             <Button
               variant={callsFilter === "errors" ? "default" : "outline"}
               size="sm"
@@ -488,7 +515,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                 })
               }
             >
-              {callsFilter === "errors" ? "Showing errors only" : "Show errors only"}
+              {callsFilter === "errors" ? t("showingErrorsOnly") : t("showErrorsOnly")}
             </Button>
           </div>
         </CardHeader>
@@ -503,12 +530,12 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Time</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Path</TableHead>
-                      <TableHead className="text-right">Status</TableHead>
-                      <TableHead className="text-right">Latency</TableHead>
-                      <TableHead>Flags</TableHead>
+                      <TableHead>{t("col.time")}</TableHead>
+                      <TableHead>{t("col.method")}</TableHead>
+                      <TableHead>{t("col.path")}</TableHead>
+                      <TableHead className="text-right">{t("col.status")}</TableHead>
+                      <TableHead className="text-right">{t("col.latency")}</TableHead>
+                      <TableHead>{t("col.flags")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -518,14 +545,14 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                           colSpan={6}
                           className="py-8 text-center text-muted-foreground"
                         >
-                          No API calls logged yet.
+                          {t("emptyCalls")}
                         </TableCell>
                       </TableRow>
                     ) : (
                       calls.map((call) => (
                         <TableRow key={call.id}>
                           <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                            {new Date(call.createdAt).toLocaleString()}
+                            {formatDisplayDateTime(call.createdAt, locale)}
                           </TableCell>
                           <TableCell className="font-mono text-xs">{call.method}</TableCell>
                           <TableCell className="max-w-[280px] truncate font-mono text-xs">
@@ -539,7 +566,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                           <TableCell className="text-right text-sm tabular-nums">
                             {call.latencyMs}ms
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="min-w-[180px] whitespace-normal">
                             {call.rateLimited && (
                               <Badge variant="secondary" className="mr-1">
                                 429
@@ -579,7 +606,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
         {(["RECEIVED", "PROCESSING", "PROCESSED", "SKIPPED", "DEAD"] as const).map((s) => (
           <Card key={s}>
             <CardHeader className="pb-2">
-              <div className="text-sm text-muted-foreground">{s}</div>
+              <StatusTileLabel label={t(`status.${s}`)} code={s} />
               <div className="text-2xl font-bold">{whStats?.byStatus?.[s] ?? 0}</div>
             </CardHeader>
           </Card>
@@ -588,9 +615,9 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Webhook events</CardTitle>
-            <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>{t("webhookEvents")}</CardTitle>
+            <div className="flex flex-wrap gap-2" role="group" aria-label={t("filterLabel")}>
               {(["all", "errors", "DEAD"] as const).map((f) => (
                 <Button
                   key={f}
@@ -598,7 +625,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                   variant={whFilter === f ? "default" : "outline"}
                   onClick={() => updateUrl({ whFilter: f === "all" ? null : f, whPage: "1" })}
                 >
-                  {f}
+                  {t(`filter.${f}`)}
                 </Button>
               ))}
             </div>
@@ -610,13 +637,15 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8"></TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Attempts</TableHead>
-                    <TableHead>Flags / reason</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="w-8">
+                      <span className="sr-only">{t("col.details")}</span>
+                    </TableHead>
+                    <TableHead>{t("col.time")}</TableHead>
+                    <TableHead>{t("col.event")}</TableHead>
+                    <TableHead>{t("col.status")}</TableHead>
+                    <TableHead className="text-right">{t("col.attempts")}</TableHead>
+                    <TableHead>{t("col.reason")}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{t("col.action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -626,7 +655,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                         colSpan={7}
                         className="py-8 text-center text-muted-foreground"
                       >
-                        No webhook events.
+                        {t("emptyWebhooks")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -643,6 +672,9 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                                 onClick={() =>
                                   setExpandedWebhookId(isExpanded ? null : e.id)
                                 }
+                                aria-expanded={isExpanded}
+                                aria-label={isExpanded ? t("hideDetails") : t("showDetails")}
+                                title={isExpanded ? t("hideDetails") : t("showDetails")}
                               >
                                 {isExpanded ? (
                                   <ChevronDown className="h-4 w-4" />
@@ -652,11 +684,14 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                               </Button>
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                              {new Date(e.receivedAt).toLocaleString()}
+                              {formatDisplayDateTime(e.receivedAt, locale)}
                             </TableCell>
-                            <TableCell className="font-mono text-xs">{e.event}</TableCell>
+                            <TableCell className="text-sm" title={e.event}>
+                              {t.has(`event.${e.event}`) ? t(`event.${e.event}`) : e.event}
+                            </TableCell>
                             <TableCell>
                               <Badge
+                                title={e.status}
                                 variant={
                                   e.status === "DEAD"
                                     ? "destructive"
@@ -665,23 +700,23 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                                       : "default"
                                 }
                               >
-                                {e.status}
+                                {t(`status.${e.status as WebhookStatus}`)}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right text-sm tabular-nums">
                               {e.attempts}
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell className="min-w-[200px] max-w-[320px] whitespace-normal break-words text-xs">
                               {e.skipReason ?? e.lastError?.slice(0, 60) ?? "—"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="sticky right-0 bg-card text-right">
                               {(e.status === "DEAD" || e.status === "SKIPPED") && (
                                 <Button
                                   size="sm"
                                   variant="outline"
                                   onClick={() => void handleRetry(e.id)}
                                 >
-                                  Retry
+                                  {t("retry")}
                                 </Button>
                               )}
                             </TableCell>
@@ -691,47 +726,39 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                               <TableCell colSpan={7} className="bg-muted/50">
                                 <div className="p-4 space-y-2 text-sm">
                                   <p>
-                                    <span className="font-medium">Signature:</span>{" "}
+                                    <span className="font-medium">{t("detail.signature")}:</span>{" "}
                                     <span className="font-mono text-xs break-all">
                                       {e.signature ?? "—"}
                                     </span>
                                   </p>
                                   <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                                     <p>
-                                      <span className="font-medium">receivedAt:</span>{" "}
-                                      {e.receivedAt
-                                        ? new Date(e.receivedAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.receivedAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.receivedAt, locale)}
                                     </p>
                                     <p>
-                                      <span className="font-medium">processedAt:</span>{" "}
-                                      {e.processedAt
-                                        ? new Date(e.processedAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.processedAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.processedAt, locale)}
                                     </p>
                                     <p>
-                                      <span className="font-medium">deadAt:</span>{" "}
-                                      {e.deadAt
-                                        ? new Date(e.deadAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.deadAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.deadAt, locale)}
                                     </p>
                                     <p>
-                                      <span className="font-medium">lastEnqueuedAt:</span>{" "}
-                                      {e.lastEnqueuedAt
-                                        ? new Date(e.lastEnqueuedAt).toLocaleString()
-                                        : "—"}
+                                      <span className="font-medium">{t("detail.lastEnqueuedAt")}:</span>{" "}
+                                      {formatDisplayDateTime(e.lastEnqueuedAt, locale)}
                                     </p>
                                   </div>
                                   {e.lastError && (
                                     <div>
-                                      <p className="font-medium">lastError:</p>
+                                      <p className="font-medium">{t("detail.lastError")}:</p>
                                       <pre className="bg-background p-3 rounded text-xs overflow-auto max-h-32 whitespace-pre-wrap break-all">
                                         {e.lastError}
                                       </pre>
                                     </div>
                                   )}
                                   <div>
-                                    <p className="font-medium">Raw payload:</p>
+                                    <p className="font-medium">{t("detail.rawPayload")}:</p>
                                     <pre className="bg-background p-3 rounded text-xs overflow-auto max-h-64">
                                       {JSON.stringify(e.rawPayload, null, 2)}
                                     </pre>
@@ -764,7 +791,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
         {(["PENDING", "PROCESSING", "DONE", "SKIPPED", "DEAD"] as const).map((s) => (
           <Card key={s}>
             <CardHeader className="pb-2">
-              <div className="text-sm text-muted-foreground">{s}</div>
+              <StatusTileLabel label={t(`status.${s}`)} code={s} />
               <div className="text-2xl font-bold">{outboxStats?.byStatus?.[s] ?? 0}</div>
             </CardHeader>
           </Card>
@@ -774,8 +801,8 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
       <Card>
         <CardHeader className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle>Outbox events</CardTitle>
-            <div className="flex flex-wrap gap-2">
+            <CardTitle>{t("outboxEvents")}</CardTitle>
+            <div className="flex flex-wrap gap-2" role="group" aria-label={t("filterLabel")}>
               {(["all", "errors", "DEAD"] as const).map((f) => (
                 <Button
                   key={f}
@@ -785,7 +812,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                     updateUrl({ outboxFilter: f === "all" ? null : f, outboxPage: "1" })
                   }
                 >
-                  {f}
+                  {t(`filter.${f}`)}
                 </Button>
               ))}
             </div>
@@ -796,15 +823,15 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
               <Input
                 value={outboxSearch}
                 onChange={(e) => handleOutboxSearchChange(e.target.value)}
-                placeholder="Search row id, entity, or error text..."
-                aria-label="Search outbox events"
+                placeholder={t("outboxSearchPlaceholder")}
+                aria-label={t("outboxSearchLabel")}
                 className="h-10 pr-9 pl-9"
               />
               {outboxSearch !== "" && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  aria-label="Clear outbox search"
+                  aria-label={t("outboxSearchClear")}
                   className="absolute top-1/2 right-1 h-8 w-8 -translate-y-1/2"
                   onClick={handleOutboxSearchClear}
                 >
@@ -819,7 +846,7 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
               disabled={!outboxFiltered}
               onClick={handleOutboxReset}
             >
-              Reset
+              {t("reset")}
             </Button>
             {outboxLoading && (
               <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
@@ -832,13 +859,15 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8" />
-                    <TableHead>Time</TableHead>
-                    <TableHead>Entity</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Attempts</TableHead>
-                    <TableHead>Flags / reason</TableHead>
-                    <TableHead className="text-right">Action</TableHead>
+                    <TableHead className="w-8">
+                      <span className="sr-only">{t("col.details")}</span>
+                    </TableHead>
+                    <TableHead>{t("col.time")}</TableHead>
+                    <TableHead>{t("col.entity")}</TableHead>
+                    <TableHead>{t("col.status")}</TableHead>
+                    <TableHead className="text-right">{t("col.attempts")}</TableHead>
+                    <TableHead>{t("col.reason")}</TableHead>
+                    <TableHead className="sticky right-0 bg-card text-right">{t("col.action")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -856,13 +885,13 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                       >
                         {outboxFiltered ? (
                           <div className="space-y-3">
-                            <p>No outbox events match this search or filter.</p>
+                            <p>{t("emptyOutboxFiltered")}</p>
                             <Button size="sm" variant="outline" onClick={handleOutboxReset}>
-                              Clear search and filter
+                              {t("clearSearchAndFilter")}
                             </Button>
                           </div>
                         ) : (
-                          "No outbox events."
+                          t("emptyOutbox")
                         )}
                       </TableCell>
                     </TableRow>
@@ -882,6 +911,9 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                                 onClick={() =>
                                   setExpandedOutboxId(expanded ? null : r.id)
                                 }
+                                aria-expanded={expanded}
+                                aria-label={expanded ? t("hideDetails") : t("showDetails")}
+                                title={expanded ? t("hideDetails") : t("showDetails")}
                               >
                                 {expanded ? (
                                   <ChevronDown className="h-4 w-4" />
@@ -891,13 +923,16 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                               </Button>
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                              {new Date(r.createdAt).toLocaleString()}
+                              {formatDisplayDateTime(r.createdAt, locale)}
                             </TableCell>
-                            <TableCell className="font-mono text-xs">
-                              {r.entityType}:{r.entityId.slice(0, 8)}
+                            <TableCell className="text-sm" title={`${r.entityType}:${r.entityId}`}>
+                              {t.has(`entity.${r.entityType}`)
+                                ? t(`entity.${r.entityType}`)
+                                : r.entityType}
                             </TableCell>
                             <TableCell>
                               <Badge
+                                title={r.status}
                                 variant={
                                   r.status === "DEAD"
                                     ? "destructive"
@@ -906,23 +941,23 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                                       : "default"
                                 }
                               >
-                                {r.status}
+                                {t(`status.${r.status as OutboxStatus}`)}
                               </Badge>
                             </TableCell>
                             <TableCell className="text-right text-sm tabular-nums">
                               {r.attempts}
                             </TableCell>
-                            <TableCell className="text-xs">
+                            <TableCell className="min-w-[200px] max-w-[320px] whitespace-normal break-words text-xs">
                               {r.skipReason ?? r.lastError?.slice(0, 60) ?? "—"}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="sticky right-0 bg-card text-right">
                               {(r.status === "DEAD" || r.status === "SKIPPED") && (
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => void handleOutboxRetry(r.id)}
+                                  onClick={() => setRetryOutboxRow(r)}
                                 >
-                                  Retry
+                                  {t("retry")}
                                 </Button>
                               )}
                             </TableCell>
@@ -932,30 +967,24 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
                               <TableCell colSpan={7} className="bg-muted/50">
                                 <div className="space-y-2 p-4 text-sm">
                                   <p>
-                                    <span className="font-medium">Enqueued by:</span>{" "}
+                                    <span className="font-medium">{t("detail.enqueuedBy")}:</span>{" "}
                                     {enqueuedByLabel}
                                   </p>
                                   <p>
-                                    <span className="font-medium">createdAt:</span>{" "}
-                                    {new Date(r.createdAt).toLocaleString()}
+                                    <span className="font-medium">{t("detail.createdAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.createdAt, locale)}
                                   </p>
                                   <p>
-                                    <span className="font-medium">lastEnqueuedAt:</span>{" "}
-                                    {r.lastEnqueuedAt
-                                      ? new Date(r.lastEnqueuedAt).toLocaleString()
-                                      : "—"}
+                                    <span className="font-medium">{t("detail.lastEnqueuedAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.lastEnqueuedAt, locale)}
                                   </p>
                                   <p>
-                                    <span className="font-medium">processedAt:</span>{" "}
-                                    {r.processedAt
-                                      ? new Date(r.processedAt).toLocaleString()
-                                      : "—"}
+                                    <span className="font-medium">{t("detail.processedAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.processedAt, locale)}
                                   </p>
                                   <p>
-                                    <span className="font-medium">deadAt:</span>{" "}
-                                    {r.deadAt
-                                      ? new Date(r.deadAt).toLocaleString()
-                                      : "—"}
+                                    <span className="font-medium">{t("detail.deadAt")}:</span>{" "}
+                                    {formatDisplayDateTime(r.deadAt, locale)}
                                   </p>
                                   {r.lastError && (
                                     <pre className="bg-background max-h-32 overflow-auto rounded p-3 text-xs">
@@ -988,6 +1017,78 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
           </div>
         </CardContent>
       </Card>
+
+      <AlertDialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {bulkCount === null
+                ? t("bulkPushTitle")
+                : t("bulkPushDialogTitle", { count: bulkCount })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {bulkCount === null
+                ? t("bulkPushCounting")
+                : bulkCount === 0
+                  ? t("bulkPushNone")
+                  : t("bulkPushBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!bulkCount}
+              onClick={(ev) => {
+                ev.preventDefault();
+                void handleBulkPush();
+              }}
+            >
+              {t("bulkPushDialogAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={retryOutboxRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setRetryOutboxRow(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("outboxRetryTitle", {
+                entity:
+                  retryOutboxRow && t.has(`entity.${retryOutboxRow.entityType}`)
+                    ? t(`entity.${retryOutboxRow.entityType}`)
+                    : (retryOutboxRow?.entityType ?? ""),
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("outboxRetryConfirm")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(ev) => {
+                ev.preventDefault();
+                if (retryOutboxRow) void handleOutboxRetry(retryOutboxRow.id);
+              }}
+            >
+              {t("outboxRetryAction")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/** Label Indonesia saja; nama status teknisnya hanya di tooltip. */
+function StatusTileLabel({ label, code }: { label: string; code: string }) {
+  return (
+    <div className="text-sm text-muted-foreground" title={code}>
+      {label}
     </div>
   );
 }

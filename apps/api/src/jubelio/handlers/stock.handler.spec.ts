@@ -250,9 +250,10 @@ describe("StockWebhookHandler", () => {
 
 /*
  * Penekan gema push stok (Usulan B, analisis-webhook-stok §5).
- * ERP mendorong AVAILABLE (onHand − ditahan) ke Jubelio; webhook stok menulis end_qty
- * MUTLAK ke onHand. Bila Jubelio menggema push kita, setiap putaran menghapus `ditahan`
- * dari onHand. Model di bawah meniru penulis sungguhan: end_qty → onHand + satu
+ * ERP mendorong onHand − penahanan sales lapangan ke Jubelio; webhook stok menyerahkan end_qty
+ * MENTAH ke penulis, yang menambahkan penahanan yang terbuka SAAT ITU. Gema push kita tidak
+ * membawa perubahan dari Jubelio, dan bila penahanan berubah sejak push, menuliskannya menggeser
+ * onHand. Model di bawah menyederhanakan penulis (penahanan dianggap 0): end_qty → onHand + satu
  * StockAdjustment JUBELIO_WEBHOOK per penerapan.
  */
 describe("StockWebhookHandler — penekan gema push stok", () => {
@@ -321,11 +322,11 @@ describe("StockWebhookHandler — penekan gema push stok", () => {
       penyesuaian.push({
         itemId: input.itemId,
         externalRef: input.externalRef,
-        qtyChange: input.newQty - stok.onHand,
+        qtyChange: input.jubelioEndQty - stok.onHand,
         createdAt: new Date(),
         source: "JUBELIO_WEBHOOK",
       });
-      stok.onHand = input.newQty;
+      stok.onHand = input.jubelioEndQty;
       return { adjustmentId: `adj_${penyesuaian.length}`, skipped: false };
     });
   });
@@ -390,7 +391,7 @@ describe("StockWebhookHandler — penekan gema push stok", () => {
     const hasil = await kirimWebhook("evt_sah");
 
     expect(hasil).toEqual({ kind: "processed" });
-    expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({ newQty: 5, variantSku: "ERP-A-RED" }));
+    expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({ jubelioEndQty: 5, variantSku: "ERP-A-RED" }));
     expect(stok.onHand).toBe(5);
     expect(penyesuaian.map((a) => a.qtyChange)).toEqual([-5]);
   });
@@ -486,7 +487,7 @@ describe("StockWebhookHandler — penekan gema push stok", () => {
 
     expect(hasil).toEqual({ kind: "processed" });
     expect(applyJubelioStockAdjustment).toHaveBeenCalledTimes(1);
-    expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({ variantSku: "ERP-A-BLU", newQty: 1 }));
+    expect(applyJubelioStockAdjustment).toHaveBeenCalledWith(prisma, expect.objectContaining({ variantSku: "ERP-A-BLU", jubelioEndQty: 1 }));
   });
 
   it("isi `terkirim` yang rusak (tanggal tak terbaca, angka bukan bilangan) diabaikan, bukan dilempar", async () => {

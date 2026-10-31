@@ -8,9 +8,6 @@ describe("sales-return-writer", () => {
       stockAdjustment: { create: jest.fn() },
       inventoryValue: {
         findFirst: jest.fn(),
-        findUnique: jest.fn(),
-        findMany: jest.fn(),
-        count: jest.fn(),
         update: jest.fn(),
         /* moveMainStock's pinned path: a guarded updateMany, a re-read, then the ledger append. */
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -37,11 +34,13 @@ describe("sales-return-writer", () => {
         decision: "PENDING",
         salesReturn: { pushOutboxRowId: null },
       });
-      // Barang tanpa varian: baris gabungan null/"" (aturan barisStokPesanan).
-      tx.inventoryValue.findMany.mockResolvedValue([{ id: "iv1", avgCost: "100.00", variantSku: null }]);
+      tx.inventoryValue.findFirst.mockResolvedValue({
+        id: "iv1",
+        qtyOnHand: "10.00",
+        avgCost: "100.00",
+      });
       tx.stockAdjustment.create.mockResolvedValue({ id: "sa1" });
       tx.salesReturnItem.update.mockResolvedValue({});
-      tx.inventoryValue.update.mockResolvedValue({ qtyOnHand: "12.00" });
 
       const result = await acceptReturnItem(tx, {
         returnItemId: "ri1",
@@ -50,13 +49,18 @@ describe("sales-return-writer", () => {
       });
 
       expect(result).toEqual({ applied: true, stockAdjustmentId: "sa1" });
-      // Increment atom, bukan angka mutlak dari bacaan sebelumnya.
-      expect(tx.inventoryValue.update).toHaveBeenCalledWith(expect.objectContaining({
-        where: { id: "iv1" },
-        data: expect.objectContaining({
-          qtyOnHand: { increment: 2 },
-          totalValue: { increment: 200 },
-        }),
+      // A variantless line finds its row whether it is spelled null or "".
+      expect(tx.inventoryValue.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { itemId: "i1", OR: [{ variantSku: null }, { variantSku: "" }] },
+      }));
+      // qtyOnHand moves by an atomic increment on the row that was read, never an absolute write.
+      expect(tx.inventoryValue.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: "iv1", itemId: "i1" }),
+        data: expect.objectContaining({ qtyOnHand: { increment: 2 } }),
+      }));
+      expect(tx.inventoryValue.update).not.toHaveBeenCalled();
+      expect(tx.stockLedgerEntry.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ itemId: "i1", qty: 2, balanceQty: 12 }),
       }));
       expect(tx.stockAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({
@@ -294,7 +298,7 @@ describe("sales-return-writer", () => {
         qty: "1.00",
         salesReturn: { pushOutboxRowId: null },
       });
-      tx.inventoryValue.findMany.mockResolvedValue([]);
+      tx.inventoryValue.findFirst.mockResolvedValue(null);
 
       const r = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "x", changedById: "u1" });
       expect(r).toEqual({ applied: false, skipped: "no_inventory_row" });

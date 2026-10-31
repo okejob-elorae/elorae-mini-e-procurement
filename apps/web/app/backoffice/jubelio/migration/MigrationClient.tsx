@@ -86,7 +86,11 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
         toast.error(pesanGalat(r));
         return;
       }
-      toast.success(t("queued", { count: r.data.enqueued }));
+      toast.success(
+        r.data.skipped > 0
+          ? t("queuedSkipped", { count: r.data.enqueued, skipped: r.data.skipped })
+          : t("queued", { count: r.data.enqueued }),
+      );
       setItems((prev) => prev.filter((it) => !selected.has(it.id)));
       setSelected(new Set());
     });

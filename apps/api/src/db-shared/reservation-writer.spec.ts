@@ -8,8 +8,13 @@ function makeTx(overrides: any = {}) {
       create: jest.fn().mockResolvedValue({ id: "r1" }),
       ...overrides.stockReservation,
     },
+    /*
+     * reserveOrder resolves its row through barisStokPesanan: an exact (itemId, variantSku) row by
+     * findUnique, a count of the item's per-variant rows, then the pooled null/"" rows by findMany.
+     */
     inventoryValue: {
-      findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "10", reservedQty: "0" }),
+      findUnique: jest.fn().mockResolvedValue(null),
+      count: jest.fn().mockResolvedValue(0),
       findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
       update: jest.fn().mockResolvedValue({ qtyOnHand: "10", reservedQty: "3" }),
       ...overrides.inventoryValue,
@@ -28,8 +33,19 @@ describe("reserveOrder", () => {
     });
     expect(r.reserved).toBe(1);
     expect(r.skipped).toBe(0);
+    expect(tx.inventoryValue.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { itemId: "i1", OR: [{ variantSku: null }, { variantSku: "" }] } }),
+    );
     expect(tx.stockReservation.create).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ salesorderDetailId: 5, state: "RESERVED", qty: 3 }) }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          salesorderDetailId: 5,
+          state: "RESERVED",
+          qty: 3,
+          variantSku: "",
+          inventoryValueId: "iv1",
+        }),
+      }),
     );
     expect(tx.inventoryValue.update).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -56,8 +72,6 @@ describe("reserveOrder", () => {
   it("emits an oversell alert + AdminNotification when reserved exceeds onHand", async () => {
     const tx = makeTx({
       inventoryValue: {
-        findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "2", reservedQty: "0" }),
-        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({ qtyOnHand: "2", reservedQty: "3" }),
       },
     });
@@ -76,7 +90,7 @@ describe("reserveOrder", () => {
 
   it("throws InventoryValueMissingError when no InventoryValue row exists for the line", async () => {
     const tx = makeTx({
-      inventoryValue: { findFirst: jest.fn().mockResolvedValue(null), findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
+      inventoryValue: { findMany: jest.fn().mockResolvedValue([]), update: jest.fn() },
     });
     await expect(
       reserveOrder(tx, {
@@ -85,6 +99,51 @@ describe("reserveOrder", () => {
         lines: [{ salesorderDetailId: 5, itemId: "i1", variantSku: "", qty: 3 }],
       }),
     ).rejects.toThrow(InventoryValueMissingError);
+    expect(tx.stockReservation.create).not.toHaveBeenCalled();
+  });
+
+  it("reserves a variant line on its own (itemId, variantSku) row", async () => {
+    const tx = makeTx({
+      inventoryValue: { findUnique: jest.fn().mockResolvedValue({ id: "iv-red", avgCost: "0" }) },
+    });
+    await reserveOrder(tx, {
+      salesorderId: 100,
+      salesorderNo: "SO-100",
+      lines: [{ salesorderDetailId: 5, itemId: "i1", variantSku: "i1-RED", qty: 3 }],
+    });
+    expect(tx.inventoryValue.findUnique).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { itemId_variantSku: { itemId: "i1", variantSku: "i1-RED" } } }),
+    );
+    expect(tx.inventoryValue.findMany).not.toHaveBeenCalled();
+    expect(tx.stockReservation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ variantSku: "i1-RED", inventoryValueId: "iv-red" }) }),
+    );
+    expect(tx.inventoryValue.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "iv-red" } }));
+  });
+
+  it("falls back to the pooled row for a variant line when the item keeps no per-variant rows, keying the reservation on it", async () => {
+    const tx = makeTx();
+    await reserveOrder(tx, {
+      salesorderId: 100,
+      salesorderNo: "SO-100",
+      lines: [{ salesorderDetailId: 5, itemId: "i1", variantSku: "i1-RED", qty: 3 }],
+    });
+    expect(tx.stockReservation.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ variantSku: "", inventoryValueId: "iv1" }) }),
+    );
+  });
+
+  it("refuses a variant line with no row of its own when the item keeps per-variant rows", async () => {
+    const tx = makeTx({ inventoryValue: { count: jest.fn().mockResolvedValue(2), update: jest.fn() } });
+    await expect(
+      reserveOrder(tx, {
+        salesorderId: 100,
+        salesorderNo: "SO-100",
+        lines: [{ salesorderDetailId: 5, itemId: "i1", variantSku: "i1-RED", qty: 3 }],
+      }),
+    ).rejects.toThrow(InventoryValueMissingError);
+    expect(tx.inventoryValue.findMany).not.toHaveBeenCalled();
+    expect(tx.stockReservation.create).not.toHaveBeenCalled();
   });
 });
 
@@ -99,7 +158,6 @@ describe("consumeOrder", () => {
       },
       inventoryValue: {
         findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "10", reservedQty: "3", avgCost: "2" }),
-        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "2", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({ qtyOnHand: "7" }),
       },
       stockAdjustment: { create: jest.fn().mockResolvedValue({ id: "a1" }) },
@@ -145,7 +203,6 @@ describe("consumeOrder", () => {
       },
       inventoryValue: {
         findFirst: jest.fn().mockResolvedValue(null),
-        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
       stockAdjustment: { create: jest.fn() },
@@ -186,7 +243,6 @@ describe("releaseOrder", () => {
       },
       inventoryValue: {
         findFirst: jest.fn().mockResolvedValue({ id: "iv1", qtyOnHand: "10", reservedQty: "3" }),
-        findMany: jest.fn().mockResolvedValue([{ id: "iv1", avgCost: "0", variantSku: "" }]),
         update: jest.fn().mockResolvedValue({}),
       },
     };

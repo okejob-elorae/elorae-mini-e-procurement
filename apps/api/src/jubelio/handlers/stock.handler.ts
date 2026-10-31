@@ -12,9 +12,11 @@ import type { HandlerOutcome, WebhookEventHandler } from "./handler.types";
  * Penekan gema push stok (analisis-webhook-stok §5, Usulan B).
  *
  * ERP mendorong `end_qty` (onHand − penahanan sales lapangan, lihat jubelio-stock-contract.ts)
- * ke Jubelio, dan webhook ini menulis balik `end_qty` sebagai onHand. Gema push kita sendiri
- * tidak membawa perubahan apa pun dari Jubelio, jadi tidak ditulis ulang. Varian yang `end_qty`-nya
- * SAMA dengan push stok terakhir untuk kodenya dilewati, selama push itu:
+ * ke Jubelio, dan webhook ini menulis balik `end_qty` sebagai onHand (penulis menambahkan
+ * penahanan yang terbuka saat webhook diterapkan). Gema push kita sendiri tidak membawa perubahan
+ * apa pun dari Jubelio — dan bila penahanan berubah sejak push, menuliskannya menggeser onHand —
+ * jadi tidak ditulis ulang. Varian yang `end_qty`-nya SAMA dengan push stok terakhir untuk
+ * kodenya dilewati, selama push itu:
  *  - diterima Jubelio paling lama JENDELA_GEMA_PUSH_MS sebelum webhook ini DITERIMA (lebih tua →
  *    tidak menekan apa pun; diukur dari waktu terima, jadi gema yang tertahan di antrean tetap dikenali);
  *  - belum disusul webhook stok yang benar-benar DITERAPKAN untuk kode itu SESUDAH push (Jubelio
