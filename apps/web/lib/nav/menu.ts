@@ -17,6 +17,8 @@ import {
   ShoppingBag,
   ShoppingCart,
   Store,
+  Users,
+  Warehouse,
 } from "lucide-react";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 
@@ -61,6 +63,8 @@ export interface NavItem {
    */
   section?: string;
   children?: NavChild[];
+  /** Hanya tampil bagi peran lama ADMIN (mis. Akun Profil, yang halamannya sendiri menolak selain ADMIN). */
+  adminOnly?: boolean;
 }
 
 /**
@@ -140,6 +144,8 @@ export const navItems: NavItem[] = [
     permission: PERMISSIONS.INVENTORY_VIEW,
     children: [
       { labelKey: "inventory", href: "/backoffice/inventory", permission: PERMISSIONS.INVENTORY_VIEW },
+      { labelKey: "navStockCard", href: "/backoffice/inventory/stock-card", permission: PERMISSIONS.INVENTORY_VIEW },
+      { labelKey: "navStockMovements", href: "/backoffice/inventory/movements", permission: PERMISSIONS.INVENTORY_VIEW },
       { labelKey: "navStockOpnameKalimat", href: "/backoffice/inventory/stock-opname", permission: PERMISSIONS.INVENTORY_OPNAME_VIEW },
       // Layar gudang menghitung barang retur dari toko — di luar /backoffice
       // (lihat CLAUDE.md "Layar gudang ada di /gudang-retur"); sebelumnya tidak
@@ -148,6 +154,15 @@ export const navItems: NavItem[] = [
       { labelKey: "navStockReconciliation", href: "/backoffice/inventory/reconciliation", permission: PERMISSIONS.INVENTORY_RECONCILIATION_VIEW },
       // Barang RUSAK/EXPIRED yang kembali lewat nota retur toko; memutuskan = `inventory:manage`.
       { labelKey: "navGudangRusak", href: "/backoffice/gudang-rusak", permission: PERMISSIONS.INVENTORY_VIEW },
+      // Reject dan sisa produksi dari penerimaan barang jadi — tidak masuk stok aktif.
+      { labelKey: "navRejectedGoods", href: "/backoffice/inventory/rejected-goods", permission: PERMISSIONS.INVENTORY_VIEW },
+      // Pengirim (`deliveries:ship`) mengemas dan mengirim; penutup (`deliveries:pod`)
+      // menutup kiriman lewat bukti terima — halamannya menerima salah satu.
+      {
+        labelKey: "navDeliveries",
+        href: "/backoffice/deliveries",
+        permission: [PERMISSIONS.DELIVERIES_SHIP, PERMISSIONS.DELIVERIES_POD],
+      },
     ],
   },
   {
@@ -160,9 +175,17 @@ export const navItems: NavItem[] = [
       // Label menu = judul halaman tujuannya (audit 2026-10-08: "Pesanan" membuka "Pesanan marketplace").
       { labelKey: "navPesananMarketplace", href: "/backoffice/sales-orders", permission: PERMISSIONS.SALES_ORDERS_VIEW },
       { labelKey: "navFulfillment", href: "/backoffice/fulfillment", permission: PERMISSIONS.SALES_ORDERS_VIEW },
+      // Pencatatan pengemas pesanan marketplace — layarnya di luar /backoffice.
+      { labelKey: "navRecordPacker", href: "/packer", permission: PERMISSIONS.PACKER_MENU },
       { labelKey: "navSalesReturns", href: "/backoffice/returns", permission: PERMISSIONS.SALES_ORDERS_VIEW },
       { labelKey: "navPesananLapangan", href: "/backoffice/field-sales-orders", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
       { labelKey: "navInden", href: "/backoffice/inden", permission: PERMISSIONS.FIELD_SALES_ORDERS_VIEW },
+      // Sama dengan `canViewFieldReturns`: pembaca pesanan lapangan ATAU gudang yang menerima returnya.
+      {
+        labelKey: "navFieldReturns",
+        href: "/backoffice/field-returns",
+        permission: [PERMISSIONS.FIELD_SALES_ORDERS_VIEW, PERMISSIONS.FIELD_RETURNS_MANAGE],
+      },
       { labelKey: "navSalesKanvas", href: "/backoffice/canvassing", permission: PERMISSIONS.CANVASSING_MANAGE },
       { labelKey: "navPenjualanKanvas", href: "/backoffice/van-sales", permission: PERMISSIONS.CANVASSING_MANAGE },
       { labelKey: "promos", href: "/backoffice/promos", permission: PERMISSIONS.PROMOS_VIEW },
@@ -220,6 +243,8 @@ export const navItems: NavItem[] = [
       { labelKey: "navSpgPelanggan", href: "/backoffice/spg-pelanggan", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navJadwalShiftSpg", href: "/backoffice/jadwal-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navKomisiSpg", href: "/backoffice/komisi-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
+      // Rekap komisi per pcs dari penjualan POS yang dikonfirmasi laporan sell-through.
+      { labelKey: "navSpgCommission", href: "/backoffice/spg-commission", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navSpgRequests", href: "/backoffice/spg-requests", permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.STORES_MANAGE] },
       { labelKey: "navSpgLostSales", href: "/backoffice/spg-lost-sales", permission: PERMISSIONS.SPG_SALES_VIEW },
       // Mutasi antar toko oleh SPG — barang KONSI berpindah rak, bukan dokumen penjualan.
@@ -268,8 +293,11 @@ export const navItems: NavItem[] = [
     permission: PERMISSIONS.PURCHASE_ORDERS_VIEW,
     children: [
       { labelKey: "navPesananPembelian", href: "/backoffice/purchase-orders", permission: PERMISSIONS.PURCHASE_ORDERS_VIEW },
+      { labelKey: "navItemRequests", href: "/backoffice/item-requests", permission: PERMISSIONS.ITEM_REQUESTS_VIEW },
       { labelKey: "navPembayaranPemasok", href: "/backoffice/supplier-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
       { labelKey: "navUmurHutang", href: "/backoffice/supplier-payments/umur-hutang", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
+      { labelKey: "navVendorBills", href: "/backoffice/vendor-bills", permission: PERMISSIONS.VENDOR_BILLS_VIEW },
+      { labelKey: "navVendorPayments", href: "/backoffice/vendor-payments", permission: PERMISSIONS.SUPPLIER_PAYMENTS_VIEW },
       { labelKey: "navReturKePemasok", href: "/backoffice/vendor-returns", permission: PERMISSIONS.VENDOR_RETURNS_VIEW },
     ],
   },
@@ -293,6 +321,12 @@ export const navItems: NavItem[] = [
       { labelKey: "navReturPencocokan", href: "/backoffice/retur-toko", permission: IZIN_BACA_RETUR },
       { labelKey: "navBebanSelisih", href: "/backoffice/beban-selisih", permission: IZIN_BACA_PIUTANG },
       { labelKey: "navArsipNotaRetur", href: "/backoffice/arsip-retur", permission: IZIN_BACA_ARSIP },
+      // Layar `/backoffice/finance/*` memagari dirinya dengan SATU izin (ROUTE_PERMISSIONS
+      // dan `page.tsx`-nya), bukan lewat `lib/receivables/izin.ts`; izin di sini sama dengan pagar itu.
+      { labelKey: "navFinancePiutang", href: "/backoffice/finance/piutang", permission: PERMISSIONS.RECEIVABLES_VIEW },
+      { labelKey: "navFinancePayments", href: "/backoffice/finance/payments", permission: PERMISSIONS.PAYMENTS_MANAGE },
+      { labelKey: "navFinanceStoreSettlements", href: "/backoffice/finance/pelunasan", permission: PERMISSIONS.COLLECTIONS_MANAGE },
+      { labelKey: "navFinanceCollections", href: "/backoffice/finance/collections", permission: PERMISSIONS.COLLECTIONS_MANAGE },
     ],
   },
   {
@@ -301,6 +335,20 @@ export const navItems: NavItem[] = [
     href: "/backoffice/konsinyasi",
     icon: Handshake,
     permission: PERMISSIONS.CONSIGNMENT_VIEW,
+  },
+  // Stok di toko konsinyasi: hitung stok toko (dengan persetujuan), laporan
+  // sell-through, dan transfer antar toko.
+  {
+    section: "secReceivablesKalimat",
+    labelKey: "consignmentSales",
+    href: "/backoffice/store-stocktakes",
+    icon: Warehouse,
+    permission: PERMISSIONS.STORES_VIEW,
+    children: [
+      { labelKey: "storeStocktakes", href: "/backoffice/store-stocktakes", permission: PERMISSIONS.STORES_MANAGE },
+      { labelKey: "navKonsiSellThrough", href: "/backoffice/konsi-sell-through", permission: PERMISSIONS.STORES_VIEW },
+      { labelKey: "storeTransfers", href: "/backoffice/store-transfers", permission: PERMISSIONS.STORES_MANAGE },
+    ],
   },
 
   // ── Kreatif ────────────────────────────────────────────────────────────────
@@ -419,6 +467,14 @@ export const navItems: NavItem[] = [
       { labelKey: "archiveKalimat", href: "/backoffice/archive", permission: [PERMISSIONS.PURCHASE_ORDERS_VIEW, PERMISSIONS.RECEIVABLES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE] },
       { labelKey: "auditTrailKalimat", href: "/backoffice/audit-trail", permission: PERMISSIONS.AUDIT_TRAIL_VIEW },
     ],
+  },
+  {
+    section: "secSystem",
+    labelKey: "profileAccounts",
+    href: "/backoffice/profile-accounts",
+    icon: Users,
+    permission: PERMISSIONS.SETTINGS_RBAC_VIEW,
+    adminOnly: true,
   },
   {
     section: "secSystem",

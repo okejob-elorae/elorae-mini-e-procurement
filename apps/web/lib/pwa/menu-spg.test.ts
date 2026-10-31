@@ -28,6 +28,7 @@ describe("tampilkanMenuSpg", () => {
   it("hides it on every SPG form with its own submit bar", () => {
     for (const p of [
       "/pwa/spg/opname",
+      "/pwa/spg/stocktake",
       "/pwa/spg/stok/minta",
       "/pwa/spg/terima/PUTUS/abc123",
       "/pwa/spg/terima/MUTASI/abc123",
@@ -57,6 +58,7 @@ describe("tabAktifSpg", () => {
       "/pwa/spg/terima",
       "/pwa/spg/terima/PUTUS/abc123",
       "/pwa/spg/opname",
+      "/pwa/spg/stocktake",
       "/pwa/spg/mutasi",
       "/pwa/spg/mutasi/kirim",
       "/pwa/spg/mutasi/abc123",

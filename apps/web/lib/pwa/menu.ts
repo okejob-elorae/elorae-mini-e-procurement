@@ -19,6 +19,11 @@ const TANPA_MENU = [
   /^\/pwa\/stores\/[^/]+\/analisa\/rekomendasi(\/|$)/,
   /^\/pwa\/van(\/|$)/,
   /^\/pwa\/(bkm|retur)\/baru(\/|$)/,
+  // Retur lapangan satu toko, formulir pelunasan satu toko, dan bukti BKM satu
+  // pelunasan: masing-masing punya bilah aksi sticky di bawah.
+  /^\/pwa\/stores\/[^/]+\/retur(\/|$)/,
+  /^\/pwa\/pelunasan\/[^/]+(\/|$)/,
+  /^\/pwa\/bkm\/[^/]+(\/|$)/,
   /^\/pwa\/piutang\/[^/]+\/janji(\/|$)/,
   /^\/pwa\/stores\/baru(\/|$)/,
   /^\/pwa\/biaya\/baru(\/|$)/,

@@ -265,7 +265,7 @@ function Sidebar({
   const terizinkan = useMemo(
     () =>
       navItems.filter((item) => {
-        if ('adminOnly' in item && item.adminOnly && userRole !== Role.ADMIN) return false;
+        if (item.adminOnly && userRole !== Role.ADMIN) return false;
         if (item.children?.length) {
           const anakTerlihat = item.children.filter(
             (child) => bolehAnak(permissions, child.permission),

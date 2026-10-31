@@ -10,8 +10,9 @@ export type TabSpg = "beranda" | "jual" | "stok" | "nota" | "lainnya";
 /**
  * Layar yang MENYEMBUNYIKAN menu: layar jual (punya bilah keranjang sendiri
  * di bawah — dua bilah bertumpuk membuat ketukan meleset), nota cetak, dan
- * setiap formulir SPG yang punya tombol kirim di bawah (opname, minta kiriman,
- * terima satu kiriman, retur baru, barang kembali dari pembeli, kirim mutasi).
+ * setiap formulir SPG yang punya tombol kirim di bawah (opname, hitung stok toko,
+ * minta kiriman, terima satu kiriman, retur baru, barang kembali dari pembeli,
+ * kirim mutasi).
  *
  * `/pwa/spg/terima` (daftar kiriman) TETAP bermenu; hanya formulir terima satu
  * kiriman (`/pwa/spg/terima/<jenis>/<id>`) yang tidak.
@@ -19,6 +20,7 @@ export type TabSpg = "beranda" | "jual" | "stok" | "nota" | "lainnya";
 const TANPA_MENU = [
   /^\/pwa\/spg\/sale(\/|$)/,
   /^\/pwa\/spg\/opname(\/|$)/,
+  /^\/pwa\/spg\/stocktake(\/|$)/,
   /^\/pwa\/spg\/stok\/minta(\/|$)/,
   /^\/pwa\/spg\/terima\/[^/]+\/[^/]+(\/|$)/,
   /^\/pwa\/spg\/mutasi\/kirim(\/|$)/,
@@ -39,7 +41,7 @@ export function tabAktifSpg(path: string): TabSpg | null {
   if (path === "/pwa") return "beranda";
   // "Barang dicari" dibuka dari layar jual: pembeli menanyakan barang saat SPG melayaninya.
   if (["/pwa/spg/sale", "/pwa/spg/dicari", "/pwa/spg/produk", "/pwa/spg/antrean", "/pwa/spg/promo"].some((a) => DI_BAWAH(a)(path))) return "jual";
-  if (["/pwa/spg/stok", "/pwa/spg/terima", "/pwa/spg/opname", "/pwa/spg/mutasi"].some((a) => DI_BAWAH(a)(path))) return "stok";
+  if (["/pwa/spg/stok", "/pwa/spg/terima", "/pwa/spg/opname", "/pwa/spg/stocktake", "/pwa/spg/mutasi"].some((a) => DI_BAWAH(a)(path))) return "stok";
   if (path === "/pwa/spg/nota") return "nota";
   if (
     [
