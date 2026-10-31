@@ -384,6 +384,25 @@ One line per known trap, and each line is a TRIGGER: **the situation you are in 
 
 - Writing TS a subagent cannot compile? The § Code conventions inference shapes show only in `type-check` (`scripts/verify.sh`, CI `checks`), never vitest; merged red, the web build breaks. → `docs/landmines/typescript-inference.md`
 
+## Max's features (merged onto master on branch `timotiusmax`, 2026-10-31)
+
+Branch `timotiusmax` = this master (82205090) + Max's two months of work (archived unchanged as `timotiusmax-arsip`, 677065bc), merge commit `dec47732`. Max's original orientation file is kept verbatim in `docs/max-branch-notes.md` — **historical**: where it contradicts the decisions below, the decisions win. It is not merged to master yet; CI on a draft PR is the first type-check/test run the merged tree gets.
+
+**Owner decisions (2026-10-29/31) for features both sides built.** Max's version: store returns (NRT/NRI, blind warehouse count, deductions held until counted, "store bears the shortfall" leaves it open on the original invoice), the consignment cycle (SPG + store reports reconciled, official figures typed and locked by admin, then the tax invoice), the store stock book, store transfers (proposed → approved → shipped with a delivery note → received and counted), SPG pay and commission (plus a new approval step before paying), supplier payables (booked at goods receipt — ONE path) and supplier payments (PPh 23/21/4(2), SKB, advances, giro, proof photo), receivables (imports and manual invoices allowed; giro held until cleared). The team's version: store opname (reason required, approval), deliveries + proof of delivery (plus Max's on-screen signature, office correction and print), konsi goods shipping, store pricing (markup + PUTUS discount — the client confirmed markup, PR #324), the credit-limit base with Max's warn/hold/block modes and max-open-invoices on top. Konsi bills appear in Receivables, filterable konsi/non-konsi. "Manager" approvals are admin-only, except payment verification, which finance may also do. "BKM" means a store payment report (`PaymentClaim`). Photos go to R2, not the database. New: every office-recorded payment waits for verification against the bank statement before receivables drop, and can be returned for revision.
+
+**Phase A (current):** both sides' code is present. Tables both sides created under the same name are column UNIONS — `Receivable` (team `originalAmount`/`outstandingAmount`/`status` + Max `invoiceNo`/`amount`/`outstanding`/`source`), `StoreTransfer`/`StoreTransferLine` (both status value sets). One migration, `20261031100000_merge_max_features`, replaced Max's 40 never-run MariaDB migrations; it backfills new NOT NULL columns, re-adds `Receivable_one_source_check` source-aware, and aborts on a fractional `StoreTransferLine.qty`. Phase B retires the losing side of each duplicate and migrates its data — check prod rows in `Receivable`/`StoreTransfer` first. Prod permissions for the new modules: `packages/db/prisma/seed-max-features-permissions.sql` (run by hand once, after deploy).
+
+**Invariants carried over from Max's modules:**
+- Receivables: a claim is not a payment (the balance drops only after finance verifies); a return counts at the physical value, not the claimed one. The balance is recomputed from zero (`hitungUlangPiutang`); `deductions.ts` is the only translator between Prisma shapes and the return rules; `izin.ts` holds the separation of duties.
+- KONSI prices and totals never reach the salesman phone or the store portal — not on screen, not in payloads (tested on serialized payloads).
+- Stock: every qtyOnHand/StoreStock/VanStock change goes through the team's ledger helpers (`stock-balance.ts`); Max's `StockMovement` table is legacy and must not be read for new data. Max's store stock book (`StoreStockMovement`, balance computed, may go negative) is separate.
+- Every reversible decision writes its audit row in the same transaction through `lib/receivables/jejak.ts` names (`JEJAK`); never free-text action names.
+- Offline: field reports, orders, photos and proofs queue in Dexie with a client `idempotencyKey`; writers check the key FIRST. Bumping the Dexie version must keep every existing table listed (Dexie 4 drops unlisted tables).
+- Phone layout: no viewport breakpoints inside `/pwa` (use container queries); `Card` + `CardContent` padding rules; screens with a sticky bottom bar join `TANPA_MENU`; "Kembali" uses `TautanKembali`. Native date/time inputs are a lint error — use `TanggalInput`/`TanggalJamInput`/`JamInput`.
+- Settings are `SystemSetting` JSON with an in-code fallback (Settings → Salesman/SPG); provisional owner decisions live in one named constant each.
+- The backoffice menu lives in `lib/nav/menu.ts`, not in `BackofficeShell`. Help text lives in the Bantuan panel, not on screen.
+- Raw SQL goes through `packages/db/src/sql-dialect.ts` (Max also ran PostgreSQL locally; prod is MariaDB). Case-insensitive search uses `lib/db/cari-teks.ts`, never `mode: "insensitive"`.
+
 ## What NOT to do
 
 - Don't put EPIC-XX refs in commits, PRs, branch names, or shared specs.
