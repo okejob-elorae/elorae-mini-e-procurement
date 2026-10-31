@@ -24,9 +24,12 @@ vi.mock("@elorae/db", () => {
   const model = { findMany: mockFindMany, findUnique: mockFindUnique, count: mockCount };
   class ConcurrentFirstReceiptError extends Error {}
   class MainStockNegativeError extends Error {}
+  class PrismaClientKnownRequestError extends Error {}
   return {
     ConcurrentFirstReceiptError,
     MainStockNegativeError,
+    // `runSerializable` reads the isolation level when its module loads.
+    Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" }, PrismaClientKnownRequestError },
     prisma: {
       gRN: model,
       fabricRoll: model,
@@ -61,6 +64,19 @@ vi.mock("@/lib/inventory/grn-journal", () => ({
 vi.mock("@/lib/leadtime/calculations", () => ({ computeActualLeadDays: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("@/lib/purchase-orders/payment-due", () => ({ recomputePaymentDueDate: mockRecompute }));
+// PPN at receipt reads the PO and the tax settings; this spec is about the GRN writer around them.
+vi.mock("@/lib/finance/operasional/grn-kapitalisasi-queries", () => ({
+  hitungPpnKapitalisasiGrn: vi.fn(async (_tx: unknown, input: { baris: unknown[] }) => input.baris.map(() => 0)),
+}));
+vi.mock("@/lib/finance/pajak/grn-ppn", () => ({
+  hitungPpnMasukanGrn: vi.fn(async () => ({ ppn: 0, dpp: 0, kenaPpn: new Set<string>(), barisPo: null })),
+  kunciBarisPpn: (itemId: string, variantSku?: string | null) => `${itemId}\t${variantSku ?? ""}`,
+}));
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async () => ({})) }));
+vi.mock("@/lib/finance/jurnal-tertunda", () => ({
+  dokumenJurnal: (sourceType: string, sourceId: string) => ({ sourceType, sourceId }),
+  tandaiJurnalTertundaSelesai: vi.fn(async () => 0),
+}));
 
 import {
   approveGRNByOwner,
@@ -107,7 +123,7 @@ describe("grn read actions gate", () => {
   ])("%s", (_name, call) => {
     it("rejects an unauthenticated caller and runs no query", async () => {
       mockAuth.mockResolvedValue(null);
-      await expect(call()).rejects.toThrow("Forbidden");
+      await expect(call()).rejects.toThrow("Unauthorized");
       assertNoQueryRan();
     });
 
@@ -205,11 +221,11 @@ describe("grn actor trust", () => {
     ["approveGRNByOwner", () => approveGRNByOwner("g1", "u1"), "Only owner/admin can approve over-receive GRN"],
     ["declineGRNByOwner", () => declineGRNByOwner("g1", "u1"), "Only owner/admin can decline over-receive GRN"],
   ] as Array<[string, () => Promise<unknown>, string]>)(
-    "%s runs the role check on the session user",
+    "%s refuses a session without the admin wildcard before any write",
     async (_name, call, message) => {
-      mockUserFindUnique.mockResolvedValue({ role: "WAREHOUSE" });
+      // Owner = system admin: the `*` permission lib/auth.ts grants, read from the session.
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["inventory:manage"] } });
       await expect(call()).rejects.toThrow(message);
-      expect(mockUserFindUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "u1" } }));
       expect(mockTransaction).not.toHaveBeenCalled();
     }
   );
@@ -228,7 +244,6 @@ describe("payment due date wiring", () => {
   });
 
   it("declineGRNByOwner recomputes after the GRN is stamped as declined", async () => {
-    mockUserFindUnique.mockResolvedValue({ role: "ADMIN" });
     vi.mocked(findExistingInventoryValueRow).mockResolvedValue({ qtyOnHand: 10 } as never);
     const tx = {
       gRN: {
@@ -327,6 +342,7 @@ describe("payment due date wiring", () => {
           findUnique: vi
             .fn()
             .mockResolvedValue({ type: "RAW", uomId: "u", overReceiveThreshold: null }),
+          findMany: vi.fn().mockResolvedValue([{ id: "i1", type: "RAW" }]),
         },
         pOItem: {
           findMany: vi

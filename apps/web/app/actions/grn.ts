@@ -627,9 +627,11 @@ async function createGRNInner(data: z.infer<typeof grnSchema>, claimedUserId?: s
   return result;
 }
 
+/** Penjaga baca GRN: sesi (`Unauthorized`) + `inventory:view` atau salah satu izin `extra` (`Forbidden`). */
 async function requireGrnRead(extra: string[] = []): Promise<void> {
   const session = await auth();
-  requireAnyPermission(session?.user?.permissions ?? [], [PERMISSIONS.INVENTORY_VIEW, ...extra]);
+  if (!session?.user?.id) throw new Error('Unauthorized');
+  requireAnyPermission(session.user.permissions ?? [], [PERMISSIONS.INVENTORY_VIEW, ...extra]);
 }
 
 export type KodeTolakGrn = keyof typeof PESAN_TOLAK_GRN;

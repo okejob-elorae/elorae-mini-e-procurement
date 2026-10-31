@@ -253,9 +253,12 @@ const CARI_PENYESUAIAN_MAKS = 100;
 /**
  * Daftar penyesuaian stok. Saringan sumber dan pencarian dijalankan di SERVER,
  * jadi `totalCount` dan halaman mengikuti saringan:
- *  - `sumber`: "manual" (bawaan — menyembunyikan sumber otomatis seperti webhook
- *    Jubelio dan penjualan marketplace), "semua", "otomatis", atau satu kode sumber;
- *  - `cari`: nomor dokumen, alasan, SKU/nama barang, atau rujukan luar (abai huruf).
+ *  - `sumber`: "manual" (bawaan layar — menyembunyikan sumber otomatis seperti
+ *    webhook Jubelio dan penjualan marketplace), "semua", "otomatis", atau satu
+ *    kode sumber. TANPA `sumber` = semua sumber: pemanggil yang tidak memilih
+ *    saringan tidak boleh kehilangan penyesuaian otomatis diam-diam;
+ *  - `cari` (atau `search`): nomor dokumen, alasan, SKU/nama barang, atau
+ *    rujukan luar (abai huruf).
  */
 export async function getStockAdjustments(
   itemId?: string,
@@ -265,7 +268,7 @@ export async function getStockAdjustments(
   const cari = (opts?.cari ?? opts?.search ?? '').trim().slice(0, CARI_PENYESUAIAN_MAKS);
   const where: Prisma.StockAdjustmentWhereInput = {
     ...(itemId ? { itemId } : {}),
-    ...whereSaringanSumber(opts?.sumber),
+    ...(opts?.sumber === undefined ? {} : whereSaringanSumber(opts.sumber)),
     ...(cari
       ? {
           OR: [

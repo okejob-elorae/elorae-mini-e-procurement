@@ -18,6 +18,8 @@ vi.mock("@elorae/db", async (importOriginal) => {
   const prisma = new Proxy(asli.prisma, {
     get(t, p) {
       if (p === "gRN") return { findUnique: async () => keadaan.grn };
+      // Tanpa jurnal balik yang nyasar: GRN ditolak tidak punya alasan diposting.
+      if (p === "journal") return { findUnique: async () => null };
       const v = Reflect.get(t, p);
       return typeof v === "function" ? (v as (...a: unknown[]) => unknown).bind(t) : v;
     },

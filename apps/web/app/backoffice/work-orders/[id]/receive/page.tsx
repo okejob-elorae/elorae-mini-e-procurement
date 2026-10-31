@@ -29,6 +29,7 @@ export default function WorkOrderReceivePage() {
   const t = useTranslations('toasts');
   const tRc = useTranslations('workOrders.receive');
   const tTolak = useTranslations('productionErrors');
+  const tRefusal = useTranslations('receiptRefusal');
   const params = useParams();
   const router = useRouter();
   const { data: session } = useSession();
@@ -162,7 +163,13 @@ export default function WorkOrderReceivePage() {
         }
       );
       if (!hasil.ok) {
-        toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : t('failedToReceive'));
+        toast.error(
+          tTolak.has(hasil.code)
+            ? tTolak(hasil.code)
+            : tRefusal.has(hasil.code)
+              ? tRefusal(hasil.code, { detail: hasil.detail ?? '' })
+              : t('failedToReceive')
+        );
         return;
       }
       toast.success(t('fgReceived'));

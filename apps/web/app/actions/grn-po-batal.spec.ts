@@ -16,8 +16,8 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: sesi.id, email: null, permissions: ["*"] } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyGRNCreated: async () => {},
   notifyMaterialArrivedForPo: async () => {},
   notifyPOCreated: async () => {},
@@ -154,7 +154,7 @@ d("GRN dan status PO (test bed only)", () => {
   beforeEach(async () => {
     poId = "";
     sesi.id = userId;
-    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
   });
 
@@ -162,7 +162,7 @@ d("GRN dan status PO (test bed only)", () => {
     const grnIds = (
       await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })
     ).map((g) => g.id);
-    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grnIds) } } });
     await prisma.pOStatusHistory.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
     await prisma.pOItem.deleteMany({ where: { poId: { in: seededIds(poIds) } } });

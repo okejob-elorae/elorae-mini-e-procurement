@@ -187,8 +187,10 @@ async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
     const beforeSelling = toNumOrNull(beforeItem.sellingPrice);
     const afterSelling = toNumOrNull(data.sellingPrice);
 
-    const marginChanged = beforeMargin !== afterMargin;
-    const extrasChanged = beforeExtras !== afterExtras;
+    // The item form no longer sends margin or extra cost (selling prices are typed by hand): an
+    // absent field is "unchanged", never "cleared", or every save would re-price the item.
+    const marginChanged = data.targetMarginPercent !== undefined && beforeMargin !== afterMargin;
+    const extrasChanged = data.additionalCost !== undefined && beforeExtras !== afterExtras;
     const sellingPriceChanged = beforeSelling !== afterSelling;
 
     let outboxRowId: string | null = null;

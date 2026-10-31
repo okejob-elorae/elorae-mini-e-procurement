@@ -28,6 +28,8 @@ const tx = {
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => ({
   moveMainStock: vi.fn(),
+  // `runSerializable` reads the isolation level when its module loads.
+  Prisma: { TransactionIsolationLevel: { Serializable: "Serializable" } },
   prisma: {
     $transaction: (fn: (t: typeof tx) => unknown) => fn(tx),
     vendorReturn: { findUnique: mockVrFindUnique },
@@ -77,6 +79,8 @@ describe("vendor return line valuation on a null-spelled variantless inventory r
     mockVrCreate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
     mockVrUpdate.mockResolvedValue({ id: "r1", docNumber: "RET-1" });
     mockVrFindUnique.mockResolvedValue({ id: "r1", status: "DRAFT", docNumber: "RET-1" });
+    // The draft guard of an edit is read inside its transaction.
+    mockTxVrFindUnique.mockResolvedValue({ status: "DRAFT" });
     mockFindFirst.mockImplementation(async ({ where }: { where: { OR?: unknown[] } }) => {
       const tolerant = JSON.stringify(where.OR) === JSON.stringify([{ variantSku: null }, { variantSku: "" }]);
       return tolerant ? { id: "iv1", avgCost: "2.5", qtyOnHand: "10" } : null;
@@ -127,14 +131,15 @@ describe("vendor return actor trust", () => {
     }
   );
 
+  // Refusals come back as codes: a thrown server-action message is masked in production.
   it.each([
     ["processReturn", () => processReturn("r1", "u1")],
     ["completeReturn", () => completeReturn("r1", "u1", completeInput)],
   ] as Array<[string, () => Promise<unknown>]>)(
-    "%s rejects an unauthenticated caller",
+    "%s refuses an unauthenticated caller",
     async (_name, call) => {
       mockAuth.mockResolvedValue(null);
-      await expect(call()).rejects.toThrow("Unauthorized");
+      expect(await call()).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect(mockVrFindUnique).not.toHaveBeenCalled();
       expect(mockTxVrFindUnique).not.toHaveBeenCalled();
     }
@@ -144,27 +149,26 @@ describe("vendor return actor trust", () => {
     ["processReturn", () => processReturn("r1", "u1")],
     ["completeReturn", () => completeReturn("r1", "u1", completeInput)],
   ] as Array<[string, () => Promise<unknown>]>)(
-    "%s rejects a caller without vendor_returns:manage",
+    "%s refuses a caller without vendor_returns:manage",
     async (_name, call) => {
       mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:create"] } });
-      await expect(call()).rejects.toThrow("Forbidden: Insufficient permissions");
+      expect(await call()).toEqual({ ok: false, code: "TANPA_AKSES" });
       expect(mockVrFindUnique).not.toHaveBeenCalled();
       expect(mockTxVrFindUnique).not.toHaveBeenCalled();
     }
   );
 
   it.each([
-    ["processReturn", () => processReturn("r1", "u1"), "Return tidak valid atau sudah diproses"],
+    ["processReturn", () => processReturn("r1", "u1")],
     [
       "completeReturn",
       () => completeReturn("r1", "u1", { trackingNumber: "TRK-1", receiptFileUrl: "https://example.com/r.pdf" }),
-      "Return must be in PROCESSED status to complete",
     ],
-  ] as Array<[string, () => Promise<unknown>, string]>)(
+  ] as Array<[string, () => Promise<unknown>]>)(
     "%s reads the return inside the transaction once the caller passes (positive control)",
-    async (_name, call, message) => {
+    async (_name, call) => {
       mockTxVrFindUnique.mockResolvedValue(null);
-      await expect(call()).rejects.toThrow(message);
+      expect(await call()).toEqual({ ok: false, code: "TIDAK_DITEMUKAN" });
       expect(mockTxVrFindUnique).toHaveBeenCalledWith({ where: { id: "r1" } });
     }
   );

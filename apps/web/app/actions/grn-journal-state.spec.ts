@@ -37,6 +37,10 @@ vi.mock("@/lib/notifications/events", () => ({
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("@/lib/finance/jurnal-tertunda", () => ({
+  dokumenJurnal: (sourceType: string, sourceId: string) => ({ sourceType, sourceId }),
+  tandaiJurnalTertundaSelesai: vi.fn(async () => 0),
+}));
 
 import { getGrnJournalState, postGrnReceiptJournalAction } from "./grn";
 
@@ -103,7 +107,7 @@ describe("GRN journals on a declined GRN (unit — prisma and writers mocked)", 
     mockHasPermission.mockReturnValue(true);
     mockGrnFind.mockResolvedValue({ id: "g1", ownerDeclinedAt: new Date() });
     const result = await postGrnReceiptJournalAction("g1");
-    expect(result).toEqual({ ok: false, code: "BAD_STATE" });
+    expect(result).toEqual({ ok: false, code: "DITOLAK_PEMILIK" });
     expect(mockPostGrnJournal).not.toHaveBeenCalled();
   });
 

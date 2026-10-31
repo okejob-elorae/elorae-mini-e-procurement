@@ -283,6 +283,15 @@ describe("attributesFromSavedVariants", () => {
     const saved: Array<Record<string, string>> = [{ Warna: "Merah", sku: "A", barcode: "111" }];
     expect(attributesFromSavedVariants(saved)).toEqual([{ key: "Warna", values: ["Merah"] }]);
   });
+
+  it("excludes a fabric colour's Pantone code, so it never becomes a grid dimension", () => {
+    const saved: Array<Record<string, string>> = [
+      { warna: "HITAM", sku: "KAIN-HITAM", pantone: "19-4005 TCX" },
+      { warna: "PUTIH", sku: "KAIN-PUTIH" },
+    ];
+    expect(attributesFromSavedVariants(saved)).toEqual([{ key: "warna", values: ["HITAM", "PUTIH"] }]);
+    expect(findSavedVariant({ warna: "hitam" }, saved)?.sku).toBe("KAIN-HITAM");
+  });
 });
 
 describe("overlaySavedSpelling", () => {

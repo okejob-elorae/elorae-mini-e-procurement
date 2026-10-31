@@ -17,8 +17,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => state.sesi) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: vi.fn(async () => "Uji"),
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn(async () => "Uji") }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyGRNCreated: vi.fn(async () => {}),
   notifyMaterialArrivedForPo: vi.fn(async () => {}),
 }));

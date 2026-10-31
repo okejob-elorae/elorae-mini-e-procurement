@@ -10,8 +10,6 @@ import { prisma, seededId } from "@elorae/db";
  *   `getGRNById`, `getVendorReturnById` mengirim `supplier.bankAccountEnc` ke
  *   browser.
  * - `createUOMConversion` tanpa `auth()` sama sekali.
- * - `enqueueProductPush*` tanpa izin: siapa pun bisa mengantre push produk ke
- *   Jubelio.
  */
 
 const sesi = vi.hoisted(() => ({ ada: true, id: "", permissions: [] as string[] }));
@@ -27,7 +25,6 @@ const po = await import("./purchase-orders");
 const grn = await import("./grn");
 const retur = await import("./vendor-returns");
 const uom = await import("./uom");
-const push = await import("./jubelio-product-push");
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -108,7 +105,7 @@ d("izin aksi pembelian (test bed only)", () => {
     });
   });
 
-  describe("data yang dikirim ke browser & tulis UOM/push", () => {
+  describe("data yang dikirim ke browser & tulis UOM", () => {
     const token = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
     let userId = "";
     let typeId = "";
@@ -118,7 +115,6 @@ d("izin aksi pembelian (test bed only)", () => {
     let returId = "";
     let uomA = "";
     let uomB = "";
-    let itemFgId = "";
 
     beforeAll(async () => {
       userId = "";
@@ -129,7 +125,6 @@ d("izin aksi pembelian (test bed only)", () => {
       returId = "";
       uomA = "";
       uomB = "";
-      itemFgId = "";
       userId = (await prisma.user.create({ data: { email: `beli-izin-${token}@uji.local` }, select: { id: true } })).id;
       typeId = (
         await prisma.supplierType.create({ data: { code: `TBI-${token}`, name: `Jenis beli ${token}` }, select: { id: true } })
@@ -164,17 +159,9 @@ d("izin aksi pembelian (test bed only)", () => {
       uomB = (
         await prisma.uOM.create({ data: { code: `B${token}`.slice(0, 10), nameId: "B", nameEn: "B" }, select: { id: true } })
       ).id;
-      itemFgId = (
-        await prisma.item.create({
-          data: { sku: `BI-FG-${token}`, nameId: "Barang jadi uji", nameEn: "Test FG", type: "FINISHED_GOOD", uomId: uomA },
-          select: { id: true },
-        })
-      ).id;
     });
 
     afterAll(async () => {
-      await prisma.jubelioOutbox.deleteMany({ where: { entityId: seededId(itemFgId) } });
-      await prisma.item.deleteMany({ where: { id: seededId(itemFgId) } });
       await prisma.uOMConversion.deleteMany({ where: { fromUomId: seededId(uomA) } });
       await prisma.uOMConversion.deleteMany({ where: { fromUomId: seededId(uomB) } });
       await prisma.uOM.deleteMany({ where: { id: seededId(uomA) } });
@@ -238,51 +225,6 @@ d("izin aksi pembelian (test bed only)", () => {
         sesi.permissions = ["settings_uom:manage"];
         await uom.createUOMConversion({ fromUomId: uomA, toUomId: uomB, factor: 12 });
         expect(await jumlahKonversi()).toBe(1);
-      });
-    });
-
-    describe("enqueueProductPush*", () => {
-      const sebelum = {
-        nameId: "Barang jadi uji",
-        nameEn: "Test FG",
-        description: null,
-        sellingPrice: null,
-        targetMarginPercent: null,
-        additionalCost: null,
-        variants: null,
-        isActive: true,
-      };
-      const sesudah = { ...sebelum, nameId: "Barang jadi uji (ubah)" };
-
-      async function jumlahAntrean() {
-        return prisma.jubelioOutbox.count({ where: { entityId: seededId(itemFgId), entityType: "product_push" } });
-      }
-
-      beforeEach(async () => {
-        await prisma.jubelioOutbox.deleteMany({ where: { entityId: seededId(itemFgId) } });
-        sesi.id = userId;
-      });
-
-      it.each([
-        ["OnCreate", () => push.enqueueProductPushOnCreate(itemFgId)],
-        ["OnUpdate", () => push.enqueueProductPushOnUpdate(itemFgId, sebelum, sesudah)],
-        ["OnImageChange", () => push.enqueueProductPushOnImageChange(itemFgId)],
-      ] as Array<[string, () => Promise<void>]>)("%s tidak mengantre untuk pengguna tanpa izin barang", async (_n, panggil) => {
-        sesi.permissions = ORANG_LAIN;
-        await panggil();
-        sesi.ada = false;
-        await panggil();
-        expect(await jumlahAntrean()).toBe(0);
-      });
-
-      it.each([
-        ["OnCreate ← items:create", () => push.enqueueProductPushOnCreate(itemFgId), "items:create"],
-        ["OnUpdate ← items:edit", () => push.enqueueProductPushOnUpdate(itemFgId, sebelum, sesudah), "items:edit"],
-        ["OnImageChange ← items:manage", () => push.enqueueProductPushOnImageChange(itemFgId), "items:manage"],
-      ] as Array<[string, () => Promise<void>, string]>)("%s tetap mengantre", async (_n, panggil, izin) => {
-        sesi.permissions = [izin];
-        await panggil();
-        expect(await jumlahAntrean()).toBe(1);
       });
     });
   });

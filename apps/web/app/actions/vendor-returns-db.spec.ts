@@ -228,9 +228,16 @@ d("retur pemasok: proses & selesai (test bed only)", () => {
       expect((await retur()).status).toBe("DRAFT");
     });
 
+    it("id pelaku kiriman yang bukan pengguna sesi ditolak; stok tidak bergerak", async () => {
+      sebagai(PENGELOLA());
+      await expect(processReturn(returId, lainId)).rejects.toThrow(/actor does not match/);
+      expect((await retur()).status).toBe("DRAFT");
+      expect(await stok()).toBe(STOK_AWAL);
+    });
+
     it("vendor_returns:manage boleh; pelaku dicatat dari sesi", async () => {
       sebagai(PENGELOLA());
-      expect(await processReturn(returId, lainId)).toEqual({ ok: true, id: returId, docNumber: `RET-UJI-${token}-${urut}` });
+      expect(await processReturn(returId)).toEqual({ ok: true, id: returId, docNumber: `RET-UJI-${token}-${urut}` });
       expect(await retur()).toMatchObject({ status: "PROCESSED", processedBy: pengelolaId });
       expect(await stok()).toBe(STOK_AWAL - QTY_RETUR);
     });
@@ -346,7 +353,8 @@ d("retur pemasok: proses & selesai (test bed only)", () => {
 
     it("vendor_returns:manage boleh; penutup dicatat dari sesi", async () => {
       sebagai(PENGELOLA());
-      expect(await completeReturn(returId, lainId, BUKTI)).toEqual({ ok: true });
+      await expect(completeReturn(returId, lainId, BUKTI)).rejects.toThrow(/actor does not match/);
+      expect(await completeReturn(returId, undefined, BUKTI)).toEqual({ ok: true });
       expect(await retur()).toMatchObject({ status: "COMPLETED", completedById: pengelolaId });
     });
 

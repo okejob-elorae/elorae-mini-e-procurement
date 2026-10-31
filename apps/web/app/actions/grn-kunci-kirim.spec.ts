@@ -16,8 +16,8 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: sesi.id, email: null, permissions: sesi.izin } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyGRNCreated: async () => {},
   notifyMaterialArrivedForPo: async () => {},
 }));
@@ -118,6 +118,13 @@ async function balapan<A, B>(pertama: () => Promise<A>, kedua: () => Promise<B>)
 const { createGRN, simpanGRN } = await import("./grn");
 const { tutupPurchaseOrder } = await import("@/lib/purchase-orders/tutup");
 
+/** `createGRN` yang diterima → GRN-nya; penolakan penerimaan berkode menggagalkan tes. */
+async function terimaGrn(data: Parameters<typeof createGRN>[0]) {
+  const hasil = await createGRN(data);
+  if (!hasil.success) throw new Error(`GRN ditolak: ${hasil.code}`);
+  return hasil.grn;
+}
+
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
 
@@ -171,7 +178,7 @@ d("kunci kiriman GRN (test bed only)", () => {
     tunda.sembunyikanGrn = 0;
     sesudah.jurnal = 0;
     sesudah.push = 0;
-    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
   });
 
@@ -179,7 +186,7 @@ d("kunci kiriman GRN (test bed only)", () => {
     const grnIds = (
       await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })
     ).map((g) => g.id);
-    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grnIds) } } });
     await prisma.pOStatusHistory.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
     await prisma.pOItem.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
@@ -229,7 +236,7 @@ d("kunci kiriman GRN (test bed only)", () => {
       where: { itemId: seededId(itemId) },
       select: { qtyOnHand: true, avgCost: true },
     });
-    const gerak = await prisma.stockMovement.count({ where: { itemId: seededId(itemId) } });
+    const gerak = await prisma.stockLedgerEntry.count({ where: { itemId: seededId(itemId) } });
     return {
       status: po.status,
       diterima: po.items.map((i) => Number(i.receivedQty)),
@@ -243,9 +250,9 @@ d("kunci kiriman GRN (test bed only)", () => {
   it("kunci sama dua kali → GRN yang sama (ulang), stok 4 bukan 8; jurnal & push stok sekali", async () => {
     const poId = await buatPo();
     const kunci = kunciBaru("a");
-    const pertama = await createGRN(isian(poId, 4, kunci));
+    const pertama = await terimaGrn(isian(poId, 4, kunci));
     expect(pertama.ulang).toBe(false);
-    const kedua = await createGRN(isian(poId, 4, kunci));
+    const kedua = await terimaGrn(isian(poId, 4, kunci));
     expect(kedua).toMatchObject({ id: pertama.id, docNumber: pertama.docNumber, totalAmount: 4_000, ulang: true });
     expect(await keadaan(poId)).toEqual({
       status: "PARTIAL",
@@ -261,8 +268,8 @@ d("kunci kiriman GRN (test bed only)", () => {
   it("simpan ulang membawa harga lain dengan kunci sama → isian pertama yang tercatat; harga rata-rata tidak bergeser", async () => {
     const poId = await buatPo();
     const kunci = kunciBaru("b");
-    await createGRN(isian(poId, 4, kunci, 1_000));
-    const ulang = await createGRN(isian(poId, 4, kunci, 3_000));
+    await terimaGrn(isian(poId, 4, kunci, 1_000));
+    const ulang = await terimaGrn(isian(poId, 4, kunci, 3_000));
     expect(ulang).toMatchObject({ totalAmount: 4_000, ulang: true });
     expect(await keadaan(poId)).toMatchObject({ diterima: [4], stok: [4], hargaRata: [1_000], grn: 1 });
   });
@@ -270,9 +277,9 @@ d("kunci kiriman GRN (test bed only)", () => {
   it("GRN pertama melengkapi PO (CLOSED) → simpan ulang berkunci sama tidak menerima 10 lagi sebagai terima-lebih", async () => {
     const poId = await buatPo();
     const kunci = kunciBaru("c");
-    const pertama = await createGRN(isian(poId, 10, kunci));
+    const pertama = await terimaGrn(isian(poId, 10, kunci));
     expect((await keadaan(poId)).status).toBe("CLOSED");
-    const ulang = await createGRN(isian(poId, 10, kunci));
+    const ulang = await terimaGrn(isian(poId, 10, kunci));
     expect(ulang).toMatchObject({ id: pertama.id, ulang: true });
     expect(await keadaan(poId)).toMatchObject({ status: "CLOSED", diterima: [10], grn: 1, stok: [10] });
   });
@@ -280,7 +287,7 @@ d("kunci kiriman GRN (test bed only)", () => {
   it("PO ditutup sesudah GRN pertama → simpan ulang berkunci sama tetap GRN yang sama, bukan PO_DITUTUP", async () => {
     const poId = await buatPo();
     const kunci = kunciBaru("d");
-    const pertama = await createGRN(isian(poId, 4, kunci));
+    const pertama = await terimaGrn(isian(poId, 4, kunci));
     expect((await tutupPurchaseOrder({ poId, userId, alasan: "uji kunci" })).ok).toBe(true);
     expect(await simpanGRN(isian(poId, 4, kunci))).toEqual({
       ok: true,
@@ -304,7 +311,7 @@ d("kunci kiriman GRN (test bed only)", () => {
   it("Promise.all dua simpan berkunci sama → GRN yang sama, stok 4, satu GRN; sesudah-commit sekali", async () => {
     const poId = await buatPo();
     const kunci = kunciBaru("f");
-    const [a, b] = await Promise.all([createGRN(isian(poId, 4, kunci)), createGRN(isian(poId, 4, kunci))]);
+    const [a, b] = await Promise.all([terimaGrn(isian(poId, 4, kunci)), terimaGrn(isian(poId, 4, kunci))]);
     expect(b.id).toBe(a.id);
     expect([a.ulang, b.ulang].sort()).toEqual([false, true]);
     expect(await keadaan(poId)).toMatchObject({ status: "PARTIAL", diterima: [4], grn: 1, stok: [4], gerakStok: 1 });
@@ -315,13 +322,13 @@ d("kunci kiriman GRN (test bed only)", () => {
     const poId = await buatPo();
     const kunci = kunciBaru("g");
     const [p1, p2] = await balapan(
-      () => createGRN(isian(poId, 4, kunci)),
-      () => createGRN(isian(poId, 4, kunci)),
+      () => terimaGrn(isian(poId, 4, kunci)),
+      () => terimaGrn(isian(poId, 4, kunci)),
     );
     expect(p1.status).toBe("fulfilled");
     expect(p2.status).toBe("fulfilled");
-    const a = (p1 as PromiseFulfilledResult<Awaited<ReturnType<typeof createGRN>>>).value;
-    const b = (p2 as PromiseFulfilledResult<Awaited<ReturnType<typeof createGRN>>>).value;
+    const a = (p1 as PromiseFulfilledResult<Awaited<ReturnType<typeof terimaGrn>>>).value;
+    const b = (p2 as PromiseFulfilledResult<Awaited<ReturnType<typeof terimaGrn>>>).value;
     expect(a.id).toBe(b.id);
     expect(a.ulang).toBe(true);
     expect(b.ulang).toBe(false);
@@ -331,10 +338,10 @@ d("kunci kiriman GRN (test bed only)", () => {
   it("kembaran yang lolos kedua pembacaan kunci bentrok di indeks unik → tetap GRN yang sama, tidak melempar", async () => {
     const poId = await buatPo();
     const kunci = kunciBaru("p2002");
-    const pertama = await createGRN(isian(poId, 4, kunci));
+    const pertama = await terimaGrn(isian(poId, 4, kunci));
     // Pembacaan di luar dan di dalam transaksi sama-sama "tidak melihat" GRN pertama.
     tunda.sembunyikanGrn = 2;
-    const kedua = await createGRN(isian(poId, 4, kunci));
+    const kedua = await terimaGrn(isian(poId, 4, kunci));
     expect(tunda.sembunyikanGrn).toBe(0);
     expect(kedua).toMatchObject({ id: pertama.id, ulang: true });
     expect(await keadaan(poId)).toMatchObject({ diterima: [4], grn: 1, stok: [4], gerakStok: 1 });
@@ -343,8 +350,8 @@ d("kunci kiriman GRN (test bed only)", () => {
 
   it("GRN tanpa PO juga dilindungi kunci", async () => {
     const kunci = kunciBaru("h");
-    const a = await createGRN(isian(undefined, 6, kunci));
-    const b = await createGRN(isian(undefined, 6, kunci));
+    const a = await terimaGrn(isian(undefined, 6, kunci));
+    const b = await terimaGrn(isian(undefined, 6, kunci));
     expect(b).toMatchObject({ id: a.id, ulang: true });
     const stok = await prisma.inventoryValue.findMany({ where: { itemId: seededId(itemId) }, select: { qtyOnHand: true } });
     expect(stok.map((s) => Number(s.qtyOnHand))).toEqual([6]);

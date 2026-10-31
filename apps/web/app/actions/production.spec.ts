@@ -21,6 +21,11 @@ vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("@elorae/db", () => ({
   ConcurrentFirstReceiptError: class ConcurrentFirstReceiptError extends Error {},
   MainStockNegativeError: class MainStockNegativeError extends Error {},
+  // `runSerializable` reads the isolation level when its module loads.
+  Prisma: {
+    TransactionIsolationLevel: { Serializable: "Serializable" },
+    PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {},
+  },
   moveMainStock: vi.fn(),
   recalcItemSellingPrice: vi.fn(),
   prisma: {
@@ -47,6 +52,32 @@ vi.mock("@/lib/notifications/events", () => ({
 vi.mock("@/app/actions/settings/ppn", () => ({ getPpnRatePercent: vi.fn() }));
 vi.mock("@/lib/audit", () => ({ logAudit: vi.fn() }));
 vi.mock("@/lib/production/fg-receipt-journal", () => ({ postFgReceiptJournal: vi.fn() }));
+vi.mock("@/lib/production/fg-receipt-journal-aman", () => ({
+  postFgReceiptJournalAman: vi.fn(async () => ({ ok: true })),
+}));
+// The receipt's cost basis (issued material, CMT steps, PPN settings) — zero here, so the closed-short
+// test below exercises status handling only.
+vi.mock("@/lib/production/biaya-penerimaan-queries", async () => {
+  const { PPN_BAWAAN } = await import("@/lib/finance/pajak/ppn");
+  return {
+    bacaDasarBiayaPenerimaan: vi.fn(async () => ({
+      totalBiayaBahan: 0,
+      qtyRencana: 100,
+      bahanSudahDibebankan: 0,
+      sudahDiterima: 0,
+      sudahLolos: 0,
+      langkah: [],
+      biayaTambahanPerPcs: null,
+      pengaturanPpn: PPN_BAWAAN,
+    })),
+  };
+});
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async () => ({})) }));
+vi.mock("@/lib/item-requests/mutations", () => ({
+  cancelOpenLinesForWo: vi.fn(async () => {}),
+  getUncoveredShortages: vi.fn(async () => []),
+  syncRequestForWo: vi.fn(async () => {}),
+}));
 vi.mock("@/lib/work-orders/queries", () => ({ listWorkOrders: vi.fn() }));
 vi.mock("@/lib/leadtime/wo-snapshot", () => ({ resolveWoLeadTimeFields: vi.fn() }));
 vi.mock("@/lib/leadtime/calculations", () => ({ computeActualLeadDays: vi.fn() }));
@@ -113,18 +144,59 @@ describe("additional materials on an accessory whose stock is split across varia
     expect(lines).toEqual([expect.objectContaining({ itemId: "m1", qtyNeeded: 4 })]);
   });
 
-  it("issue passes the pre-check on a null row (0) plus a blank row (50) and reaches the transaction", async () => {
-    mockAggregate.mockResolvedValue({ _sum: { qtyOnHand: "50" } });
-    await expect(issueAdditionalMaterials("wo1", 10, "u1")).rejects.toThrow(STOP);
+  /** The issue transaction: stock is checked there, from the rows it reads, not from a stale pre-check. */
+  function issueTx(rows: Array<{ id: string; variantSku: string | null; qtyOnHand: string }>) {
+    return {
+      workOrder: {
+        findUnique: vi.fn().mockResolvedValue({
+          status: "IN_PRODUCTION",
+          consumptionPlan: "[]",
+          docNumber: "WO-1",
+          poId: null,
+          consumptionMaterialId: null,
+          rollBreakdown: null,
+        }),
+        update: vi.fn(),
+      },
+      materialIssue: { create: vi.fn().mockResolvedValue({ id: "mi1", docNumber: "ISS-1" }), update: vi.fn() },
+      item: { findUnique: vi.fn().mockResolvedValue({ nameId: "Button", defaultPpnIncluded: true }) },
+      inventoryValue: {
+        findMany: vi.fn().mockResolvedValue(rows.map((r) => ({ ...r, itemId: "m1", avgCost: "100" }))),
+      },
+    };
+  }
+
+  it("issue sums a null row (0) and a blank row (50) inside the transaction and draws from the blank row", async () => {
+    const { moveMainStock } = await import("@elorae/db");
+    vi.mocked(moveMainStock).mockRejectedValueOnce(new Error(STOP));
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+      cb(issueTx([
+        { id: "iv-null", variantSku: null, qtyOnHand: "0" },
+        { id: "iv-blank", variantSku: "", qtyOnHand: "50" },
+      ]))
+    );
+    expect(await issueAdditionalMaterials("wo1", 10, "u1")).toEqual({ ok: false, code: "GAGAL" });
     expect(mockTransaction).toHaveBeenCalledTimes(1);
+    expect(moveMainStock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ itemId: "m1", qtyDelta: -20, inventoryValueId: "iv-blank" })
+    );
   });
 
-  it("issue still refuses when the total on-hand is short", async () => {
-    mockAggregate.mockResolvedValue({ _sum: { qtyOnHand: "5" } });
-    await expect(issueAdditionalMaterials("wo1", 10, "u1")).rejects.toThrow(
-      "Insufficient stock for Button: need 20, have 5"
+  it("issue refuses inside the transaction when the total on-hand is short", async () => {
+    const { moveMainStock } = await import("@elorae/db");
+    mockTransaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
+      cb(issueTx([
+        { id: "iv-null", variantSku: null, qtyOnHand: "0" },
+        { id: "iv-blank", variantSku: "", qtyOnHand: "5" },
+      ]))
     );
-    expect(mockTransaction).not.toHaveBeenCalled();
+    expect(await issueAdditionalMaterials("wo1", 10, "u1")).toEqual({
+      ok: false,
+      code: "STOK_BAHAN_KURANG",
+      barang: "Button",
+    });
+    expect(moveMainStock).not.toHaveBeenCalled();
   });
 });
 
@@ -312,6 +384,11 @@ describe("issueWorkOrder stock guard", () => {
   const draftWo = { id: "wo1", docNumber: "WO-1", status: "DRAFT", vendorId: "v1", finishedGoodId: "fg1", plannedQty: "10", outputMode: "GENERIC", skuBreakdown: null };
   const planLine = (shortage: number) => ({ itemId: "m1", itemName: "Kain", uomId: "u1", uomCode: "MTR", shortage: new Decimal(shortage) });
 
+  /** The issue transaction: the row lock, then the re-read the guards and the write work from. */
+  function issueTx(wo: Record<string, unknown>) {
+    return { $queryRaw: vi.fn(), workOrder: { findUnique: vi.fn().mockResolvedValue(wo), update: vi.fn() } };
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
@@ -321,9 +398,13 @@ describe("issueWorkOrder stock guard", () => {
   it("refuses to issue while the BOM is short and never reaches the lead-time step", async () => {
     const { generateMaterialPlan } = await import("@/lib/production/planning");
     vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(12.001)] as never);
+    const tx = issueTx(draftWo);
+    mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(tx));
     await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("Stok belum cukup untuk issue: Kain (kurang 12.01 MTR)");
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toMatchObject({ code: "STOK_BELUM_CUKUP" });
     const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
     expect(resolveWoLeadTimeFields).not.toHaveBeenCalled();
+    expect(tx.workOrder.update).not.toHaveBeenCalled();
   });
 
   it("gets past the guard once stock covers every line", async () => {
@@ -331,31 +412,37 @@ describe("issueWorkOrder stock guard", () => {
     vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(0)] as never);
     const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
     vi.mocked(resolveWoLeadTimeFields).mockRejectedValue(new Error("STOP_AFTER_GUARD"));
-    const tx = { $queryRaw: vi.fn(), workOrder: { findUnique: vi.fn().mockResolvedValue({ ...draftWo, vendorId: "v2" }) } };
+    const tx = issueTx({ ...draftWo, vendorId: "v2" });
     mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(tx));
     await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("STOP_AFTER_GUARD");
-    // Lead time comes from the row re-read under the lock, not the first read.
+    // Lead time comes from the row re-read under the lock.
     expect(resolveWoLeadTimeFields).toHaveBeenCalledWith(tx, "v2", 10);
   });
 
-  it("re-checks under the row lock and flips status only from DRAFT", async () => {
+  it("checks stock under the row lock and flips status only from DRAFT", async () => {
     const { generateMaterialPlan } = await import("@/lib/production/planning");
-    // Covered at the first check, short again by the time the lock is held.
-    vi.mocked(generateMaterialPlan).mockResolvedValueOnce([planLine(0)] as never).mockResolvedValueOnce([planLine(3)] as never);
+    vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(3)] as never);
     const { resolveWoLeadTimeFields } = await import("@/lib/leadtime/wo-snapshot");
     vi.mocked(resolveWoLeadTimeFields).mockResolvedValue({} as never);
-    const lockRow = vi.fn();
-    const updateMany = vi.fn();
-    mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) =>
-      cb({ $queryRaw: lockRow, workOrder: { findUnique: vi.fn().mockResolvedValue(draftWo), updateMany } })
-    );
+    const tx = issueTx(draftWo);
+    mockTransaction.mockImplementation((cb: (tx: unknown) => unknown) => cb(tx));
     await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("Stok belum cukup untuk issue: Kain (kurang 3.00 MTR)");
-    expect(lockRow).toHaveBeenCalled();
-    expect(updateMany).not.toHaveBeenCalled();
+    expect(tx.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(tx.workOrder.findUnique.mock.invocationCallOrder[0]);
+    expect(tx.workOrder.update).not.toHaveBeenCalled();
 
     vi.mocked(generateMaterialPlan).mockResolvedValue([planLine(0)] as never);
-    updateMany.mockResolvedValue({ count: 0 });
-    await expect(issueWorkOrder("wo1", "u1")).rejects.toThrow("already issued");
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: "wo1", status: "DRAFT" } }));
+    tx.workOrder.findUnique.mockResolvedValue({ ...draftWo, status: "ISSUED" });
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toMatchObject({ code: "WO_SUDAH_TERBIT" });
+    tx.workOrder.findUnique.mockResolvedValue({ ...draftWo, status: "CANCELLED" });
+    await expect(issueWorkOrder("wo1", "u1")).rejects.toMatchObject({ code: "WO_SUDAH_DIBATALKAN" });
+    expect(tx.workOrder.update).not.toHaveBeenCalled();
+
+    tx.workOrder.findUnique.mockResolvedValue(draftWo);
+    const { getActorName } = await import("@/lib/notifications/actor-name");
+    vi.mocked(getActorName).mockResolvedValue("Admin");
+    await issueWorkOrder("wo1", "u1");
+    expect(tx.workOrder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "wo1" }, data: expect.objectContaining({ status: "ISSUED" }) })
+    );
   });
 });

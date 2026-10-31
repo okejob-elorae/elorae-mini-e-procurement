@@ -49,7 +49,7 @@ import { ItemType } from '@/lib/constants/enums';
 import { itemHasSkuVariants } from '@/lib/items/variants';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { alasanSimpanWo } from '@/lib/production/rencana-wo';
-import { KeteranganSimpanWo } from '../RencanaBahanWo';
+import { KeteranganSimpanWo } from '../KeteranganSimpanWo';
 
 interface TailorSupplier {
   id: string;

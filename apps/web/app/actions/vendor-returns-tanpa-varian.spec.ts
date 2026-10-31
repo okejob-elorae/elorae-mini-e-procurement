@@ -17,11 +17,12 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: sesi.id, email: null, permissions: sesi.permissions } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyVendorReturnCreated: async () => {},
   notifyVendorReturnStatusUpdated: async () => {},
 }));
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async () => {}) }));
 
 const { createVendorReturn, updateVendorReturn, processReturn, completeReturn } = await import("./vendor-returns");
 
@@ -80,7 +81,7 @@ d("retur pemasok bahan tanpa varian (baris stok variantSku NULL) — test bed on
 
   beforeEach(async () => {
     returIds = [];
-    await prisma.stockMovement.deleteMany({ where: { itemId: { in: seededIds([linenId, kancingId]) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds([linenId, kancingId]) } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: seededIds([linenId, kancingId]) } } });
     await prisma.inventoryValue.create({
       data: { itemId: linenId, variantSku: null, qtyOnHand: STOK_AWAL, avgCost: HARGA, totalValue: STOK_AWAL * HARGA },
@@ -89,7 +90,7 @@ d("retur pemasok bahan tanpa varian (baris stok variantSku NULL) — test bed on
 
   afterAll(async () => {
     await prisma.auditLog.deleteMany({ where: { entityType: "VendorReturn", userId: seededId(userId) } });
-    await prisma.stockMovement.deleteMany({ where: { itemId: { in: seededIds([linenId, kancingId]) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds([linenId, kancingId]) } } });
     await prisma.vendorReturn.deleteMany({ where: { vendorId: seededId(supplierId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: seededIds([linenId, kancingId]) } } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds([linenId, kancingId]) } } });
@@ -145,14 +146,13 @@ d("retur pemasok bahan tanpa varian (baris stok variantSku NULL) — test bed on
     expect(Number(stok[0].totalValue)).toBeCloseTo(27.8 * HARGA, 2);
     expect(Number(stok[0].avgCost)).toBeCloseTo(HARGA, 2);
 
-    const gerak = await prisma.stockMovement.findMany({
-      where: { refType: "VENDOR_RETURN", refId: seededId(ret.id) },
-      select: { qty: true, unitCost: true, totalCost: true, balanceQty: true, balanceValue: true },
+    const gerak = await prisma.stockLedgerEntry.findMany({
+      where: { refType: "VendorReturn", refId: seededId(ret.id) },
+      select: { qty: true, totalCost: true, balanceQty: true, balanceValue: true },
     });
     expect(gerak).toHaveLength(1);
     expect(Number(gerak[0].qty)).toBe(-5);
-    expect(Number(gerak[0].unitCost)).toBe(HARGA);
-    expect(Number(gerak[0].totalCost)).toBe(225_000);
+    expect(Number(gerak[0].totalCost)).toBe(5 * HARGA);
     expect(Number(gerak[0].balanceQty)).toBeCloseTo(27.8, 6);
     expect(Number(gerak[0].balanceValue)).toBeCloseTo(27.8 * HARGA, 2);
 
@@ -174,12 +174,11 @@ d("retur pemasok bahan tanpa varian (baris stok variantSku NULL) — test bed on
     });
     returIds.push(lama.id);
     expect(await processReturn(lama.id)).toEqual({ ok: true, id: lama.id, docNumber: lama.docNumber });
-    const gerak = await prisma.stockMovement.findFirstOrThrow({
-      where: { refType: "VENDOR_RETURN", refId: seededId(lama.id) },
-      select: { unitCost: true, totalCost: true, balanceValue: true },
+    const gerak = await prisma.stockLedgerEntry.findFirstOrThrow({
+      where: { refType: "VendorReturn", refId: seededId(lama.id) },
+      select: { totalCost: true, balanceValue: true },
     });
-    expect(Number(gerak.unitCost)).toBe(HARGA);
-    expect(Number(gerak.totalCost)).toBe(225_000);
+    expect(Number(gerak.totalCost)).toBe(5 * HARGA);
     // Saldo sebelum − keluar = saldo sesudah: kartu stok dan jurnal (yang membaca `totalCost`) sama.
     expect(Number(gerak.balanceValue)).toBeCloseTo(STOK_AWAL * HARGA - 225_000, 2);
   });

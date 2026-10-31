@@ -2,7 +2,12 @@ export type AttributeDef = { key: string; values: string[] };
 
 const COMBO_KEY_SEPARATOR = "\u0000";
 
-const RESERVED_VARIANT_KEYS = new Set(["sku", "barcode"]);
+/*
+ * Keys a variant row carries that are not attributes: `pantone` is the fabric colour's Pantone
+ * code added from the PO form (`lib/purchase-orders/varian-warna.ts`), metadata like the barcode,
+ * never a dimension of the grid.
+ */
+const RESERVED_VARIANT_KEYS = new Set(["sku", "barcode", "pantone"]);
 
 /**
  * The attributes `cartesianCombinations` actually uses: a trimmed, non-empty
@@ -119,7 +124,7 @@ export function comboKey(
 
 /**
  * A record's attribute entries with names and values trimmed and lowercased,
- * `sku`/`barcode` left out.
+ * the reserved keys (`sku`/`barcode`/`pantone`) left out.
  */
 function normalizedAttributeEntries(record: Record<string, string>): Map<string, string> {
   const entries = new Map<string, string>();
@@ -136,7 +141,7 @@ function normalizedAttributeEntries(record: Record<string, string>): Map<string,
  * match — names and values trimmed and case-insensitive. A saved variant with
  * an attribute the combo lacks does not match, so removing an attribute never
  * hands one saved variant's code to a combination it only partly describes.
- * `sku`/`barcode` are skipped on both sides — they are not attribute values
+ * `sku`/`barcode`/`pantone` are skipped on both sides — they are not attribute values
  * and must never gate the match.
  */
 export function findSavedVariant(

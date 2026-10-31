@@ -1715,18 +1715,21 @@ async function receiveFGInner(data: ReceiptFormData, claimedUserId?: string) {
 
 export type TerimaBarangJadiResult =
   | { ok: true; id: string; docNumber: string }
-  | { ok: false; code: KodeTolakProduksi | ReceiptRefusalCode };
+  | { ok: false; code: KodeTolakProduksi | Exclude<ReceiptRefusalCode, 'WORK_ORDER_NOT_FOUND'>; detail?: string };
 
 /**
  * `receiveFG` untuk layar terima barang jadi: penolakan berkode (WO batal, WO
  * draf, …) DIKEMBALIKAN, bukan dilempar — di build produksi Next menyamarkan
- * pesan lemparan aksi server. Galat lain (izin, validasi) tetap dilempar.
+ * pesan lemparan aksi server. Penolakan penerimaan stok (`receiptRefusal.*`:
+ * penerimaan serentak, varian, …) ikut dikembalikan beserta `detail`-nya.
+ * Galat lain (izin, validasi) tetap dilempar.
  */
 export async function terimaBarangJadi(data: ReceiptFormData): Promise<TerimaBarangJadiResult> {
   try {
     const r = await receiveFG(data);
     if (!r.success) {
-      return { ok: false, code: r.code === 'WORK_ORDER_NOT_FOUND' ? 'WO_TIDAK_DITEMUKAN' : r.code };
+      if (r.code === 'WORK_ORDER_NOT_FOUND') return { ok: false, code: 'WO_TIDAK_DITEMUKAN' };
+      return { ok: false, code: r.code, ...(r.detail ? { detail: r.detail } : {}) };
     }
     return { ok: true, id: r.id, docNumber: r.docNumber };
   } catch (error) {

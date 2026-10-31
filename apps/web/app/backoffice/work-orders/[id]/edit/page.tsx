@@ -53,7 +53,7 @@ import { ColorSizeRatio } from "@/components/work-orders/ColorSizeRatio";
 import { ItemType } from '@/lib/constants/enums';
 import { TombolBantuan } from '@/components/bantuan/TombolBantuan';
 import { alasanSimpanWo } from '@/lib/production/rencana-wo';
-import { KeteranganSimpanWo } from '../../RencanaBahanWo';
+import { KeteranganSimpanWo } from '../../KeteranganSimpanWo';
 import { WoTidakDitemukan } from '../../WoTidakDitemukan';
 
 interface TailorSupplier {

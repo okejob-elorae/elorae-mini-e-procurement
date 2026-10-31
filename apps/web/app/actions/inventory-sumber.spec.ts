@@ -6,9 +6,9 @@ import { prisma, seededId } from "@elorae/db";
  * (basis data uji sungguhan, sesi ditiru).
  *
  * Yang dibuktikan:
- *  - bawaan menyembunyikan sumber otomatis (webhook Jubelio, penjualan
- *    marketplace, van, …) tapi tetap menampilkan manual, opname, dan sumber
- *    baru yang belum dikenal;
+ *  - saringan "manual" (bawaan layar) menyembunyikan sumber otomatis (webhook
+ *    Jubelio, penjualan marketplace, van, …) tapi tetap menampilkan manual,
+ *    opname, dan sumber baru yang belum dikenal; tanpa saringan = semua;
  *  - "semua", "otomatis", dan satu kode sumber menyaring dengan benar;
  *  - totalCount dan halaman mengikuti saringan (bukan menyaring satu halaman di klien);
  *  - setiap baris membawa `source` untuk labelnya.
@@ -19,10 +19,8 @@ vi.mock("@/lib/auth", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/app/actions/security/pin-auth", () => ({ verifyPinForAction: vi.fn() }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: vi.fn(async () => "Penguji"),
-  notifyStockAdjustmentCreated: vi.fn(async () => {}),
-}));
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn(async () => "Penguji") }));
+vi.mock("@/lib/notifications/events", () => ({ notifyStockAdjustmentCreated: vi.fn(async () => {}) }));
 
 const { getStockAdjustments } = await import("./inventory");
 
@@ -82,10 +80,15 @@ d("daftar penyesuaian: saringan sumber di server (test bed only)", () => {
   }
   const sumberDari = (h: Awaited<ReturnType<typeof halaman>>) => h.items.map((r) => r.source).sort();
 
-  it("bawaan: sumber otomatis disembunyikan, manual/opname/sumber baru tetap tampil", async () => {
-    const h = await halaman();
+  it("saringan bawaan layar (manual): sumber otomatis disembunyikan, manual/opname/sumber baru tetap tampil", async () => {
+    const h = await halaman({ sumber: "manual" });
     expect(sumberDari(h)).toEqual(["ERP", "ERP_OPNAME", "SUMBER_BARU_UJI"]);
     expect(h.totalCount).toBe(3);
+  });
+
+  it("tanpa saringan sumber: semua penyesuaian, termasuk yang otomatis", async () => {
+    const h = await halaman();
+    expect(h.totalCount).toBe(6);
   });
 
   it("'semua', 'otomatis', dan satu kode sumber", async () => {
@@ -96,7 +99,7 @@ d("daftar penyesuaian: saringan sumber di server (test bed only)", () => {
   });
 
   it("halaman dan totalCount mengikuti saringan (bukan saring satu halaman di klien)", async () => {
-    const h = await halaman({ pageSize: 2 });
+    const h = await halaman({ sumber: "manual", pageSize: 2 });
     expect(h.items).toHaveLength(2);
     expect(h.totalCount).toBe(3);
     // Terbaru dulu: sumber baru (jam 5) lalu opname (jam 1).
@@ -107,7 +110,7 @@ d("daftar penyesuaian: saringan sumber di server (test bed only)", () => {
     const h = await halaman({ sumber: "semua", cari: `${tag}-KANVAS-PAGI`.toLowerCase() });
     expect(h.items.map((r) => r.id)).toEqual([idPerSumber.get("VAN_LOAD")]);
     expect(h.totalCount).toBe(1);
-    // Saringan bawaan tetap berlaku bersama pencarian.
-    expect((await halaman({ cari: `${tag}-kanvas-pagi` })).totalCount).toBe(0);
+    // Saringan manual tetap berlaku bersama pencarian.
+    expect((await halaman({ sumber: "manual", cari: `${tag}-kanvas-pagi` })).totalCount).toBe(0);
   });
 });

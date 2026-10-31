@@ -7,9 +7,10 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  * Dulu `approveGRNByOwner`/`declineGRNByOwner` memeriksa kolom lama `User.role`
  * milik `userId` KIRIMAN KLIEN: siapa pun yang punya `inventory:manage` cukup
  * mengirim id admin untuk menyetujui/menolak atas nama pemilik. Sekarang
- * pemilik = admin sistem (izin `*`) dari SESI, setuju punya penjaga keadaan, dan
- * keduanya berjalan di `runSerializable` — tolak ganda yang serentak dulu bisa
- * membalik stok dua kali.
+ * pemilik = admin sistem (izin `*`) dari SESI, id kiriman yang bukan pengguna
+ * sesi ditolak (`assertActor`), setuju punya penjaga keadaan, dan keduanya
+ * berjalan di `runSerializable` — tolak ganda yang serentak dulu bisa membalik
+ * stok dua kali.
  */
 
 const sesi = vi.hoisted(() => ({ ada: true, id: "", permissions: [] as string[] }));
@@ -19,11 +20,12 @@ vi.mock("@/lib/auth", () => ({
   ),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyGRNCreated: async () => {},
   notifyMaterialArrivedForPo: async () => {},
 }));
+vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async () => {}) }));
 /* Jurnal GRN tidak diuji di sini dan tidak boleh menyentuh pemetaan akun bersama. */
 vi.mock("@/lib/inventory/grn-journal", () => ({
   postGrnJournal: vi.fn(async () => ({ ok: true })),
@@ -202,7 +204,7 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
     const semuaGrn = (
       await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })
     ).map((g) => g.id);
-    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fabricRoll.deleteMany({ where: { grnId: { in: seededIds(semuaGrn) } } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(semuaGrn) } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
@@ -238,7 +240,7 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
   }
 
   async function jumlahPembalikan(): Promise<number> {
-    return prisma.stockMovement.count({ where: { refId: seededId(grnId), refType: "GRN_OWNER_DECLINE" } });
+    return prisma.stockLedgerEntry.count({ where: { refId: seededId(grnId), refType: "GRNReversal" } });
   }
 
   describe("approveGRNByOwner", () => {
@@ -253,13 +255,19 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
       await expect(approveGRNByOwner(grnId, pemilikId)).rejects.toThrow(/Unauthorized/);
     });
 
-    it("pemilik (izin *) boleh; penyetuju dicatat dari SESI, bukan argumen", async () => {
+    it("pemilik (izin *) boleh; penyetuju dicatat dari SESI", async () => {
       sebagai(PEMILIK());
-      await approveGRNByOwner(grnId, gudangId);
+      await approveGRNByOwner(grnId);
       const g = await keadaanGrn();
       expect(g.ownerApprovedAt).not.toBeNull();
       expect(g.ownerApprovedById).toBe(pemilikId);
       expect(g.requiresOwnerApproval).toBe(false);
+    });
+
+    it("id kiriman yang bukan pengguna sesi ditolak, walau sesinya pemilik", async () => {
+      sebagai(PEMILIK());
+      await expect(approveGRNByOwner(grnId, gudangId)).rejects.toThrow(/actor does not match/);
+      expect(await keadaanGrn()).toMatchObject({ ownerApprovedAt: null, requiresOwnerApproval: true });
     });
 
     it("GRN yang sudah ditolak tidak bisa disetujui", async () => {
@@ -291,7 +299,7 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
 
     it("pemilik boleh; stok dibalik sekali, penolak dicatat dari sesi", async () => {
       sebagai(PEMILIK());
-      await declineGRNByOwner(grnId, gudangId);
+      await declineGRNByOwner(grnId);
       expect(await stok()).toBe(STOK_AWAL - QTY_GRN);
       expect(await jumlahPembalikan()).toBe(1);
       expect((await keadaanGrn()).ownerDeclinedById).toBe(pemilikId);
@@ -358,14 +366,21 @@ d("GRN terima-lebih: persetujuan pemilik (test bed only)", () => {
   });
 
   describe("createGRN", () => {
-    it("penerima dicatat dari sesi, bukan dari argumen userId", async () => {
+    it("penerima dicatat dari sesi", async () => {
       sebagai(GUDANG());
-      const grn = await createGRN(
-        { supplierId, items: [{ itemId, qty: 1, unitCost: 1000 }] },
-        pemilikId,
+      const hasil = await createGRN({ supplierId, items: [{ itemId, qty: 1, unitCost: 1000 }] });
+      if (!hasil.success) throw new Error(`GRN ditolak: ${hasil.code}`);
+      grnIds.push(hasil.grn.id);
+      expect(hasil.grn.receivedBy).toBe(gudangId);
+    });
+
+    it("id penerima kiriman yang bukan pengguna sesi ditolak; tidak ada GRN tercatat", async () => {
+      sebagai(GUDANG());
+      const sebelum = await prisma.gRN.count({ where: { supplierId: seededId(supplierId) } });
+      await expect(createGRN({ supplierId, items: [{ itemId, qty: 1, unitCost: 1000 }] }, pemilikId)).rejects.toThrow(
+        /actor does not match/,
       );
-      grnIds.push(grn.id);
-      expect(grn.receivedBy).toBe(gudangId);
+      expect(await prisma.gRN.count({ where: { supplierId: seededId(supplierId) } })).toBe(sebelum);
     });
 
     it("tetap menolak tanpa inventory:manage", async () => {

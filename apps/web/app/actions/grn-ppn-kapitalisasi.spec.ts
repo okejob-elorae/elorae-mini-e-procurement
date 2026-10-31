@@ -18,8 +18,8 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: sesi.id, email: null, permissions: sesi.izin } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyGRNCreated: async () => {},
   notifyMaterialArrivedForPo: async () => {},
 }));
@@ -32,6 +32,13 @@ vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async 
 vi.mock("@/lib/finance/pajak/ppn-pengaturan", () => ({ bacaPengaturanPpn: vi.fn(async () => ppn.nilai) }));
 
 const { createGRN } = await import("./grn");
+
+/** `createGRN` yang diterima → GRN-nya; penolakan penerimaan berkode menggagalkan tes. */
+async function terimaGrn(data: Parameters<typeof createGRN>[0]) {
+  const hasil = await createGRN(data);
+  if (!hasil.success) throw new Error(`GRN ditolak: ${hasil.code}`);
+  return hasil.grn;
+}
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -72,13 +79,13 @@ d("PPN pembelian dikapitalisasi saat bukan PKP (test bed only)", () => {
   beforeEach(async () => {
     sesi.id = userId;
     ppn.nilai = NON_PKP;
-    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
   });
 
   afterAll(async () => {
     const grnIds = (await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })).map((g) => g.id);
-    await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grnIds) } } });
     await prisma.pOStatusHistory.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
     await prisma.pOItem.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
@@ -116,7 +123,7 @@ d("PPN pembelian dikapitalisasi saat bukan PKP (test bed only)", () => {
   async function keadaan(grnId: string) {
     const grn = await prisma.gRN.findUniqueOrThrow({ where: { id: grnId }, select: { totalAmount: true, ppnAmount: true, items: true } });
     const stok = await prisma.inventoryValue.findMany({ where: { itemId: seededId(itemId) }, select: { avgCost: true, totalValue: true } });
-    const gerak = await prisma.stockMovement.findMany({ where: { refId: grnId }, select: { totalCost: true } });
+    const gerak = await prisma.stockLedgerEntry.findMany({ where: { refId: grnId, refType: "GRN" }, select: { totalCost: true } });
     const baris = JSON.parse(String(grn.items)) as Array<Record<string, unknown>>;
     return {
       total: Number(grn.totalAmount),
@@ -130,7 +137,7 @@ d("PPN pembelian dikapitalisasi saat bukan PKP (test bed only)", () => {
 
   it("bukan PKP, baris Exclude PPN → PPN masuk nilai stok, harga rata-rata, dan hutang (total GRN)", async () => {
     const poId = await buatPo(false);
-    const g = await createGRN({ poId, supplierId, items: [{ itemId, qty: 10, unitCost: 1_000 }] });
+    const g = await terimaGrn({ poId, supplierId, items: [{ itemId, qty: 10, unitCost: 1_000 }] });
     expect(await keadaan(g.id)).toEqual({
       total: 11_100,
       ppnMasukan: 0,
@@ -144,13 +151,13 @@ d("PPN pembelian dikapitalisasi saat bukan PKP (test bed only)", () => {
   it("PKP → PPN jadi PPN masukan, nilai stok tetap harga PO", async () => {
     ppn.nilai = PKP;
     const poId = await buatPo(false);
-    const g = await createGRN({ poId, supplierId, items: [{ itemId, qty: 10, unitCost: 1_000 }] });
+    const g = await terimaGrn({ poId, supplierId, items: [{ itemId, qty: 10, unitCost: 1_000 }] });
     expect(await keadaan(g.id)).toMatchObject({ total: 10_000, ppnMasukan: 1_100, hargaRata: [1_000], gerak: [10_000] });
   });
 
   it("baris Include PPN (bawaan) tidak dikapitalisasi lagi", async () => {
     const poId = await buatPo(true);
-    const g = await createGRN({ poId, supplierId, items: [{ itemId, qty: 10, unitCost: 1_000 }] });
+    const g = await terimaGrn({ poId, supplierId, items: [{ itemId, qty: 10, unitCost: 1_000 }] });
     expect(await keadaan(g.id)).toMatchObject({ total: 10_000, hargaRata: [1_000], gerak: [10_000], baris: [{ unitCost: 1_000 }] });
   });
 });
