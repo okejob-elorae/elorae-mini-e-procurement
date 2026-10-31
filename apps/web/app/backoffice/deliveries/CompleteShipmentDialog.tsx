@@ -7,6 +7,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -299,9 +300,8 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <Label htmlFor="invoiceDate">{t("invoiceDate")}</Label>
-                  <Input
+                  <TanggalInput
                     id="invoiceDate"
-                    type="date"
                     className="h-10"
                     value={invoiceDate}
                     disabled={isPending}
@@ -313,9 +313,8 @@ export function CompleteShipmentDialog({ shipmentId, open, onOpenChange, onDone 
                 </div>
                 <div className="space-y-1">
                   <Label htmlFor="dueDate">{t("dueDate")}</Label>
-                  <Input
+                  <TanggalInput
                     id="dueDate"
-                    type="date"
                     className="h-10"
                     value={dueDate}
                     min={invoiceDate || undefined}

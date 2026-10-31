@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
@@ -85,11 +86,11 @@ export function VendorPaymentsClient({ canCreate }: { canCreate: boolean }) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="vp-from">{t("from")}</Label>
-              <Input id="vp-from" type="date" className="w-[160px]" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <TanggalInput id="vp-from" className="w-[160px]" value={from} onChange={(e) => setFrom(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="vp-to">{t("to")}</Label>
-              <Input id="vp-to" type="date" className="w-[160px]" value={to} onChange={(e) => setTo(e.target.value)} />
+              <TanggalInput id="vp-to" className="w-[160px]" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="vp-search">{t("search")}</Label>

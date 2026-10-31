@@ -6,6 +6,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * tidak satu pun memeriksa sesi, jadi akun salesman/SPG bisa menarik nilai
  * persediaan, harga PO, dan biaya bahan per vendor. Tanpa basis data: prisma
  * ditiru, dan yang dihitung adalah apakah kueri sempat berjalan.
+ *
+ * Nilai persediaan dan pembagian bahan baku/barang jadi juga dibaca halaman
+ * Laporan, yang terbuka bagi pemegang `dashboard:view`, jadi untuk dua bacaan
+ * itu `dashboard:view` ikut sah. Ekspornya tetap butuh `inventory:view`.
  */
 
 const state = vi.hoisted(() => ({
@@ -30,28 +34,33 @@ const produksi = await import("./production");
 const persediaan = await import("./inventory");
 const indeks = await import("./index");
 
-type Kasus = [nama: string, izinSah: string, panggil: () => Promise<unknown>];
+type Kasus = [nama: string, izinSah: string[], panggil: () => Promise<unknown>];
 
 const KASUS: Kasus[] = [
-  ["getProcurementReport", "purchase_orders:view", () => pengadaan.getProcurementReport()],
-  ["exportProcurementReport", "purchase_orders:view", () => pengadaan.exportProcurementReport(undefined, "csv")],
+  ["getProcurementReport", ["purchase_orders:view"], () => pengadaan.getProcurementReport()],
+  ["exportProcurementReport", ["purchase_orders:view"], () => pengadaan.exportProcurementReport(undefined, "csv")],
   [
     "getVendorPerformanceReport",
-    "work_orders:view",
+    ["work_orders:view"],
     () => produksi.getVendorPerformanceReport("v1", new Date("2026-09-01"), new Date("2026-09-30")),
   ],
   [
     "exportVendorPerformanceReport",
-    "work_orders:view",
+    ["work_orders:view"],
     () => produksi.exportVendorPerformanceReport("v1", new Date("2026-09-01"), new Date("2026-09-30"), "csv"),
   ],
-  ["getInventoryValueSnapshot", "inventory:view", () => persediaan.getInventoryValueSnapshot()],
-  ["getCOGSRawVsFinished", "inventory:view", () => persediaan.getCOGSRawVsFinished()],
-  ["exportInventorySnapshotReport", "inventory:view", () => persediaan.exportInventorySnapshotReport("csv")],
-  ["getSuppliersForReportFilter", "dashboard:view", () => indeks.getSuppliersForReportFilter()],
+  ["getInventoryValueSnapshot", ["inventory:view", "dashboard:view"], () => persediaan.getInventoryValueSnapshot()],
+  ["getCOGSRawVsFinished", ["inventory:view", "dashboard:view"], () => persediaan.getCOGSRawVsFinished()],
+  ["exportInventorySnapshotReport", ["inventory:view"], () => persediaan.exportInventorySnapshotReport("csv")],
+  ["getSuppliersForReportFilter", ["dashboard:view", "suppliers:view"], () => indeks.getSuppliersForReportFilter()],
 ];
 
-/** Bukan pembaca sah laporan itu. `dashboard:view` saja tidak cukup untuk laporan rinci. */
+/** Setiap pasangan (aksi, satu izin sahnya): masing-masing izin harus cukup sendirian. */
+const PEMEGANG_SAH: Array<[nama: string, izin: string, panggil: () => Promise<unknown>]> = KASUS.flatMap(
+  ([nama, izinSah, panggil]) => izinSah.map((izin): [string, string, () => Promise<unknown>] => [nama, izin, panggil]),
+);
+
+/** Bukan pembaca sah laporan itu. `dashboard:view` saja hanya cukup di aksi yang mencantumkannya. */
 const LUAR: Array<[string, string[]]> = [
   ["salesman", ["pwa:access"]],
   ["SPG", ["pwa:access", "spg_sales:record"]],
@@ -86,7 +95,7 @@ describe("aksi laporan — pagar per izin", () => {
     });
   }
 
-  it.each(KASUS.filter(([, izin]) => izin !== "dashboard:view"))(
+  it.each(KASUS.filter(([, izinSah]) => !izinSah.includes("dashboard:view")))(
     "%s menolak pemegang dashboard:view saja (laporan rinci butuh izin modulnya)",
     async (_n, _izin, panggil) => {
       state.sesi = { user: { id: "u1", permissions: ["dashboard:view"] } };
@@ -95,7 +104,7 @@ describe("aksi laporan — pagar per izin", () => {
     },
   );
 
-  it.each(KASUS)("%s tetap boleh untuk pemegang izinnya (%s)", async (_n, izin, panggil) => {
+  it.each(PEMEGANG_SAH)("%s tetap boleh untuk pemegang %s saja", async (_n, izin, panggil) => {
     state.sesi = { user: { id: "u1", permissions: [izin] } };
     const galat = await galatDari(panggil);
     expect(galat ?? "").not.toMatch(/Unauthorized|Forbidden/);

@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import { Pagination } from "@/components/ui/pagination";
 import { cn } from "@/lib/utils";
@@ -166,15 +166,13 @@ export function PaymentsPageClient(props: Props) {
                 <SelectItem value="VOIDED">{t("statusVoided")}</SelectItem>
               </SelectContent>
             </Select>
-            <Input
-              type="date"
+            <TanggalInput
               value={props.dateFrom}
               onChange={(e) => pushParams({ from: e.target.value || undefined })}
               className="h-10 w-full sm:w-[160px]"
               aria-label={t("fromLabel")}
             />
-            <Input
-              type="date"
+            <TanggalInput
               value={props.dateTo}
               onChange={(e) => pushParams({ to: e.target.value || undefined })}
               className="h-10 w-full sm:w-[160px]"

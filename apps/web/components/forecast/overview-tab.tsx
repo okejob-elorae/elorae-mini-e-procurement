@@ -29,6 +29,7 @@ import { MonthlyForecastRow } from './monthly-forecast-row';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PERMISSIONS, hasPermission } from '@/lib/rbac';
 import { MIN_BULAN_DATA_MUSIMAN } from '@/app/backoffice/forecast/tahun-forecast';
+import type { CakupanPermintaanForecast } from '@/app/backoffice/forecast/actions';
 
 const PAGE_SIZE = 25;
 
@@ -144,6 +145,8 @@ interface OverviewTabProps {
   coverageMonths: number;
   coverage: DataCoverage | null;
   sources: DemandSourceCoverage | null;
+  /** Bulan penjualan yang dibaca `runForecast` untuk tahun ini, lintas semua sumber. */
+  demand: CakupanPermintaanForecast | null;
   permissions: string[];
   onRefresh: () => void;
   onEditConfig: () => void;
@@ -156,6 +159,7 @@ export function ForecastOverviewTab({
   coverageMonths,
   coverage,
   sources,
+  demand,
   permissions,
   onRefresh,
   onEditConfig,
@@ -245,7 +249,7 @@ export function ForecastOverviewTab({
             <Button variant="outline" size="sm" onClick={onEditConfig}>
               {t('config.ubahKonfigurasi')}
             </Button>
-            <Button size="sm" onClick={handleRun} disabled={running || coverageMonths <= 0}>
+            <Button size="sm" onClick={handleRun} disabled={running}>
               {running ? t('config.running') : t('config.jalankanForecast')}
             </Button>
             <Button variant="secondary" size="sm" asChild>
@@ -257,11 +261,11 @@ export function ForecastOverviewTab({
           </>
         )}
       </div>
-      {canManage && coverageMonths < MIN_BULAN_DATA_MUSIMAN ? (
+      {canManage && demand && demand.bulan < MIN_BULAN_DATA_MUSIMAN ? (
         <p className="text-sm text-muted-foreground">
-          {coverageMonths <= 0
-            ? t('results.belumAdaData')
-            : t('results.dataKurangSetahun', { bulan: coverageMonths, minimal: MIN_BULAN_DATA_MUSIMAN })}
+          {demand.bulan <= 0
+            ? t('results.belumAdaPermintaan', { lookback: demand.lookbackMonths, tahun: year })
+            : t('results.dataKurangSetahun', { bulan: demand.bulan, minimal: MIN_BULAN_DATA_MUSIMAN })}
         </p>
       ) : null}
 

@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -302,7 +303,7 @@ export function ItemRequestsClient({ userId, canManage, canCreatePo }: { userId:
               </div>
               <div className="space-y-2">
                 <Label htmlFor="ir-eta">{t("eta")}</Label>
-                <Input id="ir-eta" type="date" className="w-[180px]" value={etaDate} onChange={(e) => setEtaDate(e.target.value)} />
+                <TanggalInput id="ir-eta" className="w-[180px]" value={etaDate} onChange={(e) => setEtaDate(e.target.value)} />
               </div>
             </div>
             <Table>

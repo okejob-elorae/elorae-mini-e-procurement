@@ -35,7 +35,7 @@ export function PickListPrint({ order, items, lineIdentities, lineImages = {} }:
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: PRINT_STYLES }} />
-      <BilahCetak orderId={order.id} />
+      <BilahCetak orderId={order.id} entityType="SalesOrderPickList" />
       <div className="print-root">
         <div className="print-header">{BRAND.name} — {t("title")}</div>
         <div className="print-divider" />

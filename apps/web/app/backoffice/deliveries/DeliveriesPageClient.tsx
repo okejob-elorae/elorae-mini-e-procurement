@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
@@ -153,8 +153,7 @@ export function DeliveriesPageClient({
           emptyMessage={t("storeSearchEmpty")}
           triggerClassName="h-10 w-full sm:w-[220px]"
         />
-        <Input
-          type="date"
+        <TanggalInput
           value={filters.dateFrom}
           max={filters.dateTo || undefined}
           disabled={isPending}
@@ -162,8 +161,7 @@ export function DeliveriesPageClient({
           className="h-10 w-full sm:w-[160px]"
           aria-label={t("filterDateFrom")}
         />
-        <Input
-          type="date"
+        <TanggalInput
           value={filters.dateTo}
           min={filters.dateFrom || undefined}
           disabled={isPending}

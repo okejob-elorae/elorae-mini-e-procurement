@@ -87,8 +87,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  const entitas = [...klaimIds, ...nrtIds, ...nriIds].filter(Boolean).map(seededId);
-  if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: entitas } } });
+  const entitas = [...klaimIds, ...nrtIds, ...nriIds].filter(Boolean);
+  if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: entitas.map(seededId) } } });
   const notif = await prisma.adminNotification.findMany({
     where: {
       category: {

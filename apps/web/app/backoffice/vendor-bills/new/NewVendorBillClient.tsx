@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -142,11 +143,11 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="vb-date">{t("billDate")}</Label>
-            <Input id="vb-date" type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
+            <TanggalInput id="vb-date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
           </div>
           <div className="space-y-2">
             <Label htmlFor="vb-due">{t("dueDate")}</Label>
-            <Input id="vb-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+            <TanggalInput id="vb-due" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             <p className="text-xs text-muted-foreground">{t("dueDateHint")}</p>
           </div>
           <div className="space-y-2 sm:col-span-2 lg:col-span-4">

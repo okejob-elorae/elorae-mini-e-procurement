@@ -10,7 +10,7 @@ import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { cn } from "@/lib/utils";
 import { approveSellThroughAction, type SellThroughActionFailure } from "@/app/actions/konsi-sell-through";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
@@ -193,9 +193,8 @@ export function SellThroughApproveDialog({
               <Label htmlFor="sell-through-invoice-date" className="text-xs text-muted-foreground">
                 {tApprove("invoiceDate")}
               </Label>
-              <Input
+              <TanggalInput
                 id="sell-through-invoice-date"
-                type="date"
                 className="h-10"
                 value={invoiceDate}
                 min={minDate}

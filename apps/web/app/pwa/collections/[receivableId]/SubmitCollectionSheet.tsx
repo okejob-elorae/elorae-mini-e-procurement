@@ -11,6 +11,7 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -254,9 +255,8 @@ export function SubmitCollectionSheet({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="collection-paid-at">{t("paidAtLabel")}</Label>
-          <Input
+          <TanggalInput
             id="collection-paid-at"
-            type="date"
             className="h-10"
             value={paidAt}
             disabled={isPending}

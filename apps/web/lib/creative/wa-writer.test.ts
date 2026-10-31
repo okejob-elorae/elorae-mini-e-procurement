@@ -24,8 +24,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  const entitas = [...seededIds(kolabIds), seededId(kolId)];
-  await prisma.auditLog.deleteMany({ where: { entityId: { in: entitas } } });
+  await prisma.auditLog.deleteMany({ where: { entityId: { in: [...seededIds(kolabIds), seededId(kolId)] } } });
   await prisma.kolBrief.deleteMany({ where: { id: { in: seededIds(kolabIds) } } });
   if (kolId) await prisma.kol.delete({ where: { id: seededId(kolId) } });
 });

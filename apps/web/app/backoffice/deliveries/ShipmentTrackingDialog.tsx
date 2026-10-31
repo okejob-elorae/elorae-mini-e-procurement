@@ -7,6 +7,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { SearchableCombobox } from "@/components/ui/searchable-combobox";
 import {
@@ -145,7 +146,7 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
      * Fail fast on a reversed pair rather than letting the action refuse it, because this is the
      * last moment the pair is editable at all: `updateShipmentTracking` is PACKED-gated, so once
      * this dialog ships the shipment the dates freeze and the salesman meets them in the field.
-     * Both values are `YYYY-MM-DD` strings straight out of `<input type="date">`, so a plain
+     * Both values are `YYYY-MM-DD` strings straight out of `TanggalInput`, so a plain
      * string comparison is exactly a chronological one — no `Date` round-trip needed. Self-gating
      * on both being non-empty, which is why it needs no `method`/`isKonsi` check of its own: the
      * date inputs only render for a non-konsi SALESMAN_CARRY shipment, and the server-side guard
@@ -297,16 +298,15 @@ export function ShipmentTrackingDialog({ shipmentId, open, onOpenChange, onDone,
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <Label htmlFor="invoiceDate">{t("invoiceDateLabel")}</Label>
-                      <Input
+                      <TanggalInput
                         id="invoiceDate"
-                        type="date"
                         value={invoiceDate}
                         onChange={(e) => setInvoiceDate(e.target.value)}
                       />
                     </div>
                     <div>
                       <Label htmlFor="dueDate2">{t("dueDateLabel2")}</Label>
-                      <Input id="dueDate2" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                      <TanggalInput id="dueDate2" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
                     </div>
                   </div>
                 )}

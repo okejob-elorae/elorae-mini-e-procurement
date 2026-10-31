@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { TanggalInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -103,11 +104,11 @@ export function VendorBillsClient({ canManage }: { canManage: boolean }) {
             </div>
             <div className="space-y-2">
               <Label htmlFor="vb-from">{t("from")}</Label>
-              <Input id="vb-from" type="date" className="w-[160px]" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <TanggalInput id="vb-from" className="w-[160px]" value={from} onChange={(e) => setFrom(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="vb-to">{t("to")}</Label>
-              <Input id="vb-to" type="date" className="w-[160px]" value={to} onChange={(e) => setTo(e.target.value)} />
+              <TanggalInput id="vb-to" className="w-[160px]" value={to} onChange={(e) => setTo(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="vb-search">{t("search")}</Label>

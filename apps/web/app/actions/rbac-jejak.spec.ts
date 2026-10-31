@@ -8,13 +8,15 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  *   yang sama, membawa daftar izin sebelum/sesudah. Barisnya hanya menyimpan
  *   keadaan terakhir — siapa yang memberi peran salesman akses keuangan hanya
  *   bisa ditanyakan dari jejaknya.
+ * - Mengelola peran hanya untuk admin: `settings_rbac:manage` saja tidak cukup
+ *   tanpa peran ADMIN, sama dengan pembaca daftar peran.
  * - `assignUserRole` memegang aturan toko tetap SPG yang sama dengan
  *   Pengaturan → Pengguna: peran SPG wajib punya toko tetap (aktif), dan
  *   berganti ke peran lain mengosongkannya — pengguna lain yang kebetulan
  *   punya toko tetap diperlakukan sebagai SPG di HP.
  */
 
-type SesiUji = { user: { id: string; email: null; permissions: string[] } };
+type SesiUji = { user: { id: string; email: null; role: string; permissions: string[] } };
 const sesi = vi.hoisted(() => ({ kini: null as SesiUji | null }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => sesi.kini) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -38,8 +40,8 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
   let tokoAktif = "";
   let tokoMati = "";
 
-  const masuk = (permissions: string[]) => {
-    sesi.kini = { user: { id: pelaku, email: null, permissions } };
+  const masuk = (permissions: string[], role = "ADMIN") => {
+    sesi.kini = { user: { id: pelaku, email: null, role, permissions } };
   };
   const buatPeran = async (akhiran: string, kode: string[]) => {
     const p = await prisma.roleDefinition.create({
@@ -186,6 +188,22 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
       expect(await deleteRole(peranBiasa)).toEqual({ ok: false, code: "MASIH_DIPAKAI" });
       expect(await prisma.roleDefinition.findUnique({ where: { id: seededId(peranBiasa) }, select: { id: true } })).not.toBeNull();
       expect(await jejak(peranBiasa, "ROLE_DELETED")).toEqual([]);
+    });
+  });
+
+  describe("hanya admin", () => {
+    it("pemegang settings_rbac:manage yang bukan ADMIN → TANPA_AKSES, tanpa perubahan dan tanpa jejak", async () => {
+      const peran = await buatPeran("BUKAN-ADMIN", ["pwa:access"]);
+      masuk(["settings_rbac:manage"], "USER");
+      expect(await createRole({ name: `${tag}-Z` }, [])).toEqual({ ok: false, code: "TANPA_AKSES" });
+      expect(await updateRolePermissions(peran, [izinId["stores:view"]])).toEqual({ ok: false, code: "TANPA_AKSES" });
+      expect(await deleteRole(peran)).toEqual({ ok: false, code: "TANPA_AKSES" });
+
+      expect(await prisma.roleDefinition.count({ where: { name: `${tag}-Z` } })).toBe(0);
+      const tautan = await prisma.rolePermission.findMany({ where: { roleId: seededId(peran) }, select: { permissionId: true } });
+      expect(tautan.map((t) => t.permissionId)).toEqual([izinId["pwa:access"]]);
+      expect(await jejak(peran, "ROLE_PERMISSIONS_UPDATED")).toEqual([]);
+      expect(await jejak(peran, "ROLE_DELETED")).toEqual([]);
     });
   });
 

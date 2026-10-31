@@ -38,7 +38,7 @@ export function PackingSlipPrint({ order, items, lineImages = {} }: Props) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: PRINT_STYLES }} />
-      <BilahCetak orderId={order.id} />
+      <BilahCetak orderId={order.id} entityType="SalesOrderPackingSlip" />
       <div className="print-root">
         <div className="print-header">{BRAND.name}</div>
         <div className="print-address-block">{BRAND.address}</div>

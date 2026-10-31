@@ -15,6 +15,7 @@ import type { StoreStockOptionRow } from "@/lib/stores/transfer/queries";
 import { formatMovedAtInput, isMovedAtInFuture, parseMovedAtInput } from "@/lib/stores/transfer/moved-at";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TanggalJamInput } from "@/components/ui/tanggal-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -244,9 +245,8 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
             {sameStore && <p className="text-sm text-destructive">{tNew("sameStoreError")}</p>}
             <div className="space-y-1.5 sm:max-w-xs">
               <Label htmlFor="transfer-moved-at">{tNew("movedAt")}</Label>
-              <Input
+              <TanggalJamInput
                 id="transfer-moved-at"
-                type="datetime-local"
                 className="min-h-[44px]"
                 required
                 max={formatMovedAtInput(new Date())}

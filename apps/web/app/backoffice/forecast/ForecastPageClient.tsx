@@ -30,6 +30,7 @@ import {
   type ForecastResultDetail,
 } from '@/app/actions/forecast';
 import { pilihanTahunForecast, tahunForecastDariUrl } from './tahun-forecast';
+import { getCakupanPermintaanForecast, type CakupanPermintaanForecast } from './actions';
 
 const TABS = ['overview', 'articles', 'abc', 'plan-bridge'] as const;
 
@@ -51,22 +52,25 @@ export function ForecastPageClient() {
   const [coverageMonths, setCoverageMonths] = useState(0);
   const [coverage, setCoverage] = useState<DataCoverage | null>(null);
   const [sources, setSources] = useState<DemandSourceCoverage | null>(null);
+  const [demand, setDemand] = useState<CakupanPermintaanForecast | null>(null);
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
-      const [forecastResults, forecastConfig, coverage, demandSources] = await Promise.all([
+      const [forecastResults, forecastConfig, coverage, demandSources, demandCoverage] = await Promise.all([
         getForecastResults(year),
         getForecastConfig(year),
         getDataCoverage(),
         getDemandSourceCoverage(),
+        getCakupanPermintaanForecast(year),
       ]);
       setResults(forecastResults);
       setConfig(forecastConfig);
       setCoverageMonths(coverage.totalMonthsCovered);
       setCoverage(coverage);
       setSources(demandSources);
+      setDemand(demandCoverage);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('loadFailed'));
     }
@@ -139,6 +143,7 @@ export function ForecastPageClient() {
             coverageMonths={coverageMonths}
             coverage={coverage}
             sources={sources}
+            demand={demand}
             permissions={session?.user?.permissions ?? []}
             onRefresh={refresh}
             onEditConfig={() => setConfigOpen(true)}
