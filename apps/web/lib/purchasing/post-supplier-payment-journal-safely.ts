@@ -1,6 +1,7 @@
 import { prisma, type AdminNotification } from "@elorae/db";
 import { isRetryableTxError } from "@/lib/db/tx-retry";
 import { hasCurrentPaymentJournal } from "./supplier-payment-journal";
+import { adaPembayaranDokumenUntukPo } from "./pembayaran-dokumen-po";
 import type { PostSupplierPaymentResult, PostSupplierPaymentReversalResult } from "./supplier-payment-journal";
 import type { SupplierPaymentDirection } from "./supplier-payment-journal-message";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
@@ -70,7 +71,11 @@ const TOGGLE_RETRY = "unmark payment on the PO and mark it paid again";
  * Classifying is all it does; the caller decides what a failure costs the
  * toggle. `setPOPaidAt` commits the mark through every infrastructure failure
  * but ABORTS it on the three receipt-state codes (`isReceiptBlockedMarkCode`),
- * so no notification is ever written for those from the toggle.
+ * so no notification is ever written for those from the toggle. The same holds
+ * for `ADA_PEMBAYARAN_DOKUMEN` (paid through supplier payment documents): the
+ * toggle refuses it before its compare-and-swap, and the retry action turns it
+ * into its own result rather than a `JOURNAL_PENDING` row — nothing is pending
+ * for a PO whose receipts the documents already paid.
  *
  * An `ok` result is silent even when nothing was created, because the writer only
  * reports an idempotent hit as `ok` once it has confirmed the journal already
@@ -185,6 +190,13 @@ export async function latestPaymentJournalFailure(poId: string): Promise<Payment
  * that as a failure. Its retry comes back `NOTHING_TO_POST` again; it can never
  * post a payment journal for such a PO.
  *
+ * A PO paid through supplier payment documents is never pending here, whatever
+ * its old failure rows say: the documents debited payables themselves (and
+ * marked the PO paid once they cleared it), so the payment journal this banner
+ * offers to post would pay the same receipts a second time — the writer refuses
+ * it (`ADA_PEMBAYARAN_DOKUMEN`), and a banner whose only action is refused never
+ * clears.
+ *
  * The row's reason is shown only when the row is at least as new as the current
  * `paidAt`. An older row describes an earlier mark, so its reason may not be why
  * the current one has no journal; `reason` is then `null` and the banner says the
@@ -195,6 +207,7 @@ export async function paymentJournalPendingWhilePaid(poId: string): Promise<Paym
   if (!po || po.paidAt == null) return null;
   const paidAt = po.paidAt;
   if (await hasCurrentPaymentJournal(poId)) return null;
+  if (await adaPembayaranDokumenUntukPo(poId)) return null;
 
   const row = await latestPaymentJournalFailure(poId);
   if (!row) return null;

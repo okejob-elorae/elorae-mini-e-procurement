@@ -144,10 +144,15 @@ export function buildPOsWhere(filters?: ListPOsFilters) {
     where.paidAt = null;
   }
   if (filters?.overdue) {
-    /* Tanggal tiba hari ini belum terlambat: batasnya awal hari ini WIB, sama dengan `overduePOWhere`. */
-    where.etaDate = overduePOWhere().etaDate;
+    /*
+     * The same rule as `overduePOWhere`, the one the dashboard and the menu badge count with, so
+     * `?status=overdue` lists exactly the POs they report: ETA before the start of today WIB (an
+     * ETA of today is not late yet), and only SUBMITTED or PARTIAL — a DRAFT promised nothing.
+     */
+    const terlambat = overduePOWhere();
+    where.etaDate = terlambat.etaDate;
     /* ANDed in, never assigned to `where.status`, so an explicit status or statusIn still applies. */
-    const openStatus = { status: { notIn: ["CLOSED", "OVER", "CANCELLED"] } };
+    const openStatus = { status: terlambat.status };
     where.AND = Array.isArray(where.AND) ? [...where.AND, openStatus] : [openStatus];
   }
   const cari = syaratCariPo(filters?.cari);

@@ -236,6 +236,8 @@ export default function PODetailPage() {
         toast.error(tSupplierPayments("pendingPayment.errForbidden"));
       } else if (result.code === "BAD_STATE") {
         toast.info(tSupplierPayments("pendingPayment.errBadState"), { duration: 10000 });
+      } else if (result.code === "ADA_PEMBAYARAN_DOKUMEN") {
+        toast.info(tSupplierPayments("pendingPayment.errPaidViaDocuments"), { duration: 12000 });
       } else if (result.code === "JOURNAL_FAILED") {
         toast.warning(journalFailureMessage(result.failure.code, result.failure.role, "payment"), {
           duration: 12000,

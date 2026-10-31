@@ -3,7 +3,6 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
 import { catatJejakKas, JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import { AWALAN_KUNCI_TANDAI_LUNAS, kunciTandaiLunas, STATUS_PEMBAYARAN } from "./pembayaran-aturan";
-import { SARING_PEMBAYARAN_DOKUMEN } from "./pembayaran-hutang-queries";
 import { generasiTandaiLunas } from "./supplier-payment-journal";
 
 /**
@@ -108,21 +107,8 @@ export async function selaraskanCerminTandaiLunas(poId: string, olehUserId: stri
   }
 }
 
-/**
- * Penjaga tombol lama: PO yang SUDAH punya pembayaran dokumen (sebagian/penuh
- * lewat halaman Pembayaran pemasok) tidak boleh ditandai lunas atau dibuka
- * tandanya dengan tombol — tombol itu membayar SELURUH hutang PO dari buku
- * besar, jadi bagian yang sudah dibayar akan terbayar dua kali.
- */
-export async function adaPembayaranDokumenUntukPo(poId: string, tx: Klien | typeof prisma = prisma): Promise<boolean> {
-  const grn = await tx.gRN.findMany({ where: { poId }, select: { id: true } });
-  if (grn.length === 0) return false;
-  const ada = await tx.supplierPaymentAllocation.findFirst({
-    where: { targetType: "GRN", targetId: { in: grn.map((g) => g.id) }, payment: SARING_PEMBAYARAN_DOKUMEN },
-    select: { id: true },
-  });
-  return ada != null;
-}
+/** Penjaga tombol lama — tinggal di berkas daun, lihat `pembayaran-dokumen-po.ts`. */
+export { adaPembayaranDokumenUntukPo } from "./pembayaran-dokumen-po";
 
 /** Kunci cermin untuk generasi yang sekarang berlaku (untuk tes dan layar). */
 export async function kunciCerminSekarang(poId: string, tx: Klien | typeof prisma = prisma): Promise<string> {

@@ -9,7 +9,8 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { kunciJenis, SUMBER_JURNAL_SALDO_AWAL } from "@/lib/finance/saldo-awal/jenis";
 import { JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import { bacaSkbPemasok, type SkbPemasok } from "@/lib/finance/pajak/pemotongan";
-import { AWALAN_KUNCI_TANDAI_LUNAS, ID_SALDO_AWAL, kunciDokumenHutang, type SisaDokumen } from "./pembayaran-aturan";
+import { ID_SALDO_AWAL, kunciDokumenHutang, type SisaDokumen } from "./pembayaran-aturan";
+import { SARING_PEMBAYARAN_DOKUMEN } from "./pembayaran-dokumen-po";
 import { terapkanFifo } from "./pembayaran-umur";
 import { hitungUangMukaBelumDipotong, susunJejakUangMuka, type DataUangMukaPembayaran } from "./pembayaran-uang-muka";
 
@@ -111,11 +112,7 @@ function potong<T>(arr: T[], n: number): T[][] {
   return hasil;
 }
 
-/** Penyaring pembayaran yang dihitung sebagai alokasi dokumen (bukan cermin tombol lama). */
-export const SARING_PEMBAYARAN_DOKUMEN: Prisma.SupplierPaymentWhereInput = {
-  status: "POSTED",
-  OR: [{ idempotencyKey: null }, { NOT: { idempotencyKey: { startsWith: AWALAN_KUNCI_TANDAI_LUNAS } } }],
-};
+export { SARING_PEMBAYARAN_DOKUMEN };
 
 /** PO id dari sourceId `<poId>#<gen>` jurnal tombol lama. */
 function poDariSumberTandaiLunas(sourceId: string | null): string | null {

@@ -1,4 +1,5 @@
 import type { PendingGRN } from "./db";
+import type { ImportedRoll } from "@/lib/grn/roll-import/types";
 
 /*
  * Draf GRN di perangkat.
@@ -30,6 +31,12 @@ export type BarisIsianGrn = {
   qty: number;
   unitCost: number;
   rollValues?: string[];
+  /**
+   * Kain: roll dari impor Excel (panjang + nomor roll + catatan). Bila ada, ia
+   * menggantikan `rollValues` dan qty = jumlah panjangnya. Tidak ada = roll
+   * diketik (atau bukan kain).
+   */
+  importedRolls?: ImportedRoll[];
   poOrderedQty?: number | null;
   poAlreadyReceivedQty?: number | null;
 };
@@ -62,6 +69,8 @@ export type BarisDrafGrn = {
   qty: number;
   unitCost: number;
   rollValues: string[];
+  /** Lihat `BarisIsianGrn.importedRolls`; tidak ada pada draf yang ditulis sebelum roll impor ikut draf. */
+  importedRolls?: ImportedRoll[];
   poOrderedQty: number | null;
   poAlreadyReceivedQty: number | null;
 };
@@ -104,10 +113,15 @@ export function drafDariIsian(isian: IsianGrn, sekarang: number): DrafGrn {
         poAlreadyReceivedQty: l.poAlreadyReceivedQty ?? null,
       };
       if (l.variantSku) baris.variantSku = l.variantSku;
+      if (l.importedRolls !== undefined) baris.importedRolls = salinRoll(l.importedRolls);
       return baris;
     }),
     disimpanPada: sekarang,
   };
+}
+
+function salinRoll(rolls: readonly ImportedRoll[]): ImportedRoll[] {
+  return rolls.map((r) => ({ length: r.length, ref: r.ref, notes: r.notes }));
 }
 
 /** Ada yang layak disimpan? Saring kategori saja bukan isian. */
@@ -134,6 +148,23 @@ function angkaAtauNull(v: unknown): number | null | undefined {
   return angka(v) ? v : undefined;
 }
 
+function teksAtauNull(v: unknown): v is string | null {
+  return v === null || teks(v);
+}
+
+/** Roll impor dari simpanan; null bila satu saja rusak (barisnya ikut dibuang — qty-nya jumlah roll itu). */
+function bacaRollImpor(v: unknown): ImportedRoll[] | null {
+  if (!Array.isArray(v)) return null;
+  const hasil: ImportedRoll[] = [];
+  for (const r of v) {
+    if (!r || typeof r !== "object") return null;
+    const roll = r as Record<string, unknown>;
+    if (!angka(roll.length) || !teksAtauNull(roll.ref) || !teksAtauNull(roll.notes)) return null;
+    hasil.push({ length: roll.length, ref: roll.ref, notes: roll.notes });
+  }
+  return hasil;
+}
+
 function bacaBaris(v: unknown): BarisDrafGrn | null {
   if (!v || typeof v !== "object") return null;
   const b = v as Record<string, unknown>;
@@ -144,6 +175,8 @@ function bacaBaris(v: unknown): BarisDrafGrn | null {
   const dipesan = angkaAtauNull(b.poOrderedQty);
   const diterima = angkaAtauNull(b.poAlreadyReceivedQty);
   if (dipesan === undefined || diterima === undefined) return null;
+  const rollImpor = b.importedRolls === undefined ? undefined : bacaRollImpor(b.importedRolls);
+  if (rollImpor === null) return null;
   const baris: BarisDrafGrn = {
     itemId: b.itemId as string,
     itemType: b.itemType as string,
@@ -158,6 +191,7 @@ function bacaBaris(v: unknown): BarisDrafGrn | null {
     poAlreadyReceivedQty: diterima,
   };
   if (b.variantSku) baris.variantSku = b.variantSku as string;
+  if (rollImpor) baris.importedRolls = rollImpor;
   return baris;
 }
 
@@ -191,7 +225,9 @@ export function bacaDrafGrn(mentah: unknown): DrafGrn | null {
 }
 
 /** Draf → baris formulir (id baru `draf-N`; minimal satu baris kosong). */
-export function barisDariDraf(draf: DrafGrn): Array<Required<Omit<BarisIsianGrn, "variantSku">> & { variantSku?: string }> {
+export function barisDariDraf(
+  draf: DrafGrn,
+): Array<Required<Omit<BarisIsianGrn, "variantSku" | "importedRolls">> & { variantSku?: string; importedRolls?: ImportedRoll[] }> {
   if (draf.lines.length === 0) {
     return [
       {
@@ -210,7 +246,12 @@ export function barisDariDraf(draf: DrafGrn): Array<Required<Omit<BarisIsianGrn,
       },
     ];
   }
-  return draf.lines.map((l, i) => ({ ...l, rollValues: [...l.rollValues], id: `draf-${i}` }));
+  return draf.lines.map((l, i) => ({
+    ...l,
+    rollValues: [...l.rollValues],
+    ...(l.importedRolls ? { importedRolls: salinRoll(l.importedRolls) } : {}),
+    id: `draf-${i}`,
+  }));
 }
 
 /**

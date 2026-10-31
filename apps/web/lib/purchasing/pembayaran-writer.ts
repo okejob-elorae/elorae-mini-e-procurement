@@ -34,6 +34,7 @@ import {
 import { bacaHutangPemasok, keadaanBayarPo, petaSisaDokumen } from "./pembayaran-hutang-queries";
 import { AWALAN_KUNCI_POTONG_UANG_MUKA, kunciPotongUangMuka, rencanaPotongPenerapan } from "./pembayaran-uang-muka";
 import { adaJurnalTandaiLunasBerdiri } from "./supplier-payment-journal";
+import { paidThroughVendorPayments } from "@/lib/vendor-billing/billable";
 
 /**
  * Penulis pembayaran pemasok (dokumen) — KHUSUS SERVER. Pembayaran adalah
@@ -209,6 +210,24 @@ async function tolakPoDitandaiLunas(tx: Prisma.TransactionClient, alokasi: reado
   });
 }
 
+/**
+ * Dokumen yang tagihan vendornya (Tagihan vendor) sudah (sebagian) dibayar lewat
+ * Pembayaran vendor — yang mendebit hutang usaha sendiri. Satu dokumen hanya punya
+ * satu jalur bayar, jadi jangan dibayar dua kali di sini; kebalikannya ditolak
+ * penulis pembayaran vendor (`lib/vendor-billing/payment-writer.ts`). Tagihan yang
+ * BELUM dibayar tidak menghalangi: tagihan hanya pencocokan invoice, utangnya
+ * tetap utang dokumen ini.
+ */
+async function tolakDibayarLewatTagihanVendor(tx: Prisma.TransactionClient, alokasi: readonly AlokasiSah[], poPerGrn: Map<string, string>) {
+  const poIds = [...new Set(alokasi.filter((a) => a.jenis === "GRN").map((a) => poPerGrn.get(a.id)).filter((id): id is string => !!id))];
+  const woStepIds = alokasi.filter((a) => a.jenis === "WO_STEP").map((a) => a.id);
+  const terbayar = await paidThroughVendorPayments(tx, { poIds, woStepIds });
+  alokasi.forEach((a, i) => {
+    const kena = a.jenis === "GRN" ? terbayar.poIds.has(poPerGrn.get(a.id) ?? "") : a.jenis === "WO_STEP" && terbayar.woStepIds.has(a.id);
+    if (kena) throw new Tolak("DIBAYAR_LEWAT_TAGIHAN_VENDOR", i + 1);
+  });
+}
+
 export type IsianCatatPembayaran = IsianPembayaran & { idempotencyKey?: string | null; olehUserId: string; hariIni?: string };
 
 export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promise<HasilPembayaranPemasok> {
@@ -243,6 +262,7 @@ export async function catatPembayaranPemasok(input: IsianCatatPembayaran): Promi
       if (!cek.ok) throw new Tolak(cek.kode, cek.baris);
       const poPerGrn = await poDariAlokasi(tx, p.alokasi);
       await tolakPoDitandaiLunas(tx, p.alokasi, poPerGrn);
+      await tolakDibayarLewatTagihanVendor(tx, p.alokasi, poPerGrn);
 
       const diminta = p.jenisPotong === undefined ? bacaJenisPotongPemasok(pemasok.taxWithholding) : p.jenisPotong;
       // SKB yang berlaku pada hari bayar membebaskan potongan apa pun jenisnya.
@@ -507,6 +527,7 @@ export async function terapkanUangMuka(input: { pembayaranId: string; alokasi: u
       if (!cek.ok) return { ok: false, kode: cek.kode, baris: cek.baris };
       const poPerGrn = await poDariAlokasi(tx, alokasi);
       await tolakPoDitandaiLunas(tx, alokasi, poPerGrn);
+      await tolakDibayarLewatTagihanVendor(tx, alokasi, poPerGrn);
       const nomorDok = new Map((milik?.dokumen ?? []).map((d) => [kunciDokumenHutang(d.jenis, d.id), d.nomor]));
 
       // Potongan saat penerapan bertanggal `hariIni`; SKB yang berlaku hari itu membebaskannya.

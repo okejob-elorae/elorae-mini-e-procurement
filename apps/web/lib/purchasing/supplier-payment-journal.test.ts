@@ -319,6 +319,49 @@ d("supplier payment journal (test bed only)", () => {
     }
   });
 
+  it("a PO already paid through a supplier payment document returns ADA_PEMBAYARAN_DOKUMEN and posts nothing", async () => {
+    const po = await prisma.purchaseOrder.create({
+      data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },
+      select: { id: true },
+    });
+    const tracked: TrackedPo = { poId: po.id, grnIds: [] };
+    createdPos.push(tracked);
+    const grn = await prisma.gRN.create({
+      data: { docNumber: nextDocNumber("GRN"), poId: po.id, supplierId, receivedBy: userId, totalAmount: 50_000, items: [] },
+      select: { id: true },
+    });
+    tracked.grnIds.push(grn.id);
+
+    let paymentId = "";
+    try {
+      expect(await postGrnJournal(grn.id, userId, prisma)).toMatchObject({ ok: true, created: true });
+      paymentId = (
+        await prisma.supplierPayment.create({
+          data: {
+            docNumber: `BYR-TEST-${token}-${grn.id}`,
+            supplierId,
+            date: new Date("2026-02-01T00:00:00.000Z"),
+            grossAmount: 20_000,
+            netAmount: 20_000,
+            createdById: userId,
+            allocations: { create: [{ targetType: "GRN", targetId: grn.id, amount: 20_000 }] },
+          },
+          select: { id: true },
+        })
+      ).id;
+
+      const r = await postSupplierPaymentJournal(po.id, userId, new Date("2026-02-02T00:00:00.000Z"), prisma);
+      expect(r).toEqual({ ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" });
+      expect(await prisma.journal.count({ where: { sourceType: "SUPPLIER_PAYMENT", sourceId: `${po.id}#1` } })).toBe(0);
+    } finally {
+      if (paymentId) {
+        await prisma.supplierPaymentAllocation.deleteMany({ where: { paymentId: seededId(paymentId) } });
+        await prisma.supplierPayment.delete({ where: { id: seededId(paymentId) } });
+      }
+      await cleanupPo(tracked);
+    }
+  });
+
   it("a PO with two GRNs, one of them reversed, posts the net", async () => {
     const po = await prisma.purchaseOrder.create({
       data: { docNumber: nextDocNumber("PO"), supplierId, createdById: userId },

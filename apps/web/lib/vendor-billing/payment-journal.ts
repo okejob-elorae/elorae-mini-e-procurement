@@ -11,7 +11,12 @@ async function paymentOf(paymentId: string, client: AnyClient) {
   return p ? { ...p, amount: Number(p.amount), cashRole: p.method === "CASH" ? ("CASH" as const) : ("BANK" as const) } : null;
 }
 
-/** Dr AP / Cr BANK or CASH for a vendor bill payment. Idempotent by payment id. */
+/**
+ * Dr AP / Cr BANK or CASH for a vendor bill payment. Idempotent by payment id. The AP it debits is
+ * the payable booked when the billed goods or WO step work were received — a bill books none of its
+ * own (`bill-journal.ts`) — so it is the same AP Supplier payments → Pay settles, and the payment
+ * writer refuses a receipt already paid there (`refusePaidThroughSupplierPayments`).
+ */
 export async function postVendorPaymentJournal(
   paymentId: string,
   postedById: string,

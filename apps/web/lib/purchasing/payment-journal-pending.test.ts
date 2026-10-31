@@ -198,6 +198,41 @@ d("paymentJournalPendingWhilePaid (test bed only)", () => {
     await expect(paymentJournalPendingWhilePaid(poId)).resolves.toBeNull();
   });
 
+  it("returns null for a PO paid through supplier payment documents, but not for the old button's mirror", async () => {
+    const poId = await seedPo(PAID);
+    await writeRow(poId, "supplier_payment", "UNMAPPED_ROLE", "BANK");
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-PJP-${token}-${seq}`, poId, supplierId, receivedBy: userId, totalAmount: 30_000, items: [] },
+      select: { id: true },
+    });
+    const bayar = (nomor: string, idempotencyKey: string | null) =>
+      prisma.supplierPayment.create({
+        data: {
+          docNumber: `BYR-PJP-${token}-${seq}-${nomor}`,
+          supplierId,
+          date: PAID,
+          grossAmount: 30_000,
+          netAmount: 30_000,
+          idempotencyKey,
+          createdById: userId,
+          allocations: { create: [{ targetType: "GRN", targetId: grn.id, amount: 30_000 }] },
+        },
+        select: { id: true },
+      });
+    const paymentIds: string[] = [];
+    try {
+      paymentIds.push((await bayar("C", `tandai-lunas:${poId}#1`)).id);
+      await expect(paymentJournalPendingWhilePaid(poId)).resolves.toEqual({ reason: "UNMAPPED_ROLE", role: "BANK" });
+
+      paymentIds.push((await bayar("D", null)).id);
+      await expect(paymentJournalPendingWhilePaid(poId)).resolves.toBeNull();
+    } finally {
+      await prisma.supplierPaymentAllocation.deleteMany({ where: { paymentId: { in: paymentIds.map(seededId) } } });
+      await prisma.supplierPayment.deleteMany({ where: { id: { in: paymentIds.map(seededId) } } });
+      await prisma.gRN.delete({ where: { id: seededId(grn.id) } });
+    }
+  });
+
   it("ignores a reversal-direction row", async () => {
     const poId = await seedPo(PAID);
     await writeRow(poId, "supplier_payment_reversal", "UNBALANCED", null);

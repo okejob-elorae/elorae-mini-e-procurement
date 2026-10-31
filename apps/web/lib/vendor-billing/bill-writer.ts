@@ -4,7 +4,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { billedQtyByPoItem, billedQtyByWoStep, PENDING_OWNER_DECISION } from "./billable";
-import { postVendorBillJournal, postVendorBillReversalJournal } from "./bill-journal";
+import { postVendorBillReversalJournal } from "./bill-journal";
 
 /** A refusal the user can act on; its message is shown as-is. */
 export class VendorBillError extends Error {}
@@ -45,9 +45,9 @@ const addDays = (d: Date, days: number) => new Date(d.getTime() + days * 86_400_
 /**
  * Saves a vendor bill against received PO items and WO steps of one supplier. The caps, the
  * supplier match and the paid-toggle exclusion are re-read inside the serializable transaction, so
- * two bills racing for the same remaining qty cannot both pass. WO step lines post
- * Dr PRODUCTION_SERVICE_COST / Cr AP in the same transaction; PO lines post nothing (AP was booked
- * at GRN). A journal refusal rolls the whole bill back.
+ * two bills racing for the same remaining qty cannot both pass. It posts no journal for either kind
+ * of line: the payable was booked at receipt — the GRN for PO lines, the finished-goods receipt for
+ * WO step work — and the bill only matches the vendor's invoice against it (see `bill-journal.ts`).
  */
 export async function createVendorBill(input: CreateVendorBillInput, userId: string) {
   const data = createVendorBillSchema.parse(input);
@@ -176,18 +176,13 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
         },
         select: { id: true, docNumber: true },
       });
-
-      if (stepLines.length > 0) {
-        const res = await postVendorBillJournal(bill.id, userId, tx);
-        if (!res.ok && res.code !== "NOTHING_TO_POST") throw journalRefusal(res);
-      }
       return bill;
     },
     { timeout: 20_000 }
   );
 }
 
-/** Voids a bill with no live payment allocation and reverses its journal if it had one. */
+/** Voids a bill with no live payment allocation, reversing the journal of a bill saved before bills stopped posting one. */
 export async function voidVendorBill(billId: string, reason: string, userId: string) {
   const why = z.string().trim().min(1).max(500).parse(reason);
   return runSerializable(

@@ -1,6 +1,8 @@
 import { z } from "zod";
+import type { Prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { adaPembayaranDokumenUntukPo, langkahWoDibayarDokumen } from "@/lib/purchasing/pembayaran-dokumen-po";
 import { journalRefusal, VendorBillError } from "./bill-writer";
 import { postVendorPaymentJournal, postVendorPaymentReversalJournal } from "./payment-journal";
 import { deriveBillStatus } from "./status";
@@ -25,10 +27,50 @@ export const createVendorPaymentSchema = z
 export type CreateVendorPaymentInput = z.input<typeof createVendorPaymentSchema>;
 
 /**
+ * One payment path per receipt. A bill posts no payable of its own: it matches receipts whose
+ * payable was booked when the goods arrived (GRN for PO lines, finished-goods receipt for WO step
+ * work), and Supplier payments → Pay settles those same receipts with its own Dr AP. Paying a bill
+ * whose PO is already marked paid, or whose receipts or WO steps that page already paid, would debit
+ * AP and credit cash a second time, so it is refused — read inside the payment's transaction, so a
+ * supplier payment committing concurrently conflicts with it. `pembayaran-writer.ts` refuses the
+ * converse (`paidThroughVendorPayments`).
+ */
+async function refusePaidThroughSupplierPayments(tx: Prisma.TransactionClient, billIds: string[]) {
+  const lines = await tx.vendorBillLine.findMany({
+    where: { billId: { in: billIds } },
+    select: {
+      woStepId: true,
+      bill: { select: { docNumber: true } },
+      poItem: { select: { po: { select: { id: true, docNumber: true, paidAt: true } } } },
+      woStep: { select: { sequence: true, wo: { select: { docNumber: true } } } },
+    },
+  });
+  const checked = new Set<string>();
+  for (const l of lines) {
+    const po = l.poItem?.po;
+    if (!po || checked.has(po.id)) continue;
+    checked.add(po.id);
+    if (po.paidAt != null || (await adaPembayaranDokumenUntukPo(po.id, tx))) {
+      throw new VendorBillError(`${l.bill.docNumber}: ${po.docNumber} sudah dibayar lewat Pembayaran Pemasok, jadi tidak dibayar lagi di sini.`);
+    }
+  }
+  const stepIds = [...new Set(lines.map((l) => l.woStepId).filter((id): id is string => id != null))];
+  const paidSteps = await langkahWoDibayarDokumen(stepIds, tx);
+  const paidStep = lines.find((l) => l.woStepId != null && paidSteps.has(l.woStepId));
+  if (paidStep?.woStep) {
+    throw new VendorBillError(
+      `${paidStep.bill.docNumber}: jasa ${paidStep.woStep.wo.docNumber} step ${paidStep.woStep.sequence} sudah dibayar lewat Pembayaran Pemasok, jadi tidak dibayar lagi di sini.`
+    );
+  }
+}
+
+/**
  * One payment over any number of open bills of one supplier. Each bill's paidAmount moves by a
  * compare-and-swap on the value read here, so two payments racing for one bill cannot both land;
  * the journal (Dr AP / Cr BANK or CASH) posts in the same serializable transaction and a refusal
- * rolls the whole payment back.
+ * rolls the whole payment back. The AP it debits is the payable booked at receipt — bills book
+ * none — which is why a receipt already paid through Supplier payments is refused
+ * (`refusePaidThroughSupplierPayments`).
  */
 export async function createVendorPayment(input: CreateVendorPaymentInput, userId: string) {
   const parsed = createVendorPaymentSchema.parse(input);
@@ -53,6 +95,7 @@ export async function createVendorPayment(input: CreateVendorPaymentInput, userI
           throw new VendorBillError(`Alokasi ${b.docNumber} melebihi sisa tagihan (${outstanding})`);
         }
       }
+      await refusePaidThroughSupplierPayments(tx, data.allocations.map((a) => a.billId));
 
       const amount = round2(data.allocations.reduce((s, a) => s + a.amount, 0));
       const docNumber = await generateDocNumber("VENDOR_PAYMENT", tx);

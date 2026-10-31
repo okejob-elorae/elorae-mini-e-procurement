@@ -60,6 +60,33 @@ export async function billedQtyByWoStep(db: Db, woStepIds: string[]): Promise<Ma
 }
 
 /**
+ * Of the given POs and WO steps, those on a live bill that a live vendor payment has (partly) paid.
+ * A receipt has one payment path: Supplier payments → Pay must not settle these again
+ * (`lib/purchasing/pembayaran-writer.ts`), just as a vendor payment refuses receipts that page
+ * already paid (`payment-writer.ts`).
+ */
+export async function paidThroughVendorPayments(
+  db: Db,
+  scope: { poIds: string[]; woStepIds: string[] }
+): Promise<{ poIds: Set<string>; woStepIds: Set<string> }> {
+  const or: Prisma.VendorBillLineWhereInput[] = [];
+  if (scope.poIds.length > 0) or.push({ poItem: { poId: { in: scope.poIds } } });
+  if (scope.woStepIds.length > 0) or.push({ woStepId: { in: scope.woStepIds } });
+  if (or.length === 0) return { poIds: new Set(), woStepIds: new Set() };
+  const lines = await db.vendorBillLine.findMany({
+    where: { OR: or, bill: { status: { not: "VOID" }, allocations: { some: { payment: { voidedAt: null } } } } },
+    select: { woStepId: true, poItem: { select: { poId: true } } },
+  });
+  const poIds = new Set<string>();
+  const woStepIds = new Set<string>();
+  for (const l of lines) {
+    if (l.poItem) poIds.add(l.poItem.poId);
+    if (l.woStepId) woStepIds.add(l.woStepId);
+  }
+  return { poIds, woStepIds };
+}
+
+/**
  * What a supplier can still bill: received PO items of its live POs, and its WO processing steps
  * on live WOs, each less the qty already on live bills. Fully billed rows drop out.
  */

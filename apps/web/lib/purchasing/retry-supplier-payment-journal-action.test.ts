@@ -179,6 +179,16 @@ d("retrySupplierPaymentJournalAction (test bed only)", () => {
     expect(rows.filter((r) => (r.metadata as { reason?: unknown }).reason === "GRN_JOURNALS_INCOMPLETE")).toHaveLength(1);
   });
 
+  it("reports a PO paid through supplier payment documents without recording a failure", async () => {
+    postMock.mockResolvedValue({ ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" });
+    const poId = await seedPo(PAID);
+    await writeRow(poId, "UNMAPPED_ROLE", "BANK");
+    await expect(retrySupplierPaymentJournalAction(poId)).resolves.toEqual({ ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" });
+    const rows = await paymentRowsFor(poId);
+    expect(rows).toHaveLength(1);
+    expect((rows[0].metadata as { reason?: unknown }).reason).toBe("UNMAPPED_ROLE");
+  });
+
   it("does not record the same failure twice", async () => {
     postMock.mockResolvedValue({ ok: false, code: "GRN_JOURNALS_INCOMPLETE" });
     const poId = await seedPo(PAID);

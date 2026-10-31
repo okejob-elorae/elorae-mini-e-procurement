@@ -188,6 +188,8 @@ async function poDariAntrean(payload: OfflinePOCreatePayload): Promise<POFormDat
     supplierId: payload.supplierId,
     etaDate: tanggalAtauKosong(payload.etaDate) ?? new Date(),
     paymentDueDate: tanggalAtauKosong(payload.paymentDueDate),
+    // `null` = termin sengaja dikosongkan (jatuh tempo diketik); tidak ada = ikut pemasok.
+    ...(payload.paymentTermsDays !== undefined ? { paymentTermsDays: payload.paymentTermsDays } : {}),
     notes: payload.notes,
     terms: payload.terms,
     // Tahap produksi diteruskan bila antrean membawanya (PO dari ruang kerja tahap).

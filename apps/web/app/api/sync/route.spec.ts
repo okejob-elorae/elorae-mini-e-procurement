@@ -289,6 +289,35 @@ d("/api/sync — izin per operasi (test bed only)", () => {
       });
       expect(po.createdById).toBe(userId);
     });
+
+    it("membawa termin dari antrean: dikosongkan tetap kosong dengan jatuh tempo diketik, tidak dikirim ikut pemasok", async () => {
+      sesi.permissions = ["purchase_orders:create"];
+      await prisma.supplier.update({ where: { id: seededId(otherSupplierId) }, data: { paymentTermsDays: 30 } });
+
+      const dikosongkan = await kirim({
+        type: "PO_CREATE",
+        payload: { ...payloadPo(), supplierId: otherSupplierId, paymentTermsDays: null, paymentDueDate: "2026-12-01" },
+      });
+      expect(dikosongkan.status).toBe(200);
+      const ikutPemasok = await kirim({ type: "PO_CREATE", payload: { ...payloadPo(), supplierId: otherSupplierId } });
+      expect(ikutPemasok.status).toBe(200);
+
+      const idDikosongkan = ((await dikosongkan.json()) as { data: { id: string } }).data.id;
+      const idIkut = ((await ikutPemasok.json()) as { data: { id: string } }).data.id;
+      const [a, b] = await Promise.all([
+        prisma.purchaseOrder.findUniqueOrThrow({
+          where: { id: seededId(idDikosongkan) },
+          select: { paymentTermsDays: true, paymentDueDate: true },
+        }),
+        prisma.purchaseOrder.findUniqueOrThrow({
+          where: { id: seededId(idIkut) },
+          select: { paymentTermsDays: true },
+        }),
+      ]);
+      expect(a.paymentTermsDays).toBeNull();
+      expect(a.paymentDueDate).not.toBeNull();
+      expect(b.paymentTermsDays).toBe(30);
+    });
   });
 
   it("operasi tak dikenal: 400", async () => {

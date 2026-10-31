@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@elorae/db';
-import { relinkPoItems, releaseLinesOfCancelledPo, unlinkPoItems } from '@/lib/item-requests/mutations';
+import { relinkPoItems, unlinkPoItems } from '@/lib/item-requests/mutations';
 import { verifyPinForAction } from '@/app/actions/security/pin-auth';
 import { hasPermission, requirePermission, PERMISSIONS } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
@@ -478,7 +478,6 @@ export async function changePOStatus(
       alasan: notes || 'Status changed to CANCELLED',
     });
     if (!hasil.ok) throw galatTolakBatalPo(hasil.code);
-    await lepasBarisPermintaanPoBatal(id);
     kabariPoDibatalkan(id, hasil.docNumber, hasil.statusSebelum, userId);
     revalidatePath('/backoffice/purchase-orders');
     revalidatePath(`/backoffice/purchase-orders/${id}`);
@@ -535,13 +534,6 @@ function kabariPoDibatalkan(id: string, docNumber: string, statusSebelum: string
   getActorName(userId)
     .then((triggeredByName) => notifyPOStatusUpdated(id, docNumber, statusSebelum, 'CANCELLED', triggeredByName))
     .catch(() => {});
-}
-
-/** A voided PO hands its Request Item lines back to purchasing. */
-async function lepasBarisPermintaanPoBatal(id: string): Promise<void> {
-  await prisma.$transaction(async (tx) => {
-    await releaseLinesOfCancelledPo(tx, id);
-  });
 }
 
 /** Untuk layar lama yang hanya menangkap lemparan: pesan terbaca + `code`. */
@@ -601,7 +593,6 @@ export async function cancelPO(id: string, claimedUserId?: string, reason?: stri
   // Penjaga "belum ada GRN" + tulis CANCELLED dalam satu transaksi serializable.
   const hasil = await batalkanPurchaseOrder({ poId: id, userId, alasan: reason || 'PO Cancelled' });
   if (!hasil.ok) throw galatTolakBatalPo(hasil.code);
-  await lepasBarisPermintaanPoBatal(id);
   kabariPoDibatalkan(id, hasil.docNumber, hasil.statusSebelum, userId);
 
   revalidatePath('/backoffice/purchase-orders');
@@ -639,7 +630,6 @@ export async function batalkanPO(id: string, alasan: string, pin: string): Promi
     }
     const hasil = await batalkanPurchaseOrder({ poId: id, userId, alasan: alasanBersih });
     if (!hasil.ok) return hasil;
-    await lepasBarisPermintaanPoBatal(id);
     kabariPoDibatalkan(id, hasil.docNumber, hasil.statusSebelum, userId);
   } catch (error) {
     console.error('[batalkanPO]', error);
@@ -786,12 +776,26 @@ export async function getPOStats() {
  * would be reported as a clean payment while the ledger gap persists.
  *
  * `refusal` is a THIRD outcome, deliberately not folded into either of the other
- * two, and only ever on a MARK. Nothing at all is written for it — no `paidAt`, no
- * journal, no status history, no notification. It comes in two kinds:
+ * two, and — `ADA_PEMBAYARAN_DOKUMEN` aside — only ever on a MARK. Nothing at all
+ * is written for it — no `paidAt`, no journal, no status history, no
+ * notification. It comes in these kinds:
  *
+ * - `TANGGAL_TIDAK_SAH`: the paid date is after today (WIB). The payment journal
+ *   is dated `paidAt`, so a future date would put the cash-out in a period that
+ *   has not happened. Refused before the transaction opens.
  * - `STANDING_PAYMENT_JOURNAL`: refused BEFORE the compare-and-swap while the PO
  *   reads unpaid with a payment journal still standing at its current
  *   generation, so no post is reached at all.
+ * - `BILLED_VIA_VENDOR_BILL`: the PO has lines on a live vendor bill, which is
+ *   paid from the bill (Vendor Bills → payments); refused before the
+ *   compare-and-swap.
+ * - `ADA_PEMBAYARAN_DOKUMEN`: the PO is already (partly) paid through supplier
+ *   payment documents (Supplier payments → Pay). This button pays the PO's WHOLE
+ *   payable from the ledger, so the settled part would be paid twice; removing
+ *   its mark does not cancel those documents either. Refused before the
+ *   compare-and-swap in BOTH directions — the rest is paid, or the payment
+ *   cancelled, from the Supplier payments page. The payment writer refuses it
+ *   too, for the paths that do not pass through here.
  * - a `ReceiptBlockedMarkCode` (`GRN_APPROVAL_PENDING`, `GRN_JOURNALS_INCOMPLETE`,
  *   `GRN_REVERSAL_MISSING`): the post WAS reached and refused because one of the
  *   PO's receipts is not settled yet, and the whole transaction is rolled back,
@@ -799,7 +803,7 @@ export async function getPOStats() {
  *   sorted out, so the mark is aborted rather than committed with a
  *   `JOURNAL_PENDING` the operator would then have to clear.
  *
- * Reporting either as `changed: false` would be wrong in both directions: the
+ * Reporting any of them as `changed: false` would be wrong in both directions: the
  * no-op message says the PO was already in the requested state (it was not) and
  * offers unmark-then-re-mark as the remedy (which reaches neither the missing
  * reversal nor the unsettled receipt). Each needs its own message naming the
@@ -821,19 +825,6 @@ export async function getPOStats() {
  * retried from its own control — and the toast picks the wording from it. Sent
  * from here rather than inferred by the caller from the button it pressed, so the
  * sentence describes the post that actually ran.
- */
-/**
- * `TANGGAL_TIDAK_SAH`: tanggal bayar sesudah hari ini (WIB). Jurnal pembayaran
- * diberi tanggal `paidAt`, jadi tanggal di masa depan menaruh kas keluar di
- * periode yang belum terjadi. Tidak ada yang ditulis.
- */
-/**
- * `ADA_PEMBAYARAN_DOKUMEN`: PO ini sudah (sebagian) dibayar lewat dokumen
- * pembayaran pemasok (Pembayaran pemasok → Bayar). Tombol ini membayar SELURUH
- * hutang PO dari buku besar, jadi bagian yang sudah dibayar akan terbayar dua
- * kali; membuka tanda lunasnya pun tidak membatalkan pembayaran dokumen itu.
- * Lunasi sisanya / batalkan pembayarannya dari halaman Pembayaran pemasok.
- * Tidak ada yang ditulis.
  */
 export type SetPOPaidAtRefusal =
   | "STANDING_PAYMENT_JOURNAL"
@@ -981,9 +972,10 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
       }
 
       /**
-       * A PO billed through Vendor Billing is paid from the bill, which debits AP itself; marking
-       * it paid here too would debit AP twice for the same receipt. Read in this transaction so a
-       * bill saved concurrently aborts one of the two. Mark only: unmark stays available.
+       * A PO billed through Vendor Billing is paid from the bill, whose vendor payment debits AP
+       * itself; marking it paid here too would debit AP twice for the same receipt. Read in this
+       * transaction so a bill saved concurrently aborts one of the two. Mark only: unmark stays
+       * available.
        */
       if (
         paidAt != null &&
@@ -1248,7 +1240,7 @@ export async function postSupplierPaymentReversalJournalAction(
 
 export type RetrySupplierPaymentJournalResult =
   | { ok: true }
-  | { ok: false; code: "FORBIDDEN" | "BAD_STATE" }
+  | { ok: false; code: "FORBIDDEN" | "BAD_STATE" | "ADA_PEMBAYARAN_DOKUMEN" }
   | { ok: false; code: "JOURNAL_FAILED"; failure: { code: string; role: string | null } };
 
 /**
@@ -1282,6 +1274,12 @@ export type RetrySupplierPaymentJournalResult =
  * The notifier dedups by `(poId, kind, reason)`, so a repeat of the same failure
  * writes nothing and a new reason writes one row, which the banner then shows.
  * Only the code and role cross to the client; the raw `detail` stays server-side.
+ *
+ * `ADA_PEMBAYARAN_DOKUMEN` is the one writer refusal that is NOT written as a
+ * failure: the PO's receipts were paid through supplier payment documents (which
+ * also mark the PO paid once they clear it), so this journal would pay them a
+ * second time and must never post. Nothing is pending, the banner no longer shows
+ * for such a PO (`paymentJournalPendingWhilePaid`), and the result says why.
  */
 export async function retrySupplierPaymentJournalAction(poId: string): Promise<RetrySupplierPaymentJournalResult> {
   const session = await auth();
@@ -1292,6 +1290,7 @@ export async function retrySupplierPaymentJournalAction(poId: string): Promise<R
 
   type Outcome =
     | { kind: "BAD_STATE" }
+    | { kind: "PAID_VIA_DOCUMENTS" }
     | { kind: "POSTED" }
     | { kind: "FAILED"; failure: SupplierPaymentPostFailure };
 
@@ -1308,6 +1307,7 @@ export async function retrySupplierPaymentJournalAction(poId: string): Promise<R
       const failure = await attemptSupplierPaymentJournal("payment", () =>
         postSupplierPaymentJournal(poId, actorId, paidAt, tx)
       );
+      if (failure?.reason === "ADA_PEMBAYARAN_DOKUMEN") return { kind: "PAID_VIA_DOCUMENTS" };
       return failure ? { kind: "FAILED", failure } : { kind: "POSTED" };
     });
   } catch (e) {
@@ -1329,6 +1329,7 @@ export async function retrySupplierPaymentJournalAction(poId: string): Promise<R
 
   if (outcome.kind === "POSTED") return { ok: true };
   if (outcome.kind === "BAD_STATE") return { ok: false, code: "BAD_STATE" };
+  if (outcome.kind === "PAID_VIA_DOCUMENTS") return { ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" };
   return {
     ok: false,
     code: "JOURNAL_FAILED",

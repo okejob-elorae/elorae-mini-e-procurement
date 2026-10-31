@@ -2,14 +2,26 @@ import { prisma, postJournal, JournalError, Prisma, type PrismaClient } from "@e
 import { generateAutoJournal, type GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { bookedPayable, type ApLine } from "./supplier-payable";
+import { adaPembayaranDokumenUntukPo } from "./pembayaran-dokumen-po";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
 
 /**
- * `postSupplierPaymentJournal` can fail five ways the shared
+ * `postSupplierPaymentJournal` can fail six ways the shared
  * `GenerateAutoJournalResult` has no code for, every one of which would
  * otherwise read as a benign zero — or a benign idempotent hit — and let the PO
  * report a clean "marked paid".
+ *
+ * `ADA_PEMBAYARAN_DOKUMEN`: the PO's receipts are already (partly) paid through
+ * supplier payment documents (Supplier payments → Pay, `SUPPLIER_PAYMENT_DOC`
+ * journals, which debit AP themselves). This journal pays the PO's WHOLE booked
+ * payable, so posting it would pay the settled part a second time — payables
+ * negative and bank credited twice for one supplier invoice. Answered before
+ * anything else, in the writer rather than only at the paid toggle, so every
+ * path to this journal passes the same guard: `setPOPaidAt` refuses it first,
+ * before its compare-and-swap, but the PO page's "Post payment journal" retry
+ * (`retrySupplierPaymentJournalAction`) reaches this writer for a PO that the
+ * document payments themselves marked paid.
  *
  * `AP_ACCOUNT_MISMATCH`: GRN journals exist for this PO, but at least one of
  * them contributed no line on the currently-resolved AP account. That happens
@@ -61,8 +73,8 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  * again, `hasStandingPaymentJournalWhileUnpaid` flags the PO and the reversal can
  * be posted directly from the detail page's standing-payment warning.
  *
- * The first four stay distinct from the genuinely benign zero cases — no GRNs at
- * all (an advance payment), no GRN that could ever book a payable (each one
+ * The four payable-read codes (`AP_ACCOUNT_MISMATCH` and the three `GRN_*`) stay
+ * distinct from the genuinely benign zero cases — no GRNs at all (an advance payment), no GRN that could ever book a payable (each one
  * either sub-cent or owner-declined), or a net payable already cleared by
  * reversals — so a caller can raise them loudly instead of reporting success.
  * `PAYMENT_SUPERSEDED` does the same for the other silent success: an idempotent
@@ -70,6 +82,7 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  */
 export type PostSupplierPaymentResult =
   | GenerateAutoJournalResult
+  | { ok: false; code: "ADA_PEMBAYARAN_DOKUMEN" }
   | { ok: false; code: "AP_ACCOUNT_MISMATCH" }
   | { ok: false; code: "GRN_APPROVAL_PENDING" }
   | { ok: false; code: "GRN_JOURNALS_INCOMPLETE" }
@@ -432,6 +445,14 @@ export async function postSupplierPaymentJournal(
   paidAt: Date,
   client: AnyClient = prisma,
 ): Promise<PostSupplierPaymentResult> {
+  /*
+   * Read in the caller's transaction like everything below, so a document
+   * payment committing concurrently conflicts with this post instead of slipping
+   * in between the check and the journal. See `ADA_PEMBAYARAN_DOKUMEN` on the
+   * result type.
+   */
+  if (await adaPembayaranDokumenUntukPo(poId, client)) return { ok: false, code: "ADA_PEMBAYARAN_DOKUMEN" };
+
   const lookup = await poBookedPayable(poId, client);
   if (!lookup.ok) return lookup;
 

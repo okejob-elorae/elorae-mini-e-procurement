@@ -1,5 +1,6 @@
 import { Decimal } from "decimal.js";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { releaseLinesOfCancelledPo } from "@/lib/item-requests/mutations";
 
 /*
  * Pembatalan PO. Penjaga "belum ada barang diterima" dan penulisan CANCELLED
@@ -8,6 +9,11 @@ import { runSerializable } from "@/lib/db/tx-retry";
  * PO batal yang punya GRN (stok sudah masuk, hutang terjurnal). GRN menulis
  * baris PO di transaksinya sendiri, jadi salah satu pihak konflik dan diulang
  * dengan keadaan baru.
+ *
+ * Baris Permintaan Barang yang sudah menjadi PO ini dikembalikan ke antrean
+ * pembelian di transaksi yang SAMA: dulu dilepas sesudahnya, di transaksi
+ * terpisah, jadi kegagalan di antara keduanya meninggalkan PO batal yang masih
+ * memegang barisnya (tidak bisa dibeli lagi lewat PO lain).
  *
  * Izin dan PIN diperiksa aksinya, bukan di sini.
  */
@@ -55,6 +61,7 @@ export async function batalkanPurchaseOrder(input: {
     await tx.pOStatusHistory.create({
       data: { poId: po.id, status: "CANCELLED", changedById: input.userId, notes: catatan },
     });
+    await releaseLinesOfCancelledPo(tx, po.id);
 
     return { ok: true, docNumber: po.docNumber, statusSebelum: po.status };
   });

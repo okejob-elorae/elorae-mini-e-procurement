@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { createVendorBill, voidVendorBill } from "./bill-writer";
-import { listBillableSources } from "./billable";
+import { listBillableSources, paidThroughVendorPayments } from "./billable";
+import { createVendorPayment } from "./payment-writer";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -116,7 +117,7 @@ d("Vendor bill writer (test bed only)", () => {
     expect(after.poItems).toHaveLength(1);
   });
 
-  it("posts Dr service cost / Cr AP for WO step lines only, dated on the bill", async () => {
+  it("posts no journal, not even for WO step lines: the payable was booked at receipt", async () => {
     const bill = await createVendorBill(
       {
         ...base(),
@@ -132,16 +133,11 @@ d("Vendor bill writer (test bed only)", () => {
     expect(saved.status).toBe("UNPAID");
     // The linked PO's 30-day terms win over the supplier's 14.
     expect(saved.dueDate?.toISOString()).toBe(new Date("2026-11-19").toISOString());
+    // The billed price stays beside the step's service price, so the variance is visible.
     expect(saved.lines.find((l) => l.type === "WO_STEP")?.refPrice.toString()).toBe("12000");
+    expect(saved.lines.find((l) => l.type === "WO_STEP")?.price.toString()).toBe("12500");
 
-    const j = await journalOf(bill.id);
-    expect(j?.date.toISOString()).toBe(new Date("2026-10-20").toISOString());
-    expect(j!.lines.map((l) => [l.chartAccountId, Number(l.debit), Number(l.credit)]).sort()).toEqual(
-      [
-        [ids.ap, 0, 1_000_000],
-        [ids.service, 1_000_000, 0],
-      ].sort()
-    );
+    expect(await journalOf(bill.id)).toBeNull();
   });
 
   it("posts no journal for a bill of PO lines only", async () => {
@@ -202,22 +198,43 @@ d("Vendor bill writer (test bed only)", () => {
     }
   });
 
-  it("commits nothing when the service cost account is unmapped", async () => {
+  it("saves a WO step bill while the service cost account is unmapped, since it posts nothing", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "PRODUCTION_SERVICE_COST" } });
-    await expect(
-      createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user)
-    ).rejects.toThrow("Petakan akun untuk PRODUCTION_SERVICE_COST");
-    expect(await prisma.vendorBill.count({ where: { supplierId: ids.supplier } })).toBe(0);
+    const bill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user);
+    expect(await prisma.vendorBill.count({ where: { supplierId: ids.supplier } })).toBe(1);
+    expect(await journalOf(bill.id)).toBeNull();
   });
 
-  it("voids a bill, reverses its journal and frees the qty; refuses a bill with a live payment", async () => {
+  it("voids a bill and frees the qty, reversing nothing for a bill that never posted", async () => {
     const bill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 80, price: 12_000 }] }, ids.user);
     await voidVendorBill(bill.id, "salah input", ids.user);
     expect((await prisma.vendorBill.findUniqueOrThrow({ where: { id: bill.id } })).status).toBe("VOID");
-    const rev = await journalOf(bill.id, "VENDOR_BILL_REVERSAL");
-    expect(rev!.lines.find((l) => l.chartAccountId === ids.ap)?.debit.toString()).toBe("960000");
+    expect(await journalOf(bill.id, "VENDOR_BILL_REVERSAL")).toBeNull();
     expect((await listBillableSources(ids.supplier)).woSteps.map((s) => s.remainingQty)).toEqual([80]);
     await expect(voidVendorBill(bill.id, "lagi", ids.user)).rejects.toThrow("sudah dibatalkan");
+  });
+
+  it("still reverses the journal of a bill saved before bills stopped posting one, and refuses a bill with a live payment", async () => {
+    const bill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 80, price: 12_000 }] }, ids.user);
+    // What such a bill posted then: Dr service cost / Cr AP for its WO step lines.
+    await prisma.journal.create({
+      data: {
+        date: new Date("2026-10-20"),
+        description: `Vendor bill (legacy) ${tag}`,
+        sourceType: "VENDOR_BILL",
+        sourceId: bill.id,
+        postedById: ids.user,
+        lines: {
+          create: [
+            { chartAccountId: ids.service, debit: 960_000, credit: 0 },
+            { chartAccountId: ids.ap, debit: 0, credit: 960_000 },
+          ],
+        },
+      },
+    });
+    await voidVendorBill(bill.id, "salah input", ids.user);
+    const rev = await journalOf(bill.id, "VENDOR_BILL_REVERSAL");
+    expect(rev!.lines.find((l) => l.chartAccountId === ids.ap)?.debit.toString()).toBe("960000");
 
     const paid = await createVendorBill(
       { ...base(), vendorInvoiceNo: `INV4-${tag}`, lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 10, price: 45_000 }] },
@@ -239,6 +256,73 @@ d("Vendor bill writer (test bed only)", () => {
     } finally {
       await prisma.vendorPaymentAllocation.deleteMany({ where: { paymentId: seededId(payment.id) } });
       await prisma.vendorPayment.deleteMany({ where: { id: seededId(payment.id) } });
+    }
+  });
+
+  it("keeps one payment path per receipt between vendor payments and Supplier payments", async () => {
+    const stepBill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user);
+    const poBill = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INV5-${tag}`, lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 10, price: 45_000 }] },
+      ids.user
+    );
+    const grn = await prisma.gRN.create({
+      data: { docNumber: `GRN-${tag}`, supplierId: ids.supplier, poId: ids.po, receivedBy: ids.user, totalAmount: 450_000, items: [] },
+      select: { id: true },
+    });
+    const supplierPayment = await prisma.supplierPayment.create({
+      data: {
+        docNumber: `BYR-${tag}`,
+        supplierId: ids.supplier,
+        date: new Date("2026-10-22"),
+        grossAmount: 100_000,
+        netAmount: 100_000,
+        createdById: ids.user,
+        allocations: {
+          create: [
+            { targetType: "WO_STEP", targetId: ids.step, amount: 50_000 },
+            { targetType: "GRN", targetId: grn.id, amount: 50_000 },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    let vendorPaymentId = "";
+    try {
+      const pay = (billId: string) =>
+        createVendorPayment(
+          { supplierId: ids.supplier, paidAt: new Date("2026-10-25"), method: "BANK", allocations: [{ billId, amount: 1_000 }] },
+          ids.user
+        );
+      await expect(pay(stepBill.id)).rejects.toThrow(`WO-${tag} step 1 sudah dibayar lewat Pembayaran Pemasok`);
+      await expect(pay(poBill.id)).rejects.toThrow(`PO-${tag} sudah dibayar lewat Pembayaran Pemasok`);
+      expect(await prisma.vendorPayment.count({ where: { supplierId: ids.supplier } })).toBe(0);
+
+      // The converse: once a vendor payment pays a bill, Supplier payments must not settle its receipts.
+      const scope = { poIds: [ids.po], woStepIds: [ids.step] };
+      expect(await paidThroughVendorPayments(prisma, scope)).toEqual({ poIds: new Set(), woStepIds: new Set() });
+      vendorPaymentId = (
+        await prisma.vendorPayment.create({
+          data: {
+            docNumber: `VPAY5-${tag}`,
+            supplierId: ids.supplier,
+            paidAt: new Date(),
+            method: "BANK",
+            amount: 1_000,
+            createdById: ids.user,
+            allocations: { create: { billId: stepBill.id, amount: 1_000 } },
+          },
+          select: { id: true },
+        })
+      ).id;
+      expect(await paidThroughVendorPayments(prisma, scope)).toEqual({ poIds: new Set(), woStepIds: new Set([ids.step]) });
+    } finally {
+      if (vendorPaymentId) {
+        await prisma.vendorPaymentAllocation.deleteMany({ where: { paymentId: seededId(vendorPaymentId) } });
+        await prisma.vendorPayment.deleteMany({ where: { id: seededId(vendorPaymentId) } });
+      }
+      await prisma.supplierPaymentAllocation.deleteMany({ where: { paymentId: seededId(supplierPayment.id) } });
+      await prisma.supplierPayment.deleteMany({ where: { id: seededId(supplierPayment.id) } });
+      await prisma.gRN.deleteMany({ where: { id: seededId(grn.id) } });
     }
   });
 });

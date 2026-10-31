@@ -21,6 +21,7 @@ interface Supplier {
   id: string;
   code: string;
   name: string;
+  paymentTermsDays?: number | null;
 }
 
 type DataPo = Parameters<typeof POForm>[0]["onSubmit"] extends (data: infer T) => unknown ? T : never;
@@ -56,14 +57,23 @@ export function PoBaruClient({ dariTahap, tahapHilang }: { dariTahap: IsiPoDariT
         // Try to get from cache first (for offline)
         const cached = await offlineDB.suppliers.toArray();
         if (cached.length > 0) {
-          setSuppliers(cached.map((s) => ({ id: s.id, code: s.code, name: s.name })));
+          setSuppliers(
+            cached.map((s) => ({ id: s.id, code: s.code, name: s.name, paymentTermsDays: s.paymentTermsDays ?? null }))
+          );
         }
 
         // Fetch from API if online
         if (isOnline()) {
           const data = await getSuppliersForSelect({ sync: true, approvedOnly: true });
           const list = Array.isArray(data) ? data : [];
-          setSuppliers(list.map((s: { id: string; code: string; name: string }) => ({ id: s.id, code: s.code, name: s.name })));
+          setSuppliers(
+            list.map((s: { id: string; code: string; name: string; paymentTermsDays?: number | null }) => ({
+              id: s.id,
+              code: s.code,
+              name: s.name,
+              paymentTermsDays: s.paymentTermsDays ?? null,
+            }))
+          );
         }
       } catch (error) {
         console.error("Failed to fetch suppliers:", error);
@@ -122,6 +132,7 @@ export function PoBaruClient({ dariTahap, tahapHilang }: { dariTahap: IsiPoDariT
         supplierName: context.supplier?.name,
         etaDate: data.etaDate || undefined,
         paymentDueDate: data.paymentDueDate || undefined,
+        paymentTermsDays: data.paymentTermsDays,
         items: context.enrichedItems.map((item) => ({
           itemId: item.itemId,
           qty: item.qty,

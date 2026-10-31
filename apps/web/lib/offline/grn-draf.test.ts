@@ -125,6 +125,31 @@ describe("drafDariIsian → bacaDrafGrn → barisDariDraf", () => {
     expect(total).toBe(3_381_250);
   });
 
+  it("roll kain dari impor Excel ikut draf: panjang, nomor roll, dan catatannya kembali utuh", () => {
+    const rolls = [
+      { length: 50.5, ref: "R-001", notes: "ujung kotor" },
+      { length: 48, ref: null, notes: null },
+    ];
+    const isian: IsianGrn = { ...ISI, lines: [{ ...ISI.lines[0], rollValues: [], importedRolls: rolls }, ISI.lines[1]] };
+    const dibaca = bacaDrafGrn(JSON.parse(JSON.stringify(drafDariIsian(isian, 9))));
+    expect(dibaca!.lines[0].importedRolls).toEqual(rolls);
+    expect(dibaca!.lines[1].importedRolls).toBeUndefined();
+
+    const baris = barisDariDraf(dibaca!);
+    expect(baris[0].importedRolls).toEqual(rolls);
+    expect(baris[0].importedRolls).not.toBe(dibaca!.lines[0].importedRolls);
+    expect("importedRolls" in baris[1]).toBe(false);
+  });
+
+  it("baris dengan roll impor yang rusak dibuang, bukan dipulihkan tanpa rollnya", () => {
+    const d = JSON.parse(JSON.stringify(drafDariIsian(ISI, 1)));
+    d.lines[0].importedRolls = [{ length: "50", ref: null, notes: null }];
+    d.lines[1].importedRolls = [{ length: 1, ref: 7, notes: null }];
+    expect(bacaDrafGrn(d)!.lines).toEqual([]);
+    d.lines[0].importedRolls = "R-001";
+    expect(bacaDrafGrn(d)!.lines).toEqual([]);
+  });
+
   it("draf tanpa baris tetap memberi satu baris kosong untuk diisi", () => {
     const d = drafDariIsian({ ...ISI, lines: [] }, 5);
     const baris = barisDariDraf(d);

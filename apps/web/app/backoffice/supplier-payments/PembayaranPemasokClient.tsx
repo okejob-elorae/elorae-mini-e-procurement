@@ -23,7 +23,7 @@ import { labelTanggal } from "@/lib/tanggal-isian";
 import { cn } from "@/lib/utils";
 import { getPOById, setPOPaidAt } from "@/app/actions/purchase-orders";
 import { logPrint } from "@/app/actions/audit";
-import { supplierPaymentJournalErrorKey } from "@/lib/purchasing/supplier-payment-journal-message";
+import { useSupplierPaymentJournalFailureMessage } from "@/hooks/use-supplier-payment-journal-failure-message";
 import { LABEL_CETAK_FAKTUR_PO, buildPOPrintHtml, labelStatusCetakPo } from "@/lib/print/po-html";
 import { buildPOPaymentReceiptHtml } from "@/lib/print/po-payment-receipt-html";
 import { variantDetailForSku } from "@/lib/items/variants";
@@ -75,6 +75,7 @@ export function PembayaranPemasokClient({ saringan, pemasok, register, pembayara
   const tPO = useTranslations("purchaseOrders");
   const locale = useLocale();
   const router = useRouter();
+  const journalFailureMessage = useSupplierPaymentJournalFailureMessage();
   const [pindah, mulaiPindah] = useTransition();
   const [cari, setCari] = useState(saringan.cari);
   const [sibukPo, setSibukPo] = useState<string | null>(null);
@@ -113,16 +114,15 @@ export function PembayaranPemasokClient({ saringan, pemasok, register, pembayara
     setSibukPo(po.id);
     try {
       const r = await setPOPaidAt(po.id, paidAt);
+      // Penolakan dulu: ia juga membawa `changed: false`, tapi PO-nya TIDAK sudah dalam keadaan yang diminta.
       if (r.refusal === "TANGGAL_TIDAK_SAH") toast.error(t("konfirmasi.tanggalSalah"));
       else if (r.refusal === "ADA_PEMBAYARAN_DOKUMEN") toast.warning(td("toggleDitolak"), { duration: 12000 });
-      else if (r.refusal) toast.warning(t("standingPayment.markRefusedRegister"), { duration: 12000 });
+      else if (r.refusal === "STANDING_PAYMENT_JOURNAL") toast.warning(t("standingPayment.markRefusedRegister"), { duration: 12000 });
+      else if (r.refusal) toast.error(t(`markRefused.${r.refusal}`), { duration: 12000 });
       else if (!r.changed) toast.info(t(bayar ? "noop.alreadyPaid" : "noop.alreadyUnpaid"), { duration: 10000 });
       else if (r.journalFailure) {
         const f = r.journalFailure;
-        toast.warning(
-          f.code === "UNMAPPED_ROLE" ? t("journal.err.UNMAPPED_ROLE", { role: f.role ?? "" }) : t(supplierPaymentJournalErrorKey(f.code, f.direction) as never),
-          { duration: 12000 },
-        );
+        toast.warning(journalFailureMessage(f.code, f.role, f.direction), { duration: 12000 });
       } else toast.success(bayar ? t("markedPaid") : t("markedUnpaid"));
       router.refresh();
     } catch {
