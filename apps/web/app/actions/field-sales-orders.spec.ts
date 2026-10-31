@@ -23,6 +23,8 @@ vi.mock("@/lib/field-sales/writer", () => ({
   rejectFieldSalesOrder: mockReject,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+// The post-approve SPG heads-up reads the order back from the database; it has its own spec.
+vi.mock("@/lib/spg/pesanan-menuju-toko", () => ({ kabarkanKirimanBerangkat: vi.fn(async () => ({ penerima: 0 })) }));
 
 import { InsufficientStockError, InvalidAddedLineError } from "@/lib/field-sales/errors";
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
 import { approveFieldSalesOrder, HargaFinalTidakSahError } from "./writer";
 import { recordFieldSalesDelivery } from "./delivery/writer";
+import { InvalidFinalPriceError } from "./errors";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
@@ -116,6 +117,8 @@ d("harga final banding tidak bertumpuk dengan promo baris (basis data uji)", () 
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    // Pengiriman memotong stok lewat buku stok — barisnya ikut dibersihkan.
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
@@ -194,10 +197,13 @@ d("harga final banding tidak bertumpuk dengan promo baris (basis data uji)", () 
     expect(Number(piutang.amount)).toBe(255000);
   });
 
-  it("baris banding yang TIDAK diberi harga final tetap memakai harga toko dan promonya", async () => {
-    await approveFieldSalesOrder({ orderId, approvedById: salesmanId, finalPrices: [] });
+  it("baris banding yang TIDAK diberi harga final ditolak (MISSING_FINAL_PRICE) dan pesanan tidak berubah", async () => {
+    const err = await approveFieldSalesOrder({ orderId, approvedById: salesmanId, finalPrices: [] }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(InvalidFinalPriceError);
+    expect((err as InvalidFinalPriceError).code).toBe("MISSING_FINAL_PRICE");
 
     const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: seededId(orderId) }, include: { lines: true } });
+    expect(order.status).toBe("PENDING_APPROVAL");
     const banding = order.lines.find((l) => l.id === barisBandingId)!;
     expect(Number(banding.unitPrice)).toBe(100000);
     expect(Number(banding.discountAmount)).toBe(10000);

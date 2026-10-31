@@ -99,11 +99,12 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
 
   const [form, setForm] = useState<StoreFields>(initial);
   /*
-   * Batas kredit yang belum ikut di `initial` (halaman pemanggil belum
-   * mengirimnya) dibaca sendiri. Selama belum terbaca kolomnya dikunci dan
-   * nilainya `undefined` — penyimpanan membiarkan batas tersimpan apa adanya.
+   * Batas faktur terbuka yang belum ikut di `initial` (halaman pemanggil belum
+   * mengirimnya) dibaca sendiri bersama batas kreditnya. Selama belum terbaca
+   * kolomnya dikunci dan nilainya `undefined` — penyimpanan membiarkan batas
+   * tersimpan apa adanya.
    */
-  const [kreditTerbaca, setKreditTerbaca] = useState(mode === "create" || initial.creditLimit !== undefined);
+  const [kreditTerbaca, setKreditTerbaca] = useState(mode === "create" || initial.maxOpenInvoices !== undefined);
 
   useEffect(() => {
     if (kreditTerbaca || !storeId) return;

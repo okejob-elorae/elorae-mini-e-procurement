@@ -7,7 +7,8 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  *  - putus dibuat → stok dicadangkan (available turun);
  *  - putus dibatalkan salesman / ditolak kantor → cadangan dilepas (available naik);
  *  - putus dikirim → stok keluar (pengiriman), sisa ditutup → cadangan dilepas;
- *  - konsi disetujui → barang keluar gudang utama (transfer ke toko).
+ *  - konsi disetujui → stok dicadangkan (available turun); barangnya baru keluar
+ *    gudang utama saat pengiriman ke toko selesai.
  * Basis data uji sungguhan; fan-out notifikasi dan panggilan api ditiru.
  */
 
@@ -91,6 +92,7 @@ d("push stok Jubelio dari pesanan lapangan (test bed only)", () => {
     await prisma.storeVisit.deleteMany({ where: { id: { in: seededIds(visitIds) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoPutus, tokoKonsi].filter(Boolean)) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.jubelioProductMapping.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -212,12 +214,12 @@ d("push stok Jubelio dari pesanan lapangan (test bed only)", () => {
     expect(await antrean()).toHaveLength(0);
   });
 
-  it("konsi: dibuat tanpa push (stok belum bergerak), disetujui 10 pcs keluar gudang dan push diantrekan", async () => {
+  it("konsi: dibuat tanpa push (stok belum bergerak), disetujui 10 pcs dicadangkan dan push diantrekan", async () => {
     const { orderId, orderNo } = await pesan(tokoKonsi, visitIds[1], 10);
     expect(await antrean()).toHaveLength(0);
 
     await approveFieldSalesOrder({ orderId, approvedById: adminId });
-    expect(await gudang()).toEqual({ onHand: 40, reserved: 0 });
+    expect(await gudang()).toEqual({ onHand: 50, reserved: 10 });
     const baris = await antrean();
     expect(baris).toHaveLength(1);
     expect(JSON.stringify(baris[0].payload)).toContain(orderNo);

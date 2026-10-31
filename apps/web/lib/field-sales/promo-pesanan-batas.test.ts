@@ -103,6 +103,7 @@ d("promo pesanan dibatasi saat harga final banding (basis data uji)", () => {
     await prisma.fieldSalesDeliveryLine.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: seededId(orderId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
     if (invId) await prisma.inventoryValue.deleteMany({ where: { id: seededId(invId) } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: seededId(orderId) } });

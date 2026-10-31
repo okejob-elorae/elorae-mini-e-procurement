@@ -103,6 +103,7 @@ d("pre-order (inden): pesanan, rilis, kirim (test bed only)", () => {
     await prisma.receivable.deleteMany({ where: { storeId: { in: seededIds(stores) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { order: { storeId: { in: seededIds(stores) } } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: seededIds(items) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: seededIds(items) } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { order: { storeId: { in: seededIds(stores) } } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { storeId: { in: seededIds(stores) } } });

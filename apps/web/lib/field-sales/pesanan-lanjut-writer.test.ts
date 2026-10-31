@@ -85,6 +85,7 @@ d("createFieldSalesOrder — minimum, bonus, jarak jauh (test bed only)", () => 
     await prisma.receivable.deleteMany({ where: { storeId: seededId(storeId) } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { orderId: { in: seededIds(orderIds) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: seededIds(itemIds) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds(itemIds) } } });
     await prisma.stockReservation.deleteMany({ where: { itemId: { in: seededIds(itemIds) } } });
     await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: seededIds(orderIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });

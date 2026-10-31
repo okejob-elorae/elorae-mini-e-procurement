@@ -2,22 +2,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { createFieldSalesOrder, approveFieldSalesOrder } from "./writer";
 import { InsufficientStockError } from "./errors";
-import { stokDiToko } from "@/lib/konsinyasi/stok-di-toko";
 
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 
 /**
- * Toko konsinyasi = gudang lain milik kita (keputusan pemilik): pesanan konsinyasi yang
- * DISETUJUI memindahkan barang keluar dari gudang utama ke stok toko itu.
+ * Persetujuan pesanan konsinyasi hanya MENCADANGKAN stok gudang utama. Barangnya baru keluar
+ * gudang ke toko saat pengiriman selesai (satu `KonsiTransfer` per pengiriman), jadi kiriman yang
+ * kurang atau ditolak tidak pernah sampai di toko.
  *
- * Angka uji: gudang 50 pcs × Rp40.000 = Rp2.000.000. Kirim 10 → gudang 40 pcs, Rp1.600.000,
- * titipan toko 10.
+ * Angka uji: gudang 50 pcs × Rp40.000 = Rp2.000.000. Setujui 10 → gudang tetap 50 pcs dan
+ * Rp2.000.000, 10 di antaranya dicadangkan; belum ada yang pindah ke toko.
  */
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
 
-d("persetujuan konsinyasi memindahkan stok gudang ke toko", () => {
+d("persetujuan konsinyasi mencadangkan stok gudang, belum memindahkannya ke toko", () => {
   const tag = `KTR${Math.random().toString(36).slice(2, 8)}`;
   let uomId = "";
   let itemId = "";
@@ -58,6 +58,7 @@ d("persetujuan konsinyasi memindahkan stok gudang ke toko", () => {
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -87,46 +88,46 @@ d("persetujuan konsinyasi memindahkan stok gudang ke toko", () => {
     return { qty: Number(inv!.qtyOnHand), reserved: Number(inv!.reservedQty), nilai: Number(inv!.totalValue), avg: Number(inv!.avgCost) };
   };
 
-  it("kirim 10 pcs: gudang 50→40 (Rp2.000.000→Rp1.600.000), titipan toko +10, tanpa penjualan", async () => {
+  /** Belum ada yang keluar gudang: tanpa penyesuaian, tanpa buku stok, tanpa stok toko, tanpa transfer. */
+  const belumPindah = async () => {
+    expect(await prisma.stockAdjustment.count({ where: { itemId } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(0);
+    expect(await prisma.storeStock.count({ where: { storeId, itemId } })).toBe(0);
+    expect(await prisma.konsiTransfer.count({ where: { orderId: { in: seededIds(orderIds) } } })).toBe(0);
+  };
+
+  it("setujui 10 pcs: gudang tetap 50 (Rp2.000.000), 10 dicadangkan, belum ada yang pindah ke toko, tanpa penjualan", async () => {
     await stokAwal([{ variantSku: null, qty: 50 }]);
     const orderId = await pesan([{ variantSku: "", qty: 10 }]);
     const jualSebelum = await prisma.salesHistory.count({ where: { itemId } });
 
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
 
-    expect(await gudang()).toEqual({ qty: 40, reserved: 0, nilai: 1_600_000, avg: 40000 });
-    const adj = await prisma.stockAdjustment.findMany({ where: { itemId } });
-    expect(adj).toHaveLength(1);
-    expect(adj[0]).toMatchObject({ source: "KONSI_TRANSFER", type: "NEGATIVE" });
-    expect(Number(adj[0].qtyChange)).toBe(-10);
-    expect(Number(adj[0].prevQty)).toBe(50);
-    expect(Number(adj[0].newQty)).toBe(40);
-    expect(Number(adj[0].prevAvgCost)).toBe(40000);
-    expect(Number(adj[0].newAvgCost)).toBe(40000);
+    expect(await gudang()).toEqual({ qty: 50, reserved: 10, nilai: 2_000_000, avg: 40000 });
+    await belumPindah();
 
     const order = await prisma.fieldSalesOrder.findUnique({ where: { id: orderId }, include: { lines: true } });
+    expect(order!.status).toBe("APPROVED");
     const rsv = await prisma.stockReservation.findUnique({ where: { fieldSalesLineId: order!.lines[0].id } });
-    expect(rsv).toMatchObject({ source: "FIELD_SALES_KONSI", state: "CONSUMED" });
-    expect(Number(rsv!.consumedQty)).toBe(10);
-
-    const toko = await stokDiToko(storeId);
-    expect(toko.source).toBe("TITIPAN");
-    expect(toko.baris.map((b) => ({ itemId: b.itemId, qty: b.qty }))).toEqual([{ itemId, qty: 10 }]);
+    expect(rsv).toMatchObject({ source: "FIELD_SALES_KONSI", state: "RESERVED" });
+    expect(Number(rsv!.qty)).toBe(10);
+    expect(Number(rsv!.consumedQty)).toBe(0);
 
     // Transfer, bukan penjualan.
     expect(await prisma.salesHistory.count({ where: { itemId } })).toBe(jualSebelum);
   });
 
-  it("persetujuan ulang tidak memotong dua kali", async () => {
+  it("persetujuan ulang tidak mencadangkan dua kali", async () => {
     await stokAwal([{ variantSku: null, qty: 50 }]);
     const orderId = await pesan([{ variantSku: "", qty: 10 }]);
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
-    expect((await gudang()).qty).toBe(40);
-    expect(await prisma.stockAdjustment.count({ where: { itemId } })).toBe(1);
+    expect(await gudang()).toEqual({ qty: 50, reserved: 10, nilai: 2_000_000, avg: 40000 });
+    expect(await prisma.stockReservation.count({ where: { itemId } })).toBe(1);
+    await belumPindah();
   });
 
-  it("dua persetujuan bersamaan: satu pengurangan", async () => {
+  it("dua persetujuan bersamaan: satu cadangan", async () => {
     await stokAwal([{ variantSku: null, qty: 50 }]);
     const orderId = await pesan([{ variantSku: "", qty: 10 }]);
     const hasil = await Promise.allSettled([
@@ -134,27 +135,30 @@ d("persetujuan konsinyasi memindahkan stok gudang ke toko", () => {
       approveFieldSalesOrder({ orderId, approvedById: salesmanId }),
     ]);
     expect(hasil.filter((h) => h.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
-    expect(await gudang()).toEqual({ qty: 40, reserved: 0, nilai: 1_600_000, avg: 40000 });
-    expect(await prisma.stockAdjustment.count({ where: { itemId, source: "KONSI_TRANSFER" } })).toBe(1);
+    expect(await gudang()).toEqual({ qty: 50, reserved: 10, nilai: 2_000_000, avg: 40000 });
+    expect(await prisma.stockReservation.count({ where: { itemId, source: "FIELD_SALES_KONSI" } })).toBe(1);
+    await belumPindah();
   });
 
-  it("barang bervarian: hanya varian yang dikirim yang berkurang", async () => {
+  it("barang bervarian: hanya varian yang dipesan yang dicadangkan", async () => {
     await stokAwal([
       { variantSku: `${tag}-S`, qty: 20 },
       { variantSku: `${tag}-M`, qty: 20 },
     ]);
     const orderId = await pesan([{ variantSku: `${tag}-M`, qty: 6 }]);
     await approveFieldSalesOrder({ orderId, approvedById: salesmanId });
-    expect((await gudang(`${tag}-S`)).qty).toBe(20);
-    expect(await gudang(`${tag}-M`)).toEqual({ qty: 14, reserved: 0, nilai: 560_000, avg: 40000 });
+    expect(await gudang(`${tag}-S`)).toEqual({ qty: 20, reserved: 0, nilai: 800_000, avg: 40000 });
+    expect(await gudang(`${tag}-M`)).toEqual({ qty: 20, reserved: 6, nilai: 800_000, avg: 40000 });
+    await belumPindah();
   });
 
-  it("stok tersedia kurang: ditolak, gudang dan status tidak berubah", async () => {
+  it("stok tersedia kurang: ditolak, tanpa cadangan, status tidak berubah", async () => {
     await stokAwal([{ variantSku: null, qty: 4 }]);
     const orderId = await pesan([{ variantSku: "", qty: 10 }]);
     await expect(approveFieldSalesOrder({ orderId, approvedById: salesmanId })).rejects.toBeInstanceOf(InsufficientStockError);
-    expect((await gudang()).qty).toBe(4);
-    expect(await prisma.stockAdjustment.count({ where: { itemId } })).toBe(0);
+    expect(await gudang()).toEqual({ qty: 4, reserved: 0, nilai: 160_000, avg: 40000 });
+    expect(await prisma.stockReservation.count({ where: { itemId } })).toBe(0);
+    await belumPindah();
     expect((await prisma.fieldSalesOrder.findUnique({ where: { id: orderId } }))!.status).toBe("PENDING_APPROVAL");
   });
 });

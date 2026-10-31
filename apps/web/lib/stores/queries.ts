@@ -26,12 +26,12 @@ export type StoreFields = {
   markupPercent: number | null;
   priceDiscountPercent: number | null;
   /**
-   * Batas kredit toko PUTUS: sisa piutang maksimal (Rp). Kosong = ikut batas bawaan di
-   * Pengaturan → Salesman; 0 adalah nilai sah ("tidak boleh ada"). Milik admin, bukan sales.
-   * Opsional di masukan: pemanggil yang tidak mengirimnya (`undefined`) tidak mengubah nilai
-   * yang tersimpan — formulir lama tidak menghapus batas diam-diam.
+   * Batas kredit toko (Rp): eksposur piutang toko ditambah pesanan yang disetujui tidak boleh
+   * melewatinya tanpa alasan override. null = tanpa batas; 0 = toko tunai (setiap pesanan kredit
+   * butuh override). Milik admin, bukan sales. Mode kredit di Pengaturan → Salesman menilai di
+   * atasnya (`lib/salesman/kredit.ts`).
    */
-  creditLimit?: number | null;
+  creditLimit: number | null;
   npwp: string | null;
   lat: number | null;
   lng: number | null;
@@ -48,7 +48,7 @@ export type StoreFields = {
   /**
    * Tagihan konsinyasi toko ini memakai PPN (hanya bermakna untuk toko KONSI).
    * Bawaan mati: tanpa PPN. Dibekukan ke siklus saat angkanya dikunci. Milik
-   * admin; opsional seperti batas kredit — `undefined` tidak mengubah yang tersimpan.
+   * admin; opsional seperti `maxOpenInvoices` — `undefined` tidak mengubah yang tersimpan.
    */
   consignmentVat?: boolean;
   /** Area (StoreGroup) — JGU, JTT, … Milik admin. */
@@ -59,19 +59,22 @@ export type StoreFields = {
    * di jejak audit. Bukan penjual faktur — itu tetap di faktur/pesanannya.
    */
   salesmanId: string | null;
-  /** Jumlah faktur belum lunas maksimal — aturan opsional yang sama dengan `creditLimit`. */
+  /**
+   * Jumlah faktur belum lunas maksimal yang dinilai mode kredit. Kosong = ikut batas bawaan di
+   * Pengaturan → Salesman; 0 adalah nilai sah. Opsional di masukan: pemanggil yang tidak
+   * mengirimnya (`undefined`) tidak mengubah nilai yang tersimpan.
+   */
   maxOpenInvoices?: number | null;
   /**
    * Kelas toko A/B/C — menentukan jarak kunjungan sales (diatur per kelas di
    * Pengaturan → Salesman). null = tanpa kelas, ikut batas hari umum. Milik
-   * admin. Opsional seperti batas kredit: `undefined` tidak mengubah yang tersimpan.
+   * admin. Opsional seperti `maxOpenInvoices`: `undefined` tidak mengubah yang tersimpan.
    */
   storeClass?: KelasToko | null;
 };
 
 export type StoreListItem = StoreFields & {
   consignmentVat: boolean;
-  creditLimit: number | null;
   maxOpenInvoices: number | null;
   storeClass: KelasToko | null;
   id: string;
@@ -449,7 +452,7 @@ export async function createStore(rawInput: StoreFields): Promise<StoreListItem>
       paymentTempo: input.paymentTempo,
       markupPercent: toDecimalOrNull(input.markupPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
-      creditLimit: toDecimalOrNull(input.creditLimit ?? null),
+      creditLimit: toDecimalOrNull(input.creditLimit),
       npwp: normalizeStoreNpwp(input.npwp),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
@@ -527,6 +530,7 @@ export async function updateStore(id: string, rawInput: StoreFields, olehUserId:
         paymentTempo: input.paymentTempo,
         markupPercent: toDecimalOrNull(input.markupPercent),
         priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
+        creditLimit: toDecimalOrNull(input.creditLimit),
         npwp: normalizeStoreNpwp(input.npwp),
         lat: toDecimalOrNull(input.lat),
         lng: toDecimalOrNull(input.lng),
@@ -535,7 +539,6 @@ export async function updateStore(id: string, rawInput: StoreFields, olehUserId:
         isPkp: input.isPkp,
         groupId: input.groupId,
         salesmanId: input.salesmanId,
-        ...(input.creditLimit !== undefined ? { creditLimit: toDecimalOrNull(input.creditLimit) } : {}),
         ...(input.maxOpenInvoices !== undefined ? { maxOpenInvoices: input.maxOpenInvoices } : {}),
         ...(input.storeClass !== undefined ? { storeClass: input.storeClass } : {}),
         ...(input.consignmentVat !== undefined ? { consignmentVat: input.consignmentVat } : {}),

@@ -26,6 +26,12 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
+/*
+ * `updateStore` stamps this on the audit rows it writes for a changed holder, credit limit, class
+ * or consignment VAT. None of these specs changes any of them, so no audit row is ever written.
+ */
+const STORE_EDITOR_ID = "TEST-SQ-EDITOR";
+
 d("updateStore KONSI → PUTUS guard (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
   let uomId = "";
@@ -53,6 +59,9 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   beforeEach(async () => {
@@ -91,7 +100,7 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
 
   it("refuses KONSI → PUTUS while a non-zero StoreStock row remains", async () => {
     await expect(
-      updateStore(laggingStoreId, baseFields(`TEST-SQ-LAG-${token}`)),
+      updateStore(laggingStoreId, baseFields(`TEST-SQ-LAG-${token}`), STORE_EDITOR_ID),
     ).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
 
     const stillKonsi = await prisma.store.findUnique({ where: { id: laggingStoreId }, select: { termsType: true } });
@@ -102,7 +111,7 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
     const before = await prisma.store.findUnique({ where: { id: laggingStoreId }, select: { termsType: true, name: true, updatedAt: true } });
 
     await expect(
-      updateStore(laggingStoreId, { ...baseFields(`TEST-SQ-LAG-${token}`), name: "Changed by a refused switch" }),
+      updateStore(laggingStoreId, { ...baseFields(`TEST-SQ-LAG-${token}`), name: "Changed by a refused switch" }, STORE_EDITOR_ID),
     ).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
 
     const after = await prisma.store.findUnique({ where: { id: laggingStoreId }, select: { termsType: true, name: true, updatedAt: true } });
@@ -110,13 +119,13 @@ d("updateStore KONSI → PUTUS guard (test bed only)", () => {
   });
 
   it("allows KONSI → PUTUS once the StoreStock row nets to zero", async () => {
-    const result = await updateStore(clearedStoreId, baseFields(`TEST-SQ-CLR-${token}`));
+    const result = await updateStore(clearedStoreId, baseFields(`TEST-SQ-CLR-${token}`), STORE_EDITOR_ID);
     expect(result.termsType).toBe("PUTUS");
   });
 
   it("allows editing a KONSI store while keeping it KONSI even with stranded stock", async () => {
     const konsiFields = { ...baseFields(`TEST-SQ-LAG-${token}`), termsType: "KONSI" as const, name: "Renamed" };
-    const result = await updateStore(laggingStoreId, konsiFields);
+    const result = await updateStore(laggingStoreId, konsiFields, STORE_EDITOR_ID);
     expect(result.termsType).toBe("KONSI");
     expect(result.name).toBe("Renamed");
   });
@@ -146,6 +155,9 @@ d("updateStore KONSI → PUTUS guard over undelivered konsi orders (test bed onl
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   beforeEach(async () => {
@@ -198,18 +210,18 @@ d("updateStore KONSI → PUTUS guard over undelivered konsi orders (test bed onl
 
   it("refuses the switch while an approved konsi order is undelivered, and allows it once the remainder is closed", async () => {
     await seedKonsiOrder("APPROVED");
-    await expect(updateStore(storeId, putusFields())).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
+    await expect(updateStore(storeId, putusFields(), STORE_EDITOR_ID)).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
     const stillKonsi = await prisma.store.findUnique({ where: { id: seededId(storeId) }, select: { termsType: true } });
     expect(stillKonsi?.termsType).toBe("KONSI");
 
     await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "test: store switching terms" });
-    const result = await updateStore(storeId, putusFields());
+    const result = await updateStore(storeId, putusFields(), STORE_EDITOR_ID);
     expect(result.termsType).toBe("PUTUS");
   });
 
   it("refuses the switch while a konsi order is still awaiting approval", async () => {
     await seedKonsiOrder("PENDING_APPROVAL");
-    await expect(updateStore(storeId, putusFields())).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
+    await expect(updateStore(storeId, putusFields(), STORE_EDITOR_ID)).rejects.toBeInstanceOf(StoreHasConsignmentStockError);
   });
 });
 
@@ -233,6 +245,9 @@ d("store price discount guard (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   const konsiFields = (code: string, priceDiscountPercent: number | null): StoreFields => ({
@@ -251,6 +266,9 @@ d("store price discount guard (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   beforeEach(() => {
@@ -329,7 +347,7 @@ d("store price discount guard (test bed only)", () => {
     const created = await createStore(putusFields(`TEST-SQ-DISC-UPD-${token}`, 10));
     createdIds.push(created.id);
     await expect(
-      updateStore(created.id, putusFields(`TEST-SQ-DISC-UPD-${token}`, 100)),
+      updateStore(created.id, putusFields(`TEST-SQ-DISC-UPD-${token}`, 100), STORE_EDITOR_ID),
     ).rejects.toBeInstanceOf(InvalidPriceDiscountPercentError);
   });
 
@@ -337,7 +355,7 @@ d("store price discount guard (test bed only)", () => {
     const created = await createStore(putusFields(`TEST-SQ-DISC-UPD2-${token}`, 10));
     createdIds.push(created.id);
     await expect(
-      updateStore(created.id, konsiFields(`TEST-SQ-DISC-UPD2-${token}`, 10)),
+      updateStore(created.id, konsiFields(`TEST-SQ-DISC-UPD2-${token}`, 10), STORE_EDITOR_ID),
     ).rejects.toBeInstanceOf(KonsiPriceDiscountNotAllowedError);
   });
 
@@ -348,7 +366,7 @@ d("store price discount guard (test bed only)", () => {
     createdIds.push(created.id);
     expect(created.npwp).toBe("01.234.567.8-901.000");
 
-    const updated = await updateStore(created.id, { ...putusFields(`TEST-SQ-NPWP-${token}`, null), npwp: "09.876.543.2-109.000" });
+    const updated = await updateStore(created.id, { ...putusFields(`TEST-SQ-NPWP-${token}`, null), npwp: "09.876.543.2-109.000" }, STORE_EDITOR_ID);
     expect(updated.npwp).toBe("09.876.543.2-109.000");
   });
 });
@@ -373,6 +391,9 @@ d("store sell-through method guard (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   const putusFields = (code: string, sellThroughMethod: StoreFields["sellThroughMethod"]): StoreFields => ({
@@ -391,6 +412,9 @@ d("store sell-through method guard (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   beforeEach(() => {
@@ -425,10 +449,10 @@ d("store sell-through method guard (test bed only)", () => {
     createdIds.push(created.id);
 
     await expect(
-      updateStore(created.id, putusFields(`TEST-SQ-STM-SWITCH-${token}`, "SHELF_COUNT")),
+      updateStore(created.id, putusFields(`TEST-SQ-STM-SWITCH-${token}`, "SHELF_COUNT"), STORE_EDITOR_ID),
     ).rejects.toBeInstanceOf(SellThroughMethodRequiresKonsiError);
 
-    const cleared = await updateStore(created.id, putusFields(`TEST-SQ-STM-SWITCH-${token}`, null));
+    const cleared = await updateStore(created.id, putusFields(`TEST-SQ-STM-SWITCH-${token}`, null), STORE_EDITOR_ID);
     expect(cleared.termsType).toBe("PUTUS");
     expect(cleared.sellThroughMethod).toBeNull();
   });
@@ -454,6 +478,9 @@ d("updateStore KONSI → PUTUS guard over a draft sell-through report (test bed 
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: termsType === "KONSI" ? "SHELF_COUNT" : null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   beforeEach(async () => {
@@ -482,11 +509,11 @@ d("updateStore KONSI → PUTUS guard over a draft sell-through report (test bed 
       select: { id: true },
     });
 
-    await expect(updateStore(storeId, fields("PUTUS"))).rejects.toBeInstanceOf(StoreHasDraftSellThroughError);
+    await expect(updateStore(storeId, fields("PUTUS"), STORE_EDITOR_ID)).rejects.toBeInstanceOf(StoreHasDraftSellThroughError);
     expect((await prisma.store.findUniqueOrThrow({ where: { id: seededId(storeId) } })).termsType).toBe("KONSI");
 
     await prisma.konsiSellThrough.update({ where: { id: report.id }, data: { status: "CANCELLED" } });
-    const switched = await updateStore(storeId, fields("PUTUS"));
+    const switched = await updateStore(storeId, fields("PUTUS"), STORE_EDITOR_ID);
     expect(switched.termsType).toBe("PUTUS");
   });
 });
@@ -511,6 +538,9 @@ d("store markup guard (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
   });
 
   beforeEach(() => {
@@ -554,7 +584,7 @@ d("store markup guard (test bed only)", () => {
   it("stores the rounded value on update too", async () => {
     const created = await createStore(konsiFields(`TEST-SQ-MKP-URND-${token}`, 20));
     createdIds.push(created.id);
-    const updated = await updateStore(created.id, konsiFields(`TEST-SQ-MKP-URND-${token}`, -0.005));
+    const updated = await updateStore(created.id, konsiFields(`TEST-SQ-MKP-URND-${token}`, -0.005), STORE_EDITOR_ID);
     expect(updated.markupPercent).toBe(0);
     const row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { markupPercent: true } });
     expect(Number(row.markupPercent)).toBe(0);
@@ -571,7 +601,7 @@ d("store markup guard (test bed only)", () => {
   it("refuses an out-of-range markup on update too, and leaves the stored one alone", async () => {
     const created = await createStore(konsiFields(`TEST-SQ-MKP-UPD-${token}`, 20));
     createdIds.push(created.id);
-    await expect(updateStore(created.id, konsiFields(`TEST-SQ-MKP-UPD-${token}`, 1000))).rejects.toBeInstanceOf(
+    await expect(updateStore(created.id, konsiFields(`TEST-SQ-MKP-UPD-${token}`, 1000), STORE_EDITOR_ID)).rejects.toBeInstanceOf(
       InvalidMarkupPercentError,
     );
     const row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { markupPercent: true } });
@@ -614,6 +644,9 @@ d("listStores location filter (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
     ...over,
   });
 
@@ -709,6 +742,9 @@ d("listStores NPWP filter (test bed only)", () => {
     lng: null,
     checkinRadiusMeters: null,
     sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
     ...over,
   });
 
@@ -789,7 +825,7 @@ d("listStores NPWP filter (test bed only)", () => {
     let row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(id) }, select: { npwp: true } });
     expect(row.npwp).toBe("01.234.567.8-901.000");
 
-    await updateStore(id, fields("TRIM", { npwp: " \t " }));
+    await updateStore(id, fields("TRIM", { npwp: " \t " }), STORE_EDITOR_ID);
     row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(id) }, select: { npwp: true } });
     expect(row.npwp).toBeNull();
   });
