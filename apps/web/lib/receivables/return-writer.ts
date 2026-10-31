@@ -1,4 +1,4 @@
-import { Prisma } from '@elorae/db';
+import { moveMainStock, Prisma, type StockLedgerRefType } from '@elorae/db';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { hariIniWib } from "@/lib/tanggal-isian";
 import { bentrokKunciKiriman } from './idempoten';
@@ -12,6 +12,7 @@ import { computeStorePrice } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
 import { kunciStokReturMasuk } from "@/lib/finance/lapangan/aturan";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { fotoBolehDipakai } from "./foto-pencatat";
 import { periksaFotoKembar } from "@/lib/foto/kembar";
 import { PERMISSIONS } from "@/lib/rbac";
@@ -237,6 +238,9 @@ async function hitungUlangTersentuh(tx: Klien, storeReturnId: string | null): Pr
  * bukunya sendiri. Retur bukan pembelian, jadi ia tidak membawa harga baru
  * yang boleh mengubah rata-rata.
  *
+ * Stok bergerak lewat `moveMainStock`: buku stok (`StockLedgerEntry`) mendapat
+ * satu baris per baris hitungan, menunjuk penyesuaian stoknya.
+ *
  * Per varian: varian yang disebut dicari persis. Baris RUSAK/EXPIRED dilewati —
  * tercatat di hitungan gudang, tapi bukan stok jual: barang itu masuk gudang
  * barang rusak (`masukkanGudangRusakDariNri`, keputusan pemilik 2026-10-03).
@@ -264,46 +268,14 @@ async function masukkanKeStok(
     // Varian yang disebut dicari PERSIS: barang kembali ke varian asalnya, bukan
     // ke baris pukul-rata. Baris tanpa varian memakai `variantSku: null` di
     // sebagian data dan `""` di sebagian lain — pencarian yang toleran mencegah
-    // baris hantu kedua.
-    const stok = await tx.inventoryValue.findFirst({
-      where: varian
-        ? { itemId: b.itemId, variantSku: varian }
-        : { itemId: b.itemId, OR: [{ variantSku: null }, { variantSku: '' }] },
-      select: { id: true, qtyOnHand: true, avgCost: true },
-    });
+    // baris hantu kedua, dan barisnya dipatok ke penggerak stok di bawah.
+    const stok = await findExistingInventoryValueRow(tx, b.itemId, varian || null);
 
-    let qtyLama = stok ? Number(stok.qtyOnHand) : 0;
+    const qtyLama = stok ? Number(stok.qtyOnHand) : 0;
     const hargaRata = stok ? Number(stok.avgCost) : 0;
-    let qtyBaru = qtyLama + b.qty;
+    const qtyBaru = qtyLama + b.qty;
 
-    if (stok) {
-      // Tambah atom, bukan tulis ulang angka yang dibaca: baris stok ini juga digerakkan
-      // penulis lain (kiriman konsinyasi, pengiriman putus, webhook Jubelio) pada saat yang sama.
-      const sesudah = await tx.inventoryValue.update({
-        where: { id: stok.id },
-        data: {
-          qtyOnHand: { increment: b.qty },
-          totalValue: { increment: b.qty * hargaRata },
-          lastUpdated: new Date(),
-        },
-        select: { qtyOnHand: true },
-      });
-      qtyBaru = Number(sesudah.qtyOnHand);
-      qtyLama = qtyBaru - b.qty;
-    } else {
-      await tx.inventoryValue.create({
-        data: {
-          itemId: b.itemId,
-          variantSku: varian,
-          qtyOnHand: qtyBaru,
-          reservedQty: 0,
-          avgCost: hargaRata,
-          totalValue: qtyBaru * hargaRata,
-        },
-      });
-    }
-
-    await tx.stockAdjustment.create({
+    const adj = await tx.stockAdjustment.create({
       data: {
         docNumber: await generateDocNumber('ADJ', tx),
         itemId: b.itemId,
@@ -320,6 +292,26 @@ async function masukkanKeStok(
         // untuk membandingkannya dengan HPP saat barang itu dijual (`hppJualTerakhir`).
         idempotencyKey: kunciStokReturMasuk(b.id),
       },
+      select: { id: true, docNumber: true },
+    });
+
+    // Qty bertambah atom di dalam penggerak (baris stok ini juga digerakkan kiriman konsinyasi,
+    // pengiriman putus, webhook Jubelio). Nilainya dihitung dari bacaan di atas — aman karena
+    // hitungan gudang berjalan di `runSerializable`, yang mengunci bacaan itu sampai commit.
+    await moveMainStock(tx, {
+      itemId: b.itemId,
+      variantSku: varian || null,
+      qtyDelta: b.qty,
+      inventoryValueId: stok?.id,
+      createIfMissing: !stok,
+      unitCost: hargaRata,
+      totalCost: b.qty * hargaRata,
+      totalValue: qtyBaru * hargaRata,
+      balanceValue: qtyBaru * hargaRata,
+      refType: 'StockAdjustment' satisfies StockLedgerRefType,
+      refId: adj.id,
+      refDocNumber: adj.docNumber,
+      createdById: input.olehUserId,
     });
     jumlahBarisStok += 1;
     barang.push(b.itemId);

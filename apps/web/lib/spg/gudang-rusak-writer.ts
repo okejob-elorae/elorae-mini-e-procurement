@@ -1,7 +1,8 @@
-import { Prisma } from "@elorae/db";
-import type { StockAdjustmentSource } from "@elorae/db";
+import { moveMainStock, Prisma } from "@elorae/db";
+import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { lengkapiNilaiMasukRusak, nilaiKeluarBerikutnya, nilaiMasukRusak } from "@/lib/finance/operasional/nilai-rusak-queries";
 import { hppJualTerakhir } from "@/lib/receivables/hpp-retur";
@@ -224,39 +225,19 @@ export async function putuskanGudangRusak(input: {
 /**
  * Barang yang diperbaiki kembali ke stok jual gudang. Varian yang disebut
  * dicari PERSIS; barang tanpa varian memakai pencarian yang toleran (`null`
- * atau `""`) supaya tidak lahir baris hantu kedua. Harga rata-rata tidak
- * digeser — perbaikan bukan pembelian. Mengembalikan id penyesuaiannya.
+ * atau `""`, `findExistingInventoryValueRow`) supaya tidak lahir baris hantu
+ * kedua. Stok bergerak lewat `moveMainStock`, jadi buku stok mendapat barisnya
+ * yang menunjuk penyesuaian ini. Harga rata-rata tidak digeser — perbaikan
+ * bukan pembelian. Mengembalikan id penyesuaiannya.
  */
 async function kembalikanKeStokJual(
   tx: Klien,
   input: { itemId: string; varian: string; qty: number; productName: string; catatan: string; olehUserId: string },
 ): Promise<string> {
-  const stok = await tx.inventoryValue.findFirst({
-    where: input.varian
-      ? { itemId: input.itemId, variantSku: input.varian }
-      : { itemId: input.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-    select: { id: true, qtyOnHand: true, avgCost: true },
-  });
+  const stok = await findExistingInventoryValueRow(tx, input.itemId, input.varian || null);
   const qtyLama = stok ? Number(stok.qtyOnHand) : 0;
   const hargaRata = stok ? Number(stok.avgCost) : 0;
   const qtyBaru = qtyLama + input.qty;
-  if (stok) {
-    await tx.inventoryValue.update({
-      where: { id: stok.id },
-      data: { qtyOnHand: qtyBaru, totalValue: qtyBaru * hargaRata, lastUpdated: new Date() },
-    });
-  } else {
-    await tx.inventoryValue.create({
-      data: {
-        itemId: input.itemId,
-        variantSku: input.varian,
-        qtyOnHand: qtyBaru,
-        reservedQty: 0,
-        avgCost: hargaRata,
-        totalValue: qtyBaru * hargaRata,
-      },
-    });
-  }
   const adj = await tx.stockAdjustment.create({
     data: {
       docNumber: await generateDocNumber("ADJ", tx),
@@ -271,7 +252,22 @@ async function kembalikanKeStokJual(
       createdById: input.olehUserId,
       source: SUMBER_PERBAIKI,
     },
-    select: { id: true },
+    select: { id: true, docNumber: true },
+  });
+  await moveMainStock(tx, {
+    itemId: input.itemId,
+    variantSku: input.varian || null,
+    qtyDelta: input.qty,
+    inventoryValueId: stok?.id,
+    createIfMissing: !stok,
+    unitCost: hargaRata,
+    totalCost: input.qty * hargaRata,
+    totalValue: qtyBaru * hargaRata,
+    balanceValue: qtyBaru * hargaRata,
+    refType: "StockAdjustment" satisfies StockLedgerRefType,
+    refId: adj.id,
+    refDocNumber: adj.docNumber,
+    createdById: input.olehUserId,
   });
   return adj.id;
 }

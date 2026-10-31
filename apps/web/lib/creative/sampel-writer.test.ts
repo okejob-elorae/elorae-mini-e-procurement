@@ -109,6 +109,7 @@ d("pengiriman sampel KOL — penulis (test bed only)", () => {
   afterEach(async () => {
     await prisma.auditLog.deleteMany({ where: { entityType: "KolBrief", entityId: { in: seededIds(kolabIds) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds() } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds() } } });
     await prisma.jubelioOutbox.deleteMany({ where: { entityType: "stock_push", entityId: { in: itemIds() } } });
     await prisma.jubelioProductMapping.deleteMany({ where: { itemId: { in: itemIds() } } });
     await prisma.kolBrief.deleteMany({ where: { id: { in: seededIds(kolabIds) } } });
@@ -129,6 +130,7 @@ d("pengiriman sampel KOL — penulis (test bed only)", () => {
   };
   const penyesuaian = () =>
     prisma.stockAdjustment.findMany({ where: { itemId: { in: itemIds() } }, orderBy: { qtyChange: "asc" } });
+  const bukuStok = () => prisma.stockLedgerEntry.findMany({ where: { itemId: { in: itemIds() } } });
   const pengiriman = () =>
     prisma.kolShipment.findMany({ where: { collabId: seededId(kolabId) }, include: { lines: true }, orderBy: { createdAt: "asc" } });
   const tahap = async () => (await prisma.kolBrief.findUniqueOrThrow({ where: { id: kolabId } })).tahap;
@@ -147,6 +149,7 @@ d("pengiriman sampel KOL — penulis (test bed only)", () => {
       ].sort(),
     );
     expect(await penyesuaian()).toHaveLength(0);
+    expect(await bukuStok()).toHaveLength(0);
     expect((await stok(kaos, M)).qty).toBe(10);
     expect(await tahap()).toBe("DEAL");
     expect(await jejak("KOL_SHIPMENT_CREATED")).toHaveLength(1);
@@ -185,6 +188,26 @@ d("pengiriman sampel KOL — penulis (test bed only)", () => {
     const kaosAdj = adj.find((a) => a.itemId === kaos)!;
     expect([Number(kaosAdj.qtyChange), Number(kaosAdj.prevQty), Number(kaosAdj.newQty), Number(kaosAdj.prevAvgCost)]).toEqual([-3, 10, 7, 40_000]);
 
+    // Satu baris buku stok gudang per potongan, menunjuk penyesuaiannya.
+    const buku = await bukuStok();
+    expect(buku).toHaveLength(2);
+    const bukuKaos = buku.find((e) => e.itemId === kaos)!;
+    expect(bukuKaos).toMatchObject({
+      locationType: "MAIN",
+      variantSku: M,
+      type: "OUT",
+      refType: "StockAdjustment",
+      refId: kaosAdj.id,
+      refDocNumber: kaosAdj.docNumber,
+      createdById: userId,
+    });
+    expect([Number(bukuKaos.qty), Number(bukuKaos.balanceQty), Number(bukuKaos.totalCost), Number(bukuKaos.balanceValue)]).toEqual([
+      -3, 7, -120_000, 280_000,
+    ]);
+    const bukuPolos = buku.find((e) => e.itemId === polos)!;
+    expect(bukuPolos).toMatchObject({ variantSku: "", refId: adj.find((a) => a.itemId === polos)!.id });
+    expect(Number(bukuPolos.balanceQty)).toBe(4);
+
     const [p] = await pengiriman();
     expect(p.stockIssuedAt).not.toBeNull();
     const biaya = Object.fromEntries(p.lines.map((l) => [l.itemId, Number(l.unitCost)]));
@@ -209,6 +232,7 @@ d("pengiriman sampel KOL — penulis (test bed only)", () => {
 
     expect(await pengiriman()).toHaveLength(1);
     expect(await penyesuaian()).toHaveLength(2);
+    expect(await bukuStok()).toHaveLength(2);
     expect((await stok(kaos, M)).qty).toBe(7);
   });
 
@@ -226,8 +250,33 @@ d("pengiriman sampel KOL — penulis (test bed only)", () => {
     ]);
     expect(await pengiriman()).toHaveLength(0);
     expect(await penyesuaian()).toHaveLength(0);
+    expect(await bukuStok()).toHaveLength(0);
     expect((await stok(kaos, M)).qty).toBe(10);
     expect(await tahap()).toBe("DEAL");
+  });
+
+  it("barang tanpa varian dengan baris kembar null + \"\": potongan mendarat di baris ber-id terkecil, sama dengan penggerak stok", async () => {
+    await prisma.inventoryValue.create({
+      data: { itemId: polos, variantSku: "", qtyOnHand: 5, reservedQty: 0, avgCost: 20_000, totalValue: 100_000 },
+    });
+    const kembar = await prisma.inventoryValue.findMany({ where: { itemId: polos }, orderBy: { id: "asc" }, select: { id: true } });
+    expect(kembar).toHaveLength(2);
+
+    const r = await simpanPengiriman({
+      kolaborasiId: kolabId,
+      trackingNo: "JNE010",
+      baris: [{ itemId: polos, variantSku: null, qty: 2 }],
+      olehUserId: userId,
+    });
+    expect(r).toMatchObject({ ok: true, berangkat: true });
+    const sesudah = await prisma.inventoryValue.findMany({ where: { itemId: polos }, orderBy: { id: "asc" } });
+    expect(sesudah.map((x) => [x.id, Number(x.qtyOnHand)])).toEqual([
+      [kembar[0].id, 3],
+      [kembar[1].id, 5],
+    ]);
+    const buku = await bukuStok();
+    expect(buku).toHaveLength(1);
+    expect(Number(buku[0].balanceQty)).toBe(3);
   });
 
   it("barang bervarian wajib menyebut varian; varian yang tidak dikenal ditolak", async () => {

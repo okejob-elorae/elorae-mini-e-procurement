@@ -31,8 +31,8 @@ const state = {
   links: [] as { receivableId: string }[],
   dihitungUlang: [] as string[],
   stok: null as { id: string; qtyOnHand: number; avgCost: number } | null,
-  stokDibuat: [] as Record<string, unknown>[],
-  stokUpdates: [] as Record<string, unknown>[],
+  /** Panggilan `moveMainStock` — satu per gerakan stok gudang, masing-masing menulis buku stok. */
+  gerakStok: [] as Record<string, unknown>[],
   penyesuaian: [] as Record<string, unknown>[],
   jejak: [] as Record<string, unknown>[],
   /** Variasi `inventoryValue.findFirst` terakhir — untuk memeriksa pencarian varian. */
@@ -134,21 +134,11 @@ const tx = {
       state.cariStok.push(a.where);
       return state.stok;
     }),
-    create: vi.fn(async (a: { data: Record<string, unknown> }) => {
-      state.stokDibuat.push(a.data);
-      return {};
-    }),
-    update: vi.fn(async (a: { data: Record<string, unknown> }) => {
-      state.stokUpdates.push(a.data);
-      // Penulis menambah secara atom ({ increment }) lalu membaca hasilnya.
-      const tambah = (a.data.qtyOnHand as { increment?: number } | undefined)?.increment ?? 0;
-      return { qtyOnHand: Number((state.stok as { qtyOnHand?: unknown } | null)?.qtyOnHand ?? 0) + tambah };
-    }),
   },
   stockAdjustment: {
     create: vi.fn(async (a: { data: Record<string, unknown> }) => {
       state.penyesuaian.push(a.data);
-      return {};
+      return { id: `adj${state.penyesuaian.length}`, docNumber: a.data.docNumber };
     }),
     findMany: vi.fn(async () => []),
   },
@@ -208,6 +198,12 @@ vi.mock('@elorae/db', () => ({
       code = 'P2002';
     },
   },
+  // Penggerak stok gudang: menambah qty secara atom dan menulis buku stok. Tiruan ini hanya
+  // mencatat panggilannya; penggeraknya sendiri diuji di packages/db.
+  moveMainStock: vi.fn(async (_tx: unknown, input: Record<string, unknown>) => {
+    state.gerakStok.push(input);
+    return { balanceQty: Number(state.stok?.qtyOnHand ?? 0) + Number(input.qtyDelta) };
+  }),
 }));
 
 const {
@@ -251,8 +247,7 @@ beforeEach(() => {
   state.links = [{ receivableId: 'r1' }, { receivableId: 'r2' }];
   state.dihitungUlang = [];
   state.stok = { id: 'iv1', qtyOnHand: 10, avgCost: 50_000 };
-  state.stokDibuat = [];
-  state.stokUpdates = [];
+  state.gerakStok = [];
   state.penyesuaian = [];
   state.jejak = [];
   state.cariStok = [];
@@ -415,14 +410,28 @@ describe('catatHitunganGudang', () => {
       items: [{ itemId: 'brg1', itemName: 'Cat Tembok', qty: 2, price: 780_000 }],
     });
     expect(h).toMatchObject({ ok: true, barisStok: 1 });
-    // Tambah atom (10 + 2), bukan menulis ulang angka yang dibaca.
-    expect(state.stokUpdates[0].qtyOnHand).toEqual({ increment: 2 });
     expect(state.penyesuaian[0]).toMatchObject({
       type: 'POSITIVE',
       qtyChange: 2,
       prevQty: 10,
       newQty: 12,
       source: 'STORE_RETURN_RECEIVE',
+    });
+    // Lewat penggerak stok (+2, buku stok ikut tertulis), dipatok ke baris yang dibaca, dan
+    // baris buku stoknya menunjuk penyesuaian itu.
+    expect(state.gerakStok).toHaveLength(1);
+    expect(state.gerakStok[0]).toMatchObject({
+      itemId: 'brg1',
+      variantSku: null,
+      qtyDelta: 2,
+      inventoryValueId: 'iv1',
+      createIfMissing: false,
+      totalValue: 12 * 50_000,
+      balanceValue: 12 * 50_000,
+      refType: 'StockAdjustment',
+      refId: 'adj1',
+      refDocNumber: 'ADJ/2026/0001',
+      createdById: 'g1',
     });
   });
 
@@ -436,7 +445,9 @@ describe('catatHitunganGudang', () => {
     });
     expect(state.penyesuaian[0].prevAvgCost).toBe(50_000);
     expect(state.penyesuaian[0].newAvgCost).toBe(50_000);
-    expect(state.stokUpdates[0].totalValue).toEqual({ increment: 2 * 50_000 });
+    // Tanpa `avgCost`: penggeraknya tidak menyentuh harga rata-rata; nilai masuknya × harga lama.
+    expect(state.gerakStok[0]).not.toHaveProperty('avgCost');
+    expect(state.gerakStok[0]).toMatchObject({ unitCost: 50_000, totalCost: 2 * 50_000 });
   });
 
   it('tidak menggerakkan stok untuk baris yang hanya diketik namanya', async () => {
@@ -449,6 +460,7 @@ describe('catatHitunganGudang', () => {
     });
     expect(h).toMatchObject({ ok: true, barisStok: 0 });
     expect(state.penyesuaian).toHaveLength(0);
+    expect(state.gerakStok).toHaveLength(0);
   });
 
   it('membuat baris stok baru kalau barangnya belum pernah ada', async () => {
@@ -458,7 +470,10 @@ describe('catatHitunganGudang', () => {
       storeReturnId: 'nrt1',
       items: [{ itemId: 'brg9', itemName: 'Barang Baru', qty: 3, price: 100 }],
     });
-    expect(state.stokDibuat[0]).toMatchObject({ itemId: 'brg9', qtyOnHand: 3 });
+    // Penggeraknya yang membuka baris (tanpa varian = null) dengan +3 sebagai saldo awalnya.
+    expect(state.gerakStok[0]).toMatchObject({ itemId: 'brg9', variantSku: null, qtyDelta: 3, createIfMissing: true });
+    expect(state.gerakStok[0].inventoryValueId).toBeUndefined();
+    expect(state.penyesuaian[0]).toMatchObject({ prevQty: 0, newQty: 3 });
   });
 
   it('menghitung ulang SETIAP piutang yang tersentuh', async () => {
@@ -670,7 +685,7 @@ describe('catatHitunganGudang — per baris, per varian, per kondisi', () => {
       storeReturnId: 'nrt1',
       items: [{ itemId: 'brg1', variantSku: 'KMJ-M', itemName: 'Kemeja', qty: 2, price: 0 }],
     });
-    expect(state.stokDibuat[0]).toMatchObject({ itemId: 'brg1', variantSku: 'KMJ-M', qtyOnHand: 2 });
+    expect(state.gerakStok[0]).toMatchObject({ itemId: 'brg1', variantSku: 'KMJ-M', qtyDelta: 2, createIfMissing: true });
   });
 
   it('TIDAK memasukkan baris RUSAK atau EXPIRED ke stok jual, tapi tetap mencatatnya', async () => {

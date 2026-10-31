@@ -1,4 +1,4 @@
-import { Prisma } from "@elorae/db";
+import { MainStockNegativeError, moveMainStock, Prisma, type StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { generateDocNumber } from "@/lib/docNumber";
@@ -34,6 +34,8 @@ import { isJalurKeluar, type Tahap } from "./tahap";
  *     (stok − cadangan) kurang untuk satu baris saja;
  *   - satu `StockAdjustment` NEGATIVE bersumber `KOL_SEEDING` per baris, kunci
  *     idempoten per baris pengiriman — basis data menolak potongan kedua;
+ *   - potongannya lewat `moveMainStock`, jadi buku stok (`StockLedgerEntry`)
+ *     mendapat satu baris per potongan yang menunjuk penyesuaian itu;
  *   - harga pokok rata-rata saat itu disalin ke `KolShipmentLine.unitCost`
  *     (modal sampel di biaya kolaborasi tidak ikut berubah kalau HPP berubah);
  *   - `stockIssuedAt` terisi, lalu tahap kolaborasi dimajukan dari faktanya
@@ -174,8 +176,9 @@ const tersediaDari = (s: BarisStok | undefined) => (s ? s.qtyOnHand.toNumber() -
 /** Baris stok untuk satu kunci varian; "" mencari baris null ATAU "" (data lama memakai keduanya). */
 function barisStokUntuk(stok: readonly BarisStok[], itemId: string, sku: string): BarisStok | undefined {
   const cocok = stok.filter((s) => s.itemId === itemId && (s.variantSku ?? "") === sku);
-  // Kembar null + "": pakai yang null dulu (bentuk produksi), urutan tetap.
-  return cocok.sort((a, b) => Number(a.variantSku !== null) - Number(b.variantSku !== null))[0];
+  // Kembar null + "": id terkecil, urutan yang sama dengan `findExistingInventoryValueRow` dan
+  // `moveMainStock` — pemeriksaan stok, potongan ini, dan penulis stok lain menunjuk baris yang sama.
+  return cocok.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))[0];
 }
 
 type InfoBarang = { nama: string; opsi: { sku: string; label: string }[] };
@@ -436,36 +439,31 @@ export async function simpanPengiriman(input: IsiPengiriman): Promise<HasilSimpa
         for (const l of barisPengiriman) {
           const sku = l.variantSku ?? "";
           const baris = barisStokUntuk(stok, l.itemId, sku)!;
-          const harga = baris.avgCost.toNumber();
-          const sesudah = await tx.inventoryValue.update({
-            where: { id: baris.id },
-            data: { qtyOnHand: { decrement: l.qty }, totalValue: { decrement: l.qty * harga }, lastUpdated: sekarang },
-            select: { qtyOnHand: true, reservedQty: true },
-          });
-          const qtyBaru = sesudah.qtyOnHand.toNumber();
-          // Penjaga sebenarnya: penulis lain bisa mengambil stok di antara bacaan di atas dan potongan ini.
-          if (qtyBaru - sesudah.reservedQty.toNumber() < 0) {
-            const info = infoBarang.get(l.itemId);
-            throw new StokSampelKurang([
-              {
-                itemId: l.itemId,
-                itemName: info?.nama ?? l.itemName,
-                variantSku: sku,
-                variantLabel: labelVarianDari(info, sku),
-                diminta: l.qty,
-                tersedia: qtyBaru + l.qty - sesudah.reservedQty.toNumber(),
-              },
+          const info = infoBarang.get(l.itemId);
+          const varian = labelVarianDari(info, sku);
+          const kurang = (tersedia: number) =>
+            new StokSampelKurang([
+              { itemId: l.itemId, itemName: info?.nama ?? l.itemName, variantSku: sku, variantLabel: varian, diminta: l.qty, tersedia },
             ]);
-          }
-          const varian = labelVarianDari(infoBarang.get(l.itemId), sku);
-          await tx.stockAdjustment.create({
+          // Dibaca ulang tepat sebelum dipotong: baris di atas dibaca sebelum penulisan lain di transaksi ini.
+          const kini = await tx.inventoryValue.findUniqueOrThrow({
+            where: { id: baris.id },
+            select: { qtyOnHand: true, reservedQty: true, avgCost: true },
+          });
+          const harga = kini.avgCost.toNumber();
+          const cadangan = kini.reservedQty.toNumber();
+          const qtyLama = kini.qtyOnHand.toNumber();
+          const qtyBaru = qtyLama - l.qty;
+          if (qtyBaru - cadangan < 0) throw kurang(qtyLama - cadangan);
+
+          const adj = await tx.stockAdjustment.create({
             data: {
               docNumber: await generateDocNumber("ADJ", tx),
               itemId: l.itemId,
               type: "NEGATIVE",
               qtyChange: -l.qty,
               reason: `Sampel KOL ${c.docNo} — ${c.kol.name} — ${l.itemName}${varian ? ` — ${varian}` : ""}`,
-              prevQty: qtyBaru + l.qty,
+              prevQty: qtyLama,
               newQty: qtyBaru,
               prevAvgCost: harga,
               newAvgCost: harga,
@@ -474,7 +472,29 @@ export async function simpanPengiriman(input: IsiPengiriman): Promise<HasilSimpa
               idempotencyKey: `kol-sampel:${l.id}`,
               externalRef: `kol-sampel:${c.docNo}`,
             },
+            select: { id: true, docNumber: true },
           });
+          // Keluar tidak menggeser harga rata-rata: nilainya qty sisa × harga yang sama.
+          const gerak = await moveMainStock(tx, {
+            itemId: l.itemId,
+            variantSku: l.variantSku,
+            qtyDelta: -l.qty,
+            inventoryValueId: baris.id,
+            unitCost: harga,
+            totalCost: -l.qty * harga,
+            totalValue: qtyBaru * harga,
+            balanceValue: qtyBaru * harga,
+            refType: "StockAdjustment" satisfies StockLedgerRefType,
+            refId: adj.id,
+            refDocNumber: adj.docNumber,
+            createdById: input.olehUserId,
+          }).catch((e: unknown) => {
+            // Ditolak di bawah nol: seluruh transaksi batal, pengguna melihat STOK_KURANG.
+            if (e instanceof MainStockNegativeError) throw kurang(e.currentQty - cadangan);
+            throw e;
+          });
+          // Penjaga sebenarnya: penulis lain bisa mengambil stok di antara bacaan di atas dan potongan ini.
+          if (gerak.balanceQty - cadangan < 0) throw kurang(gerak.balanceQty + l.qty - cadangan);
           await tx.kolShipmentLine.update({ where: { id: l.id }, data: { unitCost: D(harga) } });
           nilaiHpp += l.qty * harga;
           rincianKeluar.push({ itemId: l.itemId, variantSku: l.variantSku, qty: l.qty, unitCost: harga });

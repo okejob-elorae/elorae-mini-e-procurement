@@ -56,6 +56,7 @@ d("push stok Jubelio dari keputusan gudang barang rusak (test bed only)", () => 
     await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(gerak.map((g) => g.id)) } } });
     await prisma.damagedStockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.jubelioProductMapping.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -82,6 +83,12 @@ d("push stok Jubelio dari keputusan gudang barang rusak (test bed only)", () => 
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId }, select: { qtyOnHand: true } });
     expect(Number(inv?.qtyOnHand)).toBe(12);
     expect(await antrean()).toHaveLength(1);
+    // Baris tanpa varian (null) yang sudah ada dipakai, tidak dibuka kembarannya; buku stok mencatatnya.
+    expect(await prisma.inventoryValue.count({ where: { itemId: seededId(itemId) } })).toBe(1);
+    const buku = await prisma.stockLedgerEntry.findMany({ where: { itemId: seededId(itemId) } });
+    expect(buku).toHaveLength(1);
+    expect(buku[0]).toMatchObject({ locationType: "MAIN", variantSku: "", type: "IN", refType: "StockAdjustment", refId: h.ok ? h.penyesuaianId : null });
+    expect(Number(buku[0].balanceQty)).toBe(12);
   });
 
   it("PERBAIKI yang ditolak (saldo rusak habis) tidak mengantrekan push", async () => {

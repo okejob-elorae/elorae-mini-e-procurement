@@ -95,6 +95,7 @@ d("gudang barang rusak (test bed only)", () => {
     });
     await prisma.damagedStockMovement.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(kaos) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(kaos) } });
     await prisma.returnCharge.deleteMany({ where: { storeReturnId: { in: seededIds(idNota) } } });
     // NRT SPG dari toko uji tanpa pemegang membunyikan lonceng kantor — dicocokkan di JS lewat metadata.
@@ -299,15 +300,47 @@ d("gudang barang rusak (test bed only)", () => {
     const stok = await prisma.inventoryValue.findFirstOrThrow({ where: { itemId: seededId(kaos), variantSku: varian() } });
     expect(Number(stok.qtyOnHand)).toBe(6);
     expect(Number(stok.avgCost)).toBe(20_000);
+    expect(Number(stok.totalValue)).toBe(120_000);
     const adj = await prisma.stockAdjustment.findUniqueOrThrow({ where: { id: h.penyesuaianId ?? "" } });
     expect(adj).toMatchObject({ type: "POSITIVE", source: "STORE_RETURN_RECEIVE", createdById: gudang });
-    expect(Number(adj.qtyChange)).toBe(1);
+    expect([Number(adj.qtyChange), Number(adj.prevQty), Number(adj.newQty)]).toEqual([1, 5, 6]);
+    // Buku stok gudang mencatat barang yang kembali ke stok jual, menunjuk penyesuaiannya.
+    const buku = await prisma.stockLedgerEntry.findMany({ where: { itemId: seededId(kaos) } });
+    expect(buku).toHaveLength(1);
+    expect(buku[0]).toMatchObject({
+      locationType: "MAIN",
+      variantSku: varian(),
+      type: "IN",
+      refType: "StockAdjustment",
+      refId: adj.id,
+      refDocNumber: adj.docNumber,
+      createdById: gudang,
+    });
+    expect([Number(buku[0].qty), Number(buku[0].balanceQty), Number(buku[0].totalCost), Number(buku[0].balanceValue)]).toEqual([
+      1, 6, 20_000, 120_000,
+    ]);
     const gerak = await prisma.damagedStockMovement.findUniqueOrThrow({ where: { id: h.gerakId } });
     expect(gerak).toMatchObject({ qty: -1, kind: "PERBAIKI", refType: "StockAdjustment", refId: adj.id, note: "dijahit ulang" });
 
     const jejak = await prisma.auditLog.findFirstOrThrow({ where: { entityId: h.gerakId } });
     expect(jejak).toMatchObject({ action: JEJAK_GUDANG_RUSAK.DIPUTUSKAN, entityType: "DamagedStockMovement", userId: gudang, reason: "dijahit ulang" });
     expect(jejak.changes).toEqual({ before: { saldo: 2 }, after: { saldo: 1 } });
+  });
+
+  it("PERBAIKI barang yang belum punya baris stok jual: baris dibuka lewat penggerak stok, buku stok mencatat saldo awalnya", async () => {
+    await isiGudangRusak();
+    const h = await putuskanGudangRusak({ itemId: kaos, variantSku: varian(), keputusan: "PERBAIKI", qty: 2, catatan: "layak lagi", olehUserId: gudang });
+    if (!h.ok) throw new Error(`gagal: ${h.alasan}`);
+    gerakIds.push(h.gerakId);
+
+    const stok = await prisma.inventoryValue.findMany({ where: { itemId: seededId(kaos) } });
+    expect(stok).toHaveLength(1);
+    expect(stok[0]).toMatchObject({ variantSku: varian() });
+    expect(Number(stok[0].qtyOnHand)).toBe(2);
+    const buku = await prisma.stockLedgerEntry.findMany({ where: { itemId: seededId(kaos) } });
+    expect(buku).toHaveLength(1);
+    expect(buku[0]).toMatchObject({ type: "IN", refType: "StockAdjustment", refId: h.penyesuaianId });
+    expect(Number(buku[0].balanceQty)).toBe(2);
   });
 
   it("JUAL_OBRAL mencatat nilai tanpa menyentuh stok jual; MUSNAHKAN keluar saja; keluar tidak pernah melebihi saldo", async () => {
@@ -319,6 +352,7 @@ d("gudang barang rusak (test bed only)", () => {
     expect(Number(g.value)).toBe(15_000);
     expect(obral.penyesuaianId).toBeNull();
     expect(await prisma.inventoryValue.count({ where: { itemId: seededId(kaos) } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(kaos) } })).toBe(0);
 
     expect(await putuskanGudangRusak({ itemId: kaos, variantSku: varian(), keputusan: "MUSNAHKAN", qty: 2, catatan: "x", olehUserId: gudang })).toEqual({
       ok: false,

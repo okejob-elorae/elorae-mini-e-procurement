@@ -57,6 +57,7 @@ d("push stok Jubelio dari hitungan gudang NRI (test bed only)", () => {
     await prisma.damagedStockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(nriIds) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.jubelioProductMapping.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -88,6 +89,7 @@ d("push stok Jubelio dari hitungan gudang NRI (test bed only)", () => {
     const inv = await prisma.inventoryValue.findFirst({ where: { itemId }, select: { qtyOnHand: true } });
     expect(Number(inv?.qtyOnHand)).toBe(4);
     expect(await antrean()).toHaveLength(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: seededId(itemId) } })).toBe(0);
   });
 
   it("baris LAYAK 3 pcs: stok jual 4 → 7, satu baris stock_push PENDING ber-ref nomor NRI", async () => {
@@ -102,5 +104,25 @@ d("push stok Jubelio dari hitungan gudang NRI (test bed only)", () => {
     const baris = await antrean();
     expect(baris).toHaveLength(1);
     expect(JSON.stringify(baris[0].payload)).toContain(h.noNri);
+
+    // Buku stok mencatat penerimaan itu, menunjuk penyesuaian stoknya.
+    const adj = await prisma.stockAdjustment.findFirstOrThrow({
+      where: { itemId: seededId(itemId), source: "STORE_RETURN_RECEIVE" },
+      select: { id: true, docNumber: true },
+    });
+    const buku = await prisma.stockLedgerEntry.findMany({ where: { itemId: seededId(itemId) } });
+    expect(buku).toHaveLength(1);
+    expect(buku[0]).toMatchObject({
+      locationType: "MAIN",
+      variantSku: "",
+      type: "IN",
+      refType: "StockAdjustment",
+      refId: adj.id,
+      refDocNumber: adj.docNumber,
+      createdById: gudangId,
+    });
+    expect([Number(buku[0].qty), Number(buku[0].balanceQty), Number(buku[0].totalCost), Number(buku[0].balanceValue)]).toEqual([
+      3, 7, 3000, 7000,
+    ]);
   });
 });

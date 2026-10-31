@@ -1,8 +1,9 @@
-import { Prisma, type AdminNotification } from "@elorae/db";
+import { moveMainStock, Prisma, type AdminNotification, type StockLedgerRefType } from "@elorae/db";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { computeStorePrice } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { parseItemVariants, variantSelectOptions } from "@/lib/items/variants";
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
 import { denganNomorUnik } from "@/lib/receivables/nomor";
@@ -44,10 +45,10 @@ import {
  * pesanan atau retur, yang punya aturan uangnya sendiri.
  *
  * Stok hanya bergerak di `selesaikanTukar`, dalam SATU transaksi: KELUAR
- * mengurangi, MASUK menambah, keduanya dengan increment atomik (penulis lain —
- * webhook Jubelio, pengiriman lapangan — bisa menyentuh baris yang sama pada
- * saat yang sama). Harga rata-rata TIDAK digeser: tukar barang bukan pembelian,
- * sama dengan retur.
+ * mengurangi, MASUK menambah, keduanya lewat `moveMainStock` (increment atomik,
+ * satu baris buku stok per gerakan — penulis lain, webhook Jubelio dan
+ * pengiriman lapangan, bisa menyentuh baris yang sama pada saat yang sama).
+ * Harga rata-rata TIDAK digeser: tukar barang bukan pembelian, sama dengan retur.
  */
 
 type Klien = Prisma.TransactionClient;
@@ -94,19 +95,17 @@ export type HasilKeputusanTukar =
 
 // ─── Bantuan ─────────────────────────────────────────────────────────────────
 
-const PILIH_STOK = { id: true, qtyOnHand: true, reservedQty: true, avgCost: true } as const;
 type BarisStok = { id: string; qtyOnHand: Prisma.Decimal; reservedQty: Prisma.Decimal; avgCost: Prisma.Decimal };
 
 /**
  * Baris stok gudang untuk satu barang+varian. Barang tanpa varian memakai
  * `variantSku: null` di sebagian data dan `""` di sebagian lain — pencarian
- * toleran yang sama dengan retur toko dan rekonsiliasi van, supaya tidak ada
- * baris hantu kedua yang lahir dari penukaran.
+ * toleran yang sama dengan retur toko, rekonsiliasi van, dan `moveMainStock`
+ * (id terkecil untuk baris kembar), supaya tidak ada baris hantu kedua yang
+ * lahir dari penukaran dan cek stok menunjuk baris yang digerakkan.
  */
 async function cariStok(tx: Klien, itemId: string, variantSku: string): Promise<BarisStok | null> {
-  return variantSku === ""
-    ? tx.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: "" }] }, select: PILIH_STOK })
-    : tx.inventoryValue.findFirst({ where: { itemId, variantSku }, select: PILIH_STOK });
+  return findExistingInventoryValueRow(tx, itemId, variantSku || null);
 }
 
 const tersediaDari = (s: BarisStok | null): number => (s ? s.qtyOnHand.toNumber() - s.reservedQty.toNumber() : 0);
@@ -482,10 +481,8 @@ export async function selesaikanTukar(input: { exchangeId: string; olehUserId: s
     for (const b of urut) {
       const keluar = b.direction === "KELUAR";
       const stok = await cariStok(tx, b.itemId, b.variantSku);
-      let barisStokId: string;
       let hargaRata: number;
       if (stok) {
-        barisStokId = stok.id;
         hargaRata = stok.avgCost.toNumber();
       } else {
         // Hanya MASUK yang bisa sampai di sini (KELUAR sudah lolos cek stok).
@@ -493,31 +490,20 @@ export async function selesaikanTukar(input: { exchangeId: string; olehUserId: s
         // yang sama) — bukan harga baru, sekadar titik awal yang wajar.
         const saudara = await tx.inventoryValue.findFirst({ where: { itemId: b.itemId }, select: { avgCost: true } });
         hargaRata = saudara ? saudara.avgCost.toNumber() : 0;
-        const baru = await tx.inventoryValue.create({
-          data: { itemId: b.itemId, variantSku: b.variantSku, qtyOnHand: 0, reservedQty: 0, avgCost: hargaRata, totalValue: 0 },
-          select: { id: true },
-        });
-        barisStokId = baru.id;
       }
 
-      const nilai = b.qty * hargaRata;
-      const sesudah = await tx.inventoryValue.update({
-        where: { id: barisStokId },
-        data: keluar
-          ? { qtyOnHand: { decrement: b.qty }, totalValue: { decrement: nilai }, lastUpdated: new Date() }
-          : { qtyOnHand: { increment: b.qty }, totalValue: { increment: nilai }, lastUpdated: new Date() },
-        select: { qtyOnHand: true },
-      });
-      const qtyBaru = sesudah.qtyOnHand.toNumber();
+      const delta = keluar ? -b.qty : b.qty;
+      const qtyLama = stok ? stok.qtyOnHand.toNumber() : 0;
+      const qtyBaru = qtyLama + delta;
 
-      await tx.stockAdjustment.create({
+      const adj = await tx.stockAdjustment.create({
         data: {
           docNumber: await generateDocNumber("ADJ", tx),
           itemId: b.itemId,
           type: keluar ? "NEGATIVE" : "POSITIVE",
-          qtyChange: keluar ? -b.qty : b.qty,
+          qtyChange: delta,
           reason: `Tukar barang ${d.docNo} — ${b.productName}`,
-          prevQty: keluar ? qtyBaru + b.qty : qtyBaru - b.qty,
+          prevQty: qtyLama,
           newQty: qtyBaru,
           prevAvgCost: hargaRata,
           newAvgCost: hargaRata,
@@ -526,6 +512,27 @@ export async function selesaikanTukar(input: { exchangeId: string; olehUserId: s
           idempotencyKey: `tukar:${b.id}`,
           externalRef: d.docNo,
         },
+        select: { id: true, docNumber: true },
+      });
+
+      // Nilai dari bacaan di atas — dikunci `runSerializable` sampai commit, dan dibaca
+      // ulang per baris, jadi KELUAR dan MASUK pada baris stok yang sama saling melihat.
+      await moveMainStock(tx, {
+        itemId: b.itemId,
+        variantSku: b.variantSku,
+        qtyDelta: delta,
+        inventoryValueId: stok?.id,
+        createIfMissing: !keluar,
+        // Baris yang dibuka MASUK memakai harga saudaranya; baris yang ada tidak digeser.
+        ...(stok ? {} : { avgCost: hargaRata }),
+        unitCost: hargaRata,
+        totalCost: delta * hargaRata,
+        totalValue: qtyBaru * hargaRata,
+        balanceValue: qtyBaru * hargaRata,
+        refType: "StockAdjustment" satisfies StockLedgerRefType,
+        refId: adj.id,
+        refDocNumber: adj.docNumber,
+        createdById: input.olehUserId,
       });
       barangBergerak.push(b.itemId);
     }

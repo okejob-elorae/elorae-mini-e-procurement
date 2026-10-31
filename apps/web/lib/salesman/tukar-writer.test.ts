@@ -124,6 +124,7 @@ d("tukar barang — penulis (test bed only)", () => {
     await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
     await prisma.auditLog.deleteMany({ where: { entityType: "StoreExchange", entityId: { in: seededIds(ids) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: itemIds() } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds() } } });
     await prisma.storeExchangeLine.deleteMany({ where: { exchangeId: { in: seededIds(ids) } } });
     await prisma.storeExchange.deleteMany({ where: { id: { in: seededIds(ids) } } });
     await prisma.jubelioOutbox.deleteMany({ where: { entityType: "stock_push", entityId: { in: itemIds() } } });
@@ -144,6 +145,11 @@ d("tukar barang — penulis (test bed only)", () => {
     expect(rows).toHaveLength(1);
     return { qty: Number(rows[0].qtyOnHand), avg: Number(rows[0].avgCost), total: Number(rows[0].totalValue) };
   };
+  /** Buku stok gudang satu barang, urut waktu: [varian, qty, saldo, nilai saldo, refId]. */
+  const bukuStok = async (itemId: string) =>
+    (await prisma.stockLedgerEntry.findMany({ where: { itemId: seededId(itemId), locationType: "MAIN" }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map(
+      (e) => ({ variantSku: e.variantSku, qty: Number(e.qty), saldo: Number(e.balanceQty), nilai: Number(e.balanceValue), refType: e.refType, refId: e.refId }),
+    );
 
   /** Tukar ukuran kaos: toko mengembalikan L, menerima M. */
   const ajukanUkuran = (q = 1, dari = "L", ke = "M") =>
@@ -330,6 +336,12 @@ d("tukar barang — penulis (test bed only)", () => {
     expect(adj.every((a) => a.createdById === kantor && a.externalRef === r.docNo && a.idempotencyKey?.startsWith("tukar:"))).toBe(
       true,
     );
+    // Satu baris buku stok gudang per gerakan, KELUAR dulu, masing-masing menunjuk penyesuaiannya.
+    const [masuk, keluar] = adj;
+    expect(await bukuStok(kaos)).toEqual([
+      { variantSku: `${tag}-KAOS-M`, qty: -1, saldo: 9, nilai: 360_000, refType: "StockAdjustment", refId: keluar.id },
+      { variantSku: `${tag}-KAOS-L`, qty: 1, saldo: 3, nilai: 120_000, refType: "StockAdjustment", refId: masuk.id },
+    ]);
     const dok = await prisma.storeExchange.findUniqueOrThrow({ where: { id: r.id } });
     expect(dok.status).toBe("SELESAI");
     expect(dok.completedAt).not.toBeNull();
@@ -337,6 +349,7 @@ d("tukar barang — penulis (test bed only)", () => {
     // Diulang (dua tab, jaringan putus): berhasil, tanpa gerakan kedua.
     expect(await selesaikanTukar({ exchangeId: r.id, olehUserId: kantor })).toMatchObject({ ok: true, ulang: true });
     expect(await prisma.stockAdjustment.count({ where: { itemId: kaos } })).toBe(2);
+    expect(await bukuStok(kaos)).toHaveLength(2);
     expect((await stok(kaos, `${tag}-KAOS-M`)).qty).toBe(9);
     // Yang sudah bergerak tidak bisa dibatalkan.
     expect(await batalkanTukar({ exchangeId: r.id, olehUserId: sales, sebagai: "SALESMAN" })).toEqual({
@@ -395,6 +408,7 @@ d("tukar barang — penulis (test bed only)", () => {
     expect(await selesaikanTukar({ exchangeId: r.id, olehUserId: kantor })).toMatchObject({ ok: false, kode: "STOK_KURANG" });
     expect((await prisma.storeExchange.findUniqueOrThrow({ where: { id: r.id } })).status).toBe("DISETUJUI");
     expect(await prisma.stockAdjustment.count({ where: { itemId: kaos } })).toBe(0);
+    expect(await bukuStok(kaos)).toHaveLength(0);
     expect((await stok(kaos, `${tag}-KAOS-M`)).qty).toBe(10);
   });
 
@@ -414,6 +428,11 @@ d("tukar barang — penulis (test bed only)", () => {
     expect(await stok(kemeja, null)).toEqual({ qty: 5, avg: 70_000, total: 350_000 });
     expect(await prisma.inventoryValue.count({ where: { itemId: kemeja } })).toBe(1);
     expect(await prisma.stockAdjustment.count({ where: { itemId: kemeja } })).toBe(2);
+    // Satu kunci buku stok (""), saldonya berurutan 5 → 4 → 5.
+    expect((await bukuStok(kemeja)).map((e) => [e.variantSku, e.qty, e.saldo])).toEqual([
+      ["", -1, 4],
+      ["", 1, 5],
+    ]);
   });
 
   it("MASUK varian tanpa baris stok: baris dibuat dengan harga rata-rata saudaranya", async () => {
@@ -422,6 +441,8 @@ d("tukar barang — penulis (test bed only)", () => {
     await setujuiTukar({ exchangeId: r.id, olehUserId: kantor });
     expect(await selesaikanTukar({ exchangeId: r.id, olehUserId: kantor })).toMatchObject({ ok: true });
     expect(await stok(kaos, `${tag}-KAOS-XL`)).toEqual({ qty: 1, avg: 40_000, total: 40_000 });
+    // Baris yang dibuka MASUK mendapat saldo awalnya di buku stok.
+    expect((await bukuStok(kaos)).find((e) => e.variantSku === `${tag}-KAOS-XL`)).toMatchObject({ qty: 1, saldo: 1, nilai: 40_000 });
   });
 
   it("membatalkan: salesman miliknya sendiri tanpa alasan; kantor wajib alasan; sales lain tidak melihatnya", async () => {
