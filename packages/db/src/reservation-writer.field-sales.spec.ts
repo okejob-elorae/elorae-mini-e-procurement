@@ -5,6 +5,8 @@ import {
   consumeFieldSalesOrderPartial,
   releaseFieldSalesOrder,
   reserveKonsiFieldSalesOrder,
+  transferKonsiStock,
+  transferKonsiFieldSalesOrder,
 } from "./reservation-writer";
 import { seededId } from "./spec-teardown";
 
@@ -441,5 +443,137 @@ d("field-sales reservations pinned to the row they reserved against (test bed on
     expect(Number(nullAfter.reservedQty)).toBe(0);
     expect(Number(emptyAfter.qtyOnHand)).toBe(0);
     expect(Number(emptyAfter.reservedQty)).toBe(0);
+  });
+});
+
+d("konsi stock transfer (test bed only)", () => {
+  let itemId = "";
+  let uomId = "";
+  let nullRowId = "";
+  const sku = `TEST-KTRF-${Math.random().toString(36).slice(2, 10)}`;
+
+  beforeEach(async () => {
+    /* Unset before seeding, so a throw mid-hook leaves teardown scoped to what this run actually created. */
+    itemId = "";
+    uomId = "";
+    nullRowId = "";
+
+    const uom = await prisma.uOM.create({
+      data: { code: `TEST-UOM-${sku}`, nameId: "test", nameEn: "test" },
+    });
+    uomId = uom.id;
+    const item = await prisma.item.create({
+      data: { sku, nameId: "test", nameEn: "test", type: "FINISHED_GOOD", isActive: true, uomId },
+    });
+    itemId = item.id;
+    const row = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 20, reservedQty: 0, avgCost: 1000, totalValue: 20000 },
+    });
+    nullRowId = row.id;
+  });
+
+  afterEach(async () => {
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
+    /* Every InventoryValue row of the item, both variantless spellings, including any sibling a test provisioned. */
+    await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
+    await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
+  });
+
+  const line = (key: string, qty: number) => ({
+    itemId,
+    variantSku: "",
+    qty,
+    idempotencyKey: `${sku}-${key}`,
+    docNumber: `KTRF-${sku}-${key}`,
+    reason: "test",
+    externalRef: "test",
+  });
+
+  it("moves main stock through the mover and ledgers the move against its adjustment", async () => {
+    const res = await transferKonsiStock(prisma, { lines: [line("a", 6)] });
+    expect(res).toEqual({ transferred: 1, skipped: 0, shortLines: [] });
+
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    expect(Number(inv.qtyOnHand)).toBe(14);
+    expect(Number(inv.totalValue)).toBe(14000);
+    const adj = await prisma.stockAdjustment.findUniqueOrThrow({ where: { idempotencyKey: `${sku}-a` } });
+    expect(adj.source).toBe("KONSI_TRANSFER");
+    expect([Number(adj.prevQty), Number(adj.newQty)]).toEqual([20, 14]);
+
+    const entries = await prisma.stockLedgerEntry.findMany({ where: { itemId } });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      locationType: "MAIN",
+      variantSku: "",
+      type: "OUT",
+      refType: "StockAdjustment",
+      refId: adj.id,
+      refDocNumber: `KTRF-${sku}-a`,
+    });
+    expect([Number(entries[0].qty), Number(entries[0].balanceQty), Number(entries[0].totalCost), Number(entries[0].balanceValue)]).toEqual([
+      -6, 14, -6000, 14000,
+    ]);
+  });
+
+  it("a replay with the same key moves nothing and writes no second ledger entry", async () => {
+    await transferKonsiStock(prisma, { lines: [line("b", 5)] });
+    const again = await transferKonsiStock(prisma, { lines: [line("b", 5)] });
+    expect(again).toEqual({ transferred: 0, skipped: 1, shortLines: [] });
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    expect(Number(inv.qtyOnHand)).toBe(15);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(1);
+  });
+
+  it("lands on the empty-string row when both variantless spellings exist", async () => {
+    const emptyRow = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: "", qtyOnHand: 5, reservedQty: 0, avgCost: 1000, totalValue: 5000 },
+    });
+    const res = await transferKonsiStock(prisma, { lines: [line("c", 3)] });
+    expect(res.transferred).toBe(1);
+    expect(Number((await prisma.inventoryValue.findUniqueOrThrow({ where: { id: emptyRow.id } })).qtyOnHand)).toBe(2);
+    expect(Number((await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } })).qtyOnHand)).toBe(20);
+  });
+
+  it("transferKonsiFieldSalesOrder leaves a line whose reservation the delivery flow owns untouched", async () => {
+    const lineId = `konsi-line-${sku}-reserved`;
+    await reserveKonsiFieldSalesOrder(prisma, {
+      orderNo: "KONSI-T-TRF-A",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+    });
+
+    const res = await transferKonsiFieldSalesOrder(prisma, {
+      orderNo: "KONSI-T-TRF-A",
+      lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }],
+      guard: "ON_HAND",
+    });
+    expect(res).toEqual({ transferred: 0, skipped: 1, shortLines: [] });
+
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    expect(Number(inv.qtyOnHand)).toBe(20);
+    expect(Number(inv.reservedQty)).toBe(4);
+    const rsv = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: lineId } });
+    expect(rsv.state).toBe("RESERVED");
+    expect(Number(rsv.consumedQty)).toBe(0);
+    expect(await prisma.stockAdjustment.count({ where: { itemId } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(0);
+  });
+
+  it("transferKonsiFieldSalesOrder moves a line with no reservation once, leaving a CONSUMED marker", async () => {
+    const lineId = `konsi-line-${sku}-bare`;
+    const input = { orderNo: "KONSI-T-TRF-B", lines: [{ fieldSalesLineId: lineId, itemId, variantSku: "", qty: 4 }] };
+
+    expect(await transferKonsiFieldSalesOrder(prisma, input)).toEqual({ transferred: 1, skipped: 0, shortLines: [] });
+    expect(await transferKonsiFieldSalesOrder(prisma, input)).toEqual({ transferred: 0, skipped: 1, shortLines: [] });
+
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: nullRowId } });
+    expect(Number(inv.qtyOnHand)).toBe(16);
+    expect(Number(inv.reservedQty)).toBe(0);
+    const rsv = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: lineId } });
+    expect(rsv.state).toBe("CONSUMED");
+    expect(Number(rsv.consumedQty)).toBe(4);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(1);
   });
 });

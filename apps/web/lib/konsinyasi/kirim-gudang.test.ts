@@ -9,7 +9,7 @@ import { stokDiToko } from "./stok-di-toko";
  * konsinyasi (`kirimTitipan`), terhadap basis data sungguhan:
  *
  *   gudang 50 pcs × Rp40.000 (Rp2.000.000)
- *   kirim 10  → gudang 40 (Rp1.600.000), titipan toko 10
+ *   kirim 10  → gudang 40 (Rp1.600.000), titipan toko 10, satu entri buku stok gudang
  *   jual 3    → gudang tetap 40,           titipan 7   (angka resmi siklus dikunci)
  *   retur 2   → gudang 42 (Rp1.680.000),   titipan 5   (NRI dihitung gudang)
  */
@@ -58,6 +58,7 @@ d("kiriman titipan konsinyasi memindahkan stok gudang ke toko", () => {
     await prisma.consignmentCycle.deleteMany({ where: { id: seededId(siklusId) } });
     await prisma.consignmentShipmentItem.deleteMany({ where: { shipmentId: { in: seededIds(kirimIds) } } });
     await prisma.consignmentShipment.deleteMany({ where: { id: { in: seededIds(kirimIds) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(barangId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(barangId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(barangId) } });
     await prisma.item.deleteMany({ where: { id: seededId(barangId) } });
@@ -102,6 +103,11 @@ d("kiriman titipan konsinyasi memindahkan stok gudang ke toko", () => {
     expect(Number(adj[0].qtyChange)).toBe(-10);
     expect(Number(adj[0].prevAvgCost)).toBe(40000);
     expect(Number(adj[0].newAvgCost)).toBe(40000);
+    // Potongan gudang tercatat di buku stok, menunjuk penyesuaiannya.
+    const buku = await prisma.stockLedgerEntry.findMany({ where: { itemId: barangId } });
+    expect(buku).toHaveLength(1);
+    expect(buku[0]).toMatchObject({ locationType: "MAIN", type: "OUT", refType: "StockAdjustment", refId: adj[0].id, createdById: adminId });
+    expect([Number(buku[0].qty), Number(buku[0].balanceQty), Number(buku[0].balanceValue)]).toEqual([-10, 40, 1_600_000]);
 
     // Jual 3 di toko: angka resmi siklus dikunci. Gudang tidak bergerak.
     const s = await bukaSiklus({ storeId: tokoId, periodYear: 2026, periodMonth: 9, olehUserId: adminId });
@@ -212,5 +218,31 @@ d("kiriman titipan konsinyasi memindahkan stok gudang ke toko", () => {
     const b = await transferKonsiStock(prisma, { lines: [baris] });
     expect([a.transferred, b.transferred, b.skipped]).toEqual([1, 0, 1]);
     expect(await gudang()).toEqual({ qty: 40, nilai: 1_600_000 });
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: barangId } })).toBe(1);
+  });
+
+  it("pemindahan menolak stok yang sudah dicadangkan, tanpa menulis apa pun; ON_HAND hanya menjaga stok fisik", async () => {
+    await stokAwal([{ variantSku: null, qty: 12 }]);
+    await prisma.inventoryValue.updateMany({ where: { itemId: seededId(barangId) }, data: { reservedQty: 5 } });
+    const baris = (n: number) => ({
+      itemId: barangId,
+      variantSku: "",
+      qty: 10,
+      idempotencyKey: `uji-${tag}-cadangan-${n}`,
+      docNumber: `UJI-${tag}-C${n}`,
+      reason: "uji",
+      externalRef: "uji",
+    });
+
+    const tersedia = await transferKonsiStock(prisma, { lines: [baris(1)] });
+    expect(tersedia).toEqual({ transferred: 0, skipped: 0, shortLines: [{ itemId: barangId, variantSku: "", requested: 10, available: 7 }] });
+    expect(await gudang()).toEqual({ qty: 12, nilai: 480_000 });
+    expect(await prisma.stockAdjustment.count({ where: { itemId: barangId } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: barangId } })).toBe(0);
+
+    const fisik = await transferKonsiStock(prisma, { lines: [baris(2)], guard: "ON_HAND" });
+    expect(fisik.transferred).toBe(1);
+    expect(await gudang()).toEqual({ qty: 2, nilai: 80_000 });
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: barangId } })).toBe(1);
   });
 });

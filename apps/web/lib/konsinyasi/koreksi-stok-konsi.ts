@@ -1,10 +1,4 @@
-import {
-  prisma,
-  transferKonsiFieldSalesOrder,
-  transferKonsiStock,
-  konsiTransferKeyForLine,
-  type KonsiTransferShortLine,
-} from "@elorae/db";
+import { prisma, transferKonsiStock, konsiTransferKeyForLine, type KonsiTransferShortLine } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 
 /**
@@ -12,18 +6,26 @@ import { runSerializable } from "@/lib/db/tx-retry";
  * lain" tidak pernah keluar dari stok gudang utama, sementara returnya (NRI) sudah menambahkannya
  * kembali — stok gudang membengkak.
  *
- * Yang dihitung "terkirim konsinyasi":
- *   - baris pesanan KONSI salesman yang DISETUJUI (disetujui = dikirim);
- *   - baris kiriman modul konsinyasi (`ConsignmentShipmentItem`) yang menunjuk barang katalog.
- *     Baris yang hanya diketik namanya tidak punya baris gudang — tidak pernah dipotong.
+ * Yang dikoreksi hanya baris kiriman modul konsinyasi (`ConsignmentShipmentItem`) yang menunjuk
+ * barang katalog. Baris yang hanya diketik namanya tidak punya baris gudang — tidak pernah dipotong.
  * "Sudah dipotong" = baris itu sudah punya penyesuaian KONSI_TRANSFER dengan kuncinya
- * (`konsi-transfer-line-<baris>` / `konsi-kirim-<baris kiriman>`), jadi koreksi dan penulis baru
- * memakai kunci yang SAMA: menjalankan ulang tidak pernah memotong dua kali.
+ * (`konsi-kirim-<baris kiriman>`), jadi koreksi dan `kirimTitipan` memakai kunci yang SAMA:
+ * menjalankan ulang tidak pernah memotong dua kali.
+ *
+ * Baris pesanan KONSI salesman yang DISETUJUI hanya DILAPORKAN — tidak pernah dipotong dan
+ * cadangannya tidak pernah dilepas di sini. Persetujuan hanya mencadangkan; stoknya pindah lewat
+ * alur pengiriman (`issueKonsiTransfer` saat pengiriman selesai, yang memakai cadangan itu sebagian
+ * demi sebagian), dan sisa yang tidak jadi dikirim dilepas lewat tutup sisa pesanan. Cadangan
+ * RESERVED adalah keadaan "menunggu kirim" yang biasa: memotongnya di sini membuat pengiriman
+ * berikutnya ditolak karena cadangannya sudah habis, atau memotong dua kali untuk baris yang
+ * sebagian sudah dikirim. Baris yang masih menunggu tampil sebagai MENUNGGU_KIRIM; yang sudah
+ * selesai (cadangan CONSUMED, atau dipotong penulis lama berkunci `konsi-transfer-line-<baris>`)
+ * sebagai SUDAH_DIPOTONG.
  *
  * Retur tidak dikoreksi: NRI yang sudah menambah stok memang benar menurut aturan baru (barang
  * kembali dari gudang lain). Hanya sisi kirim yang hilang.
  *
- * Dua kasus yang TIDAK dipotong otomatis, hanya dilaporkan:
+ * Dua kasus kiriman yang TIDAK dipotong otomatis, hanya dilaporkan:
  *   - TERTIMPA — sesudah tanggal kirim, angka gudang barang itu sudah ditetapkan ulang secara
  *     mutlak (opname gudang, webhook stok Jubelio, rekonsiliasi Jubelio). Hitungan itu sudah tidak
  *     memuat barang yang ada di toko; memotongnya lagi = memotong dua kali. Penyesuaian stok tidak
@@ -31,12 +33,8 @@ import { runSerializable } from "@/lib/db/tx-retry";
  *   - VARIAN_TIDAK_PASTI — kiriman lama per barang untuk barang yang stok gudangnya per varian:
  *     tidak ada cara tahu varian mana yang keluar.
  * Saat diterapkan, baris yang stok fisiknya lebih kecil dari jumlah kirim ditolak (stok gudang
- * tidak dibuat negatif) dan dilaporkan sebagai gagal.
- *
- * Pesanan lama yang TERTIMPA masih memegang cadangan RESERVED: barangnya sudah tidak terhitung di
- * gudang, tapi cadangannya tetap menahan stok tersedia. Laporan menyebutnya per barang
- * (`cadanganLamaTertimpa` + sumber hitung ulangnya); `lepasCadanganOpname` melepasnya TANPA
- * memotong qtyOnHand, hanya bila hitung ulang terakhir adalah opname gudang.
+ * tidak dibuat negatif) dan dilaporkan sebagai gagal. Potongannya tercatat di buku stok
+ * (`transferKonsiStock` → `moveMainStock`).
  *
  * Fungsi ini menyapu seluruh basis data bila cakupan tidak diisi — spesifikasi WAJIB mengisi
  * `orderIds`/`shipmentIds` dengan fixture-nya sendiri.
@@ -57,8 +55,10 @@ export type KeadaanBarisKoreksi =
   | "AKAN_DIPOTONG"
   | "TERTIMPA"
   | "VARIAN_TIDAK_PASTI"
-  /** Gudang sudah dihitung ulang (opname) sesudah kirim: cadangan lamanya dilepas tanpa memotong lagi. */
-  | "CADANGAN_DILEPAS";
+  /** Cadangan pesanan sudah dilepas tanpa memotong (tutup sisa pesanan, atau koreksi lama sesudah opname). */
+  | "CADANGAN_DILEPAS"
+  /** Pesanan yang belum selesai dikirim: stoknya pindah lewat alur pengiriman, tidak lewat koreksi ini. */
+  | "MENUNGGU_KIRIM";
 
 export type BarisKoreksiKonsi = {
   sumber: SumberKirimKonsi;
@@ -71,7 +71,7 @@ export type BarisKoreksiKonsi = {
   qty: number;
   tanggal: Date;
   keadaan: KeadaanBarisKoreksi;
-  /** Pesanan lama yang masih memegang cadangan RESERVED (dilepas saat dipotong). */
+  /** Pesanan yang cadangannya masih RESERVED: sisa yang masih ditahan untuk pengiriman (informasi). */
   cadanganLama: number;
   /** Untuk TERTIMPA: sumber penetapan ulang angka gudang yang TERAKHIR sesudah tanggal kirim. */
   sumberHitungUlang: string | null;
@@ -82,6 +82,7 @@ export type RingkasanBarangKoreksi = {
   sku: string;
   nama: string;
   variantSku: string;
+  /** Tanpa baris MENUNGGU_KIRIM: barang itu belum tentu berangkat. */
   terkirim: number;
   sudahDipotong: number;
   /** terkirim − sudah dipotong − cadangan dilepas (sisa yang belum diselesaikan). */
@@ -89,12 +90,13 @@ export type RingkasanBarangKoreksi = {
   akanDipotong: number;
   tertimpa: number;
   variantTidakPasti: number;
-  /** Baris opname-tertimpa yang cadangan lamanya sudah dilepas tanpa memotong (tidak masuk selisih). */
+  /** Baris pesanan yang cadangannya sudah dilepas tanpa memotong (tidak masuk selisih). */
   cadanganDilepas: number;
+  /** Baris pesanan MENUNGGU_KIRIM (pcs): diurus alur pengiriman, tidak masuk terkirim maupun selisih. */
+  menungguKirim: number;
   /**
-   * Cadangan RESERVED lama milik baris TERTIMPA: stok fisiknya sudah tidak di gudang (sudah
-   * dihitung ulang), tapi cadangannya masih menahan stok tersedia. Tidak lepas tanpa
-   * `lepasCadanganOpname` (hanya bila hitung ulang terakhir = opname) atau penanganan manual.
+   * Cadangan RESERVED milik baris TERTIMPA. Selalu 0: hanya kiriman yang bisa TERTIMPA, dan kiriman
+   * tidak pernah mencadangkan. Dipertahankan agar bentuk laporan tidak berubah.
    */
   cadanganLamaTertimpa: number;
   /** Sumber penetapan ulang terakhir sesudah kirim, bila ada baris TERTIMPA. */
@@ -113,6 +115,7 @@ export type LaporanKoreksiStokKonsi = {
   perBarang: RingkasanBarangKoreksi[];
   /** Retur NRI dari toko konsi atas barang yang tidak pernah tercatat dikirim (informasi saja). */
   returTanpaKiriman: { itemId: string; sku: string; nama: string; variantSku: string; qty: number }[];
+  /** `cadanganDilepas` selalu 0: koreksi ini tidak pernah melepas cadangan (lihat `lepasCadanganOpname`). */
   diterapkan: null | { dokumenDipotong: number; barisDipotong: number; cadanganDilepas: number; gagal: GagalKoreksi[] };
 };
 
@@ -143,14 +146,20 @@ export async function koreksiStokKonsi(opsi: {
   /** Ikut potong baris TERTIMPA (hanya sesudah dipastikan hitung ulangnya belum memuatnya). */
   sertakanTertimpa?: boolean;
   /**
-   * Untuk baris pesanan TERTIMPA yang hitung ulang terakhirnya OPNAME gudang: jangan potong lagi
-   * (hitungan fisik sudah tanpa barang itu), tapi lepas cadangan RESERVED lamanya — kalau tidak,
-   * stok tersedia kurang selamanya. Tidak berlaku untuk hitung ulang Jubelio (angkanya belum tentu
-   * tanpa barang konsinyasi) dan tidak bersama `sertakanTertimpa`.
+   * DITOLAK bila `true`. Dulu melepas cadangan RESERVED pesanan yang gudangnya sudah diopname
+   * sesudah disetujui. Cadangan itu kini milik alur pengiriman — melepasnya di sini membuka stok
+   * yang masih harus dikirim, lalu pengirimannya ditolak. Sisa pesanan yang memang tidak akan
+   * dikirim ditutup dari halaman pesanan (tutup sisa), yang melepas cadangannya sekaligus mencatat
+   * alasannya.
    */
   lepasCadanganOpname?: boolean;
   olehUserId?: string | null;
 }): Promise<LaporanKoreksiStokKonsi> {
+  if (opsi.lepasCadanganOpname === true) {
+    throw new Error(
+      "lepasCadanganOpname tidak berlaku lagi: cadangan pesanan konsinyasi milik alur pengiriman. Tutup sisa pesanan dari halaman pesanan.",
+    );
+  }
   const lingkupPesanan = opsi.orderIds ? { id: { in: opsi.orderIds } } : {};
   const lingkupKiriman = opsi.shipmentIds ? { id: { in: opsi.shipmentIds } } : {};
 
@@ -229,10 +238,8 @@ export async function koreksiStokKonsi(opsi: {
     const t = terakhirDihitungUlang.get(itemId);
     return t && t.tanggal > tanggal ? t.sumber : null;
   };
-  const keadaanUntuk = (itemId: string, tanggal: Date, sudahDipotong: boolean): KeadaanBarisKoreksi => {
-    if (sudahDipotong) return "SUDAH_DIPOTONG";
-    return hitungUlangSesudah(itemId, tanggal) ? "TERTIMPA" : "AKAN_DIPOTONG";
-  };
+  const keadaanKiriman = (itemId: string, tanggal: Date): KeadaanBarisKoreksi =>
+    hitungUlangSesudah(itemId, tanggal) ? "TERTIMPA" : "AKAN_DIPOTONG";
 
   const baris: BarisKoreksiKonsi[] = [];
   for (const o of pesanan) {
@@ -240,11 +247,11 @@ export async function koreksiStokKonsi(opsi: {
     for (const l of o.lines) {
       const c = cadangan.get(l.id);
       const berkunci = sudah.has(konsiTransferKeyForLine(l.id));
-      // Cadangan CONSUMED tanpa penyesuaian berkunci tidak terjadi di penulis mana pun. RELEASED
-      // tanpa kunci = cadangan lama yang dilepas koreksi ini (opname sudah menghitung ulang) —
-      // selesai, tapi bukan potongan. Keduanya tidak pernah dipindah lagi, sama seperti penulisnya.
-      const dilepas = !berkunci && c?.state === "RELEASED";
-      const sudahDipotong = berkunci || (c !== undefined && c.state !== "RESERVED" && !dilepas);
+      // Selesai: dipotong penulis lama (berkunci), atau cadangannya habis dipakai pengiriman
+      // (CONSUMED). RELEASED tanpa kunci = sisa yang dilepas tanpa memotong. Selain itu — cadangan
+      // masih RESERVED, atau tidak ada sama sekali — barisnya milik alur pengiriman.
+      const keadaan: KeadaanBarisKoreksi =
+        berkunci || c?.state === "CONSUMED" ? "SUDAH_DIPOTONG" : c?.state === "RELEASED" ? "CADANGAN_DILEPAS" : "MENUNGGU_KIRIM";
       baris.push({
         sumber: "PESANAN",
         dokumenId: o.id,
@@ -255,7 +262,7 @@ export async function koreksiStokKonsi(opsi: {
         variantSku: l.variantSku ?? "",
         qty: l.qty,
         tanggal,
-        keadaan: dilepas ? "CADANGAN_DILEPAS" : keadaanUntuk(l.itemId, tanggal, sudahDipotong),
+        keadaan,
         cadanganLama: c && c.state === "RESERVED" ? c.sisa : 0,
         sumberHitungUlang: hitungUlangSesudah(l.itemId, tanggal),
       });
@@ -282,7 +289,7 @@ export async function koreksiStokKonsi(opsi: {
         variantSku,
         qty: i.qty,
         tanggal: k.shippedAt,
-        keadaan: sudahDipotong ? "SUDAH_DIPOTONG" : tidakPasti ? "VARIAN_TIDAK_PASTI" : keadaanUntuk(itemId, k.shippedAt, false),
+        keadaan: sudahDipotong ? "SUDAH_DIPOTONG" : tidakPasti ? "VARIAN_TIDAK_PASTI" : keadaanKiriman(itemId, k.shippedAt),
         cadanganLama: 0,
         sumberHitungUlang: hitungUlangSesudah(itemId, k.shippedAt),
       });
@@ -330,6 +337,7 @@ export async function koreksiStokKonsi(opsi: {
         tertimpa: 0,
         variantTidakPasti: 0,
         cadanganDilepas: 0,
+        menungguKirim: 0,
         cadanganLamaTertimpa: 0,
         sumberHitungUlang: null,
         stokGudang: stok ? Number(stok.qtyOnHand) : null,
@@ -338,6 +346,10 @@ export async function koreksiStokKonsi(opsi: {
         returDariKonsi: returPerKunci.get(k) ?? 0,
       };
       ringkas.set(k, r);
+    }
+    if (b.keadaan === "MENUNGGU_KIRIM") {
+      r.menungguKirim += b.qty;
+      continue;
     }
     r.terkirim += b.qty;
     if (b.keadaan === "SUDAH_DIPOTONG") r.sudahDipotong += b.qty;
@@ -373,7 +385,10 @@ export async function koreksiStokKonsi(opsi: {
   if (!opsi.terapkan) return { baris, perBarang, returTanpaKiriman, diterapkan: null };
 
   // Terapkan: per dokumen, satu transaksi per dokumen — dokumen yang kurang stok batal sendiri.
-  const dipotong = (b: BarisKoreksiKonsi) => b.keadaan === "AKAN_DIPOTONG" || (opsi.sertakanTertimpa === true && b.keadaan === "TERTIMPA");
+  // Hanya kiriman: baris pesanan tidak pernah AKAN_DIPOTONG/TERTIMPA, dan penjagaan ini
+  // memastikan tetap begitu.
+  const dipotong = (b: BarisKoreksiKonsi) =>
+    b.sumber === "KIRIMAN" && (b.keadaan === "AKAN_DIPOTONG" || (opsi.sertakanTertimpa === true && b.keadaan === "TERTIMPA"));
   const perDokumen = new Map<string, BarisKoreksiKonsi[]>();
   for (const b of baris.filter(dipotong)) {
     const k = `${b.sumber}:${b.dokumenId}`;
@@ -392,27 +407,19 @@ export async function koreksiStokKonsi(opsi: {
     const pertama = daftar[0];
     try {
       const n = await runSerializable(async (tx) => {
-        const r =
-          pertama.sumber === "PESANAN"
-            ? await transferKonsiFieldSalesOrder(tx, {
-                orderNo: pertama.dokumen,
-                lines: daftar.map((b) => ({ fieldSalesLineId: b.barisId, itemId: b.itemId, variantSku: b.variantSku, qty: b.qty })),
-                guard: "ON_HAND",
-                createdById: opsi.olehUserId ?? null,
-              })
-            : await transferKonsiStock(tx, {
-                guard: "ON_HAND",
-                lines: daftar.map((b) => ({
-                  itemId: b.itemId,
-                  variantSku: b.variantSku,
-                  qty: b.qty,
-                  idempotencyKey: kunciKiriman(b.barisId),
-                  docNumber: `${b.dokumen}-${b.barisId}`,
-                  reason: `Koreksi data lama: kirim titipan ${b.dokumen} ke toko (stok pindah ke toko)`,
-                  externalRef: `konsi-kirim:${b.dokumen}`,
-                  createdById: opsi.olehUserId ?? null,
-                })),
-              });
+        const r = await transferKonsiStock(tx, {
+          guard: "ON_HAND",
+          lines: daftar.map((b) => ({
+            itemId: b.itemId,
+            variantSku: b.variantSku,
+            qty: b.qty,
+            idempotencyKey: kunciKiriman(b.barisId),
+            docNumber: `${b.dokumen}-${b.barisId}`,
+            reason: `Koreksi data lama: kirim titipan ${b.dokumen} ke toko (stok pindah ke toko)`,
+            externalRef: `konsi-kirim:${b.dokumen}`,
+            createdById: opsi.olehUserId ?? null,
+          })),
+        });
         if (r.shortLines.length > 0) throw new Kurang(r.shortLines);
         return r.transferred;
       });
@@ -424,42 +431,5 @@ export async function koreksiStokKonsi(opsi: {
     }
   }
 
-  // Cadangan lama baris pesanan yang gudangnya sudah DIOPNAME sesudah kirim: barangnya sudah tidak
-  // terhitung di gudang, jadi qtyOnHand tidak dipotong lagi — hanya cadangannya yang dilepas.
-  let cadanganDilepas = 0;
-  if (opsi.lepasCadanganOpname === true && opsi.sertakanTertimpa !== true) {
-    const lepas = baris.filter(
-      (b) => b.sumber === "PESANAN" && b.keadaan === "TERTIMPA" && b.sumberHitungUlang === "ERP_OPNAME" && b.cadanganLama > 0,
-    );
-    for (const b of lepas) {
-      const dilepas = await runSerializable(async (tx) => {
-        const r = await tx.stockReservation.findUnique({ where: { fieldSalesLineId: b.barisId } });
-        if (!r || r.state !== "RESERVED" || r.source !== "FIELD_SALES_KONSI") return false;
-        // Penjaga keadaan di transaksi serializable (updateMany bukan compare-and-swap).
-        const upd = await tx.stockReservation.updateMany({
-          where: { fieldSalesLineId: b.barisId, state: "RESERVED" },
-          data: { state: "RELEASED", resolvedAt: new Date() },
-        });
-        if (upd.count === 0) return false;
-        const ditahan = Number(r.qty) - Number(r.consumedQty);
-        if (ditahan > 0) {
-          const inv = await tx.inventoryValue.findFirst({
-            where: r.variantSku
-              ? { itemId: r.itemId, variantSku: r.variantSku }
-              : { itemId: r.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-            select: { id: true },
-          });
-          if (inv) {
-            await tx.inventoryValue.update({
-              where: { id: inv.id },
-              data: { reservedQty: { decrement: ditahan }, lastUpdated: new Date() },
-            });
-          }
-        }
-        return true;
-      });
-      if (dilepas) cadanganDilepas += 1;
-    }
-  }
-  return { baris, perBarang, returTanpaKiriman, diterapkan: { dokumenDipotong, barisDipotong, cadanganDilepas, gagal } };
+  return { baris, perBarang, returTanpaKiriman, diterapkan: { dokumenDipotong, barisDipotong, cadanganDilepas: 0, gagal } };
 }

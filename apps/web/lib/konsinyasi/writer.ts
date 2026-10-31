@@ -142,11 +142,15 @@ async function kirimanDenganKunci(
   });
 }
 
-/** Baris stok yang akan dipotong untuk satu kunci — kueri yang sama dengan `transferKonsiStock`. */
-function barisStokKirim(tx: Klien, itemId: string, variantSku: string) {
-  return variantSku === ''
-    ? tx.inventoryValue.findFirst({ where: { itemId, OR: [{ variantSku: null }, { variantSku: '' }] } })
-    : tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
+/**
+ * Baris stok yang akan dipotong untuk satu kunci — aturan pilih yang sama dengan
+ * `transferKonsiStock`: tanpa varian, baris "" didahulukan, lalu baris null ber-id terkecil
+ * (barang bisa punya keduanya; pencarian OR tanpa urutan bisa membaca kembaran yang lain).
+ */
+async function barisStokKirim(tx: Klien, itemId: string, variantSku: string) {
+  if (variantSku !== "") return tx.inventoryValue.findFirst({ where: { itemId, variantSku } });
+  const kosong = await tx.inventoryValue.findFirst({ where: { itemId, variantSku: "" } });
+  return kosong ?? tx.inventoryValue.findFirst({ where: { itemId, variantSku: null }, orderBy: { id: "asc" } });
 }
 
 /** Label varian dari katalog barang untuk rincian kurang stok. */
@@ -321,7 +325,7 @@ export async function kirimTitipan(input: {
             continue;
           }
           const baris = await tx.inventoryValue.findMany({ where: { itemId: b.itemId }, select: { variantSku: true } });
-          // null dan "" sama-sama baris tanpa varian (lihat findFieldSalesInventory).
+          // null dan "" sama-sama baris tanpa varian (lihat barisStokKirim).
           const kunciBaris = [...new Set(baris.map((r) => r.variantSku ?? ''))];
           if (kunciBaris.length > 1) return { ok: false, alasan: 'VARIAN_WAJIB' };
           varian.push(kunciBaris[0] ?? '');
@@ -395,8 +399,9 @@ export async function kirimTitipan(input: {
               ]
             : [],
         );
-        // Penjaga sebenarnya tetap UPDATE bersyarat di transferKonsiStock: penulis lain bisa
-        // mengambil stok di antara bacaan di atas dan pemotongan ini.
+        // transferKonsiStock memeriksa lagi per baris sesudah baris sebelumnya terpotong (transaksi
+        // serializable ini mengunci bacaannya), dan stok fisik tidak pernah negatif: lantai
+        // moveMainStock membatalkan seluruh kiriman. Setiap potongan tercatat di buku stok.
         const hasilPindah = await transferKonsiStock(tx, { lines: pindah });
         if (hasilPindah.shortLines.length > 0) {
           throw new StokGudangKurang(await lengkapiKurang(tx, hasilPindah.shortLines, nama));

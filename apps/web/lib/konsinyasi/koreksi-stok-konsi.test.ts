@@ -8,10 +8,12 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 /**
  * Koreksi data lama "konsinyasi tidak pernah keluar dari gudang", terhadap basis data sungguhan.
  *
- * Keadaan lama yang ditiru persis seperti penulis lama meninggalkannya:
- *   - pesanan KONSI 10 pcs DISETUJUI: hanya dicadangkan (reservedQty +10), qtyOnHand tidak turun;
- *   - kiriman modul konsinyasi 5 pcs: tidak menyentuh gudang sama sekali.
- * Gudang 50 pcs × Rp40.000 = Rp2.000.000 → seharusnya 35 pcs, Rp1.400.000.
+ *   - kiriman modul konsinyasi 5 pcs yang dicatat penulis LAMA: tidak menyentuh gudang sama sekali
+ *     → dipotong koreksi, tercatat di buku stok;
+ *   - pesanan KONSI 10 pcs DISETUJUI: hanya dicadangkan (reservedQty +10), qtyOnHand tidak turun.
+ *     Itu keadaan "menunggu kirim" yang biasa — stoknya pindah saat pengiriman selesai — jadi
+ *     koreksi hanya melaporkannya, tidak pernah memotong atau melepas cadangannya.
+ * Gudang 50 pcs × Rp40.000 = Rp2.000.000 → sesudah koreksi 45 pcs, Rp1.800.000, cadangan tetap 10.
  */
 
 const url = process.env.DATABASE_URL ?? "";
@@ -66,6 +68,7 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
     await prisma.storeVisit.deleteMany({ where: { id: seededId(visitId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -80,7 +83,7 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
     }
   };
 
-  /** Pesanan KONSI yang disetujui oleh penulis LAMA: dicadangkan, tidak pernah dipotong. */
+  /** Pesanan KONSI yang disetujui: dicadangkan, stoknya baru pindah saat pengiriman selesai. */
   const pesananLama = async (variantSku: string, qty: number) => {
     const { orderId, orderNo } = await createFieldSalesOrder({
       storeId,
@@ -117,6 +120,11 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
     return { qty: Number(inv!.qtyOnHand), reserved: Number(inv!.reservedQty), nilai: Number(inv!.totalValue) };
   };
 
+  const cadanganBaris = async (orderId: string) => {
+    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId } });
+    return prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: line.id } });
+  };
+
   const cakupan = () => ({ orderIds, shipmentIds: kirimIds });
 
   /** Jejak penetapan ulang angka gudang (opname / Jubelio) sesudah tanggal kirim. */
@@ -148,33 +156,51 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
     const lap = await koreksiStokKonsi({ terapkan: false, ...cakupan() });
     expect(lap.diterapkan).toBeNull();
     expect(lap.perBarang).toEqual([
-      expect.objectContaining({ itemId, variantSku: "", terkirim: 15, sudahDipotong: 0, selisih: 15, akanDipotong: 15, stokGudang: 50, cadanganGudang: 10 }),
+      expect.objectContaining({
+        itemId,
+        variantSku: "",
+        terkirim: 5,
+        sudahDipotong: 0,
+        selisih: 5,
+        akanDipotong: 5,
+        menungguKirim: 10,
+        stokGudang: 50,
+        cadanganGudang: 10,
+      }),
+    ]);
+    expect(lap.baris.map((b) => [b.sumber, b.keadaan, b.cadanganLama])).toEqual([
+      ["PESANAN", "MENUNGGU_KIRIM", 10],
+      ["KIRIMAN", "AKAN_DIPOTONG", 0],
     ]);
     expect(await gudang()).toEqual(sebelum);
     expect(await prisma.stockAdjustment.count({ where: { itemId } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(0);
   });
 
-  it("--apply memotong 15 pcs (Rp600.000), melepas cadangan lama, dan tidak memotong dua kali bila diulang", async () => {
+  it("--apply memotong kiriman 5 pcs (Rp200.000) lewat buku stok, pesanan yang menunggu kirim tidak disentuh, dan tidak memotong dua kali bila diulang", async () => {
     await stokAwal([{ variantSku: null, qty: 50 }]);
     const orderId = await pesananLama("", 10);
     await kirimanLama(5);
 
     const lap = await koreksiStokKonsi({ terapkan: true, ...cakupan() });
-    expect(lap.diterapkan).toEqual({ dokumenDipotong: 2, barisDipotong: 2, cadanganDilepas: 0, gagal: [] });
-    expect(await gudang()).toEqual({ qty: 35, reserved: 0, nilai: 1_400_000 });
-    const adj = await prisma.stockAdjustment.findMany({ where: { itemId }, orderBy: { qtyChange: "asc" } });
-    expect(adj.map((a) => [a.source, Number(a.qtyChange)])).toEqual([
-      ["KONSI_TRANSFER", -10],
-      ["KONSI_TRANSFER", -5],
+    expect(lap.diterapkan).toEqual({ dokumenDipotong: 1, barisDipotong: 1, cadanganDilepas: 0, gagal: [] });
+    expect(await gudang()).toEqual({ qty: 45, reserved: 10, nilai: 1_800_000 });
+    const adj = await prisma.stockAdjustment.findMany({ where: { itemId } });
+    expect(adj.map((a) => [a.source, Number(a.qtyChange), Number(a.prevQty), Number(a.newQty)])).toEqual([["KONSI_TRANSFER", -5, 50, 45]]);
+    const buku = await prisma.stockLedgerEntry.findMany({ where: { itemId } });
+    expect(buku).toHaveLength(1);
+    expect(buku[0]).toMatchObject({ locationType: "MAIN", variantSku: "", type: "OUT", refType: "StockAdjustment", refId: adj[0].id });
+    expect([Number(buku[0].qty), Number(buku[0].balanceQty), Number(buku[0].totalCost), Number(buku[0].balanceValue)]).toEqual([
+      -5, 45, -200_000, 1_800_000,
     ]);
-    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId } });
-    const rsv = await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: line.id } });
-    expect(rsv.state).toBe("CONSUMED");
+    // Cadangan pesanan tetap milik alur pengiriman.
+    expect(await cadanganBaris(orderId)).toMatchObject({ state: "RESERVED" });
 
-    const ulang = await koreksiStokKonsi({ terapkan: true, ...cakupan() });
+    const ulang = await koreksiStokKonsi({ terapkan: true, sertakanTertimpa: true, ...cakupan() });
     expect(ulang.diterapkan).toEqual({ dokumenDipotong: 0, barisDipotong: 0, cadanganDilepas: 0, gagal: [] });
-    expect(ulang.perBarang[0]).toMatchObject({ terkirim: 15, sudahDipotong: 15, selisih: 0, akanDipotong: 0 });
-    expect(await gudang()).toEqual({ qty: 35, reserved: 0, nilai: 1_400_000 });
+    expect(ulang.perBarang[0]).toMatchObject({ terkirim: 5, sudahDipotong: 5, selisih: 0, akanDipotong: 0, menungguKirim: 10 });
+    expect(await gudang()).toEqual({ qty: 45, reserved: 10, nilai: 1_800_000 });
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(1);
   });
 
   it("dua koreksi bersamaan: satu pengurangan", async () => {
@@ -182,8 +208,9 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
     await pesananLama("", 10);
     await kirimanLama(5);
     await Promise.allSettled([koreksiStokKonsi({ terapkan: true, ...cakupan() }), koreksiStokKonsi({ terapkan: true, ...cakupan() })]);
-    expect(await gudang()).toEqual({ qty: 35, reserved: 0, nilai: 1_400_000 });
-    expect(await prisma.stockAdjustment.count({ where: { itemId, source: "KONSI_TRANSFER" } })).toBe(2);
+    expect(await gudang()).toEqual({ qty: 45, reserved: 10, nilai: 1_800_000 });
+    expect(await prisma.stockAdjustment.count({ where: { itemId, source: "KONSI_TRANSFER" } })).toBe(1);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(1);
   });
 
   it("gudang yang sudah dihitung ulang (opname) sesudah kirim: TERTIMPA, tidak dipotong kecuali dipaksa", async () => {
@@ -223,6 +250,8 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
       expect.objectContaining({ sumber: "KIRIMAN", kurang: [expect.objectContaining({ itemId, requested: 5, available: 3 })] }),
     ]);
     expect((await gudang()).qty).toBe(3);
+    expect(await prisma.stockAdjustment.count({ where: { itemId } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(0);
   });
 
   it("retur NRI dari toko konsi atas barang yang tidak pernah tercatat dikirim: hanya dilaporkan", async () => {
@@ -277,57 +306,56 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
     expect(await gudang()).toEqual({ qty: 45, reserved: 0, nilai: 1_800_000 });
   });
 
-  it("pesanan lama TERTIMPA opname: cadangan lama dilaporkan, dilepas hanya dengan opsi, qtyOnHand tidak dipotong lagi", async () => {
+  it("pesanan yang menunggu kirim tidak pernah dipotong, walau gudangnya diopname sesudah disetujui dan TERTIMPA dipaksa", async () => {
     await stokAwal([{ variantSku: null, qty: 50 }]);
     const orderId = await pesananLama("", 10);
     await hitungUlang("ERP_OPNAME", `OPN-${tag}`);
-    // Opname menghitung fisik 40: 10 pcs sudah di toko, angka gudang sudah benar.
-    await prisma.inventoryValue.updateMany({ where: { itemId: seededId(itemId) }, data: { qtyOnHand: 40, totalValue: 1_600_000 } });
 
-    const kering = await koreksiStokKonsi({ terapkan: false, ...cakupan() });
-    expect(kering.perBarang[0]).toMatchObject({ tertimpa: 10, selisih: 10, cadanganLamaTertimpa: 10, sumberHitungUlang: "ERP_OPNAME" });
-
-    // Tanpa opsi: tidak dipotong, cadangan lama tetap menahan 10 (tersedia 30, padahal fisik 40).
-    const tanpa = await koreksiStokKonsi({ terapkan: true, ...cakupan() });
-    expect(tanpa.diterapkan).toMatchObject({ barisDipotong: 0, cadanganDilepas: 0 });
-    expect(await gudang()).toEqual({ qty: 40, reserved: 10, nilai: 1_600_000 });
-
-    const lepas = await koreksiStokKonsi({ terapkan: true, lepasCadanganOpname: true, ...cakupan() });
-    expect(lepas.diterapkan).toMatchObject({ barisDipotong: 0, cadanganDilepas: 1 });
-    expect(await gudang()).toEqual({ qty: 40, reserved: 0, nilai: 1_600_000 });
-    const line = await prisma.fieldSalesOrderLine.findFirstOrThrow({ where: { orderId } });
-    expect((await prisma.stockReservation.findUniqueOrThrow({ where: { fieldSalesLineId: line.id } })).state).toBe("RELEASED");
-    expect(await prisma.stockAdjustment.count({ where: { itemId, source: "KONSI_TRANSFER" } })).toBe(0);
-
-    // Diulang, bahkan dengan sertakanTertimpa: selesai, tidak dipotong dan tidak dilepas lagi.
-    const ulang = await koreksiStokKonsi({ terapkan: true, sertakanTertimpa: true, ...cakupan() });
-    expect(ulang.baris.map((b) => b.keadaan)).toEqual(["CADANGAN_DILEPAS"]);
-    expect(ulang.perBarang[0]).toMatchObject({ selisih: 0, cadanganDilepas: 10, sudahDipotong: 0 });
-    expect(ulang.diterapkan).toMatchObject({ barisDipotong: 0, cadanganDilepas: 0 });
-    expect(await gudang()).toEqual({ qty: 40, reserved: 0, nilai: 1_600_000 });
-  });
-
-  it("dua pelepasan cadangan bersamaan: cadangan berkurang sekali", async () => {
-    await stokAwal([{ variantSku: null, qty: 50 }]);
-    await pesananLama("", 10);
-    await hitungUlang("ERP_OPNAME", `OPN-${tag}`);
-    await prisma.inventoryValue.updateMany({ where: { itemId: seededId(itemId) }, data: { qtyOnHand: 40, reservedQty: 13, totalValue: 1_600_000 } });
-    await Promise.allSettled([
-      koreksiStokKonsi({ terapkan: true, lepasCadanganOpname: true, ...cakupan() }),
-      koreksiStokKonsi({ terapkan: true, lepasCadanganOpname: true, ...cakupan() }),
-    ]);
-    // 13 = 10 cadangan konsi lama + 3 cadangan lain; hanya yang 10 yang lepas, sekali.
-    expect(await gudang()).toEqual({ qty: 40, reserved: 3, nilai: 1_600_000 });
-  });
-
-  it("hitung ulang TERAKHIR oleh Jubelio: cadangan lama tidak dilepas walau opsi opname menyala", async () => {
-    await stokAwal([{ variantSku: null, qty: 50 }]);
-    await pesananLama("", 10);
-    await hitungUlang("ERP_OPNAME", `OPN-${tag}`, new Date("2026-09-01T03:00:00Z"));
-    await hitungUlang("JUBELIO_WEBHOOK", `JBL-${tag}`, new Date("2026-09-15T03:00:00Z"));
-    const lap = await koreksiStokKonsi({ terapkan: true, lepasCadanganOpname: true, ...cakupan() });
-    expect(lap.perBarang[0]).toMatchObject({ tertimpa: 10, cadanganLamaTertimpa: 10, sumberHitungUlang: "JUBELIO_WEBHOOK" });
-    expect(lap.diterapkan).toMatchObject({ barisDipotong: 0, cadanganDilepas: 0 });
+    const lap = await koreksiStokKonsi({ terapkan: true, sertakanTertimpa: true, ...cakupan() });
+    expect(lap.baris.map((b) => [b.keadaan, b.cadanganLama, b.sumberHitungUlang])).toEqual([["MENUNGGU_KIRIM", 10, "ERP_OPNAME"]]);
+    expect(lap.perBarang[0]).toMatchObject({ terkirim: 0, selisih: 0, tertimpa: 0, menungguKirim: 10, cadanganLamaTertimpa: 0 });
+    expect(lap.diterapkan).toEqual({ dokumenDipotong: 0, barisDipotong: 0, cadanganDilepas: 0, gagal: [] });
     expect(await gudang()).toEqual({ qty: 50, reserved: 10, nilai: 2_000_000 });
+    expect(await cadanganBaris(orderId)).toMatchObject({ state: "RESERVED" });
+    expect(await prisma.stockAdjustment.count({ where: { itemId, source: "KONSI_TRANSFER" } })).toBe(0);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId } })).toBe(0);
+  });
+
+  it("pesanan yang sebagian sudah dikirim: sisanya tetap menunggu kirim, tidak dipotong lagi", async () => {
+    await stokAwal([{ variantSku: null, qty: 50 }]);
+    const orderId = await pesananLama("", 10);
+    // Pengiriman pertama 4 pcs sudah selesai: gudang 46, cadangan tinggal 6 (seperti issueKonsiTransfer).
+    const rsv = await cadanganBaris(orderId);
+    await prisma.stockReservation.update({ where: { id: rsv.id }, data: { consumedQty: 4 } });
+    await prisma.inventoryValue.updateMany({ where: { itemId: seededId(itemId) }, data: { qtyOnHand: 46, reservedQty: 6, totalValue: 1_840_000 } });
+
+    const lap = await koreksiStokKonsi({ terapkan: true, sertakanTertimpa: true, ...cakupan() });
+    expect(lap.baris.map((b) => [b.keadaan, b.cadanganLama])).toEqual([["MENUNGGU_KIRIM", 6]]);
+    expect(lap.diterapkan).toMatchObject({ barisDipotong: 0 });
+    expect(await gudang()).toEqual({ qty: 46, reserved: 6, nilai: 1_840_000 });
+    expect(await cadanganBaris(orderId)).toMatchObject({ state: "RESERVED" });
+  });
+
+  it("pesanan yang selesai dikirim (cadangan CONSUMED): sudah dipotong, tidak dipotong lagi", async () => {
+    await stokAwal([{ variantSku: null, qty: 50 }]);
+    const orderId = await pesananLama("", 10);
+    const rsv = await cadanganBaris(orderId);
+    await prisma.stockReservation.update({ where: { id: rsv.id }, data: { consumedQty: 10, state: "CONSUMED", resolvedAt: new Date() } });
+    await prisma.inventoryValue.updateMany({ where: { itemId: seededId(itemId) }, data: { qtyOnHand: 40, reservedQty: 0, totalValue: 1_600_000 } });
+
+    const lap = await koreksiStokKonsi({ terapkan: true, ...cakupan() });
+    expect(lap.baris.map((b) => b.keadaan)).toEqual(["SUDAH_DIPOTONG"]);
+    expect(lap.perBarang[0]).toMatchObject({ terkirim: 10, sudahDipotong: 10, selisih: 0, menungguKirim: 0 });
+    expect(lap.diterapkan).toMatchObject({ barisDipotong: 0 });
+    expect(await gudang()).toEqual({ qty: 40, reserved: 0, nilai: 1_600_000 });
+  });
+
+  it("lepasCadanganOpname ditolak: cadangan pesanan milik alur pengiriman, tidak ada yang ditulis", async () => {
+    await stokAwal([{ variantSku: null, qty: 50 }]);
+    const orderId = await pesananLama("", 10);
+    await hitungUlang("ERP_OPNAME", `OPN-${tag}`);
+    await expect(koreksiStokKonsi({ terapkan: true, lepasCadanganOpname: true, ...cakupan() })).rejects.toThrow(/lepasCadanganOpname/);
+    expect(await gudang()).toEqual({ qty: 50, reserved: 10, nilai: 2_000_000 });
+    expect(await cadanganBaris(orderId)).toMatchObject({ state: "RESERVED" });
   });
 });

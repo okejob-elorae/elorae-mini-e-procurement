@@ -47,6 +47,7 @@ d("reserveOrder untuk barang buatan ERP (test bed only)", () => {
   afterEach(async () => {
     await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds([itemId].filter(Boolean)) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

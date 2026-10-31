@@ -75,6 +75,7 @@ d("kirim titipan per varian (basis data)", () => {
       await prisma.consignmentShipmentItem.deleteMany({ where: { shipment: { storeId: seededId(tokoLainId) } } });
       await prisma.consignmentShipment.deleteMany({ where: { storeId: seededId(tokoLainId) } });
     }
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(barangId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(barangId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(barangId) } });
     await prisma.item.deleteMany({ where: { id: seededId(barangId) } });
@@ -138,6 +139,7 @@ d("kirim titipan per varian (basis data)", () => {
     expect(await prisma.consignmentShipment.count({ where: { storeId: tokoId } })).toBe(1);
     expect(await stok(M)).toBe(15);
     expect(await prisma.stockAdjustment.count({ where: { itemId: barangId } })).toBe(1);
+    expect(await prisma.stockLedgerEntry.count({ where: { itemId: barangId, variantSku: M } })).toBe(1);
   });
 
   it("kirim ulang sesudah jawaban hilang: kiriman yang sama, tidak terpotong lagi, tidak ada push ulang", async () => {
