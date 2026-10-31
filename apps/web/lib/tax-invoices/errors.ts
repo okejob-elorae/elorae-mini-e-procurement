@@ -21,8 +21,12 @@ export type KodeNomorFaktur = "NOMOR_FAKTUR_GANDA" | "NOMOR_FAKTUR_FORMAT";
 
 export type PenolakanNomorFaktur = {
   code: KodeNomorFaktur;
-  /** Hanya pada NOMOR_FAKTUR_GANDA: nota pengiriman yang sudah memegang nomor itu. */
+  /**
+   * Hanya pada NOMOR_FAKTUR_GANDA: dokumen yang sudah memegang nomor itu — nota
+   * pengiriman, atau laporan sell-through konsi. Paling banyak satu yang terisi.
+   */
   dipakaiDeliveryId: string | null;
+  dipakaiSellThroughId: string | null;
 };
 
 /**
@@ -34,11 +38,13 @@ export type PenolakanNomorFaktur = {
 export function penolakanNomorFaktur(e: unknown): PenolakanNomorFaktur | null {
   if (!(e instanceof TaxInvoiceError) || e.code !== "INVALID_REQUEST") return null;
   const { sebab, dipakai } = e as TaxInvoiceError & { sebab?: unknown; dipakai?: unknown };
-  if (sebab === "FORMAT") return { code: "NOMOR_FAKTUR_FORMAT", dipakaiDeliveryId: null };
+  if (sebab === "FORMAT") return { code: "NOMOR_FAKTUR_FORMAT", dipakaiDeliveryId: null, dipakaiSellThroughId: null };
   if (sebab !== "GANDA") return null;
-  const deliveryId =
-    typeof dipakai === "object" && dipakai !== null && typeof (dipakai as { deliveryId?: unknown }).deliveryId === "string"
-      ? (dipakai as { deliveryId: string }).deliveryId
-      : null;
-  return { code: "NOMOR_FAKTUR_GANDA", dipakaiDeliveryId: deliveryId };
+  const pemegang = typeof dipakai === "object" && dipakai !== null ? (dipakai as Record<string, unknown>) : {};
+  const teks = (v: unknown): string | null => (typeof v === "string" ? v : null);
+  return {
+    code: "NOMOR_FAKTUR_GANDA",
+    dipakaiDeliveryId: teks(pemegang.deliveryId),
+    dipakaiSellThroughId: teks(pemegang.sellThroughId),
+  };
 }

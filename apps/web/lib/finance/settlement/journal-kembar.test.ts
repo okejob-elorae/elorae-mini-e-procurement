@@ -6,6 +6,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
  * di sini dimatikan supaya yang diuji tetap jurnalnya.
  */
 vi.mock("@/lib/finance/periode/gerbang", () => ({ seluruhnyaSebelumTanggalMulai: async () => false }));
+/*
+ * Gerbang jurnal penjualan asal (setiap baris harus menunjuk pesanan yang jurnal
+ * pendapatannya sudah ada) diuji di `journal.test.ts`; di sini setiap pesanan
+ * dianggap sudah dijurnal, supaya yang diuji tetap penjaga kembarnya.
+ */
+vi.mock("@/lib/finance/sales/sales-return-journal", async (asli) => ({
+  ...(await asli<typeof import("@/lib/finance/sales/sales-return-journal")>()),
+  classifySaleLegs: async (ids: string[]) => new Map(ids.map((id) => [id, null] as const)),
+}));
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { postSettlementJournal } from "./journal";
 import { setAccountMapping } from "../journals/mapping";
@@ -50,6 +59,23 @@ d("postSettlementJournal menolak settlement kembar (basis data uji)", () => {
         sellerFeesRaw: [],
         adjustmentsRaw: [],
         createdAt: opts.createdAt,
+        lines: {
+          create: [
+            {
+              orderNo: `${opts.seller}-${opts.fileName}`,
+              netIncome: 940,
+              hargaAsliProduk: 1000,
+              totalDiskonProduk: 0,
+              biayaAdministrasi: 0,
+              biayaLayanan: 0,
+              biayaKomisiAms: 0,
+              biayaProsesPesanan: 0,
+              raw: {},
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: `uji-so-${token}`,
+            },
+          ],
+        },
       },
       select: { id: true },
     });
@@ -106,6 +132,7 @@ d("postSettlementJournal menolak settlement kembar (basis data uji)", () => {
     const jurnalIds = jurnal.map((j) => j.id);
     await prisma.journalLine.deleteMany({ where: { journalId: { in: seededIds(jurnalIds) } } });
     await prisma.journal.deleteMany({ where: { id: { in: seededIds(jurnalIds) } } });
+    await prisma.settlementLine.deleteMany({ where: { settlementId: { in: seededIds(settlementIds) } } });
     await prisma.settlement.deleteMany({ where: { id: { in: seededIds(settlementIds) } } });
     await prisma.chartAccount.deleteMany({
       where: { id: { in: [seededId(bankId), seededId(arId), seededId(feeId)] } },

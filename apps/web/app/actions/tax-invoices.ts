@@ -26,7 +26,7 @@ export type TaxInvoiceActionResult =
         | "REASON_TOO_LONG"
         | "ERROR"
         | KodeNomorFaktur;
-      /** Hanya pada NOMOR_FAKTUR_GANDA, bila ketemu: nomor nota yang sudah memegang nomor itu. */
+      /** Hanya pada NOMOR_FAKTUR_GANDA, bila ketemu: nomor nota (atau laporan sell-through) yang sudah memegang nomor itu. */
       dipakaiDi?: string;
     };
 
@@ -48,18 +48,29 @@ async function toResult(e: unknown): Promise<TaxInvoiceActionResult> {
   // Penolakan nomor faktur membawa code INVALID_REQUEST yang generik; `sebab`-nya yang dipakai layar.
   const nomor = penolakanNomorFaktur(e);
   if (nomor) {
-    const dipakaiDi = nomor.dipakaiDeliveryId ? await nomorNotaPemegang(nomor.dipakaiDeliveryId) : null;
+    const dipakaiDi = await nomorDokumenPemegang(nomor.dipakaiDeliveryId, nomor.dipakaiSellThroughId);
     return dipakaiDi ? { ok: false, code: nomor.code, dipakaiDi } : { ok: false, code: nomor.code };
   }
   if (e instanceof TaxInvoiceError) return { ok: false, code: e.code };
   return { ok: false, code: "ERROR" };
 }
 
-/** Nomor nota yang memegang NSFP ganda. Hanya pelengkap pesan: gagal mencari tidak mengubah penolakannya. */
-async function nomorNotaPemegang(deliveryId: string): Promise<string | null> {
+/**
+ * Nomor dokumen yang memegang NSFP ganda: nota pengiriman, atau laporan sell-through konsi
+ * (faktur pajaknya bersumber dari salah satu). Hanya pelengkap pesan: gagal mencari tidak
+ * mengubah penolakannya.
+ */
+async function nomorDokumenPemegang(deliveryId: string | null, sellThroughId: string | null): Promise<string | null> {
   try {
-    const nota = await prisma.fieldSalesDelivery.findUnique({ where: { id: deliveryId }, select: { docNo: true } });
-    return nota?.docNo ?? null;
+    if (deliveryId) {
+      const nota = await prisma.fieldSalesDelivery.findUnique({ where: { id: deliveryId }, select: { docNo: true } });
+      return nota?.docNo ?? null;
+    }
+    if (sellThroughId) {
+      const laporan = await prisma.konsiSellThrough.findUnique({ where: { id: sellThroughId }, select: { docNo: true } });
+      return laporan?.docNo ?? null;
+    }
+    return null;
   } catch {
     return null;
   }

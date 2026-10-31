@@ -25,7 +25,7 @@ import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { LabelPeriode } from "../LabelPeriode";
-import { CASH_FLOW_COVERAGE_BODY } from "@/lib/finance/reports/disclosures";
+import { CASH_FLOW_COVERAGE_BODY } from "@/lib/finance/reports/cakupan-laporan";
 import { SpandukBukuBesar } from "../../_kesiapan/SpandukBukuBesar";
 import { periodeLaporan, type KesiapanBukuBesar } from "../../_kesiapan/kesiapan";
 import type { AksesSpanduk } from "../../_kesiapan/baca";

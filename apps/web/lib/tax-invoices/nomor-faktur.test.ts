@@ -62,6 +62,18 @@ d("nomor faktur ganda (test bed only)", () => {
     return `010.000-31.${token.slice(0, 6)}${String(urut).padStart(2, "0")}`;
   }
 
+  /** NPWP dan nilai tidak diuji di sini; penulis mewajibkannya. */
+  function tandai(taxInvoiceId: string, invoiceNo: string) {
+    return markTaxInvoiceCreated({
+      taxInvoiceId,
+      invoiceNo,
+      buyerNpwp: "01.234.567.8-901.000",
+      taxableAmount: 100_000,
+      ppnAmount: 11_000,
+      userId,
+    });
+  }
+
   async function barisBaru(): Promise<string> {
     const r = await prisma.taxInvoice.create({
       data: { deliveryId: `uji-dlv-${token}-${ids.length}`, status: "PENDING" },
@@ -89,10 +101,10 @@ d("nomor faktur ganda (test bed only)", () => {
     const a = await barisBaru();
     const b = await barisBaru();
     const no = nomor(1);
-    await markTaxInvoiceCreated({ taxInvoiceId: a, invoiceNo: no, userId });
+    await tandai(a, no);
 
     const ditulisLain = no.replace(/[.-]/g, " ");
-    const e = await markTaxInvoiceCreated({ taxInvoiceId: b, invoiceNo: ditulisLain, userId }).catch((x: unknown) => x);
+    const e = await tandai(b, ditulisLain).catch((x: unknown) => x);
     expect(e).toBeInstanceOf(NomorFakturError);
     expect(e).toBeInstanceOf(TaxInvoiceError);
     expect((e as NomorFakturError).sebab).toBe("GANDA");
@@ -101,7 +113,7 @@ d("nomor faktur ganda (test bed only)", () => {
 
     // Faktur pengganti (status 1) dengan NSFP yang sama di nota lain juga ditolak.
     const pengganti = `011${no.slice(3)}`;
-    await expect(markTaxInvoiceCreated({ taxInvoiceId: b, invoiceNo: pengganti, userId })).rejects.toBeInstanceOf(NomorFakturError);
+    await expect(tandai(b, pengganti)).rejects.toBeInstanceOf(NomorFakturError);
 
     const rowB = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(b) } });
     expect(rowB.status).toBe("PENDING");
@@ -115,9 +127,9 @@ d("nomor faktur ganda (test bed only)", () => {
     const no = nomor(3);
     // Nota pertama ditulis dengan titik di tengah 4 digit terakhir nomor urut.
     const dipotong = `${no.slice(0, -2)}.${no.slice(-2)}`;
-    await markTaxInvoiceCreated({ taxInvoiceId: a, invoiceNo: dipotong, userId });
+    await tandai(a, dipotong);
 
-    const e = await markTaxInvoiceCreated({ taxInvoiceId: b, invoiceNo: no, userId }).catch((x: unknown) => x);
+    const e = await tandai(b, no).catch((x: unknown) => x);
     expect(e).toBeInstanceOf(NomorFakturError);
     expect((e as NomorFakturError).sebab).toBe("GANDA");
     expect((e as NomorFakturError).dipakai?.taxInvoiceId).toBe(a);
@@ -128,15 +140,15 @@ d("nomor faktur ganda (test bed only)", () => {
     const a = await barisBaru();
     const b = await barisBaru();
     const no = nomor(2);
-    await markTaxInvoiceCreated({ taxInvoiceId: a, invoiceNo: no, userId });
+    await tandai(a, no);
     await revertTaxInvoiceToPending({ taxInvoiceId: a, reason: "salah nota", userId });
-    await markTaxInvoiceCreated({ taxInvoiceId: b, invoiceNo: no, userId });
+    await tandai(b, no);
     expect((await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(b) } })).status).toBe("CREATED");
   });
 
   it("menolak format yang bukan NSFP tanpa menyentuh baris", async () => {
     const a = await barisBaru();
-    const e = await markTaxInvoiceCreated({ taxInvoiceId: a, invoiceNo: "FP/2024/001", userId }).catch((x: unknown) => x);
+    const e = await tandai(a, "FP/2024/001").catch((x: unknown) => x);
     expect(e).toBeInstanceOf(NomorFakturError);
     expect((e as NomorFakturError).sebab).toBe("FORMAT");
     expect((await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(a) } })).status).toBe("PENDING");
@@ -148,8 +160,8 @@ d("nomor faktur ganda (test bed only)", () => {
       const b = await barisBaru();
       const no = nomor(5 + putaran);
       const hasil = await Promise.allSettled([
-        markTaxInvoiceCreated({ taxInvoiceId: a, invoiceNo: no, userId }),
-        markTaxInvoiceCreated({ taxInvoiceId: b, invoiceNo: no, userId }),
+        tandai(a, no),
+        tandai(b, no),
       ]);
       const berhasil = hasil.filter((h) => h.status === "fulfilled");
       const ditolak = hasil.filter((h): h is PromiseRejectedResult => h.status === "rejected");

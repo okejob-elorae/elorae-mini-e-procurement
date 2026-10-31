@@ -8,12 +8,17 @@ import type { Role } from "@elorae/db";
  * menghapus akunnya — baru berlaku saat JWT-nya kedaluwarsa (hingga 8 jam).
  * Sekarang callback `jwt` di lib/auth.ts membaca ulang token yang lebih tua
  * dari `UMUR_SEGAR_SESI_MS`; akun yang sudah tidak ada membuat sesinya tidak sah.
+ * Di depannya, callback itu menjalankan kueri ringan pada SETIAP pemakaian
+ * (peran, versi izin peran, sidik sandi, toko tetap) dan memaksa pembacaan
+ * ulang di sini begitu salah satunya berubah — jadi batas 60 detik hanya
+ * berlaku untuk perubahan yang tidak menaikkan versi izin peran.
  *
  * Singgahan per proses: `auth()` di komponen server dan aksi server menjalankan
  * callback `jwt` tetapi TIDAK menulis ulang cookie, jadi cap waktu baru di token
  * hilang dan setiap `auth()` berikutnya melihat token basi lagi. Tanpa singgahan,
- * satu halaman = beberapa kueri. Dengan singgahan, paling banyak satu kueri per
- * orang per `UMUR_SEGAR_SESI_MS` per proses — batas basinya tetap sama.
+ * satu halaman = beberapa pembacaan ulang. Dengan singgahan, paling banyak satu
+ * pembacaan ulang isi per orang per `UMUR_SEGAR_SESI_MS` per proses — batas
+ * basinya tetap sama (kueri ringan di lib/auth.ts tetap berjalan tiap pemakaian).
  *
  * Kolom `isActive` pada User belum ada (menonaktifkan pengguna belum dibangun);
  * yang dinilai sekarang hanya: akunnya masih ada.
@@ -104,7 +109,8 @@ type TokenSesi = {
  * Inti callback `jwt` untuk token yang sudah ada (bukan saat masuk).
  * - Token segar (< `UMUR_SEGAR_SESI_MS`) dikembalikan apa adanya, tanpa kueri.
  * - Token basi, atau `paksa` (trigger "update"), dibaca ulang.
- * - Akun tidak ada lagi → null (NextAuth menghapus cookie sesinya).
+ * - Akun tidak ada lagi → null; lib/auth.ts menggantinya dengan penanda
+ *   `sessionInvalid`, yang dibaca proxy sebagai keluar dan menghapus cookie-nya.
  * - Basis data gagal → token lama dikembalikan tanpa memajukan cap waktu,
  *   supaya gangguan sesaat tidak mengeluarkan semua orang; dicoba lagi berikutnya.
  */

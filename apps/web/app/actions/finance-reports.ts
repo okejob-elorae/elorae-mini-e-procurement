@@ -97,34 +97,39 @@ function rangeLabel(from: Date | undefined, to: Date): string {
 }
 
 /**
+ * Akun bersaldo nol ikut ditampilkan? Layar Laba Rugi dan Neraca mengirim `nol`,
+ * Neraca Saldo `includeZero`; keduanya diterima di setiap laporan.
+ */
+type ZeroToggle = { includeZero?: boolean; nol?: boolean };
+
+function showZero(input: ZeroToggle): boolean {
+  return input.nol ?? input.includeZero ?? false;
+}
+
+/**
  * Unauthorized report assembly, shared by the exported read action and its
  * matching export action so a single `assertCanView()` call — made by
  * whichever of the two the caller invoked — gates both.
  */
-async function loadTrialBalanceReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<TrialBalance & { periodLabel: string }> {
+async function loadTrialBalanceReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<TrialBalance & { periodLabel: string }> {
   const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   return {
-    ...(await muatNeracaSaldo({ from, to, includeZero: input.includeZero ?? false })),
+    ...(await muatNeracaSaldo({ from, to, includeZero: showZero(input) })),
     periodLabel: rangeLabel(from, to),
   };
 }
 
-async function loadIncomeStatementReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-  nol?: boolean;
-}): Promise<IncomeStatement & { periodLabel: string }> {
+async function loadIncomeStatementReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<IncomeStatement & { periodLabel: string }> {
   const to = parseDateOnlyEnd(input.to ?? "") ?? endOfTodayJakarta();
   const from = parseDateOnly(input.from ?? "");
   const balances = await getAccountBalances({ from, to });
   return {
-    ...buildIncomeStatement(balances, { includeZero: input.includeZero ?? input.nol ?? false }),
+    ...buildIncomeStatement(balances, { includeZero: showZero(input) }),
     periodLabel: rangeLabel(from, to),
   };
 }
@@ -144,11 +149,9 @@ async function loadBalanceSheetReport(input: {
  */
 type Attribution = { preparedBy: string; printedAt: string };
 
-export async function getTrialBalanceReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<
+export async function getTrialBalanceReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<
   TrialBalance & { periodLabel: string; notes: TrialBalancePrintNotes } & Attribution
 > {
   const preparedBy = await assertCanView();
@@ -161,11 +164,9 @@ export async function getTrialBalanceReport(input: {
   };
 }
 
-export async function getIncomeStatementReport(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<
+export async function getIncomeStatementReport(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<
   IncomeStatement & { periodLabel: string; notes: IncomeStatementPrintNotes } & Attribution
 > {
   const preparedBy = await assertCanView();
@@ -325,11 +326,9 @@ function flattenNodes(nodes: RollupNode[], tampilkanNol = false): Cell[][] {
   });
 }
 
-export async function exportTrialBalanceExcel(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-}): Promise<{ base64: string; filename: string }> {
+export async function exportTrialBalanceExcel(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadTrialBalanceReport(input);
 
@@ -352,15 +351,12 @@ export async function exportTrialBalanceExcel(input: {
   return toWorkbook(rows, "Neraca Saldo", `neraca-saldo-${dateLabel(new Date())}.xlsx`);
 }
 
-export async function exportIncomeStatementExcel(input: {
-  from?: string;
-  to?: string;
-  includeZero?: boolean;
-  nol?: boolean;
-}): Promise<{ base64: string; filename: string }> {
+export async function exportIncomeStatementExcel(
+  input: { from?: string; to?: string } & ZeroToggle,
+): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadIncomeStatementReport(input);
-  const nol = input.nol ?? input.includeZero ?? false;
+  const nol = showZero(input);
 
   const rows: Cell[][] = [
     ...headerRows("Laporan Laba Rugi", report.periodLabel, preparedBy),
@@ -384,13 +380,12 @@ export async function exportIncomeStatementExcel(input: {
   return toWorkbook(rows, "Laba Rugi", `laba-rugi-${dateLabel(new Date())}.xlsx`);
 }
 
-export async function exportBalanceSheetExcel(input: {
-  asOf?: string;
-  nol?: boolean;
-}): Promise<{ base64: string; filename: string }> {
+export async function exportBalanceSheetExcel(
+  input: { asOf?: string } & ZeroToggle,
+): Promise<{ base64: string; filename: string }> {
   const preparedBy = await assertCanView();
   const report = await loadBalanceSheetReport(input);
-  const nol = input.nol ?? false;
+  const nol = showZero(input);
 
   const rows: Cell[][] = [
     ...headerRows("Neraca", report.periodLabel, preparedBy),

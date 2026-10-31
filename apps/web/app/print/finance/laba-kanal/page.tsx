@@ -9,7 +9,7 @@ import { GagalCetak, KepalaCetak, MemuatCetak, useCetakOtomatis } from "../cetak
 import type { BarisLabaKanal } from "@/lib/finance/reports/laba-kanal";
 import { labelKanalJurnal } from "@/lib/finance/journals/kanal";
 import { persenLaporan, rupiahLaporan } from "@/lib/finance/reports/format-laporan";
-import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/disclosures";
+import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/cakupan-laporan";
 import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 
 const tgl = (s: string) => formatDisplayDate(parseDateOnly(s));

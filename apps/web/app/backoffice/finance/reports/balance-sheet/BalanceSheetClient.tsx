@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { BarisTotalLaporan, KepalaKolomLaporan, ReportSection } from "../ReportSection";
 import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
-import { BALANCE_SHEET_COVERAGE_BODY } from "@/lib/finance/reports/disclosures";
+import { BALANCE_SHEET_COVERAGE_BODY } from "@/lib/finance/reports/cakupan-laporan";
 import { ReportExportButtons } from "../ReportExportButtons";
 import { exportBalanceSheetExcel } from "@/app/actions/finance-reports";
 import { formatDisplayDate } from "@/lib/date-only";

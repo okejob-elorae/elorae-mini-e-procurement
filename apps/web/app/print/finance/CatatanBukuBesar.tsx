@@ -1,7 +1,7 @@
 "use client";
 
 import type { KesiapanCetak } from "@/app/backoffice/finance/_kesiapan/aksi";
-import { LEDGER_NOT_ACTIVE_NOTE, ledgerPendingNote } from "@/lib/finance/reports/disclosures";
+import { LEDGER_NOT_ACTIVE_NOTE, ledgerPendingNote } from "@/lib/finance/reports/cakupan-laporan";
 
 /**
  * Catatan yang sama dengan spanduk di layar, untuk lembar yang dikirim ke luar

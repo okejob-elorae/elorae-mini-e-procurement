@@ -10,11 +10,6 @@ import { GagalCetak, KepalaCetak, MemuatCetak, useCetakOtomatis } from "../cetak
 import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
 import { sisiSaldo } from "@/lib/finance/reports/trial-balance";
 import type { AccountType } from "@/lib/constants/enums";
-import {
-  TRIAL_BALANCE_BALANCED_NOTE,
-  TRIAL_BALANCE_UNBALANCED_NOTE,
-  REPORT_EMPTY_PERIOD_NOTE,
-} from "@/lib/finance/reports/disclosures";
 
 type Report = Awaited<ReturnType<typeof getTrialBalanceReport>>;
 
@@ -26,6 +21,7 @@ function saldo(type: AccountType, nilai: number): string {
 
 export default function PrintTrialBalancePage() {
   const sp = useSearchParams();
+  const nol = sp.get("nol") === "1" || sp.get("zero") === "1";
   const [report, setReport] = useState<Report | "error" | null>(null);
   const [kesiapan, setKesiapan] = useState<KesiapanCetak | null>(null);
 
@@ -34,7 +30,7 @@ export default function PrintTrialBalancePage() {
       getTrialBalanceReport({
         from: sp.get("from") ?? undefined,
         to: sp.get("to") ?? undefined,
-        includeZero: sp.get("zero") === "1",
+        includeZero: nol,
       }),
       bacaKesiapanCetakAction().catch(() => null),
     ])
@@ -43,7 +39,7 @@ export default function PrintTrialBalancePage() {
         setReport(r);
       })
       .catch(() => setReport("error"));
-  }, [sp]);
+  }, [sp, nol]);
 
   useCetakOtomatis(!!report && report !== "error");
 
@@ -62,7 +58,7 @@ export default function PrintTrialBalancePage() {
       <KepalaCetak judul="Neraca Saldo" periode={report.periodLabel} disiapkanOleh={report.preparedBy} dicetak={report.printedAt} />
       <CatatanBukuBesar kesiapan={kesiapan} />
       {report.rows.length === 0 ? (
-        <p className="py-6 text-center text-sm">{REPORT_EMPTY_PERIOD_NOTE}</p>
+        <p className="py-6 text-center text-sm">{report.notes.empty}</p>
       ) : (
         <>
           <table className="w-full text-xs">
@@ -114,9 +110,7 @@ export default function PrintTrialBalancePage() {
             </tbody>
           </table>
           {(report.totalDebit !== 0 || report.totalCredit !== 0 || report.adaSaldoAwal) && (
-            <p className="mt-4 text-xs text-gray-700">
-              {report.isBalanced ? TRIAL_BALANCE_BALANCED_NOTE : TRIAL_BALANCE_UNBALANCED_NOTE}
-            </p>
+            <p className="mt-4 text-xs text-gray-700">{report.notes.note}</p>
           )}
         </>
       )}

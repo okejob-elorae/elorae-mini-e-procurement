@@ -10,7 +10,7 @@ import type { AccountType } from "@/lib/constants/enums";
 import { capaianAnggaran } from "@/lib/finance/anggaran/aturan";
 import { barisPohon, type SimpulNilai } from "@/lib/finance/reports/tampil-pohon";
 import { persenLaporan, rupiahLaporan } from "@/lib/finance/reports/format-laporan";
-import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/disclosures";
+import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/cakupan-laporan";
 
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 

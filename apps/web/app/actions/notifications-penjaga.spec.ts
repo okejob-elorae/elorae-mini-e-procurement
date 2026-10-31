@@ -3,20 +3,22 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 /*
- * app/actions/notifications.ts dulu ber-'use server': ke-20 ekspornya (kirim
- * notifikasi ke semua pemegang izin dengan teks bebas, jalankan pemeriksaan
- * cron, `getActorName` yang membuka nama + email pengguna mana pun dari id-nya)
- * menjadi titik panggil publik TANPA sesi. Pemanggilnya semua kode server —
- * aksi lain, rute API, dan cron (cron tidak punya sesi, jadi pemeriksaan sesi
- * per ekspor akan mematikannya). Perbaikannya: berkas ini BUKAN modul aksi
- * server, jadi tidak satu pun ekspornya bisa dipanggil dari peramban.
+ * Pemicu notifikasi (kirim notifikasi ke semua pemegang izin dengan teks bebas,
+ * jalankan pemeriksaan cron, `getActorName` yang membuka nama + email pengguna
+ * mana pun dari id-nya) dulu tinggal di app/actions/notifications.ts yang
+ * ber-'use server': setiap ekspornya menjadi titik panggil publik TANPA sesi.
+ * Pemanggilnya semua kode server — aksi lain, rute API, dan cron (cron tidak
+ * punya sesi, jadi pemeriksaan sesi per ekspor akan mematikannya). Kini
+ * semuanya di lib/notifications/events.ts, yang BUKAN modul aksi server, jadi
+ * tidak satu pun ekspornya bisa dipanggil dari peramban.
  *
- * Penjaga ini menolak 'use server' kembali, dan menolak komponen klien yang
+ * Penjaga ini menolak 'use server' di sana, dan menolak komponen klien yang
  * mengimpornya (itu akan menyeret Prisma dan firebase-admin ke peramban).
  */
 
 const AKAR = join(__dirname, "..", "..");
-const BERKAS = join(__dirname, "notifications.ts");
+const BERKAS = join(AKAR, "lib", "notifications", "events.ts");
+const IMPOR = /from\s+["']@\/lib\/notifications\/events["']/;
 
 function arahan(isi: string): string | null {
   // Arahan hanya sah sebagai pernyataan pertama (sesudah komentar/baris kosong).
@@ -35,7 +37,7 @@ function semuaBerkas(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-describe("app/actions/notifications.ts bukan titik panggil publik", () => {
+describe("lib/notifications/events.ts bukan titik panggil publik", () => {
   it("tidak ber-'use server'", () => {
     expect(arahan(readFileSync(BERKAS, "utf8"))).toBeNull();
   });
@@ -43,7 +45,7 @@ describe("app/actions/notifications.ts bukan titik panggil publik", () => {
   it("tidak diimpor komponen klien mana pun", () => {
     const pengimpor = ["app", "components", "hooks", "lib"]
       .flatMap((d) => semuaBerkas(join(AKAR, d)))
-      .filter((p) => /from\s+["']@\/app\/actions\/notifications["']/.test(readFileSync(p, "utf8")));
+      .filter((p) => IMPOR.test(readFileSync(p, "utf8")));
     expect(pengimpor.length).toBeGreaterThan(0);
     const klien = pengimpor.filter((p) => arahan(readFileSync(p, "utf8")) === "client").map((p) => relative(AKAR, p));
     expect(klien).toEqual([]);

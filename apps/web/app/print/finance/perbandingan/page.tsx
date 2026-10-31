@@ -13,7 +13,7 @@ import { CatatanBukuBesar } from "../CatatanBukuBesar";
 import { GagalCetak, KepalaCetak, MemuatCetak, useCetakOtomatis } from "../cetak-laporan";
 import { barisPohon, type SimpulNilai } from "@/lib/finance/reports/tampil-pohon";
 import { persenLaporan, rupiahLaporan, selisihPersen } from "@/lib/finance/reports/format-laporan";
-import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/disclosures";
+import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/cakupan-laporan";
 import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 import type { RentangTanggal } from "@/lib/finance/reports/periode-banding";
 

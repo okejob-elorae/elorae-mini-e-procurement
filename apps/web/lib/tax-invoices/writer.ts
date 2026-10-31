@@ -2,6 +2,9 @@ import { Prisma } from "@elorae/db";
 import { roundCents } from "@elorae/db/pricing";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { MAX_TAX_INVOICE_REASON_LENGTH, TaxInvoiceError } from "./errors";
+import { normalisasiNomorFaktur, periksaFormatNomorFaktur } from "./invoice-number-format";
+
+export { normalisasiNomorFaktur, periksaFormatNomorFaktur };
 
 type Status = "PENDING" | "CREATED" | "SENT_TO_STORE" | "NOT_REQUIRED" | "CANCELLED";
 
@@ -14,29 +17,6 @@ type TransitionData = Partial<{
   markedAt: Date | null;
   markedById: string | null;
 }>;
-
-/**
- * Nomor Seri Faktur Pajak (NSFP) yang diterima, setelah spasi dan tanda baca
- * dibuang — sengaja longgar, yang ditolak hanya yang jelas bukan NSFP:
- *  - 16 digit, e-Faktur lama: `010.000-24.00000001` = 2 digit kode transaksi,
- *    1 digit status (0 normal, 1 pengganti), lalu 13 digit NSFP alokasi DJP
- *    (3 kode cabang, 2 tahun, 8 nomor urut);
- *  - 13 digit, NSFP alokasi itu sendiri tanpa kode transaksi: `000-24.00000001`;
- *  - 17 digit, nomor faktur Coretax (2025+);
- *  - 14–15 digit ikut diterima karena tidak ada alasan kuat menolaknya.
- * Huruf, kurang dari 13 digit, atau lebih dari 17 digit ditolak.
- */
-const PANJANG_MIN_NSFP = 13;
-const PANJANG_MAKS_NSFP = 17;
-
-export function normalisasiNomorFaktur(nomor: string): string {
-  return nomor.replace(/[\s.,\-/_]/g, "");
-}
-
-export function periksaFormatNomorFaktur(nomor: string): boolean {
-  const n = normalisasiNomorFaktur(nomor);
-  return /^[0-9]+$/.test(n) && n.length >= PANJANG_MIN_NSFP && n.length <= PANJANG_MAKS_NSFP;
-}
 
 /**
  * Kunci pembanding "NSFP yang sama". Untuk 16 digit, 3 digit depan (kode

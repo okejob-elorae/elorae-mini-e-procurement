@@ -93,6 +93,19 @@ describe("report disclosures", () => {
       disclosures.cashFlowPrintNotes({ isReconciled: false, unclassifiedCount: 0, hasComparison: false }).reconciliation,
     ).toBe(reports.cashFlow.unreconciledNote);
   });
+
+  it("carries every id.json string a print page needs, so the page never imports this module", () => {
+    expect(disclosures.trialBalancePrintNotes(true).empty).toBe(reports.trialBalance.empty);
+    expect(disclosures.incomeStatementPrintNotes().empty).toBe(reports.incomeStatement.empty);
+    const bs = disclosures.balanceSheetPrintNotes(true, "2026-06-01T00:00:00.000Z");
+    expect(bs.empty).toBe(reports.balanceSheet.empty);
+    expect(bs.coverageTitle).toBe(reports.balanceSheet.coverageTitle);
+    expect(bs.coverageBody).toBe(disclosures.BALANCE_SHEET_COVERAGE_BODY);
+    expect(bs.openingTitle).toBe(reports.balanceSheet.openingTitle);
+    expect(bs.openingBody).toBe(
+      disclosures.balanceSheetOpeningBody(disclosures.formatOpeningDate("2026-06-01T00:00:00.000Z")),
+    );
+  });
 });
 
 /*

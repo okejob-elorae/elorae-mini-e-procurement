@@ -10,7 +10,6 @@ import { GagalCetak, KepalaCetak, MemuatCetak, barisPohonCetak, useCetakOtomatis
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import { barisPohon, dariRollup } from "@/lib/finance/reports/tampil-pohon";
 import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
-import { INCOME_STATEMENT_EMPTY_NOTE } from "@/lib/finance/reports/disclosures";
 import { adaMutasiLabaRugi } from "@/app/backoffice/finance/_kesiapan/kesiapan";
 
 type Report = Awaited<ReturnType<typeof getIncomeStatementReport>>;
@@ -82,7 +81,7 @@ export default function PrintIncomeStatementPage() {
       <KepalaCetak judul="Laporan Laba Rugi" periode={report.periodLabel} disiapkanOleh={report.preparedBy} dicetak={report.printedAt} />
       <CatatanBukuBesar kesiapan={kesiapan} />
       {!adaMutasiLabaRugi(report) ? (
-        <p className="py-6 text-center text-sm">{INCOME_STATEMENT_EMPTY_NOTE}</p>
+        <p className="py-6 text-center text-sm">{report.notes.empty}</p>
       ) : (
         <table className="w-full text-sm">
           <thead>

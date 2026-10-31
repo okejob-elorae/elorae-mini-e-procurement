@@ -15,7 +15,7 @@ import { ReportExportButtons } from "../ReportExportButtons";
 import { exportIncomeStatementExcel } from "@/app/actions/finance-reports";
 import { RentangTanggalInput } from "@/components/ui/rentang-tanggal-input";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
-import { INCOME_STATEMENT_COVERAGE_BODY } from "@/lib/finance/reports/disclosures";
+import { INCOME_STATEMENT_COVERAGE_BODY } from "@/lib/finance/reports/cakupan-laporan";
 import { LabelPeriode } from "../LabelPeriode";
 import { SpandukBukuBesar } from "../../_kesiapan/SpandukBukuBesar";
 import { periodeLaporan, type KesiapanBukuBesar } from "../../_kesiapan/kesiapan";

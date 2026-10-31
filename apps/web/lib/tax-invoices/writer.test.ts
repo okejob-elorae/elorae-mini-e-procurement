@@ -25,9 +25,17 @@ d("tax-invoice status transitions (test bed only)", () => {
   let lineId = "";
   let deliveryId = "";
   let taxInvoiceId = "";
+  let nsfpToken = "";
+
+  /* Unique per test: a number already CREATED on any faktur is refused as a duplicate
+     (`tolakNomorGanda`), so a row left behind by a failed run must never collide with the next. */
+  function nsfp(urut: number): string {
+    return `010.000-32.${nsfpToken}${String(urut).padStart(2, "0")}`;
+  }
 
   beforeEach(async () => {
     token = Math.random().toString(36).slice(2, 10);
+    nsfpToken = String(Math.floor(Math.random() * 1e6)).padStart(6, "0");
     uomId = ""; itemId = ""; invId = ""; storeId = ""; userId = ""; orderId = ""; lineId = ""; deliveryId = ""; taxInvoiceId = "";
 
     const uom = await prisma.uOM.create({
@@ -112,10 +120,10 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("PENDING -> CREATED stamps the number, NPWP, amounts, the marker and the time", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000001", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(1), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
     expect(row.status).toBe("CREATED");
-    expect(row.invoiceNo).toBe("010.000-26.00000001");
+    expect(row.invoiceNo).toBe(nsfp(1));
     expect(row.buyerNpwp).toBe(NPWP);
     expect(Number(row.taxableAmount)).toBe(5000);
     expect(Number(row.ppnAmount)).toBe(550);
@@ -124,7 +132,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("rounds taxableAmount and ppnAmount to 2dp", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000001", buyerNpwp: NPWP, taxableAmount: 5000.005, ppnAmount: 550.004, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(1), buyerNpwp: NPWP, taxableAmount: 5000.005, ppnAmount: 550.004, userId });
     const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
     expect(Number(row.taxableAmount)).toBe(5000.01);
     expect(Number(row.ppnAmount)).toBe(550);
@@ -136,22 +144,22 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("rejects an empty buyerNpwp with INVALID_REQUEST", async () => {
-    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000001", buyerNpwp: "  ", taxableAmount: 5000, ppnAmount: 550, userId }))
+    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(1), buyerNpwp: "  ", taxableAmount: 5000, ppnAmount: 550, userId }))
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
   it("rejects a negative taxableAmount with INVALID_REQUEST", async () => {
-    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000001", buyerNpwp: NPWP, taxableAmount: -1, ppnAmount: 550, userId }))
+    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(1), buyerNpwp: NPWP, taxableAmount: -1, ppnAmount: 550, userId }))
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
   it("rejects a negative ppnAmount with INVALID_REQUEST", async () => {
-    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000001", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: -1, userId }))
+    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(1), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: -1, userId }))
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
   it("accepts a zero taxableAmount and ppnAmount", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000001", buyerNpwp: NPWP, taxableAmount: 0, ppnAmount: 0, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(1), buyerNpwp: NPWP, taxableAmount: 0, ppnAmount: 0, userId });
     const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
     expect(Number(row.taxableAmount)).toBe(0);
     expect(Number(row.ppnAmount)).toBe(0);
@@ -169,7 +177,7 @@ d("tax-invoice status transitions (test bed only)", () => {
     await expect(revertTaxInvoiceToPending({ taxInvoiceId, reason: tooLong, userId }))
       .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
 
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000015", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(15), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await expect(markTaxInvoiceSentToStore({ taxInvoiceId, reason: tooLong, userId }))
       .rejects.toMatchObject({ code: "REASON_TOO_LONG" });
     await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
@@ -194,13 +202,13 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("CREATED -> CREATED is INVALID_STATE", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000002", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
-    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000003", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId }))
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(2), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(3), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId }))
       .rejects.toMatchObject({ code: "INVALID_STATE" });
   });
 
   it("CREATED -> SENT_TO_STORE preserves invoiceNo, NPWP, amounts, markedAt and markedById", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000004", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(4), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     const before = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
     await markTaxInvoiceSentToStore({ taxInvoiceId, reason: "handed to store owner", userId });
     const after = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
@@ -214,7 +222,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("markTaxInvoiceSentToStore accepts a null/absent reason", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000005", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(5), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await expect(markTaxInvoiceSentToStore({ taxInvoiceId, userId })).resolves.toEqual({ ok: true });
     const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
     expect(row.status).toBe("SENT_TO_STORE");
@@ -232,7 +240,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("CREATED -> PENDING clears the number, NPWP and amounts, and records the reason", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000006", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(6), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await revertTaxInvoiceToPending({ taxInvoiceId, reason: "wrong nota", userId });
     const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
     expect(row.status).toBe("PENDING");
@@ -244,7 +252,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("SENT_TO_STORE -> PENDING clears all four value fields", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000007", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(7), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
     await revertTaxInvoiceToPending({ taxInvoiceId, reason: "handed to wrong store contact", userId });
     const row = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
@@ -256,7 +264,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("SENT_TO_STORE -> CREATED leaves every filed value byte-identical", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000011", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(11), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
     const before = await prisma.taxInvoice.findUniqueOrThrow({ where: { id: seededId(taxInvoiceId) } });
     await revertTaxInvoiceToCreated({ taxInvoiceId, reason: "clicked by mistake", userId });
@@ -271,7 +279,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("writes a TAX_INVOICE_SENT_REVERTED audit row carrying the reason", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000012", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(12), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
     await revertTaxInvoiceToCreated({ taxInvoiceId, reason: "clicked by mistake", userId });
     const logs = await prisma.auditLog.findMany({
@@ -282,13 +290,13 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("refuses CREATED -> CREATED with INVALID_STATE", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000013", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(13), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await expect(revertTaxInvoiceToCreated({ taxInvoiceId, reason: "x", userId }))
       .rejects.toMatchObject({ code: "INVALID_STATE" });
   });
 
   it("rejects a blank reason on SENT_TO_STORE -> CREATED with INVALID_REQUEST", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000014", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(14), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await markTaxInvoiceSentToStore({ taxInvoiceId, userId });
     await expect(revertTaxInvoiceToCreated({ taxInvoiceId, reason: "   ", userId }))
       .rejects.toMatchObject({ code: "INVALID_REQUEST" });
@@ -300,7 +308,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("writes exactly one AuditLog row on a successful transition", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000008", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(8), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     const logs = await prisma.auditLog.findMany({
       where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId) },
     });
@@ -308,7 +316,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("writes a TAX_INVOICE_SENT_TO_STORE audit action on the handover transition", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000009", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(9), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await markTaxInvoiceSentToStore({ taxInvoiceId, reason: "handed over", userId });
     const logs = await prisma.auditLog.findMany({
       where: { entityType: "TaxInvoice", entityId: seededId(taxInvoiceId), action: "TAX_INVOICE_SENT_TO_STORE" },
@@ -318,7 +326,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   });
 
   it("captures the pre-transition invoiceNo and NPWP in the audit changes when reverting a CREATED row", async () => {
-    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000010", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
+    await markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(10), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId });
     await revertTaxInvoiceToPending({ taxInvoiceId, reason: "typed against the wrong nota", userId });
 
     const logs = await prisma.auditLog.findMany({
@@ -327,7 +335,7 @@ d("tax-invoice status transitions (test bed only)", () => {
     expect(logs).toHaveLength(1);
     expect(logs[0].reason).toBe("typed against the wrong nota");
     expect(logs[0].changes).toMatchObject({
-      before: { status: "CREATED", invoiceNo: "010.000-26.00000010", buyerNpwp: NPWP },
+      before: { status: "CREATED", invoiceNo: nsfp(10), buyerNpwp: NPWP },
       after: { status: "PENDING", invoiceNo: null, buyerNpwp: null },
     });
 
@@ -347,7 +355,7 @@ d("tax-invoice status transitions (test bed only)", () => {
   it("refuses to mark a CANCELLED faktur created, not required, sent, or back to pending", async () => {
     await prisma.taxInvoice.update({ where: { id: taxInvoiceId }, data: { status: "CANCELLED" } });
 
-    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: "010.000-26.00000011", buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId }))
+    await expect(markTaxInvoiceCreated({ taxInvoiceId, invoiceNo: nsfp(11), buyerNpwp: NPWP, taxableAmount: 5000, ppnAmount: 550, userId }))
       .rejects.toMatchObject({ code: "INVALID_STATE" });
     await expect(markTaxInvoiceNotRequired({ taxInvoiceId, reason: "x", userId }))
       .rejects.toMatchObject({ code: "INVALID_STATE" });

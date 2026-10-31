@@ -8,9 +8,14 @@ const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
+/*
+ * A fresh seller per call: `persistSettlement` refuses a second upload with the same marketplace,
+ * seller, period and payout (`SettlementGandaError`), so a fixed seller would collide with a row
+ * another test — or a failed earlier run — left behind.
+ */
 function buildParsed(totalDilepas: number): ParsedSettlement {
   return {
-    seller: "elorae.official",
+    seller: `elorae.official-${randomUUID().slice(0, 8)}`,
     periodFrom: "2026-06-01",
     periodTo: "2026-06-30",
     summary: { totalPendapatan: 100000, totalPengeluaran: 40000, totalDilepas, raw: {} },

@@ -8,7 +8,7 @@ import { CatatanBukuBesar } from "../CatatanBukuBesar";
 import { GagalCetak, KepalaCetak, MemuatCetak, useCetakOtomatis } from "../cetak-laporan";
 import type { HasilRasio } from "@/lib/finance/reports/rasio";
 import { hariLaporan, persenLaporan, rasioLaporan, rupiahLaporan } from "@/lib/finance/reports/format-laporan";
-import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/disclosures";
+import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/cakupan-laporan";
 import { formatDisplayDate, parseDateOnly } from "@/lib/date-only";
 import type { RentangTanggal } from "@/lib/finance/reports/periode-banding";
 

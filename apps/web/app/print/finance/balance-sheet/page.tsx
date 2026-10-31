@@ -10,14 +10,6 @@ import { GagalCetak, KepalaCetak, MemuatCetak, barisPohonCetak, useCetakOtomatis
 import type { RollupNode } from "@/lib/finance/reports/rollup";
 import { barisPohon, dariRollup } from "@/lib/finance/reports/tampil-pohon";
 import { rupiahLaporan } from "@/lib/finance/reports/format-laporan";
-import {
-  BALANCE_SHEET_COVERAGE_BODY,
-  BALANCE_SHEET_COVERAGE_TITLE,
-  BALANCE_SHEET_EMPTY_NOTE,
-  BALANCE_SHEET_OPENING_TITLE,
-  balanceSheetOpeningBody,
-  formatOpeningDate,
-} from "@/lib/finance/reports/disclosures";
 import { adaMutasiPohon } from "@/app/backoffice/finance/_kesiapan/kesiapan";
 
 type Report = Awaited<ReturnType<typeof getBalanceSheetReport>>;
@@ -42,7 +34,7 @@ function Bagian({ judul, nodes, total, labelTotal, nol }: { judul: string; nodes
 
 export default function PrintBalanceSheetPage() {
   const sp = useSearchParams();
-  const nol = sp.get("nol") === "1";
+  const nol = sp.get("nol") === "1" || sp.get("zero") === "1";
   const [report, setReport] = useState<Report | "error" | null>(null);
   const [kesiapan, setKesiapan] = useState<KesiapanCetak | null>(null);
 
@@ -72,50 +64,52 @@ export default function PrintBalanceSheetPage() {
       <KepalaCetak judul="Neraca" periode={report.periodLabel} disiapkanOleh={report.preparedBy} dicetak={report.printedAt} />
       <CatatanBukuBesar kesiapan={kesiapan} />
       {!adaMutasiPohon([...report.aset, ...report.liabilitas, ...report.ekuitas]) && report.unclosedEarnings === 0 ? (
-        <p className="py-6 text-center text-sm">{BALANCE_SHEET_EMPTY_NOTE}</p>
+        <p className="py-6 text-center text-sm">{report.notes.empty}</p>
       ) : (
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-black">
-              <th className="py-1 text-left">Keterangan</th>
-              <th className="w-32 py-1 text-right">Rincian</th>
-              <th className="w-32 py-1 text-right">Jumlah</th>
-            </tr>
-          </thead>
-          <tbody>
-            <Bagian judul="ASET" nodes={report.aset} total={report.totalAset} labelTotal="Total Aset" nol={nol} />
-            <Bagian judul="LIABILITAS" nodes={report.liabilitas} total={report.totalLiabilitas} labelTotal="Total Liabilitas" nol={nol} />
-            <Bagian judul="EKUITAS" nodes={report.ekuitas} total={report.totalEkuitas} labelTotal="Total Ekuitas" nol={nol} />
-            {report.labaTahunLaluBelumDitutup !== 0 ? (
-              <tr className="border-b border-gray-200">
-                <td className="py-1 pl-4">Laba (Rugi) Tahun Lalu Belum Ditutup</td>
-                <td />
-                <td className="py-1 text-right">{rupiahLaporan(report.labaTahunLaluBelumDitutup)}</td>
+        <>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-black">
+                <th className="py-1 text-left">Keterangan</th>
+                <th className="w-32 py-1 text-right">Rincian</th>
+                <th className="w-32 py-1 text-right">Jumlah</th>
               </tr>
-            ) : null}
-            <tr className="border-b border-gray-200">
-              <td className="py-1 pl-4">Laba (Rugi) Tahun Berjalan</td>
-              <td />
-              <td className="py-1 text-right">{rupiahLaporan(report.labaTahunBerjalan)}</td>
-            </tr>
-            <tr className="border-t-2 border-black font-bold">
-              <td className="py-1">Total Liabilitas dan Ekuitas</td>
-              <td />
-              <td className="py-1 text-right">{rupiahLaporan(report.totalLiabilitasEkuitas)}</td>
-            </tr>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              <Bagian judul="ASET" nodes={report.aset} total={report.totalAset} labelTotal="Total Aset" nol={nol} />
+              <Bagian judul="LIABILITAS" nodes={report.liabilitas} total={report.totalLiabilitas} labelTotal="Total Liabilitas" nol={nol} />
+              <Bagian judul="EKUITAS" nodes={report.ekuitas} total={report.totalEkuitas} labelTotal="Total Ekuitas" nol={nol} />
+              {report.labaTahunLaluBelumDitutup !== 0 ? (
+                <tr className="border-b border-gray-200">
+                  <td className="py-1 pl-4">Laba (Rugi) Tahun Lalu Belum Ditutup</td>
+                  <td />
+                  <td className="py-1 text-right">{rupiahLaporan(report.labaTahunLaluBelumDitutup)}</td>
+                </tr>
+              ) : null}
+              <tr className="border-b border-gray-200">
+                <td className="py-1 pl-4">Laba (Rugi) Tahun Berjalan</td>
+                <td />
+                <td className="py-1 text-right">{rupiahLaporan(report.labaTahunBerjalan)}</td>
+              </tr>
+              <tr className="border-t-2 border-black font-bold">
+                <td className="py-1">Total Liabilitas dan Ekuitas</td>
+                <td />
+                <td className="py-1 text-right">{rupiahLaporan(report.totalLiabilitasEkuitas)}</td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-4 text-xs text-gray-700">{report.notes.note}</p>
+        </>
       )}
-      <p className="mt-4 text-xs text-gray-700">{report.notes.note}</p>
-      {report.openingWarningDate && (
+      {report.notes.openingBody && (
         <div className="mt-4 text-xs text-gray-700">
-          <p className="font-semibold">{BALANCE_SHEET_OPENING_TITLE}</p>
-          <p>{balanceSheetOpeningBody(formatOpeningDate(report.openingWarningDate))}</p>
+          <p className="font-semibold">{report.notes.openingTitle}</p>
+          <p>{report.notes.openingBody}</p>
         </div>
       )}
       <div className="mt-4 text-xs text-gray-700">
-        <p className="font-semibold">{BALANCE_SHEET_COVERAGE_TITLE}</p>
-        <p>{BALANCE_SHEET_COVERAGE_BODY}</p>
+        <p className="font-semibold">{report.notes.coverageTitle}</p>
+        <p>{report.notes.coverageBody}</p>
       </div>
     </div>
   );
