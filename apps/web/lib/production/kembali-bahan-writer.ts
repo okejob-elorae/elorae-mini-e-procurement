@@ -2,9 +2,11 @@
 // adalah `kembalikanBahan` di app/actions/production.ts.
 
 import { Decimal } from "decimal.js";
-import { prisma, type Prisma } from "@elorae/db";
+import { prisma, moveMainStock, type Prisma, type StockLedgerRefType } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { generateDocNumber } from "@/lib/docNumber";
+import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
+import { gerakStokPerDokumen, type GerakDokumen } from "@/lib/inventory/kartu-stok-queries";
 import { bentrokKunciKiriman } from "@/lib/receivables/idempoten";
 import { bagianBahanPenerimaan } from "./biaya-penerimaan";
 import {
@@ -112,13 +114,38 @@ function ringkas(baris: BarisKembaliTercatat[], ulangan: boolean, dibatasi: bool
   return { ok: true, ulangan, baris, totalNilai: total.toDecimalPlaces(2).toNumber(), dibatasi };
 }
 
+export type GerakanKeluarBahan = { qty: string; unitCost: string; variantSku: string };
+
+/**
+ * Gerakan keluar satu bahan ke WO ini, dari pembaca kartu stok per dokumen
+ * (`gerakStokPerDokumen`: buku besar stok dulu, arsip `StockMovement` hanya untuk
+ * pengeluaran lama — satu sumber per pengeluaran, tidak pernah dijumlah dua kali).
+ * Buku besar tidak menyimpan harga satuan, jadi harganya |totalCost| ÷ |qty|.
+ * Pengeluaran yang nilainya tidak tercatat (`null`) tidak ikut: menimbangnya
+ * sebagai Rp 0 menurunkan harga bahan yang kembali.
+ */
+export function gerakanKeluarBahan(gerak: ReadonlyMap<string, GerakDokumen | null>, itemId: string): GerakanKeluarBahan[] {
+  const hasil: GerakanKeluarBahan[] = [];
+  for (const dokumen of gerak.values()) {
+    if (!dokumen) continue;
+    for (const g of dokumen.baris) {
+      if (g.itemId !== itemId) continue;
+      const q = new Decimal(g.qty).abs();
+      if (q.isZero()) continue;
+      hasil.push({ qty: q.toString(), unitCost: new Decimal(g.totalCost).abs().div(q).toString(), variantSku: g.variantSku });
+    }
+  }
+  return hasil;
+}
+
 /**
  * Bahan kembali dari CMT ke gudang. Satu transaksi serializable:
  *  1. kunci idempotensi PALING DULU — isian yang sudah tercatat dikembalikan apa adanya;
  *  2. penjaga WO (ada, belum batal) dan sisa per barang dibaca DI DALAM transaksi,
  *     jadi dua pengembalian serentak tidak bisa melewati sisa bersama-sama;
  *  3. per barang: stok gudang bertambah pada harga keluarnya (rata-rata gudang
- *     dicampur), satu `StockAdjustment` POSITIVE, `returnedQty` rencana naik;
+ *     dicampur) lewat `moveMainStock` — entri buku stok merujuk satu
+ *     `StockAdjustment` POSITIVE — dan `returnedQty` rencana naik;
  *  4. satu baris `AuditLog` untuk seluruh pengembalian.
  */
 export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKembaliBahan> {
@@ -162,18 +189,16 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
       const periksa = periksaBarisKembali(m.baris, sisa);
       if (!periksa.ok) return periksa;
 
-      const issueIds = wo.issues.map((i) => i.id);
-      const perBaris: Array<{ itemId: string; qty: Decimal; harga: Decimal; gerakan: Array<{ qty: unknown; variantSku: string | null }> }> = [];
+      // Harga dan varian keluarnya dibaca dari kartu stok pengeluaran WO ini.
+      const gerakPengeluaran = await gerakStokPerDokumen(
+        tx,
+        "MaterialIssue",
+        wo.issues.map((i) => i.id),
+      );
+      const perBaris: Array<{ itemId: string; qty: Decimal; harga: Decimal; gerakan: GerakanKeluarBahan[] }> = [];
       for (const b of periksa.baris) {
-        const gerakan = issueIds.length
-          ? await tx.stockMovement.findMany({
-              where: { refType: "WO_ISSUE", refId: { in: issueIds }, itemId: b.itemId },
-              select: { qty: true, unitCost: true, variantSku: true },
-            })
-          : [];
-        const harga = hargaKeluar(
-          gerakan.map((g) => ({ qty: String(g.qty), unitCost: g.unitCost == null ? null : String(g.unitCost) })),
-        ).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const gerakan = gerakanKeluarBahan(gerakPengeluaran, b.itemId);
+        const harga = hargaKeluar(gerakan).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         perBaris.push({ itemId: b.itemId, qty: b.qty, harga, gerakan });
       }
 
@@ -200,54 +225,25 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
         // tanpa varian → baris gabungan null/"" (pencarian toleran keduanya).
         const perVarian = new Map<string, Decimal>();
         for (const g of gerakan) {
-          const v = g.variantSku ?? "";
-          perVarian.set(v, (perVarian.get(v) ?? new Decimal(0)).plus(new Decimal(String(g.qty)).abs()));
+          perVarian.set(g.variantSku, (perVarian.get(g.variantSku) ?? new Decimal(0)).plus(g.qty));
         }
         const varian = [...perVarian.entries()].sort((a, z) => z[1].comparedTo(a[1]))[0]?.[0] ?? "";
-        const baris = varian === ""
-          ? await tx.inventoryValue.findFirst({
-              where: { itemId: b.itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-              select: { id: true, qtyOnHand: true, avgCost: true },
-            })
-          : await tx.inventoryValue.findFirst({
-              where: { itemId: b.itemId, variantSku: varian },
-              select: { id: true, qtyOnHand: true, avgCost: true },
-            });
+        // Pencari baku (tie-break sama dengan `moveMainStock`), jadi baris kembar
+        // null/"" selalu jatuh ke baris yang sama dengan penulis stok lainnya.
+        const baris = await findExistingInventoryValueRow(tx, b.itemId, varian || null);
 
         const stokSebelum = baris ? new Decimal(String(baris.qtyOnHand)) : new Decimal(0);
         const rataSebelum = baris ? new Decimal(String(baris.avgCost)) : new Decimal(0);
         const stokSesudah = stokSebelum.plus(b.qty);
         const rataSesudah = rataRataSesudahKembali(stokSebelum, rataSebelum, b.qty, harga);
         const nilaiSesudah = stokSesudah.mul(rataSesudah);
-
-        if (baris) {
-          await tx.inventoryValue.update({
-            where: { id: baris.id },
-            data: {
-              qtyOnHand: stokSesudah.toNumber(),
-              avgCost: rataSesudah.toNumber(),
-              totalValue: nilaiSesudah.toNumber(),
-              lastUpdated: new Date(),
-            },
-          });
-        } else {
-          await tx.inventoryValue.create({
-            data: {
-              itemId: b.itemId,
-              variantSku: varian,
-              qtyOnHand: stokSesudah.toNumber(),
-              reservedQty: 0,
-              avgCost: rataSesudah.toNumber(),
-              totalValue: nilaiSesudah.toNumber(),
-            },
-          });
-        }
+        const nilaiKembali = b.qty.mul(harga).toDecimalPlaces(2);
 
         const docNumber = await generateDocNumber("ADJ", tx);
         // Harga satuan PERTAMA (sesudah nomor WO, yang tidak memuat "@"): kolom
         // penyesuaian tidak punya harga satuan, jadi riwayat membacanya dari sini.
         const alasan = `Kembali bahan ${wo.docNumber} @ ${harga.toFixed(2)} dari ${wo.vendor?.name ?? "CMT"}${catatan ? ` — ${catatan}` : ""}`;
-        await tx.stockAdjustment.create({
+        const penyesuaian = await tx.stockAdjustment.create({
           data: {
             docNumber,
             itemId: b.itemId,
@@ -263,12 +259,32 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
             externalRef: m.woId,
             idempotencyKey: kunciBarisKembali(m.woId, m.kunci, b.itemId),
           },
+          select: { id: true },
+        });
+        // Stok gudang bertambah lewat penggerak stok (entri buku stok di transaksi yang sama),
+        // rata-rata campuran ikut ditulis di pernyataan yang sama. Baris yang belum ada dibuat
+        // penggeraknya, ejaan tanpa varian null.
+        await moveMainStock(tx, {
+          itemId: b.itemId,
+          variantSku: varian,
+          qtyDelta: b.qty.toNumber(),
+          unitCost: harga.toNumber(),
+          avgCost: rataSesudah.toNumber(),
+          totalValue: nilaiSesudah.toNumber(),
+          totalCost: nilaiKembali.toNumber(),
+          balanceValue: nilaiSesudah.toNumber(),
+          inventoryValueId: baris?.id,
+          createIfMissing: true,
+          refType: "StockAdjustment" satisfies StockLedgerRefType,
+          refId: penyesuaian.id,
+          refDocNumber: docNumber,
+          createdById: m.userId,
         });
         tercatat.push({
           itemId: b.itemId,
           qty: b.qty.toNumber(),
           hargaSatuan: harga.toNumber(),
-          nilai: b.qty.mul(harga).toDecimalPlaces(2).toNumber(),
+          nilai: nilaiKembali.toNumber(),
           docNumber,
         });
       }

@@ -8,7 +8,7 @@
  * `lib/tanpa-use-server.test.ts`.
  */
 import { Decimal } from 'decimal.js';
-import { Prisma, prisma, moveMainStock } from '@elorae/db';
+import { Prisma, prisma, moveMainStock, lockMainInventoryValueRow, ConcurrentFirstReceiptError } from '@elorae/db';
 import {
   filterAndSortStockItems,
   summarizeStockHealth,
@@ -54,8 +54,11 @@ export type StockRef = {
  * canvassing/writer.ts, canvassing/reconcile-writer.ts,
  * field-sales/retur/approve-writer.ts, field-sales/konsi-push-writer.ts,
  * field-sales/writer.ts (konsi approve added lines), konsi-sell-through/writer.ts (a line's
- * unitCost fallback when the store row has no average), and
- * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below. reconciliation-runner.ts's MATCH_JUBELIO path uses packages/db's locking copy,
+ * unitCost fallback when the store row has no average), production/kembali-bahan-writer.ts
+ * (material coming back from the CMT), and
+ * reverseMovingAverage / calculateMovingAverage / reverseInventoryValue below — calculateMovingAverage
+ * then takes packages/db's locking copy of the same row before it reads the cost it blends.
+ * reconciliation-runner.ts's MATCH_JUBELIO path uses that locking copy,
  * lockMainInventoryValueRow, instead, because it must lock the row before reading it; and
  * konsi-transfer/writer.ts uses packages/db's resolveReservedInventory, because it draws down a
  * reservation and must act on the row that reservation was made against.
@@ -64,8 +67,9 @@ export type StockRef = {
  * there are FOUR, not two. moveMainStock and setMainStock in stock-balance.ts, the return-accept
  * restore in sales-return-writer.ts, and lockMainInventoryValueRow in stock-row-lock.ts (the raw
  * `SELECT … FOR UPDATE` behind applyJubelioStockAdjustment, MATCH_JUBELIO, moveMainStock's
- * first-receipt re-read and the superseded-item retirement) all restate this shape, tie-break
- * included. Change this helper, change all four.
+ * first-receipt re-read, calculateMovingAverage's receipt read below and the superseded-item
+ * retirement) all restate this shape, tie-break included. Change this helper, change all four —
+ * calculateMovingAverage refuses a receipt whose locked row is not the row this lookup found.
  *
  * Two further packages/db lookups are deliberately a DIFFERENT shape and must not be
  * "harmonised" onto this one: reservation-writer.ts's findReservationInventory prefers an exact
@@ -87,9 +91,6 @@ export async function findExistingInventoryValueRow(
         orderBy: { id: "asc" },
       });
 }
-
-// Prisma compound unique keys don't accept null; use '' for non-variant items.
-const normalizeVariantSku = (variantSku?: string | null) => variantSku ?? '';
 
 export interface HasilRataRataMasuk {
   qtyBaru: Decimal;
@@ -158,30 +159,57 @@ function berurutanPerKlien<T>(klien: object, kerja: () => Promise<T>): Promise<T
 }
 
 /**
- * Wajib dipanggil di dalam transaksi (`tx`): kenaikan qty dan penulisan
- * rata-rata adalah dua pernyataan, dan hanya kunci baris transaksi yang
- * membuat keduanya tidak diselang penulis lain.
+ * Barang MASUK pada rata-rata bergerak (GRN, penerimaan barang jadi, impor GRN lama). `ref` wajib:
+ * kenaikan qty, rata-rata baru dan entri buku stok selalu ditulis `moveMainStock` dalam satu
+ * pernyataan — tidak ada jalur tulis langsung ke `InventoryValue`.
  *
- * With `ref` the receipt goes through `moveMainStock`, which also appends the stock-ledger entry.
- * Without it the row is written directly and the caller records the movement itself.
+ * Dipanggil di dalam transaksi (`tx`): baris stok dikunci sebelum rata-ratanya dibaca, dan kunci
+ * itu hanya bertahan sampai transaksinya selesai.
  */
 export function calculateMovingAverage(
   itemId: string,
   incomingQty: Decimal,
   incomingCost: Decimal,
-  tx?: any,
-  variantSku?: string | null,
-  ref?: StockRef
+  tx: any,
+  variantSku: string | null | undefined,
+  ref: StockRef
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
   return berurutanPerKlien(prismaClient, () =>
-    ref
-      ? tulisRataRataMasukLewatBuku(prismaClient, itemId, incomingQty, incomingCost, variantSku, ref)
-      : tulisRataRataMasuk(prismaClient, itemId, incomingQty, incomingCost, variantSku)
+    tulisRataRataMasuk(prismaClient, itemId, incomingQty, incomingCost, variantSku, ref)
   );
 }
 
-async function tulisRataRataMasukLewatBuku(
+/*
+ * The cost a receipt blends against must come from a LOCKED read. moveMainStock increments qtyOnHand
+ * atomically but SETs avgCost/totalValue to the figures passed in, so two receipts of the same item
+ * in separate transactions that both computed from an unlocked read would each write their own
+ * average: under REPEATABLE READ, 10 @ 1.000 and 10 @ 3.000 end at 20 units @ 3.000 instead of
+ * 20 @ 2.000. Taking the row lock first makes the second receipt wait for the first to commit and
+ * blend against what it left behind.
+ *
+ * The plain lookup still runs first, on purpose. When it finds no row, moveMainStock's first-receipt
+ * path compares its own lookup against this same snapshot and refuses a row a concurrent receipt
+ * opened in the meantime (ConcurrentFirstReceiptError). Locking first would let that plain lookup run
+ * after the other receipt committed, find its row, and SET an average computed as if nothing were on
+ * hand. A locked read that disagrees with the lookup is the same race seen from the other side, and
+ * is refused the same way.
+ */
+async function bacaBarisTerkunci(
+  prismaClient: any,
+  itemId: string,
+  variantSku: string | null | undefined
+): Promise<{ id: string; qtyOnHand: string; avgCost: string } | null> {
+  const ditemukan = await findExistingInventoryValueRow(prismaClient, itemId, variantSku);
+  if (!ditemukan) return null;
+  const terkunci = await lockMainInventoryValueRow(prismaClient, itemId, variantSku);
+  if (!terkunci || terkunci.id !== ditemukan.id) {
+    throw new ConcurrentFirstReceiptError(itemId, variantSku);
+  }
+  return terkunci;
+}
+
+async function tulisRataRataMasuk(
   prismaClient: any,
   itemId: string,
   incomingQty: Decimal,
@@ -189,11 +217,10 @@ async function tulisRataRataMasukLewatBuku(
   variantSku: string | null | undefined,
   ref: StockRef
 ): Promise<CostCalculationResult> {
-  // Get current inventory state
-  const current = await findExistingInventoryValueRow(prismaClient, itemId, variantSku);
+  const current = await bacaBarisTerkunci(prismaClient, itemId, variantSku);
 
-  const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
-  const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
+  const previousQty = current ? new Decimal(current.qtyOnHand) : new Decimal(0);
+  const previousAvgCost = current ? new Decimal(current.avgCost) : new Decimal(0);
   const r = hitungRataRataMasuk({
     qtyLama: previousQty,
     avgLama: previousAvgCost,
@@ -233,92 +260,25 @@ async function tulisRataRataMasukLewatBuku(
   };
 }
 
-async function tulisRataRataMasuk(
-  prismaClient: any,
-  itemId: string,
-  incomingQty: Decimal,
-  incomingCost: Decimal,
-  variantSku?: string | null
-): Promise<CostCalculationResult> {
-  // Lookup toleran null/"" — `findUnique` dengan kunci "" melewatkan baris null
-  // lalu membuat baris kembaran (stok terbelah dua).
-  let baris = await cariBarisStok(prismaClient, itemId, variantSku);
-  if (!baris) {
-    baris = await prismaClient.inventoryValue.create({
-      data: {
-        itemId,
-        variantSku: normalizeVariantSku(variantSku),
-        qtyOnHand: 0,
-        avgCost: 0,
-        totalValue: 0,
-        lastUpdated: new Date(),
-      },
-    });
-  }
-
-  // Qty ditambah ATOM dulu: pernyataan ini mengunci baris dan mengembalikan
-  // keadaan terbaru, jadi penulis lain yang serentak tidak bisa tertimpa
-  // (dulu baca-ubah-tulis: dua penerimaan serentak 10 + 10 berakhir 10).
-  const terkunci = await prismaClient.inventoryValue.update({
-    where: { id: baris.id },
-    data: { qtyOnHand: { increment: incomingQty.toNumber() }, lastUpdated: new Date() },
-  });
-
-  const newQty = new Decimal(terkunci.qtyOnHand.toString());
-  const previousQty = newQty.minus(incomingQty);
-  const previousAvgCost = new Decimal(terkunci.avgCost.toString());
-  const r = hitungRataRataMasuk({
-    qtyLama: previousQty,
-    avgLama: previousAvgCost,
-    qtyMasuk: incomingQty,
-    hargaMasuk: incomingCost,
-  });
-
-  // Baris sudah terkunci oleh pernyataan di atas sampai transaksi selesai.
-  await prismaClient.inventoryValue.update({
-    where: { id: baris.id },
-    data: {
-      avgCost: r.avgBaru.toNumber(),
-      totalValue: r.nilaiBaru.toNumber(),
-    },
-  });
-
-  return {
-    previousQty,
-    previousAvgCost,
-    previousTotalValue: r.nilaiLama,
-    incomingQty,
-    incomingUnitCost: incomingCost,
-    incomingTotalValue: r.nilaiMasuk,
-    newQty,
-    newAvgCost: r.avgBaru,
-    newTotalValue: r.nilaiBaru,
-  };
-}
-
 /**
  * Reverse inventory value for returns/negative adjustments.
  * Outgoing value is at current avg cost; throws if insufficient stock.
  * `outgoingValue` = nilai yang BENAR-BENAR keluar dari kartu stok (qty ×
  * rata-rata saat ini) — pencatat gerakan memakainya, bukan harga dokumen,
  * supaya saldo kartu stok dan jurnalnya sama.
- *
- * With `ref` the write goes through `moveMainStock` (ledger entry included); without it the row is
- * written directly and the caller records the movement itself.
  */
 export async function reverseInventoryValue(
   itemId: string,
   outgoingQty: Decimal,
   outgoingUnitCost: Decimal,
-  tx?: any,
-  variantSku?: string | null,
-  ref?: StockRef
+  tx: any,
+  variantSku: string | null | undefined,
+  ref: StockRef
 ): Promise<{ newQty: Decimal; newAvgCost: Decimal; newTotalValue: Decimal; outgoingValue: Decimal }> {
   const prismaClient = tx || prisma;
   const current = await cariBarisStok(prismaClient, itemId, variantSku);
 
   if (!current) throw new Error('No inventory record found');
-  const where = { id: current.id };
 
   const currentQty = new Decimal(current.qtyOnHand.toString());
   const currentAvgCost = new Decimal(current.avgCost.toString());
@@ -335,34 +295,22 @@ export async function reverseInventoryValue(
     ? newTotalValue.div(newQty)
     : new Decimal(0);
 
-  if (ref) {
-    // The `if (!current) throw` above already guards the missing-row case (the OR-tolerant read
-    // finds the row regardless of null/"" spelling, so it fires only when neither spelling exists),
-    // so this never legitimately creates a row — no createIfMissing. inventoryValueId pins the
-    // write to the exact row `current` was just read from. totalCost is outgoingValue; balanceValue
-    // is the new total — both passed straight into the ledger mover below.
-    await moveMainStock(prismaClient, {
-      itemId,
-      variantSku,
-      qtyDelta: outgoingQty.neg().toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      totalCost: outgoingValue.toNumber(),
-      balanceValue: newTotalValue.toNumber(),
-      inventoryValueId: current.id,
-      ...ref,
-    });
-  } else {
-    await prismaClient.inventoryValue.update({
-      where,
-      data: {
-        qtyOnHand: newQty.toNumber(),
-        avgCost: newAvgCost.toNumber(),
-        totalValue: newTotalValue.toNumber(),
-        lastUpdated: new Date(),
-      },
-    });
-  }
+  // The `if (!current) throw` above already guards the missing-row case (the OR-tolerant read
+  // finds the row regardless of null/"" spelling, so it fires only when neither spelling exists),
+  // so this never legitimately creates a row — no createIfMissing. inventoryValueId pins the
+  // write to the exact row `current` was just read from. totalCost is outgoingValue; balanceValue
+  // is the new total — both passed straight into the ledger mover below.
+  await moveMainStock(prismaClient, {
+    itemId,
+    variantSku,
+    qtyDelta: outgoingQty.neg().toNumber(),
+    avgCost: newAvgCost.toNumber(),
+    totalValue: newTotalValue.toNumber(),
+    totalCost: outgoingValue.toNumber(),
+    balanceValue: newTotalValue.toNumber(),
+    inventoryValueId: current.id,
+    ...ref,
+  });
 
   return { newQty, newAvgCost, newTotalValue, outgoingValue };
 }
@@ -372,16 +320,15 @@ export async function reverseMovingAverage(
   itemId: string,
   outgoingQty: Decimal,
   outgoingCost: Decimal,
-  tx?: any,
-  variantSku?: string | null,
-  ref?: StockRef
+  tx: any,
+  variantSku: string | null | undefined,
+  ref: StockRef
 ): Promise<CostCalculationResult> {
   const prismaClient = tx || prisma;
 
   // Get current inventory state (toleran null/"", sama dengan penulis masuk)
   const current = await cariBarisStok(prismaClient, itemId, variantSku);
   if (!current) throw new Error('No inventory record found');
-  const where = { id: current.id };
 
   const previousQty = current?.qtyOnHand ? new Decimal(current.qtyOnHand.toString()) : new Decimal(0);
   const previousAvgCost = current?.avgCost ? new Decimal(current.avgCost.toString()) : new Decimal(0);
@@ -395,31 +342,19 @@ export async function reverseMovingAverage(
   // Average cost remains the same for outgoing (FIFO-like behavior)
   const newAvgCost = previousAvgCost;
 
-  if (ref) {
-    // inventoryValueId pins moveMainStock's write to the row the OR-tolerant read above resolved.
-    // totalCost is outgoingTotalValue negated, matching the negated qtyDelta.
-    await moveMainStock(prismaClient, {
-      itemId,
-      variantSku,
-      qtyDelta: outgoingQty.neg().toNumber(),
-      avgCost: newAvgCost.toNumber(),
-      totalValue: newTotalValue.toNumber(),
-      totalCost: outgoingTotalValue.neg().toNumber(),
-      balanceValue: newTotalValue.toNumber(),
-      inventoryValueId: current.id,
-      ...ref,
-    });
-  } else {
-    await prismaClient.inventoryValue.update({
-      where,
-      data: {
-        qtyOnHand: newTotalQty.toNumber(),
-        avgCost: newAvgCost.toNumber(),
-        totalValue: newTotalValue.toNumber(),
-        lastUpdated: new Date(),
-      },
-    });
-  }
+  // inventoryValueId pins moveMainStock's write to the row the OR-tolerant read above resolved.
+  // totalCost is outgoingTotalValue negated, matching the negated qtyDelta.
+  await moveMainStock(prismaClient, {
+    itemId,
+    variantSku,
+    qtyDelta: outgoingQty.neg().toNumber(),
+    avgCost: newAvgCost.toNumber(),
+    totalValue: newTotalValue.toNumber(),
+    totalCost: outgoingTotalValue.neg().toNumber(),
+    balanceValue: newTotalValue.toNumber(),
+    inventoryValueId: current.id,
+    ...ref,
+  });
 
   return {
     previousQty,
@@ -463,17 +398,6 @@ export async function getInventoryValue(itemId: string, variantSku?: string | nu
     avgCost: Number(v.avgCost),
     totalValue: Number(v.totalValue),
   };
-}
-
-// Get stock card (movement history) for an item
-export async function getStockCard(itemId: string, limit: number = 100) {
-  const movements = await prisma.stockMovement.findMany({
-    where: { itemId },
-    orderBy: { createdAt: 'desc' },
-    take: limit
-  });
-  
-  return movements;
 }
 
 const inventorySnapshotInclude = {

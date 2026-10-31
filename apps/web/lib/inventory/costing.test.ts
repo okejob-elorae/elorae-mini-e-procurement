@@ -45,6 +45,8 @@ const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.s
 
 d("calculateMovingAverage (basis data uji)", () => {
   const token = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+  // Setiap gerakan lewat buku stok; entrinya dihapus bersama barang uji.
+  const ref = { refType: "TEST", refId: `uji-rata-rata-${token}` };
   let uomId = "";
   let itemId = "";
 
@@ -63,10 +65,12 @@ d("calculateMovingAverage (basis data uji)", () => {
   });
 
   beforeEach(async () => {
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
   });
 
   afterAll(async () => {
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -79,23 +83,40 @@ d("calculateMovingAverage (basis data uji)", () => {
     });
   }
 
+  async function buku() {
+    const rows = await prisma.stockLedgerEntry.findMany({
+      where: { itemId: seededId(itemId), locationType: "MAIN" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { refType: true, qty: true, balanceQty: true, totalCost: true, balanceValue: true },
+    });
+    return rows.map((r) => ({
+      refType: r.refType,
+      qty: Number(r.qty),
+      saldo: Number(r.balanceQty),
+      nilai: r.totalCost == null ? null : Number(r.totalCost),
+      saldoNilai: r.balanceValue == null ? null : Number(r.balanceValue),
+    }));
+  }
+
   it("stok −5 @ 8.000, terima 10 @ 9.000 → stok 5, rata-rata 9.000, nilai 45.000", async () => {
     await prisma.inventoryValue.create({
       data: { itemId, variantSku: "", qtyOnHand: -5, avgCost: 8_000, totalValue: -40_000 },
     });
-    const r = await calculateMovingAverage(itemId, new Decimal(10), new Decimal(9_000));
+    const r = await calculateMovingAverage(itemId, new Decimal(10), new Decimal(9_000), undefined, undefined, ref);
     expect(r.newAvgCost.toNumber()).toBe(9_000);
     const [b] = await baris();
     expect(Number(b.qtyOnHand)).toBe(5);
     expect(Number(b.avgCost)).toBe(9_000);
     expect(Number(b.totalValue)).toBe(45_000);
+    // Kartu stok sama dengan InventoryValue: satu entri masuk, saldo 5 bernilai 45.000.
+    expect(await buku()).toEqual([{ refType: "TEST", qty: 10, saldo: 5, nilai: 90_000, saldoNilai: 45_000 }]);
   });
 
   it("baris tanpa varian bertanda null dipakai, bukan dibuatkan kembaran \"\"", async () => {
     await prisma.inventoryValue.create({
       data: { itemId, variantSku: null, qtyOnHand: 10, avgCost: 1_000, totalValue: 10_000 },
     });
-    await calculateMovingAverage(itemId, new Decimal(10), new Decimal(2_000), undefined, null);
+    await calculateMovingAverage(itemId, new Decimal(10), new Decimal(2_000), undefined, null, ref);
     const semua = await baris();
     expect(semua).toHaveLength(1);
     expect(semua[0].variantSku).toBeNull();
@@ -104,8 +125,8 @@ d("calculateMovingAverage (basis data uji)", () => {
   });
 
   it("varian nyata tetap di barisnya sendiri", async () => {
-    await calculateMovingAverage(itemId, new Decimal(3), new Decimal(5_000), undefined, "RB-M");
-    await calculateMovingAverage(itemId, new Decimal(2), new Decimal(7_500), undefined, "RB-M");
+    await calculateMovingAverage(itemId, new Decimal(3), new Decimal(5_000), undefined, "RB-M", ref);
+    await calculateMovingAverage(itemId, new Decimal(2), new Decimal(7_500), undefined, "RB-M", ref);
     const semua = await baris();
     expect(semua).toHaveLength(1);
     expect(semua[0].variantSku).toBe("RB-M");
@@ -123,7 +144,7 @@ d("calculateMovingAverage (basis data uji)", () => {
     await prisma.inventoryValue.create({
       data: { itemId, variantSku: null, qtyOnHand: 32.8, avgCost: 45_000, totalValue: 1_476_000 },
     });
-    const r = await reverseInventoryValue(itemId, new Decimal(5), new Decimal(45_000), undefined, null);
+    const r = await reverseInventoryValue(itemId, new Decimal(5), new Decimal(45_000), undefined, null, ref);
     expect(r.newQty.toNumber()).toBeCloseTo(27.8, 6);
     expect(r.newTotalValue.toNumber()).toBeCloseTo(1_251_000, 2);
     const semua = await baris();
@@ -137,8 +158,8 @@ d("calculateMovingAverage (basis data uji)", () => {
     await prisma.inventoryValue.create({
       data: { itemId, variantSku: null, qtyOnHand: 3, avgCost: 1_000, totalValue: 3_000 },
     });
-    await expect(reverseInventoryValue(itemId, new Decimal(5), new Decimal(1_000), undefined, "")).rejects.toThrow("Insufficient stock");
-    await reverseInventoryValue(itemId, new Decimal(2), new Decimal(1_000), undefined, "");
+    await expect(reverseInventoryValue(itemId, new Decimal(5), new Decimal(1_000), undefined, "", ref)).rejects.toThrow("Insufficient stock");
+    await reverseInventoryValue(itemId, new Decimal(2), new Decimal(1_000), undefined, "", ref);
     const semua = await baris();
     expect(semua).toHaveLength(1);
     expect(Number(semua[0].qtyOnHand)).toBe(1);
@@ -148,7 +169,7 @@ d("calculateMovingAverage (basis data uji)", () => {
     await prisma.inventoryValue.create({
       data: { itemId, variantSku: null, qtyOnHand: 10, avgCost: 2_000, totalValue: 20_000 },
     });
-    const r = await reverseMovingAverage(itemId, new Decimal(4), new Decimal(2_000), undefined, null);
+    const r = await reverseMovingAverage(itemId, new Decimal(4), new Decimal(2_000), undefined, null, ref);
     expect(r.newQty.toNumber()).toBe(6);
     const semua = await baris();
     expect(semua).toHaveLength(1);
@@ -171,14 +192,15 @@ d("calculateMovingAverage (basis data uji)", () => {
     });
     let lepasA: () => void = () => {};
     const tahanA = new Promise<void>((r) => (lepasA = r));
-    // A menulis lalu menahan transaksinya; B membaca stok lama selagi A belum commit.
+    // A menulis lalu menahan transaksinya; B membaca stok lama selagi A belum commit, lalu
+    // menunggu kunci baris A — rata-ratanya dihitung dari yang ditinggalkan A, bukan dari bacaan lamanya.
     const a = prisma.$transaction(async (tx) => {
-      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(1_000), tx);
+      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(1_000), tx, undefined, ref);
       await tahanA;
     });
     await new Promise((r) => setTimeout(r, 150));
     const b = prisma.$transaction(async (tx) => {
-      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(3_000), tx);
+      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(3_000), tx, undefined, ref);
     });
     await new Promise((r) => setTimeout(r, 300));
     lepasA();
@@ -188,6 +210,10 @@ d("calculateMovingAverage (basis data uji)", () => {
     // Harga berbeda supaya rata-rata yang tertimpa ketahuan (1.000 atau 3.000, bukan 2.000).
     expect(Number(r.avgCost)).toBe(2_000);
     expect(Number(r.totalValue)).toBe(40_000);
+    expect((await buku()).map((e) => [e.saldo, e.saldoNilai])).toEqual([
+      [10, 10_000],
+      [20, 40_000],
+    ]);
   });
 
   it("barang baru diterima dua transaksi serializable serentak: yang kalah diulang, bukan gagal (10 @ 1.000 + 10 @ 3.000)", async () => {
@@ -195,12 +221,12 @@ d("calculateMovingAverage (basis data uji)", () => {
     const tahanA = new Promise<void>((r) => (lepasA = r));
     // A membuat baris pertama lalu menahan transaksinya; B tidak melihatnya dan ikut membuat.
     const a = runSerializable(async (tx) => {
-      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(1_000), tx, null);
+      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(1_000), tx, null, ref);
       await tahanA;
     });
     await new Promise((r) => setTimeout(r, 150));
     const b = runSerializable(async (tx) => {
-      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(3_000), tx, null);
+      await calculateMovingAverage(itemId, new Decimal(10), new Decimal(3_000), tx, null, ref);
     });
     await new Promise((r) => setTimeout(r, 300));
     lepasA();
@@ -221,8 +247,8 @@ d("calculateMovingAverage (basis data uji)", () => {
   it("dua baris barang yang sama dalam satu transaksi (barang baru): 10 @ 1.000 + 5 @ 4.000 → 15 @ 2.000", async () => {
     await prisma.$transaction(async (tx) => {
       await Promise.all([
-        calculateMovingAverage(itemId, new Decimal(10), new Decimal(1_000), tx, null),
-        calculateMovingAverage(itemId, new Decimal(5), new Decimal(4_000), tx, null),
+        calculateMovingAverage(itemId, new Decimal(10), new Decimal(1_000), tx, null, ref),
+        calculateMovingAverage(itemId, new Decimal(5), new Decimal(4_000), tx, null, ref),
       ]);
     });
     const semua = await baris();
@@ -238,8 +264,8 @@ d("calculateMovingAverage (basis data uji)", () => {
     });
     await prisma.$transaction(async (tx) => {
       const [a, b] = await Promise.all([
-        calculateMovingAverage(itemId, new Decimal(10), new Decimal(4_000), tx, null),
-        calculateMovingAverage(itemId, new Decimal(10), new Decimal(7_000), tx, null),
+        calculateMovingAverage(itemId, new Decimal(10), new Decimal(4_000), tx, null, ref),
+        calculateMovingAverage(itemId, new Decimal(10), new Decimal(7_000), tx, null, ref),
       ]);
       // Kartu stok per baris: saldo setelah baris pertama lalu kedua, berurutan.
       expect([a.newQty.toNumber(), b.newQty.toNumber()]).toEqual([20, 30]);

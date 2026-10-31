@@ -1,4 +1,4 @@
-import { prisma, Prisma, postJournal, JournalError } from "@elorae/db";
+import { prisma, Prisma, postJournal, JournalError, moveMainStock, type StockLedgerRefType } from "@elorae/db";
 import { withRetry } from "@/lib/db/tx-retry";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
@@ -36,7 +36,7 @@ import {
   type BarisBertanda,
 } from "./jurnal";
 import { periodeTertutupSejak, tanggalJurnalSaldoAwal } from "./tanggal";
-import { pratinjauPersediaan, type BarisStok } from "./persediaan";
+import { pratinjauPersediaan, type BarisPratinjauPersediaan, type BarisStok } from "./persediaan";
 import { hitungHutangPemasokAwal, hitungPiutangMarketplaceAwal, hitungPiutangTokoAwal } from "./hitung-queries";
 
 /*
@@ -46,7 +46,8 @@ import { hitungHutangPemasokAwal, hitungPiutangMarketplaceAwal, hitungPiutangTok
  *      `reversalOfId`) dan menandainya REVERSED,
  *   2. memposting jurnal baru `OPENING` bertanggal sehari sebelum tanggal mulai,
  *      lawan `OPENING_EQUITY`,
- *   3. (persediaan) mengisi `avgCost`/`totalValue` stok TANPA mengubah qty,
+ *   3. (persediaan) mengisi `avgCost`/`totalValue` stok TANPA mengubah qty — lewat
+ *      `moveMainStock` (qty 0), jadi kartu stok mencatat penilaian ulangnya,
  *   4. menulis jejak `AuditLog` keduanya.
  * Ditolak selama periode jurnal itu (atau sesudahnya) sudah ditutup — dibaca
  * langsung dari `AccountingPeriod`/`AccountingYear`.
@@ -208,8 +209,17 @@ type Hitungan = {
   AP?: EntriHutang[];
 };
 
-/** Bagian per jenis yang berjalan di dalam transaksi: isian final + baris bertanda. */
-type HasilJenis = { baris: unknown[]; bertanda: BarisBertanda[]; ringkasanPersediaan?: Record<"INVENTORY" | "INVENTORY_FG", number> };
+/**
+ * Bagian per jenis yang berjalan di dalam transaksi: isian final + baris bertanda.
+ * `penilaianUlang` = baris stok persediaan yang HPP/nilainya berubah; ditulis
+ * sesudah catatan impornya ada, karena id catatan itulah rujukan kartu stoknya.
+ */
+type HasilJenis = {
+  baris: unknown[];
+  bertanda: BarisBertanda[];
+  ringkasanPersediaan?: Record<"INVENTORY" | "INVENTORY_FG", number>;
+  penilaianUlang?: BarisPratinjauPersediaan[];
+};
 
 async function siapkanAkun(tx: Prisma.TransactionClient, baris: EntriAkun[], akunEkuitas: string): Promise<HasilJenis> {
   const ids = baris.map((b) => b.akunId);
@@ -275,14 +285,9 @@ async function siapkanPersediaan(
   const p = pratinjauPersediaan(baris, stok);
   if (p.tidakDikenal.length > 0) tolak("BARANG_TIDAK_DIKENAL", { rincian: p.tidakDikenal[0].sku });
 
-  const sekarang = new Date();
-  for (const b of p.baris) {
-    if (keSen(b.hppLama) === keSen(b.hppBaru) && keSen(b.nilaiLama) === keSen(b.nilaiBaru)) continue;
-    await tx.inventoryValue.update({
-      where: { id: b.ivId },
-      data: { avgCost: b.hppBaru, totalValue: b.nilaiBaru, lastUpdated: sekarang },
-    });
-  }
+  const penilaianUlang = p.baris.filter(
+    (b) => keSen(b.hppLama) !== keSen(b.hppBaru) || keSen(b.nilaiLama) !== keSen(b.nilaiBaru),
+  );
 
   // Nilai jurnal KUMULATIF: nilai posting lama (yang dibalik) + selisih kali ini.
   const kumulatif = {
@@ -300,7 +305,40 @@ async function siapkanPersediaan(
     nilaiLama: b.nilaiLama,
     nilaiBaru: b.nilaiBaru,
   }));
-  return { baris: final, bertanda: barisBertandaPersediaan(kumulatif), ringkasanPersediaan: kumulatif };
+  return { baris: final, bertanda: barisBertandaPersediaan(kumulatif), ringkasanPersediaan: kumulatif, penilaianUlang };
+}
+
+/**
+ * HPP baru ke baris stok, qty tetap. Lewat `moveMainStock` dengan qty 0 (entri
+ * ADJUSTMENT), bukan tulis langsung: kartu stok menilai stok dari saldo nilai
+ * entri terakhirnya, jadi tanpa entri ini kartu stok tetap menunjukkan nilai
+ * lama — berbeda dari `InventoryValue` dan dari jurnal OPENING yang baru
+ * diposting — sampai gerakan berikutnya melompatinya tanpa baris penjelas.
+ * `inventoryValueId` mengunci tulisan ke baris yang dinilai pratinjau (barang
+ * dengan baris kembar null/"" dinilai per baris).
+ */
+async function tulisPenilaianUlang(
+  tx: Prisma.TransactionClient,
+  baris: BarisPratinjauPersediaan[],
+  importId: string,
+  olehUserId: string,
+): Promise<void> {
+  for (const b of baris) {
+    await moveMainStock(tx, {
+      itemId: b.itemId,
+      variantSku: b.variantSku,
+      qtyDelta: 0,
+      inventoryValueId: b.ivId,
+      avgCost: b.hppBaru,
+      totalValue: b.nilaiBaru,
+      unitCost: b.hppBaru,
+      totalCost: dariSen(keSen(b.nilaiBaru) - keSen(b.nilaiLama)),
+      balanceValue: b.nilaiBaru,
+      refType: "OpeningBalance" satisfies StockLedgerRefType,
+      refId: importId,
+      createdById: olehUserId,
+    });
+  }
 }
 
 export async function postingSaldoAwal(input: {
@@ -499,6 +537,11 @@ export async function postingSaldoAwal(input: {
           lines,
         });
         journalId = res.journalId;
+      }
+
+      // 3. Persediaan: HPP baru ke baris stok, dicatat di kartu stok atas catatan ini.
+      if (disiapkan.penilaianUlang?.length) {
+        await tulisPenilaianUlang(tx, disiapkan.penilaianUlang, rec.id, input.olehUserId);
       }
 
       await tx.openingBalanceImport.update({

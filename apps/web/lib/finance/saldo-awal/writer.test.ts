@@ -101,6 +101,7 @@ d("postingSaldoAwal (basis data uji)", () => {
     await prisma.openingBalanceImport.deleteMany({ where: { kind: { in: seededIds(kinds) } } });
     await prisma.auditLog.deleteMany({ where: { userId: seededId(userId) } });
     if (periodeId) await prisma.accountingPeriod.delete({ where: { id: seededId(periodeId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: [seededId(itemFgId), seededId(itemKainId)] } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: [seededId(itemFgId), seededId(itemKainId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemFgId), seededId(itemKainId)] } } });
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
@@ -222,6 +223,27 @@ d("postingSaldoAwal (basis data uji)", () => {
     if (r2.ok) {
       const rec = await prisma.openingBalanceImport.findUniqueOrThrow({ where: { id: r2.importId } });
       expect((rec.entries as { ringkasan: { nilaiPerPeran: unknown } }).ringkasan.nilaiPerPeran).toEqual({ INVENTORY: 67500, INVENTORY_FG: 1716000 });
+    }
+
+    // Kartu stok ikut dinilai ulang: satu entri qty 0 per baris yang berubah, saldo nilainya
+    // sama dengan InventoryValue; baris yang tidak disebut posting ulang tidak mendapat entri.
+    const kartu = await prisma.stockLedgerEntry.findMany({
+      where: { itemId: { in: [seededId(itemFgId), seededId(itemKainId)] }, locationType: "MAIN" },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { variantSku: true, type: true, qty: true, balanceQty: true, totalCost: true, balanceValue: true, refType: true, refId: true },
+    });
+    const entri = (varian: string) =>
+      kartu
+        .filter((e) => e.variantSku === varian)
+        .map((e) => [e.type, Number(e.qty), Number(e.balanceQty), Number(e.totalCost), Number(e.balanceValue), e.refType, e.refId]);
+    expect(kartu).toHaveLength(4);
+    if (r1.ok && r2.ok) {
+      expect(entri(`SA-${token}-GMS-S`)).toEqual([["ADJUSTMENT", 0, 10, 1_200_000, 1_200_000, "OpeningBalance", r1.importId]]);
+      expect(entri(`SA-${token}-GMS-M`)).toEqual([
+        ["ADJUSTMENT", 0, 4, 496_000, 500_000, "OpeningBalance", r1.importId],
+        ["ADJUSTMENT", 0, 4, 20_000, 520_000, "OpeningBalance", r2.importId],
+      ]);
+      expect(entri("")).toEqual([["ADJUSTMENT", 0, 2.5, 67_500, 67_500, "OpeningBalance", r1.importId]]);
     }
   });
 
