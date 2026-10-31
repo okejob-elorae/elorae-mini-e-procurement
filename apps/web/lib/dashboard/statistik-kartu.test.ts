@@ -49,7 +49,7 @@ const { dipanggil, db } = vi.hoisted(() => {
       workOrder: { count: catat("wo.count", 1) },
       supplier: { count: catat("supplier.count", 4) },
       gRN: { count: catat("grn.count", 6) },
-      stockMovement: { count: catat("movement.count", 7) },
+      stockLedgerEntry: { count: catat("ledger.count", 7) },
     },
     Prisma: {},
     sqlId: vi.fn(),
@@ -108,6 +108,8 @@ describe("getDashboardStats — dengan kartu beranda", () => {
       expect(s.workOrders).toEqual({ inProduction: 2, sedangDiproduksi: 1, selesaiSebagian: 1, completedToday: 1 });
       expect(s.suppliers.activeCount).toBe(4);
       expect(s.grnsThisWeek).toBe(6);
+      // Gerakan hari ini dari buku besar stok (semua lokasi), bukan arsip StockMovement.
+      expect(s.movementsToday).toBe(7);
     }
   });
 });

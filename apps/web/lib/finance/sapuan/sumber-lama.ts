@@ -112,17 +112,26 @@ daftarkanSumberSapuan({
 daftarkanSumberSapuan({
   sourceType: "OPNAME",
   label: "Selisih stock opname",
-  // Sama dengan `opnameNetDelta`: Σ nilai pergerakan stok opname itu bukan nol.
+  // Sama dengan `opnameNetDelta`: Σ `totalCost` baris buku besar stok opname itu
+  // (refType StockOpname) bukan nol. Baris tanpa nilai ikut ditemukan — penulisnya
+  // melempar untuknya, jadi ia tercatat sebagai JOURNAL_PENDING, bukan dilewati diam-diam.
+  // Arsip StockMovement tidak dibaca: penulisnya tidak bisa memposting darinya.
   cariTanpaJurnal: (opsi) =>
     cariTanpaJurnalSql({
       tabel: "StockOpname",
       sourceType: "OPNAME",
       tanggal: Prisma.sql`d.${sqlId("approvedAt")}`,
       kolomLabel: "docNumber",
-      syarat: Prisma.sql`AND d.${sqlId("status")} = 'APPROVED' AND ABS((
-        SELECT COALESCE(SUM(m.${sqlId("totalCost")}), 0) FROM ${sqlId("StockMovement")} m
-        WHERE m.${sqlId("refType")} = 'OPNAME' AND m.${sqlId("refId")} = d.${sqlId("id")}
-      )) >= 0.01`,
+      syarat: Prisma.sql`AND d.${sqlId("status")} = 'APPROVED' AND (
+        ABS((
+          SELECT COALESCE(SUM(m.${sqlId("totalCost")}), 0) FROM ${sqlId("StockLedgerEntry")} m
+          WHERE m.${sqlId("refType")} = 'StockOpname' AND m.${sqlId("refId")} = d.${sqlId("id")}
+        )) >= 0.01
+        OR EXISTS (
+          SELECT 1 FROM ${sqlId("StockLedgerEntry")} m
+          WHERE m.${sqlId("refType")} = 'StockOpname' AND m.${sqlId("refId")} = d.${sqlId("id")} AND m.${sqlId("totalCost")} IS NULL
+        )
+      )`,
       opsi,
     }),
   posting: async (id, oleh) => {

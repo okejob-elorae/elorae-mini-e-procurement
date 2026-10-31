@@ -1,196 +1,125 @@
-import { prisma } from "@elorae/db";
-import {
-  REF_BERPASANGAN,
-  gabungGerakan,
-  kunciPasanganMovement,
-  kunciPasanganPenyesuaian,
-  qtyBertandaPenyesuaian,
-  susunKartuStok,
-  type BarisMovementKartu,
-  type BarisPenyesuaianKartu,
-  type KartuStokTersusun,
-} from "./kartu-stok";
+import { prisma, type Prisma, type StockLedgerRefType } from "@elorae/db";
 
 /**
- * Pemuat kartu stok gudang dari basis data. Membaca SEMUA gerakan yang
- * menggerakkan `InventoryValue` (StockMovement + StockAdjustment semua sumber),
- * lalu menyusunnya dengan `susunKartuStok` (lib/inventory/kartu-stok.ts).
+ * Nilai yang benar-benar bergerak di kartu stok gudang utama per DOKUMEN —
+ * KHUSUS SERVER. Satu pembaca untuk pengeluaran bahan (selisih nilai
+ * pengeluaran) dan retur pemasok (jurnalnya dan rekonsiliasi persediaan),
+ * supaya ketiganya membaca angka yang sama.
  *
- * Batas yang disengaja: `StockAdjustment` tidak punya kolom varian, jadi kartu
- * per varian hanya bisa memuat StockMovement varian itu. Penyesuaian yang
- * terlewat dihitung (`penyesuaianTanpaVarian`) supaya layar bisa
- * memperingatkan, dan `tanpaDokumen` dibiarkan null di mode itu.
+ * Sumbernya buku besar stok (`StockLedgerEntry`). Arsip `StockMovement`
+ * berhenti ditulis 2026-09-21 dan hanya dibaca untuk dokumen LAMA: dokumen
+ * yang buku besarnya tidak punya baris, atau barisnya tanpa nilai (ditulis
+ * 2026-09-15 … 09-21, sebelum kolom nilainya ada — arsip menyimpan nilainya).
+ * Dua sumber itu tidak pernah DIJUMLAHKAN: per dokumen dipakai satu saja,
+ * buku besar lebih dulu, jadi dokumen yang tercatat di keduanya tidak terhitung
+ * dua kali.
  */
 
-export type KartuStokBarang = KartuStokTersusun & {
-  /**
-   * Penyesuaian sejak `dari` (sampai sekarang) yang tidak bisa dipilah per varian
-   * (hanya mode varian). Yang di dalam rentang tidak tampil; yang sesudahnya
-   * menggeser saldo yang dijangkar ke stok sekarang.
-   */
-  penyesuaianTanpaVarian: number;
+type Klien = Prisma.TransactionClient | typeof prisma;
+
+/** refType buku besar stok → refType yang sama di arsip `StockMovement`. */
+export const REF_ARSIP_GERAKAN = {
+  MaterialIssue: "WO_ISSUE",
+  VendorReturn: "VENDOR_RETURN",
+} as const satisfies Partial<Record<StockLedgerRefType, string>>;
+
+export type RefGerakDokumen = keyof typeof REF_ARSIP_GERAKAN;
+
+export type BarisGerakDokumen = {
+  itemId: string;
+  /** "" = tanpa varian (null di arsip dibaca sebagai ""). */
+  variantSku: string;
+  /** Bertanda: keluar negatif. */
+  qty: number;
+  /** Rupiah, seperti yang ditulis penulisnya (keluar dicatat positif). */
+  totalCost: number;
 };
 
-const toNum = (v: unknown): number => (v == null ? 0 : Number(v));
+export type GerakDokumen = {
+  /** Σ `totalCost` baris, dibulatkan ke sen. */
+  total: number;
+  baris: BarisGerakDokumen[];
+  sumber: "BUKU_BESAR" | "ARSIP" | "TANPA_GERAKAN";
+};
 
-const pilihMovement = {
-  id: true,
-  itemId: true,
-  variantSku: true,
-  type: true,
-  refType: true,
-  refId: true,
-  refDocNumber: true,
-  qty: true,
-  unitCost: true,
-  notes: true,
-  createdAt: true,
-} as const;
+type BarisMentah = {
+  refId: string;
+  itemId: string;
+  variantSku: string | null;
+  qty: unknown;
+  totalCost: unknown;
+};
 
-const pilihPenyesuaian = {
-  id: true,
-  itemId: true,
-  docNumber: true,
-  type: true,
-  qtyChange: true,
-  prevQty: true,
-  newQty: true,
-  prevAvgCost: true,
-  newAvgCost: true,
-  source: true,
-  externalRef: true,
-  reason: true,
-  createdAt: true,
-} as const;
+function kelompokkan(rows: readonly BarisMentah[]): Map<string, BarisMentah[]> {
+  const peta = new Map<string, BarisMentah[]>();
+  for (const r of rows) {
+    const daftar = peta.get(r.refId) ?? [];
+    daftar.push(r);
+    peta.set(r.refId, daftar);
+  }
+  return peta;
+}
 
-/** Saring varian yang toleran: "" dan null sama-sama berarti "tanpa varian". */
-function saringVarian(variantSku: string) {
-  return variantSku === "" ? { OR: [{ variantSku: null }, { variantSku: "" }] } : { variantSku };
+const bernilai = (rows: readonly BarisMentah[]) => rows.every((r) => r.totalCost != null);
+
+function susun(rows: readonly BarisMentah[], sumber: GerakDokumen["sumber"]): GerakDokumen {
+  let sen = 0;
+  const baris = rows.map((r) => {
+    const totalCost = Number(r.totalCost);
+    sen += Math.round(totalCost * 100);
+    return { itemId: r.itemId, variantSku: r.variantSku ?? "", qty: Number(r.qty), totalCost };
+  });
+  return { total: sen / 100, baris, sumber };
 }
 
 /**
- * Muat kartu stok untuk sekumpulan barang dalam satu rentang.
- *
- * `sejakAwal` = baca seluruh riwayat (bukan hanya sejak `dari`), sehingga
- * `tanpaDokumen` bisa dihitung. Dipakai kartu satu barang; tampilan per jenis /
- * per kategori cukup sejak `dari`.
+ * Gerakan gudang utama per dokumen. Setiap id yang diminta mendapat entri:
+ * `GerakDokumen` (boleh tanpa baris — dokumen itu tidak menggerakkan stok), atau
+ * `null` bila nilainya TIDAK TERCATAT (baris buku besar tanpa nilai, dan arsip
+ * tidak menolong). `null` tidak pernah boleh dibaca sebagai nol oleh pemanggil.
  */
-export async function muatKartuStok(p: {
-  itemIds: string[];
-  dari: Date;
-  sampai: Date;
-  variantSku?: string;
-  sejakAwal?: boolean;
-}): Promise<Map<string, KartuStokBarang>> {
-  const hasil = new Map<string, KartuStokBarang>();
-  const itemIds = [...new Set(p.itemIds)].filter(Boolean);
-  if (itemIds.length === 0) return hasil;
+export async function gerakStokPerDokumen(
+  klien: Klien,
+  refType: RefGerakDokumen,
+  refIds: readonly string[],
+): Promise<Map<string, GerakDokumen | null>> {
+  const hasil = new Map<string, GerakDokumen | null>();
+  const ids = [...new Set(refIds)].filter(Boolean);
+  if (ids.length === 0) return hasil;
 
-  const modeVarian = p.variantSku != null;
-  const batasBawah = p.sejakAwal ? {} : { createdAt: { gte: p.dari } };
-  const varian = modeVarian ? saringVarian(p.variantSku!) : {};
-
-  const [saldo, movements, penyesuaian, pasangan] = await Promise.all([
-    prisma.inventoryValue.groupBy({
-      by: ["itemId"],
-      where: { itemId: { in: itemIds }, ...varian },
-      _sum: { qtyOnHand: true, totalValue: true },
-    }),
-    prisma.stockMovement.findMany({
-      where: { itemId: { in: itemIds }, ...batasBawah, ...varian },
-      select: pilihMovement,
+  const buku = kelompokkan(
+    await klien.stockLedgerEntry.findMany({
+      where: { refType, refId: { in: ids }, locationType: "MAIN" },
+      select: { refId: true, itemId: true, variantSku: true, qty: true, totalCost: true },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     }),
-    prisma.stockAdjustment.findMany({
-      // Mode varian: penyesuaian tidak tampil, cukup dihitung sejak `dari` untuk peringatan.
-      where: modeVarian
-        ? { itemId: { in: itemIds }, createdAt: { gte: p.dari } }
-        : { itemId: { in: itemIds }, ...batasBawah },
-      select: pilihPenyesuaian,
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    }),
-    prisma.stockMovement.findMany({
-      where: { itemId: { in: itemIds }, refType: { in: [...REF_BERPASANGAN] } },
-      select: { refType: true, refId: true, itemId: true },
-      distinct: ["refType", "refId", "itemId"],
-    }),
-  ]);
+  );
+  const perluArsip = ids.filter((id) => {
+    const b = buku.get(id);
+    return !b || !bernilai(b);
+  });
+  const arsip = kelompokkan(
+    perluArsip.length
+      ? await klien.stockMovement.findMany({
+          where: { refType: REF_ARSIP_GERAKAN[refType], refId: { in: perluArsip } },
+          select: { refId: true, itemId: true, variantSku: true, qty: true, totalCost: true },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        })
+      : [],
+  );
 
-  const kunci = new Set<string>();
-  for (const m of pasangan) {
-    const k = kunciPasanganMovement(m);
-    if (k) kunci.add(k);
-  }
-
-  const movPerBarang = new Map<string, BarisMovementKartu[]>();
-  for (const m of movements) {
-    const daftar = movPerBarang.get(m.itemId) ?? [];
-    daftar.push({
-      id: m.id,
-      itemId: m.itemId,
-      variantSku: m.variantSku,
-      type: m.type,
-      refType: m.refType,
-      refId: m.refId,
-      refDocNumber: m.refDocNumber,
-      qty: toNum(m.qty),
-      unitCost: m.unitCost == null ? null : Number(m.unitCost),
-      notes: m.notes,
-      createdAt: m.createdAt,
-    });
-    movPerBarang.set(m.itemId, daftar);
-  }
-
-  const adjPerBarang = new Map<string, BarisPenyesuaianKartu[]>();
-  const tanpaVarian = new Map<string, number>();
-  for (const a of penyesuaian) {
-    const baris: BarisPenyesuaianKartu = {
-      id: a.id,
-      itemId: a.itemId,
-      docNumber: a.docNumber,
-      type: a.type,
-      qtyChange: toNum(a.qtyChange),
-      prevQty: a.prevQty == null ? null : Number(a.prevQty),
-      newQty: a.newQty == null ? null : Number(a.newQty),
-      prevAvgCost: toNum(a.prevAvgCost),
-      newAvgCost: toNum(a.newAvgCost),
-      source: a.source,
-      externalRef: a.externalRef,
-      reason: a.reason,
-      createdAt: a.createdAt,
-    };
-    if (modeVarian) {
-      if (!kunci.has(kunciPasanganPenyesuaian(baris)) && qtyBertandaPenyesuaian(baris) !== 0) {
-        tanpaVarian.set(a.itemId, (tanpaVarian.get(a.itemId) ?? 0) + 1);
-      }
+  for (const id of ids) {
+    const b = buku.get(id) ?? [];
+    if (b.length > 0 && bernilai(b)) {
+      hasil.set(id, susun(b, "BUKU_BESAR"));
       continue;
     }
-    const daftar = adjPerBarang.get(a.itemId) ?? [];
-    daftar.push(baris);
-    adjPerBarang.set(a.itemId, daftar);
-  }
-
-  const saldoPerBarang = new Map(saldo.map((s) => [s.itemId, s._sum]));
-  for (const itemId of itemIds) {
-    const gerakan = gabungGerakan(movPerBarang.get(itemId) ?? [], adjPerBarang.get(itemId) ?? [], kunci);
-    let qtySebelumDari: number | null = null;
-    if (p.sejakAwal && !modeVarian) {
-      qtySebelumDari = 0;
-      for (const g of gerakan) {
-        if (g.tanggal.getTime() >= p.dari.getTime()) break;
-        qtySebelumDari += g.qty;
-      }
+    const a = arsip.get(id) ?? [];
+    if (a.length > 0) {
+      hasil.set(id, bernilai(a) ? susun(a, "ARSIP") : null);
+      continue;
     }
-    const jumlah = saldoPerBarang.get(itemId);
-    const kartu = susunKartuStok({
-      gerakan,
-      saldoSekarang: toNum(jumlah?.qtyOnHand),
-      nilaiSekarang: toNum(jumlah?.totalValue),
-      dari: p.dari,
-      sampai: p.sampai,
-      qtySebelumDari,
-    });
-    hasil.set(itemId, { ...kartu, penyesuaianTanpaVarian: tanpaVarian.get(itemId) ?? 0 });
+    hasil.set(id, b.length > 0 ? null : { total: 0, baris: [], sumber: "TANPA_GERAKAN" });
   }
   return hasil;
 }

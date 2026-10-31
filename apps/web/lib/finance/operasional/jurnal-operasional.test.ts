@@ -250,6 +250,7 @@ afterEach(async () => {
   if (retur.length) await prisma.vendorReturn.deleteMany({ where: { id: { in: seededIds(retur.map((r) => r.id)) } } });
   if (klaim.length) await prisma.expenseClaim.deleteMany({ where: { id: { in: seededIds(klaim.map((k) => k.id)) } } });
   if (barangIds.length) {
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
     await prisma.stockMovement.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
@@ -609,10 +610,10 @@ describe("stok manual, retur pemasok, biaya perjalanan", () => {
     expect(await postJurnalStokManual(awal.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
   });
 
-  it("retur pemasok selesai: hutang berkurang kredit PO, persediaan keluar sebesar kartu stok, beda ke selisih", async () => {
-    const ret = await prisma.vendorReturn.create({
+  const returPemasokSelesai = (akhiran: string) =>
+    prisma.vendorReturn.create({
       data: {
-        docNumber: `${tag}-RET-${urut}`,
+        docNumber: `${tag}-RET-${urut}${akhiran}`,
         vendorId: pemasokId,
         lines: JSON.stringify([{ type: "FABRIC", itemId: kainId, qty: 10, costValue: 100_000 }]),
         totalItems: 10,
@@ -624,11 +625,63 @@ describe("stok manual, retur pemasok, biaya perjalanan", () => {
         poCreditAmount: 111_000,
       },
     });
-    await prisma.stockMovement.create({
-      data: { itemId: kainId, type: "OUT", refType: "VENDOR_RETURN", refId: ret.id, refDocNumber: ret.docNumber, qty: -10, unitCost: 10_000, totalCost: 100_000, balanceQty: 0, balanceValue: 0 },
+  const keluarBukuBesar = (ret: { id: string; docNumber: string }, totalCost: number | null) =>
+    prisma.stockLedgerEntry.create({
+      data: {
+        locationType: "MAIN",
+        itemId: kainId,
+        type: "OUT",
+        refType: "VendorReturn",
+        refId: ret.id,
+        refDocNumber: ret.docNumber,
+        qty: -10,
+        unitCost: totalCost === null ? null : totalCost / 10,
+        totalCost,
+        balanceQty: 0,
+        balanceValue: totalCost === null ? null : 0,
+      },
     });
+  const keluarArsip = (ret: { id: string; docNumber: string }, totalCost: number) =>
+    prisma.stockMovement.create({
+      data: { itemId: kainId, type: "OUT", refType: "VENDOR_RETURN", refId: ret.id, refDocNumber: ret.docNumber, qty: -10, unitCost: totalCost / 10, totalCost, balanceQty: 0, balanceValue: 0 },
+    });
+
+  it("retur pemasok selesai: hutang berkurang kredit PO, persediaan keluar sebesar kartu stok, beda ke selisih", async () => {
+    const ret = await returPemasokSelesai("");
+    await keluarBukuBesar(ret, 100_000);
     expect(await postJurnalReturPemasok(ret.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.RETUR_PEMASOK, ret.id)).toEqual({ AP: 111_000, INVENTORY: -100_000, INVENTORY_VARIANCE: -11_000 });
+  });
+
+  it("retur pemasok lama: nilai keluarnya dari arsip bila buku besar stok tidak punya nilai; tidak tercatat di mana pun → ditolak", async () => {
+    // Sebelum buku besar stok: hanya arsip.
+    const lama = await returPemasokSelesai("-L");
+    await keluarArsip(lama, 100_000);
+    expect(await postJurnalReturPemasok(lama.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.RETUR_PEMASOK, lama.id)).toEqual({ AP: 111_000, INVENTORY: -100_000, INVENTORY_VARIANCE: -11_000 });
+
+    // Baris buku besar tanpa nilai: arsip yang memegang nilainya.
+    const campur = await returPemasokSelesai("-C");
+    await keluarBukuBesar(campur, null);
+    await keluarArsip(campur, 90_000);
+    expect(await postJurnalReturPemasok(campur.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.RETUR_PEMASOK, campur.id)).toEqual({ AP: 111_000, INVENTORY: -90_000, INVENTORY_VARIANCE: -21_000 });
+
+    // Tercatat di keduanya: buku besar dipakai, tidak dijumlahkan.
+    const ganda = await returPemasokSelesai("-G");
+    await keluarBukuBesar(ganda, 100_000);
+    await keluarArsip(ganda, 100_000);
+    expect(await postJurnalReturPemasok(ganda.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.RETUR_PEMASOK, ganda.id)).toEqual({ AP: 111_000, INVENTORY: -100_000, INVENTORY_VARIANCE: -11_000 });
+
+    // Tanpa nilai di mana pun: persediaan yang keluar tidak ditebak nol.
+    const takTercatat = await returPemasokSelesai("-T");
+    await keluarBukuBesar(takTercatat, null);
+    expect(await postJurnalReturPemasok(takTercatat.id, adminId)).toEqual({
+      ok: false,
+      code: "BIAYA_TIDAK_DIKETAHUI",
+      detail: takTercatat.docNumber,
+    });
   });
 
   it("biaya perjalanan disetujui → beban + hutang penggantian; dibayar dari rekening yang dipilih", async () => {

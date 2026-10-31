@@ -7,6 +7,7 @@ import { bacaBahanRetur } from "@/lib/finance/lapangan/jurnal";
 import { selaraskanJurnal, type HasilSelaras, type SasaranDokumen } from "@/lib/finance/lapangan/selaras";
 import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
+import { gerakStokPerDokumen } from "@/lib/inventory/kartu-stok-queries";
 import { hitungKreditRetur } from "@/lib/purchase-orders/kredit-retur";
 import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
 import {
@@ -584,10 +585,21 @@ export function postJurnalReturPemasok(returnId: string, postedById: string, cli
       },
     });
     if (!r || r.status !== "COMPLETED" || !r.completedAt) return null;
-    const gerak = await client.stockMovement.findMany({
-      where: { refType: "VENDOR_RETURN", refId: returnId },
-      select: { itemId: true, totalCost: true, item: { select: { type: true } } },
-    });
+    // Persediaan dikredit sebesar yang keluar dari kartu stok; nilai yang tidak tercatat tidak ditebak.
+    const gerak = (await gerakStokPerDokumen(client, "VendorReturn", [returnId])).get(returnId);
+    if (gerak === null) {
+      return { tanggal: r.completedAt, deskripsi: "", gagal: { code: "BIAYA_TIDAK_DIKETAHUI", detail: r.docNumber } };
+    }
+    const barisGerak = gerak?.baris ?? [];
+    // Buku besar stok tidak berelasi ke Item: tipe barangnya dibaca terpisah.
+    const tipeBarang = new Map<string, string>();
+    if (barisGerak.length) {
+      const barang = await client.item.findMany({
+        where: { id: { in: [...new Set(barisGerak.map((g) => g.itemId))] } },
+        select: { id: true, type: true },
+      });
+      for (const b of barang) tipeBarang.set(b.id, b.type);
+    }
     const kredit = r.poId ? angka(r.poCreditAmount) : 0;
     // PPN masukan GRN-nya dikreditkan (PKP, baris "Exclude PPN") → bagian PPN kredit dibalik.
     let ppn = 0;
@@ -616,7 +628,7 @@ export function postJurnalReturPemasok(returnId: string, postedById: string, cli
       baris: barisReturPemasok({
         kredit,
         ppnMasukan: ppn,
-        keluar: gerak.map((g) => ({ tipeBarang: g.item.type, nilai: Math.abs(angka(g.totalCost)) })),
+        keluar: barisGerak.map((g) => ({ tipeBarang: tipeBarang.get(g.itemId), nilai: Math.abs(g.totalCost) })),
       }),
       dppMasukan: dpp,
     };

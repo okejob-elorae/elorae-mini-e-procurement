@@ -35,6 +35,9 @@ d("sumber sapuan lama (test bed only)", () => {
   let akunB = "";
   let grnTerima = "";
   let grnTolak = "";
+  let uomId = "";
+  let barangId = "";
+  let opnameIds: string[] = [];
 
   beforeEach(async () => {
     userId = "";
@@ -42,6 +45,9 @@ d("sumber sapuan lama (test bed only)", () => {
     akunB = "";
     grnTerima = "";
     grnTolak = "";
+    uomId = "";
+    barangId = "";
+    opnameIds = [];
     token = Math.floor(Math.random() * 10_000_000).toString();
     userId = (await prisma.user.create({ data: { email: `uji-sapuan-lama-${token}@test.local`, name: "Uji sapuan" } })).id;
     akunA = (await prisma.chartAccount.create({ data: { code: `9${token}71`, name: "Persediaan uji sapuan", type: "ASET", depth: 1 } })).id;
@@ -57,6 +63,13 @@ d("sumber sapuan lama (test bed only)", () => {
     }
     const grn = [grnTerima, grnTolak].filter(Boolean);
     if (grn.length) await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grn) } } });
+    if (opnameIds.length) {
+      await prisma.stockLedgerEntry.deleteMany({ where: { refId: { in: seededIds(opnameIds) } } });
+      await prisma.stockMovement.deleteMany({ where: { refId: { in: seededIds(opnameIds) } } });
+      await prisma.stockOpname.deleteMany({ where: { id: { in: seededIds(opnameIds) } } });
+    }
+    if (barangId) await prisma.item.delete({ where: { id: seededId(barangId) } });
+    if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
     const periode = await prisma.accountingPeriod.findMany({ where: { year: TAHUN, month: 3 }, select: { id: true } });
     if (periode.length) await prisma.accountingPeriod.deleteMany({ where: { id: { in: seededIds(periode.map((p) => p.id)) } } });
     await prisma.chartAccount.deleteMany({ where: { id: { in: [seededId(akunA), seededId(akunB)] } } });
@@ -120,5 +133,73 @@ d("sumber sapuan lama (test bed only)", () => {
     const baris = hasil.find((x) => x.id === grnTerima);
     expect(baris?.label).toBe(`UJISAPUAN-${token}-A`);
     expect(baris?.tanggal.toISOString()).toBe(tgl.toISOString());
+  });
+
+  it("OPNAME: membaca buku besar stok seperti `opnameNetDelta` — selisih bernilai dan baris tanpa nilai ditemukan, arsip StockMovement tidak", async () => {
+    uomId = (await prisma.uOM.create({ data: { code: `S${token}`.slice(0, 10), nameId: "Meter", nameEn: "Meter" } })).id;
+    barangId = (
+      await prisma.item.create({ data: { sku: `UJISAPUAN-${token}-KN`, nameId: "Kain uji sapuan", nameEn: "Fabric", type: "FABRIC", uomId } })
+    ).id;
+    const tgl = new Date(Date.UTC(TAHUN, 4, 10, 3));
+    const opname = async (akhiran: string) => {
+      const id = (
+        await prisma.stockOpname.create({
+          data: {
+            docNumber: `UJISAPUAN-${token}-OPN-${akhiran}`,
+            scope: "FABRIC",
+            status: "APPROVED",
+            snapshotAt: tgl,
+            createdById: userId,
+            approvedById: userId,
+            approvedAt: tgl,
+          },
+        })
+      ).id;
+      opnameIds.push(id);
+      return id;
+    };
+    const buku = (refId: string, qty: number, totalCost: number | null) =>
+      prisma.stockLedgerEntry.create({
+        data: {
+          locationType: "MAIN",
+          itemId: barangId,
+          type: "ADJUSTMENT",
+          qty,
+          balanceQty: 0,
+          totalCost,
+          refType: "StockOpname",
+          refId,
+        },
+      });
+
+    const bernilai = await opname("A");
+    await buku(bernilai, -2, -20_000);
+    const nolBersih = await opname("B");
+    await buku(nolBersih, 3, 30_000);
+    await buku(nolBersih, -3, -30_000);
+    const tanpaNilai = await opname("C");
+    await buku(tanpaNilai, 1, null);
+    const hanyaArsip = await opname("D");
+    await prisma.stockMovement.create({
+      data: {
+        itemId: barangId,
+        type: "ADJUSTMENT",
+        refType: "OPNAME",
+        refId: hanyaArsip,
+        refDocNumber: `UJISAPUAN-${token}-OPN-D`,
+        qty: -1,
+        unitCost: 10_000,
+        totalCost: -10_000,
+        balanceQty: 0,
+        balanceValue: 0,
+      },
+    });
+
+    const temu = (
+      await semuaSumberSapuan()
+        .find((s) => s.sourceType === "OPNAME")!
+        .cariTanpaJurnal({ ...rentang, batas: 50, ids: opnameIds })
+    ).map((x) => x.id);
+    expect(temu.sort()).toEqual([bernilai, tanpaNilai].sort());
   });
 });

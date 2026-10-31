@@ -2,6 +2,7 @@ import { prisma, Prisma, sqlId } from "@elorae/db";
 import { muatStokDiToko } from "@/lib/konsinyasi/stok-di-toko";
 import { saringJurnalLaporan } from "@/lib/finance/reports/balances";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
+import { gerakStokPerDokumen } from "@/lib/inventory/kartu-stok-queries";
 import { nilaiBahanDiProduksi } from "@/lib/production/biaya-bahan-queries";
 import { biayaSatuanKonsi } from "./biaya-konsi";
 import { nilaiGudangRusak } from "./nilai-rusak-queries";
@@ -139,17 +140,19 @@ async function penyebabDiketahui(mulai: Date | null): Promise<PenyebabDiketahui>
     where: { status: "PROCESSED", processedAt: { gte: mulai } },
     select: { id: true },
   });
-  const gerak = diproses.length
-    ? await prisma.stockMovement.aggregate({
-        where: { refType: "VENDOR_RETURN", refId: { in: diproses.map((r) => r.id) } },
-        _sum: { totalCost: true },
-      })
-    : null;
+  // Nilai keluar per retur dari kartu stok (sama dengan jurnalnya nanti); yang tidak tercatat tidak menambah apa pun.
+  const gerak = await gerakStokPerDokumen(
+    prisma,
+    "VendorReturn",
+    diproses.map((r) => r.id),
+  );
+  let nilaiDiprosesSen = 0;
+  for (const g of gerak.values()) if (g) nilaiDiprosesSen += Math.round(g.total * 100);
   return {
     stokTanpaJurnal: stok
       .map((s) => ({ source: s.source, jumlah: Number(s.jumlah), nilai: Math.round(angka(s.nilai) * 100) / 100 }))
       .filter((s) => s.jumlah > 0),
-    returPemasokDiproses: { jumlah: diproses.length, nilai: Math.abs(angka(gerak?._sum.totalCost)) },
+    returPemasokDiproses: { jumlah: diproses.length, nilai: Math.abs(nilaiDiprosesSen) / 100 },
   };
 }
 

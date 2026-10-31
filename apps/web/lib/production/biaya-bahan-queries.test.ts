@@ -6,6 +6,8 @@ import { nilaiBahanDiProduksi, selisihNilaiPengeluaranBahan } from "./biaya-baha
  * Rekonsiliasi buku besar bahan ↔ kartu stok: bahan yang masih di produksi
  * (keluar dari kartu stok, belum dikredit dari buku besar) dan pengeluaran
  * LAMA yang nilainya bukan nilai kartu stok. Data sendiri, dibatasi `woIds`.
+ * Nilai kartu stok dibaca dari buku besar stok; arsip `StockMovement` hanya
+ * untuk pengeluaran yang buku besarnya tidak punya nilai.
  */
 
 const url = process.env.DATABASE_URL ?? "";
@@ -23,6 +25,10 @@ d("nilai bahan produksi (basis data uji)", () => {
   let woSelesaiId = "";
   let issueLamaId = "";
   let issueBaruId = "";
+  let issueArsipId = "";
+  let issueCampurId = "";
+  let issueTakTercatatId = "";
+  let issueBukuMenangId = "";
 
   beforeAll(async () => {
     userId = "";
@@ -35,6 +41,10 @@ d("nilai bahan produksi (basis data uji)", () => {
     woSelesaiId = "";
     issueLamaId = "";
     issueBaruId = "";
+    issueArsipId = "";
+    issueCampurId = "";
+    issueTakTercatatId = "";
+    issueBukuMenangId = "";
     userId = (await prisma.user.create({ data: { email: `bbq-${token}@uji.local`, name: "Uji bahan" }, select: { id: true } })).id;
     typeId = (await prisma.supplierType.create({ data: { code: `TBB-${token}`, name: `Jenis ${token}` }, select: { id: true } })).id;
     vendorId = (await prisma.supplier.create({ data: { code: `CMT-BB-${token}`, name: "CMT uji", typeId }, select: { id: true } })).id;
@@ -53,32 +63,73 @@ d("nilai bahan produksi (basis data uji)", () => {
     woId = (await wo(`WO-BB-${token}`, "IN_PRODUCTION")).id;
     woSelesaiId = (await wo(`WO-BB-${token}-S`, "COMPLETED")).id;
 
-    const keluar = async (doc: string, wo: string, totalCost: number, nilaiStok: number) => {
+    // `buku` = baris buku besar stok (null = baris tanpa nilai), `arsip` = baris StockMovement lama.
+    const keluar = async (
+      doc: string,
+      wo: string,
+      totalCost: number,
+      nilai: { buku?: number | null; arsip?: number },
+      jam = 3,
+    ) => {
       const i = await prisma.materialIssue.create({
-        data: { docNumber: doc, woId: wo, issueType: "ACCESSORIES", items: [], totalCost, issuedById: userId, issuedAt: new Date("2004-07-01T03:00:00.000Z") },
+        data: {
+          docNumber: doc,
+          woId: wo,
+          issueType: "ACCESSORIES",
+          items: [],
+          totalCost,
+          issuedById: userId,
+          issuedAt: new Date(Date.UTC(2004, 6, 1, jam)),
+        },
         select: { id: true },
       });
-      await prisma.stockMovement.create({
-        data: {
-          itemId: bahanId,
-          type: "OUT",
-          refType: "WO_ISSUE",
-          refId: i.id,
-          refDocNumber: doc,
-          qty: -10,
-          unitCost: nilaiStok / 10,
-          totalCost: nilaiStok,
-          balanceQty: 0,
-          balanceValue: 0,
-        },
-      });
+      if (nilai.buku !== undefined) {
+        await prisma.stockLedgerEntry.create({
+          data: {
+            locationType: "MAIN",
+            itemId: bahanId,
+            type: "OUT",
+            refType: "MaterialIssue",
+            refId: i.id,
+            refDocNumber: doc,
+            qty: -10,
+            balanceQty: 0,
+            totalCost: nilai.buku,
+            balanceValue: nilai.buku === null ? null : 0,
+          },
+        });
+      }
+      if (nilai.arsip !== undefined) {
+        await prisma.stockMovement.create({
+          data: {
+            itemId: bahanId,
+            type: "OUT",
+            refType: "WO_ISSUE",
+            refId: i.id,
+            refDocNumber: doc,
+            qty: -10,
+            unitCost: nilai.arsip / 10,
+            totalCost: nilai.arsip,
+            balanceQty: 0,
+            balanceValue: 0,
+          },
+        });
+      }
       return i.id;
     };
     // Pengeluaran LAMA: dicatat 15.000 (harga ketik) padahal keluar dari stok 11.200.
-    issueLamaId = await keluar(`MI-BB-${token}-1`, woId, 15_000, 11_200);
+    issueLamaId = await keluar(`MI-BB-${token}-1`, woId, 15_000, { buku: 11_200 });
     // Pengeluaran baru: nilai = kartu stok.
-    issueBaruId = await keluar(`MI-BB-${token}-2`, woId, 5_000, 5_000);
-    await keluar(`MI-BB-${token}-3`, woSelesaiId, 7_000, 7_000);
+    issueBaruId = await keluar(`MI-BB-${token}-2`, woId, 5_000, { buku: 5_000 });
+    await keluar(`MI-BB-${token}-3`, woSelesaiId, 7_000, { buku: 7_000 });
+    // Sebelum buku besar stok: nilainya hanya di arsip.
+    issueArsipId = await keluar(`MI-BB-${token}-4`, woSelesaiId, 9_000, { arsip: 8_000 }, 4);
+    // Buku besar tanpa nilai (2026-09-15 … 09-21): arsip yang memegang nilainya.
+    issueCampurId = await keluar(`MI-BB-${token}-5`, woSelesaiId, 4_500, { buku: null, arsip: 4_000 }, 5);
+    // Tanpa nilai di mana pun: tidak bisa dibandingkan, bukan "keluar nol".
+    issueTakTercatatId = await keluar(`MI-BB-${token}-6`, woSelesaiId, 3_000, { buku: null }, 6);
+    // Tercatat di keduanya: buku besar yang dipakai, tidak dijumlahkan dengan arsip.
+    issueBukuMenangId = await keluar(`MI-BB-${token}-7`, woSelesaiId, 2_000, { buku: 2_000, arsip: 1_500 }, 7);
     await prisma.fGReceipt.create({
       data: {
         docNumber: `RCPT-BB-${token}-1`,
@@ -97,6 +148,7 @@ d("nilai bahan produksi (basis data uji)", () => {
 
   afterAll(async () => {
     await prisma.fGReceipt.deleteMany({ where: { woId: { in: seededIds([woId, woSelesaiId]) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(bahanId) } });
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(bahanId) } });
     await prisma.materialIssue.deleteMany({ where: { woId: { in: seededIds([woId, woSelesaiId]) } } });
     await prisma.workOrder.deleteMany({ where: { id: { in: seededIds([woId, woSelesaiId]) } } });
@@ -117,7 +169,17 @@ d("nilai bahan produksi (basis data uji)", () => {
 
   it("hanya pengeluaran yang nilainya menyimpang dari kartu stok yang dilaporkan", async () => {
     const selisih = await selisihNilaiPengeluaranBahan({ woIds: [woId, woSelesaiId] });
-    expect(selisih.map((s) => [s.issueId, s.tercatat, s.keluarStok, s.selisih])).toEqual([[issueLamaId, 15_000, 11_200, 3_800]]);
+    expect(selisih.map((s) => [s.issueId, s.tercatat, s.keluarStok, s.selisih])).toEqual([
+      [issueLamaId, 15_000, 11_200, 3_800],
+      [issueArsipId, 9_000, 8_000, 1_000],
+      [issueCampurId, 4_500, 4_000, 500],
+    ]);
     expect(selisih.map((s) => s.issueId)).not.toContain(issueBaruId);
+  });
+
+  it("nilai yang tidak tercatat di mana pun dilewati; buku besar tidak dijumlahkan dengan arsip", async () => {
+    const ids = (await selisihNilaiPengeluaranBahan({ woIds: [woSelesaiId] })).map((s) => s.issueId);
+    expect(ids).not.toContain(issueTakTercatatId);
+    expect(ids).not.toContain(issueBukuMenangId);
   });
 });

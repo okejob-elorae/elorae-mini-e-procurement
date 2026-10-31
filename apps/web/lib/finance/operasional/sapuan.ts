@@ -225,8 +225,15 @@ export function cariReturPemasokTanpaJurnal(opsi: OpsiCariSapuan) {
     sourceType: SUMBER_OPERASIONAL.RETUR_PEMASOK,
     tanggal: d("completedAt"),
     kolomLabel: "docNumber",
+    // Nilai keluar = `gerakStokPerDokumen` (buku besar stok, arsip StockMovement untuk retur lama).
+    // Baris buku besar tanpa nilai ikut ditemukan: penulisnya menolak (BIAYA_TIDAK_DIKETAHUI), tidak diam.
     syarat: Prisma.sql`AND d.${sqlId("status")} = 'COMPLETED' AND (
       (d.${sqlId("poId")} IS NOT NULL AND COALESCE(d.${sqlId("poCreditAmount")}, 0) <> 0)
+      OR EXISTS (
+        SELECT 1 FROM ${sqlId("StockLedgerEntry")} l
+        WHERE l.${sqlId("refType")} = 'VendorReturn' AND l.${sqlId("refId")} = d.${sqlId("id")} AND l.${sqlId("locationType")} = 'MAIN'
+          AND (l.${sqlId("totalCost")} IS NULL OR l.${sqlId("totalCost")} <> 0)
+      )
       OR EXISTS (SELECT 1 FROM ${sqlId("StockMovement")} m WHERE m.${sqlId("refType")} = 'VENDOR_RETURN' AND m.${sqlId("refId")} = d.${sqlId("id")} AND m.${sqlId("totalCost")} <> 0)
     )`,
     opsi,

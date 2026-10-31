@@ -44,26 +44,6 @@ import { printHtmlInIframe } from '@/lib/print/print-html-in-iframe';
 import { ledgerRefMessageKey } from '@/lib/inventory/ledger-ref-display';
 import { toast } from 'sonner';
 import { toCsv } from "@/lib/reports/csv";
-import { labelJenisGerakan } from '@/lib/inventory/jenis-gerakan-stok';
-import { TAUTAN_DOKUMEN } from '@/app/backoffice/purchase-orders/tautan-dokumen';
-
-/** Baris gerakan kartu stok: `jenis` (gerakan gudang) atau `refType` (buku besar stok). */
-type GerakanKartu = { jenis?: string; refType?: string; notes?: string | null; tautan?: string | null };
-
-/** Ringkasan kartu stok per barang; nilai `null` = tidak tercatat. */
-type RingkasanKartu = {
-  openingValue: number | null;
-  closingValue?: number | null;
-  tanpaDokumen?: number | null;
-  penyesuaianTanpaVarian?: number;
-  movements: Array<{ balanceValue: number | null }>;
-};
-
-/** Nilai akhir: dari aksi bila dikirim, selain itu nilai baris terakhir (atau nilai awal). */
-function nilaiAkhir(d: RingkasanKartu): number | null {
-  if (d.closingValue !== undefined) return d.closingValue;
-  return d.movements.length > 0 ? d.movements[d.movements.length - 1].balanceValue : d.openingValue;
-}
 
 const stockCardPrintLabelsId: Partial<StockCardPrintLabels> = {
   title: 'Kartu Stok',
@@ -92,25 +72,11 @@ const RENTANG_BAWAAN = { dari: format(defaultFrom, 'yyyy-MM-dd'), sampai: format
 
 type ViewMode = 'by-item' | 'by-type' | 'by-category';
 
-/** Nomor dokumen gerakan: tautan ke rinciannya bila dokumen itu punya halaman. */
-function NomorDokumen({ nomor, tautan }: { nomor: string | null; tautan?: string | null }) {
-  if (!nomor) return <>-</>;
-  if (!tautan) return <>{nomor}</>;
-  return (
-    <Link href={tautan} className={TAUTAN_DOKUMEN}>
-      {nomor}
-    </Link>
-  );
-}
-
 /** Kartu stok yang belum dijawab sesudah ini dianggap gagal (tombol dibuka lagi). */
 const BATAS_MUAT_MS = 45_000;
 
 export default function StockCardPage() {
   const t = useTranslations('inventory.stockCard');
-  const tKind = useTranslations('inventory.stockMoveKind');
-  // Label jenis gerakan (GRN, penjualan marketplace, muat van, …) lewat i18n.
-  const ket = (jenis: string) => labelJenisGerakan(tKind, jenis);
   const locale = useLocale();
   const searchParams = useSearchParams();
   const pathname = usePathname();
@@ -127,10 +93,6 @@ export default function StockCardPage() {
     },
     [tMovements]
   );
-  const keterangan = (m: GerakanKartu) =>
-    m.jenis ? ket(m.jenis) : m.refType ? describeRefType(m.refType) : '';
-  const catatan = (m: GerakanKartu) => m.notes ?? null;
-  const tautanDokumen = (m: GerakanKartu) => m.tautan ?? null;
 
   const [viewMode, setViewMode] = useState<ViewMode>('by-item');
   const [itemId, setItemId] = useState<string>(awalUrl.itemId);
@@ -139,8 +101,6 @@ export default function StockCardPage() {
   const [variantSku, setVariantSku] = useState<string>(awalUrl.varian);
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof getCurrentStockSummary>>>([]);
   const [data, setData] = useState<Awaited<ReturnType<typeof getStockCard>> | null>(null);
-  const ringkasan: RingkasanKartu | null = data;
-  const nilaiAkhirTampil = ringkasan ? nilaiAkhir(ringkasan) : null;
   const [dataByType, setDataByType] = useState<Awaited<ReturnType<typeof getStockCardByType>> | null>(null);
   const [dataByCategory, setDataByCategory] = useState<Awaited<ReturnType<typeof getStockCardByCategory>> | null>(null);
   const [categories, setCategories] = useState<Awaited<ReturnType<typeof getItemCategories>>>([]);
@@ -282,7 +242,7 @@ export default function StockCardPage() {
     const rows = data.movements.map((m) => ({
       Tanggal: format(new Date(m.date), "yyyy-MM-dd HH:mm"),
       Dokumen: m.docNumber,
-      Keterangan: keterangan(m),
+      Keterangan: describeRefType(m.refType),
       Masuk: m.in ?? "",
       Keluar: m.out ?? "",
       Sisa: m.balance,
@@ -306,7 +266,6 @@ export default function StockCardPage() {
     }
     try {
       await logPrint('StockCard', itemId);
-      const closingValue = nilaiAkhir(data);
       const html = buildStockCardPrintHtml({
         kind: 'item',
         itemSku: data.item.sku ?? '-',
@@ -318,12 +277,14 @@ export default function StockCardPage() {
         openingBalance: data.openingBalance,
         openingValue: data.openingValue,
         closingBalance: data.closingBalance,
-        closingValue,
+        closingValue: data.closingValue,
         movements: data.movements.map((m) => ({
           date: m.date,
           docNumber: m.docNumber,
-          description: keterangan(m),
-          notes: catatan(m),
+          description: describeRefType(m.refType),
+          /* StockLedgerEntry has no notes column - render the column empty rather than
+             drop it, so the print layout stays identical for every stock card kind. */
+          notes: null,
           variantSku: m.variantSku ?? null,
           in: m.in,
           out: m.out,
@@ -362,8 +323,9 @@ export default function StockCardPage() {
           movements: row.movements.map((m) => ({
             date: m.date,
             docNumber: m.docNumber,
-            description: keterangan(m),
-            notes: catatan(m),
+            description: describeRefType(m.refType),
+            /* StockLedgerEntry has no notes column - see the by-item print handler above. */
+            notes: null,
             in: m.in,
             out: m.out,
             balance: m.balance,
@@ -399,8 +361,9 @@ export default function StockCardPage() {
           movements: row.movements.map((m) => ({
             date: m.date,
             docNumber: m.docNumber,
-            description: keterangan(m),
-            notes: catatan(m),
+            description: describeRefType(m.refType),
+            /* StockLedgerEntry has no notes column - see the by-item print handler above. */
+            notes: null,
             in: m.in,
             out: m.out,
             balance: m.balance,
@@ -550,7 +513,7 @@ export default function StockCardPage() {
                   {data.closingBalance.toLocaleString('id-ID')} {data.item?.uom?.code ?? ''}
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  {nilaiAkhirTampil != null ? `Rp ${nilaiAkhirTampil.toLocaleString('id-ID')}` : '—'}
+                  {data.closingValue != null ? `Rp ${data.closingValue.toLocaleString('id-ID')}` : '—'}
                 </p>
               </div>
             </div>
@@ -565,21 +528,6 @@ export default function StockCardPage() {
               <Info className="h-4 w-4" />
               <AlertDescription>{t('valueHistoryNote')}</AlertDescription>
             </Alert>
-            {/* Stok yang masuk tanpa dokumen gerakan (mis. stok awal dari katalog
-                Jubelio) ditampung di saldo awal — disebut, tidak disembunyikan. */}
-            {ringkasan?.tanpaDokumen != null && ringkasan.tanpaDokumen !== 0 && (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                {t('undocumentedNote', {
-                  qty: ringkasan.tanpaDokumen.toLocaleString('id-ID'),
-                  uom: data.item?.uom?.code ?? '',
-                })}
-              </p>
-            )}
-            {(ringkasan?.penyesuaianTanpaVarian ?? 0) > 0 && (
-              <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                {t('variantAdjNote', { count: ringkasan?.penyesuaianTanpaVarian ?? 0 })}
-              </p>
-            )}
 
             <div className="overflow-x-auto rounded-md border">
               <Table>
@@ -602,15 +550,10 @@ export default function StockCardPage() {
                   {data.movements.map((m) => (
                     <TableRow key={m.id}>
                       <TableCell>{formatDisplayDateTime(m.date, locale)}</TableCell>
-                      <TableCell className="font-medium"><NomorDokumen nomor={m.docNumber} tautan={tautanDokumen(m)} /></TableCell>
-                      <TableCell className="whitespace-normal min-w-[160px]">
-                        {keterangan(m)}
-                        {/* Di bawah 2xl catatan ikut di sini: tabel muat 1280 tanpa gulir samping. */}
-                        {catatan(m) ? (
-                          <span className="block text-xs text-muted-foreground 2xl:hidden">{catatan(m)}</span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="hidden whitespace-normal min-w-[140px] 2xl:table-cell">{catatan(m) ?? '-'}</TableCell>
+                      <TableCell className="font-medium">{m.docNumber || '-'}</TableCell>
+                      <TableCell className="whitespace-normal min-w-[160px]">{describeRefType(m.refType)}</TableCell>
+                      {/* StockLedgerEntry has no notes column - always empty for a ledger row. */}
+                      <TableCell className="hidden 2xl:table-cell">-</TableCell>
                       <TableCell>{m.variantSku ?? '-'}</TableCell>
                       {/* Ledger qty is in the item's base UOM, the same unit material issues use. */}
                       <TableCell>{data.item?.uom?.code ?? '-'}</TableCell>
@@ -782,9 +725,10 @@ export default function StockCardPage() {
                                         {row.movements.map((m) => (
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
-                                            <TableCell className="font-medium"><NomorDokumen nomor={m.docNumber} tautan={tautanDokumen(m)} /></TableCell>
-                                            <TableCell className="whitespace-normal min-w-[180px]">{keterangan(m)}</TableCell>
-                                            <TableCell className="whitespace-normal min-w-[140px]">{catatan(m) ?? '-'}</TableCell>
+                                            <TableCell className="font-medium">{m.docNumber || '-'}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[180px]">{describeRefType(m.refType)}</TableCell>
+                                            {/* StockLedgerEntry has no notes column - always empty for a ledger row. */}
+                                            <TableCell>-</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
                                             </TableCell>
@@ -961,9 +905,10 @@ export default function StockCardPage() {
                                         {row.movements.map((m) => (
                                           <TableRow key={m.id}>
                                             <TableCell className="whitespace-nowrap">{formatDisplayDateTime(m.date, locale)}</TableCell>
-                                            <TableCell className="font-medium"><NomorDokumen nomor={m.docNumber} tautan={tautanDokumen(m)} /></TableCell>
-                                            <TableCell className="whitespace-normal min-w-[180px]">{keterangan(m)}</TableCell>
-                                            <TableCell className="whitespace-normal min-w-[140px]">{catatan(m) ?? '-'}</TableCell>
+                                            <TableCell className="font-medium">{m.docNumber || '-'}</TableCell>
+                                            <TableCell className="whitespace-normal min-w-[180px]">{describeRefType(m.refType)}</TableCell>
+                                            {/* StockLedgerEntry has no notes column - always empty for a ledger row. */}
+                                            <TableCell>-</TableCell>
                                             <TableCell className="text-right text-green-600 dark:text-green-400">
                                               {m.in != null ? m.in.toLocaleString('id-ID') : '-'}
                                             </TableCell>

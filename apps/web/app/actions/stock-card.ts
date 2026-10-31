@@ -121,6 +121,11 @@ export async function getStockCard(
     entries.length > 0
       ? Number(entries[entries.length - 1].balanceQty)
       : openingBalance;
+  /* Same rule as getStockCardByType: the last row's own value, null staying null. */
+  const closingValue =
+    entries.length > 0
+      ? nullableNumber(entries[entries.length - 1].balanceValue)
+      : openingValue;
 
   return {
     item: serializeItemForClient(itemRow),
@@ -149,6 +154,7 @@ export async function getStockCard(
       };
     }),
     closingBalance,
+    closingValue,
   };
 }
 

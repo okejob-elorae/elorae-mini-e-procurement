@@ -4,6 +4,7 @@
 
 import { Decimal } from "decimal.js";
 import { prisma, type Prisma } from "@elorae/db";
+import { gerakStokPerDokumen } from "@/lib/inventory/kartu-stok-queries";
 import { bagianBahanPenerimaan } from "./biaya-penerimaan";
 import { nilaiBahanKembaliWo } from "./kembali-bahan-writer";
 
@@ -86,7 +87,7 @@ export type SelisihPengeluaranBahan = {
   issuedAt: Date;
   /** Nilai yang tercatat di dokumen pengeluaran (dan dipikul barang jadi). */
   tercatat: number;
-  /** Nilai yang benar-benar keluar dari kartu stok (Σ `StockMovement` WO_ISSUE). */
+  /** Nilai yang benar-benar keluar dari kartu stok (`gerakStokPerDokumen` MaterialIssue). */
   keluarStok: number;
   selisih: number;
 };
@@ -97,7 +98,9 @@ export type SelisihPengeluaranBahan = {
  * hanya berisi pengeluaran LAMA (dicatat dengan harga ketik / harga PO + PPN).
  * Selisihnya ikut dipikul barang jadi WO itu dan dikredit dari persediaan bahan,
  * jadi buku besar bahan menyimpang dari kartu stoknya sebesar itu. Tidak ada
- * perbaikan otomatis — angka ini untuk dilihat dan diputuskan.
+ * perbaikan otomatis — angka ini untuk dilihat dan diputuskan. Pengeluaran yang
+ * nilai keluarnya tidak tercatat di kartu stok tidak bisa dibandingkan dan
+ * dilewati, bukan dianggap keluar nol.
  */
 export async function selisihNilaiPengeluaranBahan(
   opsi: { woIds?: string[]; sejak?: Date; sampai?: Date; batas?: number } = {},
@@ -115,16 +118,17 @@ export async function selisihNilaiPengeluaranBahan(
     select: { id: true, docNumber: true, woId: true, issuedAt: true, totalCost: true },
   });
   if (issues.length === 0) return [];
-  const gerak = await klien.stockMovement.groupBy({
-    by: ["refId"],
-    where: { refType: "WO_ISSUE", refId: { in: issues.map((i) => i.id) } },
-    _sum: { totalCost: true },
-  });
-  const perIssue = new Map(gerak.map((g) => [g.refId, new Decimal(g._sum.totalCost?.toString() ?? 0)]));
+  const gerak = await gerakStokPerDokumen(
+    klien,
+    "MaterialIssue",
+    issues.map((i) => i.id),
+  );
   const hasil: SelisihPengeluaranBahan[] = [];
   for (const i of issues) {
+    const g = gerak.get(i.id);
+    if (g === null) continue;
     const tercatat = new Decimal(i.totalCost.toString());
-    const keluarStok = perIssue.get(i.id) ?? new Decimal(0);
+    const keluarStok = new Decimal(g?.total ?? 0);
     const selisih = tercatat.minus(keluarStok);
     if (selisih.abs().lt(0.01)) continue;
     hasil.push({
