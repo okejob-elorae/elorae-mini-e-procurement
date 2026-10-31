@@ -135,11 +135,11 @@ d("recordSpgSale: harga di toko konsinyasi (test bed only)", () => {
     expect(Number(nota.total)).toBe(80_000);
   });
 
-  it("toko konsi tanpa markup sah: harga jual apa adanya (80.000), sama dengan computeStorePrice", async () => {
+  it("toko konsi tanpa markup sah: nota ditolak NO_PRICE, bukan dijual di harga katalog 80.000", async () => {
     const res = await recordSpgSale({ salesmanId, storeId: konsiTanpaMarkupId, lines: [{ itemId, variantSku: null, qty: 1 }] });
-    if (!res.ok) throw new Error(`nota gagal: ${res.code}`);
-    const { baris } = await notaDan(res.spgSaleId);
-    expect(Number(baris.unitPrice)).toBe(80_000);
+    expect(res).toEqual({ ok: false, code: "NO_PRICE" });
+    expect(await prisma.spgSale.count({ where: { storeId: seededId(konsiTanpaMarkupId) } })).toBe(0);
+    expect(await prisma.storeStockMovement.count({ where: { storeId: seededId(konsiTanpaMarkupId), itemId: seededId(itemId) } })).toBe(0);
   });
 
   it("promo 10% di toko konsi dihitung dari harga di toko: 100.000 → 90.000; bagian toko 50% = 5.000, bagian Elorae 5.000", async () => {
@@ -160,20 +160,22 @@ d("recordSpgSale: harga di toko konsinyasi (test bed only)", () => {
     expect(bagianEloraeSen({ discount: Number(baris.discount), storeDiscount: Number(baris.storeDiscount) })).toBe(500_000);
   });
 
-  it("katalog HP memakai harga yang sama dengan penulis: konsi 100.000, putus 80.000, tanpa toko 80.000", async () => {
+  it("katalog HP memakai harga yang sama dengan penulis: konsi 100.000, putus 80.000, konsi tanpa markup tanpa harga, tanpa toko 80.000", async () => {
     const harga = async (storeId?: string) => (await getSellableCatalogForSpg(storeId)).find((r) => r.itemId === itemId)?.price;
     expect(await harga(konsiId)).toBe(100_000);
     expect(await harga(putusId)).toBe(80_000);
-    expect(await harga(konsiTanpaMarkupId)).toBe(80_000);
+    expect(await harga(konsiTanpaMarkupId)).toBeNull();
     expect(await harga()).toBe(80_000);
   });
 
-  it("info produk di HP SPG menyebut harga yang sama dengan kasir: konsi 100.000, putus 80.000", async () => {
+  it("info produk di HP SPG menyebut harga yang sama dengan kasir: konsi 100.000, putus 80.000, konsi tanpa markup tanpa harga", async () => {
     const sekarang = new Date();
     expect((await infoProdukSpg(itemId, konsiId, sekarang))?.harga).toBe(100_000);
     expect((await infoProdukSpg(itemId, putusId, sekarang))?.harga).toBe(80_000);
+    expect((await infoProdukSpg(itemId, konsiTanpaMarkupId, sekarang))?.harga).toBeNull();
     expect((await daftarProdukSpg(konsiId)).find((p) => p.itemId === itemId)?.harga).toBe(100_000);
     expect((await daftarProdukSpg(putusId)).find((p) => p.itemId === itemId)?.harga).toBe(80_000);
+    expect((await daftarProdukSpg(konsiTanpaMarkupId)).find((p) => p.itemId === itemId)?.harga).toBeNull();
   });
 
   it("pratinjau HP (katalog + promo + mesin yang sama) = nota tercatat di toko konsi: 2 potong diskon 10% = 180.000", async () => {

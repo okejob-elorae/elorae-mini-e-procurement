@@ -135,8 +135,13 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
       await prisma.item.create({ data: { sku: `TEST-PRD-L-${token}`, nameId: `Lain ${token}`, nameEn: "x", type: "FINISHED_GOOD", uomId } })
     ).id;
 
+    // Toko konsinyasi dengan markup sah (25%): harga di toko = 123.456 × 1,25 = 154.320.
     const toko = async (k: string, aktif = true) =>
-      (await prisma.store.create({ data: { code: `TEST-PRD-${k}-${token}`, name: `Toko ${k} ${token}`, address: "x", termsType: "KONSI", isActive: aktif } })).id;
+      (
+        await prisma.store.create({
+          data: { code: `TEST-PRD-${k}-${token}`, name: `Toko ${k} ${token}`, address: "x", termsType: "KONSI", markupPercent: 25, isActive: aktif },
+        })
+      ).id;
     tokoId = await toko("SAYA");
     tokoBaruId = await toko("BARU");
     tokoSpgLainId = await toko("SPGLAIN");
@@ -199,7 +204,7 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
     const p = await infoProdukSpg(itemId, tokoId, sekarang);
     expect(p).not.toBeNull();
     if (!p) return;
-    expect(p.harga).toBe(123_456);
+    expect(p.harga).toBe(154_320);
     expect(p.bahan).toBe("Katun combed 30s");
     expect(p.caraRawat).toBe("Cuci dingin\nJangan diputih");
     expect(p.deskripsi).toBe("Kaos harian.");
@@ -286,7 +291,7 @@ d("infoProdukSpg / daftarProdukSpg (test bed only)", () => {
       itemId,
       nama: `Kaos Uji ${token}`,
       sku: `TEST-PRD-${token}`,
-      harga: 123_456,
+      harga: 154_320,
       foto: `https://img.test/${token}/utama.jpg`,
       varian: [
         { variantSku: skuM, barcode: `BC-${token}` },

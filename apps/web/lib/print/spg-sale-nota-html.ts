@@ -24,8 +24,9 @@ function rupiah(n: number): string {
 }
 
 /**
- * Exact 2dp, for the Subtotal and rounding rows only: whole-rupiah would print Subtotal
- * identical to the already-rounded TOTAL, which is the very difference those rows explain.
+ * Exact 2dp, for the rows above a rounded TOTAL only (Subtotal, the discount breakdown and the
+ * rounding row): whole-rupiah would print them so they no longer add up to the TOTAL, and a
+ * Subtotal identical to the already-rounded TOTAL — the very difference those rows explain.
  */
 function rupiahExact(n: number): string {
   return `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -35,16 +36,19 @@ function adjustmentExact(n: number): string {
   return `${n >= 0 ? "+" : "-"}${rupiahExact(Math.abs(n))}`;
 }
 
+function roundingRow(adjustment: number): string {
+  return `<div class="tot-row"><span>Pembulatan tunai</span><span>${adjustmentExact(adjustment)}</span></div>
+  `;
+}
+
 /**
- * The Subtotal and rounding rows, printed only when the whole-rupiah TOTAL differs from the
- * exact line sum. Same rule and labels as the cash screens.
+ * The Subtotal and rounding rows of a receipt without discounts, printed only when the
+ * whole-rupiah TOTAL differs from the exact line sum. Same rule and labels as the cash screens.
  */
-function roundingRows(subtotal: number, total: number): string {
-  const adjustment = Math.round((total - subtotal) * 100) / 100;
+function roundingRows(subtotal: number, adjustment: number): string {
   if (adjustment === 0) return "";
   return `<div class="tot-row"><span>Subtotal</span><span>${rupiahExact(subtotal)}</span></div>
-  <div class="tot-row"><span>Pembulatan tunai</span><span>${adjustmentExact(adjustment)}</span></div>
-  `;
+  ${roundingRow(adjustment)}`;
 }
 
 function fmtDate(iso: string): string {
@@ -93,6 +97,11 @@ export type RincianNota = {
   diskonMember: { tingkat: string; potongan: number } | null;
   diskonSpg: number;
   potonganTotal: number;
+  /**
+   * Pembulatan tunai: TOTAL (rupiah utuh, dibulatkan penulis nota) − jumlah persisnya
+   * (subtotal − seluruh potongan). 0 kalau tidak ada yang dibulatkan, termasuk nota lama.
+   */
+  pembulatan: number;
   total: number;
 };
 
@@ -100,7 +109,8 @@ export type RincianNota = {
  * Rincian nota untuk dicetak dan ditampilkan — satu tempat, supaya HP, kantor,
  * dan kertas nota membaca angka yang sama. Jumlah baris kotor = subtotal;
  * promo barang + promo belanja + diskon member + diskon SPG = seluruh potongan; subtotal −
- * seluruh potongan = total (= jumlah nilai bersih baris, dijamin penulis nota).
+ * seluruh potongan = total persis (= jumlah nilai bersih baris, dijamin penulis nota), dan
+ * total persis + pembulatan = TOTAL rupiah utuh yang ditagih.
  */
 export function rincianNotaSpg(sale: NotaUntukRincian): RincianNota {
   const promoBelanja = sale.orderDiscount > 0 ? { nama: sale.orderPromoName ?? "Promo belanja", potongan: sale.orderDiscount } : null;
@@ -125,6 +135,7 @@ export function rincianNotaSpg(sale: NotaUntukRincian): RincianNota {
     diskonMember,
     diskonSpg,
     potonganTotal,
+    pembulatan: Math.round((sale.total - (sale.subtotal - (potonganTotal > 0 ? potonganTotal : 0))) * 100) / 100,
     total: sale.total,
   };
 }
@@ -168,15 +179,17 @@ export function spgSaleNotaHtml(sale: SpgSaleDetail): string {
     .join("");
 
   // Nota lama (sebelum promo konter) tanpa potongan dicetak seperti dulu: hanya TOTAL.
+  // Saat TOTAL dibulatkan, rincian di atasnya dicetak sampai sen supaya tetap terjumlah ke TOTAL.
+  const uang = r.pembulatan !== 0 ? rupiahExact : rupiah;
   const ringkasan =
     r.potonganTotal > 0
-      ? `<div class="tot-row"><span>Subtotal</span><span class="amt">${rupiah(r.subtotal)}</span></div>
-  ${r.promoBarang > 0 ? `<div class="tot-row"><span>Promo barang</span><span class="amt">-${rupiah(r.promoBarang)}</span></div>` : ""}
-  ${r.diskonMember ? `<div class="tot-row"><span>Diskon member (${esc(r.diskonMember.tingkat)})</span><span class="amt">-${rupiah(r.diskonMember.potongan)}</span></div>` : ""}
-  ${r.promoBelanja ? `<div class="tot-row"><span>${esc(r.promoBelanja.nama)}</span><span class="amt">-${rupiah(r.promoBelanja.potongan)}</span></div>` : ""}
-  ${r.diskonSpg > 0 ? `<div class="tot-row"><span>Diskon SPG</span><span class="amt">-${rupiah(r.diskonSpg)}</span></div>` : ""}
-  ${jenisPotongan(r) > 1 ? `<div class="tot-row"><span>Total potongan</span><span class="amt">-${rupiah(r.potonganTotal)}</span></div>` : ""}
-  <div class="divider thin"></div>`
+      ? `<div class="tot-row"><span>Subtotal</span><span class="amt">${uang(r.subtotal)}</span></div>
+  ${r.promoBarang > 0 ? `<div class="tot-row"><span>Promo barang</span><span class="amt">-${uang(r.promoBarang)}</span></div>` : ""}
+  ${r.diskonMember ? `<div class="tot-row"><span>Diskon member (${esc(r.diskonMember.tingkat)})</span><span class="amt">-${uang(r.diskonMember.potongan)}</span></div>` : ""}
+  ${r.promoBelanja ? `<div class="tot-row"><span>${esc(r.promoBelanja.nama)}</span><span class="amt">-${uang(r.promoBelanja.potongan)}</span></div>` : ""}
+  ${r.diskonSpg > 0 ? `<div class="tot-row"><span>Diskon SPG</span><span class="amt">-${uang(r.diskonSpg)}</span></div>` : ""}
+  ${jenisPotongan(r) > 1 ? `<div class="tot-row"><span>Total potongan</span><span class="amt">-${uang(r.potonganTotal)}</span></div>` : ""}
+  ${r.pembulatan !== 0 ? roundingRow(r.pembulatan) : ""}<div class="divider thin"></div>`
       : "";
   const hemat = r.potonganTotal > 0 ? `<div class="center hemat">Anda hemat ${rupiah(r.potonganTotal)}</div>` : "";
   const pembeli = sale.customer
@@ -271,7 +284,7 @@ export function spgSaleNotaHtml(sale: SpgSaleDetail): string {
   <div class="divider"></div>
   <div class="lines">${lines}</div>
   <div class="divider"></div>
-  ${ringkasan}${r.potonganTotal > 0 ? "" : roundingRows(sale.subtotal, sale.total)}
+  ${ringkasan}${r.potonganTotal > 0 ? "" : roundingRows(r.subtotal, r.pembulatan)}
   <div class="tot-row grand"><span>TOTAL</span><span class="amt">${rupiah(r.total)}</span></div>
   ${hemat}
   ${bayar}

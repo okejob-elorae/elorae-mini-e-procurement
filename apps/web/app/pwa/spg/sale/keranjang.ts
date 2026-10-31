@@ -3,6 +3,7 @@
  * bisa dites di Node: bentuk simpanan `sessionStorage`, isian diskon manual,
  * isian pembeli, dan alasan PERTAMA tombol simpan masih mati.
  */
+import { roundCents, roundToWholeRupiah } from "@elorae/db/pricing";
 import { hitungPromoKonter, type AnggotaNota, type DiskonManual, type GagalPromoKonter, type HasilPromoKonter, type PromoKonter } from "@/lib/spg/promo-konter";
 import type { AturanDiskonManualSpg } from "@/lib/spg/pengaturan";
 import type { AturanMember } from "@/lib/spg/member";
@@ -219,9 +220,27 @@ export function kekuranganJual(input: {
 /** Satu baris keranjang di layar: kunci `itemId::variantSku`, baris katalog, jumlah. */
 export type BarisKeranjang = { kunci: string; row: Pick<SpgCatalogRow, "itemId" | "categoryId" | "price">; qty: number };
 
+/**
+ * Total yang DITAGIH dari total persis keranjang (subtotal − seluruh potongan):
+ * rupiah utuh lewat `roundToWholeRupiah`, helper yang sama dengan penulis nota
+ * (`recordSpgSale`) — uang di konter tidak bersen. `pembulatan` = ditagih −
+ * total persis (bisa negatif), yang ditampilkan layar di atas Total.
+ */
+export function tagihanKeranjang(totalPersis: number): { ditagih: number; pembulatan: number } {
+  const ditagih = roundToWholeRupiah(totalPersis);
+  return { ditagih, pembulatan: roundCents(ditagih - totalPersis) };
+}
+
 export type PratinjauKeranjang = {
   /** Hitungan yang ditampilkan: dengan diskon SPG kalau sah, tanpa diskon kalau mesin menolaknya. */
   hasil: HasilPromoKonter;
+  /**
+   * Total yang akan dicatat: `hasil.total` dibulatkan ke rupiah utuh
+   * (`tagihanKeranjang`). Inilah yang dibandingkan dengan total tercatat.
+   */
+  ditagih: number;
+  /** `ditagih − hasil.total`; 0 kalau total persisnya sudah rupiah utuh. */
+  pembulatan: number;
   /** Hitungan tanpa diskon SPG — dasar batas persennya. */
   tanpaManual: HasilPromoKonter;
   /** Kenapa mesin menolak diskon SPG, atau null. */
@@ -239,7 +258,8 @@ export type PratinjauKeranjang = {
  * seperti penulis nota (`recordSpgSale`): kunci baris `itemId::variantSku`,
  * kategori barang, harga katalog per potong, aturan diskon dari pengaturan yang
  * sama — supaya total di layar sama dengan total tercatat selama harga dan promo
- * tidak berubah. Dipakai juga untuk nota yang dijual tanpa sinyal.
+ * tidak berubah. Total yang ditagih dibulatkan ke rupiah utuh dengan helper yang
+ * sama dengan penulis nota (`ditagih`). Dipakai juga untuk nota yang dijual tanpa sinyal.
  */
 export function pratinjauKeranjang(input: {
   baris: readonly BarisKeranjang[];
@@ -259,7 +279,7 @@ export function pratinjauKeranjang(input: {
     aturanManual: input.aturan,
   };
   const manual = input.aturan.aktif ? diskonUntukMesin(input.diskon) : null;
-  const hitung = (anggota: AnggotaNota | null): Omit<PratinjauKeranjang, "daftarKurang"> | null => {
+  const hitung = (anggota: AnggotaNota | null): Pick<PratinjauKeranjang, "hasil" | "tanpaManual" | "galatMesin"> | null => {
     const tanpaManual = hitungPromoKonter({ ...dasar, anggota });
     if (!tanpaManual.ok) return null;
     if (!manual) return { hasil: tanpaManual, tanpaManual, galatMesin: null };
@@ -278,8 +298,8 @@ export function pratinjauKeranjang(input: {
     if (nilai < minimal) {
       const tanpa = hitung(null);
       if (!tanpa) return null;
-      return { ...tanpa, daftarKurang: { minimal, kurang: Math.round((minimal - nilai) * 100) / 100 } };
+      return { ...tanpa, ...tagihanKeranjang(tanpa.hasil.total), daftarKurang: { minimal, kurang: Math.round((minimal - nilai) * 100) / 100 } };
     }
   }
-  return { ...awal, daftarKurang: null };
+  return { ...awal, ...tagihanKeranjang(awal.hasil.total), daftarKurang: null };
 }

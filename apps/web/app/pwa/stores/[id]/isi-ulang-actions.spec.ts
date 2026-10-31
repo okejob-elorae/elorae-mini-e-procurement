@@ -43,7 +43,7 @@ const MASUK = {
 beforeEach(() => {
   state.termsType = "KONSI";
   createFieldSalesOrder.mockReset();
-  createFieldSalesOrder.mockResolvedValue({ orderId: "o1", orderNo: "KONSI/0001", oversell: [], kreditDitahan: false });
+  createFieldSalesOrder.mockResolvedValue({ orderId: "o1", orderNo: "KONSI/0001", oversell: [], creditHold: false, kreditDitahan: false });
 });
 
 describe("kirimPesananIsiUlang", () => {

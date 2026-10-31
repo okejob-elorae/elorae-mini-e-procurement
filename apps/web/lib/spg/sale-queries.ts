@@ -158,13 +158,18 @@ export type SpgSaleDetail = {
   storeName: string;
   saleLat: number | null;
   saleLng: number | null;
+  /** Jumlah kotor persis (sampai sen) seluruh baris, SEBELUM potongan. */
   subtotal: number;
+  /**
+   * Total yang ditagih: subtotal − `discountTotal`, dibulatkan ke rupiah utuh oleh penulis
+   * nota. Selisihnya dengan jumlah persis = pembulatan tunai (`rincianNotaSpg().pembulatan`).
+   */
   total: number;
   cashReceived: number;
   changeGiven: number;
   note: string | null;
   createdAtIso: string;
-  /** Jumlah seluruh potongan (promo barang + promo belanja + diskon manual). 0 untuk nota lama. */
+  /** Jumlah seluruh potongan (promo barang + promo belanja + diskon member + diskon manual). 0 untuk nota lama. */
   discountTotal: number;
   orderPromoName: string | null;
   orderDiscount: number;

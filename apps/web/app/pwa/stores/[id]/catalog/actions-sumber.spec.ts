@@ -31,7 +31,7 @@ describe("submitFieldSalesOrder — dokumen sumber (unit)", () => {
   beforeEach(() => {
     urutan.length = 0;
     mockAuth.mockReset().mockResolvedValue({ user: { id: "u1" } });
-    mockCreate.mockReset().mockResolvedValue({ orderId: "baru1", orderNo: "PUTUS/2", kreditDitahan: false });
+    mockCreate.mockReset().mockResolvedValue({ orderId: "baru1", orderNo: "PUTUS/2", creditHold: false, kreditDitahan: false });
     mockTautkan.mockReset().mockImplementation(async () => void urutan.push("tautkan"));
     mockRapikan.mockReset().mockImplementation(async () => {
       urutan.push("rapikan");
@@ -41,7 +41,7 @@ describe("submitFieldSalesOrder — dokumen sumber (unit)", () => {
 
   it("an edit moves the old order's request/recommendation to the replacement, before linking the cart's own source", async () => {
     const r = await submitFieldSalesOrder({ storeId: "s1", visitId: "v1", lines: baris, gantiOrderId: "lama1", sumber: "permintaan:req1" });
-    expect(r).toEqual({ ok: true, orderId: "baru1", orderNo: "PUTUS/2", kreditDitahan: false });
+    expect(r).toEqual({ ok: true, orderId: "baru1", orderNo: "PUTUS/2", creditHold: false, kreditDitahan: false });
     // Dibatasi ke pesanan milik salesman ini: kiriman ulang tidak memeriksa ulang pemilik pesanan lama.
     expect(mockRapikan).toHaveBeenCalledWith("lama1", { salesmanId: "u1" });
     expect(mockTautkan).toHaveBeenCalledWith(

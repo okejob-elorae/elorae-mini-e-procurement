@@ -24,7 +24,7 @@ const { submitFieldSalesOrder } = await import("./actions");
 const baris = [{ itemId: "i1", variantSku: "", productName: "Kaos", qty: 6, unitPrice: 1000 }];
 
 beforeEach(() => {
-  h.create.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", kreditDitahan: false });
+  h.create.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", creditHold: false, kreditDitahan: false });
   h.cari.mockReset();
 });
 
@@ -32,7 +32,7 @@ describe("submitFieldSalesOrder — kunjungan tanpa sinyal", () => {
   it("finds the visit by the phone's id for this salesman and store, and hands its server id to the writer", async () => {
     h.cari.mockResolvedValue("v-dari-hp");
     const r = await submitFieldSalesOrder({ storeId: "s1", visitClientId: "hp-1", lines: baris, idempotencyKey: "k1" });
-    expect(r).toEqual({ ok: true, orderId: "o1", orderNo: "PUTUS/1", kreditDitahan: false });
+    expect(r).toEqual({ ok: true, orderId: "o1", orderNo: "PUTUS/1", creditHold: false, kreditDitahan: false });
     expect(h.cari).toHaveBeenCalledWith({ userId: "u1", storeId: "s1", visitClientId: "hp-1" });
     expect(h.create).toHaveBeenCalledWith(expect.objectContaining({ visitId: "v-dari-hp", idempotencyKey: "k1" }));
   });

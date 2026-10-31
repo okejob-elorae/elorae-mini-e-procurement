@@ -242,7 +242,8 @@ d("promo konter kantor (test bed only)", () => {
   });
 
   it("tanggungan potongan: toko konsinyasi dibagi menurut bagian yang dibekukan di nota, toko putus hanya dicatat", async () => {
-    await prisma.store.update({ where: { id: storeLainId }, data: { termsType: "KONSI" } });
+    // Toko konsinyasi wajib punya markup yang sah — tanpanya nota ditolak NO_PRICE.
+    await prisma.store.update({ where: { id: storeLainId }, data: { termsType: "KONSI", markupPercent: 25 } });
     await buat({ name: `Bagi ${tag}`, storeIds: [storeLainId], storeSharePercent: 50 });
     await buat({ name: `Putus ${tag}`, storeIds: [storeId], storeSharePercent: 50 });
     const a = await recordSpgSale({ salesmanId: userId, storeId: storeLainId, lines: [{ itemId, variantSku: null, qty: 2 }] });
@@ -254,10 +255,10 @@ d("promo konter kantor (test bed only)", () => {
       sampai: new Date(sekarang + 60_000),
       storeIds: [storeId, storeLainId],
     });
-    // Konsi: 2 × 100.000 diskon 20% = 40.000, separuhnya toko.
-    expect(lapor.tanggungan.konsi).toEqual({ potongan: 40_000, toko: 20_000, elorae: 20_000 });
+    // Konsi: harga di toko 100.000 × (1 + 25%) = 125.000; 2 × 125.000 diskon 20% = 50.000, separuhnya toko.
+    expect(lapor.tanggungan.konsi).toEqual({ potongan: 50_000, toko: 25_000, elorae: 25_000 });
     expect(lapor.tanggungan.putus).toEqual({ potongan: 20_000 });
-    expect(lapor.baris.find((x) => x.name === `Bagi ${tag}`)).toMatchObject({ potongan: 40_000, bagianToko: 50 });
+    expect(lapor.baris.find((x) => x.name === `Bagi ${tag}`)).toMatchObject({ potongan: 50_000, bagianToko: 50 });
   });
 
   it("laporan diskon manual: hanya nota dengan diskon manual, dalam rentang, dengan alasan", async () => {

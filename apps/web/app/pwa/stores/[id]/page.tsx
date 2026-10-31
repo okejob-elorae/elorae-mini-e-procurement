@@ -38,7 +38,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
 
   // SPG hanya punya satu toko tetap. Toko lain — lewat tautan lama atau alamat
   // yang diketik — dikembalikan ke beranda SEBELUM baris toko itu dibaca:
-  // halaman ini membawa margin, tempo, riwayat kunjungan, dan pesanan toko.
+  // halaman ini membawa markup, tempo, riwayat kunjungan, dan pesanan toko.
   const [terkunci, tokoTetap] = await Promise.all([tokoTerkunci(), ambilTokoTetap(session.user.id)]);
   if (tokoTetap && tokoTetap !== id) redirect("/pwa");
 
@@ -184,7 +184,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
           contactName: store.contactName,
           termsType: store.termsType,
           paymentTempo: store.paymentTempo,
-          // Margin konsinyasi tidak ditampilkan di layar mana pun, dan SPG tidak
+          // Markup konsinyasi tidak ditampilkan di layar mana pun, dan SPG tidak
           // memerlukannya — jangan dikirim ke HP-nya.
           markupPercent: tokoTetap ? null : store.markupPercent,
           lat: store.lat,

@@ -112,7 +112,7 @@ beforeEach(() => {
   h.terkunci.mockReset().mockResolvedValue(false);
   h.store.mockReset().mockResolvedValue(toko());
   h.muat.mockReset().mockResolvedValue(bahanSatuBarang());
-  h.create.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", oversell: [], kreditDitahan: false });
+  h.create.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", oversell: [], creditHold: false, kreditDitahan: false });
 });
 
 describe("penjaga server rencana kirim", () => {
@@ -196,7 +196,7 @@ describe("bangunRencanaKirimAction", () => {
 describe("kirimRencanaKirimAction", () => {
   it("never forwards a price from the phone, skips the putus minimum, and keeps the draft's idempotency key", async () => {
     const r = await kirimRencanaKirimAction(kiriman);
-    expect(r).toEqual({ ok: true, orderId: "o1", orderNo: "PUTUS/1", kreditDitahan: false });
+    expect(r).toEqual({ ok: true, orderId: "o1", orderNo: "PUTUS/1", creditHold: false, kreditDitahan: false });
     expect(h.create).toHaveBeenCalledWith({
       storeId: "s1",
       salesmanId: "u1",

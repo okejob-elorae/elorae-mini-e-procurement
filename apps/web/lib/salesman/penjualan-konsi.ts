@@ -16,7 +16,7 @@ import { kunciHariWib } from "@/lib/dashboard/tren";
  *   pernah dijumlahkan untuk bulan yang sama.
  *
  * Nilainya HARGA ELORAE: harga yang Elorae terima per potong di toko itu
- * (`hargaTerimaKonsi` — harga di toko dikurangi margin toko sekarang), sama
+ * (`hargaTerimaKonsi` — harga di toko ÷ (1 + markup toko sekarang)), sama
  * dengan dasar "harga toko terima" barang hilang; barang yang belum pernah
  * dikirim berharga ke toko itu jatuh ke harga jual Elorae.
  *

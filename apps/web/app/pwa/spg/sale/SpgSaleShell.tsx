@@ -44,6 +44,7 @@ import {
   memberKeranjang,
   pembeliUntukKirim,
   pratinjauKeranjang,
+  tagihanKeranjang,
   uraiSimpananKeranjang,
   type IsianDiskon,
   type PembeliKeranjang,
@@ -184,8 +185,28 @@ export function SpgBelumCheckIn({ namaToko }: { namaToko: string }) {
   );
 }
 
+/**
+ * Rupiah dua desimal — hanya untuk ringkasan keranjang yang total ditagihnya dibulatkan:
+ * dengan rupiah utuh, baris di atas Total tidak lagi terjumlah ke angka Total.
+ */
+const rupiahPersis = (n: number) => `Rp ${n.toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 /** Satu baris "label ........ uang". Uang tidak pernah dipotong; labelnya yang membungkus. */
-function BarisUang({ label, nilai, kuat = false, potongan = false }: { label: string; nilai: number; kuat?: boolean; potongan?: boolean }) {
+function BarisUang({
+  label,
+  nilai,
+  kuat = false,
+  potongan = false,
+  persis = false,
+}: {
+  label: string;
+  nilai: number;
+  kuat?: boolean;
+  potongan?: boolean;
+  /** Tampilkan sampai sen (`rupiahPersis`) — saat ada pembulatan tunai. */
+  persis?: boolean;
+}) {
+  const uang = persis ? rupiahPersis(nilai) : formatIDR(nilai);
   return (
     <div className={cn("flex items-baseline justify-between gap-3", kuat ? "text-base font-bold" : "text-sm")}>
       <span className={cn("min-w-0 flex-1", !kuat && "text-muted-foreground")}>{label}</span>
@@ -196,8 +217,18 @@ function BarisUang({ label, nilai, kuat = false, potongan = false }: { label: st
           kuat && "text-lg",
         )}
       >
-        {potongan ? `−${formatIDR(nilai)}` : formatIDR(nilai)}
+        {potongan ? `−${uang}` : uang}
       </span>
+    </div>
+  );
+}
+
+/** Pembulatan tunai (bertanda, sampai sen): total ditagih − total persis keranjang. */
+function BarisPembulatan({ label, nilai }: { label: string; nilai: number }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 text-sm">
+      <span className="min-w-0 flex-1 text-muted-foreground">{label}</span>
+      <span className="shrink-0 whitespace-nowrap tabular-nums">{`${nilai >= 0 ? "+" : "−"}${rupiahPersis(Math.abs(nilai))}`}</span>
     </div>
   );
 }
@@ -399,7 +430,9 @@ export function SpgSaleShell({
 
   const hasil = pratinjau?.hasil ?? null;
   const hasilPerKunci = useMemo(() => new Map((hasil?.baris ?? []).map((b) => [b.key, b])), [hasil]);
-  const total = hasil?.total ?? kotor;
+  // Total yang DITAGIH — rupiah utuh lewat helper yang sama dengan penulis nota —
+  // supaya total di layar (dan di antrean HP) sama dengan total yang tercatat.
+  const { ditagih: total, pembulatan } = pratinjau ?? tagihanKeranjang(kotor);
   const potongan = hasil?.potonganTotal ?? 0;
 
   const kurang = kekuranganJual({
@@ -893,15 +926,30 @@ export function SpgSaleShell({
             </ul>
 
             <div className="space-y-1 border-t px-4 py-3">
-              <BarisUang label={t("cart.subtotal")} nilai={hasil?.subtotal ?? kotor} />
-              {hasil && hasil.potonganBaris > 0 ? <BarisUang label={t("cart.itemPromos")} nilai={hasil.potonganBaris} potongan /> : null}
+              <BarisUang label={t("cart.subtotal")} nilai={hasil?.subtotal ?? kotor} persis={pembulatan !== 0} />
+              {hasil && hasil.potonganBaris > 0 ? (
+                <BarisUang label={t("cart.itemPromos")} nilai={hasil.potonganBaris} potongan persis={pembulatan !== 0} />
+              ) : null}
               {hasil?.member && hasil.member.potongan > 0 ? (
-                <BarisUang label={t("cart.memberDiscount", { tingkat: hasil.member.tingkat })} nilai={hasil.member.potongan} potongan />
+                <BarisUang
+                  label={t("cart.memberDiscount", { tingkat: hasil.member.tingkat })}
+                  nilai={hasil.member.potongan}
+                  potongan
+                  persis={pembulatan !== 0}
+                />
               ) : null}
               {hasil?.promoNota ? (
-                <BarisUang label={t("cart.orderPromo", { name: hasil.promoNota.name })} nilai={hasil.promoNota.potongan} potongan />
+                <BarisUang
+                  label={t("cart.orderPromo", { name: hasil.promoNota.name })}
+                  nilai={hasil.promoNota.potongan}
+                  potongan
+                  persis={pembulatan !== 0}
+                />
               ) : null}
-              {hasil && hasil.diskonManual > 0 ? <BarisUang label={t("cart.manualDiscount")} nilai={hasil.diskonManual} potongan /> : null}
+              {hasil && hasil.diskonManual > 0 ? (
+                <BarisUang label={t("cart.manualDiscount")} nilai={hasil.diskonManual} potongan persis={pembulatan !== 0} />
+              ) : null}
+              {pembulatan !== 0 ? <BarisPembulatan label={tHarga("roundingAdjustmentLabel")} nilai={pembulatan} /> : null}
             </div>
 
             {aturanManual.aktif ? (

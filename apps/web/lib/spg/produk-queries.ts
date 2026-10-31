@@ -4,6 +4,7 @@ import { bacaTabelUkuran, pilihTabelUkuran, SATUAN_UKURAN, type SatuanUkuran } f
 import { variantDetailForSku } from "@/lib/items/variants";
 import { bacaVarian } from "@/lib/salesman/analisa-toko";
 import { hargaKasirSpg, syaratHargaToko, type SyaratHargaToko } from "./harga-kasir";
+import { SPG_STORE_PRICING_SELECT } from "./pricing";
 import { promoBerlaku, ringkasPromoKonter } from "./promo-konter";
 import { promoKonterUntukToko } from "./promo-konter-queries";
 import {
@@ -27,16 +28,15 @@ import {
 
 /**
  * Harga yang disebut ke pembeli = harga kasir toko SPG ini (`hargaKasirSpg`,
- * sama dengan layar jual dan penulis nota): toko konsinyasi = harga di toko.
+ * sama dengan layar jual dan penulis nota, atas kolom toko yang sama
+ * `SPG_STORE_PRICING_SELECT`): toko konsinyasi = harga di toko, dan tanpa
+ * harga (null) selama markup tokonya belum sah.
  */
 const hargaToko = (sellingPrice: unknown, syarat: SyaratHargaToko) =>
   hargaKasirSpg(sellingPrice === null || sellingPrice === undefined ? null : Number(sellingPrice), syarat);
 
 async function syaratToko(storeId: string): Promise<SyaratHargaToko> {
-  const toko = await prisma.store.findUnique({
-    where: { id: storeId },
-    select: { termsType: true, markupPercent: true, priceDiscountPercent: true },
-  });
+  const toko = await prisma.store.findUnique({ where: { id: storeId }, select: SPG_STORE_PRICING_SELECT });
   return toko ? syaratHargaToko(toko) : { termsType: "PUTUS", markupPercent: null, priceDiscountPercent: null };
 }
 

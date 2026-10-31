@@ -42,7 +42,7 @@ const baris = [{ itemId: "i1", variantSku: "", productName: "Kaos", qty: 6, unit
 describe("submitFieldSalesOrder — pesanan jarak jauh (unit)", () => {
   beforeEach(() => {
     mockAuth.mockReset().mockResolvedValue({ user: { id: "u1" } });
-    mockCreate.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", oversell: [], kreditDitahan: false });
+    mockCreate.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", oversell: [], creditHold: false, kreditDitahan: false });
   });
 
   it("refuses an SPG (user with a fixed store) before the writer runs", async () => {
@@ -66,7 +66,7 @@ describe("submitFieldSalesOrder — pesanan jarak jauh (unit)", () => {
 
   it("passes the remote channel to the writer and no visit", async () => {
     const r = await submitFieldSalesOrder({ storeId: "s1", lines: baris, remoteChannel: "WA" });
-    expect(r).toEqual({ ok: true, orderId: "o1", orderNo: "PUTUS/1", kreditDitahan: false });
+    expect(r).toEqual({ ok: true, orderId: "o1", orderNo: "PUTUS/1", creditHold: false, kreditDitahan: false });
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ storeId: "s1", salesmanId: "u1", remoteChannel: "WA", visitId: undefined }));
   });
 
@@ -97,7 +97,7 @@ describe("submitFieldSalesOrder — pesanan jarak jauh (unit)", () => {
 describe("submitFieldSalesOrder — pre-order (unit)", () => {
   beforeEach(() => {
     mockAuth.mockReset().mockResolvedValue({ user: { id: "u1" } });
-    mockCreate.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", oversell: [], kreditDitahan: false });
+    mockCreate.mockReset().mockResolvedValue({ orderId: "o1", orderNo: "PUTUS/1", oversell: [], creditHold: false, kreditDitahan: false });
   });
 
   it("passes the pre-order window to the writer; an ordinary order sends null", async () => {
@@ -123,12 +123,12 @@ describe("submitFieldSalesOrder — pre-order (unit)", () => {
 describe("submitFieldSalesOrder — ubah pesanan (unit)", () => {
   beforeEach(() => {
     mockAuth.mockReset().mockResolvedValue({ user: { id: "u1" } });
-    mockCreate.mockReset().mockResolvedValue({ orderId: "o2", orderNo: "PUTUS/2", oversell: [], kreditDitahan: false });
+    mockCreate.mockReset().mockResolvedValue({ orderId: "o2", orderNo: "PUTUS/2", oversell: [], creditHold: false, kreditDitahan: false });
   });
 
   it("passes the replaced order to the writer; an ordinary order sends null", async () => {
     const r = await submitFieldSalesOrder({ storeId: "s1", visitId: "v1", lines: baris, gantiOrderId: "o1" });
-    expect(r).toEqual({ ok: true, orderId: "o2", orderNo: "PUTUS/2", kreditDitahan: false });
+    expect(r).toEqual({ ok: true, orderId: "o2", orderNo: "PUTUS/2", creditHold: false, kreditDitahan: false });
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ replacesOrderId: "o1", salesmanId: "u1" }));
     await submitFieldSalesOrder({ storeId: "s1", visitId: "v1", lines: baris });
     expect(mockCreate).toHaveBeenLastCalledWith(expect.objectContaining({ replacesOrderId: null }));

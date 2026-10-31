@@ -11,6 +11,7 @@ import {
   nomorPerluCekMember,
   pembeliUntukKirim,
   pratinjauKeranjang,
+  tagihanKeranjang,
   uraiSimpananKeranjang,
   type BarisKeranjang,
   type PembeliKeranjang,
@@ -255,6 +256,25 @@ describe("pratinjauKeranjang with a member", () => {
     const kurang = pratinjauKeranjang({ ...dengan, member: { anggota, mendaftar: true, minBelanjaDaftar: 95_001 } });
     expect(kurang?.hasil.total).toBe(95_000);
     expect(kurang?.daftarKurang).toEqual({ minimal: 95_001, kurang: 1 });
+  });
+});
+
+describe("total ditagih keranjang", () => {
+  const aturan = { aktif: false, maksPersen: 0, alasanWajib: false, bagianTokoPersen: 0 };
+
+  it("rounds the exact total half-up to whole rupiah, the same helper the writer uses, and reports the adjustment", () => {
+    expect(tagihanKeranjang(169_262.5)).toEqual({ ditagih: 169_263, pembulatan: 0.5 });
+    expect(tagihanKeranjang(29_333.04)).toEqual({ ditagih: 29_333, pembulatan: -0.04 });
+    expect(tagihanKeranjang(250_000)).toEqual({ ditagih: 250_000, pembulatan: 0 });
+  });
+
+  it("the preview keeps the exact total in `hasil` and carries the charged figure beside it", () => {
+    // Harga di toko konsinyasi bersen (markup 12,34%: 9.999 → 11.232,88).
+    const baris: BarisKeranjang[] = [{ kunci: "i1::", row: { itemId: "i1", categoryId: null, price: 11_232.88 }, qty: 1 }];
+    const p = pratinjauKeranjang({ baris, promos: [], storeId: "t1", waktu: new Date("2026-10-20T03:00:00Z"), aturan, diskon: null });
+    expect(p?.hasil.total).toBe(11_232.88);
+    expect(p?.ditagih).toBe(11_233);
+    expect(p?.pembulatan).toBe(0.12);
   });
 });
 

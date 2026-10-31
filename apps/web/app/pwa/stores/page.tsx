@@ -34,7 +34,7 @@ export default async function PwaStoreList() {
   );
 }
 
-/** Hanya kolom yang dipakai daftar — margin, tempo, dan pemegang tidak ikut ke HP. */
+/** Hanya kolom yang dipakai daftar — markup, tempo, dan pemegang tidak ikut ke HP. */
 function untukDaftar(s: StoreListItem) {
   return {
     id: s.id,

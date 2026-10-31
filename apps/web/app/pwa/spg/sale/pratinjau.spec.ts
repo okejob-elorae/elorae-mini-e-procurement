@@ -15,7 +15,8 @@ import { memberKeranjang, pembeliUntukKirim, pratinjauKeranjang, type BarisKeran
  * Layar jual ↔ penulis nota, di basis data sungguhan: total yang dilihat SPG di
  * HP (katalog + daftar promo yang ikut halaman + mesin promo yang sama) harus
  * sama dengan total yang dicatat server — untuk promo kategori, promo belanja,
- * dan diskon SPG — juga saat nota dikirim belakangan dari antrean HP.
+ * dan diskon SPG — juga saat nota dikirim belakangan dari antrean HP. Total yang
+ * dibandingkan adalah total DITAGIH (rupiah utuh, `ditagih`), bukan total persisnya.
  *
  * Promo uji HANYA untuk toko uji (`allStores: false`); pengaturan member dan
  * diskon manual (global) dipotret dan dipulihkan PALING DULU. Member uji
@@ -162,7 +163,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       baris: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty, productName: "x", unitPrice: b.row.price ?? 0 })),
       pembeli: pembeliUntukKirim({ jenis: "baru", nama: "Ani Uji", hp: "0812 0000 1234", setuju: true, daftarMember: false, member: null }, { aktif: true }),
       diskonManual: null,
-      totalPratinjau: p!.hasil.total,
+      totalPratinjau: p!.ditagih,
       potonganPratinjau: p!.hasil.potonganTotal,
     });
     const m = muatanKirimNotaSpg(nota!);
@@ -181,7 +182,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
 
     const res = await kirim();
     if (!res.ok) throw new Error(res.code);
-    expect(res.total).toBe(p!.hasil.total);
+    expect(res.total).toBe(p!.ditagih);
     const tercatat = await prisma.spgSale.findUniqueOrThrow({ where: { id: res.spgSaleId } });
     expect(Number(tercatat.discountTotal)).toBe(p!.hasil.potonganTotal);
     expect(tercatat.capturedOffline).toBe(true);
@@ -225,7 +226,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       diskonManual: { jenis: "RUPIAH", nilai: 7_500, alasan: "jahitan" },
     });
     if (!res.ok) throw new Error(res.code);
-    expect(res.total).toBe(p!.hasil.total);
+    expect(res.total).toBe(p!.ditagih);
   });
 
   it("toko konsinyasi: layar menampilkan dan mencatat HARGA DI TOKO, promo dihitung dari harga itu", async () => {
@@ -247,8 +248,15 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       lines: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty })),
     });
     if (!res.ok) throw new Error(res.code);
-    expect(res.total).toBe(p!.hasil.total);
+    // Kaos 10% dari 124.875 = 12.487,50 → total persis bersen. Layar dan penulis
+    // nota membulatkannya ke rupiah utuh dengan helper yang sama.
+    expect(p!.ditagih).toBe(Math.round(p!.hasil.total));
+    expect(p!.pembulatan).toBeCloseTo(p!.ditagih - p!.hasil.total, 2);
+    expect(res.total).toBe(p!.ditagih);
     const tercatat = await prisma.spgSale.findUniqueOrThrow({ where: { id: res.spgSaleId }, include: { lines: true } });
+    expect(Number(tercatat.total)).toBe(p!.ditagih);
+    // `subtotal` dan potongan tetap persis: subtotal − potongan = total persis layar.
+    expect(Number(tercatat.subtotal) - Number(tercatat.discountTotal)).toBeCloseTo(p!.hasil.total, 2);
     expect(Number(tercatat.subtotal)).toBe(181_750);
     expect(Number(tercatat.lines.find((l) => l.itemId === kaosId)?.unitPrice)).toBe(124_875);
     expect(Number(tercatat.lines.find((l) => l.itemId === topiId)?.unitPrice)).toBe(56_875);
@@ -295,7 +303,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       idempotencyKey: `m1-${tag}`,
     });
     if (!r1.ok) throw new Error(r1.code);
-    expect(r1.total).toBe(p1!.hasil.total);
+    expect(r1.total).toBe(p1!.ditagih);
     expect(r1.member).toEqual({ tingkat: "Member", potongan: p1!.hasil.member!.potongan, baru: true });
 
     // 2) Datang lagi, dipilih dari pencarian sebagai pelanggan toko: belanjanya sudah ≥ 250 rb → Gold.
@@ -312,7 +320,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       idempotencyKey: `m2-${tag}`,
     });
     if (!r2.ok) throw new Error(r2.code);
-    expect(r2.total).toBe(p2!.hasil.total);
+    expect(r2.total).toBe(p2!.ditagih);
     expect(r2.member).toEqual({ tingkat: "Gold", potongan: p2!.hasil.member!.potongan, baru: false });
     const nota = await prisma.spgSale.findUniqueOrThrow({ where: { id: r2.spgSaleId } });
     expect(nota.memberTier).toBe("Gold");
@@ -339,7 +347,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       baris: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty, productName: "x", unitPrice: b.row.price ?? 0 })),
       pembeli: pembeliUntukKirim(pembeli, aturanMember),
       diskonManual: null,
-      totalPratinjau: p!.hasil.total,
+      totalPratinjau: p!.ditagih,
       potonganPratinjau: p!.hasil.potonganTotal,
     });
     const m = muatanKirimNotaSpg(nota!);
@@ -354,7 +362,7 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       waktuJual: new Date(m.waktuJual!),
     });
     if (!res.ok) throw new Error(res.code);
-    expect(res.total).toBe(p!.hasil.total);
+    expect(res.total).toBe(p!.ditagih);
     expect(res.tanpaMember).toBe("BELANJA_KURANG");
     expect(await prisma.member.count({ where: { phone: nomor[0] } })).toBe(0);
   });

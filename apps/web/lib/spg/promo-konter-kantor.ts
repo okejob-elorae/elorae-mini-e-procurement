@@ -126,7 +126,7 @@ export function jumlahPotongPaket(komponen: readonly KomponenPaket[] | null | un
  * barang-barang itu (`hargaBarang`) — angka dari data, bukan tebakan. Paket
  * dengan komponen kategori memakai satu harga contoh per potong, karena
  * barangnya baru diketahui saat pembeli memilih. Di toko konsinyasi harga
- * konternya lebih tinggi (dinaikkan margin toko); layar menyebutnya.
+ * konternya lebih tinggi (dinaikkan markup toko); layar menyebutnya.
  */
 export function contohPromo(p: {
   type: JenisPromoKonter;

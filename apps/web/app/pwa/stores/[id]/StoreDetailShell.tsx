@@ -209,7 +209,7 @@ export function StoreDetailShell({ store, active, activePhotos, history, pending
           <Button asChild variant="outline" className="w-full">
             <Link href={`/pwa/stores/${store.id}/retur`}>
               <Undo2 className="h-4 w-4" />
-              Retur lapangan
+              {t("fieldReturn")}
             </Link>
           </Button>
         ) : null}
