@@ -784,37 +784,38 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
             </div>
           ) : null}
 
-          {/* Batas kredit hanya bermakna untuk toko PUTUS — konsinyasi tidak punya piutang. */}
-          {form.termsType === "PUTUS" ? (
-            <div className="space-y-3 rounded-lg border p-3">
-              <p className="text-sm font-medium">{tKredit("judul")}</p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="creditLimit">{t("creditLimit")}</Label>
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      Rp
-                    </span>
-                    <Input
-                      id="creditLimit"
-                      type="text"
-                      inputMode="numeric"
-                      className="pl-9 text-right tabular-nums"
-                      disabled={pending || readOnly || !kreditTerbaca}
-                      value={
-                        form.creditLimit === null || form.creditLimit === undefined
-                          ? ""
-                          : kelompokRibuan.format(form.creditLimit)
-                      }
-                      placeholder={kreditTerbaca ? t("creditLimitPlaceholder") : tKredit("memuat")}
-                      onChange={(e) => {
-                        const digit = angkaSaja(e.target.value).slice(0, 13);
-                        update("creditLimit", digit === "" ? null : Number(digit));
-                      }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">{t("creditLimitHint")}</p>
+          {/* Batas kredit berlaku untuk kedua sistem: transfer konsinyasi juga diperiksa terhadap
+              piutang toko yang sudah ada saat disetujui. Batas faktur terbuka hanya untuk toko PUTUS. */}
+          <div className="space-y-3 rounded-lg border p-3">
+            <p className="text-sm font-medium">{tKredit("judul")}</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="creditLimit">{t("creditLimit")}</Label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                    Rp
+                  </span>
+                  <Input
+                    id="creditLimit"
+                    type="text"
+                    inputMode="numeric"
+                    className="pl-9 text-right tabular-nums"
+                    disabled={pending || readOnly || !kreditTerbaca}
+                    value={
+                      form.creditLimit === null || form.creditLimit === undefined
+                        ? ""
+                        : kelompokRibuan.format(form.creditLimit)
+                    }
+                    placeholder={kreditTerbaca ? t("creditLimitPlaceholder") : tKredit("memuat")}
+                    onChange={(e) => {
+                      const digit = angkaSaja(e.target.value).slice(0, 13);
+                      update("creditLimit", digit === "" ? null : Number(digit));
+                    }}
+                  />
                 </div>
+                <p className="text-xs text-muted-foreground">{t("creditLimitHint")}</p>
+              </div>
+              {form.termsType === "PUTUS" ? (
                 <div className="space-y-1.5">
                   <Label htmlFor="maxOpenInvoices">{tKredit("maksFaktur")}</Label>
                   <Input
@@ -832,11 +833,12 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                   />
                   <p className="text-xs text-muted-foreground">{tKredit("bantuan")}</p>
                 </div>
-              </div>
+              ) : null}
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground">{tKredit("konsi")}</p>
-          )}
+            {form.termsType === "KONSI" ? (
+              <p className="text-xs text-muted-foreground">{tKredit("konsiHanyaBatasNilai")}</p>
+            ) : null}
+          </div>
         </section>
 
         <Separator />

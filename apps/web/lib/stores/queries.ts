@@ -746,11 +746,13 @@ export type BarisKelasToko = {
  * - Toko PUTUS = rupiah seluruh nota pengiriman dalam 180 hari (menurut tanggal
  *   kirim). Yang dihitung barang yang benar-benar diterima toko, bukan yang
  *   dipesan: pesanan yang sisanya ditutup hanya terhitung bagian terkirimnya.
- * - Toko KONSI = jumlah POTONG di pesanan konsinyasi yang disetujui dalam 180
- *   hari (menurut tanggal disetujui). Konsinyasi tidak punya harga beli —
- *   barangnya titipan, dibayar sesudah laku — jadi rupiah pesanannya tidak
- *   sebanding dengan toko putus. Karena itu kedua jenis diperingkat terpisah
- *   (`usulanPerJenis`), dan layar menyebut satuannya.
+ * - Toko KONSI = jumlah POTONG yang benar-benar dipindah ke toko (`KonsiTransfer`)
+ *   dalam 180 hari, menurut tanggal pengirimannya selesai. Persetujuan hanya
+ *   memesan stok, jadi pesanan yang belum dikirim atau sisanya ditutup hanya
+ *   terhitung bagian yang sampai — sama seperti toko putus. Konsinyasi tidak
+ *   punya harga beli — barangnya titipan, dibayar sesudah laku — jadi rupiahnya
+ *   tidak sebanding dengan toko putus. Karena itu kedua jenis diperingkat
+ *   terpisah (`usulanPerJenis`), dan layar menyebut satuannya.
  * Penjualan van ke toko tidak ikut: definisi pemilik adalah kiriman putus dan
  * konsinyasi. Toko tanpa pembelian tetap tanpa usulan.
  */
@@ -766,8 +768,8 @@ export async function daftarKelasToko(aturan: AturanKelasToko, hariIni: Date = n
       where: { deliveredAt: { gte: sejak }, order: { orderType: "PUTUS", status: "APPROVED" } },
       select: { total: true, order: { select: { storeId: true } } },
     }),
-    prisma.fieldSalesOrder.findMany({
-      where: { orderType: "KONSI", status: "APPROVED", approvedAt: { gte: sejak } },
+    prisma.konsiTransfer.findMany({
+      where: { createdAt: { gte: sejak } },
       select: { storeId: true, lines: { select: { qty: true } } },
     }),
   ]);
@@ -775,9 +777,9 @@ export async function daftarKelasToko(aturan: AturanKelasToko, hariIni: Date = n
   const rupiah = new Map<string, number>();
   for (const d of kirim) rupiah.set(d.order.storeId, (rupiah.get(d.order.storeId) ?? 0) + Number(d.total));
   const potong = new Map<string, number>();
-  for (const o of konsi) {
-    const n = o.lines.reduce((j, l) => j + l.qty, 0);
-    potong.set(o.storeId, (potong.get(o.storeId) ?? 0) + n);
+  for (const tr of konsi) {
+    const n = tr.lines.reduce((j, l) => j + Number(l.qty), 0);
+    potong.set(tr.storeId, (potong.get(tr.storeId) ?? 0) + n);
   }
 
   const usulan = usulanPerJenis(
