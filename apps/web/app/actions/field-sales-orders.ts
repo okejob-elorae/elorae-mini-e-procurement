@@ -147,11 +147,14 @@ export async function approveFieldSalesOrderAction(
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
-  // Pesanan konsi yang disetujui langsung berangkat ke toko → SPG toko itu dikabari, sekali per
-  // pesanan. Pesanan putus tidak (barangnya berangkat saat pengiriman); penyaringnya di sana.
+  // Persetujuan konsi hanya mencadangkan stok; barangnya berangkat saat pengiriman selesai. Kabar
+  // ke SPG toko masih dipicu di sini (sekali per pesanan) sampai kabarnya dikaitkan ke selesainya
+  // pengiriman. Pesanan putus disaring penerimanya.
   void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: orderId, pelakuId: g.userId });
-  // Pesanan konsinyasi: stok gudang pindah ke persediaan konsinyasi → jurnalnya (sesudah commit,
-  // tidak pernah melempar). Pesanan putus disaring penulisnya — jurnalnya di nota tagihan.
+  // Jurnal pindah-ke-toko konsinyasi: persetujuan tidak memindahkan stok lagi, jadi kait ini tidak
+  // menemukan transfer dan tidak memposting apa pun sampai jurnalnya dikaitkan ke selesainya
+  // pengiriman (sesudah commit, tidak pernah melempar). Pesanan putus disaring penulisnya —
+  // jurnalnya di nota tagihan.
   await kaitPesananKonsiDisetujui(orderId, g.userId);
   return { ok: true };
 }

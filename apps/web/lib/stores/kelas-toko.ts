@@ -186,9 +186,10 @@ export type UsulanKelas = { nilai: number; satuan: SatuanNilaiKelas; usulan: Kel
 /**
  * Usulan untuk toko putus dan konsinyasi, diperingkat TERPISAH:
  * toko putus menurut rupiah kiriman, toko konsinyasi menurut jumlah potong
- * yang disetujui dikirim. Pesanan konsinyasi tidak punya harga beli (barang
- * titipan, dibayar sesudah laku), jadi rupiahnya tidak sebanding dengan toko
- * putus — mencampur keduanya dalam satu peringkat membandingkan rupiah dengan potong.
+ * yang benar-benar dipindah ke toko (`KonsiTransfer`). Pesanan konsinyasi tidak
+ * punya harga beli (barang titipan, dibayar sesudah laku), jadi rupiahnya tidak
+ * sebanding dengan toko putus — mencampur keduanya dalam satu peringkat
+ * membandingkan rupiah dengan potong.
  */
 export function usulanPerJenis(
   toko: readonly { storeId: string; termsType: "PUTUS" | "KONSI"; rupiah: number; potong: number }[],

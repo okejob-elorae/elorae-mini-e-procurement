@@ -8,10 +8,12 @@ import type { Role } from "@elorae/db";
  * menghapus akunnya — baru berlaku saat JWT-nya kedaluwarsa (hingga 8 jam).
  * Sekarang callback `jwt` di lib/auth.ts membaca ulang token yang lebih tua
  * dari `UMUR_SEGAR_SESI_MS`; akun yang sudah tidak ada membuat sesinya tidak sah.
- * Di depannya, callback itu menjalankan kueri ringan pada SETIAP pemakaian
- * (peran, versi izin peran, sidik sandi, toko tetap) dan memaksa pembacaan
- * ulang di sini begitu salah satunya berubah — jadi batas 60 detik hanya
- * berlaku untuk perubahan yang tidak menaikkan versi izin peran.
+ * Di depannya, callback itu menjalankan kueri ringan pada SETIAP pemakaian:
+ * sidik sandi yang berubah (atau akun yang hilang) langsung membuat sesinya
+ * tidak sah tanpa sampai ke sini, dan perubahan peran, versi izin peran, atau
+ * toko tetap memaksa pembacaan ulang di sini saat itu juga. Jadi batas 60 detik
+ * hanya berlaku untuk perubahan yang tidak menyentuh keempatnya (mis. izin
+ * peran diubah tanpa versinya naik).
  *
  * Singgahan per proses: `auth()` di komponen server dan aksi server menjalankan
  * callback `jwt` tetapi TIDAK menulis ulang cookie, jadi cap waktu baru di token

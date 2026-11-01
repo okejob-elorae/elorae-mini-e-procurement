@@ -176,6 +176,10 @@ describe("nilaiSatuanSen", () => {
     expect(nilaiSatuanSen("HARGA_ELORAE", { ...bahan, sellingPrice: null })).toBe(0);
     expect(nilaiSatuanSen("HPP", { ...bahan, avgCost: null })).toBe(0);
     expect(nilaiSatuanSen("HARGA_TERIMA", { ...bahan, sellingPrice: null, hargaTerima: null })).toBe(0);
+    // Konsinyasi tanpa markup sah: tidak ada harga eceran, bukan harga jual Elorae.
+    expect(nilaiSatuanSen("ECERAN", { ...bahan, markupPercent: null })).toBe(0);
+    expect(nilaiSatuanSen("ECERAN", { ...bahan, markupPercent: -5 })).toBe(0);
+    expect(nilaiSatuanSen("ECERAN", { ...bahan, markupPercent: 1000 })).toBe(0);
   });
   it("harga toko terima: harga kiriman, atau harga jual Elorae kalau toko belum pernah menerima", () => {
     expect(nilaiSatuanSen("HARGA_TERIMA", { ...bahan, hargaTerima: 75_000 })).toBe(75_000_00);

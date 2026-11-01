@@ -1,5 +1,6 @@
-import { computeStorePrice, isValidMarkupPercent } from "@elorae/db/pricing";
+import { isValidMarkupPercent } from "@elorae/db/pricing";
 import type { AturanBarangHilang, DasarNilaiHilang } from "./pengaturan";
+import { spgUnitPrice } from "./pricing";
 
 /**
  * Barang hilang — aturan murni, satu tempat (keputusan pemilik 2026-10-03:
@@ -281,7 +282,9 @@ export type BahanNilai = {
  * - HPP: harga pokok rata-rata gudang (`InventoryValue.avgCost`).
  * - ECERAN: harga eceran di toko itu — harga jual dikurangi diskon harga toko
  *   untuk toko putus, dinaikkan dengan markup toko untuk konsinyasi
- *   (`computeStorePrice`).
+ *   (`spgUnitPrice`, harga yang sama dengan kasir SPG). Toko konsinyasi tanpa
+ *   markup yang sah tidak punya harga eceran: bernilai nol, bukan harga jual
+ *   Elorae yang akan menagih terlalu murah.
  * Yang tidak diketahui bernilai nol (dan ditandai di layar).
  */
 export function nilaiSatuanSen(dasar: DasarNilaiHilang, b: BahanNilai): number {
@@ -290,12 +293,10 @@ export function nilaiSatuanSen(dasar: DasarNilaiHilang, b: BahanNilai): number {
   if (dasar === "ECERAN") {
     if (!b.termsType) return aman(b.sellingPrice);
     return aman(
-      computeStorePrice({
-        sellingPrice: b.sellingPrice,
-        termsType: b.termsType,
-        markupPercent: b.markupPercent,
-        priceDiscountPercent: b.priceDiscountPercent,
-      }).price,
+      spgUnitPrice(
+        { termsType: b.termsType, markupPercent: b.markupPercent, priceDiscountPercent: b.priceDiscountPercent },
+        b.sellingPrice,
+      ),
     );
   }
   if (dasar === "HARGA_TERIMA") return aman(b.hargaTerima) || aman(b.sellingPrice);
