@@ -244,7 +244,7 @@ export const navItems: NavItem[] = [
       { labelKey: "navJadwalShiftSpg", href: "/backoffice/jadwal-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navKomisiSpg", href: "/backoffice/komisi-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
       // Rekap komisi per pcs dari penjualan POS yang dikonfirmasi laporan sell-through.
-      { labelKey: "navSpgCommission", href: "/backoffice/spg-commission", permission: PERMISSIONS.SPG_SALES_VIEW },
+      { labelKey: "navSpgCommissionSellThrough", href: "/backoffice/spg-commission", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navSpgRequests", href: "/backoffice/spg-requests", permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.STORES_MANAGE] },
       { labelKey: "navSpgLostSales", href: "/backoffice/spg-lost-sales", permission: PERMISSIONS.SPG_SALES_VIEW },
       // Mutasi antar toko oleh SPG — barang KONSI berpindah rak, bukan dokumen penjualan.

@@ -19,11 +19,15 @@ const TANPA_MENU = [
   /^\/pwa\/stores\/[^/]+\/analisa\/rekomendasi(\/|$)/,
   /^\/pwa\/van(\/|$)/,
   /^\/pwa\/(bkm|retur)\/baru(\/|$)/,
-  // Retur lapangan satu toko, formulir pelunasan satu toko, dan bukti BKM satu
-  // pelunasan: masing-masing punya bilah aksi sticky di bawah.
+  // Retur lapangan satu toko, formulir pelunasan satu toko, bukti BKM satu
+  // pelunasan, formulir setoran tagihan satu piutang, dan penyelesaian bukti
+  // terima satu pengiriman: masing-masing punya bilah aksi sticky di bawah.
+  // Daftar `/pwa/deliveries/pending` tidak punya bilah, jadi menunya tetap ada.
   /^\/pwa\/stores\/[^/]+\/retur(\/|$)/,
   /^\/pwa\/pelunasan\/[^/]+(\/|$)/,
   /^\/pwa\/bkm\/[^/]+(\/|$)/,
+  /^\/pwa\/collections\/[^/]+(\/|$)/,
+  /^\/pwa\/deliveries\/(?!pending(\/|$))[^/]+(\/|$)/,
   /^\/pwa\/piutang\/[^/]+\/janji(\/|$)/,
   /^\/pwa\/stores\/baru(\/|$)/,
   /^\/pwa\/biaya\/baru(\/|$)/,
