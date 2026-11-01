@@ -54,7 +54,7 @@ export function BalanceSheetClient({
     ? (accountId: string) => tautanBukuBesar(accountId, { dari: null, sampai: tanggalPosisi })
     : undefined;
 
-  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`disclosures.ts`).
+  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`cakupan-laporan.ts`).
   const cakupan = locale.toLowerCase().startsWith("id") ? BALANCE_SHEET_COVERAGE_BODY : t("balanceSheet.coverageBody");
 
   function pushParam(key: string, value: string | undefined) {

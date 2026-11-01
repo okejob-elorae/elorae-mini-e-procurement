@@ -41,6 +41,13 @@ d("postSettlementJournal (test bed only)", () => {
   let orderJournalId = "";
 
   /*
+   * A fresh seller per test: `postSettlementJournal` first refuses a settlement that twins an
+   * older or journaled one (same marketplace, seller, period and payout — `SETTLEMENT_KEMBAR`),
+   * so a fixed seller would collide with a row another spec — or a failed earlier run — left behind.
+   */
+  const testSeller = (name: string) => `${name}-${token}-${orderSeq}`;
+
+  /*
    * The revenue-journal gate needs every line matched to a sales order whose
    * `SALESORDER_REVENUE` journal stands, so each settlement here is matched to
    * one fixture sale (dated 2026-03-02) carrying a bare journal; the gate only
@@ -112,7 +119,7 @@ d("postSettlementJournal (test bed only)", () => {
     const settlement = await prisma.settlement.create({
       data: {
         marketplace: "SHOPEE",
-        seller: "elorae.official",
+        seller: testSeller("elorae.official"),
         periodFrom: new Date("2026-06-01T00:00:00+07:00"),
         periodTo: new Date("2026-06-30T00:00:00+07:00"),
         fileName: "t-fee-split.xlsx",
@@ -277,7 +284,7 @@ d("postSettlementJournal (test bed only)", () => {
     const settlement = await prisma.settlement.create({
       data: {
         marketplace: "SHOPEE",
-        seller: "elorae.official",
+        seller: testSeller("elorae.official"),
         periodFrom: new Date("2026-06-01T00:00:00+07:00"),
         periodTo: new Date("2026-06-30T00:00:00+07:00"),
         fileName: "t.xlsx",
@@ -431,7 +438,7 @@ d("postSettlementJournal (test bed only)", () => {
     const tiktokSettlement = await prisma.settlement.create({
       data: {
         marketplace: "TIKTOK",
-        seller: "TikTok Shop",
+        seller: testSeller("TikTok Shop"),
         periodFrom: new Date("2026-06-01T00:00:00+07:00"),
         periodTo: new Date("2026-06-30T00:00:00+07:00"),
         fileName: "t-tiktok.xlsx",

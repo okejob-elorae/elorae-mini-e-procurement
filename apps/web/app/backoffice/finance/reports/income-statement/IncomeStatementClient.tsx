@@ -40,7 +40,7 @@ export function IncomeStatementClient({ report, filters, adaMutasi, hariIni, kes
   const locale = useLocale();
   const periode = periodeLaporan({ dari: filters.from, sampai: filters.to }, hariIni);
   const tautanAkun = akses.jurnal ? (accountId: string) => tautanBukuBesar(accountId, periode) : undefined;
-  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`disclosures.ts`).
+  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`cakupan-laporan.ts`).
   const cakupan = locale.toLowerCase().startsWith("id")
     ? INCOME_STATEMENT_COVERAGE_BODY
     : t("incomeStatement.coverageBody");

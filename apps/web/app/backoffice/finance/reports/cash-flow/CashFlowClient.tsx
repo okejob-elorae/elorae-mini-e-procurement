@@ -69,7 +69,7 @@ export function CashFlowClient({ report, filters, canManageJournals, hariIni, ke
 
   const cmp = report.comparison;
   const periode = periodeLaporan({ dari: filters.from, sampai: filters.to }, hariIni);
-  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`disclosures.ts`).
+  // Daftar sumber yang belum berjurnal hanya ditulis di satu tempat (`cakupan-laporan.ts`).
   const cakupan = locale.toLowerCase().startsWith("id") ? CASH_FLOW_COVERAGE_BODY : t("cashFlow.coverageBody");
   const columns = cmp ? 4 : 2;
 

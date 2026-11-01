@@ -4,7 +4,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { Info } from "lucide-react";
 import { CAKUPAN_LAPORAN_BODY } from "@/lib/finance/reports/cakupan-laporan";
 
-/** Kartu "Cakupan data" laporan lanjutan — daftar sumbernya dari `disclosures.ts` (satu tempat). */
+/** Kartu "Cakupan data" laporan lanjutan — daftar sumbernya dari `cakupan-laporan.ts` (satu tempat). */
 export function CatatanCakupan() {
   const t = useTranslations("laporanLanjutan");
   const locale = useLocale();
