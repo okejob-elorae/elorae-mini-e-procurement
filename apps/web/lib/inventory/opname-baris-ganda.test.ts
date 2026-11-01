@@ -46,7 +46,7 @@ d("opname gudang: baris stok ganda null/\"\" (test bed only)", () => {
   });
 
   afterEach(async () => {
-    await prisma.stockMovement.deleteMany({ where: { refType: "OPNAME", refId: seededId(opnameId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { externalRef: seededId(opnameId) } });
     await prisma.stockOpnameItem.deleteMany({ where: { opnameId: seededId(opnameId) } });
     await prisma.stockOpname.deleteMany({ where: { id: seededId(opnameId) } });
@@ -74,6 +74,19 @@ d("opname gudang: baris stok ganda null/\"\" (test bed only)", () => {
       barisBerisi: rows.filter((r) => Number(r.qtyOnHand) !== 0).length,
     };
   };
+
+  /** Entri kartu stok yang ditulis opname ini. */
+  const kartuOpname = async () => {
+    const rows = await prisma.stockLedgerEntry.findMany({
+      where: { refType: "StockOpname", refId: seededId(opnameId) },
+      select: { type: true, qty: true, totalCost: true, balanceQty: true },
+    });
+    return rows.map((r) => ({ type: r.type, qty: Number(r.qty), totalCost: Number(r.totalCost), balanceQty: Number(r.balanceQty) }));
+  };
+  const jumlah = (rows: { qty: number; totalCost: number }[]) => ({
+    qty: rows.reduce((s, r) => s + r.qty, 0),
+    totalCost: rows.reduce((s, r) => s + r.totalCost, 0),
+  });
 
   const hitungSemua = (qty: number) =>
     prisma.stockOpnameItem.updateMany({ where: { opnameId: seededId(opnameId), itemId: seededId(itemId) }, data: { countedQty: qty } });
@@ -108,8 +121,15 @@ d("opname gudang: baris stok ganda null/\"\" (test bed only)", () => {
     expect(adj.map((a) => ({ type: a.type, prevQty: Number(a.prevQty), newQty: Number(a.newQty), qtyChange: Number(a.qtyChange) }))).toEqual([
       { type: "NEGATIVE", prevQty: 7, newQty: 5, qtyChange: 2 },
     ]);
-    const mv = await prisma.stockMovement.findMany({ where: { refType: "OPNAME", refId: opnameId }, select: { qty: true, totalCost: true } });
-    expect(mv.map((m) => ({ qty: Number(m.qty), totalCost: Number(m.totalCost) }))).toEqual([{ qty: -2, totalCost: -40_000 }]);
+    const led = await kartuOpname();
+    // Hitungannya sendiri: satu ADJUSTMENT 7 → 5 di baris utama.
+    expect(led.filter((l) => l.type === "ADJUSTMENT")).toEqual([{ type: "ADJUSTMENT", qty: -2, totalCost: -40_000, balanceQty: 5 }]);
+    // Kembaran pindah ke baris utama sebagai pasangan keluar/masuk yang saling meniadakan,
+    // jadi jumlah opname ini (bahan jurnal selisihnya) tetap −2 potong / −Rp40.000.
+    const pindah = led.filter((l) => l.type !== "ADJUSTMENT");
+    expect(pindah.map((l) => l.type).sort()).toEqual(["IN", "OUT"]);
+    expect(jumlah(pindah)).toEqual({ qty: 0, totalCost: 0 });
+    expect(jumlah(led)).toEqual({ qty: -2, totalCost: -40_000 });
   });
 
   it("twin rows at different costs merge at the blended cost: 3 @20.000 + 4 @27.000 counted 5 → Rp120.000", async () => {
@@ -119,8 +139,9 @@ d("opname gudang: baris stok ganda null/\"\" (test bed only)", () => {
     await setujui();
     // Nilai 168.000 untuk 7 potong = 24.000 per potong; 5 potong = 120.000.
     expect(await stok()).toEqual({ qty: 5, nilai: 120_000, barisBerisi: 1 });
-    const mv = await prisma.stockMovement.findFirst({ where: { refType: "OPNAME", refId: opnameId }, select: { qty: true, totalCost: true } });
-    expect({ qty: Number(mv?.qty), totalCost: Number(mv?.totalCost) }).toEqual({ qty: -2, totalCost: -48_000 });
+    const led = await kartuOpname();
+    expect(led.filter((l) => l.type === "ADJUSTMENT")).toEqual([{ type: "ADJUSTMENT", qty: -2, totalCost: -48_000, balanceQty: 5 }]);
+    expect(jumlah(led)).toEqual({ qty: -2, totalCost: -48_000 });
   });
 
   it("an opname frozen before the fix (two rows 3 and 4 for one item) counted 3 and 4 → stock 7, not 8", async () => {

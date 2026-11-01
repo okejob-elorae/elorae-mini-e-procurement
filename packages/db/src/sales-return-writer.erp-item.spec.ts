@@ -12,6 +12,11 @@ import { seededId } from "./spec-teardown";
  * (`barisStokPesanan`). Retur ukuran yang sama dulu ditolak `no_inventory_row`
  * — barang yang keluar dari baris gabungan tidak bisa kembali ke sana, jadi
  * retur tidak pernah bisa diterima. Retur memakai aturan baris yang SAMA.
+ *
+ * Retur yang menyebut baris pesanannya mengikuti cadangan pesanan itu. Varian
+ * yang jatuh ke baris gabungan dicatat berkunci "", padahal pemetaan Jubelio
+ * barang ini per varian — retur tetap harus mengenali barangnya dari baris
+ * gabungan yang dipatok, bukan menolaknya `no_governing_row`.
  */
 
 const url = process.env.DATABASE_URL ?? "";
@@ -42,6 +47,9 @@ d("acceptReturnItem untuk barang buatan ERP (test bed only)", () => {
   afterEach(async () => {
     await prisma.salesReturnItem.deleteMany({ where: { salesReturnId: seededId(returnId) } });
     await prisma.salesReturn.deleteMany({ where: { id: seededId(returnId) } });
+    await prisma.stockReservation.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.jubelioProductMapping.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: seededId(itemId) } });
@@ -49,7 +57,7 @@ d("acceptReturnItem untuk barang buatan ERP (test bed only)", () => {
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
   });
 
-  async function retur(variantSku: string | null, qty: number): Promise<string> {
+  async function retur(variantSku: string | null, qty: number, salesOrderDetailId: number | null = null): Promise<string> {
     const ret = await prisma.salesReturn.create({
       data: {
         jubelioReturnId: 1_500_000_000 + Math.floor(Math.random() * 400_000_000),
@@ -58,7 +66,16 @@ d("acceptReturnItem untuk barang buatan ERP (test bed only)", () => {
         receivedAt: new Date(),
         rawIngestPayload: {},
         items: {
-          create: { itemId, variantSku, externalSku: tag, productName: "Kaos ERP", qty, unitPrice: 100_000, subtotal: qty * 100_000 },
+          create: {
+            itemId,
+            variantSku,
+            salesOrderDetailId,
+            externalSku: tag,
+            productName: "Kaos ERP",
+            qty,
+            unitPrice: 100_000,
+            subtotal: qty * 100_000,
+          },
         },
       },
       include: { items: { select: { id: true } } },
@@ -119,5 +136,35 @@ d("acceptReturnItem untuk barang buatan ERP (test bed only)", () => {
     const semua = await baris();
     expect(semua.find((b) => b.v === "")).toMatchObject({ q: 7 });
     expect(semua.find((b) => b.v === null)).toMatchObject({ q: 4 });
+  });
+
+  it("varian pesanan marketplace yang terkirim dari baris gabungan kembali ke baris itu walau pemetaannya per varian", async () => {
+    const gabungan = await prisma.inventoryValue.create({
+      data: { itemId, variantSku: null, qtyOnHand: 10, avgCost: 40_000, totalValue: 400_000 },
+      select: { id: true },
+    });
+    const varian = `${tag}-RED-M`;
+    const idJubelio = 1_500_000_000 + Math.floor(Math.random() * 400_000_000);
+    await prisma.jubelioProductMapping.create({
+      data: { itemId, jubelioItemGroupId: idJubelio, jubelioItemId: idJubelio, jubelioItemCode: varian, erpVariantSku: varian },
+    });
+    const detailId = 1_500_000_000 + Math.floor(Math.random() * 400_000_000);
+    await prisma.stockReservation.create({
+      data: {
+        salesorderId: detailId,
+        salesorderDetailId: detailId,
+        itemId,
+        variantSku: "",
+        qty: 2,
+        state: "CONSUMED",
+        inventoryValueId: gabungan.id,
+      },
+    });
+    const id = await retur(varian, 2, detailId);
+
+    const hasil = await terima(id);
+
+    expect(hasil.applied).toBe(true);
+    expect(await baris()).toEqual([{ v: null, q: 12, n: 480_000 }]);
   });
 });

@@ -64,18 +64,21 @@ export type StockRef = {
  * reservation and must act on the row that reservation was made against.
  *
  * packages/db cannot import this (it sits above apps/web), so it carries its own copies — and
- * there are FOUR, not two. moveMainStock and setMainStock in stock-balance.ts, the return-accept
- * restore in sales-return-writer.ts, and lockMainInventoryValueRow in stock-row-lock.ts (the raw
+ * there are THREE, not two. moveMainStock and setMainStock in stock-balance.ts, and
+ * lockMainInventoryValueRow in stock-row-lock.ts (the raw
  * `SELECT … FOR UPDATE` behind applyJubelioStockAdjustment, MATCH_JUBELIO, moveMainStock's
  * first-receipt re-read, calculateMovingAverage's receipt read below and the superseded-item
- * retirement) all restate this shape, tie-break included. Change this helper, change all four —
+ * retirement) all restate this shape, tie-break included. Change this helper, change all three —
  * calculateMovingAverage refuses a receipt whose locked row is not the row this lookup found.
  *
- * Two further packages/db lookups are deliberately a DIFFERENT shape and must not be
- * "harmonised" onto this one: reservation-writer.ts's findReservationInventory prefers an exact
- * "" row and only falls back to null, because a bare OR can decrement the sibling row and orphan
- * reservedQty on an item carrying both spellings; and item-price-writer.ts reads avgCost only,
- * item-level with no variant input at all, so it pins no row and needs no tie-break.
+ * Further packages/db lookups are deliberately a DIFFERENT shape and must not be
+ * "harmonised" onto this one: reservation-writer.ts's findReservationInventory and
+ * barisStokPesanan prefer an exact "" row and only fall back to null, because a bare OR can
+ * decrement the sibling row and orphan reservedQty on an item carrying both spellings; the
+ * marketplace return-accept restore in sales-return-writer.ts follows that same order rule (and
+ * the reservation's pinned row), so returned goods land on the row their sale left; and
+ * item-price-writer.ts reads avgCost only, item-level with no variant input at all, so it pins no
+ * row and needs no tie-break.
  */
 export async function findExistingInventoryValueRow(
   prismaClient: any,

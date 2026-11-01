@@ -6,8 +6,14 @@ describe("sales-return-writer", () => {
       salesReturnItem: { findUnique: jest.fn(), update: jest.fn() },
       salesReturn: { findUnique: jest.fn(), update: jest.fn() },
       stockAdjustment: { create: jest.fn() },
+      /* The restore row is locked by id (SELECT … FOR UPDATE) before its balance is read. */
+      $queryRaw: jest.fn().mockResolvedValue([]),
       inventoryValue: {
         findFirst: jest.fn(),
+        /* barisStokPesanan: the exact variant row, a count of per-variant rows, then the pooled rows. */
+        findUnique: jest.fn().mockResolvedValue(null),
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
         /* moveMainStock's pinned path: a guarded updateMany, a re-read, then the ledger append. */
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -15,7 +21,7 @@ describe("sales-return-writer", () => {
       },
       stockLedgerEntry: { create: jest.fn() },
       stockReservation: { findUnique: jest.fn() },
-      jubelioProductMapping: { findFirst: jest.fn(), findMany: jest.fn() },
+      jubelioProductMapping: { findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
       jubelioOutbox: { create: jest.fn() },
       ...overrides,
     };
@@ -34,11 +40,8 @@ describe("sales-return-writer", () => {
         decision: "PENDING",
         salesReturn: { pushOutboxRowId: null },
       });
-      tx.inventoryValue.findFirst.mockResolvedValue({
-        id: "iv1",
-        qtyOnHand: "10.00",
-        avgCost: "100.00",
-      });
+      tx.inventoryValue.findMany.mockResolvedValue([{ id: "iv1", avgCost: "100.00", variantSku: null }]);
+      tx.$queryRaw.mockResolvedValue([{ id: "iv1", qtyOnHand: "10.00", avgCost: "100.00" }]);
       tx.stockAdjustment.create.mockResolvedValue({ id: "sa1" });
       tx.salesReturnItem.update.mockResolvedValue({});
 
@@ -49,10 +52,14 @@ describe("sales-return-writer", () => {
       });
 
       expect(result).toEqual({ applied: true, stockAdjustmentId: "sa1" });
-      // A variantless line finds its row whether it is spelled null or "".
-      expect(tx.inventoryValue.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      // A variantless line finds its row whether it is spelled null or "", by the marketplace order rule.
+      expect(tx.inventoryValue.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: { itemId: "i1", OR: [{ variantSku: null }, { variantSku: "" }] },
       }));
+      // The balance the adjustment records is read under a lock on that row, taken before any write.
+      expect(tx.$queryRaw.mock.calls[0].slice(1)).toEqual(["iv1", "i1"]);
+      expect(tx.$queryRaw.mock.invocationCallOrder[0])
+        .toBeLessThan(tx.stockAdjustment.create.mock.invocationCallOrder[0]);
       // qtyOnHand moves by an atomic increment on the row that was read, never an absolute write.
       expect(tx.inventoryValue.updateMany).toHaveBeenCalledWith(expect.objectContaining({
         where: expect.objectContaining({ id: "iv1", itemId: "i1" }),
@@ -137,6 +144,7 @@ describe("sales-return-writer", () => {
       tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state: "CONSUMED", qty: "2" });
       tx.jubelioProductMapping.findFirst.mockResolvedValue({ id: "m1" });
       tx.inventoryValue.findFirst.mockResolvedValue({ id: "iv1", qtyOnHand: "10.00", avgCost: "100.00" });
+      tx.$queryRaw.mockResolvedValue([{ id: "iv1", qtyOnHand: "10.00", avgCost: "100.00" }]);
       tx.stockAdjustment.create.mockResolvedValue({ id: "sa1" });
       tx.salesReturnItem.update.mockResolvedValue({});
 
@@ -160,7 +168,8 @@ describe("sales-return-writer", () => {
       tx.stockReservation.findUnique.mockResolvedValue({ itemId: "old-item", variantSku: "V-M", state: "CONSUMED", qty: "2" });
       tx.jubelioProductMapping.findFirst.mockResolvedValue(null);
       tx.jubelioProductMapping.findMany.mockResolvedValue([{ itemId: "twin" }]);
-      tx.inventoryValue.findFirst.mockResolvedValue({ id: "iv-twin", qtyOnHand: "5.00", avgCost: "80.00" });
+      tx.inventoryValue.findUnique.mockResolvedValue({ id: "iv-twin", avgCost: "80.00" });
+      tx.$queryRaw.mockResolvedValue([{ id: "iv-twin", qtyOnHand: "5.00", avgCost: "80.00" }]);
       tx.stockAdjustment.create.mockResolvedValue({ id: "sa2" });
       tx.salesReturnItem.update.mockResolvedValue({});
 
@@ -170,8 +179,8 @@ describe("sales-return-writer", () => {
       expect(tx.jubelioProductMapping.findMany).toHaveBeenCalledWith(expect.objectContaining({
         where: { erpVariantSku: "V-M", itemId: { not: "old-item" } },
       }));
-      expect(tx.inventoryValue.findFirst).toHaveBeenCalledWith(expect.objectContaining({
-        where: { itemId: "twin", variantSku: "V-M" },
+      expect(tx.inventoryValue.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+        where: { itemId_variantSku: { itemId: "twin", variantSku: "V-M" } },
       }));
       expect(tx.stockAdjustment.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ itemId: "twin", qtyChange: 2 }),
@@ -195,12 +204,64 @@ describe("sales-return-writer", () => {
       expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
     });
 
+    it("restores a CONSUMED variant the order put on the item's pooled row (key \"\") onto that pinned row", async () => {
+      const tx = createTx();
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine({ itemId: "i1", variantSku: "V-M" }));
+      tx.stockReservation.findUnique.mockResolvedValue({
+        itemId: "i1", variantSku: "", state: "CONSUMED", qty: "2", inventoryValueId: "iv-pool",
+      });
+      tx.jubelioProductMapping.findFirst.mockResolvedValue(null);
+      tx.jubelioProductMapping.count.mockResolvedValue(3);
+      tx.inventoryValue.findFirst.mockResolvedValue({ id: "iv-pool", itemId: "i1", variantSku: null, qtyOnHand: "10.00", avgCost: "100.00" });
+      tx.$queryRaw.mockResolvedValue([{ id: "iv-pool", qtyOnHand: "10.00", avgCost: "100.00" }]);
+      tx.stockAdjustment.create.mockResolvedValue({ id: "sa4" });
+      tx.salesReturnItem.update.mockResolvedValue({});
+
+      const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
+
+      expect(result).toEqual({ applied: true, stockAdjustmentId: "sa4" });
+      // The mapping is per variant, so no "" mapping exists: the pinned pooled row is what says the item governs.
+      expect(tx.inventoryValue.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: "iv-pool", itemId: "i1", OR: [{ variantSku: null }, { variantSku: "" }] },
+      }));
+      expect(tx.jubelioProductMapping.count).toHaveBeenCalledWith({ where: { itemId: "i1" } });
+      expect(tx.jubelioProductMapping.findMany).not.toHaveBeenCalled();
+      expect(tx.inventoryValue.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ id: "iv-pool", itemId: "i1" }),
+        data: expect.objectContaining({ qtyOnHand: { increment: 2 } }),
+      }));
+      expect(tx.stockLedgerEntry.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ itemId: "i1", variantSku: "", qty: 2 }),
+      }));
+    });
+
+    it.each([
+      ["has no pinned row", { inventoryValueId: null }, null, 3],
+      ["is pinned to a row that is not the item's pooled row", { inventoryValueId: "iv-other" }, null, 3],
+      ["is pinned to the pooled row of an item with no mapping left", { inventoryValueId: "iv-pool" }, { id: "iv-pool" }, 0],
+    ])("refuses no_governing_row for an unmapped key-\"\" reservation that %s, writing nothing", async (_label, pin, pooled, mapped) => {
+      const tx = createTx();
+      tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine({ itemId: "i1", variantSku: "V-M" }));
+      tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "", state: "CONSUMED", qty: "2", ...pin });
+      tx.jubelioProductMapping.findFirst.mockResolvedValue(null);
+      tx.jubelioProductMapping.count.mockResolvedValue(mapped);
+      tx.inventoryValue.findFirst.mockResolvedValue(pooled);
+
+      const result = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "Came back", changedById: "u1" });
+
+      expect(result).toEqual({ applied: false, skipped: "no_governing_row" });
+      expect(tx.jubelioProductMapping.findMany).not.toHaveBeenCalled();
+      expect(tx.stockAdjustment.create).not.toHaveBeenCalled();
+      expect(tx.salesReturnItem.update).not.toHaveBeenCalled();
+    });
+
     it("caps the restore at the reserved qty when the return line claims more", async () => {
       const tx = createTx();
       tx.salesReturnItem.findUnique.mockResolvedValue(pendingLine({ qty: "5.00" }));
       tx.stockReservation.findUnique.mockResolvedValue({ itemId: "i1", variantSku: "V-M", state: "CONSUMED", qty: "2" });
       tx.jubelioProductMapping.findFirst.mockResolvedValue({ id: "m1" });
       tx.inventoryValue.findFirst.mockResolvedValue({ id: "iv1", qtyOnHand: "10.00", avgCost: "100.00" });
+      tx.$queryRaw.mockResolvedValue([{ id: "iv1", qtyOnHand: "10.00", avgCost: "100.00" }]);
       tx.stockAdjustment.create.mockResolvedValue({ id: "sa3" });
       tx.salesReturnItem.update.mockResolvedValue({});
 
@@ -298,7 +359,7 @@ describe("sales-return-writer", () => {
         qty: "1.00",
         salesReturn: { pushOutboxRowId: null },
       });
-      tx.inventoryValue.findFirst.mockResolvedValue(null);
+      tx.inventoryValue.findMany.mockResolvedValue([]);
 
       const r = await acceptReturnItem(tx, { returnItemId: "ri1", reason: "x", changedById: "u1" });
       expect(r).toEqual({ applied: false, skipped: "no_inventory_row" });

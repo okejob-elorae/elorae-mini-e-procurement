@@ -1,5 +1,7 @@
 import type { Prisma } from "../generated/prisma/client";
+import { barisStokPesanan, resolveReservedInventory } from "./reservation-writer";
 import { moveMainStock } from "./stock-balance";
+import { lockInventoryValueRowById } from "./stock-row-lock";
 import type { StockAdjustmentSource } from "./stock-adjustment-source";
 import type { JubelioOutboxEntityType } from "./jubelio-outbox";
 import type { StockLedgerRefType } from "./stock-ledger-ref";
@@ -61,13 +63,11 @@ function toNum(v: unknown): number {
   return typeof v === "number" ? v : Number(v);
 }
 
-// Concurrency note: callers must serialize concurrent acceptReturnItem calls
-// that resolve to the same (itemId, variantSku). qtyOnHand itself is safe now —
-// moveMainStock moves it with an atomic increment — but totalValue is still
-// computed from this function's own pre-read of prevQty/avgCost and then written
-// absolutely, so two concurrent calls can still race on totalValue and lose an
-// update. Sub-B server actions handle this with row-level locking or
-// per-return-id serialization.
+// Concurrency note: the restore row is locked (lockInventoryValueRowById) before its balance is
+// read, so a stock writer that moved the row first is waited out and then seen, and the absolute
+// totalValue handed to moveMainStock is computed from the locked figures rather than a stale
+// read. Two accepts of the same line serialize on that lock; the second one's StockAdjustment then
+// hits the `return-accept:<id>` idempotency key and its whole transaction rolls back.
 export async function acceptReturnItem(
   tx: Prisma.TransactionClient,
   input: AcceptReturnItemInput,
@@ -91,10 +91,11 @@ export async function acceptReturnItem(
    *   RELEASED  — never consumed: accept with no stock change.
    *   RESERVED  — the order's stock is not settled; a later consume would take off goods that came
    *               back, so refuse until the order resolves.
-   *   CONSUMED  — restore, capped at the reserved qty, onto the row that governs the variant now:
-   *               the reservation's own row while it is still mapped, else the one other item the
-   *               variant is mapped on (the row it moved to when its old item was superseded). With
-   *               neither, refuse — never a silent no-stock accept, since the sale's COGS is booked.
+   *   CONSUMED  — restore, capped at the reserved qty. While the reserved item still governs the
+   *               reservation's key (see resolveRestoreItem) the goods go back onto the very row
+   *               the consume took them from; otherwise onto the one other item the variant is
+   *               mapped on (the row it moved to when its old item was superseded). With neither,
+   *               refuse — never a silent no-stock accept, since the sale's COGS is booked.
    * A line that names its order line but has NO reservation came from a line never reserved (unmapped
    * when the order arrived, or older than reservations), so nothing says whether its stock left:
    * refuse rather than restore onto the ingest-resolved item, which could add stock that never left.
@@ -103,7 +104,7 @@ export async function acceptReturnItem(
     ? null
     : await tx.stockReservation.findUnique({
         where: { salesorderDetailId: item.salesOrderDetailId },
-        select: { itemId: true, variantSku: true, state: true, qty: true },
+        select: { itemId: true, variantSku: true, state: true, qty: true, inventoryValueId: true },
       });
   if (item.salesOrderDetailId !== null && !reservation) {
     return { applied: false, skipped: "stock_not_traceable" };
@@ -112,42 +113,39 @@ export async function acceptReturnItem(
   if (reservation && reservation.state !== "CONSUMED") {
     return acceptWithoutStock(tx, input, "NOT_CONSUMED");
   }
-  let stockItemId = item.itemId;
-  let stockVariantSku = item.variantSku;
-  let qty = toNum(item.qty);
-  if (reservation) {
-    const target = await resolveRestoreItem(tx, reservation.itemId, reservation.variantSku);
-    if (target === null) return { applied: false, skipped: "no_governing_row" };
-    stockItemId = target;
-    stockVariantSku = reservation.variantSku;
-    qty = Math.min(qty, toNum(reservation.qty));
-  }
-  if (!stockItemId) {
-    return { applied: false, skipped: "unmapped_sku" };
-  }
 
   /*
-   * The canonical OR-tolerant lookup, restated: findExistingInventoryValueRow lives in
-   * apps/web/lib/inventory/costing.ts and packages/db sits below apps/web, so it cannot be
-   * imported here — the shape is copied instead, tie-break included. Change it there, change it
-   * here and in stock-balance.ts's two movers.
-   *
-   * Tolerance keys on FALSY, not on null. This used to widen the OR only when variantSku was
-   * null, which made a Jubelio-sourced variantless item arriving with "" strict: it missed a
-   * null-spelled InventoryValue row and returned skipped: "no_inventory_row" with the stock
-   * sitting right there, silently declining to restore it.
+   * Every path lands on a row picked by the marketplace order rule, so goods go back where a sale
+   * of this line takes them from: the reservation's own pinned row, or barisStokPesanan in
+   * reservation-writer.ts — variantless ("" or null on the line) takes the "" spelling first and
+   * then the lowest-id null; a variant with no row of its own takes the item's pooled row only while
+   * the item has no per-variant row at all, and is otherwise refused. `kunci` is the key the ledger
+   * entry carries, the same one the reserve recorded.
    */
-  const invSelect = { id: true, qtyOnHand: true, avgCost: true } as const;
-  const inv = stockVariantSku
-    ? await tx.inventoryValue.findFirst({
-        where: { itemId: stockItemId, variantSku: stockVariantSku },
-        select: invSelect,
-      })
-    : await tx.inventoryValue.findFirst({
-        where: { itemId: stockItemId, OR: [{ variantSku: null }, { variantSku: "" }] },
-        orderBy: { id: "asc" },
-        select: invSelect,
-      });
+  let qty = toNum(item.qty);
+  let stockItemId: string;
+  let row: { id: string; kunci: string } | null;
+  if (reservation) {
+    const target = await resolveRestoreItem(tx, reservation);
+    if (target === null) return { applied: false, skipped: "no_governing_row" };
+    stockItemId = target;
+    qty = Math.min(qty, toNum(reservation.qty));
+    if (target === reservation.itemId) {
+      const pinned = await resolveReservedInventory(tx, reservation);
+      row = pinned ? { id: pinned.id, kunci: reservation.variantSku } : null;
+    } else {
+      row = await barisStokPesanan(tx, target, reservation.variantSku);
+    }
+  } else {
+    if (!item.itemId) {
+      return { applied: false, skipped: "unmapped_sku" };
+    }
+    stockItemId = item.itemId;
+    row = await barisStokPesanan(tx, item.itemId, item.variantSku ?? "");
+  }
+  if (!row) return { applied: false, skipped: "no_inventory_row" };
+
+  const inv = await lockInventoryValueRowById(tx, row.id, stockItemId);
   if (!inv) return { applied: false, skipped: "no_inventory_row" };
 
   const prevQty = toNum(inv.qtyOnHand);
@@ -174,7 +172,7 @@ export async function acceptReturnItem(
 
   await moveMainStock(tx, {
     itemId: stockItemId,
-    variantSku: stockVariantSku,
+    variantSku: row.kunci,
     qtyDelta: qty,
     totalValue: newQty * avgCost,
     totalCost: qty * avgCost,
@@ -200,22 +198,38 @@ export async function acceptReturnItem(
 }
 
 /**
- * The item whose row a consumed line's stock goes back to: the reserved item while its variant is
- * still mapped there, else the single other item the variant is mapped on. `null` when neither
- * exists or the variant is mapped on more than one other item. A variantless reservation has no
- * SKU to follow, so it resolves only to its own item.
+ * The item whose row a consumed line's stock goes back to: the reserved item while it still
+ * governs the reservation's key, else the single other item the variant is mapped on. `null` when
+ * neither exists or the variant is mapped on more than one other item.
+ *
+ * The reserved item governs its key while it still has a mapping for it — or, for key "", while
+ * the reservation is pinned to that item's own pooled (null/"") row and the item is still mapped
+ * at all. That second case is a variant the order rule put on the pooled row because the item had
+ * no per-variant rows: barisStokPesanan records it under "", but the item's mappings stay per
+ * variant, so no "" mapping exists. A pooled row is never retired as superseded (superseded-items.ts
+ * refuses an item that has one). A variantless item that lost its "" mapping has no mapping left
+ * and stays refused: a "" key has no SKU to follow, so it never resolves to another item.
  */
 async function resolveRestoreItem(
   tx: Prisma.TransactionClient,
-  itemId: string,
-  variantSku: string,
+  reservation: { itemId: string; variantSku: string; inventoryValueId: string | null },
 ): Promise<string | null> {
+  const { itemId, variantSku } = reservation;
   const own = await tx.jubelioProductMapping.findFirst({
     where: { itemId, erpVariantSku: variantSku },
     select: { id: true },
   });
   if (own) return itemId;
-  if (variantSku === "") return null;
+  if (variantSku === "") {
+    if (!reservation.inventoryValueId) return null;
+    const pooled = await tx.inventoryValue.findFirst({
+      where: { id: reservation.inventoryValueId, itemId, OR: [{ variantSku: null }, { variantSku: "" }] },
+      select: { id: true },
+    });
+    if (!pooled) return null;
+    const mapped = await tx.jubelioProductMapping.count({ where: { itemId } });
+    return mapped > 0 ? itemId : null;
+  }
   const moved = await tx.jubelioProductMapping.findMany({
     where: { erpVariantSku: variantSku, itemId: { not: itemId } },
     select: { itemId: true },

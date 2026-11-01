@@ -1,5 +1,5 @@
 import type { Prisma, StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
-import { prisma, setMainStock } from "@elorae/db";
+import { moveMainStock, prisma, setMainStock } from "@elorae/db";
 import { Decimal } from "decimal.js";
 import { generateDocNumber } from "@/lib/docNumber";
 import { apiFetch } from "@/lib/internal-api";
@@ -221,18 +221,43 @@ export async function applyFgAccessoriesAdjustments(
     });
 
     // Baris kembar dipindah ke baris utama dulu (isi dan nilainya), lalu hitungan
-    // ditetapkan mutlak di baris utama: jumlah kunci ini = hitungan.
-    const now = new Date();
+    // ditetapkan mutlak di baris utama: jumlah kunci ini = hitungan. Perpindahannya
+    // lewat penggerak stok, jadi kartu stok mencatat keluar dari kembaran dan masuk
+    // ke baris utama. Pasangan itu bernilai sama dan berlawanan, sehingga jumlah
+    // totalCost opname ini (bahan jurnal selisihnya) tetap = selisih hitungan × harga.
+    const ref = {
+      refType: "StockOpname" satisfies StockLedgerRefType,
+      refId: opnameId,
+      refDocNumber: docNumber,
+      createdById: userId,
+    };
+    let nilaiUtama = new Decimal(toNum(inv.totalValue));
     for (const k of kembar) {
       const q = toNum(k.qtyOnHand);
-      const v = toNum(k.totalValue);
-      await tx.inventoryValue.update({
-        where: { id: k.id },
-        data: { qtyOnHand: { decrement: q }, totalValue: { decrement: v }, lastUpdated: now },
+      const v = new Decimal(toNum(k.totalValue));
+      const hargaKembar = toNum(k.avgCost);
+      await moveMainStock(tx, {
+        itemId: row.itemId,
+        variantSku: variantKey,
+        inventoryValueId: k.id,
+        qtyDelta: -q,
+        totalValue: 0,
+        unitCost: hargaKembar,
+        totalCost: v.neg().toNumber(),
+        balanceValue: 0,
+        ...ref,
       });
-      await tx.inventoryValue.update({
-        where: { id: inv.id },
-        data: { qtyOnHand: { increment: q }, totalValue: { increment: v }, lastUpdated: now },
+      nilaiUtama = nilaiUtama.plus(v);
+      await moveMainStock(tx, {
+        itemId: row.itemId,
+        variantSku: variantKey,
+        inventoryValueId: inv.id,
+        qtyDelta: q,
+        totalValue: nilaiUtama.toNumber(),
+        unitCost: hargaKembar,
+        totalCost: v.toNumber(),
+        balanceValue: nilaiUtama.toNumber(),
+        ...ref,
       });
     }
     const newTotalValue = newQty.mul(cost);
@@ -260,27 +285,7 @@ export async function applyFgAccessoriesAdjustments(
       totalCost: totalCostAdj,
       balanceValue: newTotalValue.toNumber(),
       inventoryValueId: inv.id,
-      refType: "StockOpname" satisfies StockLedgerRefType,
-      refId: opnameId,
-      refDocNumber: docNumber,
-      createdById: userId,
-    });
-
-    await tx.stockMovement.create({
-      data: {
-        itemId: row.itemId,
-        variantSku: variantKey,
-        type: "ADJUSTMENT",
-        refType: "OPNAME",
-        refId: opnameId,
-        refDocNumber: docNumber,
-        qty: delta.toNumber(),
-        unitCost: cost.toNumber(),
-        totalCost: totalCostAdj,
-        balanceQty: newQty.toNumber(),
-        balanceValue: newTotalValue.toNumber(),
-        notes: `Opname adjustment: ${docNumber}`,
-      },
+      ...ref,
     });
 
     await tx.stockOpnameItem.updateMany({

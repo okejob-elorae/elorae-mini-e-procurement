@@ -117,8 +117,12 @@ export async function resolveReservedInventory(
  * StockReservation, jadi kirim dan batal mengenai baris yang sama persis.
  * Untuk kunci "" pilihannya HARUS sama dengan `findReservationInventory`: cadangan
  * tanpa `inventoryValueId` (atau yang barisnya hilang) jatuh ke sana saat kirim/batal.
- * Retur marketplace yang diterima (`acceptReturnItem`) memakai aturan yang sama,
- * supaya barang kembali ke baris tempat ia dijual.
+ * Retur marketplace yang diterima (`acceptReturnItem`, sales-return-writer.ts)
+ * memakai aturan yang sama — baris yang dipatok cadangannya bila ada, selain itu
+ * fungsi ini — supaya barang kembali ke baris tempat ia dijual. Varian yang jatuh
+ * ke baris gabungan dicatat berkunci "", sedangkan pemetaan Jubelio-nya tetap per
+ * varian; karena itu retur mengenali barangnya dari baris gabungan yang dipatok,
+ * bukan dari pemetaan berkunci "" (yang memang tidak ada).
  */
 export async function barisStokPesanan(
   tx: Prisma.TransactionClient,

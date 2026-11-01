@@ -1,4 +1,5 @@
 import type { Prisma } from "../generated/prisma/client";
+import { usePostgres } from "./sql-dialect";
 import { lockMainInventoryValueRow } from "./stock-row-lock";
 import { appendStockLedger, normaliseVariantKey, type StockLedgerEntryType } from "./stock-ledger";
 
@@ -137,8 +138,14 @@ function negativeFloorFilter(qtyDelta: number): { qtyOnHand?: { gte: number } } 
  * Taken only when the first lookup found no row, so the common path stays lock-free: locking Item
  * rows on every receipt would let two multi-line receipts naming the same items in different
  * orders deadlock.
+ *
+ * One complete statement per dialect, for the reason given on lockMainInventoryValueRow.
  */
 async function lockItemRow(tx: Tx, itemId: string): Promise<void> {
+  if (usePostgres()) {
+    await tx.$queryRaw`SELECT "id" FROM "Item" WHERE "id" = ${itemId} FOR UPDATE`;
+    return;
+  }
   await tx.$queryRaw`SELECT \`id\` FROM \`Item\` WHERE \`id\` = ${itemId} FOR UPDATE`;
 }
 

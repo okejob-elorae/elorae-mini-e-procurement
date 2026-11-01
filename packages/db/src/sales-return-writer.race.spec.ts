@@ -11,10 +11,11 @@ import { seededId, seededIds } from "./spec-teardown";
  * (webhook stok, kirim pesanan, penyesuaian) hilang tanpa jejak.
  *
  * Urutan dibuat pasti, bukan untung-untungan waktu: transaksi B menambah stok
- * dan MENAHAN kunci barisnya; selagi B menahan, A (retur diterima) membaca lalu
- * menulis — tulisan A menunggu kunci B, dan baru jalan setelah B commit.
- * Penulisan mutlak menghasilkan 10 + 2 = 12 (tambahan B hilang); increment atom
- * menghasilkan 10 + 5 + 2 = 17.
+ * dan MENAHAN kunci barisnya; selagi B menahan, A (retur diterima) mengunci baris
+ * itu sebelum membaca saldonya — A menunggu kunci B, dan baru membaca setelah B
+ * commit. Bacaan basi menghasilkan 10 + 2 = 12 (tambahan B hilang, termasuk di
+ * `totalValue` dan jejak penyesuaian); bacaan di bawah kunci menghasilkan
+ * 10 + 5 + 2 = 17.
  */
 
 const url = process.env.DATABASE_URL ?? "";
@@ -86,6 +87,7 @@ d("acceptReturnItem bersamaan dengan penulis stok lain (test bed only)", () => {
   afterEach(async () => {
     await prisma.salesReturnItem.deleteMany({ where: { salesReturnId: seededId(returnId) } });
     await prisma.salesReturn.deleteMany({ where: { id: seededId(returnId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds([itemId].filter(Boolean)) } } });
