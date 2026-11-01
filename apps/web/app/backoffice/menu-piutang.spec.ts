@@ -15,6 +15,10 @@ import {
  * memverifikasi BKM, gudang yang menghitung retur, dan pemegang
  * `receivables:manage` saja boleh membuka halamannya tetapi tidak pernah
  * menemukannya di menu.
+ *
+ * Memverifikasi BKM kini izinnya sendiri, `payments:verify` ("periksa
+ * pembayaran", keputusan pemilik 2026-10-29), bukan lagi menumpang
+ * `journals:manage` — jadi pekerjaan jurnal saja tidak lagi membuka BKM.
  */
 
 // Komponen berat yang tidak relevan untuk susunan menu.
@@ -37,11 +41,15 @@ const PAGAR: Record<string, (izin: string[]) => boolean> = {
   "/backoffice/retur-toko": bolehMembacaRetur,
   "/backoffice/beban-selisih": bolehMembacaPiutang,
   "/backoffice/arsip-retur": bolehMembacaArsip,
-  // Layar `/backoffice/finance/*` memagari dirinya dengan satu izin di `page.tsx`-nya.
+  // Layar `/backoffice/finance/*` memagari dirinya di `page.tsx`-nya.
   "/backoffice/finance/piutang": (izin) => hasPermission(izin, PERMISSIONS.RECEIVABLES_VIEW),
   "/backoffice/finance/payments": (izin) => hasPermission(izin, PERMISSIONS.PAYMENTS_MANAGE),
-  "/backoffice/finance/pelunasan": (izin) => hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE),
-  "/backoffice/finance/collections": (izin) => hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE),
+  // Pelunasan toko dan setoran penagih: dikelola penagihan, disetujui/diverifikasi pemeriksa pembayaran
+  // (aksinya menuntut `payments:verify`), jadi pagar halamannya menerima salah satu.
+  "/backoffice/finance/pelunasan": (izin) =>
+    hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE) || hasPermission(izin, PERMISSIONS.PAYMENTS_VERIFY),
+  "/backoffice/finance/collections": (izin) =>
+    hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE) || hasPermission(izin, PERMISSIONS.PAYMENTS_VERIFY),
 };
 
 const DASAR = [
@@ -50,6 +58,7 @@ const DASAR = [
   "journals:manage",
   "inventory_opname:count",
   "payments:manage",
+  "payments:verify",
   "collections:manage",
 ];
 /** Setiap gabungan izin yang menentukan, ditambah admin dan orang lapangan. */
@@ -78,10 +87,21 @@ describe("menu Piutang & Pelunasan mengikuti pagar halaman", () => {
     });
   }
 
-  it("keuangan (journals:manage) menemukan BKM dan nota retur, bukan buku piutang", () => {
-    const keuangan = ["dashboard:view", "journals:manage"];
-    const terlihat = (grup?.children ?? []).filter((c) => bolehAnak(keuangan, c.permission)).map((c) => c.href);
-    expect(terlihat.sort()).toEqual(["/backoffice/pelunasan", "/backoffice/retur-toko"]);
+  it("pemeriksa pembayaran (payments:verify) menemukan BKM, nota retur, pelunasan toko, dan setoran penagih — bukan buku piutang", () => {
+    const pemeriksa = ["dashboard:view", "payments:verify"];
+    const terlihat = (grup?.children ?? []).filter((c) => bolehAnak(pemeriksa, c.permission)).map((c) => c.href);
+    expect(terlihat.sort()).toEqual([
+      "/backoffice/finance/collections",
+      "/backoffice/finance/pelunasan",
+      "/backoffice/pelunasan",
+      "/backoffice/retur-toko",
+    ]);
+  });
+
+  it("pekerjaan jurnal saja (journals:manage) tidak lagi membuka apa pun di grup ini", () => {
+    const jurnal = ["dashboard:view", "journals:view", "journals:manage"];
+    const terlihat = (grup?.children ?? []).filter((c) => bolehAnak(jurnal, c.permission)).map((c) => c.href);
+    expect(terlihat).toEqual([]);
   });
 
   it("gudang (inventory_opname:count) hanya menemukan nota retur", () => {

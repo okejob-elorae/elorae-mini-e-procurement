@@ -46,11 +46,16 @@ type Hasil = { ok: true } | { ok: false; code: string; noKonsi?: string[] };
 export function TombolMutasiKantor({
   rincian: r,
   bolehPutuskan,
+  bolehPutuskanSelisih,
   bolehTerima,
   milikSendiri,
 }: {
   rincian: RincianMutasiKantor;
+  /** Setujui, tolak, batalkan, alihkan tujuan — `store_transfers:approve`. */
   bolehPutuskan: boolean;
+  /** Memutuskan selisih kiriman — `store_transfers:decide_shortfall`. */
+  bolehPutuskanSelisih: boolean;
+  /** Menerima atas nama toko — `stores:manage`. */
   bolehTerima: boolean;
   milikSendiri: boolean;
 }) {
@@ -140,7 +145,7 @@ export function TombolMutasiKantor({
   const tampilSetujui = bolehPutuskan && !milikSendiri && r.status === "DIAJUKAN";
   const tampilBatal = bolehPutuskan && (r.status === "DIAJUKAN" || r.status === "DISETUJUI" || r.status === "DIKIRIM");
   const tampilAlihkan = bolehPutuskan && r.status === "DIKIRIM";
-  const tampilSelisih = bolehPutuskan && r.selisihStatus === "TERBUKA";
+  const tampilSelisih = bolehPutuskanSelisih && r.selisihStatus === "TERBUKA";
   const tampilTerima = bolehTerima && r.terimaKantor !== null;
   if (!tampilSetujui && !tampilBatal && !tampilAlihkan && !tampilSelisih && !tampilTerima) return null;
 

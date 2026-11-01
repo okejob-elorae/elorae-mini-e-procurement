@@ -1,6 +1,14 @@
 import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
-import { nilaiKredit, type AlasanKredit, type KeadaanTagihan, type ModeKredit, type TingkatKredit } from "@/lib/salesman/kredit";
+import {
+  batasKreditBerlaku,
+  nilaiKredit,
+  type AlasanKredit,
+  type KeadaanTagihan,
+  type ModeKredit,
+  type SumberBatas,
+  type TingkatKredit,
+} from "@/lib/salesman/kredit";
 import { muatKreditToko } from "./kredit-toko";
 
 /**
@@ -25,8 +33,12 @@ export type PanelKredit = {
   ditahan: boolean;
   catatan: string | null;
   mode: ModeKredit;
+  /** Batas yang BERLAKU (sesudah bawaan dan "Tanpa batas"); null = tidak dibatasi. */
   batasNilai: number | null;
   batasFaktur: number | null;
+  /** Asal batas di atas — "khusus toko ini", "ikut bawaan", atau "tanpa batas". */
+  sumberBatasNilai: SumberBatas;
+  sumberBatasFaktur: SumberBatas;
   /** Penilaian dengan tagihan sekarang; null = tagihan toko gagal dibaca. */
   sekarang: { tingkat: TingkatKredit; alasan: AlasanKredit[]; keadaan: KeadaanTagihan; nilaiPesanan: number } | null;
   /** Faktur terbuka, yang lewat janji dulu; paling banyak `BATAS_FAKTUR_PANEL`. */
@@ -64,12 +76,16 @@ export async function muatPanelKredit(orderId: string): Promise<PanelKredit | nu
     hariTerlambat: b.alasan.hariTerlambat ?? null,
   }));
 
+  // Batas dibaca lewat pemutus yang sama dengan penilaian `sekarang` dan gerbang persetujuan.
+  const batas = batasKreditBerlaku(kredit.batas, kredit.aturan);
   return {
     ditahan: order.kreditDitahan,
     catatan: order.kreditCatatan,
     mode: kredit.aturan.mode,
-    batasNilai: kredit.batas.creditLimit ?? kredit.aturan.batasNilai,
-    batasFaktur: kredit.batas.maxOpenInvoices ?? kredit.aturan.batasFaktur,
+    batasNilai: batas.nilai.nilai,
+    batasFaktur: batas.faktur.nilai,
+    sumberBatasNilai: batas.nilai.sumber,
+    sumberBatasFaktur: batas.faktur.sumber,
     sekarang,
     faktur,
     fakturLainnya: Math.max(0, urut.length - faktur.length),

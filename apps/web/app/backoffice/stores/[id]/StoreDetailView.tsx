@@ -86,15 +86,15 @@ import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import type { CatatanTampil } from "@/lib/stores/catatan-queries";
 import type { BarisStok } from "@/lib/spg/queries";
 import { formatRupiah } from "@/lib/format/rupiah";
-import type { KeadaanTagihan } from "@/lib/salesman/kredit";
-import { formatJarak, type BatasBerlaku } from "./ringkasan-toko";
+import type { BatasBerlaku, KeadaanTagihan } from "@/lib/salesman/kredit";
+import { formatJarak } from "./ringkasan-toko";
 
 /**
  * Kredit toko PUTUS di rincian toko. `piutang`: keadaan tagihan, "GAGAL" bila
  * tidak terbaca, "TERSEMBUNYI" bila penonton tidak boleh membaca piutang.
+ * Batas nilainya ada di prop `batasKredit` (berlaku juga untuk toko konsinyasi).
  */
 export type KreditTokoTampil = {
-  batasNilai: BatasBerlaku;
   batasFaktur: BatasBerlaku;
   piutang: KeadaanTagihan | "GAGAL" | "TERSEMBUNYI";
 };
@@ -214,6 +214,12 @@ type Props = {
   catatan: CatatanTampil[];
   /** null untuk toko konsinyasi. */
   kredit: KreditTokoTampil | null;
+  /**
+   * Batas kredit (Rp) yang BERLAKU untuk toko ini, dari `batasKreditBerlaku` — pemutus yang sama
+   * dengan pemeriksaan kredit — supaya rincian menulis "khusus toko ini", "ikut bawaan", atau
+   * "tanpa batas" sesuai yang benar-benar dinilai.
+   */
+  batasKredit: BatasBerlaku;
   /** Buku stok toko dari gerakan SPG; waktu gerakan sudah diformat di server. */
   stokToko: { stok: BarisStok[]; gerakan: GerakanStokTampil[] };
   /** Area dan sales pemegang, sudah dalam bentuk label. */
@@ -388,6 +394,7 @@ export function StoreDetailView({
   canPush,
   catatan,
   kredit,
+  batasKredit,
   visits,
   orders,
   sentItems,
@@ -422,10 +429,20 @@ export function StoreDetailView({
   const tTanda = useTranslations("stores.detail.tanda");
   const tKredit = useTranslations("stores.detail.kredit");
   const tKelas = useTranslations("kelasToko.daftar");
-  const teksBatas = (b: BatasBerlaku, format: (n: number) => string) =>
-    b.sumber === "TANPA"
-      ? tKredit("noLimit")
-      : tKredit(b.sumber === "TOKO" ? "fromStore" : "fromDefault", { nilai: format(b.nilai) });
+  const teksBatas = (b: BatasBerlaku, format: (n: number) => string) => {
+    switch (b.sumber) {
+      case "TOKO":
+        return tKredit("fromStore", { nilai: format(b.nilai) });
+      case "BAWAAN":
+        return tKredit("fromDefault", { nilai: format(b.nilai) });
+      case "TANPA_BATAS":
+        return tDetail("creditLimitUnlimited");
+      case "BAWAAN_KOSONG":
+        return tKredit("defaultEmpty");
+      case "KONSI_KOSONG":
+        return tKredit("konsiEmpty");
+    }
+  };
   const locale = useLocale();
   const formatDateTime = (iso: string) => formatDisplayDateTime(iso, locale);
   const router = useRouter();
@@ -770,9 +787,7 @@ export function StoreDetailView({
               {store.termsType === "KONSI" ? (
                 <DetailField label={tKredit("ppnKonsi")}>{store.consignmentVat ? tKredit("ppnKonsiYa") : tKredit("ppnKonsiTidak")}</DetailField>
               ) : null}
-              <DetailField label={tForm("creditLimit")}>
-                {store.creditLimit !== null ? formatRupiah(store.creditLimit) : tDetail("creditLimitUnlimited")}
-              </DetailField>
+              <DetailField label={tForm("creditLimit")}>{teksBatas(batasKredit, formatRupiah)}</DetailField>
               {creditExposure && (
                 <>
                   <DetailField label={tDetail("creditExposureLabel")}>

@@ -1901,12 +1901,15 @@ export type KembalikanBahanInput = {
 
 export type KembalikanBahanResult =
   | Extract<HasilKembaliBahan, { ok: true }>
-  | { ok: false; code: KodeTolakKembaliBahan; itemId?: string; sisa?: number };
+  | { ok: false; code: KodeTolakKembaliBahan; itemId?: string; sisa?: number; dokumen?: string[] };
 
 /**
  * Bahan kembali dari CMT ke gudang (sisa potong, WO yang akan dibatalkan).
  * Penulisnya `kembalikanBahanWo` (lib/production/kembali-bahan-writer.ts);
  * penolakan DIKEMBALIKAN sebagai `{ ok:false, code }`. Pelaku dari sesi.
+ * Harga yang diambil dari dokumen pengeluaran (kartu stok tanpa nilai) ditandai
+ * `barangHargaDokumen`; tanpa harga di keduanya → `HARGA_KELUAR_TIDAK_DIKETAHUI`
+ * beserta nomor dokumennya (`dokumen`).
  */
 export async function kembalikanBahan(data: KembalikanBahanInput): Promise<KembalikanBahanResult> {
   const session = await auth();

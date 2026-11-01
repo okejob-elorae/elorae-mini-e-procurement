@@ -6,7 +6,7 @@ import { returTertahan } from "@/lib/receivables/rules";
 import { PILIH_POTONGAN, potonganRetur } from "@/lib/receivables/deductions";
 import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
-import { bolehMembacaPelunasan } from "@/lib/receivables/izin";
+import { bolehMembacaPelunasan, bolehMemverifikasi } from "@/lib/receivables/izin";
 import { koreksiTertunda } from "@/lib/receivables/koreksi";
 import { PelunasanClient, type BarisKlaim } from "./PelunasanClient";
 import { bacaPeriodeKlaim, bacaStatusKlaim, dalamPeriode, hitungTabKlaim } from "./saring";
@@ -146,10 +146,9 @@ export default async function PelunasanPage(props?: {
       jumlah={jumlah}
       ringkas={{ semua: semua.length, menunggu: semua.filter((b) => b.status === "DIKIRIM").length }}
       giroMenunggu={giroMenunggu}
-      bolehMemutuskan={hasPermission(
-        session.user.permissions ?? [],
-        PERMISSIONS.JOURNALS_MANAGE,
-      )}
+      // Memverifikasi, menolak, membatalkan, dan menautkan ulang potongan = payments:verify
+      // (bolehMemverifikasi), izin yang sama dengan aksinya di app/actions/receivables.ts.
+      bolehMemutuskan={bolehMemverifikasi(session.user.permissions)}
       bolehMengelola={hasPermission(
         session.user.permissions ?? [],
         PERMISSIONS.RECEIVABLES_MANAGE,

@@ -1,5 +1,9 @@
 import { prisma } from "@elorae/db";
+import { kalimatKurangPerjalanan } from "./antaran";
+import { muatInfoAntaran } from "./antaran-queries";
 import { kurangDariOpname, kurangDariTerima } from "./hilang";
+import type { JenisKiriman } from "./kiriman";
+import { hitungSelisihTerima } from "./selisih-terima";
 import { bacaAturanHilang } from "./hilang-db";
 import { bukaCatatanHilang, type HasilBukaHilang } from "./hilang-writer";
 
@@ -82,10 +86,16 @@ export async function bukaHilangDariMutasi(transferId: string, userId: string): 
 }
 
 /**
- * Kiriman ke toko (pesanan putus, konsinyasi, kiriman konsinyasi) yang TIBA
- * kurang dari yang dikirim. Tanda terima mutasi diabaikan — kekurangannya
- * diputuskan kantor lebih dulu (HILANG → `bukaHilangDariMutasi`, KEMBALI →
- * bukan hilang).
+ * Kiriman ke toko (pengiriman putus, antaran konsinyasi, pesanan konsi lama,
+ * kiriman konsinyasi) yang TIBA kurang dari yang dikirim. Tanda terima mutasi
+ * diabaikan — kekurangannya diputuskan kantor lebih dulu (HILANG →
+ * `bukaHilangDariMutasi`, KEMBALI → bukan hilang).
+ *
+ * Yang "dikirim" di tanda terima adalah isi kiriman itu sendiri — untuk antaran
+ * konsinyasi, yang diserahkan di antaran itu — jadi sisa pesanan yang belum
+ * dikirim gudang tidak pernah menjadi barang hilang. Kekurangan sebuah antaran
+ * adalah KURANG DI PERJALANAN: catatan kantornya menyebut berapa yang dikirim
+ * gudang di pengiriman itu, berapa yang tiba, dan pengantar/ekspedisi yang dicek.
  */
 export async function bukaHilangDariPenerimaan(receiptId: string, userId: string): Promise<HasilSumberHilang> {
   const r = await prisma.storeReceipt.findUnique({
@@ -94,12 +104,17 @@ export async function bukaHilangDariPenerimaan(receiptId: string, userId: string
       id: true,
       storeId: true,
       sourceType: true,
+      sourceId: true,
       sourceDocNo: true,
       lines: { select: { itemId: true, variantSku: true, productName: true, qtySent: true, qtyReceived: true } },
     },
   });
   if (!r) return { ok: false, kode: "TIDAK_DITEMUKAN" };
   if (r.sourceType === "MUTASI" || r.sourceType === "MUTASI_KEMBALI") return { ok: false, kode: "SUMBER_MUTASI" };
+  const antaran = await muatInfoAntaran(prisma, r.storeId, r.sourceType as JenisKiriman, r.sourceId).catch((err) => {
+    console.error("bukaHilangDariPenerimaan: antaran tidak terbaca", r.id, err);
+    return null;
+  });
   return bukaCatatanHilang({
     storeId: r.storeId,
     source: "PENERIMAAN",
@@ -109,6 +124,7 @@ export async function bukaHilangDariPenerimaan(receiptId: string, userId: string
     note: null,
     createdById: userId,
     idempotencyKey: `penerimaan:${r.id}`,
+    keteranganAsal: kalimatKurangPerjalanan(hitungSelisihTerima(r.lines), antaran),
   });
 }
 

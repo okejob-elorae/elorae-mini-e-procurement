@@ -247,7 +247,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "komisiSpg.judul" },
     isi: [
       { kunci: "komisiSpg.deskripsi" },
-      "Dasar pembagian antar SPG di satu toko dan menyalakan komisi ini diatur di Pengaturan → SPG. Komisi bisa ditetapkan mulai tanggal 1 bulan berikutnya. Menetapkan dan menandai dibayar butuh izin mengelola piutang; bulan yang sudah ada pembayarannya tidak bisa ditetapkan ulang.",
+      "Dasar pembagian antar SPG di satu toko dan menyalakan komisi ini diatur di Pengaturan → SPG. Komisi bisa ditetapkan mulai tanggal 1 bulan berikutnya. Menetapkan butuh izin mengelola piutang; menandai dibayar butuh izin membayar gaji & komisi SPG, yang bawaannya hanya dipegang admin. Bulan yang sudah ada pembayarannya tidak bisa ditetapkan ulang.",
       "Beban barang hilang yang ditanggung SPG dipotong dari komisinya saat ditetapkan; batas potongannya diatur di Pengaturan → SPG.",
       "Komisi tidak terbentuk sendiri: baris resminya baru ada setelah keuangan menekan Tetapkan per toko. Beranda mengingatkan pemegang izin mengelola piutang dengan jumlah toko putus ber-SPG yang komisi bulan lalunya belum ditetapkan; tautannya membuka bulan lalu di halaman ini.",
     ],
@@ -281,8 +281,8 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgMutasi.kantor.judul" },
     isi: [
       { kunci: "spgMutasi.kantor.deskripsi" },
-      "Alurnya: SPG toko asal mengajukan, kantor menyetujui bila arah itu butuh persetujuan, SPG toko asal mengirim, lalu SPG toko tujuan menerima. Arah mana yang boleh, yang butuh persetujuan, dan yang ditolak diatur di Pengaturan → Salesman. Stok gudang utama tidak bergerak; yang berpindah adalah buku stok kedua toko.",
-      "Menyetujui, menolak, mengalihkan, membatalkan, dan memutuskan selisih butuh izin menyetujui pesanan lapangan. Menerima atas nama toko butuh izin mengelola toko, untuk toko tujuan tanpa SPG atau kiriman yang sudah melewati batas hari pengingat.",
+      "Alurnya: SPG toko asal mengajukan, kantor menyetujui bila arah itu butuh persetujuan, SPG toko asal mengirim, lalu SPG toko tujuan menerima. Arah mana yang boleh, yang butuh persetujuan, dan yang ditolak diatur di Pengaturan → SPG. Stok gudang utama tidak bergerak; yang berpindah adalah buku stok kedua toko.",
+      "Menyetujui, menolak, mengalihkan, dan membatalkan butuh izin menyetujui transfer antar toko; memutuskan selisih butuh izin memutuskan selisih transfer. Keduanya keputusan manager — bawaannya hanya admin, dan bisa diberikan ke peran lain di Peran & izin. Menerima atas nama toko butuh izin mengelola toko, untuk toko tujuan tanpa SPG atau kiriman yang sudah melewati batas hari pengingat.",
     ],
   },
   {
@@ -291,7 +291,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Rincian mutasi antar toko",
     isi: [
       "Satu mutasi: toko asal dan tujuan, barang dan jumlahnya, dan riwayat setiap langkahnya. Surat jalan bisa dicetak atau disimpan sebagai PDF dari sini; sebelum barang dikirim, surat jalan tercetak dengan cap DRAF.",
-      "Bila barang diterima kurang dari yang dikirim, kantor memutuskan selisihnya: hilang (hanya dicatat, stok tidak berubah, dan catatan barang hilang dibuka untuk toko asal di SPG → Barang hilang) atau kembali (stok toko asal ditambah sebesar kekurangannya).",
+      "Bila barang diterima kurang dari yang dikirim, kantor memutuskan selisihnya: hilang (hanya dicatat, stok tidak berubah, dan catatan barang hilang dibuka untuk toko asal di SPG → Barang hilang) atau kembali (stok toko asal ditambah sebesar kekurangannya). Memutuskannya butuh izin memutuskan selisih transfer.",
     ],
   },
   {
@@ -310,7 +310,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "barangHilang.kantor.judul" },
     isi: [
       { kunci: "barangHilang.kantor.deskripsi" },
-      "Pengawas SPG bisa melihat. Mencatat barang hilang secara manual, menetapkan penanggung, dan menandai pelunasan butuh izin mengelola piutang.",
+      "Pengawas SPG bisa melihat. Mencatat barang hilang secara manual, menandai pelunasan, dan membatalkan catatan yang belum diputuskan butuh izin mengelola piutang. Menetapkan penanggung, mengubah keputusan, dan membatalkan catatan yang sudah diputuskan adalah keputusan manager: butuh izin memutuskan penanggung, yang bawaannya hanya dipegang admin.",
       "Barang hilang yang dicatat manual untuk toko yang sudah punya buku stok langsung mengurangi buku toko itu (gerakan Barang hilang di kartu stok toko), jadi opname berikutnya atas potong yang sama tidak membuka catatan kedua. Membatalkan catatannya mengembalikan potong itu ke buku, kecuali barangnya sudah dihitung opname sesudah catatan dibuat — opname itu yang berlaku. Toko tanpa buku stok tidak dibukakan buku; stok titipannya dikurangi catatan yang sudah ditetapkan.",
     ],
   },
@@ -321,7 +321,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Satu catatan barang hilang: asalnya, barang dan nilainya, penanggung beserta pelunasan bagiannya, dan riwayat keputusannya.",
       { kunci: "barangHilang.keputusan.akibat" },
-      "Penanggung bisa dibagi ke beberapa pihak, dan jumlah semua bagian harus sama dengan total. Keringanan diskon pegawai, bila dipakai, persennya diketik setiap kali memutuskan dan selisihnya ditanggung Elorae. Keputusan bisa diubah atau dibatalkan selama belum ada potongan atau tagihan atas catatan ini.",
+      "Penanggung bisa dibagi ke beberapa pihak, dan jumlah semua bagian harus sama dengan total. Keringanan diskon pegawai, bila dipakai, persennya diketik setiap kali memutuskan dan selisihnya ditanggung Elorae. Keputusan bisa diubah atau dibatalkan selama belum ada potongan atau tagihan atas catatan ini; keduanya butuh izin memutuskan penanggung, sama dengan memutuskannya.",
     ],
     kartu: [{ judul: { kunci: "barangHilang.rincian.rincianJudul" }, isi: { kunci: "barangHilang.rincian.dasarTerimaIsi" } }],
   },

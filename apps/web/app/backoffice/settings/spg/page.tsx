@@ -24,7 +24,8 @@ import { KomisiPutusCard } from "./KomisiPutusCard";
 import { TitipPesanCard } from "./TitipPesanCard";
 import { TutupHariCard } from "./TutupHariCard";
 import { BarangHilangCard } from "./BarangHilangCard";
-// Dua kartu SPG ini dulu ada di Pengaturan → Salesman; tetap memakai izin yang sama (penyetuju pesanan).
+// Dua kartu SPG ini dulu ada di Pengaturan → Salesman. Hari kerja tetap memakai izin penyetuju
+// pesanan; aturan mutasi memakai izin penyetuju mutasi (`simpanAturanMutasi`).
 import { AturanMutasiCard } from "../salesman/AturanMutasiCard";
 import { HariKerjaSpgCard } from "../salesman/HariKerjaSpgCard";
 import { KUNCI_ATURAN_MUTASI } from "@/lib/spg/mutasi-aturan";
@@ -106,7 +107,7 @@ export default async function PengaturanSpgPage() {
 
       <JudulKelompok kunci="settings.spg.toc.stok" />
       <div id="mutasi" className={jangkar}>
-        <AturanMutasiCard bolehUbah={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)} nilai={nilai(KUNCI_ATURAN_MUTASI)} />
+        <AturanMutasiCard bolehUbah={hasPermission(izin, PERMISSIONS.STORE_TRANSFERS_APPROVE)} nilai={nilai(KUNCI_ATURAN_MUTASI)} />
       </div>
     </div>
   );

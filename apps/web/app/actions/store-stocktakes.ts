@@ -438,7 +438,8 @@ export async function approveAction(stocktakeId: string): Promise<StoreStocktake
   try {
     const session = await auth();
     const permissions = session?.user?.permissions ?? [];
-    if (!session?.user?.id || !hasPermission(permissions, PERMISSIONS.STORES_MANAGE)) {
+    // Approval is a manager decision (owner, 2026-11-01): its own code, not stores:manage.
+    if (!session?.user?.id || !hasPermission(permissions, PERMISSIONS.STORE_STOCKTAKES_APPROVE)) {
       return { ok: false, code: "FORBIDDEN" };
     }
     if (typeof stocktakeId !== "string" || stocktakeId === "") return { ok: false, code: "INVALID_REQUEST" };
@@ -469,20 +470,30 @@ export async function approveAction(stocktakeId: string): Promise<StoreStocktake
   return { ok: true, id: stocktakeId };
 }
 
-/** Abandons an open document. Admin-only, and requires a non-blank reason (enforced by the writer). */
+/**
+ * Abandons an open document, with a non-blank reason (enforced by the writer). A DRAFT is
+ * `stores:manage`'s to abandon. A count already submitted for approval (PENDING_VERIFICATION) is
+ * not: cancelling it discards the SPG's count before the approver ever sees it, which is the
+ * reject half of the approval, so it takes `store_stocktakes:approve` like approving does (owner,
+ * 2026-11-01). The status is read before the writer's transaction, so a count submitted in the
+ * gap between the two can still be cancelled on `stores:manage` alone.
+ */
 export async function cancelAction(input: { stocktakeId: string; reason: string }): Promise<StoreStocktakeActionResult> {
   let stocktakeId = "";
   let storeIdForRevalidate = "";
   try {
     const session = await auth();
     const permissions = session?.user?.permissions ?? [];
-    if (!session?.user?.id || !hasPermission(permissions, PERMISSIONS.STORES_MANAGE)) {
+    const canManage = hasPermission(permissions, PERMISSIONS.STORES_MANAGE);
+    const canApprove = hasPermission(permissions, PERMISSIONS.STORE_STOCKTAKES_APPROVE);
+    if (!session?.user?.id || (!canManage && !canApprove)) {
       return { ok: false, code: "FORBIDDEN" };
     }
     if (!isValidCancelInput(input)) return { ok: false, code: "INVALID_REQUEST" };
     stocktakeId = input.stocktakeId;
-    const doc = await prisma.storeStocktake.findUnique({ where: { id: stocktakeId }, select: { storeId: true } });
+    const doc = await prisma.storeStocktake.findUnique({ where: { id: stocktakeId }, select: { storeId: true, status: true } });
     if (!doc) return { ok: false, code: "NOT_FOUND" };
+    if (doc.status === "PENDING_VERIFICATION" ? !canApprove : !canManage) return { ok: false, code: "FORBIDDEN" };
     storeIdForRevalidate = doc.storeId;
     await cancelStoreStocktake({ stocktakeId, cancelledById: session.user.id, reason: input.reason });
   } catch (e) {

@@ -15,7 +15,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * jadi setiap tes memakai email sendiri.
  */
 
-const tangkap = vi.hoisted(() => ({ konfigurasi: null as null | { providers: Array<{ authorize: (c: unknown) => Promise<unknown> }> } }));
+type SesiKeluar = { user?: Record<string, unknown> };
+const tangkap = vi.hoisted(() => ({
+  konfigurasi: null as null | {
+    providers: Array<{ authorize: (c: unknown) => Promise<unknown> }>;
+    callbacks: { session: (a: { session: { user: Record<string, unknown> }; token: Record<string, unknown> }) => Promise<SesiKeluar> };
+  },
+}));
 
 vi.mock("next-auth", () => ({
   default: (konfigurasi: typeof tangkap.konfigurasi) => {
@@ -117,5 +123,30 @@ describe("authorize — batas tebakan sandi", () => {
     const email = emailBaru();
     await Promise.allSettled(Array.from({ length: 5 }, (_, i) => authorize(i % 2 ? email.toUpperCase() : email, "salah")));
     await expect(authorize(` ${email.toUpperCase()} `, BENAR)).rejects.toBeInstanceOf(TooManyAttemptsSignin);
+  });
+});
+
+/*
+ * Peran lama di sesi (`session.user.role`) mengikuti peran baru, bukan kolom
+ * `User.role`. Dulu Pengaturan → Pengguna tidak mengisi kolom itu: admin yang
+ * diangkat di sana tetap USER (Peran & izin gagal dimuat, tab HPP tertutup) dan
+ * admin yang diturunkan di sana tetap ADMIN (tab HPP dan markup HPP tetap
+ * terbuka). `token.role` tetap nilai kolom — pemeriksaan ringan di callback
+ * `jwt` membandingkannya dengan basis data.
+ */
+describe("session — peran lama diturunkan dari peran baru", () => {
+  const sesiDari = (token: Record<string, unknown>) =>
+    tangkap.konfigurasi!.callbacks.session({ session: { user: {} }, token: { id: "u1", roleId: "peran-1", ...token } });
+
+  it("admin yang diangkat lewat Pengguna (kolom masih USER) adalah ADMIN di sesi", async () => {
+    const s = await sesiDari({ role: "USER", roleName: "ADMIN", permissions: ["*"] });
+    expect(s.user).toMatchObject({ role: "ADMIN", roleName: "ADMIN", permissions: ["*"] });
+  });
+
+  it("admin yang diturunkan lewat Pengguna (kolom masih ADMIN) bukan ADMIN lagi di sesi", async () => {
+    const s = await sesiDari({ role: "ADMIN", roleName: "PRODUCTION", permissions: ["work_orders:view"] });
+    expect(s.user?.role).toBe("PRODUCTION");
+    const lain = await sesiDari({ role: "ADMIN", roleName: "Keuangan", permissions: ["journals:manage"] });
+    expect(lain.user?.role).toBe("USER");
   });
 });

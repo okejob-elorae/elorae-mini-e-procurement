@@ -3,15 +3,25 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { perannyaSpg } from "@/lib/users/validasi";
+import { bacaBukaAwal } from "./aturan-pengguna";
 import { PenggunaClient } from "./PenggunaClient";
 
 export const dynamic = "force-dynamic";
 
+type PageProps = {
+  searchParams: Promise<{ baru?: string | string[]; ubah?: string | string[] }>;
+};
+
 /**
  * Pengaturan → Pengguna: tambah akun (sales, SPG, admin, …), pasang sandi,
  * ganti peran, dan pilih toko tetap untuk SPG.
+ *
+ * Satu-satunya layar akun sejak Akun Profil ditutup (keputusan pemilik
+ * 2026-11-01); `?baru=1` / `?ubah=<id>` membuka formulirnya langsung, untuk
+ * rute Akun Profil lama yang diteruskan ke sini.
  */
-export default async function PenggunaPage() {
+export default async function PenggunaPage({ searchParams }: PageProps) {
+  const bukaAwal = bacaBukaAwal(await searchParams);
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_SECURITY_MANAGE)) redirect("/backoffice/settings");
@@ -34,6 +44,7 @@ export default async function PenggunaPage() {
     <PenggunaClient
       sayaId={session.user.id}
       bolehLihatPeran={bolehLihatPeran}
+      bukaAwal={bukaAwal}
       pengguna={users.map((u) => ({
         id: u.id,
         nama: u.name ?? "",

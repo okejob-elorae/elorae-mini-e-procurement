@@ -9,19 +9,24 @@ import path from "node:path";
 vi.mock("@elorae/db", () => ({ prisma: {} }));
 vi.mock("./recipients", () => ({ getUsersWithPermission: vi.fn(), sendNotificationToUsers: vi.fn() }));
 
-import { getNotificationHref } from "./navigation";
+import { NOTIFICATION_TYPES, getNotificationHref } from "./navigation";
+import { JENIS_KABAR } from "./kabar-pengguna";
 import { toFcmData } from "./admin-fanout";
 import { sumberNotifikasiJurnal } from "@/lib/finance/jurnal-tertunda";
+import { JENIS_TERTUNDA_LAPANGAN } from "@/lib/finance/lapangan/aturan";
+import { JENIS_TERTUNDA_OPERASIONAL } from "@/lib/finance/operasional/aturan";
 
 describe("getNotificationHref — field sales order rejection", () => {
-  it("opens the store the rejected order was for, in the PWA", () => {
-    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", { orderId: "o1", storeId: "s1" }, "pwa")).toBe("/pwa/stores/s1");
-    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", {}, "pwa")).toBe("/pwa/stores");
+  it("opens the rejected order on the salesman's phone, else its store, else his orders", () => {
+    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", { orderId: "o1", storeId: "s1" }, "pwa")).toBe("/pwa/orders/o1");
+    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", { storeId: "s1" }, "pwa")).toBe("/pwa/stores/s1");
+    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", {}, "pwa")).toBe("/pwa/orders");
   });
 
-  it("opens the store an admin pushed konsi stock to, in the PWA", () => {
-    expect(getNotificationHref("KONSI_ORDER_PUSHED", { orderId: "o1", storeId: "s1" }, "pwa")).toBe("/pwa/stores/s1");
-    expect(getNotificationHref("KONSI_ORDER_PUSHED", {}, "pwa")).toBe("/pwa/stores");
+  it("opens the konsi order an admin pushed, on the salesman's phone", () => {
+    expect(getNotificationHref("KONSI_ORDER_PUSHED", { orderId: "o1", storeId: "s1" }, "pwa")).toBe("/pwa/orders/o1");
+    expect(getNotificationHref("KONSI_ORDER_PUSHED", { storeId: "s1" }, "pwa")).toBe("/pwa/stores/s1");
+    expect(getNotificationHref("KONSI_ORDER_PUSHED", {}, "pwa")).toBe("/pwa/orders");
   });
 });
 
@@ -48,8 +53,9 @@ describe("getNotificationHref — types without a destination", () => {
 describe("getNotificationHref — field retur count mismatch", () => {
   it("opens the store in the PWA, for the salesman who raised the retur", () => {
     expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "s1", returnId: "r1" }, "pwa")).toBe("/pwa/stores/s1");
-    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { returnId: "r1" }, "pwa")).toBe("/pwa/notifications");
-    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "", returnId: "r1" }, "pwa")).toBe("/pwa/notifications");
+    // Tanpa toko tidak ada layar HP-nya: ketukannya hanya menandai dibaca (dan push jatuh ke Kabar).
+    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { returnId: "r1" }, "pwa")).toBeNull();
+    expect(getNotificationHref("FIELD_RETURN_MISMATCH", { storeId: "", returnId: "r1" }, "pwa")).toBeNull();
   });
 
   it("keeps opening the retur in the backoffice", () => {
@@ -279,32 +285,20 @@ const KASUS_JURNAL: { nama: string; metadata: Record<string, unknown>; href: str
     href: "/backoffice/kreatif/kolaborasi/kolab-1?tab=pembayaran",
   },
   // Jurnal lapangan (lib/finance/lapangan/tertunda.ts): posting ulang di layar rekonsiliasi piutang.
-  ...(["nota_putus", "bkm_lapangan", "retur_toko", "tukar_barang"] as const).map((kind) => ({
+  // Daftarnya diambil dari kontraknya (`JENIS_TERTUNDA_LAPANGAN`), sama seperti jurnal operasional di bawah.
+  ...Object.values(JENIS_TERTUNDA_LAPANGAN).map((kind) => ({
     nama: `jurnal lapangan ${kind}`,
     metadata: { docId: `${kind}-1`, kind, reason: "UNMAPPED_ROLE", role: "AR_STORE", docNo: "X/1" },
     href: "/backoffice/finance/rekonsiliasi-piutang#tertunda",
   })),
-  // Jurnal operasional (lib/finance/operasional/tertunda.ts): posting ulang di layar rekonsiliasi persediaan.
-  ...(
-    [
-      "konsi_kirim",
-      "konsi_pesanan",
-      "konsi_retur",
-      "konsi_siklus",
-      "konsi_komisi",
-      "konsi_gaji_bayar",
-      "konsi_bayar_toko",
-      "komisi_spg",
-      "komisi_spg_bayar",
-      "barang_hilang",
-      "potong_sales",
-      "gudang_rusak",
-      "stok_manual",
-      "retur_pemasok",
-      "biaya_perjalanan",
-      "biaya_perjalanan_bayar",
-    ] as const
-  ).map((kind) => ({
+  /*
+   * Jurnal operasional (lib/finance/operasional/tertunda.ts): posting ulang di layar rekonsiliasi
+   * persediaan. Daftarnya DIAMBIL dari kontraknya (`JENIS_TERTUNDA_OPERASIONAL`), bukan diketik:
+   * daftar ketikan pernah tertinggal `konsi_pindah` dan `konsi_retur_lapangan`, sehingga jurnal
+   * keduanya yang gagal membuka buku jurnal umum — tanpa tombol posting ulang — dan tidak ada tes
+   * yang gagal.
+   */
+  ...Object.values(JENIS_TERTUNDA_OPERASIONAL).map((kind) => ({
     nama: `jurnal operasional ${kind}`,
     metadata: { docId: `${kind}-1`, kind, reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT", docNo: "X/1" },
     href: "/backoffice/finance/rekonsiliasi-persediaan#tertunda",
@@ -501,5 +495,151 @@ describe("sapuan: setiap kategori lonceng kantor punya tautan", () => {
     for (const k of bertautan) {
       expect(getNotificationHref(k, { adminNotificationId: "n1" }), k).toMatch(/^\/backoffice\//);
     }
+  });
+
+  // Pemegang izin kantor bisa juga memakai HP: salinan lonceng yang sama tidak pernah membuka backoffice di sana.
+  it("di HP, setiap kategori lonceng kantor menuju layar HP atau tidak ke mana-mana", () => {
+    for (const k of kategori) {
+      const href = getNotificationHref(k, { adminNotificationId: "n1", storeId: "s1", orderId: "o1" }, "pwa");
+      if (href !== null) expect(href, k).toMatch(/^\/pwa\//);
+    }
+  });
+});
+
+/*
+ * Keputusan pemilik 2026-11-01 (7b): kotak kabar HP hanya satu, Kabar. Kabar membaca kotak kabar
+ * yang sama dengan lonceng kantor, jadi SETIAP jenis — kabar Max maupun notifikasi tim — harus
+ * punya tujuan di HP (layar `/pwa/…`) atau tidak ke mana-mana. Halaman kantor menolak akun
+ * lapangan, dan Kabar/Notifikasi sendiri bukan tujuan (Notifikasi hanya mengalihkan ke Kabar).
+ */
+describe("getNotificationHref di HP — tidak pernah halaman kantor", () => {
+  const DATA_LENGKAP: Record<string, unknown> = {
+    adminNotificationId: "n1",
+    orderId: "o1",
+    orderNo: "PUT/1",
+    storeId: "s1",
+    receivableId: "r1",
+    returnId: "rt1",
+    claimId: "c1",
+    paymentClaimId: "pc1",
+    storeReturnId: "nrt1",
+    settlementId: "st1",
+    sellThroughId: "slt1",
+    stocktakeId: "sk1",
+    poId: "p1",
+    woId: "w1",
+    woIds: ["w1"],
+    supplierId: "sp1",
+    itemId: "i1",
+    adjustmentId: "a1",
+    vendorReturnId: "vr1",
+    salesReturnId: "sr1",
+    salesOrderId: "so1",
+    transferId: "t1",
+    exchangeId: "e1",
+    leaveRequestId: "l1",
+    lossId: "ls1",
+    journalId: "j1",
+    templatId: "tp1",
+    storeProposalId: "pr1",
+    docId: "d1",
+    kind: "van_sale",
+    grnId: "g1",
+    shipmentId: "sh1",
+    tanggal: "2026-10-06",
+    announcementId: "an1",
+    requestId: "rq1",
+    recommendationId: "rc1",
+    sourceType: "KONSI_TRANSFER",
+    sourceId: "kt1",
+    href: "/backoffice/dashboard",
+  };
+  const VARIAN: unknown[] = [
+    DATA_LENGKAP,
+    { ...DATA_LENGKAP, href: "/pwa/hari-ini" },
+    {},
+    null,
+    JSON.stringify(DATA_LENGKAP),
+    "bukan-json{",
+    { orderId: "../../backoffice", storeId: "//evil.example" },
+  ];
+  const SEMUA_JENIS = [...new Set<string>([...NOTIFICATION_TYPES, ...Object.values(JENIS_KABAR)])];
+
+  function periksa(jenis: string, data: unknown) {
+    const href = getNotificationHref(jenis, data, "pwa");
+    if (href === null) return;
+    expect(href, `${jenis} ${JSON.stringify(data)}`).toMatch(/^\/pwa(?:[/?#]|$)/);
+    expect(href, jenis).not.toMatch(/^\/pwa\/(?:kabar|notifications)(?:[/?#]|$)/);
+    expect(href, jenis).not.toContain("/backoffice");
+  }
+
+  it("daftar jenisnya terbaca", () => {
+    expect(NOTIFICATION_TYPES.length).toBeGreaterThan(60);
+    expect(Object.values(JENIS_KABAR).length).toBeGreaterThan(40);
+  });
+
+  it.each(SEMUA_JENIS)("%s → layar HP atau null", (jenis) => {
+    for (const data of VARIAN) periksa(jenis, data);
+  });
+
+  it.each(Object.values(JENIS_KABAR))("kabar %s selalu membuka layarnya di HP", (jenis) => {
+    expect(getNotificationHref(jenis, {}, "pwa"), jenis).toMatch(/^\/pwa\//);
+    expect(getNotificationHref(jenis, DATA_LENGKAP, "pwa"), jenis).toMatch(/^\/pwa\//);
+  });
+
+  it.each([
+    ["AR_OVERDUE", { receivableId: "r1", thresholdDays: "7" }, "/pwa/collections/r1"],
+    ["AR_OVERDUE", { receivableId: "r1", storeId: "s1" }, "/pwa/piutang/s1"],
+    ["AR_OVERDUE", {}, "/pwa/piutang"],
+    ["COLLECTOR_ASSIGNED", { receivableId: "r1", count: "1" }, "/pwa/collections/r1"],
+    ["COLLECTOR_ASSIGNED", { count: "3" }, "/pwa/collections"],
+    ["SETTLEMENT_REJECTED", { settlementId: "x", storeId: "s1" }, "/pwa/pelunasan/s1"],
+    ["SETTLEMENT_APPROVED", {}, "/pwa/pelunasan"],
+    ["FIELD_SALES_ORDER_REJECTED", { orderId: "o1", storeId: "s1" }, "/pwa/orders/o1"],
+    ["KONSI_ORDER_PUSHED", { orderId: "o1", storeId: "s1" }, "/pwa/orders/o1"],
+    ["FIELD_RETURN_MISMATCH", { returnId: "r1", storeId: "s1" }, "/pwa/stores/s1"],
+    ["KONSI_COUNT_DUE", { storeId: "s1" }, "/pwa/spg/stocktake"],
+    ["KONSI_COUNT_OVERDUE", {}, "/pwa/spg/stocktake"],
+  ])("jenis tim %s → %j di HP", (jenis, data, href) => {
+    expect(getNotificationHref(jenis, data, "pwa")).toBe(href);
+  });
+
+  it("kabar tim dari kolom JSON MariaDB (teks) tetap terbaca", () => {
+    expect(getNotificationHref("AR_OVERDUE", JSON.stringify({ receivableId: "r1" }), "pwa")).toBe("/pwa/collections/r1");
+    expect(getNotificationHref("PESANAN_DISETUJUI", JSON.stringify({ orderId: "o1" }), "pwa")).toBe("/pwa/orders/o1");
+  });
+
+  it("kabar Max yang juga punya tujuan kantor membuka layar HP-nya di HP", () => {
+    expect(getNotificationHref("PESANAN_DISETUJUI", { orderId: "o1" }, "pwa")).toBe("/pwa/orders/o1");
+    expect(getNotificationHref("PESANAN_DISETUJUI", { orderId: "o1" })).toBe("/backoffice/field-sales-orders/o1");
+    expect(getNotificationHref("PELUNASAN_DITOLAK", { claimId: "c1" }, "pwa")).toBe("/pwa/bkm");
+    expect(getNotificationHref("RETUR_DIHITUNG", { returnId: "r1" }, "pwa")).toBe("/pwa/retur");
+    expect(getNotificationHref("GIRO_CAIR", { claimId: "c1" }, "pwa")).toBe("/pwa/bkm");
+  });
+
+  it.each(["PENDING_ORDER_APPROVAL", "JOURNAL_PENDING", "PO_OVERDUE", "CREDIT_LIMIT_HOLD", "STORE_TRANSFER_TO_RECEIVE", "GIRO_JATUH_TEMPO"])(
+    "pekerjaan kantor %s tidak punya tujuan di HP",
+    (jenis) => {
+      expect(getNotificationHref(jenis, DATA_LENGKAP, "pwa")).toBeNull();
+    },
+  );
+
+  it("kirim uji hanya membuka alamat HP", () => {
+    expect(getNotificationHref("TEST", { href: "/pwa/hari-ini" }, "pwa")).toBe("/pwa/hari-ini");
+    expect(getNotificationHref("TEST", { href: "/backoffice/dashboard" }, "pwa")).toBeNull();
+    expect(getNotificationHref("TEST", { href: "/pwa/kabar" }, "pwa")).toBeNull();
+    expect(getNotificationHref("TEST", {}, "pwa")).toBeNull();
+  });
+
+  it("id di-encode, jadi tidak bisa keluar dari layar HP", () => {
+    expect(getNotificationHref("FIELD_SALES_ORDER_REJECTED", { orderId: "../../backoffice" }, "pwa")).toBe(
+      "/pwa/orders/..%2F..%2Fbackoffice",
+    );
+  });
+
+  it("jenis yang tidak dikenal (dan nama milik Object) → null", () => {
+    expect(getNotificationHref("JENIS_ANEH", DATA_LENGKAP, "pwa")).toBeNull();
+    expect(getNotificationHref("toString", {}, "pwa")).toBeNull();
+    expect(getNotificationHref("__proto__", {}, "pwa")).toBeNull();
   });
 });

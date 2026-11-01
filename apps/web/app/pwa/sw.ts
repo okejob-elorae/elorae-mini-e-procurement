@@ -3,7 +3,6 @@ import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
 import { ExpirationPlugin, NetworkFirst, Serwist, StaleWhileRevalidate } from "serwist";
 // Jalur relatif, bukan alias `@/`: service worker dibangun penyusun anak Serwist.
 import { parsePushPayload } from "../../lib/pwa/push-payload";
-import { tautanKabar } from "../../lib/notifications/tautan-kabar";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -72,9 +71,9 @@ const serwist = new Serwist({
  * iPhone revokes the subscription of an app that receives a push without showing anything), so an
  * unreadable payload still shows a generic one.
  *
- * FCM sends `{ notification: { title, body }, data: { type, ...ids } }`. A field-staff heads-up
- * (`kabariPengguna`) opens its own screen through `tautanKabar`; every other type opens through
- * the bell's navigation map (`parsePushPayload`).
+ * FCM sends `{ notification: { title, body }, data: { type, ...ids } }`. `parsePushPayload` picks
+ * the phone screen through `getNotificationHref(type, data, "pwa")` — field-staff kabar
+ * (`tautanKabar`) and the team's types alike, never an office page — and falls back to Kabar.
  */
 function dataPush(raw: unknown): Record<string, string> {
   const root = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
@@ -96,14 +95,13 @@ self.addEventListener("push", (event) => {
   }
   const payload = parsePushPayload(raw);
   const data = dataPush(raw);
-  const kabar = data.type ? tautanKabar(data.type, data) : null;
   event.waitUntil(
     self.registration.showNotification(payload.title, {
       body: payload.body,
       tag: payload.tag,
       icon: "/pwa/icon-192.png",
       badge: "/pwa/icon-192.png",
-      data: { ...data, url: kabar ?? payload.url },
+      data: { ...data, url: payload.url },
     }),
   );
 });
@@ -111,7 +109,8 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const data = event.notification.data as { url?: unknown } | null;
-  const url = typeof data?.url === "string" ? data.url : "/pwa/notifications";
+  // Same fallback as `parsePushPayload`: Kabar, the phone's one notification list.
+  const url = typeof data?.url === "string" ? data.url : "/pwa/kabar";
   event.waitUntil(openPushTarget(url));
 });
 

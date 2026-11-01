@@ -12,6 +12,7 @@ import {
   barisGudangRusak,
   barisKomisi,
   barisPindahKonsi,
+  barisPindahKonsiPengiriman,
   barisPotongSales,
   barisReturKonsi,
   barisReturPemasok,
@@ -75,6 +76,50 @@ describe("pindah ke toko konsinyasi", () => {
     expect(b.find((x) => x.role === "INVENTORY_CONSIGNMENT")?.storeId).toBe("s1");
     expect(seimbang(b)).toBe(0);
     expect(barisPindahKonsi({ storeId: "s1", keluar: [] })).toEqual([]);
+  });
+
+  it("satu transfer per pengiriman: qty × harga rata-rata saat pindah, dipisah per tipe barang", () => {
+    // Pesanan 100 pcs dikirim 60 lalu 40: dua transfer, dua jurnal, jumlahnya = seluruh pesanan.
+    const pertama = barisPindahKonsiPengiriman({ storeId: "s1", baris: [{ qty: 60, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" }] });
+    const kedua = barisPindahKonsiPengiriman({ storeId: "s1", baris: [{ qty: 40, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" }] });
+    expect(per(pertama)).toEqual({ INVENTORY_CONSIGNMENT: 240_000_000, INVENTORY_FG: -240_000_000 });
+    expect(per(kedua)).toEqual({ INVENTORY_CONSIGNMENT: 160_000_000, INVENTORY_FG: -160_000_000 });
+    expect(pertama.find((x) => x.role === "INVENTORY_CONSIGNMENT")?.storeId).toBe("s1");
+
+    const campur = barisPindahKonsiPengiriman({
+      storeId: "s2",
+      baris: [
+        { qty: 3, unitCost: 333.33, tipeBarang: "FINISHED_GOOD" },
+        { qty: 2, unitCost: 1_500, tipeBarang: "ACCESSORIES" },
+        { qty: 1, unitCost: 10_000, tipeBarang: null },
+      ],
+    });
+    expect(per(campur)).toEqual({ INVENTORY_CONSIGNMENT: 1_399_999, INVENTORY_FG: -99_999, INVENTORY: -1_300_000 });
+    expect(seimbang(campur)).toBe(0);
+  });
+
+  it("baris ber-qty nol/negatif, tanpa angka, atau tanpa harga tidak dijurnal dan tidak membalik arah", () => {
+    expect(
+      barisPindahKonsiPengiriman({
+        storeId: "s1",
+        baris: [
+          { qty: 0, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" },
+          { qty: -5, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" },
+          { qty: Number.NaN, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" },
+          { qty: 2, unitCost: 0, tipeBarang: "FINISHED_GOOD" },
+          { qty: 2, unitCost: -1, tipeBarang: "FINISHED_GOOD" },
+        ],
+      }),
+    ).toEqual([]);
+    expect(barisPindahKonsiPengiriman({ storeId: "s1", baris: [] })).toEqual([]);
+    const sebagian = barisPindahKonsiPengiriman({
+      storeId: "s1",
+      baris: [
+        { qty: -5, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" },
+        { qty: 1, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" },
+      ],
+    });
+    expect(per(sebagian)).toEqual({ INVENTORY_CONSIGNMENT: 4_000_000, INVENTORY_FG: -4_000_000 });
   });
 });
 

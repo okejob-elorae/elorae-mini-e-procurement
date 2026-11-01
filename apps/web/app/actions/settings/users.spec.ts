@@ -10,6 +10,11 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  * dan tidak bisa mengubah akun berperan sistem sama sekali (termasuk sandinya)
  * — juga bila JWT-nya masih membawa '*' dari sebelum perannya diturunkan,
  * karena peran pelaku dibaca dari basis data. Admin sistem tetap boleh.
+ *
+ * Juga: kolom peran lama (`User.role`) ditulis bersama `roleId` di transaksi
+ * yang sama dan ikut jejak sebagai `legacyRole`. Dulu Pengguna tidak mengisinya,
+ * jadi admin yang diangkat di sini tetap USER di kolom itu (Peran & izin dan tab
+ * HPP tertutup baginya) dan admin yang diturunkan tetap ADMIN.
  */
 
 const sesi = vi.hoisted(() => ({ id: "", permissions: [] as string[] }));
@@ -45,6 +50,15 @@ d("simpanPenggunaAction — akun sistem (test bed only)", () => {
   };
   const baca = (id: string) =>
     prisma.user.findUnique({ where: { id: seededId(id) }, select: { name: true, roleId: true, passwordHash: true } });
+  const kolomLama = async (where: { id: string } | { email: string }) =>
+    (
+      await prisma.user.findUnique({
+        where: "id" in where ? { id: seededId(where.id) } : { email: seededId(where.email) },
+        select: { role: true },
+      })
+    )?.role;
+  const jejak = (id: string, action: string) =>
+    prisma.auditLog.findMany({ where: { entityType: "User", entityId: seededId(id), action }, select: { changes: true } });
   const isian = (o: Partial<{ id: string | null; nama: string; email: string; roleId: string; sandi: string; ulangSandi: string }>) => ({
     id: null,
     nama: `${tag} Nama`,
@@ -86,8 +100,14 @@ d("simpanPenggunaAction — akun sistem (test bed only)", () => {
   beforeEach(async () => {
     await prisma.auditLog.deleteMany({ where: { userId: { in: seeded() } } });
     await prisma.user.deleteMany({ where: { email: { in: seededIds(emailBaru) } } });
-    await prisma.user.update({ where: { id: seededId(targetBiasa) }, data: { name: `${tag} TB`, roleId: peranBiasa, passwordHash: hashAwal.biasa } });
-    await prisma.user.update({ where: { id: seededId(targetSistem) }, data: { name: `${tag} TS`, roleId: peranSistem, passwordHash: hashAwal.sistem } });
+    await prisma.user.update({
+      where: { id: seededId(targetBiasa) },
+      data: { name: `${tag} TB`, role: "USER", roleId: peranBiasa, passwordHash: hashAwal.biasa },
+    });
+    await prisma.user.update({
+      where: { id: seededId(targetSistem) },
+      data: { name: `${tag} TS`, role: "ADMIN", roleId: peranSistem, passwordHash: hashAwal.sistem },
+    });
     masukSebagai(pelakuBiasa, ["settings_security:manage"]);
   });
 
@@ -161,7 +181,7 @@ d("simpanPenggunaAction — akun sistem (test bed only)", () => {
 
   it("balapan: pengangkatan oleh admin sistem tidak tertimpa ubahan admin bukan-sistem yang membaca sebelumnya", async () => {
     for (let putaran = 0; putaran < 3; putaran++) {
-      await prisma.user.update({ where: { id: seededId(targetBiasa) }, data: { roleId: peranBiasa, passwordHash: hashAwal.biasa } });
+      await prisma.user.update({ where: { id: seededId(targetBiasa) }, data: { role: "USER", roleId: peranBiasa, passwordHash: hashAwal.biasa } });
       // `auth()` dibaca saat aksi dipanggil, jadi sesi bisa diganti di antara dua panggilan.
       masukSebagai(pelakuSistem, ["*"]);
       const angkat = simpanPenggunaAction(isian({ id: targetBiasa, email: `${tagEmail}-tb@uji.local`, nama: `${tag} TB`, roleId: peranSistem }));
@@ -174,6 +194,8 @@ d("simpanPenggunaAction — akun sistem (test bed only)", () => {
       const t = await baca(targetBiasa);
       // Urutan seri mana pun berakhir dengan akun sistem; yang ditolak tidak meninggalkan sandinya.
       expect(t?.roleId).toBe(peranSistem);
+      // Peran lama ditulis di transaksi yang sama, jadi ikut pemenang balapan.
+      expect(await kolomLama({ id: targetBiasa })).toBe("ADMIN");
       if (!hasilGanti.ok) {
         expect(hasilGanti.codes).toEqual(["AKUN_SISTEM"]);
         expect(t?.passwordHash).toBe(hashAwal.biasa);
@@ -194,5 +216,45 @@ d("simpanPenggunaAction — akun sistem (test bed only)", () => {
       ),
     ).toEqual({ ok: true, id: targetSistem });
     expect(await bcrypt.compare(SANDI, (await baca(targetSistem))?.passwordHash ?? "")).toBe(true);
+  });
+
+  it("peran lama mengikuti peran baru: diangkat → ADMIN, diturunkan → USER, akun baru sejak dibuat — semuanya berjejak", async () => {
+    masukSebagai(pelakuSistem, ["*"]);
+    expect(await simpanPenggunaAction(isian({ id: targetBiasa, email: `${tagEmail}-tb@uji.local`, nama: `${tag} TB`, roleId: peranSistem }))).toEqual({
+      ok: true,
+      id: targetBiasa,
+    });
+    expect(await kolomLama({ id: targetBiasa })).toBe("ADMIN");
+    expect((await jejak(targetBiasa, "USER_UPDATED"))[0].changes).toMatchObject({
+      before: { roleId: peranBiasa, legacyRole: "USER" },
+      after: { roleId: peranSistem, legacyRole: "ADMIN" },
+    });
+
+    expect(await simpanPenggunaAction(isian({ id: targetSistem, email: `${tagEmail}-ts@uji.local`, nama: `${tag} TS`, roleId: peranBiasa }))).toEqual({
+      ok: true,
+      id: targetSistem,
+    });
+    expect(await kolomLama({ id: targetSistem })).toBe("USER");
+    expect((await jejak(targetSistem, "USER_UPDATED"))[0].changes).toMatchObject({
+      before: { roleId: peranSistem, legacyRole: "ADMIN" },
+      after: { roleId: peranBiasa, legacyRole: "USER" },
+    });
+
+    const dibuat = await simpanPenggunaAction(isian({ email: emailBaru[2], roleId: peranSistem, sandi: SANDI, ulangSandi: SANDI }));
+    expect(dibuat).toMatchObject({ ok: true });
+    expect(await kolomLama({ email: emailBaru[2] })).toBe("ADMIN");
+    if (dibuat.ok) {
+      expect((await jejak(dibuat.id, "USER_CREATED"))[0].changes).toMatchObject({ after: { legacyRole: "ADMIN" } });
+    }
+  });
+
+  it("menyimpan akun tanpa mengganti perannya membetulkan peran lama yang basi", async () => {
+    // Keadaan sebelum perbaikan ini: diangkat lewat Pengguna, kolom lama tertinggal USER.
+    await prisma.user.update({ where: { id: seededId(targetSistem) }, data: { role: "USER" } });
+    masukSebagai(pelakuSistem, ["*"]);
+    expect(
+      await simpanPenggunaAction(isian({ id: targetSistem, email: `${tagEmail}-ts@uji.local`, nama: `${tag} TS`, roleId: peranSistem })),
+    ).toEqual({ ok: true, id: targetSistem });
+    expect(await kolomLama({ id: targetSistem })).toBe("ADMIN");
   });
 });

@@ -21,7 +21,7 @@ import { catatanTokoUntuk } from "@/lib/stores/catatan-queries";
 import { muatKreditToko } from "@/lib/field-sales/kredit-toko";
 import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
-import { batasBerlaku } from "./ringkasan-toko";
+import { batasKreditBerlaku, type BatasToko } from "@/lib/salesman/kredit";
 import type { KreditTokoTampil } from "./StoreDetailView";
 
 const STOCKTAKE_HISTORY_PAGE_SIZE = 10;
@@ -58,9 +58,23 @@ export default async function StoreDetailPage({
   const piutang: StorePiutangSummary | null = canViewReceivables
     ? await getStorePiutangSummary(store.id, piutangAsOf)
     : null;
+  /*
+   * Batas kredit yang BERLAKU, lewat pemutus yang sama dengan pemeriksaan kredit: kolom kosong
+   * ikut bawaan Pengaturan → Salesman (toko putus), "Tanpa batas kredit" membebaskan toko.
+   * Eksposur dan sisa limit hanya dihitung kalau ada batas yang dinilai.
+   */
+  const aturanKredit = await bacaAturanKreditDb();
+  const batasToko: BatasToko = {
+    creditLimit: store.creditLimit,
+    maxOpenInvoices: store.maxOpenInvoices,
+    noCreditLimit: store.noCreditLimit,
+    termsType: store.termsType,
+  };
+  const batasKredit = batasKreditBerlaku(batasToko, aturanKredit);
+  const batasNilaiKredit = batasKredit.nilai.nilai;
   const creditExposure =
-    store.creditLimit !== null
-      ? await computeStoreCreditExposure(prisma, store.id).then((e) => ({ exposure: e.total, headroom: store.creditLimit! - e.total }))
+    batasNilaiKredit !== null
+      ? await computeStoreCreditExposure(prisma, store.id).then((e) => ({ exposure: e.total, headroom: batasNilaiKredit - e.total }))
       : null;
   const visitsPage = await listVisitsForStorePage(store.id, { page: parsePageParam(query.visitsPage), pageSize: DETAIL_CARD_PAGE_SIZE });
   const visits = visitsPage.rows;
@@ -121,10 +135,8 @@ export default async function StoreDetailPage({
   if (store.termsType === "PUTUS") {
     const bolehPiutang = bolehMembacaPiutang(perms);
     const muat = bolehPiutang ? await muatKreditToko(store.id) : null;
-    const aturan = muat?.aturan ?? (await bacaAturanKreditDb());
     kredit = {
-      batasNilai: batasBerlaku(store.creditLimit, aturan.batasNilai),
-      batasFaktur: batasBerlaku(store.maxOpenInvoices, aturan.batasFaktur),
+      batasFaktur: batasKredit.faktur,
       piutang: !bolehPiutang ? "TERSEMBUNYI" : muat?.keadaan ?? "GAGAL",
     };
   }
@@ -203,6 +215,7 @@ export default async function StoreDetailPage({
       }}
       catatan={catatan}
       kredit={kredit}
+      batasKredit={batasKredit.nilai}
       stokToko={{
         stok,
         // Waktu diformat di server: format tanggal browser dan Node bisa berbeda.

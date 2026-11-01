@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -17,26 +17,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { SANDI_MIN } from "@/lib/users/validasi";
 import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
-import { alasanBelumBisaSimpan } from "./aturan-pengguna";
+import { alasanBelumBisaSimpan, drafAwal, type BukaAwal, type DrafPengguna } from "./aturan-pengguna";
 import { useNamaPeran } from "../rbac/pakai-nama-peran";
 import { urutPeranTampil } from "../rbac/nama-peran";
 
 type Pengguna = { id: string; nama: string; email: string; roleId: string | null; tokoId: string | null; punyaSandi: boolean };
 type Peran = { id: string; nama: string; sistem: boolean; spg: boolean };
 type Toko = { id: string; name: string; code: string };
-type Draf = { id: string | null; nama: string; email: string; roleId: string; tokoId: string | null; sandi: string; ulangSandi: string };
+type Draf = DrafPengguna;
 
 const KOSONG: Draf = { id: null, nama: "", email: "", roleId: "", tokoId: null, sandi: "", ulangSandi: "" };
 
 export function PenggunaClient({
   sayaId,
   bolehLihatPeran,
+  bukaAwal = null,
   pengguna,
   peran,
   toko,
 }: {
   sayaId: string;
   bolehLihatPeran: boolean;
+  /** Formulir yang langsung terbuka dari `?baru=1` / `?ubah=<id>` (rute Akun Profil lama). */
+  bukaAwal?: BukaAwal | null;
   pengguna: Pengguna[];
   peran: Peran[];
   toko: Toko[];
@@ -46,10 +49,16 @@ export function PenggunaClient({
   const tUi = useTranslations("ui");
   const router = useRouter();
   const [cari, setCari] = useState("");
-  const [draf, setDraf] = useState<Draf | null>(null);
+  const [draf, setDraf] = useState<Draf | null>(() => drafAwal(bukaAwal, pengguna));
   const [galat, setGalat] = useState<KodeSimpanPengguna[]>([]);
   const [lihatSandi, setLihatSandi] = useState(false);
   const [sibuk, mulai] = useTransition();
+
+  // Formulir dari alamat cukup dibuka sekali: parameternya dibuang supaya muat
+  // ulang atau `router.refresh()` sesudah menyimpan tidak membukanya lagi.
+  useEffect(() => {
+    if (bukaAwal) router.replace("/backoffice/settings/users", { scroll: false });
+  }, [bukaAwal, router]);
 
   const peranById = useMemo(() => new Map(peran.map((p) => [p.id, p])), [peran]);
   const tokoById = useMemo(() => new Map(toko.map((s) => [s.id, s])), [toko]);

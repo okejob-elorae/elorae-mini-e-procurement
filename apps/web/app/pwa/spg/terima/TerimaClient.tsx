@@ -27,6 +27,8 @@ export type KirimanRingkas = {
   tanggalLabel: string;
   jumlahBaris: number;
   totalQty: number;
+  /** Nomor pesanan asal (pengiriman putus, antaran konsinyasi). */
+  pesananNo?: string | null;
 };
 
 /** Barang rusak dari kiriman yang sudah diterima toko ini — tanpa harga. */
@@ -162,6 +164,9 @@ export function TerimaClient({
                       <span className="block truncate text-xs text-muted-foreground">
                         {k.tanggalLabel} · {td(`source.${k.sourceType}`)}
                       </span>
+                      {k.pesananNo ? (
+                        <span className="block truncate text-xs text-muted-foreground">{t("pesananAsal", { orderNo: k.pesananNo })}</span>
+                      ) : null}
                       <span className="block text-xs text-muted-foreground">
                         {t("lines", { count: k.jumlahBaris, pcs: k.totalQty })}
                       </span>

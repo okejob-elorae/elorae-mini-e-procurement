@@ -60,6 +60,15 @@ const VOID_DESCRIPTION: Record<SellThroughVoidJournalKind, string> = {
  * Billed units leave inventory as COGS and shrunk units as a variance; unabsorbed surplus units
  * come back into inventory as a variance credit — all at the line's creation-time unit cost.
  * `surplusQty` is optional so a caller that never reads `surplus` need not select it.
+ *
+ * "Inventory" here is INVENTORY_CONSIGNMENT, never the warehouse's INVENTORY. Konsi goods are
+ * debited to INVENTORY_CONSIGNMENT when their delivery shipment completes — one journal per
+ * `KonsiTransfer` (`postJurnalPindahKonsi`, lib/finance/operasional) — so every exit from the store
+ * (sold, shrunk) must credit that same account and every surplus found there must debit it. Crediting
+ * INVENTORY instead would drive the warehouse account negative while INVENTORY_CONSIGNMENT only
+ * ever grew. Lines are tagged with the store, like the move journal's, so the account reads per
+ * store. Reports journaled before this rule credited INVENTORY and keep it: a void mirrors the
+ * posted lines, never this rule.
  */
 export function sellThroughCostTotals(lines: Array<{ billedQty: number; shrinkageQty: number; surplusQty?: number; unitCost: number }>): {
   cogs: number;
@@ -212,8 +221,8 @@ export async function postSellThroughCogsJournal(id: string, postedById: string,
     SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_cogs,
     id,
     [
-      { role: "COGS", debit: value, credit: 0 },
-      { role: "INVENTORY", debit: 0, credit: value },
+      { role: "COGS", debit: value, credit: 0, memo: "COGS", channel: KANAL_JURNAL.KONSINYASI, storeId: doc.storeId },
+      { role: "INVENTORY_CONSIGNMENT", debit: 0, credit: value, memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId },
     ],
     { date: doc.invoiceDate, description: `HPP nota tagihan konsi ${doc.docNo}`, postedById },
   );
@@ -230,13 +239,13 @@ export async function postSellThroughShrinkageJournal(id: string, postedById: st
     id,
     [
       { role: "INVENTORY_VARIANCE", debit: value, credit: 0 },
-      { role: "INVENTORY", debit: 0, credit: value },
+      { role: "INVENTORY_CONSIGNMENT", debit: 0, credit: value, memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId },
     ],
     { date: doc.invoiceDate, description: `Susut konsi ${doc.docNo}`, postedById },
   );
 }
 
-/* Unabsorbed surplus comes back into inventory against the variance account — the main-opname surplus rule. */
+/* Unabsorbed surplus comes back into the store's consignment inventory against the variance account — the main-opname surplus rule. */
 export async function postSellThroughSurplusJournal(id: string, postedById: string, client: AnyClient = prisma): Promise<GenerateAutoJournalResult> {
   const doc = await loadInvoicedReport(client, id);
   if (!doc) return { ok: false, code: "NOTHING_TO_POST" };
@@ -247,7 +256,7 @@ export async function postSellThroughSurplusJournal(id: string, postedById: stri
     SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_surplus,
     id,
     [
-      { role: "INVENTORY", debit: value, credit: 0 },
+      { role: "INVENTORY_CONSIGNMENT", debit: value, credit: 0, memo: "INVENTORY_CONSIGNMENT", storeId: doc.storeId },
       { role: "INVENTORY_VARIANCE", debit: 0, credit: value },
     ],
     { date: doc.invoiceDate, description: `Surplus konsi ${doc.docNo}`, postedById },

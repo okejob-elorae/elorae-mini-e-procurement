@@ -18,7 +18,8 @@ import { DeliveryError } from "@/lib/field-sales/errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
-import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
+import { kaitPindahKonsiPengiriman } from "@/lib/finance/operasional/kait";
+import { kabarkanPengirimanBerangkat, kabarkanPengirimanDiserahkan } from "@/lib/spg/kabar-pengiriman";
 
 export type { ShipmentActionReason, ShipmentActionResult };
 
@@ -59,35 +60,38 @@ async function postDeliveryJournals(deliveryId: string, postedById: string): Pro
 }
 
 /**
- * Tells the store's SPG that goods are on their way, after the completion committed. A PUTUS
- * completion notifies on its delivery document, exactly as a hand-entered delivery does. A KONSI
- * completion notifies on its order: approve only reserves, so this is the first point the goods
- * have actually left for the store — and only when the shipment delivered something. The notifier
- * never throws and notifies once per document, so a replay or a second shipment of the same order
- * sends nothing new. Never exported, for the same reason as `postDeliveryJournals`, and
- * `app/pwa/deliveries/actions.ts` holds its own copy — keep the two in sync by hand.
+ * Tells the store's SPG the goods have been HANDED OVER — count and receive them — after the
+ * completion committed, putus and konsi alike, keyed on the shipment: N is what THIS shipment
+ * actually handed over (a konsi order shipped 60 then 40 tells the SPG twice), and a 0-pcs
+ * completion says nothing was handed over. `deliveryId` is passed on the `REPLAY_MISMATCH` refusal,
+ * whose delivery is real while the shipment still reads IN_TRANSIT. The notifier never throws and
+ * notifies once per shipment, so a same-actor replay sends nothing new. Never exported, for the
+ * same reason as `postDeliveryJournals`, and `app/pwa/deliveries/actions.ts` holds its own copy —
+ * keep the two in sync by hand.
  */
-async function notifyStoreSpg(
-  shipmentId: string,
-  deliveryId: string,
-  deliveredAny: boolean,
-  actorId: string,
-): Promise<void> {
-  if (deliveryId) {
-    void kabarkanKirimanBerangkat({ sourceType: "PUTUS_DELIVERY", sourceId: deliveryId, pelakuId: actorId });
-    return;
-  }
-  if (!deliveredAny) return;
+async function notifyStoreSpg(shipmentId: string, deliveryId: string, actorId: string): Promise<void> {
+  void kabarkanPengirimanDiserahkan({ shipmentId, deliveryId: deliveryId || null, pelakuId: actorId });
+}
+
+/**
+ * Posts the consignment move journal (DR consignment inventory / CR inventory) for a KONSI
+ * shipment once it has COMPLETED, after its transaction committed. Called on every completion
+ * branch — success, same-actor replay, and a refusal — because the hook is idempotent and never
+ * throws: a shipment a crashed earlier attempt completed still gets its journal from the next
+ * call that sees it delivered. A putus shipment, an unfinished one, or a failed lookup posts
+ * nothing. Never exported; `app/pwa/deliveries/actions.ts` holds its own copy.
+ */
+async function postKonsiMoveJournal(shipmentId: string, actorId: string): Promise<void> {
   try {
     const shipment = await prisma.deliveryShipment.findUnique({
       where: { id: shipmentId },
-      select: { orderId: true, order: { select: { orderType: true } } },
+      select: { status: true, order: { select: { orderType: true } } },
     });
-    if (shipment?.order.orderType === "KONSI") {
-      void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: shipment.orderId, pelakuId: actorId });
-    }
+    if (shipment?.order.orderType !== "KONSI") return;
+    if (shipment.status !== "DELIVERED" && shipment.status !== "PARTIALLY_DELIVERED") return;
+    await kaitPindahKonsiPengiriman(shipmentId, actorId);
   } catch (error) {
-    console.error(`[${ERROR_TAG}] SPG notice lookup failed`, error);
+    console.error(`[${ERROR_TAG}] konsi move journal hook failed`, error);
   }
 }
 
@@ -213,6 +217,12 @@ export async function shipShipmentAction(input: { shipmentId: string }): Promise
   }
   try {
     await shipDeliveryShipment({ shipmentId: input.shipmentId, shippedById: session.user.id });
+    /*
+     * The goods leave HERE — this is the IN_TRANSIT transition ("Kirim" in the Pengiriman menu /
+     * Ubah Pelacakan), not the pack step `createShipmentAction` performs. The store's SPG is told,
+     * once per shipment, after the write committed; the notifier never throws.
+     */
+    void kabarkanPengirimanBerangkat({ shipmentId: input.shipmentId, pelakuId: session.user.id });
     revalidatePath("/backoffice/deliveries");
     await revalidateShipmentOrder(input.shipmentId);
     return { ok: true };
@@ -275,12 +285,8 @@ export async function completeShipmentAction(input: {
      * that doesn't exist.
      */
     if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
-    await notifyStoreSpg(
-      input.shipmentId,
-      result.deliveryId,
-      input.lines.some((line) => line.deliveredQty > 0),
-      session.user.id,
-    );
+    else await postKonsiMoveJournal(input.shipmentId, session.user.id);
+    await notifyStoreSpg(input.shipmentId, result.deliveryId, session.user.id);
 
     revalidatePath("/backoffice/deliveries");
     await revalidateShipmentOrder(input.shipmentId);
@@ -296,7 +302,10 @@ export async function completeShipmentAction(input: {
        * SPG notice follows it for the same reason.
        */
       await postDeliveryJournals(error.replay.deliveryId, session.user.id);
-      await notifyStoreSpg(input.shipmentId, error.replay.deliveryId, true, session.user.id);
+      await notifyStoreSpg(input.shipmentId, error.replay.deliveryId, session.user.id);
+    } else {
+      /* A konsi shipment an earlier, crashed attempt already completed still owes its journal. */
+      await postKonsiMoveJournal(input.shipmentId, session.user.id);
     }
     return mapError(error, ERROR_TAG);
   }

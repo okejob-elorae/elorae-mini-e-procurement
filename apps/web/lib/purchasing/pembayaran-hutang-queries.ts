@@ -11,7 +11,7 @@ import { JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import { bacaSkbPemasok, type SkbPemasok } from "@/lib/finance/pajak/pemotongan";
 import { ID_SALDO_AWAL, kunciDokumenHutang, type SisaDokumen } from "./pembayaran-aturan";
 import { SARING_PEMBAYARAN_DOKUMEN } from "./pembayaran-dokumen-po";
-import { vendorPaidBySource } from "@/lib/vendor-billing/billable";
+import { oldestBookedBillDateByWo, vendorPaidBySource } from "@/lib/vendor-billing/billable";
 import { terapkanFifo } from "./pembayaran-umur";
 import { hitungUangMukaBelumDipotong, susunJejakUangMuka, type DataUangMukaPembayaran } from "./pembayaran-uang-muka";
 
@@ -30,7 +30,10 @@ type Klien = Prisma.TransactionClient | typeof prisma;
  *   `SUPPLIER_PAYMENT` `<poId>#<gen>` tanpa pembaliknya) + pembayaran Vendor
  *   Billing yang berlaku (bagian baris PO tagihannya, `vendorPaidBySource` —
  *   jurnal `VENDOR_PAYMENT`-nya mendebit hutang usaha sebesar itu juga),
- *   diterapkan FIFO dari GRN tertua PO itu.
+ *   diterapkan FIFO dari GRN tertua PO itu. Pembayaran Vendor Billing tidak
+ *   menerima pembayaran baru sejak 2026-11-01; yang lama tetap dihitung di
+ *   sini, jadi sisanya dibayar lewat halaman ini dan bagian yang sudah dibayar
+ *   di sana tidak terbayar dua kali.
  * - Dibayar per dokumen = Σ alokasi pembayaran pemasok yang BERLAKU, kecuali
  *   pembayaran cermin "Tandai lunas" (nilainya sudah terbaca dari jurnalnya).
  * - Hutang jasa produksi per langkah WO dari `daftarHutangJasa` (jurnal
@@ -146,7 +149,14 @@ async function susunHutangGrn(
   where: Prisma.GRNWhereInput,
   apAkunId: string,
   klien: Klien,
-): Promise<{ dokumen: Array<DokumenHutang & { supplierId: string }>; belumBerjurnal: Map<string, number>; lebihBayar: Map<string, number> }> {
+): Promise<{
+  dokumen: Array<DokumenHutang & { supplierId: string }>;
+  belumBerjurnal: Map<string, number>;
+  lebihBayar: Map<string, number>;
+  /** Kredit per PO (semua sumber) dan bagian tombol lama di dalamnya — untuk `bacaLunasPemasokPerGrn`. */
+  kreditPo: Map<string, number>;
+  tandaiPo: Map<string, number>;
+}> {
   const grns: GrnBaris[] = await klien.gRN.findMany({
     where,
     select: { id: true, docNumber: true, grnDate: true, poId: true, supplierId: true, totalAmount: true, ownerDeclinedAt: true, po: { select: { docNumber: true } } },
@@ -154,7 +164,9 @@ async function susunHutangGrn(
   });
   const belumBerjurnal = new Map<string, number>();
   const lebihBayar = new Map<string, number>();
-  if (grns.length === 0) return { dokumen: [], belumBerjurnal, lebihBayar };
+  const kreditPo = new Map<string, number>();
+  const tandaiPo = new Map<string, number>();
+  if (grns.length === 0) return { dokumen: [], belumBerjurnal, lebihBayar, kreditPo, tandaiPo };
 
   const hutangPerGrn = new Map<string, number>();
   const berjurnal = new Set<string>();
@@ -178,7 +190,6 @@ async function susunHutangGrn(
 
   // Kredit per PO: retur pemasok selesai + pembayaran tombol lama yang berdiri + pembayaran Vendor Billing.
   const poIds = [...new Set(grns.map((g) => g.poId).filter((x): x is string => Boolean(x)))];
-  const kreditPo = new Map<string, number>();
   if (poIds.length > 0) {
     // Retur ke pemasok: dibaca dari jurnal `VENDOR_RETURN`-nya (DR hutang usaha
     // sebesar kredit PO), bukan dari `poCreditAmount`, supaya buku pembantu =
@@ -208,7 +219,9 @@ async function susunHutangGrn(
       if (j.sourceType !== "SUPPLIER_PAYMENT" || dibalik.has(j.sourceId)) continue;
       const po = poDariSumberTandaiLunas(j.sourceId);
       if (!po || !poSet.has(po)) continue;
-      kreditPo.set(po, (kreditPo.get(po) ?? 0) + j.lines.reduce((s, l) => s + sen(l.debit), 0));
+      const n = j.lines.reduce((s, l) => s + sen(l.debit), 0);
+      kreditPo.set(po, (kreditPo.get(po) ?? 0) + n);
+      tandaiPo.set(po, (tandaiPo.get(po) ?? 0) + n);
     }
     // Pembayaran Vendor Billing: dialokasikan per TAGIHAN, dibagi ke baris tagihan
     // sebanding nilainya; bagian baris PO menjadi kredit PO itu, seperti tombol lama.
@@ -276,7 +289,42 @@ async function susunHutangGrn(
     d.dibayarSen = bayar;
     d.sisaSen = d.sisaSen - bayar;
   }
-  return { dokumen, belumBerjurnal, lebihBayar };
+  return { dokumen, belumBerjurnal, lebihBayar, kreditPo, tandaiPo };
+}
+
+export type LunasPemasokGrn = { poId: string | null; hutangSen: number; lunasPemasokSen: number };
+
+/**
+ * Per GRN berjurnal milik PO-PO ini: hutang barangnya dan bagian yang SUDAH dilunasi lewat
+ * Pembayaran pemasok — alokasi dokumen ke GRN itu + bagiannya dari pembayaran tombol lama
+ * "Tandai lunas" yang masih berdiri. Kredit PO diterapkan FIFO dari GRN tertua seperti di buku
+ * pembantu; bagian tombol lama dari kredit satu GRN sebanding porsinya di kredit PO itu. Retur
+ * pemasok dan pembayaran Vendor Billing lama tidak ikut: retur bukan pembayaran, dan pembayaran
+ * Vendor Billing tercatat di tagihannya sendiri. Dibaca Vendor Billing
+ * (`lib/vendor-billing/supplier-paid.ts`) untuk menandai invoice lunas per penerimaan. GRN tanpa
+ * jurnal tidak ada di peta; AP belum dipetakan = peta kosong.
+ */
+export async function bacaLunasPemasokPerGrn(poIds: string[], klien: Klien = prisma): Promise<Map<string, LunasPemasokGrn>> {
+  const hasil = new Map<string, LunasPemasokGrn>();
+  const unik = [...new Set(poIds)];
+  if (unik.length === 0) return hasil;
+  let apAkunId: string | null = null;
+  try {
+    apAkunId = await resolveAccount("AP", klien);
+  } catch (e) {
+    if (!(e instanceof UnmappedRoleError)) throw e;
+  }
+  if (!apAkunId) return hasil;
+  for (const ids of potong(unik, 500)) {
+    const g = await susunHutangGrn({ poId: { in: ids } }, apAkunId, klien);
+    for (const d of g.dokumen) {
+      const kredit = d.poId ? (g.kreditPo.get(d.poId) ?? 0) : 0;
+      const tandai = d.poId ? (g.tandaiPo.get(d.poId) ?? 0) : 0;
+      const bagianTandai = kredit > 0 && tandai > 0 && d.kreditSen > 0 ? Math.round((d.kreditSen * Math.min(tandai, kredit)) / kredit) : 0;
+      hasil.set(d.id, { poId: d.poId, hutangSen: d.hutangSen, lunasPemasokSen: d.dibayarSen + bagianTandai });
+    }
+  }
+  return hasil;
 }
 
 /** Hutang saldo awal per pemasok dari impor `AP` yang berlaku (null bila belum ada). */
@@ -302,15 +350,22 @@ async function hutangSaldoAwal(klien: Klien, ruang?: string): Promise<{ tanggal:
 }
 
 /**
- * Tanggal penerimaan barang jadi PERTAMA yang menjurnal jasa, per WO — dasar umur hutang jasa. WO
- * yang jasanya hanya dijurnal tagihan vendor (penerimaannya semua lama) memakai tanggal tagihan
- * berlaku tertuanya.
+ * Dasar umur hutang jasa per WO: saat hutang jasanya PERTAMA dijurnal — penerimaan barang jadi
+ * pertama yang menjurnal jasa, atau tagihan vendor berlaku tertua yang menjurnal jasa pcs lama
+ * (`oldestBookedBillDateByWo`), mana yang lebih dulu. Jadi hutang jahit lama di WO yang sebagian
+ * pcs-nya diterima sesudah aturan baru tidak tampak lebih muda dari sebenarnya. WO tanpa keduanya
+ * memakai tanggal tagihan berlaku tertuanya.
  */
 async function tanggalJasaPerWo(woIds: string[], klien: Klien): Promise<Map<string, string>> {
   const hasil = new Map<string, string>();
+  const pakai = (woId: string, t: string) => {
+    const ada = hasil.get(woId);
+    if (!ada || t < ada) hasil.set(woId, t);
+  };
   for (const ids of potong(woIds, 500)) {
     const r = await klien.fGReceipt.groupBy({ by: ["woId"], where: { woId: { in: ids }, serviceCost: { not: null } }, _min: { receivedAt: true } });
-    for (const x of r) if (x._min.receivedAt) hasil.set(x.woId, tglWib(x._min.receivedAt));
+    for (const x of r) if (x._min.receivedAt) pakai(x.woId, tglWib(x._min.receivedAt));
+    for (const [woId, tanggal] of await oldestBookedBillDateByWo(klien, ids)) pakai(woId, tglWib(tanggal));
   }
   for (const ids of potong(woIds.filter((id) => !hasil.has(id)), 500)) {
     const baris = await klien.vendorBillLine.findMany({

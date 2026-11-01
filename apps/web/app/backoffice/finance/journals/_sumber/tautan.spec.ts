@@ -131,3 +131,16 @@ describe("faktur piutang manual/impor (STORE_INVOICE)", () => {
     expect(tautanDokumenSumber("STORE_INVOICE", "r1")).toBe("/backoffice/piutang");
   });
 });
+
+describe("pindah barang & retur lapangan konsinyasi (lib/finance/operasional)", () => {
+  it("bisa disaring dan menunjuk halaman pesanan lapangan / retur lapangannya", () => {
+    expect(JENIS_SUMBER_JURNAL).toContain("CONSIGNMENT_TRANSFER");
+    expect(JENIS_SUMBER_JURNAL).toContain("CONSIGNMENT_FIELD_RETURN");
+    expect(saringanSumber("CONSIGNMENT_TRANSFER")).toEqual({ sourceType: "CONSIGNMENT_TRANSFER" });
+    expect(saringanSumber("CONSIGNMENT_FIELD_RETURN")).toEqual({ sourceType: "CONSIGNMENT_FIELD_RETURN" });
+    expect(idDokumenDariSumber("CONSIGNMENT_TRANSFER", "kt1")).toBe("kt1");
+    expect(tautanDokumenSumber("CONSIGNMENT_TRANSFER", "kt1", { fieldOrderId: "fso1" })).toBe("/backoffice/field-sales-orders/fso1");
+    expect(tautanDokumenSumber("CONSIGNMENT_TRANSFER", "kt1")).toBe("/backoffice/field-sales-orders");
+    expect(tautanDokumenSumber("CONSIGNMENT_FIELD_RETURN", "fr1")).toBe("/backoffice/field-returns/fr1");
+  });
+});

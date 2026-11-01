@@ -1,4 +1,5 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { splitCents } from "./bill-paid-rule";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -11,7 +12,11 @@ export type BillablePoItem = {
   poItemId: string;
   poId: string;
   poDocNumber: string;
-  /** Marked paid through the old Supplier Payment toggle: shown, but not billable. */
+  /**
+   * Already marked paid (Supplier payments → Pay settled it, or the old toggle did). Still billable:
+   * a bill only matches the vendor's invoice to the receipts, and it reads as paid from those
+   * payments (`supplier-paid.ts`).
+   */
   poPaid: boolean;
   itemName: string;
   sku: string;
@@ -83,18 +88,6 @@ function linesOf(scope: { poIds: string[]; woStepIds: string[] }): Prisma.Vendor
 
 const cents = (v: Prisma.Decimal | number) => Math.round(Number(v) * 100);
 
-/** `total` cents split over `weights`, largest remainder first, so the parts add up to `total` exactly. */
-function splitCents(total: number, weights: number[]): number[] {
-  const sum = weights.reduce((s, w) => s + w, 0);
-  if (sum <= 0 || total <= 0) return weights.map(() => 0);
-  const raw = weights.map((w) => (total * w) / sum);
-  const parts = raw.map((r) => Math.floor(r));
-  let left = total - parts.reduce((s, p) => s + p, 0);
-  const order = raw.map((r, i) => ({ i, frac: r - Math.floor(r) })).sort((a, b) => b.frac - a.frac || a.i - b.i);
-  for (let k = 0; left > 0; k = (k + 1) % order.length, left--) parts[order[k].i] += 1;
-  return parts;
-}
-
 /**
  * What live vendor payments have paid, in cents: per PO for its PO item lines, per WO step for its
  * step lines. A payment is allocated to a bill, not to a line, so each live bill's live allocations
@@ -105,6 +98,10 @@ function splitCents(total: number, weights: number[]): number[] {
  * (`daftarHutangJasa`), so it stays equal to the general ledger. The step part also covers payments
  * of step work the bill booked itself (`bill-journal.ts`), whose payable no finished-goods receipt
  * holds; `billBookedByWoStep` gives the sub-ledger that payable.
+ *
+ * Vendor payments take no new payments since 2026-11-01 (`payment-writer.ts`); these are the ones
+ * made before. Because the sub-ledger counts them as paid, Supplier payments → Pay can settle what
+ * they left open and refuses an allocation above it, so nothing they paid is paid again there.
  */
 export async function vendorPaidBySource(
   db: Db,
@@ -135,18 +132,21 @@ export async function vendorPaidBySource(
   return { byPo, byWoStep };
 }
 
+/** What one bill's standing `VENDOR_BILL` journal booked on one WO step: signed `cents` of AP, and `qty` pieces while it stands. */
+export type BillBookedShare = { billId: string; woStepId: string; cents: number; qty: number };
+
 /**
- * The step payable vendor bills booked themselves (`bill-journal.ts`), per WO step: `cents` of AP and
- * the `qty` pieces it covers. Each bill's amount is its standing `VENDOR_BILL` journal (the AP credit,
- * less a posted `VENDOR_BILL_REVERSAL`), so the parts add up to the general ledger. That journal holds
- * one total per bill, so it is split over the bill's step lines by the share `createVendorBill` booked
- * for each, replayed here: the pieces of the step's WO that no finished-goods receipt booked, less
- * what the step's bills saved earlier and still live at that moment held. When the replay no longer
- * adds up to the journal (data changed since), the journal is split by the replayed shares, or by
- * line amount when none is left.
+ * The step payable vendor bills booked themselves (`bill-journal.ts`), per bill and WO step. Each
+ * bill's amount is its standing `VENDOR_BILL` journal (the AP credit, less a posted
+ * `VENDOR_BILL_REVERSAL`), so the parts add up to the general ledger. That journal holds one total per
+ * bill, so it is split over the bill's step lines by the share `createVendorBill` booked for each,
+ * replayed here: the pieces of the step's WO that no finished-goods receipt booked, less what the
+ * step's bills saved earlier and still live at that moment held. When the replay no longer adds up to
+ * the journal (data changed since), the journal is split by the replayed shares, or by line amount
+ * when none is left. Only rows on the given steps are returned; a bill that books nothing has none.
  */
-export async function billBookedByWoStep(db: Db, woStepIds: string[]): Promise<Map<string, { cents: number; qty: number }>> {
-  const result = new Map<string, { cents: number; qty: number }>();
+export async function billBookedShares(db: Db, woStepIds: string[]): Promise<BillBookedShare[]> {
+  const result: BillBookedShare[] = [];
   if (woStepIds.length === 0) return result;
   const touching = await db.vendorBillLine.findMany({ where: { woStepId: { in: woStepIds } }, select: { billId: true } });
   const billIds = [...new Set(touching.map((l) => l.billId))];
@@ -209,38 +209,74 @@ export async function billBookedByWoStep(db: Db, woStepIds: string[]): Promise<M
       sum === Math.abs(total) ? rows.map((r) => r.weight) : splitCents(Math.abs(total), sum > 0 ? rows.map((r) => r.weight) : rows.map((r) => r.amount));
     rows.forEach((r, i) => {
       if (!wanted.has(r.woStepId)) return;
-      const cur = result.get(r.woStepId) ?? { cents: 0, qty: 0 };
-      cur.cents += Math.sign(total) * parts[i];
-      if (total > 0) cur.qty = round2(cur.qty + r.qty);
-      result.set(r.woStepId, cur);
+      result.push({ billId, woStepId: r.woStepId, cents: Math.sign(total) * parts[i], qty: total > 0 ? r.qty : 0 });
     });
   }
   return result;
 }
 
 /**
- * Of the given POs and WO steps, those on a live bill that a live vendor payment has (partly) paid.
- * A receipt has one payment path: Supplier payments → Pay must not settle these again
- * (`lib/purchasing/pembayaran-writer.ts`), just as a vendor payment refuses receipts that page
- * already paid (`payment-writer.ts`).
+ * The step payable vendor bills booked themselves, per WO step: `cents` of AP and the `qty` pieces it
+ * covers — `billBookedShares` summed over the bills.
+ */
+export async function billBookedByWoStep(db: Db, woStepIds: string[]): Promise<Map<string, { cents: number; qty: number }>> {
+  const result = new Map<string, { cents: number; qty: number }>();
+  for (const s of await billBookedShares(db, woStepIds)) {
+    const cur = result.get(s.woStepId) ?? { cents: 0, qty: 0 };
+    cur.cents += s.cents;
+    cur.qty = round2(cur.qty + s.qty);
+    result.set(s.woStepId, cur);
+  }
+  return result;
+}
+
+/**
+ * Of the given POs and WO steps, the ones Supplier payments → Pay must refuse because a vendor
+ * payment paid them — none, since 2026-11-01. Until then the two pages refused each other's
+ * receipts whole, a step or PO partly paid on one page being unpayable on the other; now that
+ * vendor payments take no new payments, Supplier payments is the only path and may pay what an old
+ * vendor payment left open. It cannot pay that part twice: the payable sub-ledger it allocates
+ * against already counts those payments as paid (`vendorPaidBySource`), and its writer refuses an
+ * allocation above what is left.
+ *
+ * @deprecated Kept only so `lib/purchasing/pembayaran-writer.ts` (`tolakDibayarLewatTagihanVendor`)
+ * still compiles; delete it with that caller.
  */
 export async function paidThroughVendorPayments(
   db: Db,
   scope: { poIds: string[]; woStepIds: string[] }
 ): Promise<{ poIds: Set<string>; woStepIds: Set<string> }> {
-  const or = linesOf(scope);
-  if (or.length === 0) return { poIds: new Set(), woStepIds: new Set() };
+  void db;
+  void scope;
+  return { poIds: new Set(), woStepIds: new Set() };
+}
+
+/**
+ * Per WO, the bill date of its oldest live bill that booked step work itself (a posted
+ * `VENDOR_BILL` journal with no reversal): when that part of the WO's CMT payable was booked. The
+ * supplier payable ages a WO's step debt from here or from its first finished-goods receipt that
+ * booked CMT, whichever came first (`pembayaran-hutang-queries.ts`).
+ */
+export async function oldestBookedBillDateByWo(db: Db, woIds: string[]): Promise<Map<string, Date>> {
+  const result = new Map<string, Date>();
+  if (woIds.length === 0) return result;
   const lines = await db.vendorBillLine.findMany({
-    where: { OR: or, bill: { status: { not: "VOID" }, allocations: { some: { payment: { voidedAt: null } } } } },
-    select: { woStepId: true, poItem: { select: { poId: true } } },
+    where: { woStep: { woId: { in: woIds } }, bill: { status: { not: "VOID" } } },
+    select: { billId: true, woStep: { select: { woId: true } }, bill: { select: { billDate: true } } },
   });
-  const poIds = new Set<string>();
-  const woStepIds = new Set<string>();
+  if (lines.length === 0) return result;
+  const journals = await db.journal.findMany({
+    where: { sourceType: { in: ["VENDOR_BILL", "VENDOR_BILL_REVERSAL"] }, sourceId: { in: [...new Set(lines.map((l) => l.billId))] }, status: "POSTED" },
+    select: { sourceType: true, sourceId: true },
+  });
+  const posted = new Set(journals.filter((j) => j.sourceType === "VENDOR_BILL").map((j) => j.sourceId));
+  const reversed = new Set(journals.filter((j) => j.sourceType === "VENDOR_BILL_REVERSAL").map((j) => j.sourceId));
   for (const l of lines) {
-    if (l.poItem) poIds.add(l.poItem.poId);
-    if (l.woStepId) woStepIds.add(l.woStepId);
+    if (!l.woStep || !posted.has(l.billId) || reversed.has(l.billId)) continue;
+    const cur = result.get(l.woStep.woId);
+    if (!cur || l.bill.billDate.getTime() < cur.getTime()) result.set(l.woStep.woId, l.bill.billDate);
   }
-  return { poIds, woStepIds };
+  return result;
 }
 
 /**

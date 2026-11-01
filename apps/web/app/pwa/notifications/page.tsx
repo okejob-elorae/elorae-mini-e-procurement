@@ -1,36 +1,12 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { pwaAccessGuard } from "@/lib/pwa/guard";
-import { prisma } from "@elorae/db";
-import { fetchNotificationPage } from "@/lib/notifications/page";
-import { NotificationsList } from "./NotificationsList";
 
 export const dynamic = "force-dynamic";
 
-export default async function PwaNotificationsPage() {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login");
-  if (pwaAccessGuard(session.user.permissions) !== "render") redirect("/backoffice");
-
-  const [page, unreadCount] = await Promise.all([
-    fetchNotificationPage(session.user.id, null),
-    prisma.notificationQueue.count({ where: { userId: session.user.id, readAt: null } }),
-  ]);
-  const items = page.items;
-
-  return (
-    <NotificationsList
-      initialNextCursor={page.nextCursor}
-      initialUnreadCount={unreadCount}
-      initialItems={items.map((n) => ({
-        id: n.id,
-        type: n.type,
-        title: n.title,
-        body: n.body,
-        data: n.data as Record<string, unknown> | null,
-        readAt: n.readAt ? n.readAt.toISOString() : null,
-        createdAt: n.createdAt.toISOString(),
-      }))}
-    />
-  );
+/**
+ * Layar Notifikasi lama di HP. Kotak kabar HP sekarang satu, Kabar (`/pwa/kabar`, keputusan
+ * pemilik 2026-11-01): alamat ini tetap ada hanya untuk tautan dan pemberitahuan lama yang masih
+ * menunjuk ke sini. Kabar sendiri memeriksa sesi dan izin HP.
+ */
+export default function PwaNotificationsPage(): never {
+  redirect("/pwa/kabar");
 }

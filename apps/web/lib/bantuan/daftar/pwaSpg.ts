@@ -147,7 +147,8 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaSpg",
     judul: { kunci: "pwa.spgTerima.title" },
     isi: [
-      "Kiriman ke toko Anda yang belum dihitung dan diterima: pengiriman pesanan, pesanan dan kiriman konsinyasi, serta mutasi dari toko lain. Buka satu kiriman untuk menghitung dan menerimanya. Menerima butuh check-in di toko; tanpa sinyal, penerimaan disimpan di HP dan kirimannya ditandai sudah diterima di HP sampai terkirim.",
+      "Kiriman ke toko Anda yang belum dihitung dan diterima: pengiriman pesanan, antaran pesanan konsinyasi, kiriman konsinyasi, serta mutasi dari toko lain. Buka satu kiriman untuk menghitung dan menerimanya. Menerima butuh check-in di toko; tanpa sinyal, penerimaan disimpan di HP dan kirimannya ditandai sudah diterima di HP sampai terkirim.",
+      "Pesanan konsinyasi bisa datang dalam beberapa antaran (pengiriman). Setiap antaran muncul sebagai kiriman sendiri dan dihitung serta diterima sendiri, sebesar yang dibawa antaran itu — misalnya pesanan 100 pcs yang datang 60 lalu 40 diterima dua kali, 60 dan 40. Sisa pesanan yang belum dibawa antaran mana pun tidak pernah dihitung kurang.",
       "Angka Kiriman menunggu di beranda tidak menghitung kiriman yang penerimaannya sudah tersimpan di HP ini; yang belum terkirim atau ditolak server tampil di tugas Belum terkirim.",
     ],
     kartu: [
@@ -158,8 +159,9 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Pesanan untuk toko ini",
         isi: [
-          "Pesanan sales untuk toko Anda yang barangnya belum sampai, supaya Anda tahu apa yang akan datang: yang menunggu persetujuan kantor, yang sudah disetujui tapi belum dikirim, dan yang baru dikirim sebagian (yang tampil sisanya). Pesanan konsinyasi yang sudah disetujui tetap tampil sampai Anda menerimanya di daftar kiriman.",
-          "Hanya nomor, tanggal, status, dan jumlah potong per barang yang ditampilkan — tanpa harga. Begitu barangnya berangkat, Anda mendapat kabar dan kirimannya muncul di daftar Menunggu diterima.",
+          "Pesanan sales untuk toko Anda yang barangnya belum sampai, supaya Anda tahu apa yang akan datang: yang menunggu persetujuan kantor, yang sudah disetujui, yang sedang dalam perjalanan, dan yang baru sampai sebagian (yang tampil sisanya). Putus dan konsinyasi dibaca dengan cara yang sama.",
+          "Sisa pesanan yang disetujui dibagi menurut tempatnya: dalam perjalanan, sedang dikemas, dan belum dikirim gudang. Belum dikirim gudang berarti barangnya masih di gudang — tidak ada di dus yang sedang datang dan bukan kekurangan; kalau ditunggu, tanyakan ke gudang.",
+          "Hanya nomor, tanggal, status, dan jumlah potong per barang yang ditampilkan — tanpa harga. Untuk setiap pengiriman Anda mendapat dua kabar: saat barang berangkat (dalam perjalanan, beserta pengantar atau ekspedisi dan resinya) dan saat barang diserahkan di toko (silakan hitung dan terima); kiriman yang dicatat kantor sekali jalan, seperti kiriman titipan, hanya memberi satu kabar. Sesudah diserahkan, kirimannya muncul di daftar Menunggu diterima.",
         ],
       },
       {
@@ -181,6 +183,9 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Terima satu kiriman",
     isi: [
       "Formulir untuk menghitung dan menerima satu kiriman. Isi jumlah yang benar-benar diterima di setiap baris (Semua sesuai mengisi semuanya sama dengan yang dikirim); jumlah itulah yang masuk stok toko. Baris yang bukan barang katalog dicatat tetapi tidak masuk stok, dan mutasi dari toko lain tidak bisa diterima lebih dari yang dikirim. Bila yang diterima kurang dari yang dikirim, kekurangannya diteruskan ke kantor untuk diputuskan.",
+      "Untuk antaran konsinyasi, Dikirim adalah yang dibawa antaran ini, bukan jumlah pesanannya. Kartu di atas formulir menyebut nomor pesanan dan pengirimannya, siapa yang membawa, dan sisa pesanan yang masih di pengiriman lain atau belum dikirim gudang.",
+      "Kurang di perjalanan: barangnya sudah dikirim gudang di antaran ini tetapi tidak sampai di toko. Yang dicek adalah pengantarnya, atau ekspedisi dengan nomor resinya, dan foto serah terima pengiriman itu bila ada. Kekurangannya dicatat ke kantor dengan keterangan itu, dan sales pemesannya dikabari.",
+      "Belum dikirim gudang: sisa pesanan yang belum masuk pengiriman mana pun — barangnya masih di gudang. Itu bukan kekurangan dan tidak pernah tercatat sebagai barang hilang; jangan dihitung kurang di antaran ini, dan tanyakan ke gudang kalau ditunggu.",
       "Barang rusak dicatat lewat Ada yang rusak? dengan keterangan dan foto; barang itu dihitung diterima tetapi tidak masuk stok toko sampai gudang memutuskan. Bila toko sudah opname sesudah kiriman berangkat, barang yang sudah ikut terhitung di opname itu diisi 0 supaya tidak terhitung dua kali.",
       "Setelah disimpan, penerimaan tidak bisa diubah. Butuh check-in; tanpa sinyal, penerimaan disimpan di HP dan terkirim sendiri.",
     ],

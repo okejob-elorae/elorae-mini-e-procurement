@@ -50,7 +50,7 @@
     "version": "Version {version}"
   },
   "navigation": {
-    "navVendorPayments": "Vendor Bill Payments",
+    "navVendorPayments": "Vendor bill payment history",
     "navVendorBills": "Vendor Bills",
     "navItemRequests": "Item Requests",
     "purchasing": "Purchasing",
@@ -765,11 +765,11 @@
     },
     "overdueThresholds": {
       "title": "Receivables",
-      "description": "Overdue alert thresholds and settlement variance tolerance",
+      "description": "Overdue receivable reminder thresholds",
       "heading": "Overdue Notification Thresholds",
-      "subtitle": "Comma-separated day list, counted from the due date, that triggers a notification",
+      "subtitle": "Comma-separated days counted from the due date at which the office and the store's holder are reminded",
       "fieldLabel": "Days (e.g. 0,7,30,60)",
-      "fieldHint": "Only the highest newly-crossed threshold fires per invoice, not one per threshold",
+      "fieldHint": "Only the highest newly crossed threshold is announced, once per invoice",
       "save": "Save",
       "loadError": "Failed to load the overdue thresholds",
       "errEmpty": "Enter at least one day",
@@ -833,16 +833,6 @@
         "CATEGORY_INACTIVE": "This category was deactivated, so its rate can no longer change. The list has been refreshed.",
         "UNEXPECTED": "The rate could not be saved. Try again."
       }
-    },
-    "varianceTolerance": {
-      "heading": "Settlement Variance Tolerance",
-      "subtitle": "How far a salesman's cash may differ from the expected amount before finance must give a reason",
-      "fieldLabel": "Tolerance (Rp)",
-      "fieldHint": "A settlement whose cash differs from the expected amount by at most this many rupiah approves without an override reason. 0 means every difference needs one.",
-      "save": "Save",
-      "loadError": "Failed to load the variance tolerance",
-      "errEmpty": "Enter an amount (0 or more)",
-      "errInvalid": "Use a non-negative number with at most two decimals"
     },
     "theme": {
       "title": "Account theme",
@@ -972,14 +962,14 @@
         "modeBLOKIR": "Block",
         "modeBLOKIRIsi": "The order is refused as soon as it is sent from the salesperson's phone.",
         "batasNilai": "Outstanding limit",
-        "batasNilaiIsi": "Includes the new order. Leave empty for no limit.",
+        "batasNilaiIsi": "Includes the new order. Applies to putus stores whose own credit limit is left empty. Leave empty for no limit — stores that follow the default then have no outstanding limit either.",
         "batasFaktur": "Max. unpaid invoices",
-        "batasFakturIsi": "Leave empty for no limit. 0 = no open invoices allowed.",
+        "batasFakturIsi": "Applies to putus stores whose own field is left empty. Leave empty for no limit — stores that follow the default then have no invoice limit either. 0 = no open invoices allowed.",
         "hariToleransi": "Grace period (days)",
         "hariToleransiIsi": "A bill only counts as past its promised date after this many days.",
         "tanpaBatas": "No limit",
-        "tokoBatasSendiri": "{n, plural, one {# store has its own limit} other {# stores have their own limits}} that override these defaults.",
-        "perTokoIsi": "Per-store limits are set in the store master.",
+        "tokoBatasSendiri": "{n, plural, one {# putus store has its own limit or is marked “No credit limit”} other {# putus stores have their own limits or are marked “No credit limit”}}, so they don't fully follow these defaults.",
+        "perTokoIsi": "Per-store limits and the “No credit limit” switch are set in the store master. Stores with empty fields follow these defaults.",
         "bukaMasterToko": "Open store master",
         "simpan": "Save credit rules"
       },
@@ -3031,9 +3021,12 @@
         "BUKAN_BAHAN_WO": "{barang} was never issued to this work order.",
         "BARANG_GANDA": "{barang} was entered twice.",
         "TANPA_BARIS": "Enter a quantity for at least one material.",
-        "CATATAN_TERLALU_PANJANG": "The note is too long."
+        "CATATAN_TERLALU_PANJANG": "The note is too long.",
+        "HARGA_KELUAR_TIDAK_DIKETAHUI": "{barang} cannot be returned yet because its price when it was issued is not recorded, either on the stock card or on issue document {dokumen}. The return can only be recorded once the system admin corrects that document's data; report the document number to them."
       },
-      "berhasilDibatasi": "Materials returned to the warehouse, valued at {nilai} (capped: the material cost was already charged to finished goods)"
+      "berhasilDibatasi": "Materials returned to the warehouse, valued at {nilai} (capped: the material cost was already charged to finished goods)",
+      "hargaDariDokumen": "The price of {barang} was taken from the material issue document, because the stock card does not hold its value.",
+      "riwayatHargaDokumen": "price from the issue document"
     },
     "setoran": {
       "target": "Target {qty} pcs",
@@ -3924,7 +3917,7 @@
       "GRN_APPROVAL_PENDING": "The PO was NOT marked paid — nothing was saved and no journal was posted. One of its receipts is an over-receive still awaiting the owner's decision. Have the owner approve or decline that receipt on the Inventory page first, then mark the PO paid.",
       "GRN_JOURNALS_INCOMPLETE": "The PO was NOT marked paid — nothing was saved and no journal was posted. One of its receipts has no GRN journal yet, so its payable is not on the books. Use \"Post journal\" on that GRN's row on the Inventory page first (needs journals:manage), then mark the PO paid.",
       "GRN_REVERSAL_MISSING": "The PO was NOT marked paid — nothing was saved and no journal was posted. A receipt the owner declined still has its GRN journal on the books with no reversal. Use \"Post reversal journal\" on the declined GRN's row on the Inventory page first (needs journals:manage), then mark the PO paid.",
-      "BILLED_VIA_VENDOR_BILL": "The PO was NOT marked paid — nothing was saved and no journal was posted. This PO is already billed through Vendor Bills, so it is paid from the vendor bill instead. Use Vendor Bills for this PO."
+      "BILLED_VIA_VENDOR_BILL": "The PO was NOT marked paid — nothing was saved and no journal was posted. This PO is already billed through Vendor Bills, so pay its receipts through Supplier payments → Pay."
     },
     "standingPayment": {
       "title": "A payment journal is standing for a PO that is not marked paid",
@@ -5825,8 +5818,8 @@
       "priceDiscountPercent": "Store price discount (%)",
       "priceDiscountPercentKonsiNotice": "Price discount only applies to Putus stores. Konsi stores price off markup, not a discount, so this field isn't available here.",
       "creditLimit": "Credit Limit (Rp)",
-      "creditLimitPlaceholder": "No limit",
-      "creditLimitHint": "Leave empty for unlimited. Enter 0 for a cash-only store (every credit order needs an override).",
+      "creditLimitPlaceholder": "Default",
+      "creditLimitHint": "Leave empty to follow the default limit in Settings → Salesman (if that default is empty too, the store has no limit). Enter 0 for a cash-only store (every credit order needs an override).",
       "npwp": "NPWP",
       "npwpPlaceholder": "e.g. 01.234.567.8-901.000",
       "npwpHint": "Used to prefill this store's tax invoices. Leave empty if the store has none.",
@@ -5871,7 +5864,12 @@
       "salesmanNone": "None",
       "salesmanHint": "This salesperson visits the store and collects its receivables — including invoices from the previous salesperson.",
       "searchNoApiKeyV2": "Address search is not available yet. Drag the map or paste coordinates.",
-      "consignmentVat": "Consignment bill includes VAT"
+      "consignmentVat": "Consignment bill includes VAT",
+      "creditLimitPlaceholderKonsi": "No limit",
+      "creditLimitHintKonsi": "Leave empty for no limit — the default in Settings → Salesman applies to putus stores only. Enter 0 for a cash-only store.",
+      "noCreditLimit": "No credit limit",
+      "noCreditLimitHint": "This store is not checked against a credit limit or an open-invoice limit, the defaults included. Bills past their promised payment date are still checked.",
+      "noCreditLimitPlaceholder": "No limit"
     },
     "badge": {
       "putus": "Putus",
@@ -5969,7 +5967,7 @@
         "creditLimit": "Credit limit",
         "maxInvoices": "Max open invoices",
         "fromStore": "{nilai} (this store only)",
-        "fromDefault": "{nilai} (default)",
+        "fromDefault": "Follows the default: {nilai}",
         "noLimit": "No limit",
         "invoiceCount": "{n} invoices",
         "outstanding": "Outstanding",
@@ -5981,7 +5979,9 @@
         "notApplicableKonsi": "Not applicable — consignment stores have no receivables.",
         "ppnKonsi": "Consignment bill VAT",
         "ppnKonsiYa": "With VAT",
-        "ppnKonsiTidak": "Without VAT"
+        "ppnKonsiTidak": "Without VAT",
+        "defaultEmpty": "Follows the default: no limit",
+        "konsiEmpty": "No limit (the Settings default applies to putus stores only)"
       }
     },
     "storeChanges": {
@@ -7607,7 +7607,8 @@
         "KONSI_ORDER": "Consignment order",
         "KONSI_SHIPMENT": "Consignment shipment",
         "MUTASI": "Transfer from another store",
-        "MUTASI_KEMBALI": "Transfer coming back (cancelled)"
+        "MUTASI_KEMBALI": "Transfer coming back (cancelled)",
+        "KONSI_TRANSFER": "Consignment delivery"
       },
       "hint": "Count the box first. The quantities you enter when receiving are what go into the store stock.",
       "form": {
@@ -7639,7 +7640,30 @@
         "saved": "Delivery {docNo} received.",
         "needCheckIn": "Check in at the store first to save the receipt.",
         "overTransfer": "A transfer cannot be received above what was sent. Lower the quantity.",
-        "opnameAfter": "This store did a stock count on {tanggal}, after this shipment left. If these goods were already counted in it, enter 0 for them so they are not counted twice."
+        "opnameAfter": "This store did a stock count on {tanggal}, after this shipment left. If these goods were already counted in it, enter 0 for them so they are not counted twice.",
+        "antaran": {
+          "label": "This delivery's shipment",
+          "pesanan": "Order {orderNo}",
+          "pengiriman": "Shipment {docNo}",
+          "dibawaPengantar": "Carried by {nama}",
+          "dibawaEkspedisi": "Sent by {ekspedisi}",
+          "dibawaEkspedisiResi": "Sent by {ekspedisi} · tracking {resi}",
+          "resiSaja": "Tracking {resi}",
+          "dalamPengirimanLain": "In another shipment: {pcs} pcs — it arrives separately; receive it once it is handed over.",
+          "belumDikirimGudang": "Not yet sent by the warehouse: {pcs} pcs of this order. They are still at the warehouse, not in this delivery, and are not counted as short."
+        },
+        "kurangPerjalanan": {
+          "judul": "Short in transit: {pcs} pcs",
+          "isi": "The warehouse sent {dikirim} pcs in shipment {docNo}; you counted {diterima} pcs.",
+          "cekPengantar": "Check with the carrier, {nama}.",
+          "cekEkspedisi": "Check with the courier, {ekspedisi}.",
+          "cekEkspedisiResi": "Check with the courier, {ekspedisi}, tracking {resi}.",
+          "cekResi": "Check with the courier, tracking {resi}.",
+          "cekTanpaNama": "Check with the carrier or the courier.",
+          "bukti": "The handover photo is saved on that shipment.",
+          "dicatat": "Once saved, the shortfall is reported to the salesperson and the office and recorded as lost goods to be checked."
+        },
+        "tersimpanKurangPerjalanan": "{pcs} pcs short in transit have been reported to the salesperson and the office."
       },
       "confirm": {
         "title": "Save this receipt?",
@@ -7649,7 +7673,8 @@
         "final": "Once saved, this receipt can't be changed.",
         "cancel": "Check again",
         "ok": "Save",
-        "saving": "Saving…"
+        "saving": "Saving…",
+        "kurangPerjalanan": "{pcs} pcs short in transit — reported to the salesperson and the office."
       },
       "err": {
         "FORBIDDEN": "You don't have access to receive deliveries.",
@@ -7672,18 +7697,22 @@
         "judul": "Orders for this store · {count}",
         "dipesan": "Ordered {tanggal}",
         "ringkas": "{count} items · {pcs} pcs",
-        "ringkasSisa": "Not yet sent: {count} items · {pcs} pcs",
+        "ringkasSisa": "Not at the store yet: {count} items · {pcs} pcs",
         "status": {
           "MENUNGGU_PERSETUJUAN": "Awaiting approval",
           "DISETUJUI": "Approved, not yet sent",
           "DIKIRIM_SEBAGIAN": "Partly sent",
-          "DALAM_PERJALANAN": "Sent, awaiting receipt"
+          "DALAM_PERJALANAN": "On the way"
         },
         "inden": "Pre-order",
         "pcs": "{count} pcs",
         "lihatSemua": "Show all {count} items",
-        "lebihSedikit": "Show less"
-      }
+        "lebihSedikit": "Show less",
+        "belumDikirimGudang": "Not yet sent by the warehouse: {pcs} pcs",
+        "dikemas": "Being packed at the warehouse: {pcs} pcs",
+        "dalamPerjalanan": "On the way: {pcs} pcs"
+      },
+      "pesananAsal": "Order {orderNo}"
     },
     "spgOpname": {
       "title": "Store stock count",
@@ -7779,13 +7808,13 @@
       "open": "Updates",
       "openWithCount": "Updates, {count} unread",
       "title": "Updates",
-      "subtitle": "Updates from the office: orders, payments, returns, schedules, announcements and your stores.",
+      "subtitle": "Updates from the office: orders, payments, bills, returns, deliveries, schedules, announcements and your stores.",
       "unreadSummary": "{count} unread",
       "allRead": "You're all caught up.",
       "markAll": "Mark all as read",
       "markAllFailed": "Could not mark updates as read. Check your connection and try again.",
       "empty": "No updates yet",
-      "emptyHint": "Updates appear here when your orders are approved or delivered, payments are verified, returns are counted by the warehouse, or store data changes are decided.",
+      "emptyHint": "Updates appear here when there is something you need to know: orders approved or delivered, payments verified, returns counted by the warehouse, bills due or assigned to you, deliveries on their way to a store, schedules, and announcements.",
       "todayAt": "Today, {time}",
       "unread": "Unread",
       "capped": "Showing the latest {count} updates.",
@@ -7801,7 +7830,10 @@
           "TANPA_SW": "Notifications only work in the installed app opened from the official (https) address.",
           "GAGAL": "Could not turn on notifications. Check the connection and try again."
         }
-      }
+      },
+      "loadMore": "Load more",
+      "loadMoreFailed": "Could not load older updates. Check your connection and try again.",
+      "officeOnly": "Handled in the backoffice on an office computer; there is no phone screen for it."
     },
     "tokoMenurun": {
       "jarang": "Usually orders every {usual} days · last order {days} days ago",
@@ -7859,7 +7891,7 @@
         "noticeWaitingDelivery": "Approved. Goods are waiting to be shipped by the warehouse.",
         "noticePartial": "Some goods have shipped; the rest is still waiting.",
         "noticeClosed": "Remainder closed by the office",
-        "noticeKonsi": "Approved. Consignment goods are sent to the store.",
+        "noticeKonsi": "Approved. The warehouse sends the goods shipment by shipment; the store's SPG counts and receives each one.",
         "linesTitle": "Items ({count})",
         "qty": "{qty} pcs",
         "perPcs": "{price}/pc",
@@ -9696,7 +9728,11 @@
       "belumJatuhTempo": "Not yet due",
       "bukaPiutang": "Open receivables list",
       "dilipatDitolak": "Store credit — this order was rejected, so no credit decision is needed. Open to view.",
-      "dilipatDibatalkan": "Store credit — the salesperson cancelled this order, so no credit decision is needed. Open to view."
+      "dilipatDibatalkan": "Store credit — the salesperson cancelled this order, so no credit decision is needed. Open to view.",
+      "batasMilikToko": "{nilai} (this store only)",
+      "batasIkutBawaan": "Follows the default: {nilai}",
+      "batasTanpaBatas": "No limit",
+      "batasBawaanKosong": "Follows the default: no limit"
     },
     "inden": {
       "saringan": "Pre-order",
@@ -9739,7 +9775,8 @@
     "kosongMenunggu": "No orders are waiting for approval.",
     "lihatSemuaPesanan": "See all orders",
     "daftarJudul": "Order list",
-    "judulHalaman": "Field orders"
+    "judulHalaman": "Field orders",
+    "creditLimitFromDefault": "This store has no credit limit of its own, so the default in Settings → Salesman applies."
   },
   "fieldReturns": {
     "pageTitle": "Field Returns",
@@ -11420,7 +11457,7 @@
       "OPENING": "Opening balance",
       "YEAR_END_CLOSE": "Year-end close",
       "CONSIGNMENT_SHIPMENT": "Consignment shipment",
-      "CONSIGNMENT_ORDER": "Consignment order shipment",
+      "CONSIGNMENT_ORDER": "Consignment order shipment (legacy)",
       "CONSIGNMENT_RETURN": "Consignment store return",
       "CONSIGNMENT_CYCLE": "Consignment cycle sales",
       "CONSIGNMENT_COMMISSION": "Consignment SPG pay & commission",
@@ -11458,7 +11495,9 @@
       "KONSI_SELLTHRU_SHRINKAGE_VOID": "Konsi shrinkage reversal",
       "KONSI_SELLTHRU_SURPLUS_VOID": "Konsi surplus reversal",
       "FIELD_DELIVERY_REVENUE": "Field sales invoice revenue (old shape)",
-      "FIELD_DELIVERY_COGS": "Field sales invoice COGS (old shape)"
+      "FIELD_DELIVERY_COGS": "Field sales invoice COGS (old shape)",
+      "CONSIGNMENT_TRANSFER": "Consignment transfer to store",
+      "CONSIGNMENT_FIELD_RETURN": "Consignment store field return"
     },
     "tabPosted": "Posted",
     "tabPending": "Pending",
@@ -11858,7 +11897,7 @@
       "PPH23_PAYABLE": "PPh 23 withheld from fees of KOL companies (agencies, PT, CV), until deposited.",
       "AR_STORE": "Receivables from outright-purchase (putus) stores: debited when a billing note is issued (delivery) or a manual/imported invoice is recorded, credited when a payment report is verified, an office payment is recorded, a return is recognised, or a deduction is approved.",
       "AR_CONSIGNMENT": "Amounts owed by consignment stores for goods sold in the store: debited when a consignment cycle is locked or a konsi sell-through report is invoiced, credited when the store's payment is recorded.",
-      "INVENTORY_CONSIGNMENT": "Elorae-owned goods held at consignment stores: debited when goods are sent to the store, credited when sold (COGS) or returned to the warehouse.",
+      "INVENTORY_CONSIGNMENT": "Elorae-owned goods held at consignment stores: debited when goods reach the store (delivery completed) or turn up as a count surplus, credited when sold (COGS), shrunk or lost, and when they come back to the warehouse.",
       "INVENTORY_DAMAGED": "Damaged or expired goods in the damaged-goods warehouse: debited when a damaged return is received, credited when repaired, sold off, or destroyed.",
       "SALES_RETURN": "Contra-revenue account (Revenue type, debit balance) for the value of recognised returns, so the income statement shows net sales.",
       "SALES_DISCOUNT": "Contra-revenue account for discounts given to stores or buyers (non-return payment deductions, promotions borne by Elorae).",
@@ -12039,7 +12078,8 @@
       "OVER_ALLOCATED": "The amount exceeds this receivable's outstanding balance.",
       "WRONG_STORE": "This receivable doesn't belong to the expected store.",
       "DUPLICATE_ALLOCATION": "This receivable was allocated more than once.",
-      "ERROR": "Something went wrong. Please try again."
+      "ERROR": "Something went wrong. Please try again.",
+      "SELF_VERIFICATION": "You handed this collection in, so you cannot review it yourself. Ask another finance person to review it."
     }
   },
   "financeStoreSettlements": {
@@ -12231,8 +12271,10 @@
       "INVALID_REQUEST": "That request was not valid. Close this dialog and open it again.",
       "UNEXPECTED": "Something went wrong. Please try again.",
       "NO_ALLOCATIONS": "One of this settlement's payments has nothing to allocate against.",
-      "DUPLICATE_ALLOCATION": "One of this settlement's payments allocates to the same invoice twice."
-    }
+      "DUPLICATE_ALLOCATION": "One of this settlement's payments allocates to the same invoice twice.",
+      "SELF_VERIFICATION": "You submitted this settlement, so you cannot review it yourself. Ask another finance person to review it."
+    },
+    "verifyPermissionHint": "You can view this settlement, but approving or rejecting it is up to the payment verifier."
   },
   "settlementBkm": {
     "title": "Settlement Receipt (BKM)",
@@ -13330,7 +13372,7 @@
     "colQty": "Bill qty",
     "colPrice": "Price",
     "colAmount": "Amount",
-    "poPaidNotBillable": "Marked paid via Supplier Payment, not billable",
+    "poPaidNotBillable": "Already paid through Supplier payments; its invoice can still be recorded here for matching.",
     "variance": "Differs from {ref}",
     "woSourcesTitle": "WO processing steps",
     "woSourcesSubtitle": "Work whose payable was booked when the finished goods were received posts no journal here. Work from receipts before that rule posts Dr Production Service Cost / Cr Payables.",
@@ -13350,15 +13392,22 @@
     "noJournal": "No journal — the payable was booked when the goods were received.",
     "void": "Void",
     "voidTitle": "Void this bill?",
-    "voidBody": "Its lines become billable again and any journal is reversed. A bill with payments cannot be voided.",
+    "voidBody": "Its lines become billable again and any journal it posted is reversed. Supplier payments on its receipts stay recorded and count toward other bills on the same goods, so a wrongly entered invoice can be voided and entered again. It cannot be voided while an old vendor bill payment is still live on it, or when old CMT it booked has been paid through Supplier payments beyond what the step would still owe.",
     "voidReason": "Reason",
     "voided": "{docNumber} voided",
     "voidedOn": "Voided on {date}",
-    "linkedTitle": "Vendor bills"
+    "linkedTitle": "Vendor bills",
+    "paidSupplier": "Through Supplier payments",
+    "paidVendor": "Through vendor bill payments",
+    "supplierPaymentsTitle": "Supplier payments on its receipts",
+    "noSupplierPayments": "No supplier payments on this bill's receipts yet.",
+    "vendorPaymentsTitle": "Vendor bill payments (old)",
+    "payViaSupplierPayments": "Pay through Supplier payments",
+    "voidBlockedBySupplierPayments": "Can't be voided yet: this bill booked old CMT on {steps}, and the supplier payments on that step exceed what it would still owe without this bill. Cancel the supplier payment first."
   },
   "vendorPayments": {
-    "title": "Vendor Bill Payments",
-    "subtitle": "One payment settles one or more bills of a supplier",
+    "title": "Vendor bill payment history",
+    "subtitle": "Vendor bill payments recorded before payments moved to Supplier payments",
     "newPayment": "New payment",
     "listTitle": "Payments",
     "listSubtitle": "Filter by supplier or payment date",
@@ -13409,10 +13458,13 @@
     "journalsTitle": "Journals",
     "void": "Void",
     "voidTitle": "Void this payment?",
-    "voidBody": "Each bill gets its allocation back and the journal is reversed.",
+    "voidBody": "Each bill gets its allocation back and the journal is reversed. What it paid is then paid through Supplier payments.",
     "voidReason": "Reason",
     "voided": "{docNumber} voided",
-    "voidedOn": "Voided on {date}"
+    "voidedOn": "Voided on {date}",
+    "closedTitle": "New payments go through Supplier payments",
+    "closedBody": "This page no longer takes payments. Every vendor bill, old CMT included, is paid through Purchasing → Supplier payments, with PPh withholding, SKB, giro, a chosen account and a proof photo. Old payments here can still be viewed and voided.",
+    "openSupplierPayments": "Open Supplier payments"
   },
   "productionPalette": {
     "title": "Color Palette",
@@ -15712,7 +15764,8 @@
       "KOL_BRAND_COLLAB_ADDED": "KOL brand added",
       "KOL_BRAND_COLLAB_DELETED": "KOL brand deleted",
       "KOL_CALENDAR_FEED_CREATED": "Creative calendar subscription link created",
-      "KOL_CALENDAR_FEED_REVOKED": "Creative calendar subscription link revoked"
+      "KOL_CALENDAR_FEED_REVOKED": "Creative calendar subscription link revoked",
+      "STORE_SHIPMENT_HANDED_OVER_NOTIFIED": "Store SPG told goods were handed over"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -15888,7 +15941,8 @@
       "vatApplied": "Bill VAT (frozen)",
       "skbNumber": "SKB number",
       "skbValidUntil": "SKB valid until",
-      "skbPhotoUrl": "SKB photo"
+      "skbPhotoUrl": "SKB photo",
+      "legacyRole": "Legacy role"
     }
   },
   "jubelio": {
@@ -20043,7 +20097,8 @@
       "KONSI_ORDER": "Consignment order",
       "KONSI_SHIPMENT": "Consignment shipment",
       "MUTASI": "Transfer from another store",
-      "MUTASI_KEMBALI": "Transfer coming back (cancelled)"
+      "MUTASI_KEMBALI": "Transfer coming back (cancelled)",
+      "KONSI_TRANSFER": "Consignment delivery"
     },
     "kantor": {
       "judul": "SPG day close",
@@ -22232,7 +22287,8 @@
     "ALASAN_WAJIB": "Enter a cancellation reason first.",
     "ALASAN_TERLALU_PANJANG": "The cancellation reason is too long (190 characters max).",
     "CACAT_MELEBIHI_SETORAN": "Rejected quantity cannot exceed the quantity handed over.",
-    "STOK_BELUM_CUKUP": "There is not enough material stock to issue this work order. Check the material shortages on the work order."
+    "STOK_BELUM_CUKUP": "There is not enough material stock to issue this work order. Check the material shortages on the work order.",
+    "HARGA_KELUAR_TIDAK_DIKETAHUI": "The material cannot be returned because its price at issue is unknown: the stock card does not hold its value and the material issue document does not show a price either."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "Purchase order not found.",
@@ -22305,7 +22361,11 @@
       "WAREHOUSE": "Warehouse staff — manages inventory",
       "PRODUCTION": "Production staff — manages work orders",
       "SALESMAN": "Field salesman — phone app only",
-      "SPG": "In-store promoter — phone app only, fixed to one store"
+      "SPG": "In-store promoter — phone app only, fixed to one store",
+      "PACKER": "Packer — Record Packer video packing surface",
+      "KEUANGAN": "Finance — verifies payments against the bank statement, journals and financial reports",
+      "ADMIN_PENJUALAN": "Sales admin — records the sales-note number on consignment cycles",
+      "ADMIN_PAJAK": "Tax admin — records tax-invoice numbers for billing notes and consignment"
     },
     "izin": {
       "dashboard_view": {
@@ -22338,7 +22398,7 @@
       },
       "field_sales_orders_approve": {
         "label": "Approve field orders",
-        "keterangan": "Approves or rejects salespeople's orders, sets appealed prices, releases pre-orders, approves goods exchanges and store transfers, changes Settings → Salesman and opens the salesman commission report."
+        "keterangan": "Approves or rejects salespeople's orders, sets appealed prices, releases pre-orders, approves goods exchanges, changes Settings → Salesman and opens the salesman commission report."
       },
       "field_sales_orders_deliver": {
         "label": "Record putus deliveries",
@@ -22350,7 +22410,7 @@
       },
       "stores_manage": {
         "label": "Manage stores",
-        "keterangan": "Adds, edits and deactivates stores, moves stores to another salesperson, approves store-data changes from salespeople and processes SPG stock requests."
+        "keterangan": "Adds, edits and deactivates stores, moves stores to another salesperson, approves store-data changes from salespeople, opens and cancels draft store counts, creates store transfers and withdraws their own, and processes SPG stock requests. Approving a count or a transfer has its own permission."
       },
       "promos_view": {
         "label": "View promotions",
@@ -22382,7 +22442,7 @@
       },
       "receivables_manage": {
         "label": "Manage receivables",
-        "keterangan": "Imports invoices, creates collection notes, records receipts from the office, assigns collection tasks, decides who bears return shortfalls and lost goods, and manages deduction types."
+        "keterangan": "Imports invoices, creates collection notes, records receipts from the office, pairs and cancels return notes, assigns collection tasks, records and cancels lost goods not yet decided, sets putus-store SPG commission and manages deduction types. Deciding who bears a shortfall has its own permission."
       },
       "consignment_view": {
         "label": "View consignment",
@@ -22390,15 +22450,15 @@
       },
       "consignment_manage": {
         "label": "Manage consignment",
-        "keterangan": "Records consigned shipments and sales reports, locks the figures, records note and tax-invoice numbers, and commission payments."
+        "keterangan": "Opens consignment cycles, records consigned shipments, and records the SPG and store sales reports. Locking figures, note numbers, tax-invoice numbers and paying SPG salaries each have their own permission."
       },
       "journals_view": {
         "label": "View journals & ledger",
         "keterangan": "Opens journals, the ledger per account, account mapping and cash-flow classification."
       },
       "journals_manage": {
-        "label": "Manage journals & verify incoming money",
-        "keterangan": "Creates manual journals, re-posts pending journals, matches receipts against bank statements, marks POs as paid and pays travel expenses."
+        "label": "Manage journals",
+        "keterangan": "Creates and approves manual journals, re-posts pending journals, records cash & bank, marks POs as paid and pays travel expenses. Checking receipts against the bank statement uses the Verify payments permission."
       },
       "coa_view": {
         "label": "View chart of accounts",
@@ -22425,8 +22485,8 @@
         "keterangan": "Opens the list of billing notes waiting for a tax-invoice number."
       },
       "tax_invoices_manage": {
-        "label": "Record tax-invoice numbers",
-        "keterangan": "Records tax-invoice numbers, or marks a note as needing none with a reason."
+        "label": "Record billing-note tax invoices",
+        "keterangan": "Records the tax-invoice number of a billing note in the Tax Invoices queue, or marks a note as needing none with a reason. Consignment-cycle tax invoices have their own permission."
       },
       "purchase_orders_view": {
         "label": "View purchase orders (PO)",
@@ -22663,8 +22723,118 @@
       "jubelio_admin_view": {
         "label": "Open the Jubelio API dashboard",
         "keterangan": "Opens the token status, API call log and Jubelio sync tools; best kept for admins."
+      },
+      "payments_verify": {
+        "label": "Verify payments",
+        "keterangan": "Matches receipts (BKM) against the bank statement and verifies or rejects them, marks a giro cleared or bounced, cancels a receipt, records consignment store payments, verifies collector submissions, and approves or rejects store settlements. A payment the person reported, recorded or handed in themselves still cannot be checked by them."
+      },
+      "receivables_decide_bearer": {
+        "label": "Decide who bears shortfalls",
+        "keterangan": "Sets and reassigns who bears a store-return shortfall, decides who bears lost SPG goods, and cancels a lost-goods record that has already been decided. Approval — admin only by default."
+      },
+      "consignment_note_number": {
+        "label": "Record consignment note numbers",
+        "keterangan": "Records the sales admin's note number on a locked consignment cycle."
+      },
+      "consignment_tax_number": {
+        "label": "Record consignment tax-invoice numbers",
+        "keterangan": "Records the tax-invoice number on a locked consignment cycle that charges VAT."
+      },
+      "consignment_lock": {
+        "label": "Lock consignment figures",
+        "keterangan": "Locks a consignment cycle's official sold figures, and unlocks them while no document number, paid salary or store payment exists. Approval — admin only by default."
+      },
+      "store_stocktakes_approve": {
+        "label": "Approve store counts",
+        "keterangan": "Approves a store stock count so it takes effect in the store stock book, or cancels a count that is waiting for approval. Approval — admin only by default."
+      },
+      "store_transfers_approve": {
+        "label": "Approve store transfers",
+        "keterangan": "Approves, rejects, cancels or redirects a transfer of goods between stores, and sets the transfer rules in Settings → SPG, including which directions may ship without approval. Approval — admin only by default."
+      },
+      "store_transfers_decide_shortfall": {
+        "label": "Decide transfer shortfalls",
+        "keterangan": "Decides goods that never arrived in a transfer: written off as lost or returned to the sending store. Approval — admin only by default."
+      },
+      "spg_commission_pay": {
+        "label": "Mark SPG pay as paid",
+        "keterangan": "Marks SPG base pay and commission as paid, for consignment and putus stores. Approval — admin only by default."
+      },
+      "field_sales_orders_credit_override": {
+        "label": "Override credit limits",
+        "keterangan": "Approves a putus order that exceeds the store's credit limit, with a written reason. Approval — admin only by default."
+      },
+      "deliveries_ship": {
+        "label": "Ship deliveries",
+        "keterangan": "Packs, tracks, ships and cancels deliveries to stores."
+      },
+      "deliveries_pod": {
+        "label": "Close deliveries with proof",
+        "keterangan": "Closes a delivery with proof of delivery, and can be assigned as its carrier."
+      },
+      "spg_commission_manage": {
+        "label": "Set SPG commission rates",
+        "keterangan": "Sets SPG commission rates per item category in Settings → SPG commission."
+      },
+      "item_requests_view": {
+        "label": "View material requests",
+        "keterangan": "Opens the material requests from production."
+      },
+      "item_requests_manage": {
+        "label": "Manage material requests",
+        "keterangan": "Creates and cancels material requests and turns them into POs."
+      },
+      "vendor_bills_view": {
+        "label": "View vendor bills",
+        "keterangan": "Opens supplier invoices with the goods receipts and work-order steps they bill."
+      },
+      "vendor_bills_manage": {
+        "label": "Manage vendor bills",
+        "keterangan": "Records supplier invoices, matches them against goods receipts, and voids them."
+      },
+      "field_returns_manage": {
+        "label": "Manage field returns",
+        "keterangan": "Receives returned goods from the field, resolves discrepancies and approves them."
+      },
+      "field_returns_writeoff": {
+        "label": "Write off field-return shortfalls",
+        "keterangan": "Absorbs a field-return shortfall as a company loss. Approval — admin only by default."
+      },
+      "payments_manage": {
+        "label": "Record office payments",
+        "keterangan": "Records and voids customer payments from the office (Finance → Payments). Checking collector submissions uses the Verify payments permission."
+      },
+      "collections_collect": {
+        "label": "Collect in the field",
+        "keterangan": "Submits collections from the phone app, and can be assigned as a collector."
+      },
+      "collections_manage": {
+        "label": "Manage collections",
+        "keterangan": "Assigns collectors to invoices, opens the collector submission queue and store settlements, and changes Settings → Receivables. Verifying submissions and approving settlements uses the Verify payments permission."
+      },
+      "collections_amplop": {
+        "label": "View the collection envelope",
+        "keterangan": "Opens the digital envelope on the phone: billing documents per store for one collection round."
+      },
+      "settlements_submit": {
+        "label": "Submit store settlements",
+        "keterangan": "Submits a store settlement document (invoices and deductions) from the counter screen on the phone."
+      },
+      "packer_menu": {
+        "label": "Open Record Packer",
+        "keterangan": "Opens the menu and list of marketplace packing videos."
+      },
+      "packer_record": {
+        "label": "Record packing videos",
+        "keterangan": "Records a video while packing an order."
+      },
+      "packer_edit": {
+        "label": "Replace packing videos",
+        "keterangan": "Replaces an existing packing video."
       }
-    }
+    },
+    "persetujuan": "Approval",
+    "persetujuanJudul": "Approval permission — admin only by default. Grant it only to someone you trust to decide on your behalf."
   },
   "itemForm": {
     "basicInfo": "Basic information",

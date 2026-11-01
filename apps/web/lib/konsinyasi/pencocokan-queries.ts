@@ -1,6 +1,7 @@
 import { prisma } from "@elorae/db";
 import { gerakLakuBersih, returRusakLaku } from "@/lib/spg/laku-bersih";
 import { REF_BUKU_HILANG } from "@/lib/spg/hilang-buku";
+import { bacaPesananKonsiLama } from "@/lib/spg/antaran-queries";
 import { rentangBulanWib } from "./laporan-spg";
 import {
   buatPenyelesaiKunci,
@@ -108,7 +109,7 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
 
   const stokMentah = adaBuku
     ? await (async () => {
-        const [gerakJual, saldo, pesanan, kiriman, terimaMutasi, mutasiKeluar, mutasiKembali, retur, diterima, returKeluar, rusak, hilang, bukuHilang, rusakPembeli] =
+        const [gerakJual, saldo, transfer, pesanan, kiriman, terimaMutasi, mutasiKeluar, mutasiKembali, retur, diterima, returKeluar, rusak, hilang, bukuHilang, rusakPembeli] =
           await Promise.all([
             // Laku bersih (`gerakLakuBersih`): JUAL, RETUR_PEMBELI, dan retur rusak dari pembeli.
             gerakLakuBersih([{ storeId, sebelum: akhir, kecuali: bulanResmiLain }]),
@@ -117,6 +118,16 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
               where: { storeId, createdAt: { lt: akhir } },
               _sum: { qty: true },
             }),
+            // Barang konsinyasi yang berpindah ke toko: baris `KonsiTransfer`, bertanggal
+            // transfernya — satu per pengiriman yang selesai, sebesar yang diserahkan.
+            // Transfer lama tanpa pengiriman (stok keluar saat disetujui) ikut juga.
+            prisma.konsiTransferLine.findMany({
+              where: { transfer: { storeId, createdAt: { lt: akhir } } },
+              select: { itemId: true, qty: true, transfer: { select: { id: true, orderId: true, shipmentId: true, createdAt: true } } },
+            }),
+            // Pesanan konsi yang disetujui — hanya untuk pesanan LAMA (`bacaPesananKonsiLama`):
+            // yang tanpa transfer sama sekali masuk dari barisnya, dan semua yang lama
+            // diterima sekali per pesanan. Pesanan aturan baru masuk lewat transfernya.
             prisma.fieldSalesOrderLine.findMany({
               where: {
                 order: {
@@ -165,7 +176,7 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
               select: { itemId: true, qty: true },
             }),
             prisma.storeReceipt.findMany({
-              where: { storeId, sourceType: { in: ["KONSI_ORDER", "KONSI_SHIPMENT"] }, receivedAt: { lt: akhir } },
+              where: { storeId, sourceType: { in: ["KONSI_TRANSFER", "KONSI_ORDER", "KONSI_SHIPMENT"] }, receivedAt: { lt: akhir } },
               select: { sourceType: true, sourceId: true },
             }),
             prisma.storeStockMovement.findMany({
@@ -234,10 +245,13 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
             ? prisma.stockLoss.findMany({ where: { id: { in: idHilangBuku } }, select: { id: true, status: true, decidedAt: true } })
             : Promise.resolve([]),
         ]);
+        const konsiLama = await bacaPesananKonsiLama(prisma, [...new Set(pesanan.map((l) => l.order.id))]);
         return {
           gerakJual,
           saldo,
+          transfer,
           pesanan,
+          konsiLama,
           kiriman,
           terimaMutasi,
           mutasiKeluar,
@@ -269,6 +283,7 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
       ? [
           ...stokMentah.gerakJual.map((g) => g.itemId),
           ...stokMentah.saldo.map((g) => g.itemId),
+          ...stokMentah.transfer.map((g) => g.itemId),
           ...stokMentah.pesanan.map((g) => g.itemId),
           ...stokMentah.kiriman.map((g) => g.itemId as string),
           ...stokMentah.terimaMutasi.map((g) => g.itemId as string),
@@ -324,7 +339,8 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
   if (stokMentah && pertama) {
     const s = stokMentah;
     const masuk: JumlahBarang[] = [
-      ...s.pesanan.map((l) => ({ kunci: l.itemId, qty: l.qty - l.cancelledQty })),
+      ...s.transfer.map((l) => ({ kunci: l.itemId, qty: Number(l.qty) })),
+      ...s.pesanan.filter((l) => s.konsiLama.tanpaTransfer.has(l.order.id)).map((l) => ({ kunci: l.itemId, qty: l.qty - l.cancelledQty })),
       ...s.kiriman.map((l) => ({ kunci: l.itemId as string, qty: l.qty })),
       ...s.terimaMutasi.map((l) => ({ kunci: l.itemId as string, qty: l.qtyReceived })),
       ...s.mutasiKeluar.map((l) => ({ kunci: l.itemId, qty: -l.qty })),
@@ -356,13 +372,23 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
       if (pilih.dasar && pilih.dasar !== "RESMI") bulanSementara.push({ periode: p, dasar: pilih.dasar });
     }
 
-    // Kiriman yang sudah jalan (sejak buku dimulai) tapi belum diterima SPG
+    // Kiriman yang sudah diserahkan (sejak buku dimulai) tapi belum diterima SPG
     // sampai akhir bulan. Kiriman sebelum buku dimulai masuk lewat opname pembuka.
+    // Antaran konsinyasi diterima per transfer; pesanan lama sekali per pesanan.
+    // Sisa pesanan yang belum dikirim gudang tidak pernah ada di sini — masih di gudang.
     const sudah = new Set(s.diterima.map((r) => `${r.sourceType}:${r.sourceId}`));
     const mulai = pertama.createdAt;
     const kirimanBelum: JumlahBarang[] = [
+      ...s.transfer
+        .filter((l) => l.transfer.shipmentId !== null && l.transfer.createdAt >= mulai && !sudah.has(`KONSI_TRANSFER:${l.transfer.id}`))
+        .map((l) => ({ kunci: l.itemId, qty: Number(l.qty) })),
       ...s.pesanan
-        .filter((l) => (l.order.approvedAt ?? l.order.createdAt) >= mulai && !sudah.has(`KONSI_ORDER:${l.order.id}`))
+        .filter(
+          (l) =>
+            s.konsiLama.lama.has(l.order.id) &&
+            (l.order.approvedAt ?? l.order.createdAt) >= mulai &&
+            !sudah.has(`KONSI_ORDER:${l.order.id}`),
+        )
         .map((l) => ({ kunci: l.itemId, qty: l.qty - l.cancelledQty })),
       ...s.kiriman
         .filter((l) => l.shipment.shippedAt >= mulai && !sudah.has(`KONSI_SHIPMENT:${l.shipment.id}`))

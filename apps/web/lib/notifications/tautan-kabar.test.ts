@@ -81,6 +81,21 @@ describe("tautanKabar", () => {
   it("kiriman yang berangkat ke toko SPG membawa ke layar terima kiriman", () => {
     expect(JENIS_KABAR.KIRIMAN_BERANGKAT).toBe("KIRIMAN_BERANGKAT");
     expect(tautanKabar("KIRIMAN_BERANGKAT", { storeId: "s1", sourceType: "PUTUS_DELIVERY", sourceId: "d1" })).toBe("/pwa/spg/terima");
+    expect(tautanKabar("KIRIMAN_BERANGKAT", { storeId: "s1", shipmentId: "shp1" })).toBe("/pwa/spg/terima");
     expect(tautanKabar("KIRIMAN_BERANGKAT", {})).toBe("/pwa/spg/terima");
+  });
+
+  it("barang yang sudah diserahkan membuka formulir terima kiriman itu; tanpa barang ke daftar kiriman", () => {
+    expect(JENIS_KABAR.KIRIMAN_DISERAHKAN).toBe("KIRIMAN_DISERAHKAN");
+    expect(tautanKabar("KIRIMAN_DISERAHKAN", { storeId: "s1", shipmentId: "shp1", sourceType: "KONSI_TRANSFER", sourceId: "t1" })).toBe(
+      "/pwa/spg/terima/KONSI_TRANSFER/t1",
+    );
+    expect(tautanKabar("KIRIMAN_DISERAHKAN", { storeId: "s1", shipmentId: "shp1", sourceType: "PUTUS_DELIVERY", sourceId: "d1" })).toBe(
+      "/pwa/spg/terima/PUTUS_DELIVERY/d1",
+    );
+    // Pengiriman 0 pcs: tidak ada yang bisa diterima.
+    expect(tautanKabar("KIRIMAN_DISERAHKAN", { storeId: "s1", shipmentId: "shp1" })).toBe("/pwa/spg/terima");
+    // Jenis yang bukan kiriman tidak pernah dirangkai ke alamat.
+    expect(tautanKabar("KIRIMAN_DISERAHKAN", { sourceType: "../../backoffice", sourceId: "x" })).toBe("/pwa/spg/terima");
   });
 });

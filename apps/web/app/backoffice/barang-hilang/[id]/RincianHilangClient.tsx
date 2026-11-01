@@ -23,19 +23,24 @@ type Orang = { spg: { id: string; nama: string; toko: string | null }[]; sales: 
 export function RincianHilangClient({
   rincian: r,
   bolehKelola,
+  bolehPutus,
   orang,
 }: {
   rincian: RincianHilangKantor;
+  /** `receivables:manage`: tandai toko ditagih, batalkan yang masih TERBUKA. */
   bolehKelola: boolean;
+  /** `receivables:decide_bearer`: putuskan, ubah, dan batalkan keputusan. */
+  bolehPutus: boolean;
   orang: Orang;
 }) {
   const t = useTranslations("barangHilang");
   const td = dinamis(t);
   const tAudit = useTranslations("auditActions");
 
-  const bisaPutuskan = bolehKelola && r.status === "TERBUKA";
-  const bisaUbah = bolehKelola && (r.status === "DITETAPKAN" || r.status === "SELESAI") && !r.terkunci;
-  const bisaBatal = bolehKelola && r.status !== "DIBATALKAN" && !r.terkunci;
+  const bisaPutuskan = bolehPutus && r.status === "TERBUKA";
+  const bisaUbah = bolehPutus && (r.status === "DITETAPKAN" || r.status === "SELESAI") && !r.terkunci;
+  // Sama dengan `batalkanBarangHilangAction`: yang TERBUKA milik pengelola, keputusan milik pemutus.
+  const bisaBatal = r.status !== "DIBATALKAN" && !r.terkunci && (r.status === "TERBUKA" ? bolehKelola : bolehPutus);
   const totalDiubah = keSen(r.total) !== keSen(r.nilaiBarang);
   // Bagian SPG/sales yang sudah dikurangi keringanan diskon pegawai (dari jejak keputusannya).
   const diringankan = (b: { bearer: string; orang: { id: string } | null }) =>
@@ -94,7 +99,7 @@ export function RincianHilangClient({
         title={judul}
         meta={t("rincian.deskripsi", { pcs: r.totalQty, nilai: formatIDR(r.total) })}
         actions={
-          bolehKelola ? (
+          bisaPutuskan || bisaUbah || bisaBatal ? (
             <div className="flex flex-wrap gap-2">
               {bisaPutuskan ? <KeputusanHilangDialog rincian={r} orang={orang} mode="PUTUSKAN" /> : null}
               {bisaUbah ? <KeputusanHilangDialog rincian={r} orang={orang} mode="UBAH" /> : null}
@@ -107,7 +112,7 @@ export function RincianHilangClient({
       {r.status === "TERBUKA" ? (
         <p role="status" className="flex items-start gap-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          {bolehKelola ? t("rincian.menungguKelola") : t("rincian.menungguLihat")}
+          {bisaPutuskan || bisaBatal ? t("rincian.menungguKelola") : t("rincian.menungguLihat")}
         </p>
       ) : null}
       {r.adaBarisTanpaNilai && r.status === "TERBUKA" ? (

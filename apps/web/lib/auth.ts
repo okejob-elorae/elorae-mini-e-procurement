@@ -9,6 +9,7 @@ import { Role } from "@elorae/db";
 import { ServerUnavailableSignin, TooManyAttemptsSignin } from "@/lib/auth/login-errors";
 import { loginThrottle, throttleKey } from "@/lib/auth/login-throttle";
 import { ingatIsiSesi, isiSesiDari, segarkanToken } from "@/lib/auth/segarkan-sesi";
+import { peranLamaSesi } from "@/lib/users/peran-lama";
 
 function fingerprintPassword(passwordHash: string | null | undefined): string | null {
   if (!passwordHash) return null;
@@ -213,7 +214,15 @@ export const {
         return { expires: session.expires } as typeof session;
       }
       session.user.id = token.id as string;
-      session.user.role = token.role as Role;
+      // Peran lama di sesi diturunkan dari peran baru (wildcard `*` = ADMIN), bukan
+      // disalin dari kolom `User.role`: kolom itu bisa basi untuk akun yang perannya
+      // diganti lewat Pengaturan → Pengguna sebelum Pengguna ikut mengisinya
+      // (lib/users/peran-lama.ts). `token.role` sengaja tetap nilai kolom — pemeriksaan
+      // ringan di callback `jwt` membandingkannya dengan basis data.
+      session.user.role = peranLamaSesi({
+        roleName: token.roleName as string | undefined,
+        permissions: (token.permissions || []) as string[],
+      });
       session.user.roleId = token.roleId as string | null;
       session.user.roleName = token.roleName as string;
       session.user.permissions = (token.permissions || []) as string[];

@@ -145,9 +145,10 @@ export async function verifikasiKlaimAction(
 ): Promise<HasilAksiKlaim> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  // Verifikasi ke mutasi bank adalah pekerjaan admin keuangan, bukan sales —
-  // kalau sales bisa memverifikasi klaimnya sendiri, seluruh Aturan 1 runtuh.
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+  // Verifikasi ke mutasi bank adalah pekerjaan pemeriksa pembayaran
+  // (`payments:verify`), bukan sales — kalau sales bisa memverifikasi klaimnya
+  // sendiri, seluruh Aturan 1 runtuh.
+  if (!bolehMemverifikasi(session.user.permissions)) {
     return { ok: false, kode: 'TANPA_AKSES' };
   }
 
@@ -359,9 +360,10 @@ export type HasilKoreksiAksi = { ok: true } | { ok: false; kode: KodeKoreksi };
 /**
  * Batalkan BKM yang salah catat.
  *
- * Dibatasi ke `journals:manage` sama seperti verifikasi: membatalkan mengubah
- * sisa piutang, jadi ia keputusan keuangan. Satu-satunya jalan pelapor sendiri
- * adalah `tarikKlaimSendiriAction`, dan hanya selama BKM-nya belum diputuskan.
+ * Dibatasi ke pemeriksa pembayaran (`payments:verify`), sama seperti
+ * verifikasi: membatalkan mengubah sisa piutang, jadi ia keputusan keuangan.
+ * Satu-satunya jalan pelapor sendiri adalah `tarikKlaimSendiriAction`, dan
+ * hanya selama BKM-nya belum diputuskan.
  */
 export async function batalkanKlaimAction(
   paymentClaimId: string,
@@ -369,7 +371,7 @@ export async function batalkanKlaimAction(
 ): Promise<HasilKoreksiAksi> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+  if (!bolehMemverifikasi(session.user.permissions)) {
     return { ok: false, kode: 'TANPA_AKSES' };
   }
 
@@ -398,7 +400,7 @@ export async function tautkanUlangPotonganAction(
 ): Promise<HasilKoreksiAksi> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, kode: 'TANPA_AKSES' };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.JOURNALS_MANAGE)) {
+  if (!bolehMemverifikasi(session.user.permissions)) {
     return { ok: false, kode: 'TANPA_AKSES' };
   }
 

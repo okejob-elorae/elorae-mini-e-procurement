@@ -39,6 +39,8 @@ d("pesananSayaById — hasil terima toko (test bed only)", () => {
   const orderIds: string[] = [];
   const deliveryIds: string[] = [];
   const receiptIds: string[] = [];
+  const shipmentIds: string[] = [];
+  const transferIds: string[] = [];
   let nomor = 0;
 
   beforeAll(async () => {
@@ -56,6 +58,9 @@ d("pesananSayaById — hasil terima toko (test bed only)", () => {
 
   afterAll(async () => {
     await prisma.storeReceipt.deleteMany({ where: { id: { in: seededIds(receiptIds) } } });
+    // Anak relasi 1:1 sebelum induknya: transfer sebelum pengiriman, pengiriman sebelum pesanan.
+    await prisma.konsiTransfer.deleteMany({ where: { id: { in: seededIds(transferIds) } } });
+    await prisma.deliveryShipment.deleteMany({ where: { id: { in: seededIds(shipmentIds) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: seededIds(deliveryIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoPutus, tokoKonsi].filter(Boolean)) } } });
@@ -110,7 +115,7 @@ d("pesananSayaById — hasil terima toko (test bed only)", () => {
 
   async function tandaTerima(
     storeId: string,
-    sourceType: "PUTUS_DELIVERY" | "KONSI_ORDER",
+    sourceType: "PUTUS_DELIVERY" | "KONSI_ORDER" | "KONSI_TRANSFER",
     sourceId: string,
     docNo: string,
     baris: { qtySent: number; qtyReceived: number; qtyDamaged?: number }[],
@@ -182,6 +187,53 @@ d("pesananSayaById — hasil terima toko (test bed only)", () => {
     expect(berharga).toEqual([]);
     // Angka harga konsi (156.250/pcs, 1.875.000 total) tidak ada di muatan; tag acak dibuang dulu.
     expect(JSON.stringify(muatan).split(tag).join("")).not.toMatch(/156250|156\.250|1875000/);
+  });
+
+  /** Satu antaran konsinyasi: pengiriman selesai + transfernya, sebesar `qty`. */
+  async function antaran(orderId: string, orderLineId: string, qty: number) {
+    nomor += 1;
+    const shp = await prisma.deliveryShipment.create({
+      data: {
+        docNo: `${tag}-SHP-${nomor}`,
+        orderId,
+        method: "SALESMAN_CARRY",
+        status: "DELIVERED",
+        packedById: salesId,
+        lines: { create: [{ orderLineId, itemId, variantSku: `${tag}-M`, plannedQty: qty, deliveredQty: qty }] },
+      },
+      select: { id: true, docNo: true },
+    });
+    shipmentIds.push(shp.id);
+    const t = await prisma.konsiTransfer.create({
+      data: {
+        docNo: `${tag}-TRF-${nomor}`,
+        orderId,
+        storeId: tokoKonsi,
+        shipmentId: shp.id,
+        transferredById: salesId,
+        lines: { create: [{ orderLineId, itemId, variantSku: `${tag}-M`, productName: "Kemeja Uji — M", qty, unitCost: 90_000 }] },
+      },
+      select: { id: true },
+    });
+    transferIds.push(t.id);
+    return { id: t.id, docNo: shp.docNo };
+  }
+
+  it("konsi per shipment: the counted shipments add up into one summary — what the warehouse has not sent yet is never short", async () => {
+    // 100 dipesan; antaran 60 (tiba 57) dan 30 (tiba 30); 10 belum dikirim gudang.
+    const o = await pesanan(tokoKonsi, "KONSI", 100, 90);
+    const a1 = await antaran(o.id, o.lines[0].id, 60);
+    const a2 = await antaran(o.id, o.lines[0].id, 30);
+    await tandaTerima(tokoKonsi, "KONSI_TRANSFER", a1.id, a1.docNo, [{ qtySent: 60, qtyReceived: 57 }]);
+    await tandaTerima(tokoKonsi, "KONSI_TRANSFER", a2.id, a2.docNo, [{ qtySent: 30, qtyReceived: 30, qtyDamaged: 1 }]);
+
+    const detail = await pesananSayaById(o.id, salesId);
+    expect(detail?.penerimaanToko).toEqual([
+      expect.objectContaining({ sourceType: "KONSI_ORDER", sourceId: o.id, docNo: o.orderNo, dikirim: 90, diterima: 87, kurang: 3, rusak: 1 }),
+    ]);
+    const muatan = JSON.parse(JSON.stringify(detail));
+    expect(pasanganSemua(muatan).filter(([k, v]) => KUNCI_HARGA.test(k) && v !== null)).toEqual([]);
+    expect(JSON.stringify(muatan).split(tag).join("")).not.toMatch(/90000|90\.000|156250/);
   });
 
   it("an order the SPG has not counted yet has no summary; another salesman sees nothing at all", async () => {

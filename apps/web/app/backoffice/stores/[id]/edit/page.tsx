@@ -57,6 +57,7 @@ export default async function EditStorePage({ params }: { params: Promise<{ id: 
           markupPercent: store.markupPercent,
           priceDiscountPercent: store.priceDiscountPercent,
           creditLimit: store.creditLimit,
+          noCreditLimit: store.noCreditLimit,
           npwp: store.npwp,
           lat: store.lat,
           lng: store.lng,

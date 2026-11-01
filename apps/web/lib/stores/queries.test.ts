@@ -28,7 +28,8 @@ const d = isProd ? describe.skip : describe;
 
 /*
  * `updateStore` stamps this on the audit rows it writes for a changed holder, credit limit, class
- * or consignment VAT. None of these specs changes any of them, so no audit row is ever written.
+ * or consignment VAT. Only the "Tanpa batas kredit" spec changes one of them, and its teardown
+ * deletes the audit rows of its own stores.
  */
 const STORE_EDITOR_ID = "TEST-SQ-EDITOR";
 
@@ -606,6 +607,82 @@ d("store markup guard (test bed only)", () => {
     );
     const row = await prisma.store.findUniqueOrThrow({ where: { id: seededId(created.id) }, select: { markupPercent: true } });
     expect(Number(row.markupPercent)).toBe(20);
+  });
+});
+
+d("store Tanpa batas kredit (test bed only)", () => {
+  const token = Math.random().toString(36).slice(2, 10);
+  let createdIds: string[] = [];
+
+  const putusFields = (code: string, kredit: Pick<StoreFields, "creditLimit" | "maxOpenInvoices" | "noCreditLimit">): StoreFields => ({
+    code,
+    name: "Tanpa batas kredit store",
+    address: "Test address",
+    phone: null,
+    contactName: null,
+    termsType: "PUTUS",
+    paymentTempo: 0,
+    markupPercent: 20,
+    priceDiscountPercent: null,
+    npwp: null,
+    lat: null,
+    lng: null,
+    checkinRadiusMeters: null,
+    sellThroughMethod: null,
+    isPkp: false,
+    groupId: null,
+    salesmanId: null,
+    ...kredit,
+  });
+
+  beforeEach(() => {
+    createdIds = [];
+  });
+
+  afterEach(async () => {
+    /* `updateStore` writes a credit-limit audit row for every flag flip below. */
+    await prisma.auditLog.deleteMany({ where: { entityType: "Store", entityId: { in: createdIds.map((id) => seededId(id)) } } });
+    await prisma.store.deleteMany({ where: { id: { in: createdIds.map((id) => seededId(id)) } } });
+  });
+
+  it("a ticked store keeps no limit figure behind, on create and on update", async () => {
+    const created = await createStore(putusFields(`TEST-SQ-TBK-C-${token}`, { creditLimit: 5_000_000, maxOpenInvoices: 3, noCreditLimit: true }));
+    createdIds.push(created.id);
+    expect(created).toMatchObject({ creditLimit: null, maxOpenInvoices: null, noCreditLimit: true });
+
+    const biasa = await createStore(putusFields(`TEST-SQ-TBK-U-${token}`, { creditLimit: 5_000_000, maxOpenInvoices: 3 }));
+    createdIds.push(biasa.id);
+    expect(biasa).toMatchObject({ creditLimit: 5_000_000, maxOpenInvoices: 3, noCreditLimit: false });
+    const dicentang = await updateStore(
+      biasa.id,
+      putusFields(`TEST-SQ-TBK-U-${token}`, { creditLimit: 5_000_000, maxOpenInvoices: 3, noCreditLimit: true }),
+      STORE_EDITOR_ID,
+    );
+    expect(dicentang).toMatchObject({ creditLimit: null, maxOpenInvoices: null, noCreditLimit: true });
+  });
+
+  it("not sending the flag leaves it as stored; every flip is audited with before/after", async () => {
+    const created = await createStore(putusFields(`TEST-SQ-TBK-A-${token}`, { creditLimit: null, maxOpenInvoices: null, noCreditLimit: true }));
+    createdIds.push(created.id);
+    const tetap = await updateStore(created.id, putusFields(`TEST-SQ-TBK-A-${token}`, { creditLimit: null }), STORE_EDITOR_ID);
+    expect(tetap.noCreditLimit).toBe(true);
+
+    const dilepas = await updateStore(
+      created.id,
+      putusFields(`TEST-SQ-TBK-A-${token}`, { creditLimit: null, maxOpenInvoices: null, noCreditLimit: false }),
+      STORE_EDITOR_ID,
+    );
+    expect(dilepas.noCreditLimit).toBe(false);
+    const jejak = await prisma.auditLog.findMany({
+      where: { entityType: "Store", entityId: seededId(created.id), action: "STORE_CREDIT_LIMIT_CHANGED" },
+      select: { changes: true },
+    });
+    expect(jejak.map((j) => j.changes)).toEqual([
+      {
+        before: { creditLimit: null, maxOpenInvoices: null, noCreditLimit: true },
+        after: { creditLimit: null, maxOpenInvoices: null, noCreditLimit: false },
+      },
+    ]);
   });
 });
 

@@ -5,6 +5,7 @@ import { bulanSudahBerakhir, bulanWib, deretBulan, kunciBulan, labelBulan, renta
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { catatGagalSapuan } from "@/lib/finance/sapuan/tertunda";
+import { adminSistemTertua } from "@/lib/users/admin-sistem";
 import { akhirMasaManfaat, dalamMasaManfaat, jumlahPenyusutanBulan } from "./jadwal";
 import { idSumberPenyusutan, spekDariAset, STATUS_ASET, SUMBER_ASET } from "./aturan";
 import { ENTITAS_ASET, JEJAK_ASET } from "./jejak";
@@ -291,10 +292,9 @@ export async function postingPenyusutan(isi: {
 }
 
 
-/** Pengguna pencatat jurnal untuk cron: admin pertama (sama dengan sapuan jurnal). */
+/** Pengguna pencatat jurnal untuk cron: admin sistem tertua (peran sistem, bukan kolom `User.role`; sama dengan sapuan jurnal). */
 async function penggunaSistem(): Promise<string | null> {
-  const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, orderBy: { createdAt: "asc" }, select: { id: true } });
-  return admin?.id ?? null;
+  return (await adminSistemTertua())?.id ?? null;
 }
 
 /**

@@ -31,6 +31,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Satu siklus konsinyasi (satu toko × satu bulan): tiga nomornya, laporan SPG dan laporan toko yang disandingkan, angka resmi setelah dikunci, gaji dan komisi SPG, stok titipan, pencocokan buku stok toko, dan tagihan ke toko.",
       "Mengunci butuh kedua laporan. Tarif komisi per potong disalin dari master barang saat mengunci, jadi mengubah tarifnya sesudah itu tidak mengubah komisi bulan tersebut.",
+      "Setiap pekerjaan punya izinnya sendiri: mengunci dan membuka kunci angka resmi (keputusan manager, bawaannya hanya admin), mencatat nomor nota (admin penjualan), mencatat nomor faktur pajak (admin pajak), menandai gaji dan komisi SPG dibayar (bawaannya hanya admin), dan mencatat pembayaran toko (Periksa pembayaran). Membuka siklus serta mencatat kiriman dan kedua laporan tetap butuh izin mengelola konsinyasi.",
       "Membuka kunci ditolak begitu ada gaji SPG yang sudah dibayar, nomor nota atau nomor faktur pajak sudah dicatat, atau toko sudah membayar (pembayaran yang dibatalkan tidak dihitung); tombolnya mati dan alasannya tertulis di bawah judul. Bila masih boleh, pembukaan meminta konfirmasi: angka resmi bisa diubah lagi, potongan promo dan beban barang hilang yang dibekukan dilepas, dan potongan barang hilang dari gaji SPG dikembalikan sampai siklus dikunci ulang.",
       "Di kartu dua laporan, tanda — berarti laporannya belum masuk. Barang yang tidak tercantum di laporan yang sudah masuk ditulis 0, sama seperti di kartu pencocokan buku stok.",
       "Saat dikunci ulang, komisi dibagi di antara SPG yang ikut di kunci pertama. SPG yang sudah pindah toko tetap memegang baris gaji dan komisinya, dan SPG yang baru ditugaskan sesudahnya tidak ikut dibagi untuk bulan itu.",
@@ -70,7 +71,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "storeStocktakes.subtitle" },
       "Satu dokumen menghitung stok satu toko konsinyasi. Kantor membukanya dari halaman toko (Mulai perhitungan), sistem membukanya otomatis untuk perhitungan bulanan, atau SPG toko itu membukanya saat mengirim Laporan Stok Toko dari HP. Satu toko hanya punya satu perhitungan terbuka.",
       "Alurnya Draf → Menunggu Verifikasi → Disetujui, atau Dibatalkan. Kolom Cakupan: Penuh berarti setiap baris sudah dihitung saat disetujui; Sebagian berarti ada baris yang tidak dihitung, dan stok baris itu dibiarkan.",
-      "Melihat butuh izin melihat toko; membuka, menyimpan hitungan, menyetujui, dan membatalkan butuh izin mengelola toko.",
+      "Melihat butuh izin melihat toko; membuka, menyimpan hitungan, dan membatalkan draf butuh izin mengelola toko. Menyetujui hasil hitungan, dan membatalkan perhitungan yang sudah menunggu verifikasi, adalah keputusan manager: butuh izin menyetujui hitungan stok toko, yang bawaannya hanya dipegang admin.",
     ],
   },
   {

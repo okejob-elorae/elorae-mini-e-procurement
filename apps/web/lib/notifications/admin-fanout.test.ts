@@ -78,12 +78,14 @@ describe("fanOutAdminNotification", () => {
     await fanOutAdminNotification({ ...BASE, category: "FIELD_RETURN_MISMATCH" });
     expect(mockGetUsers).toHaveBeenCalledWith("field_returns:manage");
 
-    // Isolated from the calls above: CREDIT_LIMIT_HOLD maps to the same permission as
-    // PENDING_ORDER_APPROVAL, so a stale toHaveBeenCalledWith would pass even if the map were
-    // still missing this category — clear and assert the actual last call instead.
+    // Isolated from the calls above, so a stale toHaveBeenCalledWith cannot pass for it. A held
+    // order is approved only with an override reason, which the action accepts only from
+    // `field_sales_orders:credit_override` — plain approvers already hear about the order through
+    // PENDING_ORDER_APPROVAL.
     mockGetUsers.mockClear();
     await fanOutAdminNotification({ ...BASE, category: "CREDIT_LIMIT_HOLD" });
-    expect(mockGetUsers).toHaveBeenCalledWith("field_sales_orders:approve");
+    expect(mockGetUsers).toHaveBeenCalledWith("field_sales_orders:credit_override");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("field_sales_orders:approve");
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("no permission mapped for category CREDIT_LIMIT_HOLD"));
 
     mockGetUsers.mockClear();
@@ -109,14 +111,42 @@ describe("fanOutAdminNotification", () => {
   });
 
   it("tells whoever may verify payment claims about giros falling due", async () => {
-    // Only a claim verifier can mark a giro cleared or bounced; pinging anyone
-    // else about it is noise.
+    // Only a claim verifier (`payments:verify`, `bolehMemverifikasi`) can mark a giro cleared or
+    // bounced; pinging anyone else about it is noise.
     await fanOutAdminNotification({ ...BASE, category: "GIRO_JATUH_TEMPO" });
-    expect(mockGetUsers).toHaveBeenCalledWith("journals:manage");
+    expect(mockGetUsers).toHaveBeenCalledWith("payments:verify");
+    expect(mockGetUsers).not.toHaveBeenCalledWith("journals:manage");
     expect(mockSend).toHaveBeenCalledWith(
       [{ id: "u1", fcmToken: null }],
       expect.objectContaining({ type: "GIRO_JATUH_TEMPO" }),
     );
+  });
+
+  /*
+   * The permission split (owner, 2026-10-29 and 2026-11-01) moved these decisions to their own
+   * codes. Routing them by the old code tells people who can no longer act and leaves out the ones
+   * who now can. Each pair is the category and the code its office action checks.
+   */
+  it.each([
+    ["GIRO_JATUH_TEMPO", "payments:verify"],
+    ["KLAIM_DIBATALKAN_SALES", "payments:verify"],
+    ["KOREKSI_DIMINTA_BKM", "payments:verify"],
+    ["COLLECTION_PENDING_VERIFICATION", "payments:verify"],
+    ["STOCK_LOSS_OPEN", "receivables:decide_bearer"],
+    ["STORE_TRANSFER_PROPOSED", "store_transfers:approve"],
+    ["STORE_TRANSFER_DISCREPANCY", "store_transfers:decide_shortfall"],
+    ["CREDIT_LIMIT_HOLD", "field_sales_orders:credit_override"],
+    // Unchanged on purpose: retur-toko actions still check receivables:manage, and receiving a
+    // transfer on the store's behalf is still stores:manage.
+    ["RETUR_DIBATALKAN_SALES", "receivables:manage"],
+    ["KOREKSI_DIMINTA_RETUR", "receivables:manage"],
+    ["STORE_TRANSFER_TO_RECEIVE", "stores:manage"],
+    ["STORE_TRANSFER_STALE", "stores:manage"],
+  ])("routes %s to %s, the code its office action checks", async (category, permission) => {
+    mockGetUsers.mockClear();
+    await fanOutAdminNotification({ ...BASE, category });
+    expect(mockGetUsers).toHaveBeenCalledTimes(1);
+    expect(mockGetUsers).toHaveBeenCalledWith(permission);
   });
 
   it("sends the category as the type and carries the source id in data", async () => {

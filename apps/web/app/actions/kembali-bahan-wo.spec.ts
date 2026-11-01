@@ -9,6 +9,10 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  * kain 60 m dan kancing 200 pcs. Sesudah itu harga gudang kain berubah (140 m
  * @ 35.000), supaya terlihat bahwa yang kembali dinilai pada HARGA KELUARNYA
  * (30.000), bukan harga gudang hari ini.
+ *
+ * Keputusan pemilik 2026-11-01: bila kartu stok tidak menyimpan nilai
+ * pengeluarannya, harga keluar diambil dari DOKUMEN pengeluaran bahan; tanpa
+ * harga di keduanya pengembalian ditolak, tidak diam-diam Rp 0.
  */
 
 const sesi = vi.hoisted(() => ({ id: "", izin: ["*"] as string[] }));
@@ -151,6 +155,7 @@ d("kembalikan bahan WO (test bed only)", () => {
   const barangUji = () => seededIds([kainId, kancingId, fgId]);
 
   async function bersihkanGerakan() {
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: barangUji() } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: barangUji() } } });
     await prisma.stockMovement.deleteMany({ where: { itemId: { in: barangUji() } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: barangUji() } } });
@@ -320,6 +325,192 @@ d("kembalikan bahan WO (test bed only)", () => {
         code: "TANPA_AKSES",
       });
       expect(await stok(kainId)).toEqual([{ qty: 140, avg: 35_000, nilai: 4_900_000 }]);
+    });
+  });
+
+  describe("harga bila kartu stok tidak menyimpan nilai pengeluaran (keputusan pemilik 2026-11-01)", () => {
+    /**
+     * Contoh pemilik: SPK kemeja 20 pcs, kain 10 m keluar saat gudang @ 30.000 (dokumen
+     * menulis 10 × 30.000 = Rp 300.000). Sesudahnya gudang 50 m @ 35.000 = Rp 1.750.000.
+     */
+    async function woKain10() {
+      urut += 1;
+      const docNumber = `WO-KB-${token}-${urut}`;
+      const wo = await prisma.workOrder.create({
+        data: {
+          docNumber,
+          vendorId,
+          finishedGoodId: fgId,
+          plannedQty: 20,
+          consumptionPlan: JSON.stringify([
+            { itemId: kainId, itemName: "Kain katun uji", uomCode: "MTR", qtyRequired: 0.5, wastePercent: 0, plannedQty: 10 },
+          ]),
+          createdById: userId,
+          status: "ISSUED",
+          issuedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      woIds.push(wo.id);
+      await issueMaterials({ woId: wo.id, items: [{ itemId: kainId, qty: 10, uomId: uomMtrId }], issueType: "FABRIC", isPartial: false }, userId);
+      await prisma.inventoryValue.updateMany({
+        where: { itemId: seededId(kainId) },
+        data: { qtyOnHand: 50, avgCost: 35_000, totalValue: 1_750_000 },
+      });
+      const issue = await prisma.materialIssue.findFirstOrThrow({
+        where: { woId: seededId(wo.id) },
+        select: { id: true, docNumber: true },
+      });
+      return { id: wo.id, docNumber, issueId: issue.id, issueDoc: issue.docNumber };
+    }
+
+    /** Kartu stok pengeluaran ini kehilangan nilainya (baris ada, nilai tidak tercatat). */
+    async function hapusNilaiKartuStok(issueId: string) {
+      const n = await prisma.stockLedgerEntry.updateMany({
+        where: { refType: "MaterialIssue", refId: seededId(issueId) },
+        data: { totalCost: null, unitCost: null, balanceValue: null },
+      });
+      expect(n.count).toBeGreaterThan(0);
+    }
+
+    /** Dokumen pengeluaran ini tidak lagi mencantumkan harga per baris. */
+    async function hapusHargaDokumen(issueId: string) {
+      const issue = await prisma.materialIssue.findUniqueOrThrow({ where: { id: seededId(issueId) }, select: { items: true } });
+      const mentah: unknown = typeof issue.items === "string" ? JSON.parse(issue.items) : issue.items;
+      const baris = (mentah as Array<Record<string, unknown>>).map((b) => {
+        const salin = { ...b };
+        delete salin.avgCostAtIssue;
+        return salin;
+      });
+      await prisma.materialIssue.update({ where: { id: seededId(issueId) }, data: { items: JSON.stringify(baris) } });
+    }
+
+    const penyesuaianKembali = (id: string) =>
+      prisma.stockAdjustment.findMany({
+        where: { itemId: seededId(kainId), source: "WO_MATERIAL_RETURN", externalRef: seededId(id) },
+        select: { reason: true },
+      });
+
+    it("kartu stok menyimpan nilai → jalur biasa: 2 m kembali @ 30.000 = Rp 60.000, gudang 52 m @ 34.807,69 senilai Rp 1.810.000, tanpa tanda harga dokumen", async () => {
+      const wo = await woKain10();
+      woId = wo.id;
+      const hasil = await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], kunci: kunciBaru() });
+      expect(hasil).toMatchObject({
+        ok: true,
+        ulangan: false,
+        dibatasi: false,
+        totalNilai: 60_000,
+        barangHargaDokumen: [],
+        baris: [{ itemId: kainId, qty: 2, hargaSatuan: 30_000, nilai: 60_000, hargaDariDokumen: false }],
+      });
+      expect(await stok(kainId)).toEqual([{ qty: 52, avg: 34_807.69, nilai: 1_810_000 }]);
+      expect((await penyesuaianKembali(woId)).map((a) => a.reason)).toEqual([`Kembali bahan ${wo.docNumber} @ 30000.00 dari Penjahit uji`]);
+    });
+
+    it("nilai kartu stok tidak tercatat, dokumen menulis Rp 30.000 → dinilai harga dokumen: Rp 60.000, gudang 52 m @ 34.807,69 (sama dengan jalur biasa), ditandai di hasil, riwayat, jejak, dan kiriman ulang", async () => {
+      const wo = await woKain10();
+      woId = wo.id;
+      await hapusNilaiKartuStok(wo.issueId);
+      const kunci = kunciBaru();
+      const hasil = await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], catatan: "sisa potong", kunci });
+      expect(hasil).toMatchObject({
+        ok: true,
+        ulangan: false,
+        dibatasi: false,
+        totalNilai: 60_000,
+        barangHargaDokumen: [kainId],
+        baris: [{ itemId: kainId, qty: 2, hargaSatuan: 30_000, nilai: 60_000, hargaDariDokumen: true }],
+      });
+      expect(await stok(kainId)).toEqual([{ qty: 52, avg: 34_807.69, nilai: 1_810_000 }]);
+      expect((await penyesuaianKembali(woId)).map((a) => a.reason)).toEqual([
+        `Kembali bahan ${wo.docNumber} @ 30000.00 (harga dokumen) dari Penjahit uji — sisa potong`,
+      ]);
+
+      const ulang = await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], catatan: "sisa potong", kunci });
+      expect(ulang).toMatchObject({ ok: true, ulangan: true, totalNilai: 60_000, barangHargaDokumen: [kainId] });
+      expect(await stok(kainId)).toEqual([{ qty: 52, avg: 34_807.69, nilai: 1_810_000 }]);
+
+      const jejak = await prisma.auditLog.findMany({
+        where: { entityType: "WorkOrder", entityId: seededId(woId), action: "WO_MATERIAL_RETURNED" },
+        select: { metadata: true },
+      });
+      expect(jejak.map((j) => j.metadata)).toEqual([
+        expect.objectContaining({ totalNilai: 60_000, barangHargaDokumen: [kainId], barangTanpaHarga: [] }),
+      ]);
+      const ringkasan = await getBahanWo(woId);
+      expect(ringkasan?.riwayat.map((r) => [r.qty, r.hargaSatuan, r.nilai, r.hargaDariDokumen, r.catatan])).toEqual([
+        [2, 30_000, 60_000, true, "sisa potong"],
+      ]);
+      expect(ringkasan?.baris.map((b) => [b.keluar, b.kembali, b.diCmt])).toEqual([[10, 2, 8]]);
+    });
+
+    it("tidak ada catatan kartu stok sama sekali (data di luar layar), dokumen menulis Rp 30.000 → tetap dinilai harga dokumen", async () => {
+      const wo = await woKain10();
+      woId = wo.id;
+      await prisma.stockLedgerEntry.deleteMany({ where: { refType: "MaterialIssue", refId: seededId(wo.issueId) } });
+      const hasil = await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], kunci: kunciBaru() });
+      expect(hasil).toMatchObject({ ok: true, totalNilai: 60_000, barangHargaDokumen: [kainId], baris: [{ hargaSatuan: 30_000, hargaDariDokumen: true }] });
+      expect(await stok(kainId)).toEqual([{ qty: 52, avg: 34_807.69, nilai: 1_810_000 }]);
+    });
+
+    it("harga dokumen + catatan sepanjang batas (120 karakter) → catatan di riwayat utuh, alasan muat di kolomnya; yang dipendekkan nama CMT", async () => {
+      const wo = await woKain10();
+      woId = wo.id;
+      await hapusNilaiKartuStok(wo.issueId);
+      const catatan =
+        "Sisa potong kain katun combed 30s warna navy dari meja 3, dihitung ulang bersama kepala produksi CMT, cocok dengan nota.";
+      expect(catatan.length).toBe(120);
+      const hasil = await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], catatan, kunci: kunciBaru() });
+      expect(hasil).toMatchObject({ ok: true, totalNilai: 60_000, barangHargaDokumen: [kainId] });
+
+      const [penyesuaian] = await penyesuaianKembali(woId);
+      expect(penyesuaian.reason.length).toBeLessThanOrEqual(190);
+      expect(penyesuaian.reason.startsWith(`Kembali bahan ${wo.docNumber} @ 30000.00 (harga dokumen)`)).toBe(true);
+      expect(penyesuaian.reason.endsWith(` — ${catatan}`)).toBe(true);
+      const ringkasan = await getBahanWo(woId);
+      expect(ringkasan?.riwayat.map((r) => [r.hargaSatuan, r.hargaDariDokumen, r.catatan])).toEqual([[30_000, true, catatan]]);
+    });
+
+    it("kartu stok tanpa nilai DAN dokumen tanpa harga → HARGA_KELUAR_TIDAK_DIKETAHUI menyebut dokumennya; stok, sisa di CMT, dan jejak tidak berubah", async () => {
+      const wo = await woKain10();
+      woId = wo.id;
+      await hapusNilaiKartuStok(wo.issueId);
+      await hapusHargaDokumen(wo.issueId);
+      expect(await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], kunci: kunciBaru() })).toEqual({
+        ok: false,
+        code: "HARGA_KELUAR_TIDAK_DIKETAHUI",
+        itemId: kainId,
+        dokumen: [wo.issueDoc],
+      });
+      expect(await stok(kainId)).toEqual([{ qty: 50, avg: 35_000, nilai: 1_750_000 }]);
+      expect(await penyesuaianKembali(woId)).toEqual([]);
+      expect(await prisma.auditLog.count({ where: { entityId: seededId(woId), action: "WO_MATERIAL_RETURNED" } })).toBe(0);
+      expect((await getBahanWo(woId))?.baris.map((b) => b.diCmt)).toEqual([10]);
+    });
+
+    it("tanpa harga di keduanya tetapi seluruh biaya bahan sudah dibebankan ke barang jadi (batas Rp 0) → tidak ditolak: kembali senilai Rp 0, dibatasi", async () => {
+      const wo = await woKain10();
+      woId = wo.id;
+      expect(await terimaBarangJadi({ woId, qtyReceived: 20, qtyRejected: 0 })).toMatchObject({ ok: true });
+      await hapusNilaiKartuStok(wo.issueId);
+      await hapusHargaDokumen(wo.issueId);
+      const hasil = await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], kunci: kunciBaru() });
+      expect(hasil).toMatchObject({
+        ok: true,
+        dibatasi: true,
+        totalNilai: 0,
+        barangHargaDokumen: [],
+        baris: [{ itemId: kainId, qty: 2, hargaSatuan: 0, nilai: 0, hargaDariDokumen: false }],
+      });
+      // 50 m @ 35.000 + 2 m @ 0 → 52 m, nilai tetap Rp 1.750.000 (rata-rata 33.653,85).
+      expect(await stok(kainId)).toEqual([{ qty: 52, avg: 33_653.85, nilai: 1_750_000 }]);
+      const jejak = await prisma.auditLog.findMany({
+        where: { entityType: "WorkOrder", entityId: seededId(woId), action: "WO_MATERIAL_RETURNED" },
+        select: { metadata: true },
+      });
+      expect(jejak.map((j) => j.metadata)).toEqual([
+        expect.objectContaining({ dibatasi: true, batasNilai: 0, totalNilai: 0, barangTanpaHarga: [kainId] }),
+      ]);
     });
   });
 

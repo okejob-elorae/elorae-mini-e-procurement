@@ -205,10 +205,14 @@ function VarianceBadge({ counted, variance }: { counted: number | null; variance
 export function StocktakeDetailClient({
   stocktake,
   canManage,
+  canApproveStocktake,
   sellThroughEligibility,
 }: {
   stocktake: StoreStocktakeDetail;
+  /* `stores:manage`: edit counts, cancel a DRAFT, create the sell-through report. */
   canManage: boolean;
+  /* `store_stocktakes:approve`: approve, and cancel a count already submitted for approval. */
+  canApproveStocktake: boolean;
   sellThroughEligibility: SellThroughEligibility | null;
 }) {
   const t = useTranslations("storeStocktakes");
@@ -272,8 +276,9 @@ export function StocktakeDetailClient({
   const autoOpenMonthKey = stocktake.note ? autoOpenNoteMonthKey(stocktake.note) : null;
   const noteText = autoOpenMonthKey ? tDetail("autoOpenedNote", { month: formatCountMonth(autoOpenMonthKey, locale) }) : stocktake.note;
   const canEdit = canManage && isOpenStatus;
-  const canApprove = canManage && isOpenStatus;
-  const canCancel = canManage && isOpenStatus;
+  const canApprove = canApproveStocktake && isOpenStatus;
+  /* Mirrors `cancelAction`: a submitted count is the approver's to reject, a DRAFT is the manager's to abandon. */
+  const canCancel = isOpenStatus && (stocktake.status === "PENDING_VERIFICATION" ? canApproveStocktake : canManage);
 
   const rows: EditableRow[] = [
     ...stocktake.lines.map(toEditableRow),

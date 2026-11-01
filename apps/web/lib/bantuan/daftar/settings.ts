@@ -2,6 +2,7 @@ import type { EntriBantuan } from "../jenis";
 import { KELIPATAN_STOK_PORTAL } from "@/lib/field-sales/portal-toko-aturan";
 import { MAKS_PERIKSA_PORTAL_PER_MENIT } from "@/lib/field-sales/portal-toko-batas";
 import { DEFAULT_PAYMENT_REMINDER_DAYS } from "@/lib/purchase-orders/payment-reminder-thresholds";
+import { DEFAULT_OVERDUE_THRESHOLDS } from "@/lib/finance/ar/overdue-thresholds";
 
 export const ENTRI: EntriBantuan[] = [
   {
@@ -149,7 +150,8 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "settings.users.title" },
     isi: [
       { kunci: "settings.users.subtitle" },
-      "Pengguna dengan peran SPG wajib diberi satu toko tetap; untuk peran lain toko tetapnya dikosongkan. Anda tidak bisa mengganti peran akun Anda sendiri, dan hanya admin sistem yang boleh memberi atau mengubah peran berakses penuh.",
+      "Pengguna dengan peran SPG wajib diberi satu toko tetap; untuk peran lain toko tetapnya dikosongkan. Anda tidak bisa mengganti peran akun Anda sendiri, dan hanya admin sistem yang boleh memberi atau mengubah peran berakses penuh. Akun yang diberi peran admin di sini langsung memegang semua izin dan bisa membuka semua halaman admin.",
+      "Halaman ini menggantikan Akun Profil, yang ditutup pada 1 November 2026; alamat lamanya mengarah ke sini, dan alamat ubah peran lamanya ke Pengaturan → Peran & izin.",
       "Peran menentukan menu dan tombol yang bisa dipakai seseorang. Bila belum ada peran yang pas, buat peran sendiri lewat tombol Kelola peran di kepala halaman (Pengaturan → Peran & izin), lalu pilih peran itu di sini.",
       "Setiap penambahan dan perubahan tercatat di jejak audit, tanpa sandinya. Halaman ini butuh izin mengelola keamanan.",
     ],
@@ -164,47 +166,10 @@ export const ENTRI: EntriBantuan[] = [
       "Membuat peran sendiri: tekan Buat peran, beri nama (mis. ADMIN_GUDANG) dan keterangan, lalu centang izinnya. Bila peran baru mirip peran yang sudah ada, pakai Mulai dari peran yang ada untuk menyalin izinnya sebagai titik awal, lalu tambah atau kurangi. Kotak cari menyaring izin menurut nama, keterangan, atau nama menu.",
       "Izin dikelompokkan menurut bidang kerja: Beranda & laporan, Penjualan marketplace, Pesanan lapangan & toko, Tim lapangan (HP), SPG, Piutang & pelunasan, Konsinyasi, Keuangan & pajak, Pembelian & pemasok, Gudang & stok, Produksi, Kreatif, Data master, Pengaturan & keamanan, dan Sistem. Setiap izin punya satu kalimat keterangan dan baris Membuka yang menyebut menu yang muncul karenanya. Izin Lihat membuka halamannya; izin seperti Buat, Ubah, atau Setujui hanya menambah tombol di halaman itu, jadi editor mengingatkan Perlu juga bila izin Lihat-nya belum dicentang.",
       "Izin Masuk aplikasi HP membuka aplikasi salesman dan SPG; peran SPG juga butuh Jual di konter toko, dan penggunanya wajib diberi satu toko tetap.",
+      "Sebagian izin adalah persetujuan atau keputusan manager: menyetujui hitungan stok toko, menyetujui transfer antar toko dan memutuskan selisihnya, memutuskan siapa menanggung selisih retur dan barang hilang, mengunci angka konsinyasi, dan menandai gaji serta komisi SPG dibayar. Bawaannya hanya admin yang memegangnya; Anda boleh memberikannya ke peran lain di sini. Periksa pembayaran (mencocokkan BKM, giro, setoran penagih, dan pelunasan toko dengan mutasi rekening) dipegang admin dan peran Keuangan — siapa pun tidak bisa memeriksa pembayaran yang ia laporkan, catat, atau setorkan sendiri.",
+      "Tiga peran kantor bawaan: Keuangan (periksa pembayaran, jurnal, dan laporan keuangan), Admin Penjualan (nomor nota konsinyasi), dan Admin Pajak (nomor faktur pajak). Ketiganya bukan admin dan tidak memegang izin persetujuan; tambah atau kurangi izinnya sesuai kebutuhan.",
       "Peran ADMIN bertanda Sistem memegang semua izin, termasuk izin yang ditambahkan kemudian, dan tidak bisa diubah atau dihapus. Peran yang masih dipakai pengguna tidak bisa dihapus; pindahkan penggunanya ke peran lain dulu. Membuat dan mengubah peran butuh izin Buat & ubah peran.",
       "Perubahan izin berlaku untuk pengguna peran itu saat sesinya disegarkan — otomatis dalam sekitar satu menit, ketika ia membuka halaman berikutnya; tidak perlu keluar lalu masuk lagi. Setiap pembuatan, perubahan izin, dan penghapusan peran tercatat di jejak audit beserta daftar izin sebelum dan sesudahnya.",
-    ],
-  },
-  {
-    rute: "/backoffice/profile-accounts",
-    bagian: "settings",
-    judul: { kunci: "profileAccounts.title" },
-    isi: [
-      { kunci: "profileAccounts.subtitle" },
-      "Tab Akun mendaftar setiap login beserta perannya. Menu di setiap baris membuka Edit, Reset kata sandi (Anda mengetik kata sandi sementara, minimal 6 karakter, yang sebaiknya diganti pengguna setelah masuk), dan Reset PIN (PIN dihapus; pengguna mengatur PIN baru di Pengaturan → Keamanan).",
-      "Tab Peran mendaftar peran beserta jumlah pengguna dan izinnya. Buat peran meminta nama, keterangan, dan izin; Edit membuka daftar izin peran itu. Peran bertanda Sistem tidak bisa diubah atau dihapus, dan peran yang masih dipakai pengguna tidak bisa dihapus.",
-      "Halaman ini hanya untuk admin. Pengaturan → Pengguna dan Pengaturan → Peran & izin mengelola akun dan peran yang sama.",
-    ],
-  },
-  {
-    rute: "/backoffice/profile-accounts/new",
-    bagian: "settings",
-    judul: { kunci: "profileAccounts.createAccountTitle" },
-    isi: [
-      { kunci: "profileAccounts.createAccountSubtitle" },
-      "Isi nama, email, kata sandi (minimal 6 karakter), dan peran. Email tidak boleh sudah dipakai akun lain. Pilihan Toko penempatan muncul bila perannya SPG.",
-      { kunci: "profileAccounts.formStoreHint" },
-    ],
-  },
-  {
-    rute: "/backoffice/profile-accounts/[id]/edit",
-    bagian: "settings",
-    judul: { kunci: "profileAccounts.editAccountTitle" },
-    isi: [
-      { kunci: "profileAccounts.editAccountSubtitle" },
-      "Email tidak bisa diubah, dan kata sandi serta PIN direset dari daftar Akun Profil, bukan dari sini. Toko penempatan hanya untuk akun SPG. Akun admin terakhir tidak bisa diturunkan ke peran lain.",
-    ],
-  },
-  {
-    rute: "/backoffice/profile-accounts/roles/[id]",
-    bagian: "settings",
-    judul: "Ubah izin peran",
-    isi: [
-      { kunci: "profileAccounts.editRoleSubtitle" },
-      "Centang izin yang dimiliki peran ini lalu tekan Simpan izin; Pilih semua dan Batalkan semua mengubah semuanya sekaligus. Peran sistem hanya bisa dilihat.",
     ],
   },
   {
@@ -224,6 +189,17 @@ export const ENTRI: EntriBantuan[] = [
       "Jenis dengan cara Dari retur wajib ditautkan ke nota retur, sehingga nilainya ditahan sampai gudang selesai menghitung. Halaman ini butuh izin mengelola piutang.",
       "Akun jurnal menentukan peran akun yang didebit saat BKM dengan potongan ini diverifikasi keuangan: potongan penjualan, PPh 23 atau PPh 22 dibayar dimuka (pajak yang dipotong toko), biaya bank, atau kerugian. Otomatis berarti potongan penjualan, atau PPh 23 dibayar dimuka untuk jenis yang khusus toko PKP. Potongan Dari retur tidak memakai pilihan ini: piutangnya sudah dikurangi jurnal retur saat gudang menghitung barangnya.",
       "Kolom Akun jurnal di daftar menunjukkan akun yang berlaku untuk setiap jenis, termasuk yang otomatis, supaya terlihat potongan mana yang mengurangi penjualan. Jenis baru bernama materai/meterai langsung diisi biaya bank & administrasi (bea meterai adalah biaya, bukan potongan harga); bisa diganti sebelum disimpan. Jenis yang sudah ada tidak diubah otomatis — atur akunnya di sini.",
+    ],
+  },
+  {
+    rute: "/backoffice/settings/piutang",
+    bagian: "settings",
+    judul: { kunci: "settings.overdueThresholds.heading" },
+    isi: [
+      `Setiap hari pukul 08.00 WIB sistem memeriksa nota yang belum lunas. Saat nota melewati salah satu ambang hari ini (bawaan ${DEFAULT_OVERDUE_THRESHOLDS.join(", ")}; 0 = hari jatuh tempo itu sendiri), kantor dan HP penagihnya dikabari — sekali per ambang, hanya ambang tertinggi yang baru dilewati.`,
+      "Penagih = sales pemegang toko sekarang; selama toko belum punya pemegang, penjual notanya. Toko tanpa pemegang dan nota tanpa penjual hanya dikabarkan ke kantor. Berlaku sama untuk nota pengiriman, nota impor Excel, faktur manual, dan tagihan konsinyasi (di HP tanpa nilai uang).",
+      "Sisa dihitung ulang dengan aturan piutang. Nota dilewati kalau laporan pembayarannya (BKM) masih menunggu cek, ada di kontrabon yang berjalan, potongan returnya masih ditahan, atau ternyata sudah lunas. Begitu laporannya ditolak, kontrabonnya batal, atau returnya beres, pengingat berjalan lagi.",
+      "Dibuka dari kartu Piutang di Pengaturan. Mengubah ambang butuh izin mengelola penagihan.",
     ],
   },
   {
@@ -305,7 +281,7 @@ export const ENTRI: EntriBantuan[] = [
         isi: [
           { kunci: "spgMutasi.pengaturan.penjelasan" },
           { kunci: "spgMutasi.pengaturan.arahCatatan" },
-          "Kartu ini diubah oleh penyetuju pesanan lapangan.",
+          "Kartu ini diubah oleh pemegang izin menyetujui transfer antar toko — izin yang sama dengan menyetujui mutasinya, karena aturan inilah yang menentukan arah mana butuh persetujuan.",
         ],
       },
       {

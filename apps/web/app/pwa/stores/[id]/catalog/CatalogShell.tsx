@@ -20,7 +20,7 @@ import { PERISTIWA_ANTREAN } from "@/lib/pwa/offline/hitung";
 import { ikatanKunjungan } from "@/lib/pwa/offline/luring-kunjungan";
 import { useKunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan-hook";
 import { denganBatasWaktu, galatJaringan } from "@/lib/field-sales/jaringan-lemah";
-import { nilaiKredit, type AlasanKredit, type AturanKredit, type KeadaanTagihan } from "@/lib/salesman/kredit";
+import { nilaiKredit, type AlasanKredit, type AturanKredit, type BatasToko, type KeadaanTagihan } from "@/lib/salesman/kredit";
 import { submitFieldSalesOrder, previewFieldSalesPromos, type PromoPreviewResult, type SubmitResult } from "./actions";
 import { VariantSheet } from "./VariantSheet";
 import { AppealPriceSheet } from "./AppealPriceSheet";
@@ -70,7 +70,8 @@ type Payload = { items: CatalogItem[] };
 /** Bahan penilaian kredit toko PUTUS, dibaca server saat halaman dibuka. */
 export type KreditKatalog = {
   aturan: AturanKredit;
-  batas: { creditLimit: number | null; maxOpenInvoices: number | null };
+  /** Batas milik toko apa adanya (termasuk "Tanpa batas kredit"); `nilaiKredit` memutuskan artinya, sama dengan server. */
+  batas: BatasToko;
   /** null = tagihan toko gagal dibaca di server. */
   keadaan: KeadaanTagihan | null;
 };

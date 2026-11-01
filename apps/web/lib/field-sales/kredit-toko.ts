@@ -1,6 +1,6 @@
 import { prisma } from "@elorae/db";
 import type { BarisPiutang } from "@/lib/receivables/queries";
-import type { AturanKredit, KeadaanTagihan } from "@/lib/salesman/kredit";
+import type { AturanKredit, BatasToko, KeadaanTagihan } from "@/lib/salesman/kredit";
 import { bacaAturanKreditDb, keadaanTagihanToko } from "@/lib/salesman/tagihan-toko";
 
 /**
@@ -11,7 +11,8 @@ import { bacaAturanKreditDb, keadaanTagihanToko } from "@/lib/salesman/tagihan-t
  */
 export type KreditToko = {
   aturan: AturanKredit;
-  batas: { creditLimit: number | null; maxOpenInvoices: number | null };
+  /** Batas milik toko apa adanya — arti kolom kosong diputuskan `batasKreditBerlaku`, bukan pemanggil. */
+  batas: BatasToko;
   /** null = tagihan GAGAL dibaca. Bukan sama dengan "tidak punya tagihan". */
   keadaan: KeadaanTagihan | null;
   /** Faktur yang belum lunas; kosong kalau gagal dibaca. */
@@ -22,13 +23,15 @@ export type KreditToko = {
 export async function muatKreditToko(storeId: string): Promise<KreditToko | null> {
   const toko = await prisma.store.findUnique({
     where: { id: storeId },
-    select: { termsType: true, creditLimit: true, maxOpenInvoices: true },
+    select: { termsType: true, creditLimit: true, maxOpenInvoices: true, noCreditLimit: true },
   });
   if (!toko || toko.termsType === "KONSI") return null;
   const aturan = await bacaAturanKreditDb();
-  const batas = {
+  const batas: BatasToko = {
     creditLimit: toko.creditLimit === null ? null : Number(toko.creditLimit),
     maxOpenInvoices: toko.maxOpenInvoices,
+    noCreditLimit: toko.noCreditLimit,
+    termsType: "PUTUS",
   };
   try {
     const { keadaan, baris } = await keadaanTagihanToko(storeId, aturan.hariToleransi);

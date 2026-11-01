@@ -67,12 +67,16 @@ export function BebanClient({
   baris,
   kandidat,
   bolehMengelola,
+  bolehPutuskanBeban = false,
   faktur = {},
   tagihanToko = {},
 }: {
   baris: BarisBeban[];
   kandidat: { id: string; name: string }[];
+  /** Tandai lunas — `receivables:manage`. */
   bolehMengelola: boolean;
+  /** Alihkan beban — `receivables:decide_bearer`. */
+  bolehPutuskanBeban?: boolean;
   /** Faktur beban toko per id beban. */
   faktur?: Record<string, FakturBebanRingkas>;
   /** Yang ditagihkan ke toko saat beban TOKO terakhir ditetapkan (`tagihanBebanTokoTercatat`). */
@@ -242,23 +246,25 @@ export function BebanClient({
                             </Link>
                           </Button>
                         )}
-                        {b.status === 'DITETAPKAN' && bolehMengelola && (
+                        {b.status === 'DITETAPKAN' && (bolehMengelola || bolehPutuskanBeban) && (
                           <span className="inline-flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={pending}
-                              onClick={() => {
-                                setAlih(b);
-                                setPenanggung(b.penanggung ?? 'SALES');
-                                setOrangId('');
-                                setAlasan('');
-                              }}
-                            >
-                              {t('reassign')}
-                            </Button>
+                            {bolehPutuskanBeban && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={pending}
+                                onClick={() => {
+                                  setAlih(b);
+                                  setPenanggung(b.penanggung ?? 'SALES');
+                                  setOrangId('');
+                                  setAlasan('');
+                                }}
+                              >
+                                {t('reassign')}
+                              </Button>
+                            )}
                             {/* Beban toko lunas lewat BKM atas fakturnya, bukan ditandai di sini. */}
-                            {!faktur[b.id] && (
+                            {bolehMengelola && !faktur[b.id] && (
                               <Button
                                 size="sm"
                                 variant="outline"

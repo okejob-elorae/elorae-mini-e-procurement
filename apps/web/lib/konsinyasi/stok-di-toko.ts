@@ -2,6 +2,7 @@ import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
 import { parseItemVariants, variantDetailForSku } from "@/lib/items/variants";
 import { kirimanMenunggu } from "@/lib/spg/kiriman";
+import { bacaPesananKonsiLama } from "@/lib/spg/antaran-queries";
 import { jumlahLakuBersihSejak } from "@/lib/spg/laku-bersih";
 import {
   kunciStok,
@@ -26,6 +27,12 @@ import {
  *   mulai mencatat). Mutasi antar toko yang diterima kantor atas nama toko
  *   tanpa buku ikut sebagai "dikirim" (jumlah DITERIMA dari tanda terimanya) —
  *   penerimaan kantor sengaja tidak membukakan buku untuk toko itu.
+ *   "Dikirim" untuk pesanan konsinyasi = baris `KonsiTransfer`, bertanggal
+ *   transfernya: barang masuk toko tanpa SPG saat bukti terima pengirimannya
+ *   (transfer dibuat saat pengiriman selesai), sebesar yang diserahkan — bukan
+ *   jumlah yang disetujui. Pesanan lama yang disetujui sebelum transfer dicatat
+ *   (`bacaPesananKonsiLama`, tanpa transfer sama sekali) tetap dihitung dari
+ *   baris pesanannya, bertanggal disetujui.
  *
  * Kenapa tidak dijumlah atau dicampur: keduanya menghitung barang yang SAMA.
  * Kiriman yang diterima SPG sudah masuk buku sebagai TERIMA, dan penjualannya
@@ -144,7 +151,7 @@ export function gabungBukuToko(input: {
 /**
  * Stok titipan per barang × ukuran: dikirim − terjual − diretur − keluar lain.
  *
- * `masuk` per ukuran (pesanan konsinyasi disetujui, kiriman modul konsinyasi);
+ * `masuk` per ukuran (antaran konsinyasi / transfer, kiriman modul konsinyasi);
  * `terjual` dan `retur` per barang (laporan resmi & NRI hanya sampai barang).
  * `keluarUkuran` per ukuran: barang yang meninggalkan toko tanpa terjual dan
  * tanpa nota retur — rusak kiriman yang DIHAPUSKAN gudang, dan barang hilang
@@ -327,14 +334,27 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
   }
 
   if (idTitipan.length > 0) {
-    const [pesanan, kiriman, terjual, retur, mutasi, rusakDihapus, hilang] = await Promise.all([
-      // Pesanan konsinyasi yang disetujui = barang berpindah ke toko (transfer
-      // dicatat saat disetujui, konsinyasi tidak punya pengiriman terpisah). Di
+    const [transfer, pesananLama, kiriman, terjual, retur, mutasi, rusakDihapus, hilang] = await Promise.all([
+      // Barang konsinyasi berpindah ke toko = baris `KonsiTransfer`, satu transfer
+      // per pengiriman yang selesai (bukti terima), sebesar yang diserahkan. Di
       // titik yang sama stok gudang utama dipotong (KONSI_TRANSFER) — toko ini
-      // gudang lain, jadi setiap potong ada di SATU tempat saja.
-      prisma.fieldSalesOrderLine.findMany({
-        where: { order: { storeId: { in: idTitipan }, orderType: "KONSI", status: "APPROVED" } },
-        select: { itemId: true, variantSku: true, qty: true, cancelledQty: true, order: { select: { storeId: true, approvedAt: true, createdAt: true } } },
+      // gudang lain, jadi setiap potong ada di SATU tempat saja. Transfer lama
+      // tanpa pengiriman (stok keluar saat disetujui) ikut di sini juga.
+      prisma.konsiTransferLine.findMany({
+        where: { transfer: { storeId: { in: idTitipan } } },
+        select: { itemId: true, variantSku: true, qty: true, transfer: { select: { storeId: true, createdAt: true } } },
+      }),
+      // Pesanan konsi yang disetujui — hanya calon pesanan LAMA tanpa transfer
+      // sama sekali (disaring di bawah). Pesanan aturan baru masuk lewat transfernya.
+      prisma.fieldSalesOrder.findMany({
+        where: { storeId: { in: idTitipan }, orderType: "KONSI", status: "APPROVED", konsiTransfers: { none: {} } },
+        select: {
+          id: true,
+          storeId: true,
+          approvedAt: true,
+          createdAt: true,
+          lines: { select: { itemId: true, variantSku: true, qty: true, cancelledQty: true } },
+        },
       }),
       // Kiriman modul konsinyasi. Baris yang diketik nama saja (tanpa itemId)
       // tidak bisa dicocokkan ke barang mana pun — dilewati, sama dengan buku toko
@@ -379,19 +399,30 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
         select: { itemId: true, variantSku: true, qty: true, loss: { select: { storeId: true } } },
       }),
     ]);
+    const lamaTanpaTransfer = (await bacaPesananKonsiLama(prisma, pesananLama.map((o) => o.id))).tanpaTransfer;
     for (const id of idTitipan) {
       mentah.set(id, {
         source: "TITIPAN",
         baris: hitungTitipan({
           masuk: [
-            ...pesanan
-              .filter((l) => l.order.storeId === id)
+            ...transfer
+              .filter((l) => l.transfer.storeId === id)
               .map((l) => ({
                 itemId: l.itemId,
                 variantSku: l.variantSku ?? "",
-                qty: l.qty - l.cancelledQty,
-                tanggal: l.order.approvedAt ?? l.order.createdAt,
+                qty: Number(l.qty),
+                tanggal: l.transfer.createdAt,
               })),
+            ...pesananLama
+              .filter((o) => o.storeId === id && lamaTanpaTransfer.has(o.id))
+              .flatMap((o) =>
+                o.lines.map((l) => ({
+                  itemId: l.itemId,
+                  variantSku: l.variantSku ?? "",
+                  qty: l.qty - l.cancelledQty,
+                  tanggal: o.approvedAt ?? o.createdAt,
+                })),
+              ),
             ...kiriman
               .filter((l) => l.shipment.storeId === id && l.itemId)
               .map((l) => ({ itemId: l.itemId as string, variantSku: l.variantSku ?? "", qty: l.qty, tanggal: l.shipment.shippedAt })),
@@ -496,10 +527,15 @@ async function muatTersediaGudang(itemIds: string[]): Promise<Map<string, number
  * barang yang sama dua kali.
  *
  * - Pesanan yang MENUNGGU persetujuan (semua jenis).
- * - Pesanan PUTUS yang disetujui tapi belum terkirim semua (sisa terbuka).
- * - Toko berbuku saja: kiriman yang sudah jalan tapi belum diterima SPG
- *   (termasuk pesanan konsinyasi yang disetujui). Untuk toko TITIPAN, pesanan
- *   konsinyasi yang disetujui SUDAH dihitung sebagai stok di toko.
+ * - Pesanan yang disetujui — putus MAUPUN konsinyasi — dengan sisa yang belum
+ *   diserahkan ke toko (dipesan − terkirim − dibatalkan): masih di gudang,
+ *   sedang dikemas, atau sedang di jalan. Persetujuan konsi hanya mencadangkan.
+ *   Pesanan konsi LAMA (stok keluar saat disetujui) tidak ikut: migrasi
+ *   `20260923000000_konsi_transfer_at_shipment_completion` menandainya
+ *   terkirim penuh (DELIVERED), dan barangnya sudah terhitung di toko.
+ * - Toko berbuku saja: kiriman yang sudah diserahkan tapi belum diterima SPG
+ *   (antaran konsinyasi, pengiriman putus, …). Untuk toko TITIPAN, antaran yang
+ *   sudah diserahkan SUDAH dihitung sebagai stok di toko.
  */
 async function muatDalamProses(
   storeIds: string[],
@@ -519,7 +555,7 @@ async function muatDalamProses(
     where: {
       order: {
         storeId: { in: storeIds },
-        OR: [{ status: "PENDING_APPROVAL" }, { status: "APPROVED", orderType: "PUTUS" }],
+        OR: [{ status: "PENDING_APPROVAL" }, { status: "APPROVED", deliveryStatus: { in: ["PENDING", "PARTIAL"] } }],
       },
     },
     select: { itemId: true, variantSku: true, qty: true, deliveredQty: true, cancelledQty: true, order: { select: { storeId: true, status: true } } },

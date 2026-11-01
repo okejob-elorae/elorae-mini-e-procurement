@@ -5,8 +5,10 @@ import { rataRataKirim } from "./aturan";
  * Biaya per potong barang di toko konsinyasi — KHUSUS SERVER.
  *
  * Barang keluar dari gudang utama ke toko konsinyasi lewat penyesuaian stok
- * `KONSI_TRANSFER` (kiriman titipan dan pesanan konsinyasi yang disetujui),
- * masing-masing sebesar qty × harga rata-rata saat itu (`prevAvgCost`). Itulah
+ * `KONSI_TRANSFER` (kiriman titipan, pengiriman pesanan konsinyasi yang
+ * selesai — `issueKonsiTransfer`, satu per baris transfer — dan pesanan lama
+ * yang stoknya pindah saat disetujui), masing-masing sebesar qty × harga
+ * rata-rata saat itu (`prevAvgCost`). Itulah
  * yang didebit ke `INVENTORY_CONSIGNMENT`, jadi barang yang keluar dari toko
  * (laku, kembali, hilang) dikredit pada rata-rata tertimbang kiriman barang
  * itu SAMPAI saat kejadiannya — deterministik: kiriman sesudahnya tidak

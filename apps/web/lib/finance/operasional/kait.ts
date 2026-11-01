@@ -10,8 +10,10 @@ import { idKomisiSpg, SUMBER_OPERASIONAL, type SumberOperasional } from "./atura
  * klien, dan kegagalan memuat pun tertangkap di sini.
  *
  * Yang menyentuh apa:
- * - kiriman titipan / pesanan konsinyasi disetujui → jurnal pindah ke toko;
+ * - kiriman titipan, pengiriman pesanan konsinyasi selesai → jurnal pindah ke
+ *   toko (persetujuan pesanan konsinyasi hanya mencadangkan — tidak berjurnal);
  * - hitungan gudang dari toko konsinyasi → lewat `kaitReturBerubah` (lapangan);
+ * - retur lapangan (`FieldReturn`) toko konsinyasi disetujui → jurnal kembali ke gudang;
  * - kunci/buka kunci siklus → jurnal siklus + gaji SPG siklus itu;
  * - gaji SPG dibayar, pembayaran toko dicatat/dibatalkan → jurnal masing-masing;
  * - komisi SPG toko putus ditetapkan/dibayar;
@@ -55,9 +57,27 @@ export function kaitKirimTitipan(shipmentId: string, userId: string): Promise<vo
   return satu("kirim titipan", SUMBER_OPERASIONAL.KIRIM_KONSI, shipmentId, userId);
 }
 
-/** Pesanan lapangan disetujui — hanya konsinyasi yang dijurnal (penulisnya menyaring). */
-export function kaitPesananKonsiDisetujui(orderId: string, userId: string): Promise<void> {
-  return satu("pesanan konsinyasi", SUMBER_OPERASIONAL.PESANAN_KONSI, orderId, userId);
+/**
+ * Pengiriman pesanan konsinyasi SELESAI (`completeShipmentAction`,
+ * `completePodAction`): jurnal pindah barang untuk setiap `KonsiTransfer`
+ * pengiriman itu (satu per pengiriman). Idempoten — dipanggil di SETIAP cabang
+ * yang menyelesaikan pengiriman KONSI, termasuk ulangan (replay) yang tidak
+ * memindahkan stok lagi: ulangan itu yang menyelamatkan jurnal bila kait
+ * pertama mati sebelum sempat memposting. Pengiriman tanpa transfer (putus,
+ * atau konsi tanpa barang terkirim) tidak menjurnal apa pun.
+ */
+export function kaitPindahKonsiPengiriman(shipmentId: string, userId: string): Promise<void> {
+  if (!shipmentId) return Promise.resolve();
+  return aman("pindah konsinyasi", async () => {
+    const { prisma } = await import("@elorae/db");
+    const transfer = await prisma.konsiTransfer.findMany({ where: { shipmentId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], select: { id: true } });
+    for (const t of transfer) await posting(SUMBER_OPERASIONAL.PINDAH_KONSI, t.id, userId);
+  });
+}
+
+/** Retur lapangan disetujui — hanya toko konsinyasi yang dijurnal (penulisnya menyaring). */
+export function kaitReturLapanganKonsi(returnId: string, userId: string): Promise<void> {
+  return satu("retur lapangan konsinyasi", SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI, returnId, userId);
 }
 
 /** Hitungan gudang (NRI) berubah — pasangan konsinyasi dari jurnal retur toko putus. */

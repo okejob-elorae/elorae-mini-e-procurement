@@ -196,7 +196,6 @@ export function NewVendorBillClient({ userId }: { userId: string }) {
                           <TableCell>
                             <Checkbox
                               aria-label={`${i.poDocNumber} ${i.itemName}`}
-                              disabled={i.poPaid}
                               checked={d?.on ?? false}
                               onCheckedChange={(on) => setDraft(key, { on: on === true })}
                             />

@@ -26,7 +26,9 @@ import { pisahPpn, type PengaturanPpn } from "@/lib/finance/pajak/ppn";
 export const SUMBER_OPERASIONAL = {
   KIRIM_KONSI: "CONSIGNMENT_SHIPMENT",
   PESANAN_KONSI: "CONSIGNMENT_ORDER",
+  PINDAH_KONSI: "CONSIGNMENT_TRANSFER",
   RETUR_KONSI: "CONSIGNMENT_RETURN",
+  RETUR_LAPANGAN_KONSI: "CONSIGNMENT_FIELD_RETURN",
   SIKLUS_KONSI: "CONSIGNMENT_CYCLE",
   KOMISI_KONSI: "CONSIGNMENT_COMMISSION",
   BAYAR_GAJI_KONSI: "CONSIGNMENT_COMMISSION_PAYMENT",
@@ -69,7 +71,9 @@ export const SUMBER_BERGENERASI_OPERASIONAL: readonly SumberOperasional[] = [
 export const JENIS_TERTUNDA_OPERASIONAL: Readonly<Record<SumberOperasional, string>> = {
   CONSIGNMENT_SHIPMENT: "konsi_kirim",
   CONSIGNMENT_ORDER: "konsi_pesanan",
+  CONSIGNMENT_TRANSFER: "konsi_pindah",
   CONSIGNMENT_RETURN: "konsi_retur",
+  CONSIGNMENT_FIELD_RETURN: "konsi_retur_lapangan",
   CONSIGNMENT_CYCLE: "konsi_siklus",
   CONSIGNMENT_COMMISSION: "konsi_komisi",
   CONSIGNMENT_COMMISSION_PAYMENT: "konsi_gaji_bayar",
@@ -89,7 +93,9 @@ export const JENIS_TERTUNDA_OPERASIONAL: Readonly<Record<SumberOperasional, stri
 export const NAMA_SUMBER_OPERASIONAL: Readonly<Record<SumberOperasional, string>> = {
   CONSIGNMENT_SHIPMENT: "kiriman titipan konsinyasi",
   CONSIGNMENT_ORDER: "kiriman pesanan konsinyasi",
+  CONSIGNMENT_TRANSFER: "pindah barang konsinyasi",
   CONSIGNMENT_RETURN: "retur toko konsinyasi",
+  CONSIGNMENT_FIELD_RETURN: "retur lapangan toko konsinyasi",
   CONSIGNMENT_CYCLE: "siklus konsinyasi",
   CONSIGNMENT_COMMISSION: "gaji & komisi SPG konsinyasi",
   CONSIGNMENT_COMMISSION_PAYMENT: "pembayaran gaji SPG konsinyasi",
@@ -164,8 +170,9 @@ function barisPersediaan(nilai: readonly NilaiBarang[], arah: 1 | -1): BarisBert
 }
 
 /**
- * Barang dikirim ke toko konsinyasi (kiriman titipan, atau pesanan konsinyasi
- * yang disetujui): pindah gudang, bukan penjualan.
+ * Barang dikirim ke toko konsinyasi (kiriman titipan, pengiriman pesanan
+ * konsinyasi yang selesai, atau pesanan lama yang stoknya pindah saat
+ * disetujui): pindah gudang, bukan penjualan.
  *   DR INVENTORY_CONSIGNMENT / CR persediaan gudang (biaya kartu stok)
  */
 export function barisPindahKonsi(b: { storeId: string; keluar: readonly NilaiBarang[] }): BarisBertanda[] {
@@ -176,7 +183,29 @@ export function barisPindahKonsi(b: { storeId: string; keluar: readonly NilaiBar
 }
 
 /**
- * Barang kembali dari toko konsinyasi (hitungan gudang/NRI):
+ * Satu `KonsiTransfer` (barang pesanan konsinyasi pindah saat PENGIRIMAN
+ * selesai, satu dokumen per pengiriman): nilai per baris = qty × harga
+ * rata-rata gudang saat pindah (`KonsiTransferLine.unitCost`), sama dengan
+ * nilai yang keluar dari kartu stok gudang utama, dipisah per tipe barang
+ * seperti `barisPindahKonsi`. Baris ber-qty nol/negatif atau tanpa angka
+ * dilewati — penulisnya menolak keduanya, jadi baris begitu adalah data rusak
+ * yang tidak boleh membalik arah jurnal.
+ */
+export function barisPindahKonsiPengiriman(b: {
+  storeId: string;
+  baris: ReadonlyArray<{ qty: number; unitCost: number; tipeBarang: string | null | undefined }>;
+}): BarisBertanda[] {
+  const keluar: NilaiBarang[] = [];
+  for (const l of b.baris) {
+    if (!Number.isFinite(l.qty) || !Number.isFinite(l.unitCost) || l.qty <= 0 || l.unitCost < 0) continue;
+    keluar.push({ tipeBarang: l.tipeBarang, nilai: l.qty * l.unitCost });
+  }
+  return barisPindahKonsi({ storeId: b.storeId, keluar });
+}
+
+/**
+ * Barang kembali dari toko konsinyasi (hitungan gudang/NRI, atau retur
+ * lapangan yang disetujui — `FieldReturn`, tanpa nilai barang rusak):
  *   DR persediaan gudang (barang layak, nilai kartu stok)
  *   DR INVENTORY_DAMAGED (barang rusak/kedaluwarsa, nilai gudang rusak)
  *   CR INVENTORY_CONSIGNMENT (biaya saat dikirim)

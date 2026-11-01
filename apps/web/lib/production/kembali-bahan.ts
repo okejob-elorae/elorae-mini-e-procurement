@@ -30,10 +30,71 @@ export type KodeTolakKembaliBahan =
   | "BUKAN_BAHAN_WO"
   | "MELEBIHI_SISA"
   | "CATATAN_TERLALU_PANJANG"
+  | "HARGA_KELUAR_TIDAK_DIKETAHUI"
   | "GAGAL";
 
-/** Batas catatan pengembalian (kolom `reason` VARCHAR(191) di MariaDB, sudah termasuk awalan). */
+/**
+ * Batas catatan pengembalian. Catatan ikut ditulis di `StockAdjustment.reason`
+ * (`alasanKembaliBahan`); awalannya tanpa nama CMT paling banyak ±67 karakter
+ * (nomor WO s.d. 18 karakter, harga terbesar, penanda harga dokumen), jadi 120
+ * karakter catatan selalu muat utuh — yang dipendekkan nama CMT-nya.
+ */
 export const BATAS_CATATAN_KEMBALI = 120;
+
+/** Kolom `StockAdjustment.reason` (VARCHAR(191) di MariaDB). */
+export const BATAS_ALASAN_PENYESUAIAN = 190;
+
+/**
+ * Ditulis di alasan penyesuaian TEPAT sesudah harga satuan ("@ <harga> (harga dokumen)")
+ * bila harga diambil dari dokumen pengeluaran: kolom penyesuaian tidak punya tempat
+ * untuk sumber harga, dan riwayat serta kiriman ulang membacanya kembali dari sini.
+ */
+export const PENANDA_HARGA_DOKUMEN = " (harga dokumen)";
+
+/** Pemisah catatan: riwayat membaca catatan dari kemunculan PERTAMA-nya. */
+const PEMISAH_CATATAN = " — ";
+const AWALAN_DARI = " dari ";
+
+/**
+ * Alasan penyesuaian bahan kembali:
+ * "Kembali bahan <WO> @ <harga>[ (harga dokumen)] dari <CMT>[ — <catatan>]".
+ * Harga satuan adalah "@" PERTAMA (nomor WO tidak memuat "@"). Bila tidak muat di
+ * kolomnya, yang dipendekkan NAMA CMT (diakhiri "…"; tanpa ruang sama sekali
+ * "dari <CMT>" dibuang), tidak pernah catatannya: riwayat membaca catatan dari
+ * sini, sedangkan nama CMT tetap ada di WO-nya. Hanya awalan yang sendiri sudah
+ * melewati kolom yang masih memotong ujungnya.
+ */
+export function alasanKembaliBahan(m: {
+  woDocNumber: string;
+  /** Harga satuan dua desimal, mis. "30000.00". */
+  harga: string;
+  hargaDariDokumen: boolean;
+  vendor: string | null | undefined;
+  catatan: string;
+}): string {
+  const kepala = `Kembali bahan ${m.woDocNumber} @ ${m.harga}${m.hargaDariDokumen ? PENANDA_HARGA_DOKUMEN : ""}`;
+  const ekor = m.catatan ? `${PEMISAH_CATATAN}${m.catatan}` : "";
+  // Tanda pisah di nama CMT akan terbaca riwayat sebagai awal catatan.
+  const vendor = (m.vendor?.trim() || "CMT").replaceAll("—", "-");
+  const ruang = BATAS_ALASAN_PENYESUAIAN - kepala.length - ekor.length - AWALAN_DARI.length;
+  let dari = "";
+  if (vendor.length <= ruang) dari = `${AWALAN_DARI}${vendor}`;
+  else if (ruang >= 2) dari = `${AWALAN_DARI}${vendor.slice(0, ruang - 1).trimEnd()}…`;
+  return `${kepala}${dari}${ekor}`.slice(0, BATAS_ALASAN_PENYESUAIAN);
+}
+
+/** Harga satuan dan sumbernya dari alasan penyesuaian; tanpa "@ <harga>" → harga null. */
+export function hargaDariAlasan(alasan: string): { harga: Decimal | null; dariDokumen: boolean } {
+  const m = /@ (\d+(?:\.\d+)?)/.exec(alasan);
+  if (!m) return { harga: null, dariDokumen: false };
+  return { harga: new Decimal(m[1]), dariDokumen: alasan.startsWith(PENANDA_HARGA_DOKUMEN, m.index + m[0].length) };
+}
+
+/** Catatan pengembalian dari alasan penyesuaian; tanpa pemisah → null. */
+export function catatanDariAlasan(alasan: string): string | null {
+  const pisah = alasan.indexOf(PEMISAH_CATATAN);
+  return pisah >= 0 ? alasan.slice(pisah + PEMISAH_CATATAN.length) : null;
+}
 
 /** Alasan pembatalan WO disimpan di `WorkOrder.canceledReason` (VARCHAR(191) di MariaDB). */
 export const BATAS_ALASAN_BATAL_WO = 190;
@@ -43,8 +104,8 @@ function angka(v: unknown): Decimal {
   return Number.isFinite(n) ? new Decimal(n) : NOL;
 }
 
-/** Baris `MaterialIssue.items` (TEKS JSON atau array) → daftar {itemId, qty}. */
-export function barisPengeluaran(raw: unknown): Array<{ itemId: string; qty: Decimal }> {
+/** `MaterialIssue.items` (TEKS JSON atau array) → baris mentah; selain array → kosong. */
+function isiDokumenPengeluaran(raw: unknown): Array<Record<string, unknown> | null> {
   let isi: unknown = raw;
   if (typeof isi === "string") {
     try {
@@ -53,12 +114,41 @@ export function barisPengeluaran(raw: unknown): Array<{ itemId: string; qty: Dec
       return [];
     }
   }
-  if (!Array.isArray(isi)) return [];
+  return Array.isArray(isi) ? (isi as Array<Record<string, unknown> | null>) : [];
+}
+
+/** Baris `MaterialIssue.items` (TEKS JSON atau array) → daftar {itemId, qty}. */
+export function barisPengeluaran(raw: unknown): Array<{ itemId: string; qty: Decimal }> {
   const hasil: Array<{ itemId: string; qty: Decimal }> = [];
-  for (const b of isi as Array<Record<string, unknown> | null>) {
+  for (const b of isiDokumenPengeluaran(raw)) {
     const itemId = b?.itemId ?? b?.item_id;
     if (itemId == null || itemId === "") continue;
     hasil.push({ itemId: String(itemId), qty: angka(b?.qty ?? b?.quantity) });
+  }
+  return hasil;
+}
+
+/**
+ * Baris `MaterialIssue.items` beserta HARGA yang tertulis di dokumen:
+ * `avgCostAtIssue`, harga rata-rata gudang saat bahan keluar (ditulis setiap
+ * pengeluaran lewat layar, juga oleh kode lama). Harga kosong, bukan angka,
+ * atau tidak lebih dari 0 dibaca `null` = dokumen tidak mencantumkan harga —
+ * tidak pernah Rp 0: di dokumen yang dibuat di luar layar, 0 lebih mungkin
+ * isian kosong daripada bahan yang memang tidak bernilai. Kolom lain
+ * (`unitCost`, harga ketik) tidak dibaca — belum tentu harga gudang.
+ */
+export function barisHargaPengeluaran(raw: unknown): Array<{ itemId: string; qty: Decimal; harga: Decimal | null }> {
+  const hasil: Array<{ itemId: string; qty: Decimal; harga: Decimal | null }> = [];
+  for (const b of isiDokumenPengeluaran(raw)) {
+    const itemId = b?.itemId ?? b?.item_id;
+    if (itemId == null || itemId === "") continue;
+    const mentah = b?.avgCostAtIssue ?? b?.avg_cost_at_issue;
+    const n = mentah == null || mentah === "" ? NaN : typeof mentah === "string" ? Number(mentah.trim()) : Number(mentah);
+    hasil.push({
+      itemId: String(itemId),
+      qty: angka(b?.qty ?? b?.quantity),
+      harga: Number.isFinite(n) && n > 0 ? new Decimal(n) : null,
+    });
   }
   return hasil;
 }
@@ -124,8 +214,10 @@ export function periksaBarisKembali(
 }
 
 /**
- * Harga satuan saat bahan keluar ke WO ini: rata-rata tertimbang gerakan
- * `WO_ISSUE` barang itu (Σ |qty| × harga ÷ Σ |qty|). Bahan kembali dinilai pada
+ * Harga satuan saat bahan keluar ke WO ini: rata-rata tertimbang dasar harga
+ * barang itu (Σ |qty| × harga ÷ Σ |qty|) — gerakan keluar di kartu stok, atau
+ * harga di dokumen pengeluaran untuk pengeluaran yang nilainya tidak tersimpan
+ * di kartu stok (`dasarHargaKembali` di penulisnya). Bahan kembali dinilai pada
  * harga ini — bukan harga rata-rata gudang hari ini — supaya nilai yang kembali
  * sama dengan nilai yang dulu keluar.
  */

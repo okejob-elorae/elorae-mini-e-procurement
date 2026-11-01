@@ -87,6 +87,13 @@ const rp = (d: Decimal) => d.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber(
  * tagihannya (`vendorPaidBySource`; jurnal `VENDOR_PAYMENT`-nya mendebit hutang
  * usaha sebesar itu juga). Jumlah alokasi dibaca sebagai bagian BRUTO hutang
  * yang diselesaikan (sebelum PPh dipotong).
+ *
+ * Satu baris per langkah, apa pun jumlah tagihannya: hutang yang dijurnal
+ * penerimaan dan yang dijurnal tagihan dijumlahkan di baris yang sama, jadi
+ * WO yang sebagian pcs-nya lama dibayar sekali di Pembayaran pemasok. Sejak
+ * 2026-11-01 itu satu-satunya jalan bayar (Vendor Billing tidak menerima
+ * pembayaran baru); pembayaran vendor yang lama tetap terhitung dibayar, jadi
+ * yang dibayar di sini hanya sisanya.
  */
 export async function daftarHutangJasa(opsi: OpsiHutangJasa = {}, klien: Klien = prisma): Promise<HutangJasaPemasok[]> {
   const where: Prisma.WorkOrderWhereInput = {

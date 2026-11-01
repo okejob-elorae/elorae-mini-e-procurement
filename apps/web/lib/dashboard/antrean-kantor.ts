@@ -11,6 +11,7 @@ import {
   bolehMembacaPiutang,
   bolehMembacaRetur,
   bolehMengelola,
+  bolehMemutuskanBeban,
   bolehMemverifikasi,
 } from "@/lib/receivables/izin";
 import { JEJAK } from "@/lib/receivables/jejak";
@@ -73,7 +74,8 @@ export type DefinisiAntrean = {
 const izinTunggal = (kode: string): Pagar => (izin) => hasPermission(izin, kode);
 const spgView = izinTunggal(PERMISSIONS.SPG_SALES_VIEW);
 const storesManage = izinTunggal(PERMISSIONS.STORES_MANAGE);
-const fsoApprove = izinTunggal(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+const transfersApprove = izinTunggal(PERMISSIONS.STORE_TRANSFERS_APPROVE);
+const transfersDecideShortfall = izinTunggal(PERMISSIONS.STORE_TRANSFERS_DECIDE_SHORTFALL);
 const inventoryManage = izinTunggal(PERMISSIONS.INVENTORY_MANAGE);
 const receivablesManage = izinTunggal(PERMISSIONS.RECEIVABLES_MANAGE);
 const productionView = izinTunggal(PERMISSIONS.PRODUCTION_PLANNING_VIEW);
@@ -107,22 +109,26 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: bolehMelihatTukar,
     bolehBertindak: bolehMenyelesaikanTukar,
   },
-  // Mutasi antar toko: menyetujui dan memutuskan selisih = field_sales_orders:approve.
+  // Mutasi antar toko: menyetujui = store_transfers:approve, memutuskan selisih =
+  // store_transfers:decide_shortfall — keputusan manager (pemilik 2026-11-01),
+  // dulu menumpang field_sales_orders:approve (`app/actions/spg-mutasi.ts`).
   transfersPendingApproval: {
     href: "/backoffice/spg-transfers?status=DIAJUKAN",
     bolehBuka: spgView,
-    bolehBertindak: fsoApprove,
+    bolehBertindak: transfersApprove,
   },
   transferShortfallsOpen: {
     href: "/backoffice/spg-transfers?selisih=1",
     bolehBuka: spgView,
-    bolehBertindak: fsoApprove,
+    bolehBertindak: transfersDecideShortfall,
   },
-  // Barang hilang yang belum ditetapkan penanggungnya.
+  // Barang hilang yang belum ditetapkan penanggungnya. Menetapkannya =
+  // receivables:decide_bearer (`bolehMemutuskanBeban`, keputusan manager);
+  // receivables:manage tetap mencatat, tapi tidak lagi memutuskan bebannya.
   stockLossOpen: {
     href: "/backoffice/barang-hilang?status=TERBUKA",
     bolehBuka: (izin) => bolehMengelola(izin) || spgView(izin),
-    bolehBertindak: bolehMengelola,
+    bolehBertindak: bolehMemutuskanBeban,
   },
   // Usulan toko baru dari lapangan.
   storeProposalsPending: {

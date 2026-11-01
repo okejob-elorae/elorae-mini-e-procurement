@@ -95,11 +95,17 @@ const JENIS_PIUTANG = new Map([
  * konsinyasi, komisi, barang hilang, gudang rusak, stok manual, retur
  * pemasok, biaya perjalanan. Yang bergenerasi (`<id>`, `<id>#2`, …) selesai
  * hanya lewat `readAt` dari penyelarasnya, seperti jurnal lapangan.
+ * Disalin tangan dari `JENIS_TERTUNDA_OPERASIONAL` dan
+ * `SUMBER_BERGENERASI_OPERASIONAL` (`lib/finance/operasional/aturan.ts`);
+ * `jurnal-tertunda.test.ts` menyapu setiap sumber operasional, jadi kind baru
+ * yang lupa ditambahkan di sini gagal di tes — bukan tanda yang tidak pernah selesai.
  */
 const JENIS_OPERASIONAL = new Map([
   ["konsi_kirim", "CONSIGNMENT_SHIPMENT"],
   ["konsi_pesanan", "CONSIGNMENT_ORDER"],
+  ["konsi_pindah", "CONSIGNMENT_TRANSFER"],
   ["konsi_retur", "CONSIGNMENT_RETURN"],
+  ["konsi_retur_lapangan", "CONSIGNMENT_FIELD_RETURN"],
   ["konsi_siklus", "CONSIGNMENT_CYCLE"],
   ["konsi_komisi", "CONSIGNMENT_COMMISSION"],
   ["konsi_gaji_bayar", "CONSIGNMENT_COMMISSION_PAYMENT"],
@@ -124,7 +130,7 @@ const OPERASIONAL_BERGENERASI = new Set([
 ]);
 
 /** Sumber yang notifikasinya hanya selesai lewat `readAt` penyelarasnya (keberadaan jurnal generasi pertama bukan bukti). */
-function bergenerasi(sourceType: string): boolean {
+export function bergenerasi(sourceType: string): boolean {
   return LAPANGAN_BERGENERASI.has(sourceType) || OPERASIONAL_BERGENERASI.has(sourceType);
 }
 

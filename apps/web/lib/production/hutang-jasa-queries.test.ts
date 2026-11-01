@@ -37,6 +37,7 @@ d("hutang jasa produksi (basis data uji)", () => {
   let receiptBaru = "";
   const paymentIds: string[] = [];
   let billId = "";
+  const extraBillIds: string[] = [];
   const vendorPaymentIds: string[] = [];
   const accountIds: string[] = [];
 
@@ -52,6 +53,7 @@ d("hutang jasa produksi (basis data uji)", () => {
     stepSablon = "";
     receiptBaru = "";
     billId = "";
+    extraBillIds.length = 0;
     userId = (await prisma.user.create({ data: { email: `hj-${token}@uji.local`, name: "Uji hutang jasa" }, select: { id: true } })).id;
     typeId = (await prisma.supplierType.create({ data: { code: `THJ-${token}`, name: `Jenis ${token}` }, select: { id: true } })).id;
     jahitId = (
@@ -133,6 +135,11 @@ d("hutang jasa produksi (basis data uji)", () => {
       await prisma.journal.deleteMany({ where: { sourceType: { in: ["VENDOR_BILL", "VENDOR_BILL_REVERSAL"] }, sourceId: seededId(billId) } });
       await prisma.vendorBillLine.deleteMany({ where: { billId: seededId(billId) } });
       await prisma.vendorBill.deleteMany({ where: { id: seededId(billId) } });
+    }
+    if (extraBillIds.length > 0) {
+      await prisma.journal.deleteMany({ where: { sourceType: { in: ["VENDOR_BILL", "VENDOR_BILL_REVERSAL"] }, sourceId: { in: seededIds(extraBillIds) } } });
+      await prisma.vendorBillLine.deleteMany({ where: { billId: { in: seededIds(extraBillIds) } } });
+      await prisma.vendorBill.deleteMany({ where: { id: { in: seededIds(extraBillIds) } } });
     }
     if (accountIds.length > 0) await prisma.chartAccount.deleteMany({ where: { id: { in: seededIds(accountIds) } } });
     await prisma.fGReceipt.deleteMany({ where: { woId: seededId(woId) } });
@@ -301,5 +308,56 @@ d("hutang jasa produksi (basis data uji)", () => {
     await jurnal("VENDOR_BILL_REVERSAL", apId, jasaId);
     const [batal] = await daftarHutangJasa({ woIds: [woId], supplierId: jahitId });
     expect(batal.langkah[0]).toMatchObject({ qtyTerhutang: 40, hutang: 666_000, dasarPotong: 600_000, dibayar: 500_000, sisa: 166_000 });
+  });
+
+  it("dua tagihan berlaku atas langkah yang sama: hutang jahit lama dihitung sekali, di satu baris", async () => {
+    const akun = async (n: number, type: "HPP" | "LIABILITAS") => {
+      const id = (await prisma.chartAccount.create({ data: { code: `9HJ${token}${n}`, name: `Akun uji ${token}`, type, depth: 1 }, select: { id: true } })).id;
+      accountIds.push(id);
+      return id;
+    };
+    const jasaId = await akun(3, "HPP");
+    const apId = await akun(4, "LIABILITAS");
+    const tagihan = async (no: string, qty: number) => {
+      const id = (
+        await prisma.vendorBill.create({
+          data: {
+            docNumber: `VB2-HJ-${token}-${no}`,
+            supplierId: jahitId,
+            vendorInvoiceNo: `INV2-HJ-${token}-${no}`,
+            billDate: new Date("2004-05-24T03:00:00.000Z"),
+            total: qty * 15_000,
+            createdById: userId,
+            lines: { create: [{ type: "WO_STEP", woStepId: stepJahit, qty, price: 15_000, amount: qty * 15_000, refPrice: 15_000 }] },
+          },
+          select: { id: true },
+        })
+      ).id;
+      extraBillIds.push(id);
+      return id;
+    };
+    // Tagihan pertama memegang 10 pcs lama dan menjurnal jasanya sendiri; yang kedua menagih 40 pcs yang sudah dijurnal penerimaan.
+    const lama = await tagihan("A", 10);
+    await prisma.journal.create({
+      data: {
+        date: new Date("2004-05-24T03:00:00.000Z"),
+        description: `Tagihan uji ${token} A`,
+        sourceType: "VENDOR_BILL",
+        sourceId: lama,
+        postedById: userId,
+        lines: {
+          create: [
+            { chartAccountId: jasaId, debit: 150_000, credit: 0 },
+            { chartAccountId: apId, debit: 0, credit: 150_000 },
+          ],
+        },
+      },
+    });
+    await tagihan("B", 40);
+
+    const [jahit] = await daftarHutangJasa({ woIds: [woId], supplierId: jahitId });
+    expect(jahit.langkah).toHaveLength(1);
+    // 666.000 dari penerimaan + 150.000 dari tagihan pertama — tagihan kedua tidak menambah hutang.
+    expect(jahit.langkah[0]).toMatchObject({ stepId: stepJahit, qtyTerhutang: 50, hutang: 816_000, dibayar: 500_000, sisa: 316_000 });
   });
 });

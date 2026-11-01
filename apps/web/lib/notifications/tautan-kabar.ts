@@ -40,6 +40,9 @@ const tagihanToko: Pembuat = (d) => {
   return storeId ? `/pwa/piutang/${storeId}` : "/pwa/piutang";
 };
 
+/** Jenis kiriman yang punya formulir terima (`/pwa/spg/terima/<jenis>/<id>`) — salinan tangan, berkas ini tanpa impor nilai. */
+const JENIS_TERIMA = new Set(["PUTUS_DELIVERY", "KONSI_TRANSFER", "KONSI_ORDER", "KONSI_SHIPMENT", "MUTASI", "MUTASI_KEMBALI"]);
+
 const mutasi: Pembuat = (d) => {
   const transferId = id(d, "transferId");
   return transferId ? `/pwa/spg/mutasi/${transferId}` : "/pwa/spg/mutasi";
@@ -130,6 +133,13 @@ const TAUTAN: Record<JenisKabar, Pembuat> = {
   // Barang baru berangkat — belum bisa diterima sebelum tiba, jadi ke daftar kiriman (dan
   // "Pesanan untuk toko ini"), bukan ke formulir terima satu kiriman.
   KIRIMAN_BERANGKAT: () => "/pwa/spg/terima",
+  // Barang sudah diserahkan: langsung ke formulir hitung-dan-terima kiriman itu. Tanpa
+  // sumber (tidak ada yang diserahkan) atau jenis yang tidak dikenal → ke daftar kiriman.
+  KIRIMAN_DISERAHKAN: (d) => {
+    const jenis = id(d, "sourceType");
+    const sumber = id(d, "sourceId");
+    return jenis && sumber && JENIS_TERIMA.has(jenis) ? `/pwa/spg/terima/${jenis}/${sumber}` : "/pwa/spg/terima";
+  },
   // Hasil terima kiriman ke salesman: pesanannya (putus/konsi) — di sana tampil "Diterima toko";
   // titipan konsinyasi tidak punya pesanan, jadi ke halaman tokonya.
   KIRIMAN_DITERIMA_SELISIH: (d) => (id(d, "orderId") ? pesanan(d) : id(d, "storeId") ? toko(d) : "/pwa/orders"),

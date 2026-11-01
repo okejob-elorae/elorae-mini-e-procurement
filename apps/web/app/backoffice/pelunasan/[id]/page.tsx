@@ -5,7 +5,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { rincianKlaim } from "@/lib/receivables/claim-queries";
 import { giroKedaluwarsa, STATUS_GIRO, type StatusGiro } from "@/lib/receivables/giro";
 import { formatDisplayDate } from "@/lib/date-only";
-import { bolehMembacaArsip, bolehMembacaPelunasan, bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { bolehMembacaArsip, bolehMembacaPelunasan, bolehMembacaPiutang, bolehMemverifikasi } from "@/lib/receivables/izin";
 import { tautanPesanKlaim } from "@/lib/receivables/tugas-tagih-queries";
 import { RincianKlaimClient, type GiroKlaim } from "./RincianKlaimClient";
 import { pemeriksaSamaKlaim } from "./putusan-klaim";
@@ -92,10 +92,9 @@ export default async function RincianKlaimPage({
       data={data}
       giro={giro}
       konfirmasiToko={konfirmasi?.jenis === "KONFIRMASI" ? { url: konfirmasi.url, adaNomor: konfirmasi.adaNomor } : null}
-      bolehMemutuskan={hasPermission(
-        session.user.permissions ?? [],
-        PERMISSIONS.JOURNALS_MANAGE,
-      )}
+      // Memverifikasi, menolak, membatalkan, dan menautkan ulang potongan = payments:verify
+      // (bolehMemverifikasi), izin yang sama dengan aksinya di app/actions/receivables.ts.
+      bolehMemutuskan={bolehMemverifikasi(session.user.permissions)}
       bolehMembuat={hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)}
       digantiOleh={pengganti.get(id) ? { id: pengganti.get(id)!.id, nomor: pengganti.get(id)!.nomor } : null}
       menggantikan={asal ? { id: asal.id, nomor: asal.docNo } : null}

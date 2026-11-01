@@ -14,6 +14,8 @@ import { listShipmentsForOrder, type OrderShipmentSummary } from "@/lib/delivery
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { muatPanelKredit, type PanelKredit } from "@/lib/field-sales/kredit-panel";
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { batasKreditBerlaku } from "@/lib/salesman/kredit";
+import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
 import { muatTautanPesanan, penagihanSesuaiIzin, type FakturKreditTampil, type PiutangKiriman } from "./tautan-pesanan";
 
@@ -97,19 +99,34 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
    * re-checks at actual approve time per spec § 4). Degrades to null on failure, same pattern
    * as konsiSuggestions/konsiAssortmentGaps above, so it never takes down Approve/Reject.
    * Mirrors the writer's comparison: a putus order adds its own total, a konsi order is gated on
-   * exposure alone.
+   * exposure alone. The limit comes from the writer's own resolver (`batasKreditBerlaku`), so an
+   * empty limit that follows the Settings default is previewed too, and `sumber` tells the card
+   * where the limit came from.
    */
-  let creditCheck: { exposure: number; limit: number; overLimit: boolean } | null = null;
+  let creditCheck: { exposure: number; limit: number; overLimit: boolean; sumber: "TOKO" | "BAWAAN" } | null = null;
   if (order.status === "PENDING_APPROVAL" && canApprove) {
     try {
       const orderRow = await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { storeId: true } });
       if (orderRow) {
-        const store = await prisma.store.findUnique({ where: { id: orderRow.storeId }, select: { creditLimit: true } });
-        if (store?.creditLimit !== null && store?.creditLimit !== undefined) {
-          const limit = Number(store.creditLimit);
+        const store = await prisma.store.findUnique({
+          where: { id: orderRow.storeId },
+          select: { creditLimit: true, noCreditLimit: true },
+        });
+        const batas = store
+          ? batasKreditBerlaku(
+              {
+                creditLimit: store.creditLimit === null ? null : Number(store.creditLimit),
+                noCreditLimit: store.noCreditLimit,
+                termsType: order.orderType,
+              },
+              await bacaAturanKreditDb(),
+            ).nilai
+          : null;
+        if (batas && (batas.sumber === "TOKO" || batas.sumber === "BAWAAN")) {
+          const limit = batas.nilai;
           const exposure = await computeStoreCreditExposure(prisma, orderRow.storeId);
           const orderTotal = order.orderType === "PUTUS" ? order.total : 0;
-          creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total + orderTotal > limit };
+          creditCheck = { exposure: exposure.total, limit, overLimit: exposure.total + orderTotal > limit, sumber: batas.sumber };
         }
       }
     } catch (error) {

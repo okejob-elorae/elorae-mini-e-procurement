@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { hasPermission } from "@/lib/rbac";
+import { bolehMemverifikasi } from "@/lib/receivables/izin";
 import { buildActionItems, totalActionDocuments, type BuildActionItemsInput } from "./action-items";
 
 const nol: BuildActionItemsInput = {
@@ -38,7 +40,7 @@ describe("buildActionItems", () => {
     const janji = items.find((i) => i.key === "overduePromises");
     const bkm = items.find((i) => i.key === "claimsAwaitingVerification");
     expect(janji).toMatchObject({ count: 2, amount: 5_000_000, tone: "overdue", href: "/backoffice/piutang?keadaan=lewat" });
-    expect(bkm).toMatchObject({ count: 1, amount: 750_000, tone: "waiting", permission: "journals:manage" });
+    expect(bkm).toMatchObject({ count: 1, amount: 750_000, tone: "waiting", permission: "payments:verify" });
   });
 
   it("every link carries the filter its count was taken with", () => {
@@ -75,12 +77,12 @@ describe("buildActionItems", () => {
         claimsAwaitingVerification: { count: 1, amount: 750_000 },
         claimsAwaitingOthers: { count: 2, amount: 400_000 },
       },
-      ["journals:manage"],
+      ["payments:verify"],
     );
     const bisa = items.find((i) => i.key === "claimsAwaitingVerification");
     const lain = items.find((i) => i.key === "claimsAwaitingOthers");
     expect(bisa).toMatchObject({ count: 1, amount: 750_000, tone: "waiting" });
-    expect(lain).toMatchObject({ count: 2, amount: 400_000, tone: "waiting", permission: "journals:manage" });
+    expect(lain).toMatchObject({ count: 2, amount: 400_000, tone: "waiting", permission: "payments:verify" });
     // Dua baris, satu daftar: jumlah keduanya = isi daftar BKM berstatus DIKIRIM.
     expect(bisa?.href).toBe("/backoffice/pelunasan?status=DIKIRIM");
     expect(lain?.href).toBe("/backoffice/pelunasan?status=DIKIRIM");
@@ -92,7 +94,7 @@ describe("buildActionItems", () => {
   it("hanya BKM milik sendiri: baris 'bisa diputuskan' hilang, tidak menetap di beranda", () => {
     const items = buildActionItems(
       { ...nol, claimsAwaitingVerification: { count: 0, amount: 0 }, claimsAwaitingOthers: { count: 2, amount: 1 } },
-      ["journals:manage"],
+      ["payments:verify"],
     );
     expect(items.map((i) => i.key)).toEqual(["claimsAwaitingOthers"]);
   });
@@ -100,5 +102,46 @@ describe("buildActionItems", () => {
   it("drops zero rows and puts overdue before waiting", () => {
     const items = buildActionItems({ ...nol, draftPOs: 9, overduePromises: { count: 1, amount: 10 } });
     expect(items.map((i) => i.key)).toEqual(["overduePromises", "draftPOs"]);
+  });
+});
+
+/*
+ * Kedua baris BKM menunggu verifikasi memakai aturan yang SAMA dengan yang
+ * memuat angkanya (`kartuBeranda.klaimMenunggu` = `bolehMemverifikasi`) dan
+ * dengan aksi verifikasinya. Dulu barisnya menuntut `journals:manage`: pemegang
+ * `payments:verify` saja memuat angkanya tetapi barisnya tidak pernah tampil,
+ * dan akuntan `journals:manage` saja melihat baris yang tidak bisa ia putuskan.
+ */
+describe("buildActionItems — baris BKM mengikuti bolehMemverifikasi", () => {
+  const masukan: BuildActionItemsInput = {
+    ...nol,
+    claimsAwaitingVerification: { count: 1, amount: 750_000 },
+    claimsAwaitingOthers: { count: 2, amount: 400_000 },
+  };
+  /** Saringan beranda dan lencana menu sesudah `buildActionItems`. */
+  const terlihat = (izin: string[]) =>
+    buildActionItems(masukan, izin)
+      .filter((i) => !i.permission || hasPermission(izin, i.permission))
+      .map((i) => i.key);
+
+  const kasus: string[][] = [
+    ["dashboard:view", "payments:verify"],
+    ["dashboard:view", "journals:manage"],
+    ["dashboard:view", "journals:manage", "payments:verify"],
+    ["dashboard:view", "receivables:manage"],
+    ["dashboard:view", "payments:manage"],
+    ["*"],
+  ];
+  for (const izin of kasus) {
+    it(`[${izin.join(", ")}] sama dengan aturan yang memuat angkanya`, () => {
+      const lihat = terlihat(izin);
+      expect(lihat.includes("claimsAwaitingVerification")).toBe(bolehMemverifikasi(izin));
+      expect(lihat.includes("claimsAwaitingOthers")).toBe(bolehMemverifikasi(izin));
+    });
+  }
+
+  it("payments:verify saja melihat kedua barisnya; journals:manage saja tidak", () => {
+    expect(terlihat(["dashboard:view", "payments:verify"]).sort()).toEqual(["claimsAwaitingOthers", "claimsAwaitingVerification"]);
+    expect(terlihat(["dashboard:view", "journals:manage"])).toEqual([]);
   });
 });

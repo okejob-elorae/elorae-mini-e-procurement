@@ -27,11 +27,18 @@ export type StoreFields = {
   priceDiscountPercent: number | null;
   /**
    * Batas kredit toko (Rp): eksposur piutang toko ditambah pesanan yang disetujui tidak boleh
-   * melewatinya tanpa alasan override. null = tanpa batas; 0 = toko tunai (setiap pesanan kredit
-   * butuh override). Milik admin, bukan sales. Mode kredit di Pengaturan → Salesman menilai di
-   * atasnya (`lib/salesman/kredit.ts`).
+   * melewatinya tanpa alasan override. null = ikut batas bawaan di Pengaturan → Salesman (toko
+   * putus; bawaan kosong = tidak dibatasi); 0 = toko tunai (setiap pesanan kredit butuh
+   * override). Milik admin, bukan sales. Artinya diputuskan `batasKreditBerlaku`
+   * (`lib/salesman/kredit.ts`), yang juga dipakai mode kredit di atasnya.
    */
   creditLimit: number | null;
+  /**
+   * "Tanpa batas kredit": toko dibebaskan dari batas kredit DAN batas faktur terbuka (tagihan
+   * lewat janji tetap dinilai). Dicentang → kedua kolom batas disimpan kosong. Milik admin;
+   * opsional seperti `maxOpenInvoices` — `undefined` tidak mengubah yang tersimpan.
+   */
+  noCreditLimit?: boolean;
   npwp: string | null;
   lat: number | null;
   lng: number | null;
@@ -75,6 +82,7 @@ export type StoreFields = {
 
 export type StoreListItem = StoreFields & {
   consignmentVat: boolean;
+  noCreditLimit: boolean;
   maxOpenInvoices: number | null;
   storeClass: KelasToko | null;
   id: string;
@@ -149,11 +157,20 @@ function toPercentColumnScale(percent: number | null): number | null {
 }
 
 function atColumnScale(input: StoreFields): StoreFields {
-  return {
+  return clearLimitsWhenUnlimited({
     ...input,
     markupPercent: toPercentColumnScale(input.markupPercent),
     priceDiscountPercent: toPercentColumnScale(input.priceDiscountPercent),
-  };
+  });
+}
+
+/**
+ * A store ticked "Tanpa batas kredit" keeps no limit figure behind: both limit columns are stored
+ * empty, so nothing that reads the raw columns can mistake a stale figure for a live limit.
+ * Unticked or not sent leaves both as given.
+ */
+function clearLimitsWhenUnlimited(input: StoreFields): StoreFields {
+  return input.noCreditLimit === true ? { ...input, creditLimit: null, maxOpenInvoices: null } : input;
 }
 
 /* Takes the fields `atColumnScale` returns, so the range check runs on the figure the column stores. */
@@ -233,6 +250,7 @@ function serializeStore(s: {
   markupPercent: Prisma.Decimal | null;
   priceDiscountPercent: Prisma.Decimal | null;
   creditLimit: Prisma.Decimal | null;
+  noCreditLimit: boolean;
   npwp: string | null;
   lat: Prisma.Decimal | null;
   lng: Prisma.Decimal | null;
@@ -260,6 +278,7 @@ function serializeStore(s: {
     markupPercent: s.markupPercent ? s.markupPercent.toNumber() : null,
     priceDiscountPercent: s.priceDiscountPercent ? s.priceDiscountPercent.toNumber() : null,
     creditLimit: s.creditLimit !== null ? s.creditLimit.toNumber() : null,
+    noCreditLimit: s.noCreditLimit,
     npwp: s.npwp,
     lat: s.lat ? s.lat.toNumber() : null,
     lng: s.lng ? s.lng.toNumber() : null,
@@ -453,6 +472,7 @@ export async function createStore(rawInput: StoreFields): Promise<StoreListItem>
       markupPercent: toDecimalOrNull(input.markupPercent),
       priceDiscountPercent: toDecimalOrNull(input.priceDiscountPercent),
       creditLimit: toDecimalOrNull(input.creditLimit),
+      noCreditLimit: input.noCreditLimit ?? false,
       npwp: normalizeStoreNpwp(input.npwp),
       lat: toDecimalOrNull(input.lat),
       lng: toDecimalOrNull(input.lng),
@@ -516,7 +536,7 @@ export async function updateStore(id: string, rawInput: StoreFields, olehUserId:
 
     const sebelum = await tx.store.findUnique({
       where: { id },
-      select: { salesmanId: true, creditLimit: true, maxOpenInvoices: true, storeClass: true, consignmentVat: true },
+      select: { salesmanId: true, creditLimit: true, maxOpenInvoices: true, noCreditLimit: true, storeClass: true, consignmentVat: true },
     });
     const updated = await tx.store.update({
       where: { id },
@@ -540,6 +560,7 @@ export async function updateStore(id: string, rawInput: StoreFields, olehUserId:
         groupId: input.groupId,
         salesmanId: input.salesmanId,
         ...(input.maxOpenInvoices !== undefined ? { maxOpenInvoices: input.maxOpenInvoices } : {}),
+        ...(input.noCreditLimit !== undefined ? { noCreditLimit: input.noCreditLimit } : {}),
         ...(input.storeClass !== undefined ? { storeClass: input.storeClass } : {}),
         ...(input.consignmentVat !== undefined ? { consignmentVat: input.consignmentVat } : {}),
       },
@@ -547,17 +568,20 @@ export async function updateStore(id: string, rawInput: StoreFields, olehUserId:
     const kreditSebelum = {
       creditLimit: sebelum?.creditLimit ? sebelum.creditLimit.toNumber() : null,
       maxOpenInvoices: sebelum?.maxOpenInvoices ?? null,
+      noCreditLimit: sebelum?.noCreditLimit ?? false,
     };
     const kreditSesudah = {
       creditLimit: updated.creditLimit ? updated.creditLimit.toNumber() : null,
       maxOpenInvoices: updated.maxOpenInvoices,
+      noCreditLimit: updated.noCreditLimit,
     };
     // Batas kredit menentukan pesanan mana yang ditahan atau ditolak — siapa
     // mengubahnya, kapan, dan dari berapa hanya hidup di jejak ini.
     if (
       sebelum &&
       (kreditSebelum.creditLimit !== kreditSesudah.creditLimit ||
-        kreditSebelum.maxOpenInvoices !== kreditSesudah.maxOpenInvoices)
+        kreditSebelum.maxOpenInvoices !== kreditSesudah.maxOpenInvoices ||
+        kreditSebelum.noCreditLimit !== kreditSesudah.noCreditLimit)
     ) {
       await tx.auditLog.create({
         data: {

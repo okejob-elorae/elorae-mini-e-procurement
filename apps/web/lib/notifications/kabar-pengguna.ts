@@ -84,10 +84,17 @@ export const JENIS_KABAR = {
   /** Kantor menetapkan bagian beban barang hilang kepada orang ini (SPG/sales) ({ lossId }). */
   BEBAN_HILANG_DITETAPKAN: "BEBAN_HILANG_DITETAPKAN",
   /**
-   * Barang benar-benar berangkat ke toko (pengiriman putus dicatat, pesanan konsi disetujui,
-   * titipan konsinyasi dikirim) → setiap SPG toko itu ({ storeId, sourceType, sourceId }).
+   * Barang berangkat ke toko → setiap SPG toko itu. Dua jalur: pengiriman yang BERANGKAT
+   * (status Dalam Perjalanan, { storeId, shipmentId }), atau jalur satu langkah — pengiriman
+   * putus dicatat kantor, titipan konsinyasi dikirim ({ storeId, sourceType, sourceId }).
    */
   KIRIMAN_BERANGKAT: "KIRIMAN_BERANGKAT",
+  /**
+   * Pengiriman selesai diserahkan di toko → setiap SPG toko itu: hitung dan terima, sebanyak
+   * yang diserahkan di pengiriman itu ({ storeId, shipmentId, sourceType?, sourceId? };
+   * tanpa sumber = tidak ada barang yang diserahkan).
+   */
+  KIRIMAN_DISERAHKAN: "KIRIMAN_DISERAHKAN",
   /**
    * SPG menerima kiriman KURANG atau dengan barang RUSAK → salesman pengirimnya: salesman
    * pesanan (putus/konsi), atau pemegang toko untuk titipan ({ orderId?, storeId, sourceType, sourceId }).

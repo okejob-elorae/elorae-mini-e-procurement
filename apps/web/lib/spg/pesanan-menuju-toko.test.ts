@@ -60,7 +60,8 @@ function baris(over: Partial<BarisPesananMentah> & Pick<BarisPesananMentah, "id"
   };
 }
 
-const kemeja = (variantSku: string, qty: number, lain: { deliveredQty?: number; cancelledQty?: number } = {}) => ({
+const kemeja = (variantSku: string, qty: number, lain: { id?: string; deliveredQty?: number; cancelledQty?: number } = {}) => ({
+  ...(lain.id ? { id: lain.id } : {}),
   itemId: "kemeja",
   variantSku,
   productName: "Kemeja Linen",
@@ -70,114 +71,137 @@ const kemeja = (variantSku: string, qty: number, lain: { deliveredQty?: number; 
 });
 
 describe("susunPesananMenuju (murni)", () => {
-  const opsi = { sejak: lalu(30), konsiDiterima: new Set<string>() };
-
   it("a pending order shows every piece ordered, per item and size", () => {
-    const [p] = susunPesananMenuju([baris({ id: "a", lines: [kemeja("KL-M", 6), kemeja("KL-L", 4)] })], opsi);
-    expect(p).toMatchObject({ id: "a", orderNo: "SO-a", status: "MENUNGGU_PERSETUJUAN", jumlahPcs: 10, inden: false });
+    const [p] = susunPesananMenuju([baris({ id: "a", lines: [kemeja("KL-M", 6), kemeja("KL-L", 4)] })]);
+    expect(p).toMatchObject({ id: "a", orderNo: "SO-a", status: "MENUNGGU_PERSETUJUAN", jumlahPcs: 10, inden: false, belumDikirimGudang: 0 });
     expect(p.barang).toEqual([
       { kunci: "kemeja::KL-L", nama: "Kemeja Linen", varian: "KL-L", pcs: 4 },
       { kunci: "kemeja::KL-M", nama: "Kemeja Linen", varian: "KL-M", pcs: 6 },
     ]);
   });
 
-  it("an approved putus order not yet shipped counts what is still outstanding", () => {
-    const [p] = susunPesananMenuju(
-      [baris({ id: "b", status: "APPROVED", approvedAt: lalu(1), lines: [kemeja("KL-M", 12)] })],
-      opsi,
-    );
-    expect(p).toMatchObject({ status: "DISETUJUI", jumlahPcs: 12 });
+  it("an approved putus order not yet shipped is all still at the warehouse", () => {
+    const [p] = susunPesananMenuju([baris({ id: "b", status: "APPROVED", approvedAt: lalu(1), lines: [kemeja("KL-M", 12)] })]);
+    expect(p).toMatchObject({ status: "DISETUJUI", jumlahPcs: 12, belumDikirimGudang: 12, dikemas: 0, dalamPerjalanan: 0 });
   });
 
-  it("a partly shipped putus order lists only what has not left yet — a finished line drops out", () => {
-    const [p] = susunPesananMenuju(
-      [
-        baris({
-          id: "c",
-          status: "APPROVED",
-          deliveryStatus: "PARTIAL",
-          lines: [kemeja("KL-M", 12, { deliveredQty: 5 }), kemeja("KL-S", 6, { deliveredQty: 6 })],
-        }),
-      ],
-      opsi,
-    );
+  it("a partly shipped putus order lists only what has not reached the store — a finished line drops out", () => {
+    const [p] = susunPesananMenuju([
+      baris({
+        id: "c",
+        status: "APPROVED",
+        deliveryStatus: "PARTIAL",
+        lines: [kemeja("KL-M", 12, { deliveredQty: 5 }), kemeja("KL-S", 6, { deliveredQty: 6 })],
+      }),
+    ]);
     expect(p.status).toBe("DIKIRIM_SEBAGIAN");
     expect(p.barang).toEqual([{ kunci: "kemeja::KL-M", nama: "Kemeja Linen", varian: "KL-M", pcs: 7 }]);
-    expect(p.jumlahPcs).toBe(7);
+    expect(p).toMatchObject({ jumlahPcs: 7, belumDikirimGudang: 7 });
   });
 
-  it("an approved konsi order is on its way until the store receives it", () => {
-    const konsi = baris({
-      id: "d",
-      orderType: "KONSI",
-      status: "APPROVED",
-      approvedAt: lalu(2),
-      lines: [kemeja("KL-M", 8, { cancelledQty: 2 })],
-    });
-    expect(susunPesananMenuju([konsi], opsi)).toEqual([expect.objectContaining({ status: "DALAM_PERJALANAN", jumlahPcs: 6 })]);
-    expect(susunPesananMenuju([konsi], { ...opsi, konsiDiterima: new Set(["d"]) })).toEqual([]);
+  it("an approved konsi order with nothing shipped is approved, not on its way — approve only reserves", () => {
+    const konsi = baris({ id: "d", orderType: "KONSI", status: "APPROVED", approvedAt: lalu(2), lines: [kemeja("KL-M", 8, { cancelledQty: 2 })] });
+    expect(susunPesananMenuju([konsi])).toEqual([
+      expect.objectContaining({ status: "DISETUJUI", jumlahPcs: 6, belumDikirimGudang: 6, dalamPerjalanan: 0 }),
+    ]);
   });
 
-  it("a konsi order approved before the store started tracking is already on the shelf", () => {
-    const lama = baris({ id: "e", orderType: "KONSI", status: "APPROVED", approvedAt: lalu(45), lines: [kemeja("KL-M", 3)] });
-    expect(susunPesananMenuju([lama], opsi)).toEqual([]);
+  it("konsi 100 pcs: 60 handed over, 30 on the road, 5 packed — the last 5 are 'not yet sent by the warehouse', never a shortfall", () => {
+    const [p] = susunPesananMenuju([
+      baris({
+        id: "k100",
+        orderType: "KONSI",
+        status: "APPROVED",
+        deliveryStatus: "PARTIAL",
+        approvedAt: lalu(5),
+        lines: [kemeja("KL-M", 100, { id: "l1", deliveredQty: 60 })],
+        shipments: [
+          { status: "IN_TRANSIT", lines: [{ orderLineId: "l1", plannedQty: 30 }] },
+          { status: "PACKED", lines: [{ orderLineId: "l1", plannedQty: 5 }] },
+        ],
+      }),
+    ]);
+    expect(p).toMatchObject({ status: "DALAM_PERJALANAN", jumlahPcs: 40, dalamPerjalanan: 30, dikemas: 5, belumDikirimGudang: 5 });
   });
 
-  it("delivered, closed, rejected and cancelled orders are not heading to the store", () => {
-    const daftar = susunPesananMenuju(
-      [
-        baris({ id: "f", status: "APPROVED", deliveryStatus: "DELIVERED", lines: [kemeja("KL-M", 3, { deliveredQty: 3 })] }),
-        baris({ id: "g", status: "APPROVED", deliveryStatus: "CLOSED", lines: [kemeja("KL-M", 3, { deliveredQty: 1, cancelledQty: 2 })] }),
-        baris({ id: "h", status: "REJECTED", lines: [kemeja("KL-M", 3)] }),
-      ],
-      opsi,
-    );
+  it("a shipment planning more than is left never drives 'not yet sent' below zero", () => {
+    const [p] = susunPesananMenuju([
+      baris({
+        id: "lebih",
+        status: "APPROVED",
+        lines: [kemeja("KL-M", 4, { id: "l1" })],
+        shipments: [{ status: "IN_TRANSIT", lines: [{ orderLineId: "l1", plannedQty: 9 }] }],
+      }),
+    ]);
+    expect(p).toMatchObject({ dalamPerjalanan: 4, dikemas: 0, belumDikirimGudang: 0 });
+  });
+
+  it("delivered, closed, rejected and cancelled orders are not heading to the store — a closed konsi remainder simply disappears", () => {
+    const daftar = susunPesananMenuju([
+      baris({ id: "f", status: "APPROVED", deliveryStatus: "DELIVERED", lines: [kemeja("KL-M", 3, { deliveredQty: 3 })] }),
+      baris({ id: "g", status: "APPROVED", deliveryStatus: "CLOSED", lines: [kemeja("KL-M", 3, { deliveredQty: 1, cancelledQty: 2 })] }),
+      baris({ id: "gk", orderType: "KONSI", status: "APPROVED", deliveryStatus: "CLOSED", lines: [kemeja("KL-M", 100, { deliveredQty: 60, cancelledQty: 40 })] }),
+      baris({ id: "h", status: "REJECTED", lines: [kemeja("KL-M", 3)] }),
+    ]);
     expect(daftar).toEqual([]);
   });
 
+  it("a legacy konsi order (stock left at approval, marked delivered by the backfill) never shows", () => {
+    const lama = baris({ id: "e", orderType: "KONSI", status: "APPROVED", deliveryStatus: "DELIVERED", approvedAt: lalu(45), lines: [kemeja("KL-M", 3, { deliveredQty: 3 })] });
+    expect(susunPesananMenuju([lama])).toEqual([]);
+  });
+
   it("the same item and size on two lines (a bonus line) is one row", () => {
-    const [p] = susunPesananMenuju([baris({ id: "i", lines: [kemeja("KL-M", 6), kemeja("KL-M", 1)] })], opsi);
+    const [p] = susunPesananMenuju([baris({ id: "i", lines: [kemeja("KL-M", 6), kemeja("KL-M", 1)] })]);
     expect(p.barang).toEqual([{ kunci: "kemeja::KL-M", nama: "Kemeja Linen", varian: "KL-M", pcs: 7 }]);
   });
 
   it("an order with nothing left to send is left out", () => {
-    const daftar = susunPesananMenuju(
-      [baris({ id: "j", status: "APPROVED", deliveryStatus: "PARTIAL", lines: [kemeja("KL-M", 4, { deliveredQty: 2, cancelledQty: 2 })] })],
-      opsi,
-    );
+    const daftar = susunPesananMenuju([
+      baris({ id: "j", status: "APPROVED", deliveryStatus: "PARTIAL", lines: [kemeja("KL-M", 4, { deliveredQty: 2, cancelledQty: 2 })] }),
+    ]);
     expect(daftar).toEqual([]);
   });
 
-  it("goods already on the road come first, then partly shipped, approved, and waiting — oldest first within each", () => {
-    const daftar = susunPesananMenuju(
-      [
-        baris({ id: "tunggu-baru", createdAt: lalu(1), lines: [kemeja("KL-M", 1)] }),
-        baris({ id: "tunggu-lama", createdAt: lalu(3), lines: [kemeja("KL-M", 1)] }),
-        baris({ id: "setuju", status: "APPROVED", createdAt: lalu(2), lines: [kemeja("KL-M", 1)] }),
-        baris({ id: "jalan", orderType: "KONSI", status: "APPROVED", approvedAt: lalu(1), createdAt: lalu(1), lines: [kemeja("KL-M", 1)] }),
-        baris({ id: "sebagian", status: "APPROVED", deliveryStatus: "PARTIAL", createdAt: lalu(5), lines: [kemeja("KL-M", 2, { deliveredQty: 1 })] }),
-      ],
-      opsi,
-    );
+  it("goods on the road come first, then partly shipped, approved, and waiting — oldest first within each", () => {
+    const daftar = susunPesananMenuju([
+      baris({ id: "tunggu-baru", createdAt: lalu(1), lines: [kemeja("KL-M", 1)] }),
+      baris({ id: "tunggu-lama", createdAt: lalu(3), lines: [kemeja("KL-M", 1)] }),
+      baris({ id: "setuju", status: "APPROVED", createdAt: lalu(2), lines: [kemeja("KL-M", 1)] }),
+      baris({
+        id: "jalan",
+        orderType: "KONSI",
+        status: "APPROVED",
+        approvedAt: lalu(1),
+        createdAt: lalu(1),
+        lines: [kemeja("KL-M", 1, { id: "lj" })],
+        shipments: [{ status: "IN_TRANSIT", lines: [{ orderLineId: "lj", plannedQty: 1 }] }],
+      }),
+      baris({ id: "sebagian", status: "APPROVED", deliveryStatus: "PARTIAL", createdAt: lalu(5), lines: [kemeja("KL-M", 2, { deliveredQty: 1 })] }),
+    ]);
     expect(daftar.map((p) => p.id)).toEqual(["jalan", "sebagian", "setuju", "tunggu-lama", "tunggu-baru"]);
   });
 
   it("a pre-order is marked as such", () => {
-    const [p] = susunPesananMenuju([baris({ id: "k", status: "APPROVED", preorderWindowId: "w1", lines: [kemeja("KL-M", 2)] })], opsi);
+    const [p] = susunPesananMenuju([baris({ id: "k", status: "APPROVED", preorderWindowId: "w1", lines: [kemeja("KL-M", 2)] })]);
     expect(p.inden).toBe(true);
   });
 
-  it("the home count leaves out orders already on the road — those are counted as deliveries to receive", () => {
-    const daftar = susunPesananMenuju(
-      [
-        baris({ id: "l", lines: [kemeja("KL-M", 1)] }),
-        baris({ id: "m", status: "APPROVED", lines: [kemeja("KL-M", 1)] }),
-        baris({ id: "n", orderType: "KONSI", status: "APPROVED", approvedAt: lalu(1), lines: [kemeja("KL-M", 1)] }),
-      ],
-      opsi,
-    );
+  it("the home count counts every order not yet at the store — one on the road cannot be received before it is handed over", () => {
+    const daftar = susunPesananMenuju([
+      baris({ id: "l", lines: [kemeja("KL-M", 1)] }),
+      baris({ id: "m", status: "APPROVED", lines: [kemeja("KL-M", 1)] }),
+      baris({
+        id: "n",
+        orderType: "KONSI",
+        status: "APPROVED",
+        approvedAt: lalu(1),
+        lines: [kemeja("KL-M", 1, { id: "ln" })],
+        shipments: [{ status: "IN_TRANSIT", lines: [{ orderLineId: "ln", plannedQty: 1 }] }],
+      }),
+    ]);
     expect(daftar).toHaveLength(3);
-    expect(hitungPesananDiproses(daftar)).toBe(2);
+    expect(hitungPesananDiproses(daftar)).toBe(3);
   });
 });
 
@@ -191,6 +215,9 @@ describe("pesananMenujuUntukHp (muatan HP SPG)", () => {
       inden: false,
       barang: [{ kunci: "kemeja::KL-M", nama: "Kemeja Linen", varian: "KL-M", pcs: 7 }],
       jumlahPcs: 7,
+      belumDikirimGudang: 4,
+      dikemas: 1,
+      dalamPerjalanan: 2,
     },
   ];
 
@@ -205,6 +232,9 @@ describe("pesananMenujuUntukHp (muatan HP SPG)", () => {
         inden: false,
         barang: [{ kunci: "kemeja::KL-M", nama: "Kemeja Linen", varian: "KL-M", pcs: 7 }],
         jumlahPcs: 7,
+        belumDikirimGudang: 4,
+        dikemas: 1,
+        dalamPerjalanan: 2,
       },
     ]);
   });
@@ -239,6 +269,7 @@ d("pesanan menuju toko + kabar kiriman berangkat (basis data)", () => {
   const orderIds: string[] = [];
   const deliveryIds: string[] = [];
   const shipmentIds: string[] = [];
+  const pengirimanIds: string[] = [];
   const receiptIds: string[] = [];
   let nomor = 0;
 
@@ -312,6 +343,8 @@ d("pesanan menuju toko + kabar kiriman berangkat (basis data)", () => {
     await prisma.storeReceipt.deleteMany({ where: { id: { in: seededIds(receiptIds) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: seededIds(deliveryIds) } } });
     await prisma.consignmentShipment.deleteMany({ where: { id: { in: seededIds(shipmentIds) } } });
+    // Pengiriman sebelum pesanannya (barisnya ikut terhapus).
+    await prisma.deliveryShipment.deleteMany({ where: { id: { in: seededIds(pengirimanIds) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
     await prisma.user.deleteMany({ where: { id: { in: seededIds([kantorId, salesId, spg1, spg2, spgLain]) } } });
     await prisma.store.deleteMany({ where: { id: { in: seededIds([tokoPutus, tokoKonsi, tokoLain, tokoTanpaSpg]) } } });
@@ -349,22 +382,30 @@ d("pesanan menuju toko + kabar kiriman berangkat (basis data)", () => {
       expect(kunciSemua(JSON.parse(JSON.stringify(daftar))).filter((k) => KUNCI_HARGA.test(k))).toEqual([]);
     });
 
-    it("an approved konsi order stays on the list until the store receives it; one from before tracking never shows", async () => {
-      const jalan = await pesanan({ storeId: tokoKonsi, orderType: "KONSI", status: "APPROVED", approvedAt: lalu(2), lines: [{ variantSku: "KU-M", qty: 4 }] });
-      const lama = await pesanan({ storeId: tokoKonsi, orderType: "KONSI", status: "APPROVED", approvedAt: lalu(45), lines: [{ variantSku: "KU-M", qty: 4 }] });
+    it("an approved konsi order is 'approved, not yet sent' until a shipment departs; what is not on it stays 'not yet sent by the warehouse'", async () => {
+      const o = await pesanan({ storeId: tokoKonsi, orderType: "KONSI", status: "APPROVED", approvedAt: lalu(2), lines: [{ variantSku: "KU-M", qty: 10 }] });
 
       const sebelum = await pesananMenujuToko(tokoKonsi, SEKARANG);
-      expect(sebelum.map((p) => [p.orderNo, p.status, p.jumlahPcs])).toEqual([[jalan.orderNo, "DALAM_PERJALANAN", 4]]);
-      expect(sebelum.some((p) => p.orderNo === lama.orderNo)).toBe(false);
+      expect(sebelum.map((p) => [p.orderNo, p.status, p.jumlahPcs, p.belumDikirimGudang])).toEqual([[o.orderNo, "DISETUJUI", 10, 10]]);
 
-      receiptIds.push(
-        (
-          await prisma.storeReceipt.create({
-            data: { storeId: tokoKonsi, sourceType: "KONSI_ORDER", sourceId: jalan.id, sourceDocNo: jalan.orderNo, receivedById: kantorId },
-          })
-        ).id,
-      );
-      expect(await pesananMenujuToko(tokoKonsi, SEKARANG)).toEqual([]);
+      const shp = await prisma.deliveryShipment.create({
+        data: {
+          docNo: `${tag}-SHP-${nomor}`,
+          orderId: o.id,
+          method: "SALESMAN_CARRY",
+          status: "IN_TRANSIT",
+          packedById: kantorId,
+          shippedAt: SEKARANG,
+          lines: { create: [{ orderLineId: o.lines[0].id, itemId, variantSku: "KU-M", plannedQty: 6 }] },
+        },
+        select: { id: true },
+      });
+      pengirimanIds.push(shp.id);
+
+      const jalan = await pesananMenujuToko(tokoKonsi, SEKARANG);
+      expect(jalan).toEqual([expect.objectContaining({ orderNo: o.orderNo, status: "DALAM_PERJALANAN", jumlahPcs: 10, dalamPerjalanan: 6, belumDikirimGudang: 4 })]);
+      // Muatan yang benar-benar keluar dari kueri: tanpa satu pun kunci harga.
+      expect(kunciSemua(JSON.parse(JSON.stringify(jalan))).filter((k) => KUNCI_HARGA.test(k))).toEqual([]);
     });
   });
 
@@ -425,20 +466,9 @@ d("pesanan menuju toko + kabar kiriman berangkat (basis data)", () => {
       expect(kabar.kirim.map((k) => k.userId)).toEqual([spg2]);
     });
 
-    it("approving a putus order ships nothing, so no SPG is told", async () => {
-      const o = await pesanan({ storeId: tokoPutus, status: "APPROVED", approvedAt: lalu(0), lines: [{ variantSku: "KU-M", qty: 2 }] });
-      expect(await kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: o.id, pelakuId: kantorId })).toEqual({ penerima: 0 });
-      expect(kabar.kirim).toEqual([]);
-    });
-
-    it("an approved konsi order and a consignment shipment each notify the store's SPG", async () => {
+    it("a consignment shipment notifies the store's SPG, in pieces, never with a price", async () => {
       const spgKonsi = (await prisma.user.create({ data: { email: `${tag}-spgk@test.local`.toLowerCase(), name: `SPG K ${tag}`, assignedStoreId: tokoKonsi } })).id;
       try {
-        const o = await pesanan({ storeId: tokoKonsi, orderType: "KONSI", status: "APPROVED", approvedAt: lalu(0), lines: [{ variantSku: "KU-M", qty: 4, cancelledQty: 1 }] });
-        expect(await kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: o.id, pelakuId: kantorId })).toEqual({ penerima: 1 });
-        expect(kabar.kirim[0]).toMatchObject({ userId: spgKonsi, jenis: "KIRIMAN_BERANGKAT", data: { sourceType: "KONSI_ORDER", sourceId: o.id } });
-        expect(kabar.kirim[0].isi).toContain("3 pcs");
-
         const k = await prisma.consignmentShipment.create({
           data: {
             noKirim: `${tag}-KRM`,
@@ -448,8 +478,8 @@ d("pesanan menuju toko + kabar kiriman berangkat (basis data)", () => {
           },
         });
         shipmentIds.push(k.id);
-        kabar.kirim.length = 0;
         expect(await kabarkanKirimanBerangkat({ sourceType: "KONSI_SHIPMENT", sourceId: k.id, pelakuId: kantorId })).toEqual({ penerima: 1 });
+        expect(kabar.kirim[0]).toMatchObject({ userId: spgKonsi, jenis: "KIRIMAN_BERANGKAT", data: { sourceType: "KONSI_SHIPMENT", sourceId: k.id } });
         expect(kabar.kirim[0].isi).toContain(`${tag}-KRM`);
         expect(kabar.kirim[0].isi).toContain("6 pcs");
         expect(kabar.kirim[0].isi).not.toMatch(/Rp|100\.000|600/);
@@ -459,9 +489,17 @@ d("pesanan menuju toko + kabar kiriman berangkat (basis data)", () => {
     });
 
     it("a store without an SPG writes nothing; a document already received is not announced", async () => {
-      const o = await pesanan({ storeId: tokoTanpaSpg, orderType: "KONSI", status: "APPROVED", approvedAt: lalu(0), lines: [{ variantSku: "KU-M", qty: 2 }] });
-      expect(await kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: o.id, pelakuId: kantorId })).toEqual({ penerima: 0 });
-      expect(await prisma.auditLog.count({ where: { action: JEJAK_KIRIMAN_BERANGKAT, entityId: o.id } })).toBe(0);
+      const k = await prisma.consignmentShipment.create({
+        data: {
+          noKirim: `${tag}-KRM-T`,
+          storeId: tokoTanpaSpg,
+          shippedAt: SEKARANG,
+          items: { create: [{ itemId, variantSku: "KU-M", itemName: "Kemeja Uji", qty: 2, price: 0, amount: 0 }] },
+        },
+      });
+      shipmentIds.push(k.id);
+      expect(await kabarkanKirimanBerangkat({ sourceType: "KONSI_SHIPMENT", sourceId: k.id, pelakuId: kantorId })).toEqual({ penerima: 0 });
+      expect(await prisma.auditLog.count({ where: { action: JEJAK_KIRIMAN_BERANGKAT, entityId: k.id } })).toBe(0);
 
       const dlv = await kiriman(2);
       receiptIds.push(

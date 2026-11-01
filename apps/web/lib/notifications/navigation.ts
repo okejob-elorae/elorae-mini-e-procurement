@@ -1,10 +1,18 @@
+/*
+ * Satu-satunya impor, dan modulnya bebas impor nilai: berkas ini ikut dibundel ke service worker
+ * HP (`lib/pwa/push-payload.ts`), yang hanya boleh menarik modul relatif tanpa ketergantungan.
+ */
+import { tautanKabar } from "./tautan-kabar";
+
 /**
  * Every notification type this module routes. Adding a member without a matching `case` below is
- * a type error, because the `default` branch assigns the narrowed type to `never`. The types
- * stored in `Notification.type` are a plain string column, so the guard narrows an arbitrary
- * string before the switch and an unrecognised one has no destination.
+ * a type error, because the `default` branch assigns the narrowed type to `never` — and so is
+ * leaving it out of `TUJUAN_HP` (`Record<NotificationType, …>`), which decides where the same type
+ * opens on the phone. The types stored in `Notification.type` are a plain string column, so the
+ * guard narrows an arbitrary string before the switch and an unrecognised one has no destination.
+ * Exported for the sweep in `navigation.test.ts`.
  */
-const NOTIFICATION_TYPES = [
+export const NOTIFICATION_TYPES = [
   "PO_OVERDUE",
   "WO_OVERDUE",
   "MATERIAL_ARRIVED",
@@ -97,12 +105,17 @@ function isNotificationType(type: string): type is NotificationType {
  * Murni, tanpa basis data: dipakai komponen klien lonceng. `data` bisa null
  * (baris lama) atau teks JSON (kolom JSON di MariaDB) — keduanya dibaca sebagai
  * objek, supaya jenis yang dikenal tetap membawa ke daftarnya.
+ *
+ * `context: "pwa"` (layar Kabar, ketukan pemberitahuan HP, kapsul kabar baru)
+ * dijawab `tujuanDiHp`: selalu alamat `/pwa/…` atau `null`, tidak pernah
+ * halaman kantor.
  */
 export function getNotificationHref(
   type: string,
   raw: unknown,
   context: "backoffice" | "pwa" = "backoffice",
 ): string | null {
+  if (context === "pwa") return tujuanDiHp(type, raw);
   if (!isNotificationType(type)) return null;
   const data = bacaData(raw);
 
@@ -200,11 +213,6 @@ export function getNotificationHref(
       return '/backoffice/finance/faktur-pajak';
     }
     case 'FIELD_RETURN_MISMATCH': {
-      /* The PWA copy goes to the salesman who raised the retur, and the PWA has no retur detail page. */
-      if (context === "pwa") {
-        const storeId = data.storeId;
-        return typeof storeId === "string" && storeId !== "" ? `/pwa/stores/${storeId}` : "/pwa/notifications";
-      }
       const returnId = data.returnId;
       if (typeof returnId === 'string') {
         return `/backoffice/field-returns/${returnId}`;
@@ -213,11 +221,10 @@ export function getNotificationHref(
     }
     case 'AR_OVERDUE': {
       const receivableId = data.receivableId;
-      const base = context === 'pwa' ? '/pwa/collections' : '/backoffice/finance/piutang';
       if (typeof receivableId === 'string') {
-        return `${base}/${receivableId}`;
+        return `/backoffice/finance/piutang/${receivableId}`;
       }
-      return base;
+      return '/backoffice/finance/piutang';
     }
     case "PO_PAYMENT_DUE": {
       const poId = data.poId;
@@ -265,7 +272,6 @@ export function getNotificationHref(
     }
     case "KONSI_COUNT_DUE":
     case "KONSI_COUNT_OVERDUE": {
-      if (context === "pwa") return "/pwa/spg/stocktake";
       const stocktakeId = data.stocktakeId;
       if (typeof stocktakeId === "string" && stocktakeId !== "") {
         return `/backoffice/store-stocktakes/${stocktakeId}`;
@@ -438,6 +444,163 @@ function idAman(data: Record<string, unknown>, kunci: string): string | null {
   return typeof v === 'string' && v.trim() !== '' ? encodeURIComponent(v.trim()) : null;
 }
 
+// ─── Tujuan di HP (salesman, SPG, pengantar) ────────────────────────────────
+
+type TujuanHp = (data: Record<string, unknown>) => string | null;
+
+/**
+ * Pekerjaan kantor yang tidak punya layar di HP. Akun lapangan dipentalkan dari
+ * backoffice, jadi ketukannya cukup menandai dibaca — lebih jujur daripada
+ * membuka halaman yang menolaknya.
+ */
+const DI_KANTOR: TujuanHp = () => null;
+
+/**
+ * Kabar Max yang juga punya tujuan kantor di atas (pencatat BKM/NRT dari kantor).
+ * Di HP sudah dijawab `tautanKabar` sebelum peta ini dibaca.
+ */
+const LEWAT_TAUTAN_KABAR: TujuanHp = () => null;
+
+/** Pesanan lapangan milik salesman penerimanya → layar pesanannya; tanpa id → tokonya → daftar pesanan. */
+const pesananSaya: TujuanHp = (d) => {
+  const pesanan = idAman(d, "orderId");
+  if (pesanan) return `/pwa/orders/${pesanan}`;
+  const toko = idAman(d, "storeId");
+  return toko ? `/pwa/stores/${toko}` : "/pwa/orders";
+};
+
+const TUJUAN_HP: Record<NotificationType, TujuanHp> = {
+  /* Retur lapangan tidak punya halaman rincian di HP: ke toko tempat salesman menaikkannya. */
+  FIELD_RETURN_MISMATCH: (d) => {
+    const toko = idAman(d, "storeId");
+    return toko ? `/pwa/stores/${toko}` : null;
+  },
+  /*
+   * Kabar jatuh tempo yang membawa `storeId` dikirim ke pemegang toko (aturan Max): buka tagihan
+   * toko itu. Tanpa `storeId` ia kiriman ke penagih yang ditunjuk di Penagihan: buka tagihannya.
+   */
+  AR_OVERDUE: (d) => {
+    const toko = idAman(d, "storeId");
+    if (toko) return `/pwa/piutang/${toko}`;
+    const piutang = idAman(d, "receivableId");
+    return piutang ? `/pwa/collections/${piutang}` : "/pwa/piutang";
+  },
+  COLLECTOR_ASSIGNED: (d) => {
+    const piutang = idAman(d, "receivableId");
+    return piutang ? `/pwa/collections/${piutang}` : "/pwa/collections";
+  },
+  SETTLEMENT_REJECTED: (d) => {
+    const toko = idAman(d, "storeId");
+    return toko ? `/pwa/pelunasan/${toko}` : "/pwa/pelunasan";
+  },
+  SETTLEMENT_APPROVED: (d) => {
+    const toko = idAman(d, "storeId");
+    return toko ? `/pwa/pelunasan/${toko}` : "/pwa/pelunasan";
+  },
+  FIELD_SALES_ORDER_REJECTED: pesananSaya,
+  // Layar pesanan HP tidak pernah menampilkan harga konsinyasi (`nilaiTampil`).
+  KONSI_ORDER_PUSHED: pesananSaya,
+  // SPG toko konsi: layar hitung stok tokonya.
+  KONSI_COUNT_DUE: () => "/pwa/spg/stocktake",
+  KONSI_COUNT_OVERDUE: () => "/pwa/spg/stocktake",
+  // Kirim uji hanya membawa ke alamat HP; alamat kantor bawaannya diabaikan.
+  TEST: (d) => (typeof d.href === "string" && d.href.startsWith("/pwa") ? d.href : null),
+
+  PELUNASAN_TERVERIFIKASI: LEWAT_TAUTAN_KABAR,
+  PELUNASAN_DITOLAK: LEWAT_TAUTAN_KABAR,
+  PELUNASAN_DIBATALKAN: LEWAT_TAUTAN_KABAR,
+  GIRO_CAIR: LEWAT_TAUTAN_KABAR,
+  GIRO_DITOLAK: LEWAT_TAUTAN_KABAR,
+  RETUR_DIHITUNG: LEWAT_TAUTAN_KABAR,
+  RETUR_DIPINDAH_TOKO: LEWAT_TAUTAN_KABAR,
+  RETUR_DIBATALKAN: LEWAT_TAUTAN_KABAR,
+  RETUR_DIBEBANKAN: LEWAT_TAUTAN_KABAR,
+  PESANAN_DISETUJUI: LEWAT_TAUTAN_KABAR,
+  PESANAN_DITOLAK: LEWAT_TAUTAN_KABAR,
+  PESANAN_DIKIRIM: LEWAT_TAUTAN_KABAR,
+  PESANAN_DITUTUP: LEWAT_TAUTAN_KABAR,
+  PESANAN_PORTAL: LEWAT_TAUTAN_KABAR,
+
+  PO_OVERDUE: DI_KANTOR,
+  WO_OVERDUE: DI_KANTOR,
+  MATERIAL_ARRIVED: DI_KANTOR,
+  WO_COMPLETED: DI_KANTOR,
+  ACCESSORIES_PENDING_CMT: DI_KANTOR,
+  SUPPLIER_CREATED: DI_KANTOR,
+  SUPPLIER_APPROVED: DI_KANTOR,
+  ITEM_CREATED: DI_KANTOR,
+  PO_CREATED: DI_KANTOR,
+  PO_STATUS_UPDATED: DI_KANTOR,
+  PO_PAYMENT_TOGGLED: DI_KANTOR,
+  GRN_CREATED: DI_KANTOR,
+  STOCK_ADJUSTMENT_CREATED: DI_KANTOR,
+  WO_CREATED: DI_KANTOR,
+  WO_STATUS_UPDATED: DI_KANTOR,
+  WO_MATERIALS_ISSUED: DI_KANTOR,
+  VENDOR_RETURN_CREATED: DI_KANTOR,
+  VENDOR_RETURN_STATUS_UPDATED: DI_KANTOR,
+  DOC_NUMBER_ALTERED: DI_KANTOR,
+  TAX_INVOICE_PENDING: DI_KANTOR,
+  PO_PAYMENT_DUE: DI_KANTOR,
+  SALES_RETURN_RECEIVED: DI_KANTOR,
+  FULFILLMENT_PUSH_STUCK: DI_KANTOR,
+  KONSI_REPORT_READY: DI_KANTOR,
+  KONSI_REPORT_HELD: DI_KANTOR,
+  KONSI_REPORT_BLOCKED: DI_KANTOR,
+  PENDING_ORDER_APPROVAL: DI_KANTOR,
+  STORE_CHANGE_REQUEST: DI_KANTOR,
+  JOURNAL_PENDING: DI_KANTOR,
+  JOURNAL_APPROVAL: DI_KANTOR,
+  CREDIT_LIMIT_HOLD: DI_KANTOR,
+  COLLECTION_PENDING_VERIFICATION: DI_KANTOR,
+  DELIVERY_COMPLETION_STUCK: DI_KANTOR,
+  GIRO_JATUH_TEMPO: DI_KANTOR,
+  KOREKSI_DIMINTA_BKM: DI_KANTOR,
+  KLAIM_DIBATALKAN_SALES: DI_KANTOR,
+  KOREKSI_DIMINTA_RETUR: DI_KANTOR,
+  RETUR_SPG_TANPA_PEMEGANG: DI_KANTOR,
+  RETUR_DIBATALKAN_SALES: DI_KANTOR,
+  STORE_PROPOSAL: DI_KANTOR,
+  EXPENSE_CLAIM_SUBMITTED: DI_KANTOR,
+  EXPENSE_CLAIM_TO_PAY: DI_KANTOR,
+  STORE_EXCHANGE_PROPOSED: DI_KANTOR,
+  STORE_EXCHANGE_TO_COMPLETE: DI_KANTOR,
+  STORE_TRANSFER_PROPOSED: DI_KANTOR,
+  STORE_TRANSFER_DISCREPANCY: DI_KANTOR,
+  STORE_TRANSFER_TO_RECEIVE: DI_KANTOR,
+  STORE_TRANSFER_STALE: DI_KANTOR,
+  LEAVE_REQUEST_SUBMITTED: DI_KANTOR,
+  RINGKASAN_SALES_HARIAN: DI_KANTOR,
+  STORE_RECEIPT_DAMAGED: DI_KANTOR,
+  SPG_SHIFT_SWAP: DI_KANTOR,
+  SPG_STOCK_REQUEST_UNHELD: DI_KANTOR,
+  STOCK_LOSS_OPEN: DI_KANTOR,
+};
+
+/**
+ * Hanya layar HP yang lolos: `/pwa` atau di bawahnya, tidak pernah `//host`, dan
+ * tidak pernah Kabar sendiri (atau Notifikasi lama, yang dialihkan ke Kabar) —
+ * ketukan di Kabar yang membuka Kabar tidak membawa ke mana pun.
+ */
+function hanyaLayarHp(href: string | null): string | null {
+  if (href === null || !/^\/pwa(?:[/?#]|$)/.test(href)) return null;
+  if (/^\/pwa\/(?:kabar|notifications)(?:[/?#]|$)/.test(href)) return null;
+  return href;
+}
+
+/**
+ * Tujuan sebuah notifikasi di HP. Kabar Max (`tautanKabar`) didahulukan, lalu
+ * jenis tim lewat `TUJUAN_HP`; jenis yang tidak dikenal keduanya → `null`.
+ */
+function tujuanDiHp(type: string, raw: unknown): string | null {
+  const data = bacaData(raw);
+  const kabar = hanyaLayarHp(tautanKabar(type, data));
+  if (kabar) return kabar;
+  if (!isNotificationType(type)) return null;
+  const tujuan = TUJUAN_HP[type];
+  return tujuan ? hanyaLayarHp(tujuan(data)) : null;
+}
+
 /**
  * Dokumen yang jurnalnya gagal, dari metadata penulis `JOURNAL_PENDING` (yang
  * tiba di lonceng sudah diratakan `toFcmData`). Urutan pemeriksaannya sama
@@ -488,9 +651,13 @@ function tautanJurnalTertunda(data: Record<string, unknown>): string {
         return TAUTAN_REKONSILIASI_PIUTANG;
       // Jurnal operasional (konsinyasi, komisi, barang hilang, gudang rusak, stok manual,
       // retur pemasok, biaya perjalanan): posting ulangnya di layar rekonsiliasi persediaan.
+      // Daftarnya = nilai `JENIS_TERTUNDA_OPERASIONAL` (lib/finance/operasional/aturan.ts) —
+      // tidak bisa diimpor ke sini (service worker); navigation.test.ts menyapu seluruhnya.
       case 'konsi_kirim':
       case 'konsi_pesanan':
+      case 'konsi_pindah':
       case 'konsi_retur':
+      case 'konsi_retur_lapangan':
       case 'konsi_siklus':
       case 'konsi_komisi':
       case 'konsi_gaji_bayar':

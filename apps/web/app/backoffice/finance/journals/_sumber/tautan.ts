@@ -49,7 +49,9 @@ export const JENIS_SUMBER_JURNAL = [
   // Jurnal operasional (lib/finance/operasional).
   "CONSIGNMENT_SHIPMENT",
   "CONSIGNMENT_ORDER",
+  "CONSIGNMENT_TRANSFER",
   "CONSIGNMENT_RETURN",
+  "CONSIGNMENT_FIELD_RETURN",
   "CONSIGNMENT_CYCLE",
   "CONSIGNMENT_COMMISSION",
   "CONSIGNMENT_COMMISSION_PAYMENT",
@@ -237,8 +239,13 @@ export function tautanDokumenSumber(
       return `/backoffice/konsinyasi/${seg(id)}`;
     case "CONSIGNMENT_ORDER":
       return `/backoffice/field-sales-orders/${seg(id)}`;
+    case "CONSIGNMENT_TRANSFER":
+      // Pindah barang per pengiriman (KonsiTransfer) tampil di rincian pesanan lapangannya.
+      return induk.fieldOrderId ? `/backoffice/field-sales-orders/${seg(induk.fieldOrderId)}` : "/backoffice/field-sales-orders";
     case "CONSIGNMENT_RETURN":
       return induk.storeReturnId ? `/backoffice/retur-toko/${seg(induk.storeReturnId)}` : "/backoffice/retur-toko";
+    case "CONSIGNMENT_FIELD_RETURN":
+      return `/backoffice/field-returns/${seg(id)}`;
     case "SPG_COMMISSION":
     case "SPG_COMMISSION_PAYMENT":
       return induk.periode ? `/backoffice/komisi-spg?bulan=${seg(induk.periode)}` : "/backoffice/komisi-spg";

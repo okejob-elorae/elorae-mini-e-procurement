@@ -77,7 +77,10 @@ type Props = {
   pilihan: string[];
   bulanSelesai: boolean;
   aturan: AturanKomisiPutus;
+  /** Menetapkan komisi — `receivables:manage`. */
   bolehKelola: boolean;
+  /** Menandai komisi dibayar — `spg_commission:pay`. */
+  bolehBayar: boolean;
   toko: TokoKomisiTampil[];
   tokoKonsi: TokoKonsiKomisi[];
   ringkas: { totalHitung: number; totalResmi: number; totalDibayar: number; tokoBelum: number };
@@ -88,7 +91,7 @@ type Props = {
  * jadi bulan tertentu bisa dibuka ulang dan dibagikan. Angka "hitungan"
  * dihitung langsung dari nota; angka "ditetapkan" adalah yang dibayar.
  */
-export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehKelola, toko, tokoKonsi, ringkas }: Props) {
+export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehKelola, bolehBayar, toko, tokoKonsi, ringkas }: Props) {
   const t = useTranslations("komisiSpg");
   const td = dinamis(t);
   const tBulan = dinamis(useTranslations("komisiSalesman"));
@@ -150,7 +153,7 @@ export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehK
         </Card>
       ) : (
         toko.map((tk) => (
-          <KartuToko key={tk.storeId} toko={tk} periode={periode} bulanLabel={bulanLabel} bulanSelesai={bulanSelesai} aktif={aturan.aktif} bolehKelola={bolehKelola} />
+          <KartuToko key={tk.storeId} toko={tk} periode={periode} bulanLabel={bulanLabel} bulanSelesai={bulanSelesai} aktif={aturan.aktif} bolehKelola={bolehKelola} bolehBayar={bolehBayar} />
         ))
       )}
 
@@ -208,6 +211,7 @@ function KartuToko({
   bulanSelesai,
   aktif,
   bolehKelola,
+  bolehBayar,
 }: {
   toko: TokoKomisiTampil;
   periode: string;
@@ -215,6 +219,7 @@ function KartuToko({
   bulanSelesai: boolean;
   aktif: boolean;
   bolehKelola: boolean;
+  bolehBayar: boolean;
 }) {
   const t = useTranslations("komisiSpg");
   const td = dinamis(t);
@@ -282,7 +287,7 @@ function KartuToko({
                 <TableHead className="text-right">{t("kolom.hitungan")}</TableHead>
                 <TableHead className="text-right">{t("kolom.ditetapkan")}</TableHead>
                 <TableHead>{t("kolom.status")}</TableHead>
-                {bolehKelola ? <TableHead className="text-right">{t("kolom.aksi")}</TableHead> : null}
+                {bolehBayar ? <TableHead className="text-right">{t("kolom.aksi")}</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -331,7 +336,7 @@ function KartuToko({
                     <StatusBaris status={b.status} ditetapkan={b.resmi?.ditetapkanLabel ?? null} dibayar={b.resmi?.dibayarLabel ?? null} />
                     {b.resmi?.note ? <span className="block text-xs text-muted-foreground">{b.resmi.note}</span> : null}
                   </TableCell>
-                  {bolehKelola ? (
+                  {bolehBayar ? (
                     <TableCell className="text-right">
                       {b.resmi && b.status === "DITETAPKAN" ? (
                         <TombolBayar
@@ -357,7 +362,7 @@ function KartuToko({
                   {toko.adaResmi ? formatIDR(toko.baris.reduce((n, b) => n + (b.resmi?.commission ?? 0), 0)) : "—"}
                 </TableCell>
                 <TableCell />
-                {bolehKelola ? <TableCell /> : null}
+                {bolehBayar ? <TableCell /> : null}
               </TableRow>
             </TableFooter>
           </Table>

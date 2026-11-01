@@ -37,8 +37,10 @@ const storeInputSchema = z.object({
   paymentTempo: z.number().int().min(0).max(365),
   markupPercent: z.number().nullable(),
   priceDiscountPercent: z.number().nullable(),
-  // Batas kredit (Rp) muat di Decimal(15,2); null = tanpa batas.
+  // Batas kredit (Rp) muat di Decimal(15,2); null = ikut bawaan Pengaturan → Salesman (lihat `batasKreditBerlaku`).
   creditLimit: z.number().min(0).max(9_999_999_999_999).nullable(),
+  // "Tanpa batas kredit"; tidak dikirim = tidak diubah. Dicentang → kedua batas disimpan kosong.
+  noCreditLimit: z.boolean().optional(),
   npwp: z.string().max(32).nullable(),
   lat: z.number().min(-90).max(90).nullable(),
   lng: z.number().min(-180).max(180).nullable(),
@@ -224,14 +226,21 @@ export async function updateStoreAction(id: string, input: StoreFields): Promise
  */
 export async function bacaBatasKreditTokoAction(
   id: string,
-): Promise<ActionResult<{ creditLimit: number | null; maxOpenInvoices: number | null }>> {
+): Promise<ActionResult<{ creditLimit: number | null; maxOpenInvoices: number | null; noCreditLimit: boolean }>> {
   const gate = await requireManage();
   if (!gate.ok) return gate;
-  const toko = await prisma.store.findUnique({ where: { id }, select: { creditLimit: true, maxOpenInvoices: true } });
+  const toko = await prisma.store.findUnique({
+    where: { id },
+    select: { creditLimit: true, maxOpenInvoices: true, noCreditLimit: true },
+  });
   if (!toko) return { ok: false, code: "not_found", message: "Store not found." };
   return {
     ok: true,
-    data: { creditLimit: toko.creditLimit === null ? null : Number(toko.creditLimit), maxOpenInvoices: toko.maxOpenInvoices },
+    data: {
+      creditLimit: toko.creditLimit === null ? null : Number(toko.creditLimit),
+      maxOpenInvoices: toko.maxOpenInvoices,
+      noCreditLimit: toko.noCreditLimit,
+    },
   };
 }
 

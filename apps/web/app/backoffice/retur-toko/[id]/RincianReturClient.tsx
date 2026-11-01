@@ -116,6 +116,7 @@ export function RincianReturClient({
   data,
   kandidat,
   bolehMengelola,
+  bolehPutuskanBeban = false,
   tokoTujuan = [],
   digantiOleh = null,
   menggantikan = null,
@@ -129,6 +130,8 @@ export function RincianReturClient({
   klaimTersembunyi?: boolean;
   kandidat: { id: string; name: string }[];
   bolehMengelola: boolean;
+  /** Menetapkan siapa menanggung selisih — `receivables:decide_bearer`, bukan `receivables:manage`. */
+  bolehPutuskanBeban?: boolean;
   /** Toko aktif untuk "Pindahkan ke toko lain" — hanya dimuat untuk yang boleh mengelola. */
   tokoTujuan?: { id: string; name: string }[];
   digantiOleh?: { id: string; nomor: string } | null;
@@ -570,7 +573,7 @@ export function RincianReturClient({
                     counted: rupiah(b.nilaiFisik ?? 0),
                   })}
                 </p>
-                {bolehMengelola && (
+                {bolehPutuskanBeban && (
                   <div className="flex flex-wrap gap-2">
                     {BEBAN.map((k) => (
                       <Button

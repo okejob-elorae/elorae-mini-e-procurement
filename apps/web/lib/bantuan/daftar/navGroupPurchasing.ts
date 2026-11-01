@@ -76,6 +76,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "supplierPayments.judulHalaman" },
     isi: [
       "Dua tab. Utang per PO: setiap PO yang sudah dikirim ke pemasok, utangnya, dan status bayarnya. Dokumen pembayaran: setiap pembayaran ke pemasok (BYR/…) — sebagian atau penuh, ke satu atau banyak dokumen utang sekaligus, dengan uang muka dan potongan PPh.",
+      "Ini satu-satunya tempat membayar pemasok, termasuk tagihan vendor dan ongkos jahit (CMT) lama: sejak 1 November 2026 Vendor Billing tidak menerima pembayaran baru dan hanya dipakai mencatat serta mencocokkan invoice. Pembayaran lama lewat Vendor Billing tetap dihitung sudah dibayar, jadi bagian itu tidak ditagih lagi di sini.",
       "Bayar pemasok membuka formulir pembayaran: pilih pemasok, lalu isi jumlah yang dibayar untuk setiap dokumen utangnya — penerimaan barang (GRN), jasa produksi/CMT per langkah WO, dan utang saldo awal. Sisanya boleh dibayar lain kali. Jumlah di luar dokumen menjadi uang muka, yang kelak diterapkan ke dokumen utang dari rincian pembayarannya.",
       "Jurnal pembayaran: utang usaha didebit sebesar bruto, rekening kas/bank dikredit sebesar yang benar-benar keluar, dan PPh yang dipotong menjadi utang PPh (PPh 23 jasa badan 2%, PPh 21 penjahit perorangan, PPh 4(2) sewa 10%). Potongan bawaan mengikuti jenis potongan di data pemasok; dasar potongan jasa CMT adalah nilai jasa tanpa PPN — barang tidak dipotong.",
       "Utang setiap dokumen dibaca dari buku besar: baris utang usaha jurnal GRN-nya (sudah termasuk PPN bila PKP), dikurangi jurnal retur ke pemasok dan pembayaran sebelumnya. GRN tanpa jurnal belum muncul sebagai utang — posting jurnalnya dulu.",
@@ -113,6 +114,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "supplierPayments.umur.judul" },
     isi: [
       "Sisa utang setiap pemasok dikelompokkan menurut umur dokumennya: 0–30, 31–60, 61–90, dan lebih dari 90 hari, dihitung dari tanggal GRN, tanggal penerimaan barang jadi pertama (untuk jasa produksi), atau tanggal saldo awal. Uang muka dan lebih bayar tampil sebagai kredit. Klik nama pemasok untuk melihat dokumennya.",
+      "Utang jasa CMT lama yang dicatat lewat tagihan vendor dihitung umurnya dari tagihan hidup tertua yang mencatatnya, bila tagihan itu lebih awal dari penerimaan barang jadi pertama.",
       "Saldonya adalah saldo SAAT INI; mengganti tanggal hanya menggeser cara umur dihitung. Total dibandingkan dengan saldo akun utang usaha di buku besar — selisih biasanya berasal dari jurnal manual ke akun utang usaha, retur atau GRN yang belum berjurnal.",
     ],
   },
@@ -124,6 +126,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "vendorBills.subtitle" },
       "Tagihan vendor adalah catatan invoice pemasok: nomor invoice, tanggal, jatuh tempo, dan barang atau jasa yang ditagihnya, dicocokkan dengan barang yang sudah diterima (item PO) dan step proses WO. Utang pemasok sudah tercatat saat barangnya diterima, jadi tagihan tidak membuat utang kedua; harga di tagihan disandingkan dengan harga PO atau ongkos step supaya bedanya terlihat.",
       "Daftar bisa disaring per pemasok, status (Belum dibayar, Dibayar sebagian, Lunas, Batal), dan tanggal tagihan, atau dicari dengan nomor tagihan maupun nomor invoice vendor.",
+      "Tagihan dibayar lewat Pembelian → Pembayaran pemasok, bukan di sini. Status Lunas dan Dibayar sebagian ikut menghitung pembayaran itu, per penerimaan barang dan per barang: penerimaan yang baru dibayar DPP-nya (PPN-nya belum) belum dianggap lunas. Bila beberapa tagihan memuat barang atau langkah WO yang sama, pembayarannya diberikan lebih dulu ke tagihan yang lebih dulu disimpan. Pembayaran lama lewat Vendor Billing juga dihitung.",
       "Melihat butuh izin melihat tagihan vendor; membuat dan membatalkan tagihan butuh izin mengelolanya.",
     ],
   },
@@ -134,7 +137,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "vendorBills.newSubtitle" },
       "Hanya yang belum habis ditagih yang muncul, dengan qty diterima, qty yang sudah ditagih, dan sisanya. Qty dan harga yang ditagih boleh diubah; harga yang berbeda dari harga PO atau ongkos step ditandai.",
-      { kunci: "vendorBills.poPaidNotBillable" },
+      "PO yang sudah ditandai lunas lewat Pembayaran pemasok tetap bisa ditagih: tagihan hanya mencatat dan mencocokkan invoice, tidak membayar.",
       { kunci: "vendorBills.dueDateHint" },
       "Tagihan tidak memposting jurnal untuk barang dan jasa yang utangnya sudah tercatat saat diterima. Satu-satunya pengecualian adalah jasa step WO dari penerimaan barang jadi lama yang belum mencatat ongkos jasanya: untuk bagian itu saja, tagihan memposting biaya jasa produksi dan utangnya.",
     ],
@@ -145,8 +148,27 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Rincian tagihan vendor",
     isi: [
       "Satu tagihan: pemasok, nomor invoice vendor, tanggal dan jatuh tempo, total, yang sudah dibayar, dan sisanya, beserta barisnya dan sumber setiap baris (item PO atau step WO).",
-      "Kartu Pembayaran menampilkan pembayaran yang dialokasikan ke tagihan ini. Kartu Jurnal menampilkan jurnal yang diposting tagihan ini — biasanya kosong, karena utangnya sudah tercatat saat barang diterima.",
-      { kunci: "vendorBills.voidBody" },
+      "Ada dua kartu pembayaran. Pembayaran pemasok: pembayaran lewat Pembelian → Pembayaran pemasok atas penerimaan barang dan langkah WO yang ditagih tagihan ini. Pembayaran Vendor Billing: pembayaran lama yang dibuat di Vendor Billing sebelum 1 November 2026. Angka Dibayar dan statusnya menghitung keduanya. Tombol Bayar lewat Pembayaran pemasok membuka formulir pembayaran untuk pemasok ini.",
+      "Kartu Jurnal menampilkan jurnal yang diposting tagihan ini — biasanya kosong, karena utangnya sudah tercatat saat barang diterima.",
+      "Membatalkan tagihan mengembalikan barisnya supaya bisa ditagih lagi dan membalik jurnalnya. Tagihan PO yang sudah dibayar boleh dibatalkan, lalu invoicenya dicatat ulang. Pembatalan hanya ditolak selama masih ada pembayaran Vendor Billing lama yang belum dibatalkan, atau bila tagihan ini mencatat utang jasa CMT lama dan Pembayaran pemasok sudah membayar langkah itu melebihi utangnya tanpa tagihan ini — catatan di halaman menyebut langkahnya.",
+    ],
+  },
+  {
+    rute: "/backoffice/vendor-payments",
+    bagian: "navGroupPurchasing",
+    judul: "Riwayat pembayaran Vendor Billing",
+    isi: [
+      "Pembayaran yang dulu dicatat lewat Vendor Billing, untuk dicari dan dilihat. Sejak 1 November 2026 Vendor Billing tidak menerima pembayaran baru: semua tagihan vendor, termasuk ongkos jahit (CMT) lama, dibayar lewat Pembelian → Pembayaran pemasok, yang memotong PPh, menerima giro, memilih rekening, dan menyimpan foto bukti. Tombol di pemberitahuan atas membuka halaman itu.",
+      "Pembayaran lama tetap dihitung sudah dibayar di utang pemasok, jadi Pembayaran pemasok tidak membayar bagian itu lagi. Daftar bisa disaring per pemasok dan tanggal, atau dicari; klik nomor pembayaran untuk rinciannya. Melihat butuh izin melihat pembayaran pemasok.",
+    ],
+  },
+  {
+    rute: "/backoffice/vendor-payments/[id]",
+    bagian: "navGroupPurchasing",
+    judul: "Rincian pembayaran Vendor Billing",
+    isi: [
+      "Satu pembayaran lama lewat Vendor Billing: tanggal, cara bayar, referensi, jumlah, pembuatnya, tagihan yang dilunasinya, dan jurnalnya.",
+      "Pembayaran lama masih bisa dibatalkan dengan alasan (butuh izin mencatat pembayaran pemasok): alokasinya dikembalikan ke tiap tagihan dan jurnalnya dibalik. Sisa tagihannya kemudian dibayar lewat Pembayaran pemasok.",
     ],
   },
   {

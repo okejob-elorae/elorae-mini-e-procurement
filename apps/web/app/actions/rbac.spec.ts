@@ -44,6 +44,8 @@ d("assignUserRole — peran sistem (test bed only)", () => {
   };
   const peranDari = async (id: string) =>
     (await prisma.user.findUnique({ where: { id: seededId(id) }, select: { roleId: true } }))?.roleId;
+  const peranLamaDari = async (id: string) =>
+    (await prisma.user.findUnique({ where: { id: seededId(id) }, select: { role: true } }))?.role;
   const jejak = (id: string) =>
     prisma.auditLog.findMany({
       where: { entityType: "User", entityId: seededId(id), action: "USER_UPDATED" },
@@ -75,9 +77,10 @@ d("assignUserRole — peran sistem (test bed only)", () => {
 
   beforeEach(async () => {
     await prisma.auditLog.deleteMany({ where: { entityType: "User", entityId: { in: pengguna() } } });
-    await prisma.user.update({ where: { id: seededId(targetBiasa) }, data: { roleId: peranBiasa } });
-    await prisma.user.update({ where: { id: seededId(targetSistem) }, data: { roleId: peranSistem } });
-    await prisma.user.update({ where: { id: seededId(pelakuBiasa) }, data: { roleId: peranBiasa } });
+    // Peran lama ikut disetel sejalan, supaya tes penyelarasannya mulai dari keadaan yang benar.
+    await prisma.user.update({ where: { id: seededId(targetBiasa) }, data: { roleId: peranBiasa, role: "USER" } });
+    await prisma.user.update({ where: { id: seededId(targetSistem) }, data: { roleId: peranSistem, role: "ADMIN" } });
+    await prisma.user.update({ where: { id: seededId(pelakuBiasa) }, data: { roleId: peranBiasa, role: "USER" } });
     sesi.antrean = [];
     masuk(pelakuBiasa);
   });
@@ -137,6 +140,22 @@ d("assignUserRole — peran sistem (test bed only)", () => {
     expect(await jejak(targetSistem)).toHaveLength(1);
   });
 
+  it("peran lama (`User.role`) ikut diselaraskan di transaksi yang sama, dan berjejak", async () => {
+    masuk(pelakuSistem, ["*"]);
+    expect(await assignUserRole(targetBiasa, peranSistem)).toEqual({ ok: true });
+    expect(await assignUserRole(targetSistem, peranBiasa)).toEqual({ ok: true });
+    expect(await peranLamaDari(targetBiasa)).toBe("ADMIN");
+    expect(await peranLamaDari(targetSistem)).toBe("USER");
+    expect((await jejak(targetBiasa))[0].changes).toEqual({
+      before: { roleId: peranBiasa, legacyRole: "USER" },
+      after: { roleId: peranSistem, legacyRole: "ADMIN" },
+    });
+    expect((await jejak(targetSistem))[0].changes).toEqual({
+      before: { roleId: peranSistem, legacyRole: "ADMIN" },
+      after: { roleId: peranBiasa, legacyRole: "USER" },
+    });
+  });
+
   it("peran yang sama tidak menulis apa pun", async () => {
     expect(await assignUserRole(targetBiasa, peranBiasa)).toEqual({ ok: true });
     expect(await jejak(targetBiasa)).toEqual([]);
@@ -150,7 +169,7 @@ d("assignUserRole — peran sistem (test bed only)", () => {
   it("balapan: admin bukan-sistem tidak pernah menimpa pengangkatan oleh admin sistem", async () => {
     for (let putaran = 0; putaran < 6; putaran++) {
       await prisma.auditLog.deleteMany({ where: { entityType: "User", entityId: seededId(targetBiasa) } });
-      await prisma.user.update({ where: { id: seededId(targetBiasa) }, data: { roleId: peranBiasa } });
+      await prisma.user.update({ where: { id: seededId(targetBiasa) }, data: { roleId: peranBiasa, role: "USER" } });
       // Urutan pemanggilan bergantian, supaya kedua urutan commit ikut teruji.
       const pasangan = [
         { sesi: sebagai(pelakuBiasa, ["settings_security:manage"]), peran: peranLain },
@@ -165,6 +184,8 @@ d("assignUserRole — peran sistem (test bed only)", () => {
       // Urutan serial yang sah: biasa→sistem (keduanya berhasil) atau
       // sistem→biasa (yang biasa ditolak AKUN_SISTEM). Akhirnya selalu sistem.
       expect(await peranDari(targetBiasa)).toBe(peranSistem);
+      // Peran lama ditulis di transaksi yang sama, jadi ikut pemenang balapan.
+      expect(await peranLamaDari(targetBiasa)).toBe("ADMIN");
       const berhasil = hasil.filter((h) => h.ok).length;
       expect(await jejak(targetBiasa)).toHaveLength(berhasil);
     }

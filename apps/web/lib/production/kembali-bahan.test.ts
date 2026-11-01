@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { Decimal } from "decimal.js";
 import {
+  BATAS_ALASAN_PENYESUAIAN,
+  BATAS_CATATAN_KEMBALI,
+  alasanKembaliBahan,
   bahanMasihDiCmt,
+  barisHargaPengeluaran,
   barisPengeluaran,
   batasNilaiKembali,
+  catatanDariAlasan,
   hargaDalamBatas,
+  hargaDariAlasan,
   hargaKeluar,
   jumlahPerBarang,
   kunciBarisKembali,
@@ -29,6 +35,43 @@ describe("barisPengeluaran", () => {
     expect(barisPengeluaran([{ item_id: "benang", quantity: 3 }]).map((b) => [b.itemId, angka(b.qty)])).toEqual([["benang", 3]]);
     expect(barisPengeluaran("{rusak")).toEqual([]);
     expect(barisPengeluaran(null)).toEqual([]);
+  });
+});
+
+describe("barisHargaPengeluaran", () => {
+  it("membaca harga rata-rata saat keluar (avgCostAtIssue) per baris dokumen; teks dibaca angka", () => {
+    const teks = JSON.stringify([
+      { itemId: "kain", qty: 10, avgCostAtIssue: 30_000, totalCost: 300_000 },
+      { itemId: "kancing", qty: "200", avgCostAtIssue: "1000" },
+      { item_id: "benang", quantity: 3, avg_cost_at_issue: 2_500 },
+    ]);
+    expect(barisHargaPengeluaran(teks).map((b) => [b.itemId, angka(b.qty), b.harga == null ? null : angka(b.harga)])).toEqual([
+      ["kain", 10, 30_000],
+      ["kancing", 200, 1_000],
+      ["benang", 3, 2_500],
+    ]);
+  });
+
+  it("harga kosong, 0, negatif, bukan angka, atau hanya di kolom lain (unitCost) → null, tidak pernah Rp 0", () => {
+    const hasil = barisHargaPengeluaran([
+      { itemId: "a", qty: 1 },
+      { itemId: "b", qty: 1, avgCostAtIssue: 0 },
+      { itemId: "c", qty: 1, avgCostAtIssue: -5 },
+      { itemId: "d", qty: 1, avgCostAtIssue: "abc" },
+      { itemId: "e", qty: 1, avgCostAtIssue: "" },
+      { itemId: "f", qty: 1, avgCostAtIssue: null },
+      { itemId: "g", qty: 1, unitCost: 25_000 },
+    ]);
+    expect(hasil.map((b) => [b.itemId, b.harga])).toEqual([
+      ["a", null],
+      ["b", null],
+      ["c", null],
+      ["d", null],
+      ["e", null],
+      ["f", null],
+      ["g", null],
+    ]);
+    expect(barisHargaPengeluaran("{rusak")).toEqual([]);
   });
 });
 
@@ -154,5 +197,68 @@ describe("batas nilai bahan kembali sesudah penerimaan barang jadi", () => {
     expect(hargaDalamBatas(baris, new Decimal(650_000))).toEqual({ harga: [new Decimal(30_000), new Decimal(1_000)], dibatasi: false });
     expect(hargaDalamBatas(baris, null).dibatasi).toBe(false);
     expect(hargaDalamBatas(baris, new Decimal(0)).harga.map(angka)).toEqual([0, 0]);
+  });
+});
+
+describe("alasan penyesuaian bahan kembali", () => {
+  // Tepat 120 karakter = BATAS_CATATAN_KEMBALI.
+  const catatanPenuh =
+    "Sisa potong kain katun combed 30s warna navy dari meja 3, dihitung ulang bersama kepala produksi CMT, cocok dengan nota.";
+  const dasar = { woDocNumber: "WO/2026/0001", harga: "30000.00", hargaDariDokumen: false, vendor: "Penjahit uji", catatan: "sisa potong" };
+
+  it("pendek → susunan lama apa adanya; penanda harga dokumen tepat sesudah harga; tanpa nama CMT → \"CMT\"", () => {
+    expect(alasanKembaliBahan(dasar)).toBe("Kembali bahan WO/2026/0001 @ 30000.00 dari Penjahit uji — sisa potong");
+    expect(alasanKembaliBahan({ ...dasar, hargaDariDokumen: true })).toBe(
+      "Kembali bahan WO/2026/0001 @ 30000.00 (harga dokumen) dari Penjahit uji — sisa potong",
+    );
+    expect(alasanKembaliBahan({ ...dasar, catatan: "" })).toBe("Kembali bahan WO/2026/0001 @ 30000.00 dari Penjahit uji");
+    expect(alasanKembaliBahan({ ...dasar, vendor: null, catatan: "" })).toBe("Kembali bahan WO/2026/0001 @ 30000.00 dari CMT");
+    expect(alasanKembaliBahan({ ...dasar, vendor: "  ", catatan: "" })).toBe("Kembali bahan WO/2026/0001 @ 30000.00 dari CMT");
+  });
+
+  it("catatan 120 karakter + harga dokumen + nama CMT panjang → yang dipendekkan nama CMT, catatan utuh, harga & penandanya terbaca", () => {
+    expect(catatanPenuh.length).toBe(BATAS_CATATAN_KEMBALI);
+    const alasan = alasanKembaliBahan({ ...dasar, hargaDariDokumen: true, vendor: "Konveksi Maju Bersama Sejahtera", catatan: catatanPenuh });
+    expect(alasan).toBe(`Kembali bahan WO/2026/0001 @ 30000.00 (harga dokumen) dari Konveks… — ${catatanPenuh}`);
+    expect(alasan.length).toBe(BATAS_ALASAN_PENYESUAIAN);
+    expect(catatanDariAlasan(alasan)).toBe(catatanPenuh);
+    expect(hargaDariAlasan(alasan)).toEqual({ harga: new Decimal(30_000), dariDokumen: true });
+  });
+
+  it("tanpa ruang untuk nama CMT → \"dari <CMT>\" dibuang, catatan tetap utuh", () => {
+    const alasan = alasanKembaliBahan({ ...dasar, woDocNumber: "WO/BDG/2026/0001-ULANG", hargaDariDokumen: true, catatan: catatanPenuh });
+    expect(alasan).toBe(`Kembali bahan WO/BDG/2026/0001-ULANG @ 30000.00 (harga dokumen) — ${catatanPenuh}`);
+    expect(catatanDariAlasan(alasan)).toBe(catatanPenuh);
+  });
+
+  it("awalan terpanjang yang dijanjikan (nomor WO 18 karakter, harga terbesar, penanda) + catatan 120 → masih utuh", () => {
+    const alasan = alasanKembaliBahan({
+      woDocNumber: "WO/2026/00001-ULNG",
+      harga: "9999999999999.99",
+      hargaDariDokumen: true,
+      vendor: "Konveksi",
+      catatan: catatanPenuh,
+    });
+    expect(alasan.length).toBeLessThanOrEqual(BATAS_ALASAN_PENYESUAIAN);
+    expect(catatanDariAlasan(alasan)).toBe(catatanPenuh);
+  });
+
+  it("awalan yang sendiri melewati kolom (jalan terakhir) → tetap dipotong ke 190 karakter", () => {
+    const alasan = alasanKembaliBahan({ ...dasar, woDocNumber: `WO/${"X".repeat(40)}`, hargaDariDokumen: true, catatan: catatanPenuh });
+    expect(alasan.length).toBe(BATAS_ALASAN_PENYESUAIAN);
+    expect(alasan.startsWith(`Kembali bahan WO/${"X".repeat(40)} @ 30000.00 (harga dokumen) — `)).toBe(true);
+  });
+
+  it("tanda pisah di nama CMT tidak terbaca sebagai awal catatan", () => {
+    const alasan = alasanKembaliBahan({ ...dasar, vendor: "CMT A — B", catatan: "sisa" });
+    expect(alasan).toBe("Kembali bahan WO/2026/0001 @ 30000.00 dari CMT A - B — sisa");
+    expect(catatanDariAlasan(alasan)).toBe("sisa");
+    expect(catatanDariAlasan(alasanKembaliBahan({ ...dasar, catatan: "" }))).toBeNull();
+  });
+
+  it("harga dibaca dari \"@\" pertama; penanda hanya dihitung TEPAT sesudah harga; tanpa \"@\" → null", () => {
+    expect(hargaDariAlasan("Kembali bahan WO/2026/0001 @ 34807.69 dari Penjahit uji")).toEqual({ harga: new Decimal("34807.69"), dariDokumen: false });
+    expect(hargaDariAlasan("Kembali bahan WO/2026/0001 @ 30000.00 dari (harga dokumen) CMT").dariDokumen).toBe(false);
+    expect(hargaDariAlasan("Penyesuaian manual")).toEqual({ harga: null, dariDokumen: false });
   });
 });

@@ -62,9 +62,11 @@ describe("kartuBeranda", () => {
   it("piutang terbuka bagi receivables:view ATAU receivables:manage", () => {
     expect(kartuBeranda(["dashboard:view", "receivables:view"]).piutang).toBe(true);
     expect(kartuBeranda(["dashboard:view", "receivables:manage"]).piutang).toBe(true);
-    // Keuangan memverifikasi BKM, tetapi tidak membaca buku piutang.
-    expect(kartuBeranda(["dashboard:view", "journals:manage"]).piutang).toBe(false);
-    expect(kartuBeranda(["dashboard:view", "journals:manage"]).klaimMenunggu).toBe(true);
+    // Pemeriksa pembayaran memverifikasi BKM, tetapi tidak membaca buku piutang.
+    expect(kartuBeranda(["dashboard:view", "payments:verify"]).piutang).toBe(false);
+    expect(kartuBeranda(["dashboard:view", "payments:verify"]).klaimMenunggu).toBe(true);
+    // Pekerjaan jurnal saja bukan memverifikasi pembayaran (keputusan pemilik 2026-11-01).
+    expect(kartuBeranda(["dashboard:view", "journals:manage"]).klaimMenunggu).toBe(false);
   });
 
   it("tren butuh KEDUA izin penjualan: satu saja akan membocorkan saluran lain", () => {

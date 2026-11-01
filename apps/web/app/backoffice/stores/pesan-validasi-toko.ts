@@ -21,6 +21,7 @@ const LABEL_KOLOM: Record<string, string> = {
   groupId: "Area",
   salesmanId: "Sales pemegang",
   creditLimit: "Batas kredit",
+  noCreditLimit: "Tanpa batas kredit",
   maxOpenInvoices: "Batas faktur terbuka",
   storeClass: "Kelas toko",
 };

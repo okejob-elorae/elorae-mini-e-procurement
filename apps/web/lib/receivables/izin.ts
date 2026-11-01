@@ -21,13 +21,19 @@ export function bolehMelapor(izin: string[] | undefined): boolean {
 }
 
 /**
- * Memverifikasi klaim ke mutasi rekening.
+ * Memverifikasi klaim ke mutasi rekening — juga menandai giro cair/ditolak,
+ * membatalkan BKM atau menautkan ulang potongannya, dan mencatat pembayaran
+ * toko konsinyasi (uang yang sudah terlihat di rekening).
  *
- * Keuangan, dan HANYA keuangan. Kalau pelapor bisa mengesahkan laporannya
- * sendiri, seluruh Aturan 1 runtuh.
+ * Izinnya sendiri, `payments:verify` ("periksa pembayaran", keputusan pemilik
+ * 2026-10-29): admin dan orang keuangan. Dulu menumpang `journals:manage`,
+ * sehingga memberi seseorang pekerjaan jurnal berarti sekalian memberi hak
+ * mengesahkan uang masuk. Kalau pelapor bisa mengesahkan laporannya sendiri,
+ * seluruh Aturan 1 runtuh — penulisnya tetap menolak pemeriksa yang sama
+ * dengan pelapor atau pencatatnya (`PEMERIKSA_SAMA`), termasuk admin.
  */
 export function bolehMemverifikasi(izin: string[] | undefined): boolean {
-  return hasPermission(izin ?? [], PERMISSIONS.JOURNALS_MANAGE);
+  return hasPermission(izin ?? [], PERMISSIONS.PAYMENTS_VERIFY);
 }
 
 /** Menghitung fisik barang retur — gudang, bukan yang mengklaim. */
@@ -35,9 +41,24 @@ export function bolehMenghitung(izin: string[] | undefined): boolean {
   return hasPermission(izin ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
 }
 
-/** Menetapkan beban, menjodohkan, membatalkan — keputusan penagihan. */
+/** Menjodohkan, membatalkan, mengimpor, menugaskan — pekerjaan penagihan. */
 export function bolehMengelola(izin: string[] | undefined): boolean {
   return hasPermission(izin ?? [], PERMISSIONS.RECEIVABLES_MANAGE);
+}
+
+/**
+ * Memutuskan siapa menanggung selisih: selisih retur toko (tetapkan dan
+ * alihkan beban) dan barang hilang SPG (putuskan, ubah keputusan, dan
+ * membatalkan catatan yang sudah diputuskan — pembatalan menghapus bagian
+ * penanggungnya, jadi itu juga keputusan).
+ *
+ * Keputusan manager, jadi izinnya terpisah dari `receivables:manage`
+ * (keputusan pemilik 2026-11-01): bawaannya hanya admin, dan pemilik boleh
+ * memberikannya ke peran lain di Peran & izin. Orang yang mengelola piutang
+ * tetap mencatat dan menjodohkan, tapi tidak lagi memutuskan bebannya.
+ */
+export function bolehMemutuskanBeban(izin: string[] | undefined): boolean {
+  return hasPermission(izin ?? [], PERMISSIONS.RECEIVABLES_DECIDE_BEARER);
 }
 
 /**
@@ -80,9 +101,10 @@ export function bolehMembacaPiutang(izin: string[] | undefined): boolean {
 /**
  * BKM: daftar, rincian, cetak.
  *
- * Ditambah keuangan (`journals:manage`): BKM yang menunggu verifikasi dan
- * permintaan koreksinya dikabarkan ke keuangan, dan tautannya menuju rincian
- * BKM. Tanpa ini yang harus memverifikasi justru tidak bisa membukanya.
+ * Ditambah pemeriksa pembayaran (`payments:verify`): BKM yang menunggu
+ * verifikasi dan permintaan koreksinya dikabarkan ke keuangan, dan tautannya
+ * menuju rincian BKM. Tanpa ini yang harus memverifikasi justru tidak bisa
+ * membukanya.
  */
 export function bolehMembacaPelunasan(izin: string[] | undefined): boolean {
   return bolehMembacaPiutang(izin) || bolehMemverifikasi(izin);
@@ -113,17 +135,55 @@ export function bolehMembukaKonsi(izin: string[] | undefined): boolean {
 }
 
 /**
- * Menjalankan siklus konsinyasi: kunci angka, bayar komisi, catat nomor faktur.
+ * Menjalankan siklus konsinyasi: membuka siklus, mencatat kiriman titipan dan
+ * laporan SPG/toko.
  *
  * SATU izin, bukan "ini ATAU yang mengelola piutang". Sempat saya tulis begitu
  * supaya orang yang sudah bekerja hari ini tidak terkunci — tapi menu sampingnya
  * hanya bisa menguji SATU izin, jadi hasilnya pintu terbuka dengan menu yang
  * tidak menampilkannya: orang yang berhak tidak akan pernah menemukannya.
  *
- * Yang benar adalah seed memberi `consignment:*` kepada setiap peran yang sudah
- * memegang `receivables:manage` — lihat `seed-consignment-permissions.sql`.
- * Dengan begitu pagar halaman dan menu menguji hal yang persis sama.
+ * Yang benar adalah seed memberi `consignment:view`/`consignment:manage` kepada
+ * setiap peran yang sudah memegang `receivables:manage` — lihat
+ * `seed-max-features-permissions.sql`. Dengan begitu pagar halaman dan menu
+ * menguji hal yang persis sama.
+ *
+ * Mengunci angka, kedua nomor dokumen, dan menandai gaji SPG dibayar TIDAK lagi
+ * di sini (keputusan pemilik 2026-11-01): masing-masing izinnya sendiri di
+ * bawah, supaya admin penjualan bisa mengetik nomor nota tanpa ikut bisa
+ * mengunci angka atau mengetik faktur pajak. Seed-nya sengaja TIDAK memberikan
+ * izin-izin itu ke pemegang `consignment:manage` yang sudah ada.
  */
 export function bolehMengelolaKonsi(izin: string[] | undefined): boolean {
   return hasPermission(izin ?? [], PERMISSIONS.CONSIGNMENT_MANAGE);
+}
+
+/** Mengunci dan membuka kunci angka terjual resmi siklus — keputusan manager. */
+export function bolehMengunciKonsi(izin: string[] | undefined): boolean {
+  return hasPermission(izin ?? [], PERMISSIONS.CONSIGNMENT_LOCK);
+}
+
+/**
+ * Mencatat salah satu dari dua nomor milik orang lain di kartu "Tiga nomor":
+ * nomor nota milik admin penjualan (`NOTA`), nomor faktur pajak milik admin
+ * pajak (`PAJAK`). Nomor konsi kita dibuat sistem, jadi tidak punya izin.
+ */
+export function bolehMencatatNomorKonsi(izin: string[] | undefined, jenis: "NOTA" | "PAJAK"): boolean {
+  // `jenis` datang dari aksi server, jadi nilai lain ditolak — bukan dibaca sebagai PAJAK.
+  const kode =
+    jenis === "NOTA"
+      ? PERMISSIONS.CONSIGNMENT_NOTE_NUMBER
+      : jenis === "PAJAK"
+        ? PERMISSIONS.CONSIGNMENT_TAX_NUMBER
+        : null;
+  return kode !== null && hasPermission(izin ?? [], kode);
+}
+
+/**
+ * Menandai gaji pokok & komisi SPG sudah dibayar — toko konsinyasi (siklus)
+ * dan toko putus (Komisi SPG). Terpisah dari menetapkan komisinya: yang
+ * menghitung tidak otomatis yang mengeluarkan uang.
+ */
+export function bolehMembayarKomisiSpg(izin: string[] | undefined): boolean {
+  return hasPermission(izin ?? [], PERMISSIONS.SPG_COMMISSION_PAY);
 }

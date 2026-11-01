@@ -100,8 +100,21 @@ describe("penjelasan izin", () => {
   it("keterangan peran bawaan sama persis dengan seed", () => {
     const seed = readFileSync(path.resolve(__dirname, "../../../../packages/db/prisma/seed.ts"), "utf8");
     for (const [nama, deskripsi] of Object.entries(DESKRIPSI_PERAN_BAWAAN)) {
-      const cocok = new RegExp(`name: '${nama}',\\s*description: '([^']*)'`).exec(seed);
-      expect(cocok?.[1], nama).toBe(deskripsi);
+      // Peran lama ditulis berkutip tunggal, peran kantor berkutip ganda.
+      const cocok = new RegExp(`name: (['"])${nama}\\1,\\s*description: (['"])(.*?)\\2,`).exec(seed);
+      expect(cocok?.[3], nama).toBe(deskripsi);
+    }
+  });
+
+  it("keterangan tiga peran kantor sama persis dengan berkas seed produksinya", () => {
+    // Produksi tidak menjalankan seed.ts; perannya dibuat berkas SQL yang dijalankan tangan.
+    const sql = readFileSync(
+      path.resolve(__dirname, "../../../../packages/db/prisma/seed-office-roles-permissions.sql"),
+      "utf8",
+    );
+    for (const nama of ["KEUANGAN", "ADMIN_PENJUALAN", "ADMIN_PAJAK"]) {
+      const cocok = new RegExp(`'${nama}', '([^']*)', 0,`).exec(sql);
+      expect(cocok?.[1], nama).toBe(DESKRIPSI_PERAN_BAWAAN[nama]);
     }
   });
 });

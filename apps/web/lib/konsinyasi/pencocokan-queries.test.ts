@@ -29,6 +29,12 @@ let terimaId = "";
 let jualId = "";
 let returId = "";
 let hilangIds: string[] = [];
+let nomor = 0;
+let konsiPesananIds: string[] = [];
+let konsiBarisIds: string[] = [];
+let konsiPengirimanIds: string[] = [];
+let konsiTransferIds: string[] = [];
+let konsiTerimaIds: string[] = [];
 
 beforeEach(async () => {
   tokoId = "";
@@ -41,6 +47,11 @@ beforeEach(async () => {
   terimaId = "";
   jualId = "";
   returId = "";
+  konsiPesananIds = [];
+  konsiBarisIds = [];
+  konsiPengirimanIds = [];
+  konsiTransferIds = [];
+  konsiTerimaIds = [];
 
   tokoId = (await prisma.store.create({ data: { code: `${tag}-S`, name: `${tag} Konsi`, address: "uji", termsType: "KONSI", isActive: true } })).id;
   uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
@@ -75,6 +86,13 @@ afterEach(async () => {
   await prisma.storeStockMovement.deleteMany({ where: { storeId: seededId(tokoId) } });
   await prisma.storeReceiptLine.deleteMany({ where: { receiptId: seededId(terimaId) } });
   await prisma.storeReceipt.deleteMany({ where: { id: seededId(terimaId) } });
+  await prisma.storeReceiptLine.deleteMany({ where: { receiptId: { in: seededIds(konsiTerimaIds) } } });
+  await prisma.storeReceipt.deleteMany({ where: { id: { in: seededIds(konsiTerimaIds) } } });
+  // Pesanan konsi + antarannya: cadangan, transfer, pengiriman, lalu pesanan (barisnya ikut terhapus).
+  await prisma.stockReservation.deleteMany({ where: { fieldSalesLineId: { in: seededIds(konsiBarisIds) } } });
+  await prisma.konsiTransfer.deleteMany({ where: { id: { in: seededIds(konsiTransferIds) } } });
+  await prisma.deliveryShipment.deleteMany({ where: { id: { in: seededIds(konsiPengirimanIds) } } });
+  await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(konsiPesananIds) } } });
   await prisma.spgSaleReturnLine.deleteMany({ where: { returnId: seededId(returId) } });
   await prisma.spgSaleReturn.deleteMany({ where: { id: seededId(returId) } });
   await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: seededId(jualId) } });
@@ -178,6 +196,96 @@ async function siapkanBuku() {
   await gerak(barangA, -1, "OPNAME", "2026-08-20T03:00:00Z");
   // Nota retur ke gudang yang belum dihitung (tidak ada NRI sama sekali).
   await gerak(barangA, -1, "RETUR_KELUAR", "2026-08-25T03:00:00Z", { refType: "StoreReturn", refId: `${tag}-nrt` });
+}
+
+/**
+ * Pesanan konsi yang disetujui. `cadangan` = keadaan cadangan stok barisnya
+ * (null = pesanan lebih tua dari cadangan stok). Pesanan aturan baru selalu
+ * RESERVED sampai dikirim.
+ */
+async function pesananKonsi(itemId: string, qty: number, lain: { terkirim?: number; disetujui: string; cadangan: "RESERVED" | "CONSUMED" | null }) {
+  nomor += 1;
+  const terkirim = lain.terkirim ?? 0;
+  const o = await prisma.fieldSalesOrder.create({
+    data: {
+      orderNo: `${tag}-KONSI-${nomor}`,
+      storeId: tokoId,
+      salesmanId: orangId,
+      orderType: "KONSI",
+      status: "APPROVED",
+      deliveryStatus: terkirim >= qty ? "DELIVERED" : terkirim > 0 ? "PARTIAL" : "PENDING",
+      approvedAt: pada(lain.disetujui),
+      subtotal: 0,
+      total: 0,
+      lines: { create: [{ itemId, variantSku: "", productName: "uji", qty, deliveredQty: terkirim, unitPrice: 0, lineTotal: 0 }] },
+    },
+    select: { id: true, lines: { select: { id: true } } },
+  });
+  konsiPesananIds.push(o.id);
+  konsiBarisIds.push(o.lines[0].id);
+  if (lain.cadangan) {
+    await prisma.stockReservation.create({
+      data: { source: "FIELD_SALES_KONSI", fieldSalesLineId: o.lines[0].id, itemId, variantSku: "", qty, consumedQty: terkirim, state: lain.cadangan },
+    });
+  }
+  return { id: o.id, lineId: o.lines[0].id, itemId };
+}
+
+/** Transfer konsi (dibuat saat pengiriman diserahkan); `shipmentId` null = transfer lama saat disetujui. */
+async function transferKonsi(o: { id: string; lineId: string; itemId: string }, qty: number, shipmentId: string | null, iso: string): Promise<string> {
+  nomor += 1;
+  const t = await prisma.konsiTransfer.create({
+    data: {
+      docNo: `${tag}-TRF-${nomor}`,
+      orderId: o.id,
+      storeId: tokoId,
+      shipmentId,
+      transferredById: orangId,
+      createdAt: pada(iso),
+      lines: { create: [{ orderLineId: o.lineId, itemId: o.itemId, variantSku: "", productName: "uji", qty, unitCost: 0 }] },
+    },
+    select: { id: true },
+  });
+  konsiTransferIds.push(t.id);
+  return t.id;
+}
+
+/** Antaran: pengiriman pesanan itu; yang DELIVERED membawa transfernya. Mengembalikan id transfernya ("" kalau belum diserahkan). */
+async function antaranKonsi(o: { id: string; lineId: string; itemId: string }, qty: number, status: "DELIVERED" | "PACKED" | "IN_TRANSIT", iso: string): Promise<string> {
+  nomor += 1;
+  const shp = await prisma.deliveryShipment.create({
+    data: {
+      docNo: `${tag}-SHP-${nomor}`,
+      orderId: o.id,
+      method: "SALESMAN_CARRY",
+      status,
+      packedById: orangId,
+      carriedById: orangId,
+      packedAt: pada(iso),
+      deliveredAt: status === "DELIVERED" ? pada(iso) : null,
+      lines: { create: [{ orderLineId: o.lineId, itemId: o.itemId, variantSku: "", plannedQty: qty, deliveredQty: status === "DELIVERED" ? qty : null }] },
+    },
+    select: { id: true },
+  });
+  konsiPengirimanIds.push(shp.id);
+  return status === "DELIVERED" ? transferKonsi(o, qty, shp.id, iso) : "";
+}
+
+/** Tanda terima SPG atas satu kiriman konsi + gerakan TERIMA-nya di buku. */
+async function terimaKonsi(sourceType: "KONSI_TRANSFER" | "KONSI_ORDER", sourceId: string, itemId: string, dikirim: number, diterima: number, iso: string) {
+  const r = await prisma.storeReceipt.create({
+    data: {
+      storeId: tokoId,
+      sourceType,
+      sourceId,
+      sourceDocNo: `${tag}-TT`,
+      receivedById: orangId,
+      receivedAt: pada(iso),
+      lines: { create: [{ itemId, productName: "uji", qtySent: dikirim, qtyReceived: diterima }] },
+    },
+  });
+  konsiTerimaIds.push(r.id);
+  await gerak(itemId, diterima, "TERIMA", iso);
 }
 
 describe("pencocokanSiklus (basis data)", () => {
@@ -321,6 +429,59 @@ describe("pencocokanSiklus (basis data)", () => {
     await kirim(`${tag}/KRM3`, "2026-08-28T03:00:00Z", barangA, `${tag} Blus`, 4);
     const a = (await pencocokanSiklus(siklusId))!.baris.find((b) => b.itemId === barangA)!;
     expect(a.stok).toMatchObject({ titipan: 12, dalamProses: 5, seharusnya: 7, kemungkinanHilang: 1 });
+  });
+
+  it("antaran konsi: masuk dan dalam proses sebesar antarannya, bertanggal transfernya — sisa pesanan yang belum dikirim gudang tidak ada di mana pun", async () => {
+    await siapkanBuku();
+    // Pesanan 100 A, antaran pertama 60 diserahkan 15 Agustus, sisa 40: 30 sedang dikemas, 10 belum.
+    const o = await pesananKonsi(barangA, 100, { terkirim: 60, disetujui: "2026-08-01T03:00:00Z", cadangan: "RESERVED" });
+    const t1 = await antaranKonsi(o, 60, "DELIVERED", "2026-08-15T03:00:00Z");
+    await antaranKonsi(o, 30, "PACKED", "2026-08-28T03:00:00Z");
+    // Pesanan yang hanya disetujui (dicadangkan, belum dikirim) tidak pernah masuk titipan.
+    await pesananKonsi(barangA, 25, { disetujui: "2026-08-20T03:00:00Z", cadangan: "RESERVED" });
+
+    // Belum diterima SPG: titipan 8 + 60 (bukan + 100 / + 125), dalam proses 1 + 60 (bukan + 40 sisanya).
+    let a = (await pencocokanSiklus(siklusId))!.baris.find((b) => b.itemId === barangA)!;
+    expect(a.stok).toEqual({ buku: 6, titipan: 68, dalamProses: 61, hilangTercatat: 0, seharusnya: 7, selisih: -1, kemungkinanHilang: 1 });
+
+    // SPG menghitung 57 dari 60: kurang 3 di perjalanan, dicatat barang hilang (sumber PENERIMAAN).
+    await terimaKonsi("KONSI_TRANSFER", t1, barangA, 60, 57, "2026-08-16T03:00:00Z");
+    const l = await prisma.stockLoss.create({
+      data: {
+        storeId: tokoId,
+        source: "PENERIMAAN",
+        totalQty: 3,
+        totalAmount: 0,
+        valueBasis: "HARGA_ELORAE",
+        status: "TERBUKA",
+        createdById: orangId,
+        createdAt: pada("2026-08-16T03:00:00Z"),
+        lines: { create: [{ itemId: barangA, productName: `${tag} Blus`, qty: 3, unitValue: 0, amount: 0 }] },
+      },
+    });
+    hilangIds.push(l.id);
+    a = (await pencocokanSiklus(siklusId))!.baris.find((b) => b.itemId === barangA)!;
+    // Buku 6 + 57; antaran sudah diterima → keluar dari dalam proses; kurang 3 sudah tercatat → tidak menambah kemungkinan hilang.
+    expect(a.stok).toEqual({ buku: 63, titipan: 68, dalamProses: 1, hilangTercatat: 3, seharusnya: 64, selisih: -1, kemungkinanHilang: 1 });
+  });
+
+  it("pesanan konsi lama (stok keluar saat disetujui) masuk sekali — dari transfernya kalau ada, kalau tidak dari barisnya — dan diterima sekali per pesanan", async () => {
+    await siapkanBuku();
+    // (b) lebih tua dari cadangan stok: tanpa cadangan, tanpa transfer.
+    const lamaB = await pesananKonsi(barangB, 5, { terkirim: 5, disetujui: "2026-08-03T03:00:00Z", cadangan: null });
+    // (a) cadangan habis dipakai saat disetujui + transfer TANPA pengiriman.
+    const lamaA = await pesananKonsi(barangB, 4, { terkirim: 4, disetujui: "2026-08-04T03:00:00Z", cadangan: "CONSUMED" });
+    await transferKonsi(lamaA, 4, null, "2026-08-04T03:00:00Z");
+
+    // B dasar: titipan 3, dalam proses 2. Keduanya belum diterima: + 5 + 4, tidak dobel.
+    let b = (await pencocokanSiklus(siklusId))!.baris.find((x) => x.itemId === barangB)!;
+    expect(b.stok).toEqual({ buku: 2, titipan: 12, dalamProses: 11, hilangTercatat: 0, seharusnya: 1, selisih: 1, kemungkinanHilang: 0 });
+
+    // Pesanan lama diterima per PESANAN (`KONSI_ORDER`), bukan per transfernya.
+    await terimaKonsi("KONSI_ORDER", lamaA.id, barangB, 4, 4, "2026-08-05T03:00:00Z");
+    await terimaKonsi("KONSI_ORDER", lamaB.id, barangB, 5, 5, "2026-08-05T04:00:00Z");
+    b = (await pencocokanSiklus(siklusId))!.baris.find((x) => x.itemId === barangB)!;
+    expect(b.stok).toEqual({ buku: 11, titipan: 12, dalamProses: 2, hilangTercatat: 0, seharusnya: 10, selisih: 1, kemungkinanHilang: 0 });
   });
 
   it("sesudah dikunci, angka resmi dipakai untuk terjual dan stok titipan", async () => {

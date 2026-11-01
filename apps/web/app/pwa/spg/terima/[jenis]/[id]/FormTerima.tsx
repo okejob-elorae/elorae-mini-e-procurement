@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { CheckCheck, CloudOff, Loader2, Minus, PackageCheck, PackageX, Plus } from "lucide-react";
+import { CheckCheck, CloudOff, Loader2, Minus, PackageCheck, PackageX, Plus, Truck } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +26,8 @@ import { KeteranganKirim } from "@/app/pwa/KeteranganKirim";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { dinamis } from "@/lib/i18n/dinamis";
 import type { BarisKiriman, JenisKiriman } from "@/lib/spg/kiriman";
+import { hitungSelisihTerima } from "@/lib/spg/selisih-terima";
+import type { InfoAntaran } from "@/lib/spg/antaran";
 import { BATAS_TEKS_RUSAK } from "@/lib/spg/rusak";
 import { cn } from "@/lib/utils";
 import { PerluCheckIn } from "../../PerluCheckIn";
@@ -47,6 +49,8 @@ type KirimanForm = {
   lines: BarisKiriman[];
   /** Tanggal opname toko yang dilakukan sesudah kiriman ini berangkat, bila ada. */
   opnameSesudah?: string | null;
+  /** Pengiriman yang membawa kiriman ini dan sisa pesanannya (putus/konsi); tanpa harga. */
+  antaran?: InfoAntaran | null;
 };
 
 const KODE_GALAT = new Set([
@@ -188,6 +192,12 @@ export function FormTerima({
             : null;
   const totalKirim = lines.reduce((n, l) => n + l.qty, 0);
   const totalTerima = lines.reduce((n, l) => n + (angka(diterima[l.lineId]) ?? 0), 0);
+  // Kurang per baris (kelebihan satu baris tidak menutup kurang baris lain) — dasar
+  // catatan "kurang di perjalanan" di server, jadi layar membaca angka yang sama.
+  const selisihKirim = hitungSelisihTerima(lines.map((l) => ({ qtySent: l.qty, qtyReceived: angka(diterima[l.lineId]) ?? 0 })));
+  const antaran = kiriman.antaran ?? null;
+  const pengiriman = antaran?.pengiriman ?? null;
+  const kurangPerjalanan = pengiriman && semuaSah ? selisihKirim.kurang : 0;
   const totalRusak = lines.reduce((n, l) => n + rusakDari(l.lineId), 0);
   const barisBeda = lines.filter((l) => angka(diterima[l.lineId]) !== l.qty).length;
   const barisLuarKatalog = lines.filter((l) => !l.itemId).length;
@@ -319,6 +329,7 @@ export function FormTerima({
         return;
       }
       toast.success(t("form.saved", { docNo: kiriman.docNo, pcs: totalTerima }));
+      if (kurangPerjalanan > 0) toast.message(t("form.tersimpanKurangPerjalanan", { pcs: kurangPerjalanan }));
       if (totalRusak > 0) toast.message(tr("form.tersimpanRusak", { pcs: totalRusak }));
       router.replace("/pwa/spg/terima");
     });
@@ -380,6 +391,8 @@ export function FormTerima({
           {t("form.opnameAfter", { tanggal: kiriman.opnameSesudah })}
         </p>
       ) : null}
+
+      {antaran ? <KartuAntaran antaran={antaran} /> : null}
 
       <section className="beranda-kartu space-y-3">
         <p className="text-sm">{t("form.instructions")}</p>
@@ -495,6 +508,10 @@ export function FormTerima({
         </p>
       </section>
 
+      {pengiriman && kurangPerjalanan > 0 ? (
+        <KurangPerjalanan pengiriman={pengiriman} dikirim={selisihKirim.dikirim} diterima={selisihKirim.diterima} kurang={kurangPerjalanan} />
+      ) : null}
+
       <div className="space-y-2">
         <Label htmlFor="terima-catatan">{t("form.noteLabel")}</Label>
         <Textarea
@@ -525,6 +542,9 @@ export function FormTerima({
                 {barisBeda > 0 ? (
                   <p className="font-medium text-amber-700 dark:text-amber-300">{t("confirm.diff", { count: barisBeda })}</p>
                 ) : null}
+                {kurangPerjalanan > 0 ? (
+                  <p className="font-medium text-destructive">{t("confirm.kurangPerjalanan", { pcs: kurangPerjalanan })}</p>
+                ) : null}
                 {barisLuarKatalog > 0 ? <p>{t("confirm.notCatalog", { count: barisLuarKatalog })}</p> : null}
                 {totalRusak > 0 ? (
                   <p className="font-medium text-destructive">{tr("form.konfirmasiRusak", { pcs: totalRusak })}</p>
@@ -550,6 +570,91 @@ export function FormTerima({
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+/**
+ * Antaran yang membawa kiriman ini: nomor pesanan, siapa yang membawa, dan sisa
+ * pesanan yang BELUM DIKIRIM GUDANG — barang itu masih di gudang, tidak ada di
+ * dus ini, dan tidak pernah dihitung kurang. Potong dan nama saja, tanpa harga.
+ */
+function KartuAntaran({ antaran }: { antaran: InfoAntaran }) {
+  const t = useTranslations("pwa.spgTerima.form.antaran");
+  const p = antaran.pengiriman;
+  const pembawa = !p
+    ? null
+    : p.cara === "SALESMAN_CARRY"
+      ? p.pengantar
+        ? t("dibawaPengantar", { nama: p.pengantar })
+        : null
+      : p.ekspedisi && p.resi
+        ? t("dibawaEkspedisiResi", { ekspedisi: p.ekspedisi, resi: p.resi })
+        : p.ekspedisi
+          ? t("dibawaEkspedisi", { ekspedisi: p.ekspedisi })
+          : p.resi
+            ? t("resiSaja", { resi: p.resi })
+            : null;
+  return (
+    <section className="beranda-kartu space-y-2 text-sm" aria-label={t("label")}>
+      <div className="flex items-start gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+          <Truck className="h-4 w-4" aria-hidden />
+        </span>
+        <div className="min-w-0 space-y-0.5">
+          <p className="font-medium leading-tight">{t("pesanan", { orderNo: antaran.orderNo })}</p>
+          {p ? <p className="text-xs text-muted-foreground">{t("pengiriman", { docNo: p.docNo })}</p> : null}
+          {pembawa ? <p className="text-xs text-muted-foreground">{pembawa}</p> : null}
+        </div>
+      </div>
+      {antaran.dalamPengirimanLain > 0 ? <p className="text-xs text-muted-foreground">{t("dalamPengirimanLain", { pcs: antaran.dalamPengirimanLain })}</p> : null}
+      {antaran.belumDikirimGudang > 0 ? (
+        <p role="note" className="rounded-lg bg-muted px-3 py-2 text-xs">
+          {t("belumDikirimGudang", { pcs: antaran.belumDikirimGudang })}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * Kurang di perjalanan: yang dikirim gudang di antaran INI tapi tidak tiba.
+ * Menyebut berapa yang dikirim, berapa yang tiba, dan siapa yang dicek —
+ * pengantar atau ekspedisi dengan resinya, dan bahwa foto serah terimanya ada.
+ */
+function KurangPerjalanan({
+  pengiriman,
+  dikirim,
+  diterima,
+  kurang,
+}: {
+  pengiriman: NonNullable<InfoAntaran["pengiriman"]>;
+  dikirim: number;
+  diterima: number;
+  kurang: number;
+}) {
+  const t = useTranslations("pwa.spgTerima.form.kurangPerjalanan");
+  const cek =
+    pengiriman.cara === "SALESMAN_CARRY"
+      ? pengiriman.pengantar
+        ? t("cekPengantar", { nama: pengiriman.pengantar })
+        : t("cekTanpaNama")
+      : pengiriman.ekspedisi && pengiriman.resi
+        ? t("cekEkspedisiResi", { ekspedisi: pengiriman.ekspedisi, resi: pengiriman.resi })
+        : pengiriman.ekspedisi
+          ? t("cekEkspedisi", { ekspedisi: pengiriman.ekspedisi })
+          : pengiriman.resi
+            ? t("cekResi", { resi: pengiriman.resi })
+            : t("cekTanpaNama");
+  return (
+    <section role="status" aria-live="polite" className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm">
+      <p className="font-semibold text-destructive">{t("judul", { pcs: kurang })}</p>
+      <p>{t("isi", { dikirim, diterima, docNo: pengiriman.docNo })}</p>
+      <p>
+        {cek}
+        {pengiriman.adaBuktiSerahTerima ? ` ${t("bukti")}` : ""}
+      </p>
+      <p className="text-xs text-muted-foreground">{t("dicatat")}</p>
+    </section>
   );
 }
 

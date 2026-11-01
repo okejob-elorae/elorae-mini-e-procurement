@@ -18,11 +18,13 @@ import { TombolSuratJalanKantor } from "./TombolSuratJalanKantor";
 export function RincianMutasiKantorClient({
   rincian: r,
   bolehPutuskan,
+  bolehPutuskanSelisih,
   bolehTerima,
   milikSendiri,
 }: {
   rincian: RincianMutasiKantor;
   bolehPutuskan: boolean;
+  bolehPutuskanSelisih: boolean;
   bolehTerima: boolean;
   milikSendiri: boolean;
 }) {
@@ -80,7 +82,13 @@ export function RincianMutasiKantorClient({
         actions={
           <>
             <TombolSuratJalanKantor id={r.id} status={r.status} />
-            <TombolMutasiKantor rincian={r} bolehPutuskan={bolehPutuskan} bolehTerima={bolehTerima} milikSendiri={milikSendiri} />
+            <TombolMutasiKantor
+              rincian={r}
+              bolehPutuskan={bolehPutuskan}
+              bolehPutuskanSelisih={bolehPutuskanSelisih}
+              bolehTerima={bolehTerima}
+              milikSendiri={milikSendiri}
+            />
           </>
         }
       />

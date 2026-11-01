@@ -26,8 +26,14 @@ export async function nomorDokumenOperasional(sumber: SumberOperasional, id: str
         return (await prisma.consignmentShipment.findUnique({ where: { id }, select: { noKirim: true } }))?.noKirim ?? null;
       case SUMBER_OPERASIONAL.PESANAN_KONSI:
         return (await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { orderNo: true } }))?.orderNo ?? null;
+      case SUMBER_OPERASIONAL.PINDAH_KONSI: {
+        const t = await prisma.konsiTransfer.findUnique({ where: { id }, select: { docNo: true, order: { select: { orderNo: true } } } });
+        return t ? `${t.docNo} · ${t.order.orderNo}` : null;
+      }
       case SUMBER_OPERASIONAL.RETUR_KONSI:
         return (await prisma.warehouseReturn.findUnique({ where: { id }, select: { noNri: true } }))?.noNri ?? null;
+      case SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI:
+        return (await prisma.fieldReturn.findUnique({ where: { id }, select: { docNo: true } }))?.docNo ?? null;
       case SUMBER_OPERASIONAL.SIKLUS_KONSI:
       case SUMBER_OPERASIONAL.KOMISI_KONSI:
         return (await prisma.consignmentCycle.findUnique({ where: { id }, select: { noKonsi: true } }))?.noKonsi ?? null;

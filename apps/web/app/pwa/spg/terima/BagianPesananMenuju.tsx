@@ -23,6 +23,10 @@ const TAMPIL_AWAL = 4;
  * Pesanan sales untuk toko ini yang belum sampai — supaya SPG tahu barang apa
  * yang sedang diproses kantor sebelum dusnya tiba. Hanya jumlah potong: tidak
  * ada rupiah di HP SPG. Kosong = tidak tampil.
+ *
+ * Sisa pesanan yang disetujui dibagi ke tempatnya: dalam perjalanan, sedang
+ * dikemas, dan "belum dikirim gudang" — yang terakhir masih di gudang, jadi
+ * SPG tidak menunggunya di dus yang sedang datang dan tidak menghitungnya kurang.
  */
 export function BagianPesananMenuju({ pesanan }: { pesanan: PesananMenujuHp[] }) {
   const t = useTranslations("pwa.spgTerima.pesanan");
@@ -58,10 +62,17 @@ function BarisPesanan({ p }: { p: PesananMenujuHp }) {
           <p className="truncate font-medium leading-tight">{p.orderNo}</p>
           <p className="text-xs text-muted-foreground">{t("dipesan", { tanggal: p.tanggalLabel })}</p>
           <p className="text-sm font-semibold">
-            {t(p.status === "DIKIRIM_SEBAGIAN" ? "ringkasSisa" : "ringkas", { count: p.barang.length, pcs: p.jumlahPcs })}
+            {t(p.status === "MENUNGGU_PERSETUJUAN" ? "ringkas" : "ringkasSisa", { count: p.barang.length, pcs: p.jumlahPcs })}
           </p>
         </div>
       </div>
+      {p.status !== "MENUNGGU_PERSETUJUAN" && (p.dalamPerjalanan > 0 || p.dikemas > 0 || p.belumDikirimGudang > 0) ? (
+        <ul className="space-y-0.5 text-xs">
+          {p.dalamPerjalanan > 0 ? <li className="font-medium">{t("dalamPerjalanan", { pcs: p.dalamPerjalanan })}</li> : null}
+          {p.dikemas > 0 ? <li className="text-muted-foreground">{t("dikemas", { pcs: p.dikemas })}</li> : null}
+          {p.belumDikirimGudang > 0 ? <li className="text-muted-foreground">{t("belumDikirimGudang", { pcs: p.belumDikirimGudang })}</li> : null}
+        </ul>
+      ) : null}
       <div className="flex flex-wrap gap-1.5">
         <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", NADA[p.status])}>{td(`status.${p.status}`)}</span>
         {p.inden ? <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">{t("inden")}</span> : null}

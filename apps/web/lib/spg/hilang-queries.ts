@@ -206,6 +206,10 @@ async function tautanSumber(sumber: string, sourceId: string | null, storeId: st
   const r = await prisma.storeReceipt.findUnique({ where: { id: sourceId }, select: { sourceType: true, sourceId: true } });
   if (!r) return null;
   if (r.sourceType === "KONSI_ORDER") return `/backoffice/field-sales-orders/${r.sourceId}`;
+  if (r.sourceType === "KONSI_TRANSFER") {
+    const t = await prisma.konsiTransfer.findUnique({ where: { id: r.sourceId }, select: { orderId: true } });
+    return t ? `/backoffice/field-sales-orders/${t.orderId}` : null;
+  }
   if (r.sourceType === "PUTUS_DELIVERY") {
     const d = await prisma.fieldSalesDelivery.findUnique({ where: { id: r.sourceId }, select: { orderId: true } });
     return d ? `/backoffice/field-sales-orders/${d.orderId}` : null;

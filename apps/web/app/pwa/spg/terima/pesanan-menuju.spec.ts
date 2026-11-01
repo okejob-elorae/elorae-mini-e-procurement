@@ -37,6 +37,9 @@ const PESANAN: NonNullable<Props["pesanan"]> = [
     inden: false,
     barang: [{ kunci: "i1::KL-M", nama: "Kemeja Linen", varian: "KL-M", pcs: 7 }],
     jumlahPcs: 7,
+    belumDikirimGudang: 4,
+    dikemas: 0,
+    dalamPerjalanan: 3,
   },
 ];
 
@@ -53,6 +56,25 @@ describe("Terima kiriman — pesanan untuk toko ini", () => {
     expect(html).toContain("status.DIKIRIM_SEBAGIAN");
     expect(html).toContain("pcs(7)");
     expect(html).not.toMatch(/Rp/);
+  });
+
+  it("sisa pesanan dipisah: yang di jalan, dan yang belum dikirim gudang — yang dikemas 0 tidak ditulis", () => {
+    const html = gambar({ pesanan: PESANAN });
+    expect(html).toContain("ringkasSisa(1,7)");
+    expect(html).toContain("dalamPerjalanan(3)");
+    expect(html).toContain("belumDikirimGudang(4)");
+    expect(html).not.toContain("dikemas(");
+  });
+
+  it("kiriman menyebut pesanan asalnya", () => {
+    const html = gambar({
+      kiriman: [
+        { sourceType: "KONSI_TRANSFER", sourceId: "t1", docNo: "DLV/2026/11/0001", tanggalLabel: "3 Nov 2026", jumlahBaris: 1, totalQty: 60, pesananNo: "KONSI/2026/11/0012" },
+      ],
+    });
+    expect(html).toContain("DLV/2026/11/0001");
+    expect(html).toContain("source.KONSI_TRANSFER");
+    expect(html).toContain("pesananAsal(KONSI/2026/11/0012)");
   });
 
   it("tanpa pesanan → bagiannya tidak tampil", () => {

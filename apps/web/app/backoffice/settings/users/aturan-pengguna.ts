@@ -33,3 +33,45 @@ export function alasanBelumBisaSimpan(
   if (!draf.roleId) galat.push("PERAN_WAJIB");
   return URUTAN.find((k) => galat.includes(k)) ?? null;
 }
+
+export type DrafPengguna = {
+  id: string | null;
+  nama: string;
+  email: string;
+  roleId: string;
+  tokoId: string | null;
+  sandi: string;
+  ulangSandi: string;
+};
+
+/** Formulir yang dibuka langsung dari alamat halaman. */
+export type BukaAwal = { jenis: "baru" } | { jenis: "ubah"; id: string };
+
+/**
+ * `?baru=1` → formulir tambah; `?ubah=<id>` → formulir akun itu. Dipakai rute
+ * Akun Profil yang sudah ditutup (`app/backoffice/profile-accounts/tujuan.ts`),
+ * supaya tautan lama "buat akun" dan "ubah akun" tetap membuka formulirnya.
+ * `ubah` menang bila keduanya ada; nilai berulang (`?ubah=a&ubah=b`) diabaikan.
+ */
+export function bacaBukaAwal(sp: { baru?: string | string[]; ubah?: string | string[] }): BukaAwal | null {
+  if (typeof sp.ubah === "string" && sp.ubah.trim() !== "") return { jenis: "ubah", id: sp.ubah.trim() };
+  if (sp.baru === "1") return { jenis: "baru" };
+  return null;
+}
+
+/**
+ * Isi awal formulir untuk `buka`, atau null (formulir tertutup). Akun yang
+ * tidak ditemukan cukup membuka daftar — tidak ada formulir kosong yang
+ * menyamar sebagai akun lain.
+ */
+export function drafAwal(
+  buka: BukaAwal | null,
+  pengguna: ReadonlyArray<{ id: string; nama: string; email: string; roleId: string | null; tokoId: string | null }>,
+): DrafPengguna | null {
+  if (!buka) return null;
+  const kosong = { sandi: "", ulangSandi: "" };
+  if (buka.jenis === "baru") return { id: null, nama: "", email: "", roleId: "", tokoId: null, ...kosong };
+  const u = pengguna.find((p) => p.id === buka.id);
+  if (!u) return null;
+  return { id: u.id, nama: u.nama, email: u.email, roleId: u.roleId ?? "", tokoId: u.tokoId, ...kosong };
+}

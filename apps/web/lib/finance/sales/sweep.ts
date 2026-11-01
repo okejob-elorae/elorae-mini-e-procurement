@@ -5,6 +5,7 @@ import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
 import { listJournalPendingMetadata } from "@/lib/finance/journal-pending-dedup";
 import { dokumenJurnal, tandaiJurnalTertundaSelesai, type SumberNotifikasiJurnal } from "@/lib/finance/jurnal-tertunda";
+import { adminSistemTertua } from "@/lib/users/admin-sistem";
 
 /** SystemSetting key holding the GL go-live day as a date-only `YYYY-MM-DD` string, read as WIB. */
 export const GL_CUTOVER_SETTING_KEY = "finance.glCutoverDate";
@@ -118,8 +119,8 @@ export async function postPendingSalesJournals(
   const limit = opts.limit ?? 50;
   let systemPoster = opts.postedById ?? null;
   if (!systemPoster) {
-    const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, select: { id: true } });
-    systemPoster = admin?.id ?? null;
+    // The system role, never the legacy `User.role` column — stale for anyone promoted or demoted in Settings → Users.
+    systemPoster = (await adminSistemTertua())?.id ?? null;
   }
 
   /**

@@ -11,6 +11,7 @@ import { approveFieldReturn } from "@/lib/field-sales/retur/approve-writer";
 import { cancelFieldReturn } from "@/lib/field-sales/retur/cancel-writer";
 import { priceApprovedReturnLine } from "@/lib/field-sales/retur/valuation-writer";
 import { createFieldReturn } from "@/lib/field-sales/retur/writer";
+import { kaitReturLapanganKonsi } from "@/lib/finance/operasional/kait";
 import { listPriceCandidates, resolveLinePrice } from "@/lib/field-sales/retur/pricing";
 import { round2 } from "@/lib/field-sales/retur/pricing-rules";
 import { FieldReturnError, type FieldReturnErrorCode } from "@/lib/field-sales/retur/errors";
@@ -423,15 +424,26 @@ export async function raiseAdminReturnAction(input: {
   return { ok: true, returnId, docNo };
 }
 
+/**
+ * Approves a received retur. Once the approval has committed — never inside its transaction —
+ * a consignment store's retur posts its `CONSIGNMENT_FIELD_RETURN` journal (goods back from the
+ * store: DR warehouse inventory / CR `INVENTORY_CONSIGNMENT`). The hook never throws and is
+ * idempotent: a putus store's retur posts nothing, and a failed post becomes `JOURNAL_PENDING`
+ * instead of failing the approval. Without it the journal only arrived through the operational
+ * sweep, leaving `INVENTORY_CONSIGNMENT` overstated by the returned goods until then.
+ */
 export async function approveAction(returnId: string): Promise<FieldReturnActionResult> {
+  let approvedById = "";
   try {
     const g = await guard();
     if ("ok" in g) return g;
     if (typeof returnId !== "string" || returnId === "") return { ok: false, code: "INVALID_REQUEST" };
     await approveFieldReturn({ returnId, approvedById: g.userId });
+    approvedById = g.userId;
   } catch (e) {
     return toResult(e);
   }
+  await kaitReturLapanganKonsi(returnId, approvedById);
   revalidatePath("/backoffice/field-returns");
   revalidatePath(`/backoffice/field-returns/${returnId}`);
   return { ok: true };

@@ -224,6 +224,22 @@ async function main() {
     { code: 'packer:menu', module: 'packer', action: 'menu', description: 'Access Record Packer menu and list' },
     { code: 'packer:record', module: 'packer', action: 'record', description: 'Record packing videos' },
     { code: 'packer:edit', module: 'packer', action: 'edit', description: 'Replace existing packing videos' },
+    // Receivables & consignment (prod rows: seed-max-features-permissions.sql)
+    { code: "receivables:view", module: "receivables", action: "view", description: "View receivables, collection notes and payment claims" },
+    { code: "receivables:manage", module: "receivables", action: "manage", description: "Hand invoices over to a shop on a collection note, and close or cancel one" },
+    { code: "consignment:view", module: "consignment", action: "view", description: "Open consignment cycles, their reports and their commissions" },
+    { code: "consignment:manage", module: "consignment", action: "manage", description: "Run a consignment cycle: open it, record consigned shipments and the SPG and store reports" },
+    // Office work and approvals split out of broad codes (owner decision 2026-11-01). Approvals
+    // are held by ADMIN only (through the '*' wildcard) until the owner grants them in Peran & izin.
+    { code: "payments:verify", module: "payments", action: "verify", description: "Verify store payment reports (BKM), giro clearing, collector submissions and store settlements against the bank statement (never a payment you reported, recorded or handed in)" },
+    { code: "receivables:decide_bearer", module: "receivables", action: "decide_bearer", description: "Decide, reassign or cancel who bears a store-return shortfall or lost SPG goods (manager decision)" },
+    { code: "consignment:note_number", module: "consignment", action: "note_number", description: "Record the sales-note number on a locked consignment cycle" },
+    { code: "consignment:tax_number", module: "consignment", action: "tax_number", description: "Record the tax-invoice (faktur pajak) number on a locked consignment cycle" },
+    { code: "consignment:lock", module: "consignment", action: "lock", description: "Lock and unlock the official sold figures of a consignment cycle (manager decision)" },
+    { code: "store_stocktakes:approve", module: "store_stocktakes", action: "approve", description: "Approve a store stock count so its result takes effect, or cancel one awaiting approval (manager decision)" },
+    { code: "store_transfers:approve", module: "store_transfers", action: "approve", description: "Approve, reject, redirect or cancel an inter-store transfer, and set the transfer rules (manager decision)" },
+    { code: "store_transfers:decide_shortfall", module: "store_transfers", action: "decide_shortfall", description: "Decide an inter-store transfer shortfall: lost or returned (manager decision)" },
+    { code: "spg_commission:pay", module: "spg_commission", action: "pay", description: "Mark SPG base pay and commission as paid" },
   ];
 
   // Upsert all permissions
@@ -309,6 +325,39 @@ async function main() {
     create: {
       name: 'PACKER',
       description: 'Packer — Record Packer video packing surface',
+      isSystem: false,
+    },
+  });
+
+  // Office roles (owner decision 2026-11-01). isSystem stays false on every run: a system role
+  // is handed the '*' wildcard in code (lib/auth/segarkan-sesi.ts), so true here would be full
+  // admin. Prod creates them with seed-office-roles-permissions.sql — keep the two in step.
+  const keuanganRole = await prisma.roleDefinition.upsert({
+    where: { name: "KEUANGAN" },
+    update: { isSystem: false },
+    create: {
+      name: "KEUANGAN",
+      description: "Finance — verifies payments against the bank statement, journals and financial reports",
+      isSystem: false,
+    },
+  });
+
+  const adminPenjualanRole = await prisma.roleDefinition.upsert({
+    where: { name: "ADMIN_PENJUALAN" },
+    update: { isSystem: false },
+    create: {
+      name: "ADMIN_PENJUALAN",
+      description: "Sales admin — records the sales-note number on consignment cycles",
+      isSystem: false,
+    },
+  });
+
+  const adminPajakRole = await prisma.roleDefinition.upsert({
+    where: { name: "ADMIN_PAJAK" },
+    update: { isSystem: false },
+    create: {
+      name: "ADMIN_PAJAK",
+      description: "Tax admin — records tax-invoice numbers for billing notes and consignment",
       isSystem: false,
     },
   });
@@ -482,6 +531,49 @@ async function main() {
           roleId: packerRole.id,
           permissionId: perm.id,
         },
+      });
+    }
+  }
+
+  // Office roles: the work each role exists for plus the views it needs, and NO approval codes —
+  // approvals stay with ADMIN until the owner grants them in Peran & izin. Same lists as
+  // seed-office-roles-permissions.sql (apps/web/lib/rbac/peran-kantor.test.ts compares them).
+  // Re-running never revokes a code the owner added on screen.
+  const officeRolePermissions: { roleId: string; codes: string[] }[] = [
+    {
+      roleId: keuanganRole.id,
+      codes: [
+        "dashboard:view",
+        "journals:view", "journals:manage", "coa:view", "finance_reports:view",
+        "payments:verify", "receivables:view",
+        "tax_invoices:view",
+        "supplier_payments:view", "supplier_payments:create", "supplier_payments:edit", "purchase_orders:view",
+        "consignment:view", "sales_orders:view",
+      ],
+    },
+    {
+      roleId: adminPenjualanRole.id,
+      codes: [
+        "dashboard:view",
+        "consignment:view", "consignment:note_number",
+        "field_sales_orders:view", "stores:view", "promos:view", "spg_sales:view",
+        "sales_orders:view", "sales_returns:view", "items:view",
+      ],
+    },
+    {
+      roleId: adminPajakRole.id,
+      codes: ["dashboard:view", "tax_invoices:view", "tax_invoices:manage", "consignment:view", "consignment:tax_number"],
+    },
+  ];
+  for (const { roleId, codes } of officeRolePermissions) {
+    for (const code of codes) {
+      const perm = permissionMap.get(code);
+      // Loud, unlike the loops above: a silently skipped link would leave the role unable to work.
+      if (!perm) throw new Error(`Office role permission ${code} is missing from the permissions list`);
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionId: { roleId, permissionId: perm.id } },
+        update: {},
+        create: { roleId, permissionId: perm.id },
       });
     }
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alasanBelumBisaSimpan } from "./aturan-pengguna";
+import { alasanBelumBisaSimpan, bacaBukaAwal, drafAwal } from "./aturan-pengguna";
 
 const draf = {
   id: null as string | null,
@@ -41,5 +41,48 @@ describe("alasanBelumBisaSimpan — isian pertama yang kurang, urut formulir", (
 
   it("mengubah akun: sandi kosong berarti tetap", () => {
     expect(alasanBelumBisaSimpan({ ...draf, id: "u1", sandi: "", ulangSandi: "" }, { spg: false })).toBeNull();
+  });
+});
+
+describe("bacaBukaAwal — formulir yang dibuka dari alamat (rute Akun Profil lama)", () => {
+  it("?baru=1 membuka formulir tambah, ?ubah=<id> formulir akun itu", () => {
+    expect(bacaBukaAwal({ baru: "1" })).toEqual({ jenis: "baru" });
+    expect(bacaBukaAwal({ ubah: "u1" })).toEqual({ jenis: "ubah", id: "u1" });
+  });
+
+  it("ubah menang atas baru; nilai kosong, berulang, atau lain diabaikan", () => {
+    expect(bacaBukaAwal({ baru: "1", ubah: "u1" })).toEqual({ jenis: "ubah", id: "u1" });
+    expect(bacaBukaAwal({ ubah: "  " })).toBeNull();
+    expect(bacaBukaAwal({ ubah: ["a", "b"] })).toBeNull();
+    expect(bacaBukaAwal({ baru: "ya" })).toBeNull();
+    expect(bacaBukaAwal({})).toBeNull();
+  });
+});
+
+describe("drafAwal — isi awal formulir", () => {
+  const pengguna = [{ id: "u1", nama: "Rina", email: "rina@elorae.com", roleId: null, tokoId: "t1" }];
+
+  it("tanpa permintaan → formulir tertutup", () => {
+    expect(drafAwal(null, pengguna)).toBeNull();
+  });
+
+  it("baru → formulir kosong", () => {
+    expect(drafAwal({ jenis: "baru" }, pengguna)).toEqual({ id: null, nama: "", email: "", roleId: "", tokoId: null, sandi: "", ulangSandi: "" });
+  });
+
+  it("ubah → isian akun itu, sandi kosong (tetap memakai sandi lama)", () => {
+    expect(drafAwal({ jenis: "ubah", id: "u1" }, pengguna)).toEqual({
+      id: "u1",
+      nama: "Rina",
+      email: "rina@elorae.com",
+      roleId: "",
+      tokoId: "t1",
+      sandi: "",
+      ulangSandi: "",
+    });
+  });
+
+  it("akun yang tidak ada → hanya daftarnya, tanpa formulir", () => {
+    expect(drafAwal({ jenis: "ubah", id: "tidak-ada" }, pengguna)).toBeNull();
   });
 });

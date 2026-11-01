@@ -78,7 +78,11 @@ type Props = {
   orderLines: LineRef[];
   stagedAdditions: StagedAddition[];
   onStagedAdditionsChange: (staged: StagedAddition[]) => void;
-  creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
+  /**
+   * `sumber`: where the limit came from (`batasKreditBerlaku`) — "BAWAAN" when the store's own
+   * limit is empty and the Settings → Salesman default applies. Absent = not known.
+   */
+  creditCheck: { exposure: number; limit: number; overLimit: boolean; sumber?: "TOKO" | "BAWAAN" } | null;
   creditHoldAtCreate: boolean;
   overCommittedLines: OverCommittedLine[];
   /** Kredit ditahan saat pesanan dibuat: persetujuan butuh pernyataan sudah memeriksa tagihan. */
@@ -399,6 +403,9 @@ export function ApproveRejectCard({
                   limit: formatRupiah(serverCreditRefusal?.limit ?? creditCheck?.limit ?? 0),
                 })}
               </p>
+              {creditCheck?.sumber === "BAWAAN" && (
+                <p className="text-xs text-muted-foreground">{t("creditLimitFromDefault")}</p>
+              )}
               {canOverrideCredit && (
                 <div className="space-y-1">
                   <Label htmlFor="credit-override-reason" className="text-xs">{t("creditOverrideReasonLabel")}</Label>

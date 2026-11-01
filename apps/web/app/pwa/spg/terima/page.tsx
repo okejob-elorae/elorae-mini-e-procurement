@@ -44,6 +44,7 @@ export default async function SpgTerimaPage() {
         tanggalLabel: formatDisplayDate(k.tanggal),
         jumlahBaris: k.lines.length,
         totalQty: k.lines.reduce((n, l) => n + l.qty, 0),
+        pesananNo: k.pesananNo ?? null,
       }))}
       rusak={rusak.map((r) => ({
         // Barang rusak dari kiriman yang sudah diterima — tanpa harga.

@@ -83,6 +83,85 @@ export function cariPesananKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
   });
 }
 
+/** Satu `KonsiTransfer` per pengiriman selesai; bernilai bila ada baris ber-qty dan berharga (penulisnya membaca yang sama). */
+export function cariPindahKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
+  return cariTanpaJurnalSql({
+    tabel: "KonsiTransfer",
+    sourceType: SUMBER_OPERASIONAL.PINDAH_KONSI,
+    tanggal: d("createdAt"),
+    kolomLabel: "docNo",
+    syarat: Prisma.sql`AND EXISTS (
+      SELECT 1 FROM ${sqlId("KonsiTransferLine")} l
+      WHERE l.${sqlId("transferId")} = d.${sqlId("id")} AND l.${sqlId("qty")} > 0 AND l.${sqlId("unitCost")} > 0
+    )`,
+    opsi,
+  });
+}
+
+/** Baris kartu stok gudang utama yang dimasukkan retur lapangan `d`. */
+const masukGudangRetur = (syarat: Prisma.Sql) => Prisma.sql`EXISTS (
+  SELECT 1 FROM ${sqlId("StockLedgerEntry")} e
+  WHERE e.${sqlId("refType")} = 'FieldReturn' AND e.${sqlId("refId")} = d.${sqlId("id")} AND e.${sqlId("locationType")} = 'MAIN' ${syarat}
+)`;
+
+/** Baris retur lapangan `d` (alias `l`). */
+const barisReturLapangan = (syarat: Prisma.Sql) => Prisma.sql`EXISTS (
+  SELECT 1 FROM ${sqlId("FieldReturnLine")} l
+  WHERE l.${sqlId("returnId")} = d.${sqlId("id")} ${syarat}
+)`;
+
+/** Kiriman konsinyasi barang `l` sampai `d.approvedAt` (yang dirata-rata `rataRataKirim`: qty bukan nol). */
+const kirimanKonsiBarang = (syarat: Prisma.Sql) => Prisma.sql`EXISTS (
+  SELECT 1 FROM ${sqlId("StockAdjustment")} a
+  WHERE a.${sqlId("source")} = 'KONSI_TRANSFER' AND a.${sqlId("itemId")} = l.${sqlId("itemId")}
+    AND a.${sqlId("createdAt")} <= d.${sqlId("approvedAt")} AND a.${sqlId("qtyChange")} <> 0 ${syarat}
+)`;
+
+/**
+ * Biaya konsinyasi barang `l` pada `d.approvedAt` di atas nol — cabang yang sama dengan
+ * `biayaSatuanKonsi`: rata-rata kirimannya bila ada kiriman (nol kalau semuanya
+ * dikirim pada harga nol, tanpa cadangan); kalau tidak ada kiriman sama sekali,
+ * cadangannya (harga rata-rata gudang terakhir sebelum saat itu, lalu yang sekarang).
+ */
+const biayaKonsiBarangPositif = Prisma.sql`(
+  ${kirimanKonsiBarang(Prisma.sql`AND a.${sqlId("prevAvgCost")} > 0`)}
+  OR (NOT ${kirimanKonsiBarang(Prisma.empty)} AND (
+    EXISTS (
+      SELECT 1 FROM ${sqlId("StockAdjustment")} c
+      WHERE c.${sqlId("itemId")} = l.${sqlId("itemId")} AND c.${sqlId("createdAt")} <= d.${sqlId("approvedAt")} AND c.${sqlId("newAvgCost")} > 0
+    )
+    OR EXISTS (SELECT 1 FROM ${sqlId("InventoryValue")} v WHERE v.${sqlId("itemId")} = l.${sqlId("itemId")} AND v.${sqlId("avgCost")} > 0)
+  ))
+)`;
+
+/**
+ * Retur lapangan toko konsinyasi yang disetujui yang ditulis
+ * `postJurnalReturLapanganKonsi`:
+ *  - yang DITOLAKNYA (BIAYA_TIDAK_DIKETAHUI) — masuk gudang utama tanpa nilai
+ *    tercatat, atau barang layak tanpa baris kartu stok gudang utama — ikut
+ *    ditemukan supaya tidak diam;
+ *  - selain itu hanya yang bernilai: masuk gudang utama bukan nol, atau barang
+ *    keluar dari toko yang biaya konsinyasinya di atas nol.
+ * Retur yang semua angkanya nol (harga rata-rata nol saat dikirim dan saat
+ * kembali, atau semua ditolak gudang dan biaya kirimnya tidak diketahui) tidak
+ * menghasilkan baris jurnal, jadi tidak dicari.
+ */
+export function cariReturLapanganKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
+  return cariTanpaJurnalSql({
+    tabel: "FieldReturn",
+    sourceType: SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI,
+    tanggal: d("approvedAt"),
+    kolomLabel: "docNo",
+    syarat: Prisma.sql`AND d.${sqlId("status")} = 'APPROVED' AND d.${sqlId("approvedAt")} IS NOT NULL AND ${tokoKonsi(d("storeId"))} AND (
+      ${masukGudangRetur(Prisma.sql`AND e.${sqlId("totalCost")} IS NULL`)}
+      OR (${barisReturLapangan(Prisma.sql`AND l.${sqlId("sellableQty")} > 0`)} AND NOT ${masukGudangRetur(Prisma.empty)})
+      OR ${masukGudangRetur(Prisma.sql`AND e.${sqlId("totalCost")} <> 0`)}
+      OR ${barisReturLapangan(Prisma.sql`AND l.${sqlId("creditedQty")} > 0 AND ${biayaKonsiBarangPositif}`)}
+    )`,
+    opsi,
+  });
+}
+
 export function cariReturKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
   const tokoNri = Prisma.sql`COALESCE(d.${sqlId("storeId")}, (SELECT r.${sqlId("storeId")} FROM ${sqlId("StoreReturn")} r WHERE r.${sqlId("id")} = d.${sqlId("storeReturnId")}))`;
   return cariTanpaJurnalSql({
@@ -266,7 +345,9 @@ export function cariBayarBiayaPerjalananTanpaJurnal(opsi: OpsiCariSapuan) {
 export const PENCARI_OPERASIONAL: Readonly<Record<SumberOperasional, (opsi: OpsiCariSapuan) => Promise<DokumenTanpaJurnal[]>>> = {
   CONSIGNMENT_SHIPMENT: cariKirimKonsiTanpaJurnal,
   CONSIGNMENT_ORDER: cariPesananKonsiTanpaJurnal,
+  CONSIGNMENT_TRANSFER: cariPindahKonsiTanpaJurnal,
   CONSIGNMENT_RETURN: cariReturKonsiTanpaJurnal,
+  CONSIGNMENT_FIELD_RETURN: cariReturLapanganKonsiTanpaJurnal,
   CONSIGNMENT_CYCLE: cariSiklusKonsiTanpaJurnal,
   CONSIGNMENT_COMMISSION: cariKomisiKonsiTanpaJurnal,
   CONSIGNMENT_COMMISSION_PAYMENT: cariBayarGajiKonsiTanpaJurnal,
@@ -307,8 +388,10 @@ async function postingSapuan(sumber: SumberOperasional, id: string, olehUserId: 
 
 const LABEL_SAPUAN: Readonly<Record<SumberOperasional, string>> = {
   CONSIGNMENT_SHIPMENT: "Kiriman titipan konsinyasi",
-  CONSIGNMENT_ORDER: "Pesanan konsinyasi disetujui",
+  CONSIGNMENT_ORDER: "Pesanan konsinyasi lama (stok pindah saat disetujui)",
+  CONSIGNMENT_TRANSFER: "Pindah barang konsinyasi (pengiriman selesai)",
   CONSIGNMENT_RETURN: "Retur toko konsinyasi (NRI)",
+  CONSIGNMENT_FIELD_RETURN: "Retur lapangan toko konsinyasi (disetujui)",
   CONSIGNMENT_CYCLE: "Penjualan siklus konsinyasi",
   CONSIGNMENT_COMMISSION: "Gaji & komisi SPG konsinyasi",
   CONSIGNMENT_COMMISSION_PAYMENT: "Pembayaran gaji SPG konsinyasi",

@@ -200,7 +200,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "pwa.kabar.title" },
     isi: [
       { kunci: "pwa.kabar.subtitle" },
-      "Dibuka dari ikon lonceng di beranda. Kabar yang belum dibaca ditandai; Tandai semua dibaca menandai semuanya sekaligus. Layar ini memuat 100 kabar terbaru.",
+      "Dibuka dari ikon lonceng di beranda. Kabar yang belum dibaca ditandai; Tandai semua dibaca menandai semuanya sekaligus. Kabar terbaru tampil di atas; Muat lagi memuat kabar yang lebih lama. Kabar pekerjaan kantor yang tidak punya layar di HP diberi keterangan, dan mengetuknya hanya menandai dibaca.",
     ],
     kartu: [
       {
@@ -208,24 +208,6 @@ export const ENTRI: EntriBantuan[] = [
         isi: [
           { kunci: "pwa.kabar.push.body" },
           "Kartu ini hanya tampil selama pemberitahuan di HP ini belum menyala. Di iPhone, pemberitahuan baru bisa diterima setelah aplikasi dipasang ke layar utama.",
-        ],
-      },
-    ],
-  },
-  {
-    rute: "/pwa/notifications",
-    bagian: "pwaBersama",
-    judul: { kunci: "pwa.notifications.title" },
-    isi: [
-      "Semua notifikasi untuk akun Anda, yang terbaru di atas. Yang belum dibaca ditandai, dan jumlahnya tertulis di atas daftar. Mengetuk notifikasi menandainya dibaca lalu membuka halamannya; Tandai semua dibaca menandai semuanya sekaligus, dan Muat lebih banyak memuat yang lebih lama.",
-      "Halaman ini terbuka saat Anda mengetuk pemberitahuan di HP yang tidak menunjuk halaman tertentu. Isinya sama dengan Kabar.",
-    ],
-    kartu: [
-      {
-        judul: { kunci: "pwa.notifications.push.title" },
-        isi: [
-          { kunci: "pwa.notifications.push.body" },
-          "Bila pemberitahuan di HP ini sudah menyala, kartu ini menulis Notifikasi push aktif. Di browser yang tidak mendukung pemberitahuan, kartu ini tidak tampil.",
         ],
       },
     ],

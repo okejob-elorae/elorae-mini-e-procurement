@@ -352,14 +352,19 @@ export async function lepasPasanganAction(warehouseReturnId: string): Promise<Ha
   }
 }
 
-/** Tetapkan siapa menanggung selisih. Inilah yang melepas faktur. */
+/**
+ * Tetapkan siapa menanggung selisih. Inilah yang melepas faktur.
+ *
+ * Keputusan manager: `receivables:decide_bearer`, bukan `receivables:manage`
+ * (keputusan pemilik 2026-11-01) — bawaannya hanya admin.
+ */
 export async function putuskanBebanAction(
   chargeId: string,
   bearer: 'TOKO' | 'SALES' | 'GUDANG' | 'PERUSAHAAN',
   alasan: string,
   bearerUserId?: string | null,
 ): Promise<HasilAksiRetur> {
-  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_DECIDE_BEARER);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
@@ -414,14 +419,14 @@ export async function batalkanReturAction(
   }
 }
 
-/** Alihkan beban yang sudah diputuskan — atau lengkapi orangnya. */
+/** Alihkan beban yang sudah diputuskan — atau lengkapi orangnya. Izinnya sama dengan memutuskan. */
 export async function alihkanBebanAction(
   chargeId: string,
   bearer: 'TOKO' | 'SALES' | 'GUDANG' | 'PERUSAHAAN',
   alasan: string,
   bearerUserId?: string | null,
 ): Promise<HasilAksiRetur> {
-  const userId = await butuh(PERMISSIONS.RECEIVABLES_MANAGE);
+  const userId = await butuh(PERMISSIONS.RECEIVABLES_DECIDE_BEARER);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {

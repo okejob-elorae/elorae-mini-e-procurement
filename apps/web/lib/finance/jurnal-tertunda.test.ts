@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { prisma, seededIds } from "@elorae/db";
 import {
+  bergenerasi,
   dokumenJurnal,
   hitungJurnalTertunda,
   sumberNotifikasiJurnal,
   tandaiJurnalTertundaSelesai,
 } from "./jurnal-tertunda";
 import { findPostableJournalDocIds } from "@/lib/canvassing/journal-pending";
+import { SEMUA_SUMBER_LAPANGAN, SUMBER_BERGENERASI } from "./lapangan/aturan";
+import {
+  JENIS_TERTUNDA_OPERASIONAL,
+  SEMUA_SUMBER_OPERASIONAL,
+  SUMBER_BERGENERASI_OPERASIONAL,
+} from "./operasional/aturan";
 
 /*
  * Baris "Jurnal gagal" di Beranda dulu tidak pernah hilang: tidak ada kode yang
@@ -99,6 +106,24 @@ describe("sumberNotifikasiJurnal — metadata setiap penulis JOURNAL_PENDING", (
     });
     expect(sumberNotifikasiJurnal(JSON.stringify("teks"))).toBeNull();
     expect(sumberNotifikasiJurnal("{rusak")).toBeNull();
+  });
+
+  /*
+   * Peta kind operasional di jurnal-tertunda.ts disalin tangan. Kind yang lupa
+   * disalin (pernah: `konsi_pindah`, `konsi_retur_lapangan`) membuat tandanya
+   * tidak pernah selesai — posting ulang berhasil, tetapi baris "Jurnal gagal"
+   * tetap menghitungnya selamanya. Tes ini menyapu SETIAP sumber operasional.
+   */
+  it("setiap kind jurnal operasional dipetakan ke sourceType-nya sendiri", () => {
+    for (const s of SEMUA_SUMBER_OPERASIONAL) {
+      const kind = JENIS_TERTUNDA_OPERASIONAL[s];
+      expect(sumberNotifikasiJurnal({ docId: "op1", kind, reason: "UNMAPPED_ROLE" }), kind).toEqual(dokumenJurnal(s, "op1"));
+    }
+  });
+
+  it("sumber bergenerasi (selesai hanya lewat penyelarasnya) sama dengan daftar di aturan lapangan & operasional", () => {
+    for (const s of SEMUA_SUMBER_OPERASIONAL) expect(bergenerasi(s), s).toBe(SUMBER_BERGENERASI_OPERASIONAL.includes(s));
+    for (const s of SEMUA_SUMBER_LAPANGAN) expect(bergenerasi(s), s).toBe(SUMBER_BERGENERASI.includes(s));
   });
 
   it("bentuk yang tidak dikenal tidak dipetakan (tetap dihitung, tidak pernah diam-diam selesai)", () => {
@@ -257,6 +282,24 @@ d("hitung & tandai JOURNAL_PENDING (basis data uji)", () => {
     await jurnal("PAYMENT_RECEIPT", paymentId);
     await jurnal("KONSI_SELLTHRU_COGS", reportId);
     expect(await hitungJurnalTertunda({ notifikasiIds: [bayar, konsi] })).toBe(0);
+  });
+
+  it("pindah barang & retur lapangan konsinyasi (sekali posting): selesai oleh jurnalnya, dan ditandai oleh posting ulangnya", async () => {
+    const transferId = `kt-${token}`;
+    const returId = `fr-${token}`;
+    const pindah = await gagal({ docId: transferId, kind: "konsi_pindah", reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT" });
+    const retur = await gagal({ docId: returId, kind: "konsi_retur_lapangan", reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT" });
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(2);
+
+    await jurnal("CONSIGNMENT_TRANSFER", transferId);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(1);
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("CONSIGNMENT_TRANSFER", transferId)])).toBe(1);
+    expect(await dibaca(pindah)).toBe(true);
+    expect(await dibaca(retur)).toBe(false);
+
+    await jurnal("CONSIGNMENT_FIELD_RETURN", returId);
+    expect(await tandaiJurnalTertundaSelesai([dokumenJurnal("CONSIGNMENT_FIELD_RETURN", returId)])).toBe(1);
+    expect(await hitungJurnalTertunda({ notifikasiIds: [pindah, retur] })).toBe(0);
   });
 
   it("pembayaran pemasok: jurnal yang berdiri SEBELUM kegagalan tidak menyelesaikannya; yang sesudahnya menyelesaikan", async () => {

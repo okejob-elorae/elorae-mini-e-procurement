@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /*
  * Pagar aksi pembayaran toko konsinyasi. Yang mencatat uang masuk adalah
- * keuangan (`journals:manage`), bukan admin konsinyasi — memisahkan keduanya
+ * pemeriksa pembayaran (`payments:verify`), bukan admin konsinyasi — dan sejak
+ * 2026-11-01 juga bukan sekadar pemegang `journals:manage` — memisahkan keduanya
  * adalah aturan uang modul ini. Tanpa basis data: penulisnya ditiru, dan yang
  * diperiksa adalah apakah penulis sempat dipanggil dan dengan apa.
  */
@@ -50,8 +51,14 @@ describe("catatPembayaranTokoAction", () => {
     expect(state.dicatat).toHaveLength(0);
   });
 
+  it("pekerjaan jurnal saja tidak cukup: mencatat uang masuk butuh izin periksa pembayaran", async () => {
+    masuk(["journals:manage", "journals:view"]);
+    expect(await catat()).toEqual({ ok: false, kode: "TANPA_AKSES" });
+    expect(state.dicatat).toHaveLength(0);
+  });
+
   it("keuangan mencatat; tanggal dibaca sebagai tengah malam WIB", async () => {
-    masuk(["journals:manage"]);
+    masuk(["payments:verify"]);
     expect(await catat()).toEqual({ ok: true });
     expect(state.dicatat).toEqual([
       expect.objectContaining({
@@ -76,6 +83,9 @@ describe("batalkanPembayaranTokoAction", () => {
     masuk(["consignment:manage"]);
     expect(await aksi.batalkanPembayaranTokoAction("p1", "salah toko")).toEqual({ ok: false, kode: "TANPA_AKSES" });
     masuk(["journals:manage"]);
+    expect(await aksi.batalkanPembayaranTokoAction("p1", "salah toko")).toEqual({ ok: false, kode: "TANPA_AKSES" });
+    expect(state.dibatalkan).toHaveLength(0);
+    masuk(["payments:verify"]);
     expect(await aksi.batalkanPembayaranTokoAction("p1", "salah toko")).toEqual({ ok: false, kode: "SUDAH_DIBATALKAN" });
     expect(state.dibatalkan).toEqual([{ paymentId: "p1", alasan: "salah toko", olehUserId: "u1" }]);
   });

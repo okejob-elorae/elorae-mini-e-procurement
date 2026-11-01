@@ -13,10 +13,14 @@ import {
   AKSI_KEMBALI_BAHAN,
   BATAS_CATATAN_KEMBALI,
   SUMBER_KEMBALI_BAHAN,
+  alasanKembaliBahan,
   awalanKunciKembali,
+  barisHargaPengeluaran,
   barisPengeluaran,
   batasNilaiKembali,
+  catatanDariAlasan,
   hargaDalamBatas,
+  hargaDariAlasan,
   hargaKeluar,
   jumlahPerBarang,
   kunciBarisKembali,
@@ -70,6 +74,11 @@ export type BarisKembaliTercatat = {
   hargaSatuan: number;
   nilai: number;
   docNumber: string;
+  /**
+   * Harga (sebagian) diambil dari DOKUMEN pengeluaran bahan, karena kartu stok
+   * tidak menyimpan nilai pengeluarannya (keputusan pemilik 2026-11-01).
+   */
+  hargaDariDokumen: boolean;
 };
 
 export type HasilKembaliBahan =
@@ -80,8 +89,17 @@ export type HasilKembaliBahan =
       totalNilai: number;
       /** Nilai diperkecil karena biaya bahan sudah dibebankan ke barang jadi (`batasNilaiKembali`). */
       dibatasi: boolean;
+      /** Barang (itemId) yang harganya diambil dari dokumen pengeluaran — untuk pesan berhasil. */
+      barangHargaDokumen: string[];
     }
-  | { ok: false; code: KodeTolakKembaliBahan; itemId?: string; sisa?: number };
+  | {
+      ok: false;
+      code: KodeTolakKembaliBahan;
+      itemId?: string;
+      sisa?: number;
+      /** `HARGA_KELUAR_TIDAK_DIKETAHUI`: nomor dokumen pengeluaran yang tidak mencantumkan harga. */
+      dokumen?: string[];
+    };
 
 export type MasukanKembaliBahan = {
   woId: string;
@@ -96,22 +114,24 @@ function dariPenyesuaian(rows: Array<{ itemId: string; qtyChange: unknown; newAv
   return rows.map((r) => {
     // Harga satuan bahan yang kembali disimpan di alasan ("@ <harga>") — kolom
     // prev/newAvgCost milik baris gudang, bukan milik bahan yang kembali.
-    const m = /@ (\d+(?:\.\d+)?)/.exec(r.reason);
+    const dariAlasan = hargaDariAlasan(r.reason);
     const qty = new Decimal(String(r.qtyChange)).abs();
-    const harga = m ? new Decimal(m[1]) : new Decimal(0);
+    const harga = dariAlasan.harga ?? new Decimal(0);
     return {
       itemId: r.itemId,
       qty: qty.toNumber(),
       hargaSatuan: harga.toNumber(),
       nilai: qty.mul(harga).toDecimalPlaces(2).toNumber(),
       docNumber: r.docNumber,
+      hargaDariDokumen: dariAlasan.dariDokumen,
     };
   });
 }
 
 function ringkas(baris: BarisKembaliTercatat[], ulangan: boolean, dibatasi: boolean): HasilKembaliBahan {
   const total = baris.reduce((s, b) => s.plus(b.nilai), new Decimal(0));
-  return { ok: true, ulangan, baris, totalNilai: total.toDecimalPlaces(2).toNumber(), dibatasi };
+  const barangHargaDokumen = [...new Set(baris.filter((b) => b.hargaDariDokumen).map((b) => b.itemId))];
+  return { ok: true, ulangan, baris, totalNilai: total.toDecimalPlaces(2).toNumber(), dibatasi, barangHargaDokumen };
 }
 
 export type GerakanKeluarBahan = { qty: string; unitCost: string; variantSku: string };
@@ -125,17 +145,67 @@ export type GerakanKeluarBahan = { qty: string; unitCost: string; variantSku: st
  * sebagai Rp 0 menurunkan harga bahan yang kembali.
  */
 export function gerakanKeluarBahan(gerak: ReadonlyMap<string, GerakDokumen | null>, itemId: string): GerakanKeluarBahan[] {
+  return [...gerak.values()].flatMap((dokumen) => gerakanSatuPengeluaran(dokumen, itemId));
+}
+
+/** Gerakan keluar satu bahan di SATU pengeluaran; nilai tidak tercatat (`null`) → kosong. */
+function gerakanSatuPengeluaran(dokumen: GerakDokumen | null | undefined, itemId: string): GerakanKeluarBahan[] {
   const hasil: GerakanKeluarBahan[] = [];
-  for (const dokumen of gerak.values()) {
-    if (!dokumen) continue;
-    for (const g of dokumen.baris) {
-      if (g.itemId !== itemId) continue;
-      const q = new Decimal(g.qty).abs();
-      if (q.isZero()) continue;
-      hasil.push({ qty: q.toString(), unitCost: new Decimal(g.totalCost).abs().div(q).toString(), variantSku: g.variantSku });
-    }
+  if (!dokumen) return hasil;
+  for (const g of dokumen.baris) {
+    if (g.itemId !== itemId) continue;
+    const q = new Decimal(g.qty).abs();
+    if (q.isZero()) continue;
+    hasil.push({ qty: q.toString(), unitCost: new Decimal(g.totalCost).abs().div(q).toString(), variantSku: g.variantSku });
   }
   return hasil;
+}
+
+export type DasarHargaKembali = {
+  /** Gerakan keluar di kartu stok, dari pengeluaran yang mencatat nilai bahan ini. */
+  kartuStok: GerakanKeluarBahan[];
+  /** Harga di dokumen pengeluaran, untuk pengeluaran yang nilainya tidak ada di kartu stok. */
+  dokumen: Array<{ qty: string; unitCost: string }>;
+  /** Nomor pengeluaran yang nilainya tidak ada di kartu stok DAN dokumennya tanpa harga. */
+  tanpaHarga: string[];
+};
+
+/**
+ * Dasar harga satu bahan yang kembali, PER pengeluaran WO ini (keputusan pemilik
+ * 2026-11-01). Kartu stok lebih dulu: pengeluaran yang gerakan bahan ini bernilai di
+ * kartu stok dibaca dari sana, persis seperti sebelumnya. Bila tidak — nilainya tidak
+ * tercatat (`null`), tidak ada gerakan sama sekali (data di luar layar, data lama), atau
+ * gerakannya tanpa baris bahan ini — dipakai harga di DOKUMEN pengeluarannya
+ * (`avgCostAtIssue`, harga rata-rata gudang saat keluar), tidak lagi Rp 0. Pengeluaran
+ * yang dokumennya pun tanpa harga tidak ikut ditimbang; bila tidak ada satu pun dasar
+ * harga, pemanggil menolak pengembaliannya.
+ */
+export function dasarHargaKembali(
+  pengeluaran: ReadonlyArray<{ id: string; docNumber: string; items: unknown }>,
+  gerak: ReadonlyMap<string, GerakDokumen | null>,
+  itemId: string,
+): DasarHargaKembali {
+  const kartuStok: GerakanKeluarBahan[] = [];
+  const dokumen: Array<{ qty: string; unitCost: string }> = [];
+  const tanpaHarga: string[] = [];
+  for (const p of pengeluaran) {
+    const dariKartu = gerakanSatuPengeluaran(gerak.get(p.id), itemId);
+    if (dariKartu.length > 0) {
+      kartuStok.push(...dariKartu);
+      continue;
+    }
+    let adaBaris = false;
+    let berharga = false;
+    for (const b of barisHargaPengeluaran(p.items)) {
+      if (b.itemId !== itemId || b.qty.lte(0)) continue;
+      adaBaris = true;
+      if (b.harga == null) continue;
+      berharga = true;
+      dokumen.push({ qty: b.qty.toString(), unitCost: b.harga.toString() });
+    }
+    if (adaBaris && !berharga) tanpaHarga.push(p.docNumber);
+  }
+  return { kartuStok, dokumen, tanpaHarga };
 }
 
 /**
@@ -143,9 +213,11 @@ export function gerakanKeluarBahan(gerak: ReadonlyMap<string, GerakDokumen | nul
  *  1. kunci idempotensi PALING DULU — isian yang sudah tercatat dikembalikan apa adanya;
  *  2. penjaga WO (ada, belum batal) dan sisa per barang dibaca DI DALAM transaksi,
  *     jadi dua pengembalian serentak tidak bisa melewati sisa bersama-sama;
- *  3. per barang: stok gudang bertambah pada harga keluarnya (rata-rata gudang
- *     dicampur) lewat `moveMainStock` — entri buku stok merujuk satu
- *     `StockAdjustment` POSITIVE — dan `returnedQty` rencana naik;
+ *  3. per barang: harga keluarnya dari kartu stok, atau dari dokumen pengeluaran
+ *     bila kartu stok tidak menyimpan nilainya (`dasarHargaKembali`; tanpa keduanya
+ *     ditolak `HARGA_KELUAR_TIDAK_DIKETAHUI`). Stok gudang bertambah pada harga itu
+ *     (rata-rata gudang dicampur) lewat `moveMainStock` — entri buku stok merujuk
+ *     satu `StockAdjustment` POSITIVE — dan `returnedQty` rencana naik;
  *  4. satu baris `AuditLog` untuk seluruh pengembalian.
  */
 export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKembaliBahan> {
@@ -178,7 +250,7 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
           status: true,
           consumptionPlan: true,
           vendor: { select: { name: true } },
-          issues: { select: { id: true, items: true, totalCost: true } },
+          issues: { select: { id: true, docNumber: true, items: true, totalCost: true } },
           receipts: { select: { materialCost: true, totalCostValue: true } },
         },
       });
@@ -189,17 +261,34 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
       const periksa = periksaBarisKembali(m.baris, sisa);
       if (!periksa.ok) return periksa;
 
-      // Harga dan varian keluarnya dibaca dari kartu stok pengeluaran WO ini.
+      // Harga dan varian keluarnya dibaca dari kartu stok pengeluaran WO ini; pengeluaran
+      // yang nilainya tidak ada di kartu stok dinilai dengan harga di dokumennya.
       const gerakPengeluaran = await gerakStokPerDokumen(
         tx,
         "MaterialIssue",
         wo.issues.map((i) => i.id),
       );
-      const perBaris: Array<{ itemId: string; qty: Decimal; harga: Decimal; gerakan: GerakanKeluarBahan[] }> = [];
+      const perBaris: Array<{
+        itemId: string;
+        qty: Decimal;
+        /** null = tidak ada dasar harga sama sekali (kartu stok maupun dokumen). */
+        harga: Decimal | null;
+        gerakan: GerakanKeluarBahan[];
+        dariDokumen: boolean;
+        tanpaHarga: string[];
+      }> = [];
       for (const b of periksa.baris) {
-        const gerakan = gerakanKeluarBahan(gerakPengeluaran, b.itemId);
-        const harga = hargaKeluar(gerakan).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        perBaris.push({ itemId: b.itemId, qty: b.qty, harga, gerakan });
+        const dasar = dasarHargaKembali(wo.issues, gerakPengeluaran, b.itemId);
+        const semua = [...dasar.kartuStok, ...dasar.dokumen];
+        const harga = semua.length > 0 ? hargaKeluar(semua).toDecimalPlaces(2, Decimal.ROUND_HALF_UP) : null;
+        perBaris.push({
+          itemId: b.itemId,
+          qty: b.qty,
+          harga,
+          gerakan: dasar.kartuStok,
+          dariDokumen: dasar.dokumen.length > 0,
+          tanpaHarga: dasar.tanpaHarga,
+        });
       }
 
       // Sesudah ada penerimaan barang jadi, nilai yang kembali dibatasi biaya
@@ -212,14 +301,29 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
         // Bagian BAHAN penerimaan, bukan totalCostValue (yang kini memuat ongkos jahit).
         sudahDibebankan: wo.receipts.reduce((s, r) => s.plus(bagianBahanPenerimaan(r)), new Decimal(0)),
       });
-      const nilaiPenuh = perBaris.reduce((s, b) => s.plus(b.qty.mul(b.harga)), new Decimal(0));
-      const { harga: hargaAkhir, dibatasi } = hargaDalamBatas(perBaris, batas);
+
+      // Tanpa dasar harga sama sekali: DITOLAK, tidak diam-diam Rp 0 (keputusan pemilik
+      // 2026-11-01) — kecuali batasnya sudah 0: seluruh biaya bahan WO sudah dibebankan ke
+      // barang jadi, jadi berapa pun harganya nilai yang kembali tetap Rp 0.
+      const tanpaDasar = perBaris.find((b) => b.harga == null);
+      if (tanpaDasar && !(batas != null && batas.lte(0))) {
+        return { ok: false, code: "HARGA_KELUAR_TIDAK_DIKETAHUI", itemId: tanpaDasar.itemId, dokumen: tanpaDasar.tanpaHarga };
+      }
+      const dasarBatas = perBaris.map((b) => ({ qty: b.qty, harga: b.harga ?? new Decimal(0) }));
+      const nilaiPenuh = dasarBatas.reduce((s, b) => s.plus(b.qty.mul(b.harga)), new Decimal(0));
+      const dalamBatas = hargaDalamBatas(dasarBatas, batas);
+      const hargaAkhir = dalamBatas.harga;
+      // Baris tanpa dasar harga hanya lolos karena batas 0: nilainya ditetapkan batas itu.
+      const dibatasi = dalamBatas.dibatasi || tanpaDasar != null;
 
       const tercatat: BarisKembaliTercatat[] = [];
       for (const [i, pb] of perBaris.entries()) {
         const b = { itemId: pb.itemId, qty: pb.qty };
         const harga = hargaAkhir[i];
         const gerakan = pb.gerakan;
+        // Disebut "dari dokumen" hanya bila harga dokumen itu benar-benar menentukan nilai
+        // (bukan bila batas sudah menekannya menjadi 0).
+        const hargaDariDokumen = pb.dariDokumen && harga.gt(0);
 
         // Baris gudang tujuan: varian yang paling banyak dikeluarkan ke WO ini;
         // tanpa varian → baris gabungan null/"" (pencarian toleran keduanya).
@@ -240,16 +344,22 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
         const nilaiKembali = b.qty.mul(harga).toDecimalPlaces(2);
 
         const docNumber = await generateDocNumber("ADJ", tx);
-        // Harga satuan PERTAMA (sesudah nomor WO, yang tidak memuat "@"): kolom
-        // penyesuaian tidak punya harga satuan, jadi riwayat membacanya dari sini.
-        const alasan = `Kembali bahan ${wo.docNumber} @ ${harga.toFixed(2)} dari ${wo.vendor?.name ?? "CMT"}${catatan ? ` — ${catatan}` : ""}`;
+        // Kolom penyesuaian tidak punya harga satuan maupun sumbernya, jadi riwayat
+        // membacanya dari alasan; catatan tidak pernah terpotong (nama CMT yang dipendekkan).
+        const alasan = alasanKembaliBahan({
+          woDocNumber: wo.docNumber,
+          harga: harga.toFixed(2),
+          hargaDariDokumen,
+          vendor: wo.vendor?.name,
+          catatan,
+        });
         const penyesuaian = await tx.stockAdjustment.create({
           data: {
             docNumber,
             itemId: b.itemId,
             type: "POSITIVE",
             qtyChange: b.qty.toNumber(),
-            reason: alasan.slice(0, 190),
+            reason: alasan,
             prevQty: stokSebelum.toNumber(),
             newQty: stokSesudah.toNumber(),
             prevAvgCost: rataSebelum.toNumber(),
@@ -286,6 +396,7 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
           hargaSatuan: harga.toNumber(),
           nilai: nilaiKembali.toNumber(),
           docNumber,
+          hargaDariDokumen,
         });
       }
 
@@ -321,7 +432,13 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
           entityId: m.woId,
           reason: catatan || null,
           changes: {
-            baris: tercatat.map((t) => ({ itemId: t.itemId, qty: t.qty, hargaSatuan: t.hargaSatuan, docNumber: t.docNumber })),
+            baris: tercatat.map((t) => ({
+              itemId: t.itemId,
+              qty: t.qty,
+              hargaSatuan: t.hargaSatuan,
+              docNumber: t.docNumber,
+              hargaDariDokumen: t.hargaDariDokumen,
+            })),
           },
           metadata: {
             kunciIdempotensi: m.kunci,
@@ -330,6 +447,9 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
             dibatasi,
             nilaiPenuh: nilaiPenuh.toDecimalPlaces(2).toNumber(),
             batasNilai: batas == null ? null : batas.toNumber(),
+            barangHargaDokumen: hasil.ok ? hasil.barangHargaDokumen : [],
+            // Barang tanpa dasar harga yang lolos karena batas 0 (nilainya Rp 0 oleh batas).
+            barangTanpaHarga: perBaris.filter((b) => b.harga == null).map((b) => b.itemId),
           },
         },
       });
@@ -352,6 +472,8 @@ export type BarisRiwayatKembali = {
   qty: number;
   hargaSatuan: number;
   nilai: number;
+  /** Harga diambil dari dokumen pengeluaran (kartu stok tidak menyimpan nilainya). */
+  hargaDariDokumen: boolean;
   catatan: string | null;
   createdAt: Date;
   oleh: string | null;
@@ -376,7 +498,6 @@ export async function riwayatKembaliBahan(woId: string): Promise<BarisRiwayatKem
   });
   return rows.map((r) => {
     const [ringkasan] = dariPenyesuaian([r]);
-    const pisah = r.reason.indexOf(" — ");
     return {
       id: r.id,
       docNumber: r.docNumber,
@@ -384,7 +505,8 @@ export async function riwayatKembaliBahan(woId: string): Promise<BarisRiwayatKem
       qty: ringkasan.qty,
       hargaSatuan: ringkasan.hargaSatuan,
       nilai: ringkasan.nilai,
-      catatan: pisah >= 0 ? r.reason.slice(pisah + 3) : null,
+      hargaDariDokumen: ringkasan.hargaDariDokumen,
+      catatan: catatanDariAlasan(r.reason),
       createdAt: r.createdAt,
       oleh: r.createdBy?.name ?? r.createdBy?.email ?? null,
     };

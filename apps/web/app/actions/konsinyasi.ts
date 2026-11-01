@@ -2,7 +2,13 @@
 
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/lib/auth';
-import { bolehMemverifikasi, bolehMengelolaKonsi } from '@/lib/receivables/izin';
+import {
+  bolehMembayarKomisiSpg,
+  bolehMemverifikasi,
+  bolehMencatatNomorKonsi,
+  bolehMengelolaKonsi,
+  bolehMengunciKonsi,
+} from "@/lib/receivables/izin";
 import {
   batalkanPembayaranToko,
   bayarKomisi,
@@ -44,18 +50,25 @@ function tanggalWib(teks: string): Date | null {
 }
 
 /**
- * Seluruh aksi konsinyasi memakai `receivables:manage`.
+ * Pagar aksi konsinyasi (`lib/receivables/izin.ts`).
  *
- * Brief aslinya memisahkan admin penjualan dan admin pajak sebagai peran
- * sendiri. Elorae belum punya keduanya, dan MENGARANG peran baru di sini akan
- * membuat izin yang tidak pernah diberikan kepada siapa pun — layarnya jadi
- * tidak bisa dibuka sama sekali. Pemisahan itu dicatat sebagai pekerjaan
- * berikutnya, bukan dipura-purakan sudah ada.
+ * Menjalankan siklus — membuka siklus, kiriman titipan, laporan SPG/toko —
+ * memakai `consignment:manage` (`butuh()`). Tiga pekerjaan yang brief berikan
+ * kepada orang berbeda memakai izinnya sendiri (keputusan pemilik 2026-11-01):
+ * mengunci/membuka kunci angka (`consignment:lock`, manager), nomor nota
+ * (`consignment:note_number`, admin penjualan), dan nomor faktur pajak
+ * (`consignment:tax_number`, admin pajak). Menandai gaji SPG dibayar memakai
+ * `spg_commission:pay`, dan pembayaran toko memakai pemeriksa pembayaran.
  */
 async function butuh(): Promise<string | null> {
+  return butuhIzin(bolehMengelolaKonsi);
+}
+
+/** Pengguna yang lolos `boleh`, atau null bila tidak masuk / tidak berizin. */
+async function butuhIzin(boleh: (izin: string[] | undefined) => boolean): Promise<string | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
-  return bolehMengelolaKonsi(session.user.permissions) ? session.user.id : null;
+  return boleh(session.user.permissions) ? session.user.id : null;
 }
 
 export async function bukaSiklusAction(input: {
@@ -212,7 +225,7 @@ export async function kunciAngkaAction(
   baris: BarisResmi[],
   gajiPokokPerSpg?: number,
 ): Promise<HasilAksiKonsi> {
-  const userId = await butuh();
+  const userId = await butuhIzin(bolehMengunciKonsi);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
@@ -229,7 +242,7 @@ export async function kunciAngkaAction(
 }
 
 export async function bukaKunciAction(cycleId: string): Promise<HasilAksiKonsi> {
-  const userId = await butuh();
+  const userId = await butuhIzin(bolehMengunciKonsi);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
@@ -249,7 +262,7 @@ export async function bayarKomisiAction(
   commissionId: string,
   catatan?: string,
 ): Promise<HasilAksiKonsi> {
-  const userId = await butuh();
+  const userId = await butuhIzin(bolehMembayarKomisiSpg);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
@@ -269,7 +282,8 @@ export async function catatNomorDokumenAction(
   jenis: 'NOTA' | 'PAJAK',
   nomor: string,
 ): Promise<HasilAksiKonsi> {
-  const userId = await butuh();
+  // Nomor nota = admin penjualan, nomor faktur pajak = admin pajak; jenis lain ditolak di pagarnya.
+  const userId = await butuhIzin((izin) => bolehMencatatNomorKonsi(izin, jenis));
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
 
   try {
@@ -299,14 +313,13 @@ export async function bahanLaporanSpgAction(
 }
 
 /**
- * Pembayaran toko dicatat oleh keuangan (`journals:manage`), bukan oleh admin
- * konsinyasi: yang dicatat adalah uang yang sudah terlihat di rekening, dan
- * memverifikasi uang masuk adalah tugas yang sama dengan memverifikasi BKM.
+ * Pembayaran toko dicatat oleh pemeriksa pembayaran (`payments:verify`), bukan
+ * oleh admin konsinyasi: yang dicatat adalah uang yang sudah terlihat di
+ * rekening, dan memverifikasi uang masuk adalah tugas yang sama dengan
+ * memverifikasi BKM.
  */
 async function butuhKeuangan(): Promise<string | null> {
-  const session = await auth();
-  if (!session?.user?.id) return null;
-  return bolehMemverifikasi(session.user.permissions) ? session.user.id : null;
+  return butuhIzin(bolehMemverifikasi);
 }
 
 export async function catatPembayaranTokoAction(input: {

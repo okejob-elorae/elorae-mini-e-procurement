@@ -371,6 +371,7 @@ model Store {
   markupPercent  Decimal?       @map("marginPercent") @db.Decimal(5, 2)
   priceDiscountPercent Decimal? @db.Decimal(5, 2)
   creditLimit    Decimal?       @db.Decimal(15, 2)
+  noCreditLimit  Boolean        @default(false)
   npwp           String?        @db.VarChar(32)
   lat            Decimal?       @db.Decimal(10, 7)
   lng            Decimal?       @db.Decimal(10, 7)

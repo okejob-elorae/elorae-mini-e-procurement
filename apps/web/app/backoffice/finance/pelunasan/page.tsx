@@ -42,8 +42,12 @@ export default async function SettlementQueuePage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session) redirect("/login");
 
+  /**
+   * The collections manager OR the payment verifier, who approves these (`approveSettlementAction`
+   * is `payments:verify`, owner 2026-11-01) — the same pair the menu shows this queue to.
+   */
   const permissions = session.user.permissions ?? [];
-  if (!hasPermission(permissions, PERMISSIONS.COLLECTIONS_MANAGE)) {
+  if (!hasPermission(permissions, PERMISSIONS.COLLECTIONS_MANAGE) && !hasPermission(permissions, PERMISSIONS.PAYMENTS_VERIFY)) {
     redirect("/backoffice");
   }
 

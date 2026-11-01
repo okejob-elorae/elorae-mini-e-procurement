@@ -93,11 +93,17 @@ describe("getAntreanKantor", () => {
   });
 
   it("keuangan: koreksi BKM dan biaya yang menunggu dibayar", async () => {
-    const hasil = await getAntreanKantor(["dashboard:view", "journals:manage"]);
+    const hasil = await getAntreanKantor(["dashboard:view", "journals:manage", "payments:verify"]);
     expect(Object.keys(hasil).sort()).toEqual(["claimCorrectionsPending", "expensesPendingPayment"]);
     expect(hasil.claimCorrectionsPending).toBe(1);
     expect(catatan.dipanggil).not.toContain("usulan");
     expect(catatan.dipanggil).not.toContain("shift");
+  });
+
+  it("journals:manage tanpa payments:verify: koreksi BKM tidak dihitung — memeriksa pembayaran izinnya sendiri", async () => {
+    const hasil = await getAntreanKantor(["dashboard:view", "journals:manage"]);
+    expect(Object.keys(hasil)).toEqual(["expensesPendingPayment"]);
+    expect(catatan.dipanggil).not.toContain("koreksi");
   });
 
   it("produksi: hanya dua hitungan langkah jadwal produksi (terlambat, hari ini)", async () => {

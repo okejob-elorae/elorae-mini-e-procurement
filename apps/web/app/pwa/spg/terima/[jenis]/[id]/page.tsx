@@ -3,6 +3,7 @@ import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { formatDisplayDate } from "@/lib/date-only";
 import { JENIS_KIRIMAN, kirimanMenunggu, type JenisKiriman } from "@/lib/spg/kiriman";
+import { muatInfoAntaran } from "@/lib/spg/antaran-queries";
 import { tokoSpg } from "@/lib/spg/queries";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { FormTerima } from "./FormTerima";
@@ -30,13 +31,21 @@ export default async function SpgTerimaKirimanPage({ params }: { params: Promise
   const k = daftar.find((x) => x.sourceType === jenisSah && x.sourceId === id) ?? null;
   // Opname SESUDAH kiriman ini berangkat: barangnya mungkin sudah tiba dan ikut
   // terhitung di opname itu. Menerimanya penuh lagi menghitungnya dua kali.
-  const opname = k
-    ? await prisma.storeOpname.findFirst({
-        where: { storeId: toko.id, countedAt: { gt: k.tanggal } },
-        orderBy: { countedAt: "desc" },
-        select: { countedAt: true },
-      })
-    : null;
+  const [opname, antaran] = k
+    ? await Promise.all([
+        prisma.storeOpname.findFirst({
+          where: { storeId: toko.id, countedAt: { gt: k.tanggal } },
+          orderBy: { countedAt: "desc" },
+          select: { countedAt: true },
+        }),
+        // Antaran yang membawa kiriman ini dan sisa pesanannya — potong dan nama saja, tanpa harga.
+        // Bagian tambahan: kalau gagal dimuat, formulirnya tetap bisa dipakai.
+        muatInfoAntaran(prisma, toko.id, k.sourceType, k.sourceId).catch((e) => {
+          console.error("[terima] antaran gagal dimuat", e);
+          return null;
+        }),
+      ])
+    : ([null, null] as const);
 
   const kunjungan = aktif && aktif.storeId === toko.id ? { id: aktif.id, checkinAtMs: aktif.checkinAt.getTime() } : null;
 
@@ -54,6 +63,7 @@ export default async function SpgTerimaKirimanPage({ params }: { params: Promise
               tanggalLabel: formatDisplayDate(k.tanggal),
               lines: k.lines,
               opnameSesudah: opname ? formatDisplayDate(opname.countedAt) : null,
+              antaran,
             }
           : null
       }

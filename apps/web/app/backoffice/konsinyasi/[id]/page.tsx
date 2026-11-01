@@ -1,6 +1,13 @@
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import { bolehMembukaKonsi, bolehMemverifikasi, bolehMengelolaKonsi } from "@/lib/receivables/izin";
+import {
+  bolehMembayarKomisiSpg,
+  bolehMembukaKonsi,
+  bolehMemverifikasi,
+  bolehMencatatNomorKonsi,
+  bolehMengelolaKonsi,
+  bolehMengunciKonsi,
+} from "@/lib/receivables/izin";
 import { rincianSiklus } from "@/lib/konsinyasi/queries";
 import { katalogBarang } from "@/lib/receivables/return-queries";
 import { RincianSiklusClient } from "./RincianSiklusClient";
@@ -18,14 +25,30 @@ export default async function RincianSiklusPage({
   if (!bolehMembukaKonsi(session.user.permissions)) redirect("/backoffice");
 
   const { id } = await params;
-  const kelola = bolehMengelolaKonsi(session.user.permissions);
-  // Pembayaran toko dicatat keuangan — izin yang sama dengan memverifikasi BKM.
-  const catatBayar = bolehMemverifikasi(session.user.permissions);
+  const izin = session.user.permissions;
+  // Setiap tombol memakai izin yang SAMA dengan aksi servernya (app/actions/konsinyasi.ts):
+  // laporan = consignment:manage, kunci/buka kunci = consignment:lock, nomor nota =
+  // consignment:note_number, nomor faktur pajak = consignment:tax_number, gaji SPG =
+  // spg_commission:pay. Pembayaran toko dicatat keuangan — izin memverifikasi BKM.
+  const kelola = bolehMengelolaKonsi(izin);
+  const kunci = bolehMengunciKonsi(izin);
   const [data, katalog] = await Promise.all([
     rincianSiklus(id),
-    kelola ? katalogBarang() : Promise.resolve([]),
+    // Pilihan barang hanya dipakai dialog kunci angka.
+    kunci ? katalogBarang() : Promise.resolve([]),
   ]);
   if (!data) notFound();
 
-  return <RincianSiklusClient data={data} katalog={katalog} bolehMengelola={kelola} bolehCatatBayar={catatBayar} />;
+  return (
+    <RincianSiklusClient
+      data={data}
+      katalog={katalog}
+      bolehMengelola={kelola}
+      bolehMengunci={kunci}
+      bolehCatatNota={bolehMencatatNomorKonsi(izin, "NOTA")}
+      bolehCatatPajak={bolehMencatatNomorKonsi(izin, "PAJAK")}
+      bolehBayarGaji={bolehMembayarKomisiSpg(izin)}
+      bolehCatatBayar={bolehMemverifikasi(izin)}
+    />
+  );
 }

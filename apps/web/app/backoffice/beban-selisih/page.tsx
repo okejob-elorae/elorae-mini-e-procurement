@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { daftarBeban } from "@/lib/receivables/dashboard-queries";
 import { fakturBebanToko, kandidatPenanggung, tagihanBebanTokoTercatat } from "@/lib/receivables/return-queries";
-import { bolehMembacaPiutang } from "@/lib/receivables/izin";
+import { bolehMembacaPiutang, bolehMemutuskanBeban } from "@/lib/receivables/izin";
 import { BebanClient } from "./BebanClient";
 
 export const dynamic = "force-dynamic";
@@ -14,10 +14,13 @@ export default async function BebanSelisihPage() {
   // Rute modul piutang tidak dipetakan di ROUTE_PERMISSIONS — halaman memagari dirinya sendiri.
   if (!bolehMembacaPiutang(session.user.permissions)) redirect("/backoffice");
 
+  // Tandai lunas = receivables:manage; alihkan beban = receivables:decide_bearer (alihkanBebanAction).
   const kelola = hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE);
+  const putusBeban = bolehMemutuskanBeban(session.user.permissions);
   const [baris, kandidat] = await Promise.all([
     daftarBeban(),
-    kelola ? kandidatPenanggung() : Promise.resolve([]),
+    // Calon penanggung hanya dipakai dialog alihkan beban.
+    putusBeban ? kandidatPenanggung() : Promise.resolve([]),
   ]);
 
   // Beban yang ditanggung toko ditagih lewat fakturnya — nomornya dan sisanya
@@ -29,6 +32,13 @@ export default async function BebanSelisihPage() {
       : [{}, {}];
 
   return (
-    <BebanClient baris={baris} kandidat={kandidat} bolehMengelola={kelola} faktur={faktur} tagihanToko={tagihanToko} />
+    <BebanClient
+      baris={baris}
+      kandidat={kandidat}
+      bolehMengelola={kelola}
+      bolehPutuskanBeban={putusBeban}
+      faktur={faktur}
+      tagihanToko={tagihanToko}
+    />
   );
 }

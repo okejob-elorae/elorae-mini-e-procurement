@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
+import { adminSistemTertua } from "@/lib/users/admin-sistem";
 import type { DokumenTanpaJurnal, SumberSapuan } from "./registri";
 import { sumberSapuanTerdaftar } from "./semua";
 
@@ -212,10 +213,10 @@ export type OpsiSapuan = {
   catatNihil?: (sourceType: string, d: DokumenTanpaJurnal, olehUserId: string) => Promise<void>;
 };
 
+/** Pelaku sapuan: yang diminta, atau admin sistem tertua — dari peran sistem, bukan kolom `User.role` yang basi. */
 async function penggunaSistem(olehUserId?: string): Promise<string | null> {
   if (olehUserId) return olehUserId;
-  const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, orderBy: { createdAt: "asc" }, select: { id: true } });
-  return admin?.id ?? null;
+  return (await adminSistemTertua())?.id ?? null;
 }
 
 /**

@@ -56,9 +56,15 @@ export type PenjelasanIzin = {
   halaman: readonly string[];
   /** Izin lain yang perlu ikut dipilih supaya izin ini bisa dipakai. */
   butuh?: KodeIzin;
+  /**
+   * Izin persetujuan/keputusan manager. "Manager" = admin (keputusan pemilik
+   * 2026-10-29), jadi tidak ada peran bawaan yang memegangnya — pemilik yang
+   * memberikannya di Peran & izin.
+   */
+  persetujuan?: true;
 };
 
-type Isian = { grup: GrupIzin; halaman?: readonly string[]; butuh?: KodeIzin };
+type Isian = { grup: GrupIzin; halaman?: readonly string[]; butuh?: KodeIzin; persetujuan?: true };
 
 const P = PERMISSIONS;
 
@@ -98,7 +104,7 @@ const ISIAN: Record<KodeIzin, Isian> = {
     halaman: ["/backoffice/returns", "/backoffice/returns/[id]"],
     butuh: P.SALES_ORDERS_VIEW,
   },
-  [P.SALES_RETURNS_DECIDE]: { grup: "marketplace", butuh: P.SALES_RETURNS_VIEW },
+  [P.SALES_RETURNS_DECIDE]: { grup: "marketplace", butuh: P.SALES_RETURNS_VIEW, persetujuan: true },
 
   // ── Pesanan lapangan & toko ──
   [P.FIELD_SALES_ORDERS_VIEW]: {
@@ -121,8 +127,10 @@ const ISIAN: Record<KodeIzin, Isian> = {
     grup: "pesananLapangan",
     halaman: ["/backoffice/laporan/komisi-salesman", "/backoffice/tukar-barang"],
     butuh: P.FIELD_SALES_ORDERS_VIEW,
+    persetujuan: true,
   },
   [P.FIELD_SALES_ORDERS_DELIVER]: { grup: "pesananLapangan", butuh: P.FIELD_SALES_ORDERS_VIEW },
+  [P.FIELD_SALES_ORDERS_CREDIT_OVERRIDE]: { grup: "pesananLapangan", butuh: P.FIELD_SALES_ORDERS_APPROVE, persetujuan: true },
   [P.STORES_VIEW]: {
     grup: "pesananLapangan",
     halaman: [
@@ -139,6 +147,8 @@ const ISIAN: Record<KodeIzin, Isian> = {
     halaman: ["/backoffice/stores/new", "/backoffice/spg-requests"],
     butuh: P.STORES_VIEW,
   },
+  // Persetujuan — bawaannya hanya admin (keputusan pemilik 2026-11-01).
+  [P.STORE_STOCKTAKES_APPROVE]: { grup: "pesananLapangan", butuh: P.STORES_VIEW, persetujuan: true },
   [P.PROMOS_VIEW]: { grup: "pesananLapangan", halaman: ["/backoffice/promos", "/backoffice/promo-konter"] },
   [P.PROMOS_MANAGE]: {
     grup: "pesananLapangan",
@@ -157,6 +167,10 @@ const ISIAN: Record<KodeIzin, Isian> = {
 
   // ── Tim lapangan (HP) ──
   [IZIN_AKSES_HP]: { grup: "timLapangan", halaman: ["/pwa"] },
+  [P.COLLECTIONS_COLLECT]: { grup: "timLapangan", butuh: IZIN_AKSES_HP },
+  [P.COLLECTIONS_AMPLOP]: { grup: "timLapangan", butuh: IZIN_AKSES_HP },
+  [P.SETTLEMENTS_SUBMIT]: { grup: "timLapangan", butuh: IZIN_AKSES_HP },
+  [P.DELIVERIES_POD]: { grup: "timLapangan" },
 
   // ── SPG ──
   [P.SPG_SALES_RECORD]: { grup: "spg", butuh: IZIN_AKSES_HP },
@@ -177,13 +191,29 @@ const ISIAN: Record<KodeIzin, Isian> = {
       "/backoffice/spg-kiriman-rusak",
       "/backoffice/barang-hilang",
       "/backoffice/settings/spg",
+      "/backoffice/spg-commission",
     ],
   },
+  [P.SPG_COMMISSION_MANAGE]: {
+    grup: "spg",
+    halaman: ["/backoffice/settings/spg-commission"],
+    butuh: P.SPG_SALES_VIEW,
+  },
+  // Persetujuan dan pembayaran — bawaannya hanya admin (keputusan pemilik 2026-11-01).
+  [P.SPG_COMMISSION_PAY]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
+  [P.STORE_TRANSFERS_APPROVE]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
+  [P.STORE_TRANSFERS_DECIDE_SHORTFALL]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
 
   // ── Piutang & pelunasan ──
   [P.RECEIVABLES_VIEW]: {
     grup: "piutang",
-    halaman: [...HALAMAN_BACA_PIUTANG, "/backoffice/tugas-tagih", "/backoffice/arsip-retur", "/backoffice/archive"],
+    halaman: [
+      ...HALAMAN_BACA_PIUTANG,
+      "/backoffice/tugas-tagih",
+      "/backoffice/arsip-retur",
+      "/backoffice/archive",
+      "/backoffice/finance/piutang",
+    ],
   },
   [P.RECEIVABLES_MANAGE]: {
     grup: "piutang",
@@ -195,10 +225,25 @@ const ISIAN: Record<KodeIzin, Isian> = {
     ],
     butuh: P.RECEIVABLES_VIEW,
   },
+  // Persetujuan — bawaannya hanya admin (keputusan pemilik 2026-11-01).
+  [P.RECEIVABLES_DECIDE_BEARER]: { grup: "piutang", butuh: P.RECEIVABLES_VIEW, persetujuan: true },
+  // Periksa pembayaran (BKM, giro): admin dan keuangan. Pembaca BKM dan nota
+  // retur (`bolehMembacaPelunasan`/`bolehMembacaRetur`, lib/receivables/izin.ts).
+  [P.PAYMENTS_VERIFY]: { grup: "piutang", halaman: ["/backoffice/pelunasan", "/backoffice/retur-toko"] },
+  [P.PAYMENTS_MANAGE]: { grup: "piutang", halaman: ["/backoffice/finance/payments"] },
+  [P.COLLECTIONS_MANAGE]: {
+    grup: "piutang",
+    halaman: ["/backoffice/finance/collections", "/backoffice/finance/pelunasan", "/backoffice/settings/piutang"],
+  },
 
   // ── Konsinyasi ──
   [P.CONSIGNMENT_VIEW]: { grup: "konsinyasi", halaman: ["/backoffice/konsinyasi"] },
   [P.CONSIGNMENT_MANAGE]: { grup: "konsinyasi", butuh: P.CONSIGNMENT_VIEW },
+  // Tiga nomor berdampingan, tiga pemilik (keputusan pemilik 2026-11-01).
+  [P.CONSIGNMENT_NOTE_NUMBER]: { grup: "konsinyasi", butuh: P.CONSIGNMENT_VIEW },
+  [P.CONSIGNMENT_TAX_NUMBER]: { grup: "konsinyasi", butuh: P.CONSIGNMENT_VIEW },
+  // Persetujuan — bawaannya hanya admin.
+  [P.CONSIGNMENT_LOCK]: { grup: "konsinyasi", butuh: P.CONSIGNMENT_VIEW, persetujuan: true },
 
   // ── Keuangan & pajak ──
   [P.JOURNALS_VIEW]: {
@@ -225,13 +270,7 @@ const ISIAN: Record<KodeIzin, Isian> = {
   },
   [P.JOURNALS_MANAGE]: {
     grup: "keuangan",
-    halaman: [
-      "/backoffice/finance/journals/new",
-      "/backoffice/finance/kas/baru",
-      "/backoffice/pelunasan",
-      "/backoffice/retur-toko",
-      "/backoffice/biaya-perjalanan",
-    ],
+    halaman: ["/backoffice/finance/journals/new", "/backoffice/finance/kas/baru", "/backoffice/biaya-perjalanan"],
   },
   [P.COA_VIEW]: { grup: "keuangan", halaman: ["/backoffice/finance/coa"] },
   [P.COA_MANAGE]: { grup: "keuangan", butuh: P.COA_VIEW },
@@ -260,11 +299,26 @@ const ISIAN: Record<KodeIzin, Isian> = {
     halaman: ["/backoffice/purchase-orders/new"],
     butuh: P.PURCHASE_ORDERS_VIEW,
   },
-  [P.PURCHASE_ORDERS_EDIT]: { grup: "pembelian", butuh: P.PURCHASE_ORDERS_VIEW },
-  [P.PURCHASE_ORDERS_APPROVE]: { grup: "pembelian", butuh: P.PURCHASE_ORDERS_VIEW },
-  [P.SUPPLIER_PAYMENTS_VIEW]: { grup: "pembelian", halaman: ["/backoffice/supplier-payments"] },
+  [P.PURCHASE_ORDERS_EDIT]: {
+    grup: "pembelian",
+    halaman: ["/backoffice/settings/purchasing"],
+    butuh: P.PURCHASE_ORDERS_VIEW,
+  },
+  [P.PURCHASE_ORDERS_APPROVE]: { grup: "pembelian", butuh: P.PURCHASE_ORDERS_VIEW, persetujuan: true },
+  [P.SUPPLIER_PAYMENTS_VIEW]: {
+    grup: "pembelian",
+    halaman: ["/backoffice/supplier-payments", "/backoffice/vendor-payments"],
+  },
   [P.SUPPLIER_PAYMENTS_CREATE]: { grup: "pembelian", halaman: ["/backoffice/supplier-payments/baru"], butuh: P.SUPPLIER_PAYMENTS_VIEW },
   [P.SUPPLIER_PAYMENTS_EDIT]: { grup: "pembelian", butuh: P.SUPPLIER_PAYMENTS_VIEW },
+  [P.ITEM_REQUESTS_VIEW]: { grup: "pembelian", halaman: ["/backoffice/item-requests"] },
+  [P.ITEM_REQUESTS_MANAGE]: { grup: "pembelian", butuh: P.ITEM_REQUESTS_VIEW },
+  [P.VENDOR_BILLS_VIEW]: { grup: "pembelian", halaman: ["/backoffice/vendor-bills"] },
+  [P.VENDOR_BILLS_MANAGE]: {
+    grup: "pembelian",
+    halaman: ["/backoffice/vendor-bills/new"],
+    butuh: P.VENDOR_BILLS_VIEW,
+  },
   [P.VENDOR_RETURNS_VIEW]: { grup: "pembelian", halaman: ["/backoffice/vendor-returns"] },
   [P.VENDOR_RETURNS_CREATE]: {
     grup: "pembelian",
@@ -276,7 +330,7 @@ const ISIAN: Record<KodeIzin, Isian> = {
   [P.SUPPLIERS_CREATE]: { grup: "pembelian", butuh: P.SUPPLIERS_VIEW },
   [P.SUPPLIERS_EDIT]: { grup: "pembelian", butuh: P.SUPPLIERS_VIEW },
   [P.SUPPLIERS_DELETE]: { grup: "pembelian", butuh: P.SUPPLIERS_VIEW },
-  [P.SUPPLIERS_APPROVE]: { grup: "pembelian", butuh: P.SUPPLIERS_VIEW },
+  [P.SUPPLIERS_APPROVE]: { grup: "pembelian", butuh: P.SUPPLIERS_VIEW, persetujuan: true },
   [P.SUPPLIER_TYPES_VIEW]: { grup: "pembelian", halaman: ["/backoffice/suppliers/types"] },
   [P.SUPPLIER_TYPES_CREATE]: { grup: "pembelian", butuh: P.SUPPLIER_TYPES_VIEW },
   [P.SUPPLIER_TYPES_EDIT]: { grup: "pembelian", butuh: P.SUPPLIER_TYPES_VIEW },
@@ -302,9 +356,15 @@ const ISIAN: Record<KodeIzin, Isian> = {
     halaman: ["/backoffice/inventory/stock-opname/new", "/gudang-retur", "/backoffice/retur-toko"],
     butuh: P.INVENTORY_OPNAME_VIEW,
   },
-  [P.INVENTORY_OPNAME_APPROVE]: { grup: "gudang", butuh: P.INVENTORY_OPNAME_VIEW },
+  [P.INVENTORY_OPNAME_APPROVE]: { grup: "gudang", butuh: P.INVENTORY_OPNAME_VIEW, persetujuan: true },
   [P.INVENTORY_RECONCILIATION_VIEW]: { grup: "gudang", halaman: ["/backoffice/inventory/reconciliation"] },
   [P.INVENTORY_RECONCILIATION_MANAGE]: { grup: "gudang", butuh: P.INVENTORY_RECONCILIATION_VIEW },
+  [P.DELIVERIES_SHIP]: { grup: "gudang" },
+  [P.FIELD_RETURNS_MANAGE]: { grup: "gudang" },
+  [P.FIELD_RETURNS_WRITEOFF]: { grup: "gudang", butuh: P.FIELD_RETURNS_MANAGE, persetujuan: true },
+  [P.PACKER_MENU]: { grup: "gudang", halaman: ["/packer", "/packer/record"] },
+  [P.PACKER_RECORD]: { grup: "gudang", butuh: P.PACKER_MENU },
+  [P.PACKER_EDIT]: { grup: "gudang", butuh: P.PACKER_MENU },
 
   // ── Produksi ──
   [P.FORECAST_VIEW]: { grup: "produksi", halaman: ["/backoffice/forecast", "/backoffice/forecast/reconciliation"] },
@@ -412,12 +472,18 @@ export const PENJELASAN_IZIN: Readonly<Record<KodeIzin, PenjelasanIzin>> = Objec
       keterangan: `izin.${k}.keterangan`,
       halaman: isian.halaman ?? [],
       ...(isian.butuh ? { butuh: isian.butuh } : {}),
+      ...(isian.persetujuan ? { persetujuan: true as const } : {}),
     };
     return [kode, entri];
   }),
 ) as Record<KodeIzin, PenjelasanIzin>;
 
 const URUTAN_KODE = new Map(Object.keys(ISIAN).map((kode, i) => [kode, i]));
+
+/** Kode izin persetujuan, berurutan seperti di editor. */
+export const IZIN_PERSETUJUAN: readonly KodeIzin[] = (Object.keys(ISIAN) as KodeIzin[]).filter(
+  (kode) => ISIAN[kode].persetujuan === true,
+);
 
 export function penjelasanIzin(kode: string): PenjelasanIzin | null {
   return Object.prototype.hasOwnProperty.call(PENJELASAN_IZIN, kode)
@@ -514,6 +580,8 @@ export function cocokCari(kueri: string, teks: readonly string[]): boolean {
  * Keterangan bawaan seed (bahasa Inggris) untuk peran yang dibuat sistem.
  * Hanya bila keterangan di basis data SAMA PERSIS dengan ini, layar memakai
  * terjemahannya — keterangan yang diketik pemilik tidak pernah ditimpa.
+ * Tiga peran kantor ditulis juga oleh `seed-office-roles-permissions.sql`
+ * dengan teks yang sama persis.
  */
 export const DESKRIPSI_PERAN_BAWAAN: Readonly<Record<string, string>> = {
   ADMIN: "System administrator with full access",
@@ -522,6 +590,10 @@ export const DESKRIPSI_PERAN_BAWAAN: Readonly<Record<string, string>> = {
   PRODUCTION: "Production staff - manages work orders",
   SALESMAN: "Field salesman — PWA-only access",
   SPG: "In-store promoter — PWA-only access, fixed to one store",
+  PACKER: "Packer — Record Packer video packing surface",
+  KEUANGAN: "Finance — verifies payments against the bank statement, journals and financial reports",
+  ADMIN_PENJUALAN: "Sales admin — records the sales-note number on consignment cycles",
+  ADMIN_PAJAK: "Tax admin — records tax-invoice numbers for billing notes and consignment",
 };
 
 /** Kunci i18n (namespace `izinPeran`) terjemahan keterangan peran bawaan, atau null. */

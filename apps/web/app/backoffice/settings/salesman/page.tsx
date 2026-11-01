@@ -98,13 +98,14 @@ export default async function PengaturanSalesmanPage() {
       where: { isActive: true },
       select: { salesmanId: true, group: { select: { code: true } } },
     }),
-    // Toko PUTUS aktif yang batas kreditnya menimpa bawaan — supaya pemilik
-    // tahu batas bawaan tidak berlaku untuk semua toko.
+    // Toko PUTUS aktif yang tidak (sepenuhnya) ikut bawaan: punya batas sendiri,
+    // atau dicentang "Tanpa batas kredit" — supaya pemilik tahu batas bawaan
+    // tidak berlaku untuk semua toko. Arti kolom kosong: `batasKreditBerlaku`.
     prisma.store.count({
       where: {
         isActive: true,
         termsType: "PUTUS",
-        OR: [{ creditLimit: { not: null } }, { maxOpenInvoices: { not: null } }],
+        OR: [{ creditLimit: { not: null } }, { maxOpenInvoices: { not: null } }, { noCreditLimit: true }],
       },
     }),
     jumlahTokoPerKelas(),

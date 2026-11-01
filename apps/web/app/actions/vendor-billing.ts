@@ -11,16 +11,16 @@ import { listBillableSources } from "@/lib/vendor-billing/billable";
 import { createVendorBill, voidVendorBill, VendorBillError } from "@/lib/vendor-billing/bill-writer";
 import { listVendorBills, listBillLinesForPo, listBillLinesForWo } from "@/lib/vendor-billing/queries";
 import { createVendorPayment, voidVendorPayment } from "@/lib/vendor-billing/payment-writer";
-import { listOpenBills, listVendorPayments } from "@/lib/vendor-billing/payment-queries";
+import { listVendorPayments } from "@/lib/vendor-billing/payment-queries";
 
-type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
+type Result<T> = ({ ok: true } & T) | { ok: false; error: string; code?: string };
 
-/** A user-facing refusal comes back as `{ ok: false }`; anything else still throws. */
+/** A user-facing refusal comes back as `{ ok: false }` (with its `code` when it has one); anything else still throws. */
 async function guard<T>(fn: () => Promise<T>): Promise<Result<T>> {
   try {
     return { ok: true, ...(await fn()) };
   } catch (e) {
-    if (e instanceof VendorBillError) return { ok: false, error: e.message };
+    if (e instanceof VendorBillError) return { ok: false, error: e.message, ...(e.code ? { code: e.code } : {}) };
     if (e instanceof z.ZodError) return { ok: false, error: e.issues.map((i) => i.message).join("; ") };
     throw e;
   }
@@ -116,6 +116,7 @@ export async function getBillLinesForWo(woId: string) {
 }
 
 // --- Vendor bill payments (reuse the supplier payment permissions) ---
+// History only since 2026-11-01: new payments go through Supplier payments → Pay (`payment-writer.ts`).
 
 export async function getVendorPayments(filters: { supplierId?: string; from?: string; to?: string; search?: string }) {
   await session(PERMISSIONS.SUPPLIER_PAYMENTS_VIEW);
@@ -127,38 +128,14 @@ export async function getVendorPayments(filters: { supplierId?: string; from?: s
   });
 }
 
-export async function getOpenBills(supplierId: string) {
-  await session(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE);
-  return listOpenBills(idSchema.parse(supplierId));
-}
-
-const paymentSchema = z.object({
-  supplierId: idSchema,
-  paidAt: z.string().min(1),
-  method: z.enum(["BANK", "CASH"]),
-  reference: z.string().optional(),
-  notes: z.string().optional(),
-  allocations: z.array(z.object({ billId: idSchema, amount: z.number() })),
-});
-
-export async function createVendorPaymentAction(input: z.input<typeof paymentSchema>, userId: string) {
-  const s = await session(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE, userId);
-  const data = paymentSchema.parse(input);
-  const paidAt = parseDateOnly(data.paidAt);
-  if (!paidAt) return { ok: false as const, error: "Tanggal bayar tidak valid" };
-  const res = await guard(() => createVendorPayment({ ...data, paidAt }, s.user.id));
-  if (res.ok) {
-    await logAudit({
-      userId: s.user.id,
-      action: "CREATE",
-      entityType: "VendorPayment",
-      entityId: res.id,
-      changes: { after: { docNumber: res.docNumber, supplierId: data.supplierId, allocations: data.allocations } },
-    });
-    revalidatePath("/backoffice/vendor-payments");
-    revalidatePath("/backoffice/vendor-bills");
-  }
-  return res;
+/**
+ * Always refused (`VENDOR_PAYMENTS_CLOSED`): Vendor Billing takes no new payments, every bill is paid
+ * through Supplier payments → Pay. The refusal lives in the writer, so any caller gets it with where
+ * to pay instead; no screen offers this any more.
+ */
+export async function createVendorPaymentAction(userId: string) {
+  await session(PERMISSIONS.SUPPLIER_PAYMENTS_CREATE, userId);
+  return guard(() => createVendorPayment());
 }
 
 export async function voidVendorPaymentAction(paymentId: string, reason: string, userId: string) {

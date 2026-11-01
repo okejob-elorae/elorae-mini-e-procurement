@@ -9,7 +9,9 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  *   keadaan terakhir — siapa yang memberi peran salesman akses keuangan hanya
  *   bisa ditanyakan dari jejaknya.
  * - Mengelola peran hanya untuk admin: `settings_rbac:manage` saja tidak cukup
- *   tanpa peran ADMIN, sama dengan pembaca daftar peran.
+ *   tanpa peran SISTEM (izin penuh `*`), sama dengan pembaca daftar peran. Yang
+ *   dibaca wildcard-nya, bukan peran lama `session.user.role` — dulu kolom lama
+ *   yang diperiksa, yang tidak diisi Pengaturan → Pengguna.
  * - `assignUserRole` memegang aturan toko tetap SPG yang sama dengan
  *   Pengaturan → Pengguna: peran SPG wajib punya toko tetap (aktif), dan
  *   berganti ke peran lain mengosongkannya — pengguna lain yang kebetulan
@@ -21,7 +23,7 @@ const sesi = vi.hoisted(() => ({ kini: null as SesiUji | null }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => sesi.kini) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 
-const { assignUserRole, createRole, deleteRole, updateRolePermissions } = await import("./rbac");
+const { assignUserRole, createRole, deleteRole, getPermissions, getRoles, updateRolePermissions } = await import("./rbac");
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -40,9 +42,11 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
   let tokoAktif = "";
   let tokoMati = "";
 
-  const masuk = (permissions: string[], role = "ADMIN") => {
+  const masuk = (permissions: string[], role = "USER") => {
     sesi.kini = { user: { id: pelaku, email: null, role, permissions } };
   };
+  /** Admin sistem: wildcard `*` dari peran sistem. Peran lama sengaja USER — admin yang diangkat lewat Pengguna. */
+  const masukAdmin = () => masuk(["*"], "USER");
   const buatPeran = async (akhiran: string, kode: string[]) => {
     const p = await prisma.roleDefinition.create({
       data: {
@@ -105,7 +109,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
   describe("updateRolePermissions", () => {
     it("menulis jejak berisi daftar izin sebelum dan sesudah", async () => {
       const peran = await buatPeran("UBAH", ["pwa:access"]);
-      masuk(["settings_rbac:manage"]);
+      masukAdmin();
       expect(await updateRolePermissions(peran, [izinId["stores:view"], izinId["pwa:access"]])).toEqual({ ok: true });
 
       const baris = await jejak(peran, "ROLE_PERMISSIONS_UPDATED");
@@ -119,7 +123,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
 
     it("izin yang tidak ada → IZIN_TIDAK_SAH, tanpa perubahan dan tanpa jejak", async () => {
       const peran = await buatPeran("SALAH", ["pwa:access"]);
-      masuk(["settings_rbac:manage"]);
+      masukAdmin();
       expect(await updateRolePermissions(peran, [izinId["stores:view"], `${tag}-tidak-ada`])).toEqual({
         ok: false,
         code: "IZIN_TIDAK_SAH",
@@ -132,7 +136,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
 
   describe("createRole", () => {
     it("membuat peran dan menulis jejak berisi nama, keterangan, dan izinnya", async () => {
-      masuk(["settings_rbac:manage"]);
+      masukAdmin();
       const hasil = await createRole(
         { name: `  ${tag}-BARU `, description: "Admin toko" },
         [izinId["stores:view"], izinId["pwa:access"], izinId["stores:view"]],
@@ -157,7 +161,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
     });
 
     it("nama yang sudah dipakai → NAMA_SUDAH_ADA; nama kosong → NAMA_TIDAK_SAH; tanpa izin → TANPA_AKSES", async () => {
-      masuk(["settings_rbac:manage"]);
+      masukAdmin();
       expect(await createRole({ name: `${tag}-BIASA` }, [])).toEqual({ ok: false, code: "NAMA_SUDAH_ADA" });
       expect(await createRole({ name: "   " }, [])).toEqual({ ok: false, code: "NAMA_TIDAK_SAH" });
       expect(await createRole({ name: `${tag}-X` }, [`${tag}-tidak-ada`])).toEqual({ ok: false, code: "IZIN_TIDAK_SAH" });
@@ -171,7 +175,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
   describe("deleteRole", () => {
     it("menghapus peran dan menulis jejak berisi nama dan izinnya", async () => {
       const peran = await buatPeran("HAPUS", ["stores:view", "pwa:access"]);
-      masuk(["settings_rbac:manage"]);
+      masukAdmin();
       await deleteRole(peran);
 
       expect(await prisma.roleDefinition.findUnique({ where: { id: seededId(peran) } })).toBeNull();
@@ -184,7 +188,7 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
     });
 
     it("peran yang masih dipakai pengguna → MASIH_DIPAKAI, tidak terhapus dan tanpa jejak", async () => {
-      masuk(["settings_rbac:manage"]);
+      masukAdmin();
       expect(await deleteRole(peranBiasa)).toEqual({ ok: false, code: "MASIH_DIPAKAI" });
       expect(await prisma.roleDefinition.findUnique({ where: { id: seededId(peranBiasa) }, select: { id: true } })).not.toBeNull();
       expect(await jejak(peranBiasa, "ROLE_DELETED")).toEqual([]);
@@ -204,6 +208,27 @@ d("rbac — jejak izin peran dan toko tetap SPG (test bed only)", () => {
       expect(tautan.map((t) => t.permissionId)).toEqual([izinId["pwa:access"]]);
       expect(await jejak(peran, "ROLE_PERMISSIONS_UPDATED")).toEqual([]);
       expect(await jejak(peran, "ROLE_DELETED")).toEqual([]);
+    });
+
+    it("admin yang diturunkan lewat Pengguna (peran lama masih ADMIN, tanpa `*`) → ditolak, juga saat membaca", async () => {
+      const peran = await buatPeran("TURUN", ["pwa:access"]);
+      masuk(["settings_rbac:manage", "settings_rbac:view"], "ADMIN");
+      expect(await createRole({ name: `${tag}-TURUN-BARU` }, [])).toEqual({ ok: false, code: "TANPA_AKSES" });
+      expect(await updateRolePermissions(peran, [izinId["stores:view"]])).toEqual({ ok: false, code: "TANPA_AKSES" });
+      expect(await deleteRole(peran)).toEqual({ ok: false, code: "TANPA_AKSES" });
+      await expect(getRoles()).rejects.toThrow(/Forbidden/);
+      await expect(getPermissions()).rejects.toThrow(/Forbidden/);
+      expect(await prisma.roleDefinition.count({ where: { name: `${tag}-TURUN-BARU` } })).toBe(0);
+    });
+
+    it("admin yang diangkat lewat Pengguna (peran lama USER, dengan `*`) → boleh memuat dan mengelola peran", async () => {
+      masukAdmin();
+      const daftar = await getRoles();
+      expect(daftar.some((r) => r.id === peranBiasa)).toBe(true);
+      expect((await getPermissions()).length).toBeGreaterThan(0);
+      const hasil = await createRole({ name: `${tag}-ANGKAT` }, [izinId["pwa:access"]]);
+      expect(hasil.ok).toBe(true);
+      if (hasil.ok) peranIds.push(hasil.id);
     });
   });
 

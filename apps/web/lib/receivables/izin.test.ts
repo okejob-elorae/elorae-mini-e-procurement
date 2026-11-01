@@ -5,10 +5,14 @@ import {
   bolehMembacaPelunasan,
   bolehMembacaPiutang,
   bolehMembacaRetur,
+  bolehMembayarKomisiSpg,
   bolehMembukaKonsi,
+  bolehMemutuskanBeban,
   bolehMemverifikasi,
+  bolehMencatatNomorKonsi,
   bolehMengelola,
   bolehMengelolaKonsi,
+  bolehMengunciKonsi,
   bolehMenghitung,
 } from './izin';
 
@@ -22,7 +26,9 @@ import {
  */
 
 const SALES = ['pwa:access'];
-const KEUANGAN = ['journals:manage'];
+const KEUANGAN = ["payments:verify"];
+/** Pekerjaan jurnal saja — sebelum 2026-11-01 inilah izin pemeriksa BKM. */
+const JURNAL_SAJA = ["journals:manage"];
 const GUDANG = ['inventory_opname:count'];
 const PIUTANG = ['receivables:manage'];
 const KONSI_SAJA = ['consignment:view', 'consignment:manage'];
@@ -52,6 +58,20 @@ describe('pemisahan tugas', () => {
   it('yang mengelola piutang tetap tidak boleh mengesahkan klaim', () => {
     expect(bolehMengelola(PIUTANG)).toBe(true);
     expect(bolehMemverifikasi(PIUTANG)).toBe(false);
+  });
+
+  it("pekerjaan jurnal saja TIDAK lagi berarti boleh mengesahkan uang masuk", () => {
+    /*
+     * Sampai 2026-11-01 pemeriksa BKM menumpang `journals:manage`. Pemilik
+     * meminta izin "periksa pembayaran" sendiri, supaya orang yang membuat
+     * jurnal tidak otomatis mengesahkan pembayaran toko — dan sebaliknya.
+     */
+    expect(bolehMemverifikasi(JURNAL_SAJA)).toBe(false);
+    expect(bolehMembacaPelunasan(JURNAL_SAJA)).toBe(false);
+    expect(bolehMembacaRetur(JURNAL_SAJA)).toBe(false);
+    // Pemeriksa pembayaran tidak ikut mendapat pekerjaan piutang lainnya.
+    expect(bolehMengelola(KEUANGAN)).toBe(false);
+    expect(bolehMelapor(KEUANGAN)).toBe(false);
   });
 });
 
@@ -134,6 +154,82 @@ describe('konsinyasi', () => {
   it('melihat siklus tidak berarti boleh menguncinya', () => {
     expect(bolehMembukaKonsi(['consignment:view'])).toBe(true);
     expect(bolehMengelolaKonsi(['consignment:view'])).toBe(false);
+    expect(bolehMengunciKonsi(['consignment:view'])).toBe(false);
+  });
+
+  it("mengelola siklus tidak membawa kunci angka, kedua nomor, maupun bayar gaji SPG", () => {
+    /*
+     * Dulu SATU izin konsinyasi mencakup semuanya, jadi admin penjualan yang
+     * mengetik nomor nota sekaligus bisa mengunci angka, mengetik faktur pajak,
+     * dan menandai gaji SPG dibayar (keputusan pemilik 2026-11-01).
+     */
+    expect(bolehMengelolaKonsi(KONSI_SAJA)).toBe(true);
+    expect(bolehMengunciKonsi(KONSI_SAJA)).toBe(false);
+    expect(bolehMencatatNomorKonsi(KONSI_SAJA, "NOTA")).toBe(false);
+    expect(bolehMencatatNomorKonsi(KONSI_SAJA, "PAJAK")).toBe(false);
+    expect(bolehMembayarKomisiSpg(KONSI_SAJA)).toBe(false);
+  });
+
+  it("nomor nota milik admin penjualan, nomor faktur pajak milik admin pajak", () => {
+    const ADMIN_PENJUALAN = ["consignment:view", "consignment:note_number"];
+    const ADMIN_PAJAK = ["consignment:view", "consignment:tax_number", "tax_invoices:manage"];
+    expect(bolehMencatatNomorKonsi(ADMIN_PENJUALAN, "NOTA")).toBe(true);
+    expect(bolehMencatatNomorKonsi(ADMIN_PENJUALAN, "PAJAK")).toBe(false);
+    expect(bolehMencatatNomorKonsi(ADMIN_PAJAK, "PAJAK")).toBe(true);
+    expect(bolehMencatatNomorKonsi(ADMIN_PAJAK, "NOTA")).toBe(false);
+    // Antrean faktur pajak nota tagihan tidak sekaligus membuka nomor faktur konsi.
+    expect(bolehMencatatNomorKonsi(["tax_invoices:manage"], "PAJAK")).toBe(false);
+    // Jenis lain dari aksi server tidak dibaca sebagai PAJAK, bahkan untuk admin.
+    expect(bolehMencatatNomorKonsi(ADMIN, "KONSI" as unknown as "NOTA")).toBe(false);
+    expect(bolehMencatatNomorKonsi(ADMIN_PAJAK, "" as unknown as "PAJAK")).toBe(false);
+    // Tidak satu pun dari keduanya bisa mengunci angka.
+    expect(bolehMengunciKonsi(ADMIN_PENJUALAN)).toBe(false);
+    expect(bolehMengunciKonsi(ADMIN_PAJAK)).toBe(false);
+  });
+
+  it("mengunci angka dan membayar gaji SPG: masing-masing izinnya sendiri", () => {
+    expect(bolehMengunciKonsi(["consignment:lock"])).toBe(true);
+    expect(bolehMembayarKomisiSpg(["consignment:lock"])).toBe(false);
+    expect(bolehMembayarKomisiSpg(["spg_commission:pay"])).toBe(true);
+    expect(bolehMengunciKonsi(["spg_commission:pay"])).toBe(false);
+    // Mengatur tarif komisi bukan membayar komisi.
+    expect(bolehMembayarKomisiSpg(["spg_commission:manage"])).toBe(false);
+  });
+});
+
+describe("persetujuan: bawaannya hanya admin", () => {
+  /*
+   * "Manager" = admin (keputusan pemilik 2026-10-29). Persetujuan yang dulu
+   * menumpang izin kelola yang lebar kini izinnya sendiri, supaya pemegang izin
+   * kelola tidak diam-diam ikut memutuskan — pemilik yang memberikannya.
+   */
+  it("memutuskan beban selisih bukan bagian dari mengelola piutang", () => {
+    expect(bolehMemutuskanBeban(PIUTANG)).toBe(false);
+    expect(bolehMemutuskanBeban([...PIUTANG, ...PIUTANG_LIHAT])).toBe(false);
+    expect(bolehMemutuskanBeban(KEUANGAN)).toBe(false);
+    expect(bolehMemutuskanBeban(["receivables:decide_bearer"])).toBe(true);
+    // Yang memutuskan beban tidak otomatis mengelola piutang lainnya.
+    expect(bolehMengelola(["receivables:decide_bearer"])).toBe(false);
+  });
+
+  it("tidak satu pun persetujuan lolos untuk peran kantor yang hanya memegang izin kerja", () => {
+    const KERJA_KANTOR = [
+      "receivables:view",
+      "receivables:manage",
+      "consignment:view",
+      "consignment:manage",
+      "consignment:note_number",
+      "consignment:tax_number",
+      "tax_invoices:manage",
+      "journals:manage",
+      "payments:verify",
+      "stores:manage",
+      "field_sales_orders:approve",
+      "spg_commission:manage",
+    ];
+    expect(bolehMemutuskanBeban(KERJA_KANTOR)).toBe(false);
+    expect(bolehMengunciKonsi(KERJA_KANTOR)).toBe(false);
+    expect(bolehMembayarKomisiSpg(KERJA_KANTOR)).toBe(false);
   });
 });
 
@@ -152,9 +248,14 @@ describe('admin', () => {
       bolehMembacaRetur,
       bolehMembukaKonsi,
       bolehMengelolaKonsi,
+      bolehMengunciKonsi,
+      bolehMemutuskanBeban,
+      bolehMembayarKomisiSpg,
     ]) {
       expect(f(ADMIN)).toBe(true);
     }
+    expect(bolehMencatatNomorKonsi(ADMIN, "NOTA")).toBe(true);
+    expect(bolehMencatatNomorKonsi(ADMIN, "PAJAK")).toBe(true);
   });
 
   it('menolak daftar izin yang tidak ada sama sekali', () => {
@@ -166,8 +267,13 @@ describe('admin', () => {
       bolehMembacaPiutang,
       bolehMembacaPelunasan,
       bolehMembacaRetur,
+      bolehMengunciKonsi,
+      bolehMemutuskanBeban,
+      bolehMembayarKomisiSpg,
     ]) {
       expect(f(undefined)).toBe(false);
     }
+    expect(bolehMencatatNomorKonsi(undefined, "NOTA")).toBe(false);
+    expect(bolehMencatatNomorKonsi(undefined, "PAJAK")).toBe(false);
   });
 });

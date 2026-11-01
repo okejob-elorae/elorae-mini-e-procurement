@@ -28,6 +28,7 @@ import {
 export type CollectionActionReason =
   | "FORBIDDEN"
   | "INVALID_REQUEST"
+  | "SELF_VERIFICATION"
   | CollectionErrorCode
   | PaymentErrorCode;
 
@@ -51,12 +52,32 @@ async function guardCollect(): Promise<{ userId: string } | { ok: false; reason:
   return { userId: session.user.id };
 }
 
+/**
+ * Verifying or rejecting a collector's submission is payment verification: `payments:verify`
+ * (owner, 2026-10-29), the same code that checks a BKM against the bank statement. It used to ride
+ * on `payments:manage`, which records office payments — the recorder and the checker were one
+ * permission.
+ */
 async function guardVerify(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
   const session = await auth();
-  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.PAYMENTS_MANAGE)) {
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.PAYMENTS_VERIFY)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   return { userId: session.user.id };
+}
+
+/**
+ * Nobody checks money they handed in themselves, admin included — the rule `PEMERIKSA_SAMA`
+ * enforces on a BKM. `collectorId` never changes after submit, so reading it outside the writer's
+ * own statements is race-free. A missing row falls through to the writer's `NOT_FOUND`.
+ */
+async function guardNotOwnSubmission(
+  submissionId: string,
+  userId: string,
+): Promise<{ ok: false; reason: "INVALID_REQUEST" | "SELF_VERIFICATION" } | null> {
+  if (typeof submissionId !== "string" || submissionId === "") return { ok: false, reason: "INVALID_REQUEST" };
+  const submission = await prisma.collectionSubmission.findUnique({ where: { id: submissionId }, select: { collectorId: true } });
+  return submission?.collectorId === userId ? { ok: false, reason: "SELF_VERIFICATION" } : null;
 }
 
 function toCollectionResult(e: unknown): { ok: false; reason: CollectionActionReason } {
@@ -175,6 +196,8 @@ export async function verifyCollectionAction(submissionId: string): Promise<Coll
   let paymentId: string;
   let alreadyVerified = false;
   try {
+    const own = await guardNotOwnSubmission(submissionId, g.userId);
+    if (own) return own;
     const result = await verifyCollection({ submissionId, verifiedById: g.userId });
     paymentId = result.paymentId;
     alreadyVerified = result.alreadyVerified ?? false;
@@ -199,6 +222,8 @@ export async function rejectCollectionAction(submissionId: string, reason: strin
   if ("ok" in g) return g;
   if (typeof reason !== "string" || reason.trim() === "") return { ok: false, reason: "INVALID_REQUEST" };
   try {
+    const own = await guardNotOwnSubmission(submissionId, g.userId);
+    if (own) return own;
     await rejectCollection({ submissionId, reason, rejectedById: g.userId });
   } catch (e) {
     return toCollectionResult(e);

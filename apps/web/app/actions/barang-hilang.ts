@@ -7,7 +7,7 @@ import { cariTeks } from "@/lib/db/cari-teks";
 import { auth } from "@/lib/auth";
 import { parseItemVariants } from "@/lib/items/variants";
 import { labelVarian } from "@/lib/konsinyasi/stok-di-toko";
-import { bolehMengelola } from "@/lib/receivables/izin";
+import { bolehMemutuskanBeban, bolehMengelola } from "@/lib/receivables/izin";
 import {
   batalkanBarangHilang,
   buatBarangHilang,
@@ -18,12 +18,13 @@ import {
 } from "@/lib/spg/hilang-writer";
 
 /**
- * Aksi kantor barang hilang. Semua tulisan dijaga `receivables:manage` —
- * menetapkan beban adalah keputusan penagihan (`bolehMengelola`,
- * lib/receivables/izin.ts), dan pemisahan tugas itulah yang membuat potongan
- * gaji/komisi bisa dipertanggungjawabkan. Melihat cukup `spg_sales:view`
- * (halaman memagari dirinya). Aksi mengembalikan `{ ok:false, code }`, tidak
- * pernah melempar.
+ * Aksi kantor barang hilang. Tulisan dijaga `receivables:manage`
+ * (`bolehMengelola`, lib/receivables/izin.ts), KECUALI memutuskan, mengubah, dan
+ * membatalkan keputusan siapa menanggungnya: itu keputusan manager,
+ * `receivables:decide_bearer` (`bolehMemutuskanBeban`, keputusan pemilik
+ * 2026-11-01) — pemisahan tugas itulah yang membuat potongan gaji/komisi bisa
+ * dipertanggungjawabkan. Melihat cukup `spg_sales:view` (halaman memagari
+ * dirinya). Aksi mengembalikan `{ ok:false, code }`, tidak pernah melempar.
  */
 
 type Gagal = { ok: false; code: string };
@@ -34,10 +35,10 @@ async function pengelola(): Promise<string | null> {
   return bolehMengelola(session.user.permissions) ? session.user.id : null;
 }
 
-async function sesi(): Promise<{ userId: string } | Gagal> {
+async function sesi(boleh: (izin: string[] | undefined) => boolean = bolehMengelola): Promise<{ userId: string } | Gagal> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
-  if (!bolehMengelola(session.user.permissions)) return { ok: false, code: "FORBIDDEN" };
+  if (!boleh(session.user.permissions)) return { ok: false, code: "FORBIDDEN" };
   return { userId: session.user.id };
 }
 
@@ -106,7 +107,7 @@ type IsianKeputusan = {
 };
 
 export async function putuskanBarangHilangAction(input: IsianKeputusan): Promise<{ ok: true } | Gagal> {
-  const s = await sesi();
+  const s = await sesi(bolehMemutuskanBeban);
   if ("ok" in s) return s;
   const r = await putuskanBarangHilang({ ...input, olehUserId: s.userId });
   if (!r.ok) return { ok: false, code: r.kode };
@@ -117,7 +118,7 @@ export async function putuskanBarangHilangAction(input: IsianKeputusan): Promise
 }
 
 export async function ubahKeputusanHilangAction(input: IsianKeputusan): Promise<{ ok: true } | Gagal> {
-  const s = await sesi();
+  const s = await sesi(bolehMemutuskanBeban);
   if ("ok" in s) return s;
   const r = await ubahKeputusanHilang({ ...input, catatan: input.catatan ?? "", olehUserId: s.userId });
   if (!r.ok) return { ok: false, code: r.kode };
@@ -126,13 +127,32 @@ export async function ubahKeputusanHilangAction(input: IsianKeputusan): Promise<
   return { ok: true };
 }
 
+/**
+ * Membatalkan catatan yang masih TERBUKA = `receivables:manage`. Membatalkan yang
+ * SUDAH diputuskan menghapus seluruh bagian penanggungnya dan membalik jurnalnya,
+ * jadi itu membatalkan keputusan manager: `receivables:decide_bearer`, sama
+ * dengan memutuskannya. Tanpa ini pemegang izin kelola bisa menganulir keputusan
+ * yang tidak boleh ia buat. Statusnya dibaca SEBELUM transaksi penulis: keputusan
+ * yang masuk tepat di antara keduanya masih lolos, sampai `batalkanBarangHilang`
+ * sendiri menerima izin ini dan memeriksanya di dalam transaksinya.
+ */
 export async function batalkanBarangHilangAction(input: { lossId: string; alasan: string }): Promise<{ ok: true } | Gagal> {
-  const s = await sesi();
-  if ("ok" in s) return s;
-  const r = await batalkanBarangHilang({ lossId: input.lossId, alasan: input.alasan, olehUserId: s.userId });
+  const session = await auth();
+  if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
+  const izin = session.user.permissions;
+  if (!bolehMengelola(izin) && !bolehMemutuskanBeban(izin)) return { ok: false, code: "FORBIDDEN" };
+  if (typeof input?.lossId !== "string" || !input.lossId) return { ok: false, code: "TIDAK_DITEMUKAN" };
+  const loss = await prisma.stockLoss.findUnique({ where: { id: input.lossId }, select: { status: true } });
+  if (!loss) return { ok: false, code: "TIDAK_DITEMUKAN" };
+  if (loss.status === "TERBUKA" && !bolehMengelola(izin)) return { ok: false, code: "FORBIDDEN" };
+  if (loss.status !== "TERBUKA" && loss.status !== "DIBATALKAN" && !bolehMemutuskanBeban(izin)) {
+    return { ok: false, code: "FORBIDDEN" };
+  }
+  const userId = session.user.id;
+  const r = await batalkanBarangHilang({ lossId: input.lossId, alasan: input.alasan, olehUserId: userId });
   if (!r.ok) return { ok: false, code: r.kode };
   // Keputusan yang dibatalkan: jurnalnya dibalik (generasi penyesuaian), tidak dihapus.
-  await kaitBarangHilang(r.id, s.userId);
+  await kaitBarangHilang(r.id, userId);
   segarkan(r.id);
   return { ok: true };
 }

@@ -21,14 +21,19 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // Tukar: halaman terbuka untuk penyetuju dan gudang.
   exchangesPendingApproval: ["field_sales_orders:approve"],
   exchangesPendingCompletion: ["inventory:manage"],
-  transfersPendingApproval: ["spg_sales:view", "field_sales_orders:approve"],
-  transferShortfallsOpen: ["spg_sales:view", "field_sales_orders:approve"],
-  stockLossOpen: ["receivables:manage"],
+  // /backoffice/spg-transfers: ROUTE_PERMISSIONS + penjaga halaman spg_sales:view; menyetujui =
+  // store_transfers:approve, memutuskan selisih = store_transfers:decide_shortfall (spg-mutasi.ts).
+  transfersPendingApproval: ["spg_sales:view", "store_transfers:approve"],
+  transferShortfallsOpen: ["spg_sales:view", "store_transfers:decide_shortfall"],
+  // /backoffice/barang-hilang: halaman = receivables:manage ATAU spg_sales:view; menetapkan
+  // penanggung = receivables:decide_bearer (barang-hilang.ts).
+  stockLossOpen: ["spg_sales:view", "receivables:decide_bearer"],
   storeProposalsPending: ["stores:view", "stores:manage"],
   fieldPromisesUnconfirmed: ["receivables:manage"],
   damagedDeliveriesOpen: ["inventory:manage"],
   damagedWarehouseOpen: ["inventory:view", "inventory:manage"],
-  claimCorrectionsPending: ["journals:manage"],
+  // /backoffice/pelunasan: penjaga halaman bolehMembacaPelunasan; memutuskan = payments:verify.
+  claimCorrectionsPending: ["payments:verify"],
   returnCorrectionsPending: ["receivables:manage"],
   shiftSwapsPending: ["spg_sales:view", "stores:manage"],
   stockRequestsUnheld: ["spg_sales:view", "stores:manage"],
@@ -117,6 +122,37 @@ describe("ANTREAN_KANTOR — pagar: membuka halaman DAN bisa memutuskan", () => 
       if (rute) expect(hasPermission(terkecil, rute)).toBe(true);
     });
   }
+});
+
+/*
+ * Keputusan manager yang dipisah dari izin lama (pemilik 2026-11-01): izin lama
+ * itu sendiri tidak lagi bisa memutuskan, jadi barisnya tidak boleh tampil
+ * untuknya — baris yang tidak bisa ditindaklanjuti hanya bising.
+ */
+describe("ANTREAN_KANTOR — izin lama tidak lagi cukup untuk keputusan manager", () => {
+  it("mutasi antar toko: field_sales_orders:approve tidak lagi menyetujui atau memutuskan selisih", () => {
+    const lama = ["dashboard:view", "spg_sales:view", "field_sales_orders:approve"];
+    expect(bolehLihatAntrean("transfersPendingApproval", lama)).toBe(false);
+    expect(bolehLihatAntrean("transferShortfallsOpen", lama)).toBe(false);
+  });
+
+  it("menyetujui mutasi dan memutuskan selisihnya dua izin terpisah", () => {
+    const setuju = ["dashboard:view", "spg_sales:view", "store_transfers:approve"];
+    const selisih = ["dashboard:view", "spg_sales:view", "store_transfers:decide_shortfall"];
+    expect(bolehLihatAntrean("transfersPendingApproval", setuju)).toBe(true);
+    expect(bolehLihatAntrean("transferShortfallsOpen", setuju)).toBe(false);
+    expect(bolehLihatAntrean("transferShortfallsOpen", selisih)).toBe(true);
+    expect(bolehLihatAntrean("transfersPendingApproval", selisih)).toBe(false);
+  });
+
+  it("barang hilang: receivables:manage membuka halamannya tetapi tidak lagi menetapkan penanggung", () => {
+    expect(bolehLihatAntrean("stockLossOpen", ["dashboard:view", "receivables:manage"])).toBe(false);
+    expect(bolehLihatAntrean("stockLossOpen", ["dashboard:view", "receivables:manage", "receivables:decide_bearer"])).toBe(true);
+  });
+
+  it("koreksi BKM: journals:manage tidak lagi memeriksa pembayaran", () => {
+    expect(bolehLihatAntrean("claimCorrectionsPending", ["dashboard:view", "journals:manage"])).toBe(false);
+  });
 });
 
 describe("buildActionItems — baris antrean kantor", () => {

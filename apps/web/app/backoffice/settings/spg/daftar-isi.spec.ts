@@ -57,4 +57,11 @@ describe("daftar isi Pengaturan → SPG", () => {
     const judul = readFileSync(path.join(__dirname, "JudulPengaturanSpg.tsx"), "utf8");
     expect(judul).toMatch(/bolehBukaTarget \? \(\s*<Link href=\{TAUTAN_TARGET_SPG\}/);
   });
+
+  it("aturan mutasi bisa diubah oleh yang sama dengan penyimpannya (`simpanAturanMutasi`: store_transfers:approve)", () => {
+    expect(halaman).toContain("<AturanMutasiCard bolehUbah={hasPermission(izin, PERMISSIONS.STORE_TRANSFERS_APPROVE)}");
+    const aksi = readFileSync(path.join(__dirname, "../../../actions/spg-mutasi.ts"), "utf8");
+    const simpan = aksi.slice(aksi.indexOf("export async function simpanAturanMutasi"));
+    expect(simpan).toContain("PERMISSIONS.STORE_TRANSFERS_APPROVE");
+  });
 });

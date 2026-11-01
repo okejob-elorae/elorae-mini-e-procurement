@@ -13,6 +13,8 @@ export type InfoDokumenOperasional = {
   cycleId?: string | null;
   storeReturnId?: string | null;
   periode?: string | null;
+  /** Pindah barang konsinyasi per pengiriman tampil di rincian pesanan lapangannya. */
+  fieldOrderId?: string | null;
 };
 
 type Pasangan = { jenis: string; id: string };
@@ -41,15 +43,21 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
   const isi = (jenis: SumberOperasional, id: string, info: InfoDokumenOperasional) => hasil.push({ jenis, id, info });
   const S = SUMBER_OPERASIONAL;
 
-  const [kirim, pesanan, nri, siklus, gaji, bayar, bayarSpg, hilang, potong, rusak, stok, retur] = await Promise.all([
+  const [kirim, pesanan, pindah, nri, returLapangan, siklus, gaji, bayar, bayarSpg, hilang, potong, rusak, stok, retur] = await Promise.all([
     aman("ConsignmentShipment", ids(S.KIRIM_KONSI), () =>
       prisma.consignmentShipment.findMany({ where: { id: { in: ids(S.KIRIM_KONSI) } }, select: { id: true, noKirim: true, cycleId: true } }),
     ),
     aman("FieldSalesOrder", ids(S.PESANAN_KONSI), () =>
       prisma.fieldSalesOrder.findMany({ where: { id: { in: ids(S.PESANAN_KONSI) } }, select: { id: true, orderNo: true } }),
     ),
+    aman("KonsiTransfer", ids(S.PINDAH_KONSI), () =>
+      prisma.konsiTransfer.findMany({ where: { id: { in: ids(S.PINDAH_KONSI) } }, select: { id: true, docNo: true, orderId: true } }),
+    ),
     aman("WarehouseReturn", ids(S.RETUR_KONSI), () =>
       prisma.warehouseReturn.findMany({ where: { id: { in: ids(S.RETUR_KONSI) } }, select: { id: true, noNri: true, storeReturnId: true } }),
+    ),
+    aman("FieldReturn", ids(S.RETUR_LAPANGAN_KONSI), () =>
+      prisma.fieldReturn.findMany({ where: { id: { in: ids(S.RETUR_LAPANGAN_KONSI) } }, select: { id: true, docNo: true } }),
     ),
     aman("ConsignmentCycle", [...ids(S.SIKLUS_KONSI), ...ids(S.KOMISI_KONSI)], () =>
       prisma.consignmentCycle.findMany({ where: { id: { in: [...ids(S.SIKLUS_KONSI), ...ids(S.KOMISI_KONSI)] } }, select: { id: true, noKonsi: true } }),
@@ -85,7 +93,9 @@ export async function infoDokumenOperasional(pasangan: readonly Pasangan[]): Pro
 
   for (const r of kirim) isi(S.KIRIM_KONSI, r.id, { nomor: r.noKirim, cycleId: r.cycleId });
   for (const r of pesanan) isi(S.PESANAN_KONSI, r.id, { nomor: r.orderNo });
+  for (const r of pindah) isi(S.PINDAH_KONSI, r.id, { nomor: r.docNo, fieldOrderId: r.orderId });
   for (const r of nri) isi(S.RETUR_KONSI, r.id, { nomor: r.noNri, storeReturnId: r.storeReturnId });
+  for (const r of returLapangan) isi(S.RETUR_LAPANGAN_KONSI, r.id, { nomor: r.docNo });
   const idSiklus = new Set(ids(S.SIKLUS_KONSI));
   const idKomisi = new Set(ids(S.KOMISI_KONSI));
   for (const r of siklus) {

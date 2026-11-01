@@ -50,7 +50,7 @@
     "version": "Versi {version}"
   },
   "navigation": {
-    "navVendorPayments": "Pembayaran Vendor Billing",
+    "navVendorPayments": "Riwayat Pembayaran Vendor Billing",
     "navVendorBills": "Vendor Billing",
     "navItemRequests": "Request Item",
     "purchasing": "Pembelian",
@@ -765,11 +765,11 @@
     },
     "overdueThresholds": {
       "title": "Piutang",
-      "description": "Ambang batas notifikasi jatuh tempo dan toleransi selisih pelunasan",
+      "description": "Ambang batas pengingat piutang jatuh tempo",
       "heading": "Ambang Batas Notifikasi Piutang Jatuh Tempo",
-      "subtitle": "Daftar hari (dipisah koma) sejak jatuh tempo untuk memicu notifikasi",
+      "subtitle": "Daftar hari sejak jatuh tempo (dipisah koma) untuk mengingatkan kantor dan pemegang toko",
       "fieldLabel": "Hari (contoh: 0,7,30,60)",
-      "fieldHint": "Hanya ambang batas tertinggi yang baru dilewati yang memicu notifikasi, bukan satu per ambang batas",
+      "fieldHint": "Hanya ambang tertinggi yang baru dilewati yang dikabarkan, sekali per nota",
       "save": "Simpan",
       "loadError": "Gagal memuat ambang batas jatuh tempo",
       "errEmpty": "Isi minimal satu hari",
@@ -833,16 +833,6 @@
         "CATEGORY_INACTIVE": "Kategori ini sudah dinonaktifkan, jadi tarifnya tidak bisa diubah lagi. Daftar telah dimuat ulang.",
         "UNEXPECTED": "Tarif gagal disimpan. Coba lagi."
       }
-    },
-    "varianceTolerance": {
-      "heading": "Toleransi Selisih Pelunasan",
-      "subtitle": "Seberapa jauh uang tunai salesman boleh berbeda dari jumlah yang diharapkan sebelum finance wajib mengisi alasan",
-      "fieldLabel": "Toleransi (Rp)",
-      "fieldHint": "Pelunasan yang selisih uang tunainya dari jumlah yang diharapkan paling banyak sebesar ini (rupiah) disetujui tanpa alasan override. 0 berarti setiap selisih butuh alasan.",
-      "save": "Simpan",
-      "loadError": "Gagal memuat toleransi selisih pelunasan",
-      "errEmpty": "Isi jumlah (0 atau lebih)",
-      "errInvalid": "Gunakan angka non-negatif dengan maksimal dua desimal"
     },
     "theme": {
       "title": "Tema akun",
@@ -972,14 +962,14 @@
         "modeBLOKIR": "Blokir",
         "modeBLOKIRIsi": "Pesanan ditolak sejak dikirim dari HP salesman.",
         "batasNilai": "Batas sisa tagihan",
-        "batasNilaiIsi": "Termasuk pesanan baru. Kosongkan kalau tidak dibatasi.",
+        "batasNilaiIsi": "Termasuk pesanan baru. Berlaku untuk toko putus yang batas kreditnya dikosongkan. Kosongkan kalau tidak dibatasi — toko yang ikut bawaan pun jadi tanpa batas nilai.",
         "batasFaktur": "Maks. faktur belum lunas",
-        "batasFakturIsi": "Kosongkan kalau tidak dibatasi. 0 = tidak boleh ada faktur terbuka.",
+        "batasFakturIsi": "Berlaku untuk toko putus yang kolomnya dikosongkan. Kosongkan kalau tidak dibatasi — toko yang ikut bawaan pun jadi tanpa batas faktur. 0 = tidak boleh ada faktur terbuka.",
         "hariToleransi": "Toleransi (hari)",
         "hariToleransiIsi": "Tagihan baru dianggap lewat janji sesudah lewat sekian hari.",
         "tanpaBatas": "Tanpa batas",
-        "tokoBatasSendiri": "{n} toko punya batas sendiri yang menimpa bawaan ini.",
-        "perTokoIsi": "Batas per toko diatur di master toko.",
+        "tokoBatasSendiri": "{n} toko putus punya batas sendiri atau dicentang “Tanpa batas kredit”, jadi tidak sepenuhnya ikut bawaan ini.",
+        "perTokoIsi": "Batas per toko dan centang “Tanpa batas kredit” diatur di master toko. Toko yang kolomnya kosong ikut bawaan ini.",
         "bukaMasterToko": "Buka master toko",
         "simpan": "Simpan aturan kredit"
       },
@@ -3031,9 +3021,12 @@
         "BUKAN_BAHAN_WO": "{barang} tidak pernah dikeluarkan ke perintah kerja ini.",
         "BARANG_GANDA": "{barang} terisi dua kali.",
         "TANPA_BARIS": "Isi jumlah minimal satu bahan.",
-        "CATATAN_TERLALU_PANJANG": "Catatan terlalu panjang."
+        "CATATAN_TERLALU_PANJANG": "Catatan terlalu panjang.",
+        "HARGA_KELUAR_TIDAK_DIKETAHUI": "{barang} belum bisa dikembalikan karena harga saat bahan ini keluar tidak tercatat, baik di kartu stok maupun di dokumen pengeluaran {dokumen}. Pengembalian baru bisa dicatat setelah admin sistem membetulkan data dokumen itu; laporkan nomor dokumennya."
       },
-      "berhasilDibatasi": "Bahan kembali ke gudang, senilai {nilai} (dibatasi: biaya bahan sudah dibebankan ke barang jadi)"
+      "berhasilDibatasi": "Bahan kembali ke gudang, senilai {nilai} (dibatasi: biaya bahan sudah dibebankan ke barang jadi)",
+      "hargaDariDokumen": "Harga {barang} diambil dari dokumen pengeluaran bahan, karena kartu stok tidak menyimpan nilainya.",
+      "riwayatHargaDokumen": "harga dari dokumen pengeluaran"
     },
     "setoran": {
       "target": "Target {qty} pcs",
@@ -3924,7 +3917,7 @@
       "GRN_APPROVAL_PENDING": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Salah satu penerimaannya adalah kelebihan terima yang masih menunggu keputusan owner. Minta owner menyetujui atau menolak penerimaan itu di halaman Inventori dulu, lalu tandai lunas PO ini.",
       "GRN_JOURNALS_INCOMPLETE": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Salah satu penerimaannya belum punya jurnal GRN, jadi utangnya belum tercatat. Gunakan \"Posting jurnal\" di baris GRN itu pada halaman Inventori dulu (perlu izin journals:manage), lalu tandai lunas PO ini.",
       "GRN_REVERSAL_MISSING": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. Ada penerimaan yang ditolak owner tapi jurnal GRN-nya belum dibalik. Gunakan \"Posting jurnal pembalik\" di baris GRN yang ditolak itu pada halaman Inventori dulu (perlu izin journals:manage), lalu tandai lunas PO ini.",
-      "BILLED_VIA_VENDOR_BILL": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. PO ini sudah ditagih lewat Vendor Billing, jadi pembayarannya lewat tagihan vendor. Gunakan Vendor Billing untuk PO ini."
+      "BILLED_VIA_VENDOR_BILL": "PO ini TIDAK ditandai lunas — tidak ada yang disimpan dan tidak ada jurnal yang diposting. PO ini sudah ditagih lewat Vendor Billing, jadi bayar penerimaannya lewat Pembayaran pemasok → Bayar."
     },
     "standingPayment": {
       "title": "Jurnal pembayaran masih berdiri padahal PO ini belum ditandai lunas",
@@ -5825,8 +5818,8 @@
       "priceDiscountPercent": "Diskon harga toko (%)",
       "priceDiscountPercentKonsiNotice": "Diskon harga hanya berlaku untuk toko Putus. Toko Konsi memakai markup, bukan diskon harga, jadi kolom ini tidak tersedia di sini.",
       "creditLimit": "Limit Kredit (Rp)",
-      "creditLimitPlaceholder": "Tanpa batas",
-      "creditLimitHint": "Kosongkan untuk tanpa batas. Isi 0 untuk toko cash-only (setiap order kredit butuh persetujuan).",
+      "creditLimitPlaceholder": "Ikut bawaan",
+      "creditLimitHint": "Kosongkan untuk ikut batas bawaan di Pengaturan → Salesman (kalau bawaannya juga kosong, toko tidak dibatasi). Isi 0 untuk toko cash-only (setiap order kredit butuh persetujuan).",
       "npwp": "NPWP",
       "npwpPlaceholder": "cth. 01.234.567.8-901.000",
       "npwpHint": "Dipakai untuk mengisi otomatis faktur pajak toko ini. Kosongkan jika toko tidak punya NPWP.",
@@ -5871,7 +5864,12 @@
       "salesmanNone": "Belum ada",
       "salesmanHint": "Sales ini yang mendatangi toko dan menagih piutangnya — termasuk faktur dari sales sebelumnya.",
       "searchNoApiKeyV2": "Pencarian alamat belum tersedia. Geser peta atau tempel koordinat.",
-      "consignmentVat": "Tagihan konsinyasi memakai PPN"
+      "consignmentVat": "Tagihan konsinyasi memakai PPN",
+      "creditLimitPlaceholderKonsi": "Tidak dibatasi",
+      "creditLimitHintKonsi": "Kosongkan kalau tidak dibatasi — batas bawaan di Pengaturan → Salesman hanya berlaku untuk toko putus. Isi 0 untuk toko cash-only.",
+      "noCreditLimit": "Tanpa batas kredit",
+      "noCreditLimitHint": "Toko ini tidak dinilai batas kredit maupun batas faktur terbuka, termasuk batas bawaan. Tagihan yang lewat janji bayar tetap dinilai.",
+      "noCreditLimitPlaceholder": "Tanpa batas"
     },
     "badge": {
       "putus": "Putus",
@@ -5969,7 +5967,7 @@
         "creditLimit": "Batas kredit",
         "maxInvoices": "Maks faktur terbuka",
         "fromStore": "{nilai} (khusus toko ini)",
-        "fromDefault": "{nilai} (ikut bawaan)",
+        "fromDefault": "Ikut bawaan: {nilai}",
         "noLimit": "Tidak dibatasi",
         "invoiceCount": "{n} faktur",
         "outstanding": "Sisa piutang",
@@ -5981,7 +5979,9 @@
         "notApplicableKonsi": "Tidak berlaku — toko konsinyasi tidak punya piutang.",
         "ppnKonsi": "PPN tagihan konsinyasi",
         "ppnKonsiYa": "Dengan PPN",
-        "ppnKonsiTidak": "Tanpa PPN"
+        "ppnKonsiTidak": "Tanpa PPN",
+        "defaultEmpty": "Ikut bawaan: tidak dibatasi",
+        "konsiEmpty": "Tidak dibatasi (bawaan Pengaturan hanya untuk toko putus)"
       }
     },
     "storeChanges": {
@@ -7607,7 +7607,8 @@
         "KONSI_ORDER": "Pesanan konsinyasi",
         "KONSI_SHIPMENT": "Kiriman konsinyasi",
         "MUTASI": "Mutasi dari toko lain",
-        "MUTASI_KEMBALI": "Mutasi kembali (dibatalkan)"
+        "MUTASI_KEMBALI": "Mutasi kembali (dibatalkan)",
+        "KONSI_TRANSFER": "Antaran konsinyasi"
       },
       "hint": "Hitung isi dusnya dulu. Jumlah yang Anda isi saat menerima itulah yang masuk stok toko.",
       "form": {
@@ -7639,7 +7640,30 @@
         "saved": "Kiriman {docNo} sudah diterima.",
         "needCheckIn": "Check-in dulu di toko untuk menyimpan penerimaan.",
         "overTransfer": "Mutasi tidak bisa diterima lebih dari yang dikirim. Kurangi jumlahnya.",
-        "opnameAfter": "Toko ini sudah opname pada {tanggal}, sesudah kiriman ini berangkat. Kalau barangnya sudah ikut terhitung di opname itu, isi 0 untuk barang tersebut supaya tidak terhitung dua kali."
+        "opnameAfter": "Toko ini sudah opname pada {tanggal}, sesudah kiriman ini berangkat. Kalau barangnya sudah ikut terhitung di opname itu, isi 0 untuk barang tersebut supaya tidak terhitung dua kali.",
+        "antaran": {
+          "label": "Pengiriman kiriman ini",
+          "pesanan": "Pesanan {orderNo}",
+          "pengiriman": "Pengiriman {docNo}",
+          "dibawaPengantar": "Dibawa {nama}",
+          "dibawaEkspedisi": "Dikirim lewat {ekspedisi}",
+          "dibawaEkspedisiResi": "Dikirim lewat {ekspedisi} · resi {resi}",
+          "resiSaja": "Resi {resi}",
+          "dalamPengirimanLain": "Dalam pengiriman lain: {pcs} pcs — datang terpisah, terima setelah diserahkan.",
+          "belumDikirimGudang": "Belum dikirim gudang: {pcs} pcs dari pesanan ini. Barang itu masih di gudang, tidak ada di kiriman ini, dan tidak dihitung kurang."
+        },
+        "kurangPerjalanan": {
+          "judul": "Kurang di perjalanan: {pcs} pcs",
+          "isi": "Gudang mengirim {dikirim} pcs di pengiriman {docNo}, yang Anda hitung {diterima} pcs.",
+          "cekPengantar": "Cek ke pengantar {nama}.",
+          "cekEkspedisi": "Cek ke ekspedisi {ekspedisi}.",
+          "cekEkspedisiResi": "Cek ke ekspedisi {ekspedisi}, resi {resi}.",
+          "cekResi": "Cek ke ekspedisinya, resi {resi}.",
+          "cekTanpaNama": "Cek ke pengantar atau ekspedisinya.",
+          "bukti": "Foto serah terima tersimpan di pengiriman itu.",
+          "dicatat": "Setelah disimpan, kekurangan ini dikabarkan ke sales dan kantor, lalu dicatat sebagai barang hilang untuk diperiksa."
+        },
+        "tersimpanKurangPerjalanan": "Kurang {pcs} pcs di perjalanan sudah dikabarkan ke sales dan kantor."
       },
       "confirm": {
         "title": "Simpan penerimaan?",
@@ -7649,7 +7673,8 @@
         "final": "Setelah disimpan, penerimaan ini tidak bisa diubah.",
         "cancel": "Periksa lagi",
         "ok": "Simpan",
-        "saving": "Menyimpan…"
+        "saving": "Menyimpan…",
+        "kurangPerjalanan": "Kurang {pcs} pcs di perjalanan — dikabarkan ke sales dan kantor."
       },
       "err": {
         "FORBIDDEN": "Akun Anda tidak punya akses untuk menerima kiriman.",
@@ -7672,18 +7697,22 @@
         "judul": "Pesanan untuk toko ini · {count}",
         "dipesan": "Dipesan {tanggal}",
         "ringkas": "{count} barang · {pcs} pcs",
-        "ringkasSisa": "Belum dikirim: {count} barang · {pcs} pcs",
+        "ringkasSisa": "Belum sampai toko: {count} barang · {pcs} pcs",
         "status": {
           "MENUNGGU_PERSETUJUAN": "Menunggu persetujuan",
           "DISETUJUI": "Disetujui, belum dikirim",
           "DIKIRIM_SEBAGIAN": "Dikirim sebagian",
-          "DALAM_PERJALANAN": "Sudah dikirim, menunggu diterima"
+          "DALAM_PERJALANAN": "Dalam perjalanan"
         },
         "inden": "Pre-order",
         "pcs": "{count} pcs",
         "lihatSemua": "Lihat semua {count} barang",
-        "lebihSedikit": "Tampilkan lebih sedikit"
-      }
+        "lebihSedikit": "Tampilkan lebih sedikit",
+        "belumDikirimGudang": "Belum dikirim gudang: {pcs} pcs",
+        "dikemas": "Sedang dikemas gudang: {pcs} pcs",
+        "dalamPerjalanan": "Dalam perjalanan: {pcs} pcs"
+      },
+      "pesananAsal": "Pesanan {orderNo}"
     },
     "spgOpname": {
       "title": "Opname toko",
@@ -7779,13 +7808,13 @@
       "open": "Kabar",
       "openWithCount": "Kabar, {count} belum dibaca",
       "title": "Kabar",
-      "subtitle": "Kabar dari kantor: pesanan, pelunasan, retur, jadwal, pengumuman, dan toko Anda.",
+      "subtitle": "Kabar dari kantor: pesanan, pelunasan, tagihan, retur, kiriman, jadwal, pengumuman, dan toko Anda.",
       "unreadSummary": "{count} belum dibaca",
       "allRead": "Semua kabar sudah dibaca.",
       "markAll": "Tandai semua dibaca",
       "markAllFailed": "Gagal menandai kabar. Periksa sinyal lalu coba lagi.",
       "empty": "Belum ada kabar",
-      "emptyHint": "Kabar muncul di sini saat pesanan Anda disetujui atau dikirim, pelunasan diverifikasi, retur dihitung gudang, atau perubahan data toko diputuskan.",
+      "emptyHint": "Kabar muncul di sini saat ada yang perlu Anda ketahui: pesanan disetujui atau dikirim, pelunasan diverifikasi, retur dihitung gudang, tagihan jatuh tempo atau ditugaskan ke Anda, kiriman menuju toko, jadwal, dan pengumuman.",
       "todayAt": "Hari ini, {time}",
       "unread": "Belum dibaca",
       "capped": "Menampilkan {count} kabar terbaru.",
@@ -7801,7 +7830,10 @@
           "TANPA_SW": "Pemberitahuan hanya tersedia di aplikasi yang sudah terpasang dari alamat resmi (https).",
           "GAGAL": "Gagal menyalakan pemberitahuan. Periksa sinyal lalu coba lagi."
         }
-      }
+      },
+      "loadMore": "Muat lagi",
+      "loadMoreFailed": "Gagal memuat kabar yang lebih lama. Periksa sinyal lalu coba lagi.",
+      "officeOnly": "Ditangani di backoffice (komputer kantor), tidak ada layarnya di HP."
     },
     "tokoMenurun": {
       "jarang": "Biasanya pesan tiap {usual} hari · sudah {days} hari",
@@ -7859,7 +7891,7 @@
         "noticeWaitingDelivery": "Sudah disetujui. Barang menunggu dikirim gudang.",
         "noticePartial": "Sebagian barang sudah dikirim; sisanya menunggu.",
         "noticeClosed": "Sisa pesanan ditutup kantor",
-        "noticeKonsi": "Disetujui. Barang konsinyasi dikirim ke toko.",
+        "noticeKonsi": "Disetujui. Gudang mengirim barangnya per pengiriman; SPG toko menghitung dan menerima setiap antaran.",
         "linesTitle": "Barang ({count})",
         "qty": "{qty} pcs",
         "perPcs": "{price}/pcs",
@@ -9696,7 +9728,11 @@
       "belumJatuhTempo": "Belum jatuh tempo",
       "bukaPiutang": "Buka daftar piutang",
       "dilipatDitolak": "Kredit toko — pesanan ini sudah ditolak, jadi tidak ada keputusan kredit yang perlu diambil. Buka untuk melihat.",
-      "dilipatDibatalkan": "Kredit toko — pesanan ini sudah dibatalkan salesman, jadi tidak ada keputusan kredit yang perlu diambil. Buka untuk melihat."
+      "dilipatDibatalkan": "Kredit toko — pesanan ini sudah dibatalkan salesman, jadi tidak ada keputusan kredit yang perlu diambil. Buka untuk melihat.",
+      "batasMilikToko": "{nilai} (khusus toko ini)",
+      "batasIkutBawaan": "Ikut bawaan: {nilai}",
+      "batasTanpaBatas": "Tanpa batas",
+      "batasBawaanKosong": "Ikut bawaan: tidak dibatasi"
     },
     "inden": {
       "saringan": "Pre-order",
@@ -9739,7 +9775,8 @@
     "kosongMenunggu": "Tidak ada pesanan yang menunggu persetujuan.",
     "lihatSemuaPesanan": "Lihat semua pesanan",
     "daftarJudul": "Daftar pesanan",
-    "judulHalaman": "Pesanan lapangan"
+    "judulHalaman": "Pesanan lapangan",
+    "creditLimitFromDefault": "Toko ini tidak punya batas kredit sendiri, jadi memakai batas bawaan di Pengaturan → Salesman."
   },
   "fieldReturns": {
     "pageTitle": "Retur Lapangan",
@@ -11420,7 +11457,7 @@
       "OPENING": "Saldo awal",
       "YEAR_END_CLOSE": "Penutupan tahun",
       "CONSIGNMENT_SHIPMENT": "Kiriman titipan konsinyasi",
-      "CONSIGNMENT_ORDER": "Kiriman pesanan konsinyasi",
+      "CONSIGNMENT_ORDER": "Kiriman pesanan konsinyasi (lama)",
       "CONSIGNMENT_RETURN": "Retur toko konsinyasi",
       "CONSIGNMENT_CYCLE": "Penjualan siklus konsinyasi",
       "CONSIGNMENT_COMMISSION": "Gaji & komisi SPG konsinyasi",
@@ -11458,7 +11495,9 @@
       "KONSI_SELLTHRU_SHRINKAGE_VOID": "Pembatalan susut konsi",
       "KONSI_SELLTHRU_SURPLUS_VOID": "Pembatalan surplus konsi",
       "FIELD_DELIVERY_REVENUE": "Pendapatan nota tagihan (bentuk lama)",
-      "FIELD_DELIVERY_COGS": "HPP nota tagihan (bentuk lama)"
+      "FIELD_DELIVERY_COGS": "HPP nota tagihan (bentuk lama)",
+      "CONSIGNMENT_TRANSFER": "Pindah barang konsinyasi",
+      "CONSIGNMENT_FIELD_RETURN": "Retur lapangan toko konsinyasi"
     },
     "tabPosted": "Terposting",
     "tabPending": "Tertunda",
@@ -11858,7 +11897,7 @@
       "PPH23_PAYABLE": "PPh 23 yang dipotong dari fee KOL berbadan (agensi, PT, CV), sampai disetor.",
       "AR_STORE": "Piutang dari toko putus: didebit saat nota tagihan terbit (pengiriman) atau faktur manual/impor dicatat, dikredit saat BKM terverifikasi, pembayaran kantor dicatat, retur diakui, atau potongan disetujui.",
       "AR_CONSIGNMENT": "Tagihan ke toko konsinyasi atas barang yang laku di toko: didebit saat siklus konsinyasi dikunci atau laporan laku konsinyasi ditagihkan, dikredit saat pembayaran toko dicatat.",
-      "INVENTORY_CONSIGNMENT": "Barang milik Elorae yang dititipkan di toko konsinyasi: didebit saat barang dikirim ke toko, dikredit saat laku (HPP) atau kembali ke gudang.",
+      "INVENTORY_CONSIGNMENT": "Barang milik Elorae yang dititipkan di toko konsinyasi: didebit saat barang tiba di toko (pengiriman selesai) atau ditemukan lebih saat dihitung, dikredit saat laku (HPP), susut atau hilang, dan saat kembali ke gudang.",
       "INVENTORY_DAMAGED": "Barang rusak/kedaluwarsa di gudang rusak: didebit saat retur rusak diterima, dikredit saat diperbaiki, dijual obral, atau dimusnahkan.",
       "SALES_RETURN": "Akun pengurang pendapatan (bertipe Pendapatan, bersaldo debit) untuk nilai retur yang diakui, supaya Laba Rugi menyajikan penjualan bersih.",
       "SALES_DISCOUNT": "Akun pengurang pendapatan untuk potongan yang diberikan ke toko atau pembeli (potongan BKM bukan retur, promo tanggungan Elorae).",
@@ -12039,7 +12078,8 @@
       "OVER_ALLOCATED": "Jumlah melebihi sisa piutang ini.",
       "WRONG_STORE": "Piutang ini bukan milik toko yang dimaksud.",
       "DUPLICATE_ALLOCATION": "Piutang ini dialokasikan lebih dari sekali.",
-      "ERROR": "Terjadi kesalahan. Silakan coba lagi."
+      "ERROR": "Terjadi kesalahan. Silakan coba lagi.",
+      "SELF_VERIFICATION": "Anda yang menyetor uang ini, jadi Anda tidak bisa memeriksanya sendiri. Minta orang keuangan lain memeriksanya."
     }
   },
   "financeStoreSettlements": {
@@ -12231,8 +12271,10 @@
       "INVALID_REQUEST": "Permintaan tidak valid. Tutup dialog ini lalu buka kembali.",
       "UNEXPECTED": "Terjadi kesalahan. Silakan coba lagi.",
       "NO_ALLOCATIONS": "Salah satu pembayaran pelunasan ini tidak punya faktur untuk dialokasikan.",
-      "DUPLICATE_ALLOCATION": "Salah satu pembayaran pelunasan ini mengalokasikan ke faktur yang sama dua kali."
-    }
+      "DUPLICATE_ALLOCATION": "Salah satu pembayaran pelunasan ini mengalokasikan ke faktur yang sama dua kali.",
+      "SELF_VERIFICATION": "Anda yang mengirim dokumen pelunasan ini, jadi Anda tidak bisa memeriksanya sendiri. Minta orang keuangan lain memeriksanya."
+    },
+    "verifyPermissionHint": "Anda bisa melihat pelunasan ini, tetapi yang menyetujui atau menolaknya adalah pemeriksa pembayaran."
   },
   "settlementBkm": {
     "title": "Bukti Kas Masuk (BKM)",
@@ -13330,7 +13372,7 @@
     "colQty": "Qty tagih",
     "colPrice": "Harga",
     "colAmount": "Jumlah",
-    "poPaidNotBillable": "Sudah ditandai lunas lewat Pembayaran Pemasok, tidak bisa ditagih",
+    "poPaidNotBillable": "Sudah lunas lewat Pembayaran pemasok; invoice-nya tetap bisa dicatat di sini untuk pencocokan.",
     "variance": "Beda dari {ref}",
     "woSourcesTitle": "Step proses WO",
     "woSourcesSubtitle": "Jasa yang utangnya sudah dicatat saat barang jadi diterima tidak dijurnal di sini. Jasa dari penerimaan sebelum aturan itu memposting Dr Biaya Jasa Produksi / Cr Hutang.",
@@ -13350,15 +13392,22 @@
     "noJournal": "Tidak ada jurnal — utangnya sudah dicatat saat barang diterima.",
     "void": "Batalkan",
     "voidTitle": "Batalkan tagihan ini?",
-    "voidBody": "Barisnya bisa ditagih lagi dan jurnalnya dibalik. Tagihan yang sudah dibayar tidak bisa dibatalkan.",
+    "voidBody": "Barisnya bisa ditagih lagi dan jurnalnya, kalau ada, dibalik. Pembayaran pemasok atas penerimaannya tetap tercatat dan dihitung untuk tagihan lain atas barang yang sama, jadi invoice yang salah catat bisa dibatalkan lalu dicatat ulang. Tidak bisa dibatalkan selama masih ada pembayaran Vendor Billing lama yang berlaku, atau kalau ongkos jahit lama yang dibukukannya sudah dibayar lewat Pembayaran pemasok melebihi sisa hutang langkahnya.",
     "voidReason": "Alasan",
     "voided": "{docNumber} dibatalkan",
     "voidedOn": "Dibatalkan {date}",
-    "linkedTitle": "Tagihan vendor"
+    "linkedTitle": "Tagihan vendor",
+    "paidSupplier": "Lewat Pembayaran pemasok",
+    "paidVendor": "Lewat Pembayaran Vendor Billing",
+    "supplierPaymentsTitle": "Pembayaran pemasok atas penerimaannya",
+    "noSupplierPayments": "Belum ada pembayaran pemasok atas penerimaan tagihan ini.",
+    "vendorPaymentsTitle": "Pembayaran Vendor Billing (lama)",
+    "payViaSupplierPayments": "Bayar lewat Pembayaran pemasok",
+    "voidBlockedBySupplierPayments": "Belum bisa dibatalkan: tagihan ini membukukan ongkos jahit lama di {steps}, dan pembayaran pemasok atas langkah itu melebihi hutang yang tersisa tanpa tagihan ini. Batalkan pembayaran pemasoknya dulu."
   },
   "vendorPayments": {
-    "title": "Pembayaran Vendor Billing",
-    "subtitle": "Satu pembayaran melunasi satu atau beberapa tagihan supplier",
+    "title": "Riwayat Pembayaran Vendor Billing",
+    "subtitle": "Pembayaran tagihan vendor yang dicatat sebelum pembayaran pindah ke Pembayaran pemasok",
     "newPayment": "Pembayaran baru",
     "listTitle": "Daftar pembayaran",
     "listSubtitle": "Saring per supplier atau tanggal bayar",
@@ -13409,10 +13458,13 @@
     "journalsTitle": "Jurnal",
     "void": "Batalkan",
     "voidTitle": "Batalkan pembayaran ini?",
-    "voidBody": "Alokasinya dikembalikan ke tiap tagihan dan jurnalnya dibalik.",
+    "voidBody": "Alokasinya dikembalikan ke tiap tagihan dan jurnalnya dibalik. Yang tadinya dibayar di sini lalu dibayar lewat Pembayaran pemasok.",
     "voidReason": "Alasan",
     "voided": "{docNumber} dibatalkan",
-    "voidedOn": "Dibatalkan {date}"
+    "voidedOn": "Dibatalkan {date}",
+    "closedTitle": "Pembayaran baru dicatat di Pembayaran pemasok",
+    "closedBody": "Halaman ini tidak lagi menerima pembayaran. Semua tagihan vendor, termasuk ongkos jahit lama, dibayar lewat Pembelian → Pembayaran pemasok, dengan potongan PPh, SKB, giro, pilihan rekening, dan foto bukti. Pembayaran lama di sini tetap bisa dilihat dan dibatalkan.",
+    "openSupplierPayments": "Buka Pembayaran pemasok"
   },
   "productionPalette": {
     "title": "Palet Warna",
@@ -15712,7 +15764,8 @@
       "KOL_BRAND_COLLAB_ADDED": "Brand KOL ditambahkan",
       "KOL_BRAND_COLLAB_DELETED": "Brand KOL dihapus",
       "KOL_CALENDAR_FEED_CREATED": "Tautan langganan Kalender Kreatif dibuat",
-      "KOL_CALENDAR_FEED_REVOKED": "Tautan langganan Kalender Kreatif dicabut"
+      "KOL_CALENDAR_FEED_REVOKED": "Tautan langganan Kalender Kreatif dicabut",
+      "STORE_SHIPMENT_HANDED_OVER_NOTIFIED": "SPG toko dikabari barang sudah diserahkan"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -15888,7 +15941,8 @@
       "vatApplied": "PPN tagihan (dibekukan)",
       "skbNumber": "Nomor SKB",
       "skbValidUntil": "SKB berlaku sampai",
-      "skbPhotoUrl": "Foto SKB"
+      "skbPhotoUrl": "Foto SKB",
+      "legacyRole": "Peran lama"
     }
   },
   "jubelio": {
@@ -20043,7 +20097,8 @@
       "KONSI_ORDER": "Pesanan konsinyasi",
       "KONSI_SHIPMENT": "Kiriman konsinyasi",
       "MUTASI": "Mutasi dari toko lain",
-      "MUTASI_KEMBALI": "Mutasi kembali (dibatalkan)"
+      "MUTASI_KEMBALI": "Mutasi kembali (dibatalkan)",
+      "KONSI_TRANSFER": "Antaran konsinyasi"
     },
     "kantor": {
       "judul": "Tutup hari SPG",
@@ -22232,7 +22287,8 @@
     "ALASAN_WAJIB": "Tulis alasan pembatalan dulu.",
     "ALASAN_TERLALU_PANJANG": "Alasan pembatalan terlalu panjang (maksimal 190 huruf).",
     "CACAT_MELEBIHI_SETORAN": "Jumlah cacat tidak boleh lebih dari jumlah disetor.",
-    "STOK_BELUM_CUKUP": "Stok bahan belum cukup untuk menerbitkan perintah kerja ini. Periksa kekurangan bahannya di rincian perintah kerja."
+    "STOK_BELUM_CUKUP": "Stok bahan belum cukup untuk menerbitkan perintah kerja ini. Periksa kekurangan bahannya di rincian perintah kerja.",
+    "HARGA_KELUAR_TIDAK_DIKETAHUI": "Bahan tidak bisa dikembalikan karena harga saat bahan keluar tidak diketahui: kartu stok tidak menyimpan nilainya dan dokumen pengeluaran bahan juga tidak mencantumkan harga."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "PO tidak ditemukan.",
@@ -22305,7 +22361,11 @@
       "WAREHOUSE": "Bagian gudang — mengelola stok",
       "PRODUCTION": "Bagian produksi — mengelola perintah kerja",
       "SALESMAN": "Salesman lapangan — hanya aplikasi HP",
-      "SPG": "SPG di toko — hanya aplikasi HP, terikat ke satu toko"
+      "SPG": "SPG di toko — hanya aplikasi HP, terikat ke satu toko",
+      "PACKER": "Pengemas — layar Record Packer untuk video pengemasan",
+      "KEUANGAN": "Keuangan — memeriksa pembayaran ke mutasi bank, jurnal, dan laporan keuangan",
+      "ADMIN_PENJUALAN": "Admin penjualan — mencatat nomor nota di siklus konsinyasi",
+      "ADMIN_PAJAK": "Admin pajak — mencatat nomor faktur pajak nota tagihan dan konsinyasi"
     },
     "izin": {
       "dashboard_view": {
@@ -22338,7 +22398,7 @@
       },
       "field_sales_orders_approve": {
         "label": "Setujui pesanan lapangan",
-        "keterangan": "Menyetujui atau menolak pesanan salesman, menetapkan harga yang dibanding, merilis pre-order, menyetujui tukar barang dan mutasi antar toko, mengubah Pengaturan → Salesman, dan membuka laporan komisi salesman."
+        "keterangan": "Menyetujui atau menolak pesanan salesman, menetapkan harga yang dibanding, merilis pre-order, menyetujui tukar barang, mengubah Pengaturan → Salesman, dan membuka laporan komisi salesman."
       },
       "field_sales_orders_deliver": {
         "label": "Catat pengiriman pesanan putus",
@@ -22350,7 +22410,7 @@
       },
       "stores_manage": {
         "label": "Kelola toko",
-        "keterangan": "Menambah, mengubah, dan menonaktifkan toko, memindah toko ke salesman lain, menyetujui perubahan data toko dari salesman, dan memproses permintaan kiriman SPG."
+        "keterangan": "Menambah, mengubah, dan menonaktifkan toko, memindah toko ke salesman lain, menyetujui perubahan data toko dari salesman, membuka dan membatalkan draf opname toko, membuat transfer antar toko dan menarik transfer buatannya sendiri, dan memproses permintaan kiriman SPG. Menyetujui opname dan transfer punya izinnya sendiri."
       },
       "promos_view": {
         "label": "Lihat promo",
@@ -22382,7 +22442,7 @@
       },
       "receivables_manage": {
         "label": "Kelola piutang",
-        "keterangan": "Mengimpor faktur, membuat kontrabon, mencatat BKM dari kantor, menugaskan penagihan, menetapkan penanggung selisih retur dan barang hilang, dan mengatur jenis potongan."
+        "keterangan": "Mengimpor faktur, membuat kontrabon, mencatat BKM dari kantor, menjodohkan dan membatalkan nota retur, menugaskan penagihan, mencatat dan membatalkan barang hilang yang belum diputuskan, menetapkan komisi SPG toko putus, dan mengatur jenis potongan. Memutuskan siapa menanggung selisih punya izinnya sendiri."
       },
       "consignment_view": {
         "label": "Lihat konsinyasi",
@@ -22390,15 +22450,15 @@
       },
       "consignment_manage": {
         "label": "Kelola konsinyasi",
-        "keterangan": "Mencatat kiriman titipan dan laporan penjualan, mengunci angka, mencatat nomor nota dan faktur, serta pembayaran komisi."
+        "keterangan": "Membuka siklus konsinyasi, mencatat kiriman titipan, dan mencatat laporan penjualan SPG dan toko. Mengunci angka, nomor nota, nomor faktur pajak, dan bayar gaji SPG punya izinnya sendiri."
       },
       "journals_view": {
         "label": "Lihat jurnal & buku besar",
         "keterangan": "Membuka jurnal, buku besar per akun, pemetaan akun, dan klasifikasi arus kas."
       },
       "journals_manage": {
-        "label": "Kelola jurnal & verifikasi uang masuk",
-        "keterangan": "Membuat jurnal manual, memposting ulang jurnal yang tertunda, mencocokkan BKM dengan mutasi rekening, menandai PO sudah dibayar, dan membayar biaya perjalanan."
+        "label": "Kelola jurnal",
+        "keterangan": "Membuat dan menyetujui jurnal manual, memposting ulang jurnal yang tertunda, mencatat kas & bank, menandai PO sudah dibayar, dan membayar biaya perjalanan. Memeriksa BKM ke mutasi rekening memakai izin Periksa pembayaran."
       },
       "coa_view": {
         "label": "Lihat bagan akun",
@@ -22425,8 +22485,8 @@
         "keterangan": "Membuka daftar nota tagihan yang menunggu nomor faktur pajak."
       },
       "tax_invoices_manage": {
-        "label": "Catat nomor faktur pajak",
-        "keterangan": "Mencatat nomor faktur pajak, atau menandai nota yang tidak butuh faktur beserta alasannya."
+        "label": "Catat faktur pajak nota tagihan",
+        "keterangan": "Mencatat nomor faktur pajak nota tagihan di antrean Faktur Pajak, atau menandai nota yang tidak butuh faktur beserta alasannya. Faktur pajak siklus konsinyasi punya izinnya sendiri."
       },
       "purchase_orders_view": {
         "label": "Lihat pesanan pembelian (PO)",
@@ -22663,8 +22723,118 @@
       "jubelio_admin_view": {
         "label": "Buka dasbor API Jubelio",
         "keterangan": "Membuka status token, catatan panggilan API, dan alat sinkron Jubelio; sebaiknya hanya untuk admin."
+      },
+      "payments_verify": {
+        "label": "Periksa pembayaran",
+        "keterangan": "Mencocokkan BKM dengan mutasi rekening lalu memverifikasi atau menolaknya, menandai giro cair atau ditolak bank, membatalkan BKM, mencatat pembayaran toko konsinyasi, memverifikasi setoran penagih, dan menyetujui atau menolak dokumen pelunasan toko. Pembayaran yang dilaporkan, dicatat, atau disetor orang itu sendiri tetap tidak bisa ia periksa."
+      },
+      "receivables_decide_bearer": {
+        "label": "Putuskan penanggung selisih",
+        "keterangan": "Menetapkan dan mengalihkan siapa menanggung selisih retur toko, memutuskan penanggung barang hilang SPG, dan membatalkan catatan barang hilang yang sudah diputuskan. Persetujuan — bawaannya hanya admin."
+      },
+      "consignment_note_number": {
+        "label": "Catat nomor nota konsinyasi",
+        "keterangan": "Mencatat nomor nota dari admin penjualan pada siklus konsinyasi yang sudah dikunci."
+      },
+      "consignment_tax_number": {
+        "label": "Catat nomor faktur pajak konsinyasi",
+        "keterangan": "Mencatat nomor faktur pajak pada siklus konsinyasi yang sudah dikunci dan memakai PPN."
+      },
+      "consignment_lock": {
+        "label": "Kunci angka konsinyasi",
+        "keterangan": "Mengunci angka terjual resmi siklus konsinyasi, dan membuka kuncinya lagi selama belum ada nomor dokumen, gaji dibayar, atau pembayaran toko. Persetujuan — bawaannya hanya admin."
+      },
+      "store_stocktakes_approve": {
+        "label": "Setujui opname toko",
+        "keterangan": "Menyetujui hasil opname stok toko sehingga berlaku di buku stok toko, atau membatalkan hasil yang sedang menunggu persetujuan. Persetujuan — bawaannya hanya admin."
+      },
+      "store_transfers_approve": {
+        "label": "Setujui mutasi antar toko",
+        "keterangan": "Menyetujui, menolak, membatalkan, atau mengalihkan tujuan mutasi barang antar toko, dan mengatur aturan mutasi di Pengaturan → SPG, termasuk arah yang boleh dikirim tanpa persetujuan. Persetujuan — bawaannya hanya admin."
+      },
+      "store_transfers_decide_shortfall": {
+        "label": "Putuskan selisih mutasi",
+        "keterangan": "Memutuskan barang mutasi yang tidak sampai: dianggap hilang atau dikembalikan ke toko asal. Persetujuan — bawaannya hanya admin."
+      },
+      "spg_commission_pay": {
+        "label": "Tandai gaji & komisi SPG dibayar",
+        "keterangan": "Menandai gaji pokok dan komisi SPG sudah dibayar, untuk toko konsinyasi maupun toko putus. Persetujuan — bawaannya hanya admin."
+      },
+      "field_sales_orders_credit_override": {
+        "label": "Loloskan pesanan melewati batas kredit",
+        "keterangan": "Menyetujui pesanan putus yang melewati batas kredit toko, dengan alasan tertulis. Persetujuan — bawaannya hanya admin."
+      },
+      "deliveries_ship": {
+        "label": "Kirim pengiriman",
+        "keterangan": "Mengemas, melacak, mengirim, dan membatalkan pengiriman barang ke toko."
+      },
+      "deliveries_pod": {
+        "label": "Tutup pengiriman dengan bukti terima",
+        "keterangan": "Menutup pengiriman dengan bukti terima, dan bisa ditugaskan sebagai pengantarnya."
+      },
+      "spg_commission_manage": {
+        "label": "Atur tarif komisi SPG",
+        "keterangan": "Mengatur tarif komisi SPG per kategori barang di Pengaturan → Komisi SPG."
+      },
+      "item_requests_view": {
+        "label": "Lihat permintaan bahan",
+        "keterangan": "Membuka daftar permintaan bahan dari produksi."
+      },
+      "item_requests_manage": {
+        "label": "Kelola permintaan bahan",
+        "keterangan": "Membuat dan membatalkan permintaan bahan, dan mengubahnya menjadi PO."
+      },
+      "vendor_bills_view": {
+        "label": "Lihat tagihan pemasok",
+        "keterangan": "Membuka invoice pemasok beserta penerimaan barang dan langkah WO yang ditagihnya."
+      },
+      "vendor_bills_manage": {
+        "label": "Kelola tagihan pemasok",
+        "keterangan": "Mencatat invoice pemasok, mencocokkannya dengan penerimaan barang, dan membatalkannya."
+      },
+      "field_returns_manage": {
+        "label": "Kelola retur lapangan",
+        "keterangan": "Menerima barang retur dari lapangan, menyelesaikan selisihnya, dan menyetujuinya."
+      },
+      "field_returns_writeoff": {
+        "label": "Hapus selisih retur lapangan",
+        "keterangan": "Menanggung kekurangan retur lapangan sebagai kerugian perusahaan. Persetujuan — bawaannya hanya admin."
+      },
+      "payments_manage": {
+        "label": "Catat pembayaran kantor",
+        "keterangan": "Mencatat dan membatalkan pembayaran pelanggan dari kantor (Keuangan → Pembayaran). Memeriksa setoran penagih memakai izin Periksa pembayaran."
+      },
+      "collections_collect": {
+        "label": "Menagih di lapangan",
+        "keterangan": "Mengirim hasil penagihan dari aplikasi HP, dan bisa ditugaskan sebagai penagih."
+      },
+      "collections_manage": {
+        "label": "Kelola penagihan",
+        "keterangan": "Menugaskan penagih ke faktur, membuka antrean setoran penagih dan dokumen pelunasan toko, dan mengubah Pengaturan → Piutang. Memverifikasi setoran dan menyetujui pelunasan memakai izin Periksa pembayaran."
+      },
+      "collections_amplop": {
+        "label": "Lihat amplop tagihan",
+        "keterangan": "Membuka amplop digital di HP: dokumen tagihan per toko untuk satu putaran penagihan."
+      },
+      "settlements_submit": {
+        "label": "Kirim dokumen pelunasan toko",
+        "keterangan": "Mengirim dokumen pelunasan toko (faktur dan potongan) dari layar kasir di HP."
+      },
+      "packer_menu": {
+        "label": "Buka Record Packer",
+        "keterangan": "Membuka menu dan daftar video pengemasan pesanan marketplace."
+      },
+      "packer_record": {
+        "label": "Rekam video pengemasan",
+        "keterangan": "Merekam video saat mengemas pesanan."
+      },
+      "packer_edit": {
+        "label": "Ganti video pengemasan",
+        "keterangan": "Mengganti video pengemasan yang sudah ada."
       }
-    }
+    },
+    "persetujuan": "Persetujuan",
+    "persetujuanJudul": "Izin persetujuan — bawaannya hanya admin. Berikan hanya kepada orang yang Anda percaya memutuskan atas nama Anda."
   },
   "itemForm": {
     "basicInfo": "Informasi dasar",

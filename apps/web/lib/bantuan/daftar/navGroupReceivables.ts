@@ -85,7 +85,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "payments.judulHalaman" },
     isi: [
       { kunci: "payments.pageDescription" },
-      "Admin keuangan (izin mengelola jurnal) memverifikasi atau menolak setiap klaim setelah mencocokkannya dengan mutasi rekening. Klaim dengan bilyet giro baru mengurangi piutang setelah gironya cair; giro dikelola di Daftar giro.",
+      "Admin dan keuangan yang memegang izin Periksa pembayaran memverifikasi atau menolak setiap klaim setelah mencocokkannya dengan mutasi rekening. Tidak ada yang boleh memverifikasi klaim yang ia laporkan atau catat sendiri, termasuk admin. Klaim dengan bilyet giro baru mengurangi piutang setelah gironya cair; giro dikelola di Daftar giro.",
       "Klaim yang salah catat tidak dihapus: dibatalkan dengan alasan, lalu dilaporkan ulang. Menolak berbeda dari membatalkan — menolak berarti uangnya memang tidak ada di rekening.",
       "Kotak cari mencocokkan nomor BKM, toko, salesman, dan nomor giro. Setiap daftar di modul ini menampilkan 25 baris per halaman.",
       "Angka di tab mengikuti kotak cari. Tautan dari layar lain bisa membawa periode tanggal (keping di samping kotak cari, hapus dengan ×): di tab Terverifikasi periodenya atas tanggal verifikasi, di tab lain atas tanggal transfer di BKM.",
@@ -98,7 +98,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "giro.pageDescription" },
       "Giro dikelompokkan menurut kapan harus disetor ke bank, bukan menurut toko. Setorkan ke bank; setelah cair di rekening, tandai cair di sini.",
-      "Masa berlaku bilyet giro 70 hari sejak tanggal terbit; bilyet yang lewat masa berlakunya tidak bisa lagi diunjukkan, jadi minta toko menggantinya. Setiap hari pukul 07.00 WIB pemegang izin verifikasi klaim mendapat pengingat giro yang jatuh tempo.",
+      "Masa berlaku bilyet giro 70 hari sejak tanggal terbit; bilyet yang lewat masa berlakunya tidak bisa lagi diunjukkan, jadi minta toko menggantinya. Setiap hari pukul 07.00 WIB pemegang izin Periksa pembayaran mendapat pengingat giro yang jatuh tempo. Menandai giro cair atau ditolak juga butuh izin itu.",
     ],
   },
   {
@@ -157,7 +157,7 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "storeReturns.pageDescription" },
       "Setiap retur adalah dua dokumen: nota retur toko (NRT) yang nomornya milik toko, dan hitungan gudang (NRI) yang nomornya milik kita. Barang bisa tiba lewat ekspedisi mendahului notanya; hitungan gudang seperti itu dijodohkan ke notanya belakangan.",
-      "Mencatat nota retur butuh izin mengelola piutang; menghitung barang yang datang butuh izin menghitung opname.",
+      "Mencatat nota retur butuh izin mengelola piutang; menghitung barang yang datang butuh izin menghitung opname. Menetapkan dan mengalihkan siapa menanggung selisihnya adalah keputusan manager, dengan izinnya sendiri (memutuskan penanggung) yang bawaannya hanya dipegang admin.",
       "Nota retur yang dilaporkan SPG di toko yang belum punya salesman pemegang membunyikan lonceng pengelola piutang, karena tidak ada orang lapangan yang menindaklanjutinya.",
       "Hitungan gudang buta: bagi orang yang boleh menghitung, klaim toko pada nota yang belum dihitung tidak ditampilkan — tidak di daftar, rincian, maupun dialog Jodohkan, dan nilai tertahan di kepala halaman tidak ikut menjumlahkannya — sampai hitungannya tersimpan. Pelapor nota tetap melihat klaimnya, tetapi tidak boleh menghitung notanya sendiri; tombol Cek fisiknya mati dengan alasan.",
       "Daftar bawaan berisi retur yang masih perlu dikerjakan. Kartu angka di atas sekaligus saringan per langkah; Semua menampilkan yang sudah selesai dan batal.",
@@ -201,7 +201,11 @@ export const ENTRI: EntriBantuan[] = [
     rute: "/backoffice/beban-selisih",
     bagian: "navGroupReceivables",
     judul: { kunci: "bebanSelisih.judulHalaman" },
-    isi: [{ kunci: "bebanSelisih.pageDescription" }, { kunci: "bebanSelisih.explain" }],
+    isi: [
+      { kunci: "bebanSelisih.pageDescription" },
+      { kunci: "bebanSelisih.explain" },
+      "Menetapkan dan mengalihkan penanggung butuh izin memutuskan penanggung — keputusan manager, bawaannya hanya admin. Pengelola piutang tetap melihat daftar ini dan menandai penggantiannya.",
+    ],
   },
   {
     rute: "/backoffice/arsip-retur",

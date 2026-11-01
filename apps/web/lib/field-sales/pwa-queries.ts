@@ -459,9 +459,16 @@ export type DetailPesananSaya = {
 
 /**
  * Satu kiriman pesanan yang sudah dihitung dan dikonfirmasi SPG di toko:
- * pengiriman putus, atau pesanan konsi itu sendiri. Potong saja, tanpa rupiah
- * — juga untuk PUTUS, supaya bentuknya satu dan tidak pernah membawa harga
- * konsinyasi.
+ * pengiriman putus, atau — untuk KONSI — seluruh antaran pesanan itu. Potong
+ * saja, tanpa rupiah — juga untuk PUTUS, supaya bentuknya satu dan tidak pernah
+ * membawa harga konsinyasi.
+ *
+ * KONSI diterima per antaran (`KONSI_TRANSFER`, satu per pengiriman), tetapi
+ * kartu salesman membaca SATU ringkasan per pesanan (`KONSI_ORDER`, sourceId =
+ * pesanan): antaran yang sudah dihitung dijumlah ke situ — "dikirim" adalah yang
+ * diserahkan di antaran-antaran itu, bukan yang dipesan, jadi sisa yang belum
+ * dikirim gudang tidak terbaca kurang. Pesanan lama yang diterima sekali per
+ * pesanan ikut di ringkasan yang sama.
  */
 export type PenerimaanTokoPesanan = {
   sourceType: "PUTUS_DELIVERY" | "KONSI_ORDER";
@@ -474,12 +481,19 @@ export type PenerimaanTokoPesanan = {
  * Tanda terima SPG untuk pesanan ini, terlama dulu. Disaring ke toko
  * pesanannya: tanda terima selalu dicatat di toko tujuan kiriman.
  */
-async function penerimaanTokoPesanan(storeId: string, orderId: string, deliveryIds: string[]): Promise<PenerimaanTokoPesanan[]> {
+async function penerimaanTokoPesanan(
+  storeId: string,
+  order: { id: string; orderNo: string },
+  deliveryIds: string[],
+): Promise<PenerimaanTokoPesanan[]> {
+  const antaran = await prisma.konsiTransfer.findMany({ where: { orderId: order.id, storeId, shipmentId: { not: null } }, select: { id: true } });
+  const antaranIds = antaran.map((t) => t.id);
   const rows = await prisma.storeReceipt.findMany({
     where: {
       storeId,
       OR: [
-        { sourceType: "KONSI_ORDER", sourceId: orderId },
+        { sourceType: "KONSI_ORDER", sourceId: order.id },
+        ...(antaranIds.length > 0 ? [{ sourceType: "KONSI_TRANSFER", sourceId: { in: antaranIds } }] : []),
         ...(deliveryIds.length > 0 ? [{ sourceType: "PUTUS_DELIVERY", sourceId: { in: deliveryIds } }] : []),
       ],
     },
@@ -492,13 +506,22 @@ async function penerimaanTokoPesanan(storeId: string, orderId: string, deliveryI
       lines: { select: { qtySent: true, qtyReceived: true, qtyDamaged: true } },
     },
   });
-  return rows.map((r) => ({
-    sourceType: r.sourceType === "KONSI_ORDER" ? "KONSI_ORDER" : "PUTUS_DELIVERY",
-    sourceId: r.sourceId,
-    docNo: r.sourceDocNo,
-    diterimaPada: r.receivedAt,
-    ...hitungSelisihTerima(r.lines),
-  }));
+  const putus: PenerimaanTokoPesanan[] = [];
+  const konsiBaris: { qtySent: number; qtyReceived: number; qtyDamaged: number | null }[] = [];
+  let konsiTerakhir: Date | null = null;
+  for (const r of rows) {
+    if (r.sourceType === "PUTUS_DELIVERY") {
+      putus.push({ sourceType: "PUTUS_DELIVERY", sourceId: r.sourceId, docNo: r.sourceDocNo, diterimaPada: r.receivedAt, ...hitungSelisihTerima(r.lines) });
+      continue;
+    }
+    konsiBaris.push(...r.lines);
+    if (!konsiTerakhir || r.receivedAt > konsiTerakhir) konsiTerakhir = r.receivedAt;
+  }
+  if (!konsiTerakhir) return putus;
+  return [
+    ...putus,
+    { sourceType: "KONSI_ORDER", sourceId: order.id, docNo: order.orderNo, diterimaPada: konsiTerakhir, ...hitungSelisihTerima(konsiBaris) },
+  ];
 }
 
 /**
@@ -571,7 +594,7 @@ export async function pesananSayaById(orderId: string, salesmanId: string): Prom
   }));
   const penerimaanToko = await penerimaanTokoPesanan(
     milik.storeId,
-    o.id,
+    { id: o.id, orderNo: o.orderNo },
     o.deliveries.map((d) => d.id),
   );
 

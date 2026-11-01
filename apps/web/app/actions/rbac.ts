@@ -8,6 +8,7 @@ import { auth } from '@/lib/auth';
 import { z } from 'zod';
 import { runSerializable } from '@/lib/db/tx-retry';
 import { perannyaSpg, tolakAkunSistem, type KodeAkunSistem } from '@/lib/users/validasi';
+import { peranLamaDari } from "@/lib/users/peran-lama";
 
 /** Batas kolom VARCHAR(191) di MariaDB untuk keterangan peran. */
 const roleSchema = z.object({
@@ -30,12 +31,23 @@ export type KodeGalatPeran =
 
 export type HasilPeran = { ok: true } | { ok: false; code: KodeGalatPeran };
 
+/**
+ * Admin = peran SISTEM, dibaca dari wildcard `*` yang lib/auth/segarkan-sesi.ts
+ * berikan kepada peran sistem — bukan dari kolom peran lama `User.role`. Dulu
+ * yang diperiksa kolom itu, yang tidak diisi Pengaturan → Pengguna: admin yang
+ * diangkat di sana tidak bisa memuat Peran & izin, dan admin yang diturunkan di
+ * sana tetap bisa mengelola peran.
+ */
+function adminSistem(session: Session | null): boolean {
+  return (session?.user?.permissions ?? []).includes("*");
+}
+
 /** Sesi pengelola peran, atau null bila tidak masuk / tidak berizin. */
 async function pengelolaPeran(): Promise<string | null> {
   const session = await auth();
   if (!session?.user?.id) return null;
   // Pengelolaan peran hanya untuk admin, sama dengan pembaca peran di bawah (`requireAdminSession`).
-  if (session.user.role !== 'ADMIN') return null;
+  if (!adminSistem(session)) return null;
   if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.SETTINGS_RBAC_MANAGE)) return null;
   return session.user.id;
 }
@@ -48,7 +60,7 @@ function idIzinRapi(permissionIds: unknown): string[] | null {
 
 function requireAdminSession(session: Session | null) {
   if (!session) throw new Error("Unauthorized");
-  if (session.user.role !== "ADMIN") throw new Error("Forbidden");
+  if (!adminSistem(session)) throw new Error("Forbidden");
 }
 
 /**
@@ -171,7 +183,7 @@ export async function createRole(
       },
     );
     if (hasil.ok) {
-      revalidatePath('/backoffice/profile-accounts');
+      revalidatePath("/backoffice/settings/users");
       revalidatePath('/backoffice/settings/rbac');
     }
     return hasil;
@@ -253,8 +265,7 @@ export async function updateRolePermissions(roleId: string, permissionIds: strin
   });
 
   if (hasil.ok) {
-    revalidatePath('/backoffice/profile-accounts');
-    revalidatePath(`/backoffice/profile-accounts/roles/${roleId}`);
+    revalidatePath("/backoffice/settings/users");
     revalidatePath('/backoffice/settings/rbac');
   }
   return hasil;
@@ -312,7 +323,7 @@ export async function deleteRole(roleId: string): Promise<HasilPeran> {
   });
 
   if (hasil.ok) {
-    revalidatePath('/backoffice/profile-accounts');
+    revalidatePath("/backoffice/settings/users");
     revalidatePath('/backoffice/settings/rbac');
   }
   return hasil;
@@ -324,49 +335,6 @@ export type AssignUserRoleResult =
       ok: false;
       code: KodeAkunSistem | "PERAN_SENDIRI" | "TIDAK_DITEMUKAN" | "PERAN_TIDAK_DITEMUKAN" | "TOKO_WAJIB";
     };
-
-/**
- * Get a single role with permissions (for the dedicated edit page)
- */
-export async function getRole(roleId: string) {
-  const session = await auth();
-  requireAdminSession(session);
-  requirePermission(session!.user.permissions, PERMISSIONS.SETTINGS_RBAC_VIEW);
-
-  const role = await prisma.roleDefinition.findUnique({
-    where: { id: roleId },
-    include: {
-      permissions: {
-        include: {
-          permission: true,
-        },
-      },
-      _count: {
-        select: {
-          users: true,
-        },
-      },
-    },
-  });
-
-  if (!role) return null;
-
-  return {
-    id: role.id,
-    name: role.name,
-    description: role.description,
-    isSystem: role.isSystem,
-    permissionsVersion: role.permissionsVersion,
-    userCount: role._count.users,
-    permissions: role.permissions.map((rp) => ({
-      id: rp.permission.id,
-      code: rp.permission.code,
-      module: rp.permission.module,
-      action: rp.permission.action,
-      description: rp.permission.description,
-    })),
-  };
-}
 
 /**
  * Ganti peran seorang pengguna.
@@ -387,6 +355,10 @@ export async function getRole(roleId: string) {
  * peran SPG wajib punya toko tetap yang aktif (`TOKO_WAJIB` — aksi ini tidak
  * memilih toko, jadi tokonya ditetapkan di Pengaturan → Pengguna), dan peran
  * lain mengosongkannya, karena aplikasi mengenali SPG dari toko tetapnya.
+ *
+ * Kolom peran lama (`User.role`) ikut ditulis, diturunkan dari peran baru
+ * (`peranLamaDari`), dan masuk jejak sebagai `legacyRole` bila berubah — sama
+ * dengan Pengaturan → Pengguna.
  */
 export async function assignUserRole(userId: string, roleId: string): Promise<AssignUserRoleResult> {
   const session = await auth();
@@ -401,11 +373,11 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
       tx.user.findUnique({ where: { id: pelakuId }, select: { roleDefinition: { select: { isSystem: true } } } }),
       tx.user.findUnique({
         where: { id: userId },
-        select: { id: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
+        select: { id: true, role: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
       }),
       tx.roleDefinition.findUnique({
         where: { id: roleId },
-        select: { id: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
+        select: { id: true, name: true, isSystem: true, permissions: { select: { permission: { select: { code: true } } } } },
       }),
     ]);
     if (!target) return { ok: false, code: 'TIDAK_DITEMUKAN' };
@@ -427,10 +399,12 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
       if (!tokoAktif) return { ok: false, code: 'TOKO_WAJIB' };
       tokoBaru = target.assignedStoreId;
     }
-    // Toko tetap hanya masuk jejak bila berubah — jejak lama berbentuk roleId saja.
+    // Toko tetap dan peran lama hanya masuk jejak bila berubah — jejak lama berbentuk roleId saja.
     const tokoBerubah = target.assignedStoreId !== tokoBaru;
+    const peranLama = peranLamaDari(peran);
+    const peranLamaBerubah = target.role !== peranLama;
 
-    await tx.user.update({ where: { id: target.id }, data: { roleId: peran.id, assignedStoreId: tokoBaru } });
+    await tx.user.update({ where: { id: target.id }, data: { role: peranLama, roleId: peran.id, assignedStoreId: tokoBaru } });
     await tx.auditLog.create({
       data: {
         userId: pelakuId,
@@ -438,8 +412,16 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
         entityType: 'User',
         entityId: target.id,
         changes: {
-          before: { roleId: target.roleId, ...(tokoBerubah ? { assignedStoreId: target.assignedStoreId } : {}) },
-          after: { roleId: peran.id, ...(tokoBerubah ? { assignedStoreId: tokoBaru } : {}) },
+          before: {
+            roleId: target.roleId,
+            ...(peranLamaBerubah ? { legacyRole: target.role } : {}),
+            ...(tokoBerubah ? { assignedStoreId: target.assignedStoreId } : {}),
+          },
+          after: {
+            roleId: peran.id,
+            ...(peranLamaBerubah ? { legacyRole: peranLama } : {}),
+            ...(tokoBerubah ? { assignedStoreId: tokoBaru } : {}),
+          },
         },
         metadata: { jalur: 'assignUserRole' },
       },
@@ -448,7 +430,7 @@ export async function assignUserRole(userId: string, roleId: string): Promise<As
   });
 
   if (hasil.ok) {
-    revalidatePath('/backoffice/profile-accounts');
+    revalidatePath("/backoffice/settings/users");
     revalidatePath('/backoffice/settings/security');
   }
   return hasil;

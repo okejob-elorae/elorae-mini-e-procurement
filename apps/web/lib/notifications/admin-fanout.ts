@@ -29,8 +29,14 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   STORE_CHANGE_REQUEST: PERMISSIONS.STORES_MANAGE,
   TAX_INVOICE_PENDING: PERMISSIONS.TAX_INVOICES_MANAGE,
   FIELD_RETURN_MISMATCH: PERMISSIONS.FIELD_RETURNS_MANAGE,
-  CREDIT_LIMIT_HOLD: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
-  COLLECTION_PENDING_VERIFICATION: PERMISSIONS.PAYMENTS_MANAGE,
+  // Pesanan yang melewati batas kredit hanya bisa disetujui dengan alasan
+  // override, dan alasan itu hanya diterima dari `field_sales_orders:credit_override`
+  // (`approveFieldSalesOrderAction`). Penyetuju biasa sudah diberi tahu lewat
+  // PENDING_ORDER_APPROVAL.
+  CREDIT_LIMIT_HOLD: PERMISSIONS.FIELD_SALES_ORDERS_CREDIT_OVERRIDE,
+  // Memverifikasi setoran penagih = memeriksa pembayaran (`guardVerify` di
+  // app/actions/collections.ts), bukan `payments:manage` yang mencatatnya.
+  COLLECTION_PENDING_VERIFICATION: PERMISSIONS.PAYMENTS_VERIFY,
   AR_OVERDUE: PERMISSIONS.COLLECTIONS_MANAGE,
   [PO_PAYMENT_DUE]: PERMISSIONS.PURCHASE_ORDERS_EDIT,
   [SALES_RETURN_RECEIVED]: PERMISSIONS.SALES_RETURNS_DECIDE,
@@ -43,19 +49,22 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   [KONSI_REPORT_BLOCKED]: PERMISSIONS.STORES_MANAGE,
   /*
    * Giro yang efektif hari ini atau lewat. Yang bisa bertindak adalah yang boleh
-   * memverifikasi klaim (`bolehMemverifikasi` di `lib/receivables/izin.ts`) —
-   * hanya mereka yang bisa menandai giro cair atau ditolak bank.
+   * memverifikasi klaim (`bolehMemverifikasi` di `lib/receivables/izin.ts`,
+   * `payments:verify`) — hanya mereka yang bisa menandai giro cair atau ditolak bank.
    */
-  GIRO_JATUH_TEMPO: PERMISSIONS.JOURNALS_MANAGE,
+  GIRO_JATUH_TEMPO: PERMISSIONS.PAYMENTS_VERIFY,
   /*
    * Sales menarik laporannya sendiri (salah toko). Yang perlu tahu adalah yang
-   * memutuskan dokumen itu: keuangan untuk BKM, pengelola retur untuk NRT —
-   * supaya penarikan tidak pernah diam-diam.
+   * memutuskan dokumen itu: pemeriksa pembayaran untuk BKM (`bolehMemverifikasi`,
+   * `payments:verify`), pengelola retur untuk NRT — supaya penarikan tidak
+   * pernah diam-diam.
    */
-  KLAIM_DIBATALKAN_SALES: PERMISSIONS.JOURNALS_MANAGE,
+  KLAIM_DIBATALKAN_SALES: PERMISSIONS.PAYMENTS_VERIFY,
   RETUR_DIBATALKAN_SALES: PERMISSIONS.RECEIVABLES_MANAGE,
-  // Sales meminta koreksi laporan yang sudah diproses — ke yang bisa membetulkannya.
-  KOREKSI_DIMINTA_BKM: PERMISSIONS.JOURNALS_MANAGE,
+  // Sales meminta koreksi laporan yang sudah diproses — ke yang bisa membetulkannya:
+  // BKM dibatalkan / potongannya ditautkan ulang oleh `payments:verify`
+  // (`batalkanKlaimAction`, `tautkanUlangPotonganAction`).
+  KOREKSI_DIMINTA_BKM: PERMISSIONS.PAYMENTS_VERIFY,
   KOREKSI_DIMINTA_RETUR: PERMISSIONS.RECEIVABLES_MANAGE,
   // Calon toko baru dari lapangan — yang bisa menyetujui adalah pengelola master toko.
   STORE_PROPOSAL: PERMISSIONS.STORES_MANAGE,
@@ -71,10 +80,13 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   STORE_EXCHANGE_TO_COMPLETE: PERMISSIONS.INVENTORY_MANAGE,
   // Pengajuan izin/sakit/cuti — yang memutuskan adalah penyetuju lapangan.
   LEAVE_REQUEST_SUBMITTED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
-  // Mutasi antar toko oleh SPG: ajuan dan selisih ke penyetuju lapangan; yang
-  // harus diterima kantor (toko tujuan tanpa SPG) dan yang macet ke pengelola toko.
-  STORE_TRANSFER_PROPOSED: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
-  STORE_TRANSFER_DISCREPANCY: PERMISSIONS.FIELD_SALES_ORDERS_APPROVE,
+  // Mutasi antar toko oleh SPG: ajuan ke yang menyetujui mutasi
+  // (`store_transfers:approve`), selisih ke yang memutuskannya
+  // (`store_transfers:decide_shortfall`) — app/actions/spg-mutasi.ts; yang harus
+  // diterima kantor (toko tujuan tanpa SPG) dan yang macet ke pengelola toko,
+  // yang boleh menerima atas nama toko.
+  STORE_TRANSFER_PROPOSED: PERMISSIONS.STORE_TRANSFERS_APPROVE,
+  STORE_TRANSFER_DISCREPANCY: PERMISSIONS.STORE_TRANSFERS_DECIDE_SHORTFALL,
   STORE_TRANSFER_TO_RECEIVE: PERMISSIONS.STORES_MANAGE,
   STORE_TRANSFER_STALE: PERMISSIONS.STORES_MANAGE,
   // Barang rusak yang tiba di kiriman ke toko SPG — gudang yang memutuskan nasibnya.
@@ -82,8 +94,9 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   // Tukar shift SPG yang sudah disetujui rekannya — pengelola toko yang menyetujui.
   SPG_SHIFT_SWAP: PERMISSIONS.STORES_MANAGE,
   // Barang hilang yang perlu diputuskan penanggungnya — yang menetapkan beban
-  // adalah `receivables:manage` (pemisahan tugas di lib/receivables/izin.ts).
-  STOCK_LOSS_OPEN: PERMISSIONS.RECEIVABLES_MANAGE,
+  // adalah `receivables:decide_bearer` (`bolehMemutuskanBeban`, pemisahan tugas
+  // di lib/receivables/izin.ts), bukan `receivables:manage` yang mencatatnya.
+  STOCK_LOSS_OPEN: PERMISSIONS.RECEIVABLES_DECIDE_BEARER,
   // Permintaan stok SPG di toko tanpa salesman pemegang — tidak masuk kotak
   // masuk HP siapa pun, jadi pengelola toko yang menanganinya.
   SPG_STOCK_REQUEST_UNHELD: PERMISSIONS.STORES_MANAGE,

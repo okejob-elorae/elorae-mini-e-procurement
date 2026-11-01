@@ -6,7 +6,7 @@ import { RincianReturClient, type RincianBarangRetur } from "./RincianReturClien
 import { prisma } from "@elorae/db";
 import { formatDisplayDate } from "@/lib/date-only";
 import { koreksiTertunda, penggantiUntuk, riwayatDokumen } from "@/lib/receivables/koreksi";
-import { bolehMembacaRetur } from "@/lib/receivables/izin";
+import { bolehMembacaRetur, bolehMemutuskanBeban } from "@/lib/receivables/izin";
 import { klaimDisembunyikan } from "../buta";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +23,13 @@ export default async function RincianReturPage({
 
   const { id } = await params;
   const kelola = hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE);
+  // Menetapkan siapa menanggung selisih = receivables:decide_bearer (putuskanBebanAction).
+  const putusBeban = bolehMemutuskanBeban(session.user.permissions);
   const bolehMenghitung = hasPermission(session.user.permissions ?? [], PERMISSIONS.INVENTORY_OPNAME_COUNT);
   const [data, kandidat, tokoTujuan] = await Promise.all([
     rincianRetur(id),
-    kelola ? kandidatPenanggung() : Promise.resolve([]),
+    // Calon penanggung hanya dipakai dialog keputusan beban.
+    putusBeban ? kandidatPenanggung() : Promise.resolve([]),
     kelola ? tokoUntukRetur() : Promise.resolve([]),
   ]);
   if (!data) notFound();
@@ -93,6 +96,7 @@ export default async function RincianReturPage({
       klaimTersembunyi={buta}
       kandidat={kandidat}
       bolehMengelola={kelola}
+      bolehPutuskanBeban={putusBeban}
       tokoTujuan={tokoTujuan}
       digantiOleh={pengganti.get(id) ?? null}
       menggantikan={asal ? { id: asal.id, nomor: asal.noNrt } : null}

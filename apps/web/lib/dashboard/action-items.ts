@@ -64,6 +64,17 @@ export async function getActionItemCounts(izin?: string[]): Promise<ActionItemCo
 
 export type AngkaUang = { count: number; amount: number };
 
+/**
+ * Pagar kedua baris BKM menunggu verifikasi. Satu kode, persis
+ * `bolehMemverifikasi` — yang juga memutuskan apakah angkanya dimuat
+ * (`kartuBeranda.klaimMenunggu`) dan aksi verifikasinya
+ * (`verifikasiKlaimAction`). Dulu barisnya menuntut `journals:manage`:
+ * pemegang `payments:verify` saja memuat angkanya tetapi tidak pernah melihat
+ * barisnya, dan akuntan `journals:manage` saja melihat baris yang tidak bisa ia
+ * putuskan. Tes `action-items.test.ts` mengunci keduanya agar tetap sama.
+ */
+const IZIN_VERIFIKASI_BKM = PERMISSIONS.PAYMENTS_VERIFY;
+
 type AgregatKlaim = { _count: { _all: number }; _sum: { receivedAmount: unknown } };
 
 function angkaKlaim(x: AgregatKlaim | null): AngkaUang {
@@ -219,9 +230,9 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       count: input.claimsAwaitingVerification?.count ?? 0,
       // `?status=DIKIRIM`: daftar Pelunasan tanpa saringan memuat semua BKM.
       href: "/backoffice/pelunasan?status=DIKIRIM",
-      // Verifying a claim is finance's call (`journals:manage`, see
-      // `lib/receivables/izin.ts`) — a row nobody here can act on is noise.
-      permission: PERMISSIONS.JOURNALS_MANAGE,
+      // Verifying a claim is finance's call (`payments:verify`, see
+      // IZIN_VERIFIKASI_BKM) — a row nobody here can act on is noise.
+      permission: IZIN_VERIFIKASI_BKM,
       tone: "waiting",
       amount: input.claimsAwaitingVerification?.amount,
     },
@@ -232,7 +243,7 @@ export function buildActionItems(input: BuildActionItemsInput, izin?: string[]):
       labelKey: "claimsAwaitingOthers",
       count: input.claimsAwaitingOthers?.count ?? 0,
       href: "/backoffice/pelunasan?status=DIKIRIM",
-      permission: PERMISSIONS.JOURNALS_MANAGE,
+      permission: IZIN_VERIFIKASI_BKM,
       tone: "waiting",
       amount: input.claimsAwaitingOthers?.amount,
       menungguOrangLain: true,

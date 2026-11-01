@@ -9,5 +9,5 @@ export default async function VendorPaymentsPage() {
   const perms = session.user.permissions ?? [];
   if (!hasPermission(perms, PERMISSIONS.SUPPLIER_PAYMENTS_VIEW)) redirect("/backoffice");
 
-  return <VendorPaymentsClient canCreate={hasPermission(perms, PERMISSIONS.SUPPLIER_PAYMENTS_CREATE)} />;
+  return <VendorPaymentsClient canPay={hasPermission(perms, PERMISSIONS.SUPPLIER_PAYMENTS_CREATE)} />;
 }

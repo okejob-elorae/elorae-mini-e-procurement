@@ -26,7 +26,7 @@ vi.mock("@/lib/konsinyasi/laporan-spg", () => ({ bahanLaporanSpg: vi.fn() }));
 const aksi = await import("./konsinyasi");
 
 beforeEach(() => {
-  state.sesi = { user: { id: "u1", permissions: ["journals:manage"] } };
+  state.sesi = { user: { id: "u1", permissions: ["payments:verify"] } };
   state.dicatat = [];
 });
 

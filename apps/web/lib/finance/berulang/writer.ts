@@ -8,6 +8,7 @@ import { dokumenJurnal, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal
 import { catatGagalSapuan } from "@/lib/finance/sapuan/tertunda";
 import { akunBisaDiposting, KATEGORI_PERSETUJUAN_JURNAL } from "@/lib/finance/jurnal-manual/writer";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { adminSistemTertua } from "@/lib/users/admin-sistem";
 import type { AdminNotification } from "@elorae/db";
 import {
   idSumberBerulang,
@@ -516,9 +517,9 @@ export async function jalankanJurnalBerulang(isi: {
   return ringkas;
 }
 
-/** Cron harian: posting semua templat aktif yang jatuh tempo, atas nama admin pertama. */
+/** Cron harian: posting semua templat aktif yang jatuh tempo, atas nama admin sistem tertua (peran sistem, bukan kolom `User.role`). */
 export async function jalankanJurnalBerulangTerjadwal(sekarang: Date = new Date()): Promise<RingkasanBerulang | null> {
-  const admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, orderBy: { createdAt: "asc" }, select: { id: true } });
+  const admin = await adminSistemTertua();
   if (!admin) return null;
   return jalankanJurnalBerulang({ sekarang, olehUserId: admin.id });
 }

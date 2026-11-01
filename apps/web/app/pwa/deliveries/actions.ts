@@ -10,7 +10,8 @@ import { DeliveryError } from "@/lib/field-sales/errors";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
-import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
+import { kaitPindahKonsiPengiriman } from "@/lib/finance/operasional/kait";
+import { kabarkanPengirimanDiserahkan } from "@/lib/spg/kabar-pengiriman";
 
 const ERROR_TAG = "pwa/deliveries";
 
@@ -32,32 +33,31 @@ async function postDeliveryJournals(deliveryId: string, postedById: string): Pro
 
 /**
  * Same body as `notifyStoreSpg` in `@/app/actions/delivery-shipments`, duplicated for the same
- * reason as `postDeliveryJournals` above — keep the two in sync by hand. A PUTUS completion
- * notifies the store's SPG on its delivery document; a KONSI completion on its order, and only
- * when the shipment delivered something, since approve only reserves and this is where the goods
- * leave for the store. The notifier never throws and notifies once per document.
+ * reason as `postDeliveryJournals` above — keep the two in sync by hand. Tells the store's SPG the
+ * goods of THIS shipment were handed over (count and receive them), putus and konsi alike, keyed
+ * on the shipment; a 0-pcs completion says nothing was handed over. The notifier never throws and
+ * notifies once per shipment.
  */
-async function notifyStoreSpg(
-  shipmentId: string,
-  deliveryId: string,
-  deliveredAny: boolean,
-  actorId: string,
-): Promise<void> {
-  if (deliveryId) {
-    void kabarkanKirimanBerangkat({ sourceType: "PUTUS_DELIVERY", sourceId: deliveryId, pelakuId: actorId });
-    return;
-  }
-  if (!deliveredAny) return;
+async function notifyStoreSpg(shipmentId: string, deliveryId: string, actorId: string): Promise<void> {
+  void kabarkanPengirimanDiserahkan({ shipmentId, deliveryId: deliveryId || null, pelakuId: actorId });
+}
+
+/**
+ * Same body as `postKonsiMoveJournal` in `@/app/actions/delivery-shipments` — keep the two in sync
+ * by hand. The consignment move journal for a COMPLETED konsi shipment, after its transaction
+ * committed, on every completion branch; the hook is idempotent and never throws.
+ */
+async function postKonsiMoveJournal(shipmentId: string, actorId: string): Promise<void> {
   try {
     const shipment = await prisma.deliveryShipment.findUnique({
       where: { id: shipmentId },
-      select: { orderId: true, order: { select: { orderType: true } } },
+      select: { status: true, order: { select: { orderType: true } } },
     });
-    if (shipment?.order.orderType === "KONSI") {
-      void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: shipment.orderId, pelakuId: actorId });
-    }
+    if (shipment?.order.orderType !== "KONSI") return;
+    if (shipment.status !== "DELIVERED" && shipment.status !== "PARTIALLY_DELIVERED") return;
+    await kaitPindahKonsiPengiriman(shipmentId, actorId);
   } catch (error) {
-    console.error(`[${ERROR_TAG}] SPG notice lookup failed`, error);
+    console.error(`[${ERROR_TAG}] konsi move journal hook failed`, error);
   }
 }
 
@@ -124,12 +124,8 @@ export async function completePodAction(input: {
      * entry and no repair path.
      */
     if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
-    await notifyStoreSpg(
-      input.shipmentId,
-      result.deliveryId,
-      input.lines.some((line) => line.deliveredQty > 0),
-      session.user.id,
-    );
+    else await postKonsiMoveJournal(input.shipmentId, session.user.id);
+    await notifyStoreSpg(input.shipmentId, result.deliveryId, session.user.id);
 
     return { ok: true };
   } catch (error) {
@@ -141,7 +137,10 @@ export async function completePodAction(input: {
        * never resubmits. The SPG notice follows it for the same reason.
        */
       await postDeliveryJournals(error.replay.deliveryId, session.user.id);
-      await notifyStoreSpg(input.shipmentId, error.replay.deliveryId, true, session.user.id);
+      await notifyStoreSpg(input.shipmentId, error.replay.deliveryId, session.user.id);
+    } else {
+      /* A konsi shipment an earlier, crashed attempt already completed still owes its journal. */
+      await postKonsiMoveJournal(input.shipmentId, session.user.id);
     }
     return mapError(error, ERROR_TAG);
   }

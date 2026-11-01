@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockAuth, mockHasPermission, mockAssign, mockSubmit, mockVerify, mockReject } = vi.hoisted(() => ({
+const { mockAuth, mockHasPermission, mockAssign, mockSubmit, mockVerify, mockReject, mockFindSubmission } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockHasPermission: vi.fn(),
   mockAssign: vi.fn(),
   mockSubmit: vi.fn(),
   mockVerify: vi.fn(),
   mockReject: vi.fn(),
+  mockFindSubmission: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
@@ -19,6 +20,11 @@ vi.mock("@/lib/finance/collections/submit-writer", () => ({ submitCollection: mo
 vi.mock("@/lib/finance/collections/verify-writer", () => ({ verifyCollection: mockVerify }));
 vi.mock("@/lib/finance/collections/reject-writer", () => ({ rejectCollection: mockReject }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
+vi.mock("@/lib/finance/ar/post-ar-journal-safely", () => ({ postArJournalSafely: vi.fn(async () => ({ ok: true })) }));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return { ...actual, prisma: { collectionSubmission: { findUnique: mockFindSubmission } } };
+});
 
 import { CollectionError } from "@/lib/finance/collections/errors";
 import { assignCollectorAction, submitCollectionAction, verifyCollectionAction, rejectCollectionAction } from "./collections";
@@ -31,6 +37,8 @@ describe("collections actions (unit — writers mocked)", () => {
     mockSubmit.mockReset();
     mockVerify.mockReset();
     mockReject.mockReset();
+    mockFindSubmission.mockReset();
+    mockFindSubmission.mockResolvedValue({ collectorId: "collector-1" });
   });
 
   it("assignCollectorAction returns FORBIDDEN without collections:manage", async () => {
@@ -67,7 +75,7 @@ describe("collections actions (unit — writers mocked)", () => {
     expect(mockSubmit).not.toHaveBeenCalled();
   });
 
-  it("verifyCollectionAction returns FORBIDDEN without payments:manage", async () => {
+  it("verifyCollectionAction returns FORBIDDEN without payments:verify", async () => {
     mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
     mockHasPermission.mockReturnValue(false);
     const result = await verifyCollectionAction("s1");
@@ -76,10 +84,42 @@ describe("collections actions (unit — writers mocked)", () => {
   });
 
   it("rejectCollectionAction requires a non-blank reason", async () => {
-    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["payments:manage"] } });
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["payments:verify"] } });
     mockHasPermission.mockReturnValue(true);
     const result = await rejectCollectionAction("s1", "  ");
     expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
+    expect(mockReject).not.toHaveBeenCalled();
+  });
+
+  /*
+   * Checking a collector's money is payment verification (owner, 2026-10-29): `payments:verify`,
+   * no longer `payments:manage` — the code that RECORDS office payments must not also check them.
+   */
+  it("verify and reject pin payments:verify and refuse a payments:manage holder", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: [] } });
+    mockVerify.mockResolvedValue({ ok: true, paymentId: "p1" });
+    mockReject.mockResolvedValue({ ok: true });
+    mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "payments:verify");
+    expect(await verifyCollectionAction("s1")).toEqual({ ok: true, alreadyVerified: false });
+    expect(await rejectCollectionAction("s1", "salah nominal")).toEqual({ ok: true });
+    expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "payments:verify");
+
+    mockVerify.mockClear();
+    mockReject.mockClear();
+    mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "payments:manage");
+    expect(await verifyCollectionAction("s1")).toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect(await rejectCollectionAction("s1", "salah nominal")).toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect(mockVerify).not.toHaveBeenCalled();
+    expect(mockReject).not.toHaveBeenCalled();
+  });
+
+  it("refuses the collector who handed the money in, admin included, before either writer runs", async () => {
+    mockAuth.mockResolvedValue({ user: { id: "collector-1", permissions: ["*"] } });
+    mockHasPermission.mockReturnValue(true);
+    expect(await verifyCollectionAction("s1")).toEqual({ ok: false, reason: "SELF_VERIFICATION" });
+    expect(await rejectCollectionAction("s1", "salah nominal")).toEqual({ ok: false, reason: "SELF_VERIFICATION" });
+    expect(mockFindSubmission).toHaveBeenCalledWith({ where: { id: "s1" }, select: { collectorId: true } });
+    expect(mockVerify).not.toHaveBeenCalled();
     expect(mockReject).not.toHaveBeenCalled();
   });
 });

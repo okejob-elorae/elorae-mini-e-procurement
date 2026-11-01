@@ -37,9 +37,11 @@ import { cariKunjunganAntrean } from "@/lib/pwa/kunjungan-antrean";
  * Hasil dikembalikan sebagai kode, bukan dilempar, supaya pesan galat tidak
  * disamarkan Next di produksi.
  *
- * Izin (tanpa kode izin baru): SPG `spg_sales:record`; keputusan kantor
- * `field_sales_orders:approve` (yang menyetujui pesanan lapangan); menerima atas
- * nama toko `stores:manage` (pengelola toko).
+ * Izin: SPG `spg_sales:record`; keputusan kantor `store_transfers:approve`
+ * (setujui, tolak, batalkan, alihkan tujuan, dan aturan mutasinya) dan
+ * `store_transfers:decide_shortfall` (selisih) — keduanya keputusan manager,
+ * bawaannya hanya admin (keputusan pemilik 2026-11-01); menerima atas nama toko
+ * `stores:manage` (pengelola toko).
  */
 
 export type HasilMutasiAksi =
@@ -203,13 +205,18 @@ export async function batalkanMutasiSpgAction(input: unknown): Promise<HasilMuta
 }
 
 // ─── Kantor ──────────────────────────────────────────────────────────────────
+//
+// Menyetujui, menolak, membatalkan, dan mengalihkan tujuan mutasi =
+// `store_transfers:approve`; memutuskan selisihnya =
+// `store_transfers:decide_shortfall`. Keduanya keputusan manager (keputusan
+// pemilik 2026-11-01), dulu menumpang `field_sales_orders:approve`.
 
 const teksSchema = idSchema.extend({ teks: z.string().max(500).optional() });
 
 export async function setujuiMutasiAction(input: unknown): Promise<HasilMutasiAksi> {
   const parsed = teksSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteksKantor(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+  const k = await konteksKantor(PERMISSIONS.STORE_TRANSFERS_APPROVE);
   if ("ok" in k) return k;
   return keAksi(await setujuiMutasi({ transferId: parsed.data.transferId, olehUserId: k.userId, catatan: parsed.data.teks }));
 }
@@ -217,7 +224,7 @@ export async function setujuiMutasiAction(input: unknown): Promise<HasilMutasiAk
 export async function tolakMutasiAction(input: unknown): Promise<HasilMutasiAksi> {
   const parsed = teksSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteksKantor(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+  const k = await konteksKantor(PERMISSIONS.STORE_TRANSFERS_APPROVE);
   if ("ok" in k) return k;
   return keAksi(await tolakMutasi({ transferId: parsed.data.transferId, olehUserId: k.userId, alasan: parsed.data.teks }));
 }
@@ -225,7 +232,7 @@ export async function tolakMutasiAction(input: unknown): Promise<HasilMutasiAksi
 export async function batalkanMutasiKantorAction(input: unknown): Promise<HasilMutasiAksi> {
   const parsed = teksSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteksKantor(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+  const k = await konteksKantor(PERMISSIONS.STORE_TRANSFERS_APPROVE);
   if ("ok" in k) return k;
   return keAksi(await batalkanMutasi({ transferId: parsed.data.transferId, olehUserId: k.userId, sebagai: "KANTOR", alasan: parsed.data.teks }));
 }
@@ -235,7 +242,7 @@ const alihkanSchema = teksSchema.extend({ toStoreId: z.string().min(1).max(100) 
 export async function alihkanTujuanMutasiAction(input: unknown): Promise<HasilMutasiAksi> {
   const parsed = alihkanSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteksKantor(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+  const k = await konteksKantor(PERMISSIONS.STORE_TRANSFERS_APPROVE);
   if ("ok" in k) return k;
   return keAksi(
     await alihkanTujuanMutasi({ transferId: parsed.data.transferId, olehUserId: k.userId, toStoreId: parsed.data.toStoreId, alasan: parsed.data.teks }),
@@ -247,7 +254,7 @@ const selisihSchema = teksSchema.extend({ keputusan: z.enum(["HILANG", "KEMBALI"
 export async function putuskanSelisihMutasiAction(input: unknown): Promise<HasilMutasiAksi> {
   const parsed = selisihSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: "VALIDATION" };
-  const k = await konteksKantor(PERMISSIONS.FIELD_SALES_ORDERS_APPROVE);
+  const k = await konteksKantor(PERMISSIONS.STORE_TRANSFERS_DECIDE_SHORTFALL);
   if ("ok" in k) return k;
   return keAksi(
     await putuskanSelisihMutasi({
@@ -283,16 +290,18 @@ export async function terimaMutasiKantorAction(input: unknown): Promise<{ ok: tr
 // ─── Pengaturan ──────────────────────────────────────────────────────────────
 
 /**
- * Aturan mutasi (`SystemSetting["spg.mutasi"]`). Dijaga
- * `field_sales_orders:approve`, sama dengan pengaturan salesman lain. Nilai
- * yang disimpan harus terbaca kembali persis sama oleh `bacaAturanMutasi`,
- * supaya layar pengaturan tidak pernah menampilkan aturan yang berbeda dari
- * yang dipakai server.
+ * Aturan mutasi (`SystemSetting["spg.mutasi"]`). Dijaga `store_transfers:approve`,
+ * izin yang sama dengan menyetujui mutasi: aturan inilah yang menentukan arah mana
+ * butuh persetujuan (`LANGSUNG` = tanpa persetujuan kantor). Kalau dijaga izin
+ * lain, orang yang tidak boleh menyetujui mutasi cukup mematikan langkah
+ * persetujuannya. Nilai yang disimpan harus terbaca kembali persis sama oleh
+ * `bacaAturanMutasi`, supaya layar pengaturan tidak pernah menampilkan aturan
+ * yang berbeda dari yang dipakai server.
  */
 export async function simpanAturanMutasi(isi: AturanMutasi): Promise<{ ok: true } | { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" | "INVALID" }> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)) return { ok: false, code: "FORBIDDEN" };
+  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.STORE_TRANSFERS_APPROVE)) return { ok: false, code: "FORBIDDEN" };
   if (
     !isi ||
     typeof isi !== "object" ||

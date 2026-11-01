@@ -7,6 +7,8 @@ import { listStoreGapSuggestions, listStoreNeverSentSuggestions } from "@/lib/fi
 import { listSellThroughSalesmanCandidates, defaultSellThroughSalesmanId } from "@/lib/konsi-sell-through/salesman-candidates";
 import { filterStageableSuggestions } from "@/lib/field-sales/stageable-suggestions";
 import { computeStoreCreditExposure } from "@/lib/finance/ar/credit-exposure";
+import { batasKreditBerlaku } from "@/lib/salesman/kredit";
+import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
 import { KonsiPushForm } from "./KonsiPushForm";
 
 export default async function KonsiPushPage({ params }: { params: Promise<{ id: string }> }) {
@@ -43,10 +45,15 @@ export default async function KonsiPushPage({ params }: { params: Promise<{ id: 
   /**
    * A display preview only, so the form can ask for an override reason up front; the writer
    * re-checks live at submit and is the authority. Exposure alone, never the push's own value,
-   * matching the konsi approve gate. Degrades to null rather than taking the page down.
+   * matching the konsi approve gate. Degrades to null rather than taking the page down. The limit
+   * is the one the gate itself resolves (`batasKreditBerlaku`), so a store ticked "Tanpa batas
+   * kredit" is previewed as ungated.
    */
   let creditCheck: { exposure: number; limit: number; overLimit: boolean } | null = null;
-  const limit = store.creditLimit;
+  const limit = batasKreditBerlaku(
+    { creditLimit: store.creditLimit, noCreditLimit: store.noCreditLimit, termsType: "KONSI" },
+    await bacaAturanKreditDb(),
+  ).nilai.nilai;
   if (limit !== null) {
     try {
       const exposure = await computeStoreCreditExposure(prisma, store.id);

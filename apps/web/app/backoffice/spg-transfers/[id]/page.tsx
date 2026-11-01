@@ -16,10 +16,14 @@ export default async function RincianSpgTransferPage({ params }: { params: Promi
   const rincian = await rincianMutasiKantor(id);
   if (!rincian) notFound();
 
+  // Izin tiap tombol = izin aksinya (app/actions/spg-mutasi.ts): setujui/tolak/batalkan/alihkan
+  // = store_transfers:approve, putuskan selisih = store_transfers:decide_shortfall, terima atas
+  // nama toko = stores:manage.
   return (
     <RincianMutasiKantorClient
       rincian={rincian}
-      bolehPutuskan={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_APPROVE)}
+      bolehPutuskan={hasPermission(izin, PERMISSIONS.STORE_TRANSFERS_APPROVE)}
+      bolehPutuskanSelisih={hasPermission(izin, PERMISSIONS.STORE_TRANSFERS_DECIDE_SHORTFALL)}
       bolehTerima={hasPermission(izin, PERMISSIONS.STORES_MANAGE)}
       milikSendiri={rincian.pengajuId === session.user.id}
     />

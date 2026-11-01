@@ -13,8 +13,13 @@ export default async function VendorBillDetailPage({ params }: { params: Promise
   const { id } = await params;
   const bill = await getVendorBillDetail(id);
   if (!bill) notFound();
-  const hasLivePayment = bill.allocations.some((a) => !a.payment.voidedAt);
-  const canVoid = bill.status !== "VOID" && !hasLivePayment && hasPermission(perms, PERMISSIONS.VENDOR_BILLS_MANAGE);
+  // As `voidVendorBill` refuses: a live old vendor payment, or old CMT this bill booked that Supplier
+  // payments already paid past what voiding it would leave. Paid through Supplier payments alone does not.
+  const canManage = hasPermission(perms, PERMISSIONS.VENDOR_BILLS_MANAGE);
+  const hasLiveVendorPayment = bill.allocations.some((a) => !a.payment.voidedAt);
+  const voidBlockedSteps = bill.status !== "VOID" && !hasLiveVendorPayment && canManage ? bill.voidBlockedSteps : [];
+  const canVoid = bill.status !== "VOID" && !hasLiveVendorPayment && bill.voidBlockedSteps.length === 0 && canManage;
+  const canPay = (bill.status === "UNPAID" || bill.status === "PARTIAL") && hasPermission(perms, PERMISSIONS.SUPPLIER_PAYMENTS_CREATE);
 
-  return <VendorBillDetailClient bill={bill} canVoid={canVoid} userId={session.user.id} />;
+  return <VendorBillDetailClient bill={bill} canVoid={canVoid} canPay={canPay} voidBlockedSteps={voidBlockedSteps} userId={session.user.id} />;
 }

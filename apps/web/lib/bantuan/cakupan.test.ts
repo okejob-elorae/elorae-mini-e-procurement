@@ -16,19 +16,30 @@ const APP = path.resolve(__dirname, "../../app");
  * Versi tim dari fitur yang dibangun dua kali. Pemilik memilih versi Max
  * (2026-10-29), jadi halaman ini akan dihapus dan tidak diberi penjelasan.
  * Begitu halamannya hilang, tes kedua di bawah mengingatkan untuk mencoretnya.
+ * Yang kemudian dipertahankan pemilik (2026-11-01) keluar dari daftar ini dan
+ * mendapat entri sendiri: Pengaturan → Piutang (pengingat jatuh tempo) dan
+ * riwayat Pembayaran Vendor Billing.
  */
 const RETUR_TIM = "retur toko versi tim, akan dihapus: pemilik memilih retur versi Max (NRT/NRI)";
 const PIUTANG_TIM = "piutang & pelunasan versi tim, akan dihapus: pemilik memilih piutang dan BKM versi Max";
 const KONSI_TIM = "laporan konsinyasi versi tim, akan dihapus: pemilik memilih siklus konsinyasi versi Max";
 const TRANSFER_TIM = "transfer toko versi tim, akan dihapus: pemilik memilih mutasi antar toko versi Max";
-const KOMISI_SPG_TIM = "komisi SPG versi tim, akan dihapus: pemilik memilih gaji & komisi SPG versi Max";
-const BAYAR_PEMASOK_TIM = "pembayaran tagihan vendor versi tim, akan dihapus: pemilik memilih pembayaran pemasok versi Max";
+const KOMISI_SPG_TIM =
+  "komisi SPG versi tim: hitungannya dipakai untuk toko konsi dan putus (keputusan pemilik 2026-11-01), penjelasan menyusul setelah halamannya disatukan dengan Gaji & komisi SPG";
+const AKUN_PROFIL = "alamat lama Akun Profil, hanya mengalihkan ke Pengaturan → Pengguna";
 
 /** Halaman yang sengaja tanpa entri, dengan alasannya. */
 const DIKECUALIKAN: Record<string, string> = {
   "/backoffice": "hanya mengalihkan ke beranda",
   "/backoffice/bantuan": "halaman Bantuan itu sendiri",
   "/backoffice/kreatif/brief": "alamat lama, hanya mengalihkan ke Kolaborasi",
+  "/backoffice/profile-accounts": AKUN_PROFIL,
+  "/backoffice/profile-accounts/new": AKUN_PROFIL,
+  "/backoffice/profile-accounts/[id]/edit": AKUN_PROFIL,
+  "/backoffice/profile-accounts/roles/[id]": "alamat lama Akun Profil, hanya mengalihkan ke Pengaturan → Peran & izin",
+  "/backoffice/vendor-payments/new":
+    "alamat lama formulir pembayaran Vendor Billing, kini hanya pemberitahuan bahwa pembayaran pindah ke Pembayaran pemasok",
+  "/pwa/notifications": "alamat lama, hanya mengalihkan ke Kabar",
   "/backoffice/sales-orders/[id]/pick-list": "halaman cetak, langsung memanggil print",
   "/backoffice/sales-orders/[id]/packing-slip": "halaman cetak, langsung memanggil print",
   "/pwa/offline": "pemberitahuan sedang tidak ada sinyal",
@@ -44,7 +55,6 @@ const DIKECUALIKAN: Record<string, string> = {
   "/backoffice/finance/pelunasan": PIUTANG_TIM,
   "/backoffice/finance/pelunasan/[id]": PIUTANG_TIM,
   "/backoffice/finance/collections": PIUTANG_TIM,
-  "/backoffice/settings/piutang": PIUTANG_TIM,
   "/pwa/collections": PIUTANG_TIM,
   "/pwa/collections/[receivableId]": PIUTANG_TIM,
   "/pwa/pelunasan": PIUTANG_TIM,
@@ -60,10 +70,6 @@ const DIKECUALIKAN: Record<string, string> = {
 
   "/backoffice/spg-commission": KOMISI_SPG_TIM,
   "/backoffice/settings/spg-commission": KOMISI_SPG_TIM,
-
-  "/backoffice/vendor-payments": BAYAR_PEMASOK_TIM,
-  "/backoffice/vendor-payments/new": BAYAR_PEMASOK_TIM,
-  "/backoffice/vendor-payments/[id]": BAYAR_PEMASOK_TIM,
 };
 
 function halaman(dir: string, rute: string[] = []): string[] {

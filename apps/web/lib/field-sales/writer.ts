@@ -22,7 +22,7 @@ import { sentItemIds } from "./queries";
 import { openKonsiQtyByKey } from "./konsi-open-qty";
 import { isStockableVariantKey } from "@/lib/items/variants";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
-import { nilaiKredit } from "@/lib/salesman/kredit";
+import { bacaAturanKredit, batasKreditBerlaku, KUNCI_ATURAN_KREDIT, nilaiKredit, type AturanKredit, type BatasToko } from "@/lib/salesman/kredit";
 import { betulkanHasilKunjunganDiTx } from "@/lib/salesman/transaksi-kunjungan";
 import { kabariPengguna, type Kabar } from "@/lib/notifications/kabar-pengguna";
 import { muatKreditToko } from "./kredit-toko";
@@ -238,7 +238,7 @@ export async function createFieldSalesOrder(input: {
 
     const store = await tx.store.findUniqueOrThrow({
       where: { id: input.storeId },
-      select: { termsType: true, markupPercent: true, priceDiscountPercent: true, creditLimit: true },
+      select: { termsType: true, markupPercent: true, priceDiscountPercent: true, creditLimit: true, maxOpenInvoices: true, noCreditLimit: true },
     });
     const isKonsi = store.termsType === "KONSI";
     const markup = store.markupPercent === null ? null : Number(store.markupPercent);
@@ -400,16 +400,29 @@ export async function createFieldSalesOrder(input: {
       /*
        * Kredit, dua lapis. Dasarnya batas nilai toko: eksposur piutang toko sekarang
        * (`computeStoreCreditExposure`) ditambah total bersih pesanan ini dibandingkan dengan
-       * `Store.creditLimit`; lewat batas → `creditHoldAtCreate`, dan persetujuannya butuh
+       * batas yang berlaku; lewat batas → `creditHoldAtCreate`, dan persetujuannya butuh
        * alasan override (`enforceApproveCreditLimit`). Di atasnya mode kredit pemilik
        * (PERINGATAN/TAHAN/BLOKIR) dengan batas faktur terbuka dan janji bayar: BLOKIR menolak
        * pesanan di sini, TAHAN menandai `kreditDitahan` sehingga penyetuju wajib menyatakan
        * sudah memeriksa tagihan.
+       *
+       * Kedua lapis membaca batas dari baris toko di transaksi ini lewat SATU pemutus
+       * (`batasKreditBerlaku`): kolom kosong ikut bawaan Pengaturan → Salesman, "Tanpa
+       * batas kredit" membebaskan batas nilai dan batas faktur. Aturannya dari bacaan kredit
+       * sebelum transaksi; kalau bacaan itu tidak ada (toko baru saja menjadi PUTUS),
+       * dibaca di sini.
        */
       creditHold = false;
       let creditExposureAtCreate: number | null = null;
       let creditLimitAtCreate: number | null = null;
-      const creditLimit = store.creditLimit === null ? null : Number(store.creditLimit);
+      const aturanKredit = kredit?.aturan ?? (await bacaAturanKreditTx(tx));
+      const batasToko: BatasToko = {
+        creditLimit: store.creditLimit === null ? null : Number(store.creditLimit),
+        maxOpenInvoices: store.maxOpenInvoices,
+        noCreditLimit: store.noCreditLimit,
+        termsType: "PUTUS",
+      };
+      const creditLimit = batasKreditBerlaku(batasToko, aturanKredit).nilai.nilai;
       if (creditLimit !== null) {
         const exposure = await computeStoreCreditExposure(tx, input.storeId);
         creditHold = exposure.total + netTotal > creditLimit;
@@ -421,7 +434,7 @@ export async function createFieldSalesOrder(input: {
       // yang dilihat salesman di layar tinjau. BLOKIR melempar: seluruh transaksi
       // (nomor dokumen, reservasi stok) ikut batal, tidak ada pesanan yang tersisa.
       const putusan = kredit
-        ? putuskanKreditPesanan(kredit.keadaan ? nilaiKredit(kredit.keadaan, kredit.aturan, kredit.batas, netTotal) : null, kredit.aturan.mode)
+        ? putuskanKreditPesanan(kredit.keadaan ? nilaiKredit(kredit.keadaan, aturanKredit, batasToko, netTotal) : null, aturanKredit.mode)
         : null;
       if (putusan?.blokir) throw new KreditDiblokirError(putusan.alasan);
       kreditDitahan = putusan?.ditahan ?? false;
@@ -600,9 +613,19 @@ type CreditOverrideStamp = {
   creditOverrideAt: Date;
 };
 
+/** Aturan kredit pemilik dengan klien transaksi; belum pernah disimpan → bawaan pabrik (tanpa batas). */
+async function bacaAturanKreditTx(tx: Prisma.TransactionClient): Promise<AturanKredit> {
+  const row = await tx.systemSetting.findUnique({ where: { key: KUNCI_ATURAN_KREDIT }, select: { value: true } });
+  return bacaAturanKredit(row?.value);
+}
+
 /**
  * The approve-time credit gate both order types share, run inside the approver's serializable
- * transaction. A store with no credit limit (`null`) is not gated. Otherwise the store's live
+ * transaction. The limit is the one `batasKreditBerlaku` resolves — the same resolver the create
+ * flag and Max's warn/hold/block layer read — so an empty PUTUS limit follows the Settings →
+ * Salesman default, and a store ticked "Tanpa batas kredit" is never gated. A store whose limit
+ * resolves to none (ticked, empty with an empty default, or a konsi store with an empty limit —
+ * `BAWAAN_BERLAKU_UNTUK_KONSI`) is not gated. Otherwise the store's live
  * `computeStoreCreditExposure` plus `orderTotal` is compared against the limit: a PUTUS approve
  * passes its final order total, a KONSI approve passes 0, because consigned goods are not owed
  * until a sell-through report invoices them. Over the limit with no override reason it THROWS
@@ -615,14 +638,23 @@ async function enforceApproveCreditLimit(
   input: {
     orderId: string;
     storeId: string;
-    creditLimit: Prisma.Decimal | null;
+    /** The store's own figures as stored; the resolver decides what an empty one means. */
+    store: { creditLimit: Prisma.Decimal | null; noCreditLimit: boolean };
+    orderType: "PUTUS" | "KONSI";
     orderTotal: number;
     approvedById: string;
     creditOverrideReason?: string;
   },
 ): Promise<CreditOverrideStamp | null> {
-  if (input.creditLimit === null) return null;
-  const creditLimit = Number(input.creditLimit);
+  const creditLimit = batasKreditBerlaku(
+    {
+      creditLimit: input.store.creditLimit === null ? null : Number(input.store.creditLimit),
+      noCreditLimit: input.store.noCreditLimit,
+      termsType: input.orderType,
+    },
+    await bacaAturanKreditTx(tx),
+  ).nilai.nilai;
+  if (creditLimit === null) return null;
   const exposure = await computeStoreCreditExposure(tx, input.storeId);
   if (exposure.total + input.orderTotal > creditLimit) {
     const reason = input.creditOverrideReason?.trim();
@@ -671,7 +703,7 @@ export async function approveFieldSalesOrder(input: {
     const order = await tx.fieldSalesOrder.findUnique({
       where: { id: input.orderId },
       include: {
-        store: { select: { markupPercent: true, priceDiscountPercent: true, creditLimit: true, name: true } },
+        store: { select: { markupPercent: true, priceDiscountPercent: true, creditLimit: true, noCreditLimit: true, name: true } },
         lines: { include: { item: { select: { sku: true, sellingPrice: true, category: { select: { name: true } } } } } },
       },
     });
@@ -860,7 +892,8 @@ export async function approveFieldSalesOrder(input: {
     const creditOverride = await enforceApproveCreditLimit(tx, {
       orderId: order.id,
       storeId: order.storeId,
-      creditLimit: order.store.creditLimit,
+      store: order.store,
+      orderType: "PUTUS",
       orderTotal: total,
       approvedById: input.approvedById,
       creditOverrideReason: input.creditOverrideReason,
@@ -960,7 +993,7 @@ export async function approveKonsiOrderInTx(
       id: true,
       orderNo: true,
       storeId: true,
-      store: { select: { markupPercent: true, priceDiscountPercent: true, creditLimit: true } },
+      store: { select: { markupPercent: true, priceDiscountPercent: true, creditLimit: true, noCreditLimit: true } },
     },
   });
 
@@ -974,7 +1007,8 @@ export async function approveKonsiOrderInTx(
   const creditOverride = await enforceApproveCreditLimit(tx, {
     orderId: order.id,
     storeId: order.storeId,
-    creditLimit: order.store.creditLimit,
+    store: order.store,
+    orderType: "KONSI",
     orderTotal: 0,
     approvedById: input.approvedById,
     creditOverrideReason: input.creditOverrideReason,

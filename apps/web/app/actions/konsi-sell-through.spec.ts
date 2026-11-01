@@ -47,7 +47,8 @@ const d = isProd ? describe.skip : describe;
 /* Every case drives several real serializable writers end to end, well past vitest's 5s default. */
 const SLOW = 60_000;
 
-const MAPPED_ROLES: PostingRole[] = ["AR_CONSIGNMENT", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_VARIANCE"];
+/* COGS, shrinkage and surplus move INVENTORY_CONSIGNMENT (the store's goods), never the warehouse's INVENTORY. */
+const MAPPED_ROLES: PostingRole[] = ["AR_CONSIGNMENT", "SALES_REVENUE", "COGS", "INVENTORY_CONSIGNMENT", "INVENTORY_VARIANCE"];
 
 d("konsi sell-through actions (test bed only)", () => {
   const fx = createSellThroughFixtures();
@@ -57,7 +58,7 @@ d("konsi sell-through actions (test bed only)", () => {
   let arId = "";
   let salesRevenueId = "";
   let cogsId = "";
-  let inventoryId = "";
+  let consignmentId = "";
   let inventoryVarianceId = "";
   let reportIds: string[] = [];
 
@@ -70,7 +71,7 @@ d("konsi sell-through actions (test bed only)", () => {
     arId = "";
     salesRevenueId = "";
     cogsId = "";
-    inventoryId = "";
+    consignmentId = "";
     inventoryVarianceId = "";
     await fx.beforeEach();
     mappingSnapshot = await snapshotMappings(MAPPED_ROLES);
@@ -80,7 +81,7 @@ d("konsi sell-through actions (test bed only)", () => {
     arId = await mk("1", "ASET");
     salesRevenueId = await mk("2", "PENDAPATAN");
     cogsId = await mk("3", "HPP");
-    inventoryId = await mk("4", "ASET");
+    consignmentId = await mk("4", "ASET");
     inventoryVarianceId = await mk("5", "BEBAN");
 
     const mapRole = (role: PostingRole, chartAccountId: string) =>
@@ -88,7 +89,7 @@ d("konsi sell-through actions (test bed only)", () => {
     await mapRole("AR_CONSIGNMENT", arId);
     await mapRole("SALES_REVENUE", salesRevenueId);
     await mapRole("COGS", cogsId);
-    await mapRole("INVENTORY", inventoryId);
+    await mapRole("INVENTORY_CONSIGNMENT", consignmentId);
     await mapRole("INVENTORY_VARIANCE", inventoryVarianceId);
 
     mockAuth.mockReset();
@@ -124,7 +125,7 @@ d("konsi sell-through actions (test bed only)", () => {
       await prisma.journalLine.deleteMany({ where: { journal: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } } });
       await prisma.journal.deleteMany({ where: { sourceType: { startsWith: "KONSI_SELLTHRU_" }, sourceId: { in: ids.map(seededId) } } });
       if (mappingSnapshot) await restoreMappings(mappingSnapshot);
-      const chartAccountIds = [arId, salesRevenueId, cogsId, inventoryId, inventoryVarianceId].map((id) => seededId(id));
+      const chartAccountIds = [arId, salesRevenueId, cogsId, consignmentId, inventoryVarianceId].map((id) => seededId(id));
       await prisma.chartAccount.deleteMany({ where: { id: { in: chartAccountIds.map(seededId) } } });
     } finally {
       await fx.afterEach();

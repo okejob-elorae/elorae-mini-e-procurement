@@ -542,7 +542,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
   });
 
   describe("approveAction", () => {
-    it("returns FORBIDDEN without stores:manage and never calls the writer", async () => {
+    it("returns FORBIDDEN without store_stocktakes:approve and never calls the writer", async () => {
       mockHasPermission.mockReturnValue(false);
       const res = await approveAction("st1");
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
@@ -550,10 +550,17 @@ describe("store stocktake actions (unit — writers mocked)", () => {
     });
 
     it("pins the permission it checks", async () => {
-      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "stores:manage");
+      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "store_stocktakes:approve");
       const res = await approveAction("st1");
       expect(res.ok).toBe(true);
-      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "stores:manage");
+      expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "store_stocktakes:approve");
+    });
+
+    it("refuses a store manager without the approval code (owner, 2026-11-01: approvals are admin-only by default)", async () => {
+      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "stores:manage");
+      const res = await approveAction("st1");
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockApprove).not.toHaveBeenCalled();
     });
 
     it("returns FORBIDDEN when auth() resolves to a session with no user id", async () => {
@@ -674,7 +681,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
   });
 
   describe("cancelAction", () => {
-    it("returns FORBIDDEN without stores:manage and never calls the writer", async () => {
+    it("returns FORBIDDEN without stores:manage or store_stocktakes:approve and never calls the writer", async () => {
       mockHasPermission.mockReturnValue(false);
       const res = await cancelAction({ stocktakeId: "st1", reason: "lost sack" });
       expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
@@ -686,6 +693,30 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       const res = await cancelAction({ stocktakeId: "st1", reason: "lost sack" });
       expect(res.ok).toBe(true);
       expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "stores:manage");
+    });
+
+    /*
+     * Cancelling a count that is waiting for approval discards the SPG's count before the approver
+     * sees it — the reject half of the approval (owner, 2026-11-01), so it takes the approval code.
+     */
+    it("refuses a store manager cancelling a count awaiting approval, without calling the writer", async () => {
+      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "stores:manage");
+      mockFindStocktakeUnique.mockResolvedValue({ storeId: "s1", status: "PENDING_VERIFICATION" });
+      const res = await cancelAction({ stocktakeId: "st1", reason: "lost sack" });
+      expect(res).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockCancel).not.toHaveBeenCalled();
+    });
+
+    it("lets the approver cancel a count awaiting approval, but not a draft", async () => {
+      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "store_stocktakes:approve");
+      mockFindStocktakeUnique.mockResolvedValue({ storeId: "s1", status: "PENDING_VERIFICATION" });
+      expect(await cancelAction({ stocktakeId: "st1", reason: "lost sack" })).toEqual({ ok: true, id: "st1" });
+      expect(mockCancel).toHaveBeenCalledTimes(1);
+
+      mockCancel.mockClear();
+      mockFindStocktakeUnique.mockResolvedValue({ storeId: "s1", status: "DRAFT" });
+      expect(await cancelAction({ stocktakeId: "st1", reason: "lost sack" })).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockCancel).not.toHaveBeenCalled();
     });
 
     it("returns INVALID_REQUEST for a non-string reason without calling the writer", async () => {

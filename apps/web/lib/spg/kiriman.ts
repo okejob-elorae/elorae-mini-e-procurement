@@ -1,11 +1,18 @@
 import { prisma, type Prisma } from "@elorae/db";
+import { bacaPesananKonsiLama } from "./antaran-queries";
 
 /**
- * Kiriman barang ke toko, dari tiga sumber, dalam satu bentuk.
+ * Kiriman barang ke toko, dari beberapa sumber, dalam satu bentuk.
  *
  * - PUTUS_DELIVERY  : pengiriman pesanan putus (`FieldSalesDelivery`).
- * - KONSI_ORDER     : pesanan konsinyasi yang disetujui — transfernya tercatat
- *                     saat disetujui (`FieldSalesOrder` KONSI APPROVED).
+ * - KONSI_TRANSFER  : SATU ANTARAN pesanan konsinyasi — `KonsiTransfer` yang
+ *                     dibuat saat pengiriman (`DeliveryShipment`) selesai, sebesar
+ *                     yang diserahkan di antaran itu. Pesanan 100 pcs yang datang
+ *                     60 lalu 40 = dua kiriman, diterima sendiri-sendiri.
+ * - KONSI_ORDER     : HANYA pesanan konsinyasi LAMA, yang stoknya keluar saat
+ *                     disetujui tanpa pengiriman (`bacaPesananKonsiLama`) — tetap
+ *                     diterima sekali per pesanan. Pesanan aturan baru tidak
+ *                     pernah terbuka di sini: persetujuan hanya mencadangkan.
  * - KONSI_SHIPMENT  : kiriman modul konsinyasi (`ConsignmentShipment`); barisnya
  *                     boleh tanpa `itemId` (diketik nama saja).
  * - MUTASI          : mutasi dari toko lain (`StoreTransfer`) yang sudah DIKIRIM
@@ -14,11 +21,13 @@ import { prisma, type Prisma } from "@elorae/db";
  *                     (DIKEMBALIKAN) — barangnya kembali dan diterima toko asal.
  *
  * Jumlah yang DIKIRIM selalu dibaca dari dokumen sumbernya di server — layar
- * SPG hanya mengirim jumlah yang DITERIMA.
+ * SPG hanya mengirim jumlah yang DITERIMA. Untuk antaran, "dikirim" adalah yang
+ * diserahkan di antaran itu, bukan jumlah pesanan: sisa pesanan yang belum
+ * dikirim gudang tidak pernah menjadi kekurangan.
  */
 
-export type JenisKiriman = "PUTUS_DELIVERY" | "KONSI_ORDER" | "KONSI_SHIPMENT" | "MUTASI" | "MUTASI_KEMBALI";
-export const JENIS_KIRIMAN: JenisKiriman[] = ["PUTUS_DELIVERY", "KONSI_ORDER", "KONSI_SHIPMENT", "MUTASI", "MUTASI_KEMBALI"];
+export type JenisKiriman = "PUTUS_DELIVERY" | "KONSI_TRANSFER" | "KONSI_ORDER" | "KONSI_SHIPMENT" | "MUTASI" | "MUTASI_KEMBALI";
+export const JENIS_KIRIMAN: JenisKiriman[] = ["PUTUS_DELIVERY", "KONSI_TRANSFER", "KONSI_ORDER", "KONSI_SHIPMENT", "MUTASI", "MUTASI_KEMBALI"];
 
 /** Kiriman dari mutasi antar toko: stoknya bergerak sebagai MUTASI_MASUK, bukan TERIMA. */
 export function dariMutasi(jenis: JenisKiriman): jenis is "MUTASI" | "MUTASI_KEMBALI" {
@@ -40,6 +49,8 @@ export type Kiriman = {
   docNo: string;
   tanggal: Date;
   lines: BarisKiriman[];
+  /** Nomor pesanan asal (pengiriman putus, antaran konsinyasi); hanya untuk ditampilkan. */
+  pesananNo?: string | null;
 };
 
 type Klien = Prisma.TransactionClient | typeof prisma;
@@ -58,6 +69,7 @@ export async function muatKiriman(
         id: true,
         docNo: true,
         deliveredAt: true,
+        order: { select: { orderNo: true } },
         lines: { select: { id: true, itemId: true, variantSku: true, productName: true, qty: true } },
       },
     });
@@ -67,10 +79,40 @@ export async function muatKiriman(
       sourceId: d.id,
       docNo: d.docNo,
       tanggal: d.deliveredAt,
+      pesananNo: d.order.orderNo,
       lines: d.lines.map((l) => ({ lineId: l.id, itemId: l.itemId, variantSku: l.variantSku ?? "", productName: l.productName, qty: l.qty })),
     };
   }
+  if (sourceType === "KONSI_TRANSFER") {
+    // Hanya antaran yang lahir dari pengiriman. Transfer lama tanpa pengiriman
+    // (stok keluar saat disetujui) diterima lewat pesanannya (`KONSI_ORDER`).
+    const t = await klien.konsiTransfer.findFirst({
+      where: { id: sourceId, storeId, shipmentId: { not: null } },
+      select: {
+        id: true,
+        docNo: true,
+        createdAt: true,
+        order: { select: { orderNo: true } },
+        shipment: { select: { docNo: true, deliveredAt: true } },
+        lines: { select: { id: true, itemId: true, variantSku: true, productName: true, qty: true } },
+      },
+    });
+    if (!t) return null;
+    return {
+      sourceType,
+      sourceId: t.id,
+      // Nomor pengiriman: itu yang tertulis di surat jalan yang dibawa pengantar.
+      docNo: t.shipment?.docNo ?? t.docNo,
+      tanggal: t.shipment?.deliveredAt ?? t.createdAt,
+      pesananNo: t.order.orderNo,
+      lines: t.lines
+        .map((l) => ({ lineId: l.id, itemId: l.itemId, variantSku: l.variantSku ?? "", productName: l.productName, qty: Math.round(Number(l.qty)) }))
+        .filter((l) => l.qty > 0),
+    };
+  }
   if (sourceType === "KONSI_ORDER") {
+    // Pesanan aturan baru tidak pernah diterima per pesanan — antarannya yang diterima.
+    if (!(await bacaPesananKonsiLama(klien, [sourceId])).lama.has(sourceId)) return null;
     const o = await klien.fieldSalesOrder.findFirst({
       where: { id: sourceId, storeId, orderType: "KONSI", status: "APPROVED" },
       select: {
@@ -156,11 +198,17 @@ export async function kirimanMenunggu(storeId: string, sekarang = new Date()): P
   });
   const sejak = pertama?.createdAt ?? new Date(sekarang.getTime() - HARI_KIRIMAN_AWAL * HARI_MS);
 
-  const [putus, konsi, kirim, diterima, mutasi] = await Promise.all([
+  const [putus, antaran, konsiCalon, kirim, diterima, mutasi] = await Promise.all([
     prisma.fieldSalesDelivery.findMany({
       where: { order: { storeId }, deliveredAt: { gte: sejak } },
       select: { id: true },
     }),
+    // Antaran konsinyasi: satu per pengiriman yang selesai, sebesar yang diserahkan.
+    prisma.konsiTransfer.findMany({
+      where: { storeId, shipmentId: { not: null }, createdAt: { gte: sejak } },
+      select: { id: true },
+    }),
+    // Calon pesanan konsi LAMA — disaring `bacaPesananKonsiLama` di bawah.
     prisma.fieldSalesOrder.findMany({
       where: { storeId, orderType: "KONSI", status: "APPROVED", approvedAt: { gte: sejak } },
       select: { id: true },
@@ -183,10 +231,12 @@ export async function kirimanMenunggu(storeId: string, sekarang = new Date()): P
     }),
   ]);
 
+  const konsiLama = (await bacaPesananKonsiLama(prisma, konsiCalon.map((o) => o.id))).lama;
   const sudah = new Set(diterima.map((r) => `${r.sourceType}:${r.sourceId}`));
   const calon: { sourceType: JenisKiriman; sourceId: string }[] = [
     ...putus.map((d) => ({ sourceType: "PUTUS_DELIVERY" as const, sourceId: d.id })),
-    ...konsi.map((o) => ({ sourceType: "KONSI_ORDER" as const, sourceId: o.id })),
+    ...antaran.map((t) => ({ sourceType: "KONSI_TRANSFER" as const, sourceId: t.id })),
+    ...konsiCalon.filter((o) => konsiLama.has(o.id)).map((o) => ({ sourceType: "KONSI_ORDER" as const, sourceId: o.id })),
     ...kirim.map((k) => ({ sourceType: "KONSI_SHIPMENT" as const, sourceId: k.id })),
     ...mutasi.map((m) => ({ sourceType: m.toStoreId === storeId ? ("MUTASI" as const) : ("MUTASI_KEMBALI" as const), sourceId: m.id })),
   ].filter((c) => !sudah.has(`${c.sourceType}:${c.sourceId}`));

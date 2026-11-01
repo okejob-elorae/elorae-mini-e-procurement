@@ -28,6 +28,7 @@ import { TombolBantuan } from "@/components/bantuan/TombolBantuan";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Collapsible,
   CollapsibleContent,
@@ -105,6 +106,7 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
    * tersimpan apa adanya.
    */
   const [kreditTerbaca, setKreditTerbaca] = useState(mode === "create" || initial.maxOpenInvoices !== undefined);
+  const tanpaBatasKredit = form.noCreditLimit === true;
 
   useEffect(() => {
     if (kreditTerbaca || !storeId) return;
@@ -112,7 +114,12 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
     void bacaBatasKreditTokoAction(storeId).then((r) => {
       if (batal || !r.ok || !r.data) return;
       const batas = r.data;
-      setForm((prev) => ({ ...prev, creditLimit: batas.creditLimit, maxOpenInvoices: batas.maxOpenInvoices }));
+      setForm((prev) => ({
+        ...prev,
+        creditLimit: batas.creditLimit,
+        maxOpenInvoices: batas.maxOpenInvoices,
+        noCreditLimit: batas.noCreditLimit,
+      }));
       setKreditTerbaca(true);
     });
     return () => {
@@ -785,9 +792,33 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
           ) : null}
 
           {/* Batas kredit berlaku untuk kedua sistem: transfer konsinyasi juga diperiksa terhadap
-              piutang toko yang sudah ada saat disetujui. Batas faktur terbuka hanya untuk toko PUTUS. */}
+              piutang toko yang sudah ada saat disetujui. Batas faktur terbuka hanya untuk toko PUTUS.
+              Kolom kosong ikut bawaan Pengaturan → Salesman (toko putus); "Tanpa batas kredit"
+              mengosongkan dan mengunci keduanya — artinya diputuskan `batasKreditBerlaku`. */}
           <div className="space-y-3 rounded-lg border p-3">
             <p className="text-sm font-medium">{tKredit("judul")}</p>
+            <div className="flex items-start gap-3">
+              <Checkbox
+                id="noCreditLimit"
+                className="mt-0.5"
+                disabled={pending || readOnly || !kreditTerbaca}
+                checked={form.noCreditLimit === true}
+                onCheckedChange={(v) => {
+                  const tanpa = v === true;
+                  setForm((prev) => ({
+                    ...prev,
+                    noCreditLimit: tanpa,
+                    ...(tanpa ? { creditLimit: null, maxOpenInvoices: null } : {}),
+                  }));
+                }}
+              />
+              <div className="space-y-0.5">
+                <Label htmlFor="noCreditLimit" className="cursor-pointer">
+                  {t("noCreditLimit")}
+                </Label>
+                <p className="text-xs text-muted-foreground">{t("noCreditLimitHint")}</p>
+              </div>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="creditLimit">{t("creditLimit")}</Label>
@@ -800,20 +831,30 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                     type="text"
                     inputMode="numeric"
                     className="pl-9 text-right tabular-nums"
-                    disabled={pending || readOnly || !kreditTerbaca}
+                    disabled={pending || readOnly || !kreditTerbaca || tanpaBatasKredit}
                     value={
                       form.creditLimit === null || form.creditLimit === undefined
                         ? ""
                         : kelompokRibuan.format(form.creditLimit)
                     }
-                    placeholder={kreditTerbaca ? t("creditLimitPlaceholder") : tKredit("memuat")}
+                    placeholder={
+                      !kreditTerbaca
+                        ? tKredit("memuat")
+                        : tanpaBatasKredit
+                          ? t("noCreditLimitPlaceholder")
+                          : form.termsType === "KONSI"
+                            ? t("creditLimitPlaceholderKonsi")
+                            : t("creditLimitPlaceholder")
+                    }
                     onChange={(e) => {
                       const digit = angkaSaja(e.target.value).slice(0, 13);
                       update("creditLimit", digit === "" ? null : Number(digit));
                     }}
                   />
                 </div>
-                <p className="text-xs text-muted-foreground">{t("creditLimitHint")}</p>
+                <p className="text-xs text-muted-foreground">
+                  {form.termsType === "KONSI" ? t("creditLimitHintKonsi") : t("creditLimitHint")}
+                </p>
               </div>
               {form.termsType === "PUTUS" ? (
                 <div className="space-y-1.5">
@@ -823,9 +864,11 @@ export function StoreForm({ mode, storeId, readOnly = false, hideHeader = false,
                     type="text"
                     inputMode="numeric"
                     className="tabular-nums"
-                    disabled={pending || readOnly || !kreditTerbaca}
+                    disabled={pending || readOnly || !kreditTerbaca || tanpaBatasKredit}
                     value={form.maxOpenInvoices === null || form.maxOpenInvoices === undefined ? "" : String(form.maxOpenInvoices)}
-                    placeholder={kreditTerbaca ? tKredit("kosong") : tKredit("memuat")}
+                    placeholder={
+                      !kreditTerbaca ? tKredit("memuat") : tanpaBatasKredit ? t("noCreditLimitPlaceholder") : tKredit("kosong")
+                    }
                     onChange={(e) => {
                       const digit = angkaSaja(e.target.value).slice(0, 5);
                       update("maxOpenInvoices", digit === "" ? null : Number(digit));

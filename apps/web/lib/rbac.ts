@@ -140,7 +140,9 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/settings/uom': 'settings_uom:view',
   '/backoffice/settings/security': 'settings_security:view',
   '/backoffice/settings/rbac': 'settings_rbac:view',
-  '/backoffice/profile-accounts': 'settings_rbac:view',
+  // `/backoffice/profile-accounts` sengaja TIDAK dipetakan lagi: Akun Profil
+  // ditutup (keputusan pemilik 2026-11-01) dan setiap rutenya kini hanya
+  // meneruskan ke Pengaturan → Pengguna / Peran & izin, yang memagari dirinya.
   '/backoffice/settings/users': 'settings_security:manage',
   '/backoffice/jubelio/admin': 'jubelio_admin:view',
   '/backoffice/jubelio/settings': 'settings_security:view',
@@ -237,9 +239,9 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/settings/tax',
   '/backoffice/settings/uom',
   '/backoffice/settings/security',
-  // Profile Accounts / legacy RBAC are ADMIN-gated in the page — omit from
-  // first-allowed so a non-ADMIN with settings_rbac:view cannot loop
-  // /backoffice → settings/rbac → profile-accounts → /backoffice.
+  // Peran & izin is ADMIN-gated in the page — omit from first-allowed so a
+  // non-ADMIN with settings_rbac:view cannot loop /backoffice → settings/rbac
+  // → /backoffice.
 ];
 
 /**
@@ -306,6 +308,10 @@ export const PERMISSIONS = {
   // Receivables & collections
   RECEIVABLES_VIEW: 'receivables:view',
   RECEIVABLES_MANAGE: 'receivables:manage',
+  // Who bears a return shortfall or lost SPG goods — a manager decision
+  // (owner, 2026-11-01), so it is split out of receivables:manage and held by
+  // ADMIN only until the owner grants it in Peran & izin.
+  RECEIVABLES_DECIDE_BEARER: "receivables:decide_bearer",
   // Creative marketing — content calendar, KOL briefs, KOL master.
   // Held apart from sales: the people who plan an Instagram post are not the
   // people who approve a field-sales order, and neither should inherit the
@@ -317,6 +323,12 @@ export const PERMISSIONS = {
   // which carries photographed store documents.
   CONSIGNMENT_VIEW: 'consignment:view',
   CONSIGNMENT_MANAGE: 'consignment:manage',
+  // The cycle's three numbers belong to three people (brief): the sales-note
+  // number to the sales admin, the tax-invoice number to the tax admin, and
+  // locking the official figures to the manager. One code each.
+  CONSIGNMENT_NOTE_NUMBER: "consignment:note_number",
+  CONSIGNMENT_TAX_NUMBER: "consignment:tax_number",
+  CONSIGNMENT_LOCK: "consignment:lock",
   // Field Sales Orders
   FIELD_SALES_ORDERS_VIEW: 'field_sales_orders:view',
   FIELD_SALES_ORDERS_APPROVE: 'field_sales_orders:approve',
@@ -390,6 +402,11 @@ export const PERMISSIONS = {
   // Stores (Field Sales — SFA)
   STORES_VIEW: "stores:view",
   STORES_MANAGE: "stores:manage",
+  // Store-level approvals split out of stores:manage / field_sales_orders:approve
+  // (owner, 2026-11-01: approvals are admin-only by default, grantable).
+  STORE_STOCKTAKES_APPROVE: "store_stocktakes:approve",
+  STORE_TRANSFERS_APPROVE: "store_transfers:approve",
+  STORE_TRANSFERS_DECIDE_SHORTFALL: "store_transfers:decide_shortfall",
   // Promos
   PROMOS_VIEW: "promos:view",
   PROMOS_MANAGE: "promos:manage",
@@ -400,6 +417,8 @@ export const PERMISSIONS = {
   SPG_SALES_VIEW: "spg_sales:view",
   // SPG Commission (rates per item category)
   SPG_COMMISSION_MANAGE: "spg_commission:manage",
+  // Marking SPG pay & commission paid (consignment and putus stores).
+  SPG_COMMISSION_PAY: "spg_commission:pay",
   // Request Item (material requests -> PO)
   ITEM_REQUESTS_VIEW: "item_requests:view",
   ITEM_REQUESTS_MANAGE: "item_requests:manage",
@@ -425,6 +444,10 @@ export const PERMISSIONS = {
   FIELD_RETURNS_WRITEOFF: "field_returns:writeoff",
   // Finance — AR (Piutang) + Payments
   PAYMENTS_MANAGE: "payments:manage",
+  // Checking a store payment against the bank statement (BKM, giro clearing).
+  // Admin and finance (owner, 2026-10-29); the writer still refuses whoever
+  // reported or recorded the payment (PEMERIKSA_SAMA).
+  PAYMENTS_VERIFY: "payments:verify",
   // Finance — Collections
   COLLECTIONS_COLLECT: "collections:collect",
   COLLECTIONS_MANAGE: "collections:manage",

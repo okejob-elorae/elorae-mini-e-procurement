@@ -10,13 +10,19 @@ import type { KreditToko } from "./kredit-toko";
  * berat untuk diseed. Yang diuji di sini adalah apa yang dilakukan PENULIS
  * dengan hasil penilaian — menolak, menahan, mencatat, dan kiriman ulang.
  *
- * Batas kredit toko juga ditulis ke baris tokonya (`setel`), karena dasar
- * kreditnya — eksposur toko dibanding `Store.creditLimit` — dibaca penulis
- * langsung dari toko: lewat batas menandai `creditHoldAtCreate`, dan
- * persetujuannya butuh alasan override di mode apa pun, PERINGATAN juga.
+ * Batas kredit toko juga ditulis ke baris tokonya (`setel`), karena kedua lapis
+ * kredit membaca batasnya langsung dari toko lewat `batasKreditBerlaku`: lewat
+ * batas menandai `creditHoldAtCreate`, dan persetujuannya butuh alasan override
+ * di mode apa pun, PERINGATAN juga. Gerbang persetujuan membaca aturan pemilik
+ * sendiri di transaksinya; bacaan itu (`bacaAturanKredit`) juga DITIRUKAN dengan
+ * aturan yang sama, supaya tes tidak bergantung pada `SystemSetting` bed uji.
  */
-const { mockMuat, mockKabar } = vi.hoisted(() => ({ mockMuat: vi.fn(), mockKabar: vi.fn() }));
+const { mockMuat, mockKabar, mockAturan } = vi.hoisted(() => ({ mockMuat: vi.fn(), mockKabar: vi.fn(), mockAturan: vi.fn() }));
 vi.mock("./kredit-toko", () => ({ muatKreditToko: mockMuat }));
+vi.mock("@/lib/salesman/kredit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/salesman/kredit")>()),
+  bacaAturanKredit: mockAturan,
+}));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi.fn() }));
 vi.mock("@/lib/notifications/kabar-pengguna", () => ({ kabariPengguna: mockKabar }));
 
@@ -29,9 +35,14 @@ const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 const bersih: KeadaanTagihan = { sisa: 0, fakturTerbuka: 0, lewatJanji: 0, fakturLewatJanji: 0 };
-const kredit = (aturan: Partial<AturanKredit>, keadaan: KeadaanTagihan | null, creditLimit: number | null = null): KreditToko => ({
+const kredit = (
+  aturan: Partial<AturanKredit>,
+  keadaan: KeadaanTagihan | null,
+  creditLimit: number | null = null,
+  noCreditLimit = false,
+): KreditToko => ({
   aturan: { ...ATURAN_KREDIT_BAWAAN, ...aturan },
-  batas: { creditLimit, maxOpenInvoices: null },
+  batas: { creditLimit, maxOpenInvoices: null, noCreditLimit },
   keadaan,
   baris: [],
 });
@@ -54,6 +65,8 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
     visitId = "";
     orderIds = [];
     mockMuat.mockReset();
+    mockAturan.mockReset();
+    mockAturan.mockReturnValue(ATURAN_KREDIT_BAWAAN);
     const uom = await prisma.uOM.create({ data: { code: `U-${sku}`, nameId: "pcs", nameEn: "pcs" } });
     uomId = uom.id;
     const item = await prisma.item.create({
@@ -101,7 +114,11 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
   /** Bacaan kredit tiruan, dan batas kredit yang sama di baris tokonya — keduanya dibaca penulis. */
   const setel = async (k: KreditToko | null) => {
     mockMuat.mockResolvedValue(k);
-    await prisma.store.update({ where: { id: storeId }, data: { creditLimit: k?.batas.creditLimit ?? null } });
+    mockAturan.mockReturnValue(k?.aturan ?? ATURAN_KREDIT_BAWAAN);
+    await prisma.store.update({
+      where: { id: storeId },
+      data: { creditLimit: k?.batas.creditLimit ?? null, noCreditLimit: k?.batas.noCreditLimit ?? false },
+    });
   };
 
   it("BLOKIR menolak dan tidak meninggalkan pesanan maupun reservasi", async () => {
@@ -215,6 +232,60 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
 
     const ulang = await buat(kunci);
     expect(ulang).toMatchObject({ orderId: pertama.orderId, orderNo: pertama.orderNo, creditHold: true, kreditDitahan: false });
+  });
+
+  it("batas toko kosong ikut bawaan Pengaturan — di kedua lapis, saat dibuat dan saat disetujui", async () => {
+    await setel(kredit({ mode: "PERINGATAN", batasNilai: 100_000 }, bersih, null));
+    const res = await buat();
+    orderIds.push(res.orderId);
+    expect(res.creditHold).toBe(true);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+    expect(Number(order.creditLimitAtCreate)).toBe(100_000);
+    expect(order.kreditCatatan?.replace(/ /g, " ")).toBe(
+      "Saat dibuat: sisa Rp 210.000 termasuk pesanan ini, dari batas Rp 100.000",
+    );
+
+    const err = await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CreditLimitExceededError);
+    expect((err as CreditLimitExceededError).creditLimit).toBe(100_000);
+
+    await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId, creditOverrideReason: "Toko langganan" });
+    const disetujui = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+    expect(disetujui.status).toBe("APPROVED");
+    expect(Number(disetujui.creditLimitAtApprove)).toBe(100_000);
+  });
+
+  it("bawaan Pengaturan kosong: batas toko kosong tetap tidak dibatasi (keadaan pabrik)", async () => {
+    await setel(kredit({ mode: "BLOKIR" }, { sisa: 99_000_000, fakturTerbuka: 40, lewatJanji: 0, fakturLewatJanji: 0 }, null));
+    const res = await buat();
+    orderIds.push(res.orderId);
+    expect(res.creditHold).toBe(false);
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });
+    expect(order.creditLimitAtCreate).toBeNull();
+    expect(order.kreditCatatan).toBeNull();
+    await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId });
+    expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } })).status).toBe("APPROVED");
+  });
+
+  it("Tanpa batas kredit: lolos batas nilai dan batas faktur di kedua lapis, tapi lewat janji tetap ditahan", async () => {
+    const ketat = { mode: "TAHAN" as const, batasNilai: 1, batasFaktur: 0 };
+    await setel(kredit(ketat, { sisa: 5_000_000, fakturTerbuka: 3, lewatJanji: 0, fakturLewatJanji: 0 }, 1, true));
+    const aman = await buat();
+    orderIds.push(aman.orderId);
+    expect(aman).toMatchObject({ creditHold: false, kreditDitahan: false });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: aman.orderId } });
+    expect(order.creditLimitAtCreate).toBeNull();
+    expect(order.kreditCatatan).toBeNull();
+    // Tanpa centang dan tanpa alasan: tidak ada batas yang digerbangkan.
+    await approveFieldSalesOrder({ orderId: aman.orderId, approvedById: salesmanId });
+    expect((await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: aman.orderId } })).status).toBe("APPROVED");
+
+    await setel(kredit(ketat, { sisa: 5_000_000, fakturTerbuka: 3, lewatJanji: 400_000, fakturLewatJanji: 1 }, 1, true));
+    const menunggak = await buat();
+    orderIds.push(menunggak.orderId);
+    expect(menunggak).toMatchObject({ creditHold: false, kreditDitahan: true });
+    const tertahan = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: menunggak.orderId } });
+    expect(tertahan.kreditCatatan?.replace(/ /g, " ")).toBe("Saat dibuat: tagihan lewat janji Rp 400.000 (1 faktur)");
   });
 
   it("toko konsinyasi (bacaan kredit null) tidak pernah dinilai", async () => {

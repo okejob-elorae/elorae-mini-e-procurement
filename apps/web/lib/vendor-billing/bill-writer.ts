@@ -5,9 +5,16 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import { billedQtyByPoItem, billedQtyByWoStep, PENDING_OWNER_DECISION, unbookedReceiptQtyByWo } from "./billable";
 import { postVendorBillJournal, postVendorBillReversalJournal } from "./bill-journal";
+import { stepsOverpaidByVoid } from "./void-guard";
 
-/** A refusal the user can act on; its message is shown as-is. */
-export class VendorBillError extends Error {}
+/** A refusal the user can act on; its message is shown as-is. `code` names the refusal for a caller that branches on it. */
+export class VendorBillError extends Error {
+  code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const EPS = 0.005;
@@ -43,9 +50,12 @@ export function journalRefusal(res: Extract<GenerateAutoJournalResult, { ok: fal
 const addDays = (d: Date, days: number) => new Date(d.getTime() + days * 86_400_000);
 
 /**
- * Saves a vendor bill against received PO items and WO steps of one supplier. The caps, the
- * supplier match and the paid-toggle exclusion are re-read inside the serializable transaction, so
- * two bills racing for the same remaining qty cannot both pass. A PO line posts nothing: the GRN
+ * Saves a vendor bill against received PO items and WO steps of one supplier. The caps and the
+ * supplier match are re-read inside the serializable transaction, so two bills racing for the same
+ * remaining qty cannot both pass. A PO already marked paid is billable: the bill only matches the
+ * vendor's invoice to its receipts, and it reads as paid from the payments that settled them
+ * (`supplier-paid.ts`) — Vendor Billing takes no payment of its own any more, so there is no second
+ * payment to guard against. A PO line posts nothing: the GRN
  * booked its payable. A step line posts nothing for pieces a finished-goods receipt booked; pieces
  * from receipts that booked none (`unbookedReceiptQtyByWo`) are booked here, in the same
  * transaction (see `bill-journal.ts`). Those pieces go to the step's live bills first come, first
@@ -91,7 +101,6 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
               select: {
                 supplierId: true,
                 status: true,
-                paidAt: true,
                 docNumber: true,
                 paymentTermsDays: true,
                 grns: { where: PENDING_OWNER_DECISION, select: { id: true } },
@@ -107,7 +116,6 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
           const where = `${it.item.nameId} (${it.po.docNumber})`;
           if (it.po.supplierId !== data.supplierId) throw new VendorBillError(`${where} bukan milik supplier ini`);
           if (it.po.status === "CANCELLED") throw new VendorBillError(`${it.po.docNumber} sudah dibatalkan`);
-          if (it.po.paidAt != null) throw new VendorBillError(`${it.po.docNumber}: PO sudah ditandai lunas lewat Pembayaran Pemasok.`);
           // A declined over-receive reverses its AP and received qty, which a PO line (no journal) cannot follow.
           if (it.po.grns.length > 0) {
             throw new VendorBillError(`${it.po.docNumber}: ada penerimaan lebih yang menunggu keputusan owner; tagih setelah disetujui atau ditolak.`);
@@ -198,7 +206,18 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
   );
 }
 
-/** Voids a bill with no live payment allocation and mirrors the journal it posted, if any. */
+/** Refusal code: voiding would leave a WO step paid above its payable (`stepsOverpaidByVoid`). */
+export const VOID_WOULD_OVERPAY = "VOID_WOULD_OVERPAY";
+
+/**
+ * Voids a bill and mirrors the journal it posted, if any. Refused while an old vendor payment is live
+ * on it (that payment is allocated to this bill), and when the bill booked old CMT itself and
+ * Supplier payments already paid its steps beyond what they would still owe without it
+ * (`stepsOverpaidByVoid`, read in this transaction): the reversal would leave AP debited below zero.
+ * Anything else voids even when Supplier payments paid its receipts — the bill only matched an
+ * invoice, voiding it moves no payable, and the payment then reads against the receipt's other bills,
+ * so a wrongly entered invoice can be voided and entered again.
+ */
 export async function voidVendorBill(billId: string, reason: string, userId: string) {
   const why = z.string().trim().min(1).max(500).parse(reason);
   return runSerializable(
@@ -210,7 +229,15 @@ export async function voidVendorBill(billId: string, reason: string, userId: str
       if (!bill) throw new VendorBillError("Tagihan tidak ditemukan");
       if (bill.status === "VOID") throw new VendorBillError(`${bill.docNumber} sudah dibatalkan`);
       if (bill.allocations.length > 0) {
-        throw new VendorBillError(`${bill.docNumber} sudah dibayar sebagian/penuh; batalkan pembayarannya dulu`);
+        throw new VendorBillError(`${bill.docNumber} masih punya pembayaran Vendor Billing yang berlaku; batalkan pembayarannya dulu`);
+      }
+      const overpaid = await stepsOverpaidByVoid(tx, billId);
+      if (overpaid.length > 0) {
+        throw new VendorBillError(
+          `${bill.docNumber} belum bisa dibatalkan: tagihan ini membukukan ongkos jahit lama di ${overpaid.map((s) => s.label).join(", ")}, ` +
+            "dan pembayaran pemasok atas langkah itu melebihi hutang yang tersisa tanpa tagihan ini. Batalkan pembayaran pemasoknya dulu.",
+          VOID_WOULD_OVERPAY
+        );
       }
       const flipped = await tx.vendorBill.updateMany({
         where: { id: billId, status: { not: "VOID" } },

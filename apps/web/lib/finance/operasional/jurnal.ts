@@ -22,6 +22,7 @@ import {
   barisGudangRusak,
   barisKomisi,
   barisPindahKonsi,
+  barisPindahKonsiPengiriman,
   barisPotongSales,
   barisReturKonsi,
   barisReturPemasok,
@@ -47,9 +48,11 @@ import { nilaiKeluarGerak } from "./nilai-rusak-queries";
  *
  * DUA BENTUK:
  * - SEKALI POSTING (`postSekali`): dokumen yang tidak berubah lagi sesudah
- *   sah (kiriman titipan, pesanan konsinyasi disetujui, pembayaran gaji/komisi,
- *   potongan beban sales, keputusan gudang rusak, penyesuaian stok manual,
- *   retur pemasok selesai, biaya perjalanan disetujui/dibayar).
+ *   sah (kiriman titipan, pindah barang konsinyasi per pengiriman, pesanan
+ *   konsinyasi lama yang stoknya pindah saat disetujui, retur lapangan toko
+ *   konsinyasi disetujui, pembayaran gaji/komisi, potongan beban sales,
+ *   keputusan gudang rusak, penyesuaian stok manual, retur pemasok selesai,
+ *   biaya perjalanan disetujui/dibayar).
  * - DISELARASKAN (`selaraskanJurnal`, generasi `<id>`, `<id>#2`, …): dokumen
  *   yang keadaannya bisa berubah sesudah dijurnal — siklus konsinyasi (kunci
  *   dibuka/dikunci ulang), gaji SPG konsinyasi per siklus, pembayaran toko
@@ -232,6 +235,20 @@ export function postJurnalKirimKonsi(shipmentId: string, postedById: string, cli
   });
 }
 
+/**
+ * Pesanan konsinyasi LAMA yang stoknya pindah saat disetujui, lewat penulis
+ * berkunci `konsi-transfer-line-<baris>` (`transferKonsiFieldSalesOrder`, kini
+ * tanpa pemanggil). Persetujuan sekarang hanya mencadangkan; stoknya pindah per
+ * pengiriman dan dijurnal `postJurnalPindahKonsi`.
+ *
+ * Kedua sumber tidak pernah menjurnal barang yang sama: yang ini hanya membaca
+ * penyesuaian stok BERKUNCI itu, yang tidak pernah ditulis `issueKonsiTransfer`
+ * (penyesuaiannya tanpa kunci) dan tidak pernah membuat `KonsiTransfer`; yang
+ * per pengiriman hanya membaca `KonsiTransferLine`. Satu baris pesanan pun tidak
+ * bisa lewat keduanya — `issueKonsiTransfer` menuntut cadangan RESERVED,
+ * sedangkan penulis lama hanya memindahkan baris TANPA cadangan dan menandainya
+ * dengan cadangan CONSUMED.
+ */
 export function postJurnalPesananKonsi(orderId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
   return postSekali(client, SUMBER_OPERASIONAL.PESANAN_KONSI, orderId, postedById, async () => {
     const o = await client.fieldSalesOrder.findUnique({
@@ -249,6 +266,43 @@ export function postJurnalPesananKonsi(orderId: string, postedById: string, clie
       tanggal: o.approvedAt,
       deskripsi: `Kiriman konsinyasi ${o.orderNo} ke ${o.store.name}`,
       baris: barisPindahKonsi({ storeId: o.storeId, keluar: adj.map((a) => ({ tipeBarang: a.item.type, nilai: nilaiPenyesuaian(a) })) }),
+    };
+  });
+}
+
+/**
+ * Barang pesanan konsinyasi pindah ke toko saat PENGIRIMAN SELESAI: satu
+ * `KonsiTransfer` per pengiriman (`issueKonsiTransfer`), jadi pesanan yang
+ * dikirim 60 lalu 40 dijurnal dua kali, masing-masing pada hari barangnya
+ * pindah (`createdAt` transfernya, ditulis di transaksi penyelesaiannya — sama
+ * dengan saat kartu stoknya bergerak).
+ *   DR INVENTORY_CONSIGNMENT / CR persediaan gudang (per tipe barang)
+ * Nilai = Σ qty × `unitCost` baris transfer (harga rata-rata gudang saat pindah),
+ * sama dengan nilai keluar kartu stok gudang utama dokumen itu. Transfer lama
+ * yang dibuat saat persetujuan (sebelum ada pengiriman) ikut dijurnal dengan
+ * cara yang sama; tanggalnya jatuh sebelum tanggal mulai buku besar.
+ */
+export function postJurnalPindahKonsi(transferId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
+  return postSekali(client, SUMBER_OPERASIONAL.PINDAH_KONSI, transferId, postedById, async () => {
+    const t = await client.konsiTransfer.findUnique({
+      where: { id: transferId },
+      select: {
+        docNo: true,
+        storeId: true,
+        createdAt: true,
+        store: { select: { name: true } },
+        order: { select: { orderNo: true } },
+        lines: { select: { qty: true, unitCost: true, item: { select: { type: true } } } },
+      },
+    });
+    if (!t) return null;
+    return {
+      tanggal: t.createdAt,
+      deskripsi: `Pindah barang konsinyasi ${t.docNo} (${t.order.orderNo}) ke ${t.store.name}`,
+      baris: barisPindahKonsiPengiriman({
+        storeId: t.storeId,
+        baris: t.lines.map((l) => ({ qty: angka(l.qty), unitCost: angka(l.unitCost), tipeBarang: l.item.type })),
+      }),
     };
   });
 }
@@ -286,6 +340,73 @@ export async function selaraskanJurnalReturKonsi(nriId: string, postedById: stri
       biayaKonsi: nilaiBiayaKonsi(items, petaBiaya(biaya)),
     });
     return { sasaran, bolehMulai: bolehMulai(mulai, b.tanggal), tanggal: b.tanggal, deskripsi };
+  });
+}
+
+/**
+ * Retur LAPANGAN (`FieldReturn`, versi tim) dari toko KONSINYASI yang sudah
+ * disetujui: barang kembali dari toko ke gudang utama. Barang konsinyasi
+ * didebit ke `INVENTORY_CONSIGNMENT` saat pengirimannya selesai, jadi barang
+ * yang kembali harus mengkreditnya lagi — tanpa jurnal ini akun itu hanya
+ * bertambah dan persediaan gudang kurang sebesar barang yang kembali.
+ *   DR persediaan gudang (barang layak, nilai masuk kartu stok gudang utama)
+ *   CR INVENTORY_CONSIGNMENT (yang keluar dari toko × biaya saat dikirim)
+ *   selisih → INVENTORY_VARIANCE (`barisReturKonsi`)
+ * Yang keluar dari toko = `creditedQty` setiap baris: angka yang sama yang
+ * dikurangkan penyetujuannya dari stok toko (retur asal kantor sebagian sudah
+ * saat diterima; jumlah bersihnya tetap `creditedQty`). Barang yang ditolak
+ * gudang (`RejectedGoodsLedger`, tanpa nilai) dan kekurangan yang ditanggung
+ * sales atau dihapus tidak masuk kartu stok, jadi biayanya jatuh ke selisih.
+ * Retur yang sudah disetujui tidak berubah lagi (koreksi hitungan hanya sebelum
+ * disetujui), jadi cukup sekali posting. Retur toko putus tidak dijurnal di sini.
+ * Syarat menolak/bernilai di bawah ditiru `cariReturLapanganKonsiTanpaJurnal`
+ * (`sapuan.ts`): ubah keduanya bersama.
+ */
+export function postJurnalReturLapanganKonsi(returnId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
+  return postSekali(client, SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI, returnId, postedById, async () => {
+    const r = await client.fieldReturn.findUnique({
+      where: { id: returnId },
+      select: {
+        docNo: true,
+        status: true,
+        approvedAt: true,
+        storeId: true,
+        store: { select: { name: true, termsType: true } },
+        lines: { select: { itemId: true, creditedQty: true, sellableQty: true } },
+      },
+    });
+    if (!r || r.status !== "APPROVED" || !r.approvedAt || r.store.termsType !== "KONSI") return null;
+    const masuk = await client.stockLedgerEntry.findMany({
+      where: { refType: "FieldReturn", refId: returnId, locationType: "MAIN" },
+      select: { itemId: true, totalCost: true },
+    });
+    // Barang layak yang masuk gudang tanpa nilai tercatat tidak ditebak nol.
+    const adaLayak = r.lines.some((l) => (l.sellableQty ?? 0) > 0);
+    if (masuk.some((m) => m.totalCost === null) || (adaLayak && masuk.length === 0)) {
+      return { tanggal: r.approvedAt, deskripsi: "", gagal: { code: "BIAYA_TIDAK_DIKETAHUI", detail: r.docNo } };
+    }
+    // Buku besar stok tidak berelasi ke Item: tipe barangnya dibaca terpisah.
+    const tipeBarang = new Map<string, string>();
+    const barangIds = [...new Set(masuk.map((m) => m.itemId))];
+    if (barangIds.length) {
+      for (const b of await client.item.findMany({ where: { id: { in: barangIds } }, select: { id: true, type: true } })) tipeBarang.set(b.id, b.type);
+    }
+    const keluar = r.lines.map((l) => ({ itemId: l.itemId, qty: l.creditedQty ?? 0 }));
+    const biaya = await biayaSatuanKonsi(
+      client,
+      keluar.flatMap((l) => (l.qty > 0 ? [l.itemId] : [])),
+      r.approvedAt,
+    );
+    return {
+      tanggal: r.approvedAt,
+      deskripsi: `Retur lapangan konsinyasi ${r.docNo} — ${r.store.name}`,
+      baris: barisReturKonsi({
+        storeId: r.storeId,
+        stokLayak: masuk.map((m) => ({ tipeBarang: tipeBarang.get(m.itemId), nilai: angka(m.totalCost) })),
+        rusak: 0,
+        biayaKonsi: nilaiBiayaKonsi(keluar, petaBiaya(biaya)),
+      }),
+    };
   });
 }
 
@@ -680,8 +801,12 @@ export function jurnalOperasional(sumber: SumberOperasional, id: string, postedB
       return postJurnalKirimKonsi(id, postedById);
     case SUMBER_OPERASIONAL.PESANAN_KONSI:
       return postJurnalPesananKonsi(id, postedById);
+    case SUMBER_OPERASIONAL.PINDAH_KONSI:
+      return postJurnalPindahKonsi(id, postedById);
     case SUMBER_OPERASIONAL.RETUR_KONSI:
       return selaraskanJurnalReturKonsi(id, postedById);
+    case SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI:
+      return postJurnalReturLapanganKonsi(id, postedById);
     case SUMBER_OPERASIONAL.SIKLUS_KONSI:
       return selaraskanJurnalSiklusKonsi(id, postedById);
     case SUMBER_OPERASIONAL.KOMISI_KONSI:

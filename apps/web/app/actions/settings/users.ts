@@ -15,6 +15,7 @@ import {
   type KodeAkunSistem,
   type KodeValidasi,
 } from "@/lib/users/validasi";
+import { peranLamaDari } from "@/lib/users/peran-lama";
 
 /**
  * Tambah dan ubah akun pengguna (sales, SPG, admin, …) dari Pengaturan.
@@ -26,6 +27,11 @@ import {
  * Akun dan peran sistem (izin penuh) hanya boleh disentuh admin sistem —
  * dibaca dari peran pelaku di basis data, bukan dari '*' di JWT, supaya admin
  * yang sudah diturunkan perannya tidak tetap berkuasa sampai sesinya habis.
+ *
+ * Kolom peran lama (`User.role`) ditulis bersama `roleId` di transaksi yang
+ * sama, diturunkan dari peran baru (`peranLamaDari`), dan ikut jejak sebagai
+ * `legacyRole`. Dulu hanya Akun Profil yang mengisinya, jadi admin yang
+ * diangkat di sini tetap USER di kolom itu dan admin yang diturunkan tetap ADMIN.
  */
 
 export type KodeSimpanPengguna =
@@ -106,12 +112,13 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
   const nama = d.nama.trim();
   const sandiBaru = d.sandi !== "";
   const passwordHash = sandiBaru ? await bcrypt.hash(d.sandi, 10) : undefined;
+  const peranLama = peranLamaDari(peran);
 
   try {
     if (baru) {
       const dibuat = await prisma.$transaction(async (tx) => {
         const u = await tx.user.create({
-          data: { name: nama, email, roleId: peran.id, assignedStoreId: tokoId, passwordHash },
+          data: { name: nama, email, role: peranLama, roleId: peran.id, assignedStoreId: tokoId, passwordHash },
           select: { id: true },
         });
         await tx.auditLog.create({
@@ -120,7 +127,7 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
             action: "USER_CREATED",
             entityType: "User",
             entityId: u.id,
-            changes: { after: { name: nama, email, role: peran.name, assignedStoreId: tokoId } },
+            changes: { after: { name: nama, email, role: peran.name, legacyRole: peranLama, assignedStoreId: tokoId } },
           },
         });
         return u;
@@ -136,7 +143,7 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
     const hasil = await runSerializable(async (tx): Promise<KodeSimpanPengguna | null> => {
       const sebelum = await tx.user.findUnique({
         where: { id },
-        select: { name: true, email: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
+        select: { name: true, email: true, role: true, roleId: true, assignedStoreId: true, roleDefinition: { select: { isSystem: true } } },
       });
       if (!sebelum) return "TIDAK_DITEMUKAN";
       const tolakKini = tolakAkunSistem({
@@ -145,9 +152,11 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
         peranSistem: peran.isSystem,
       });
       if (tolakKini) return tolakKini;
+      // Selalu ditulis, juga bila perannya tidak berganti: menyimpan akun sekali
+      // membetulkan kolom lama yang basi dari sebelum Pengguna ikut mengisinya.
       await tx.user.update({
         where: { id },
-        data: { name: nama, email, roleId: peran.id, assignedStoreId: tokoId, ...(passwordHash ? { passwordHash } : {}) },
+        data: { name: nama, email, role: peranLama, roleId: peran.id, assignedStoreId: tokoId, ...(passwordHash ? { passwordHash } : {}) },
       });
       await tx.auditLog.create({
         data: {
@@ -156,8 +165,14 @@ export async function simpanPenggunaAction(input: unknown): Promise<HasilSimpanP
           entityType: "User",
           entityId: id,
           changes: {
-            before: { name: sebelum.name, email: sebelum.email, roleId: sebelum.roleId, assignedStoreId: sebelum.assignedStoreId },
-            after: { name: nama, email, roleId: peran.id, assignedStoreId: tokoId },
+            before: {
+              name: sebelum.name,
+              email: sebelum.email,
+              roleId: sebelum.roleId,
+              legacyRole: sebelum.role,
+              assignedStoreId: sebelum.assignedStoreId,
+            },
+            after: { name: nama, email, roleId: peran.id, legacyRole: peranLama, assignedStoreId: tokoId },
           },
           metadata: { sandiDiganti: sandiBaru },
         },

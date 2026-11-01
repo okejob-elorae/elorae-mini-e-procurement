@@ -16,7 +16,20 @@ type Bill = NonNullable<Awaited<ReturnType<typeof getVendorBillDetail>>>;
 
 const day = (d: Date | string) => new Date(d).toLocaleDateString("id-ID");
 
-export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; canVoid: boolean; userId: string }) {
+export function VendorBillDetailClient({
+  bill,
+  canVoid,
+  canPay,
+  voidBlockedSteps,
+  userId,
+}: {
+  bill: Bill;
+  canVoid: boolean;
+  canPay: boolean;
+  /** WO steps that keep the void withheld (`stepsOverpaidByVoid`); empty when nothing does or the viewer cannot void. */
+  voidBlockedSteps: string[];
+  userId: string;
+}) {
   const t = useTranslations("vendorBills");
 
   return (
@@ -36,8 +49,17 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
         <Badge className="ml-auto" variant={BILL_STATUS_VARIANT[bill.status]}>
           {t(`statusLabel.${bill.status}`)}
         </Badge>
+        {canPay && (
+          <Link href={`/backoffice/supplier-payments/baru?pemasok=${encodeURIComponent(bill.supplier.id)}`}>
+            <Button variant="outline">{t("payViaSupplierPayments")}</Button>
+          </Link>
+        )}
         {canVoid && <VoidBillButton billId={bill.id} userId={userId} />}
       </div>
+
+      {voidBlockedSteps.length > 0 && (
+        <p className="text-sm text-muted-foreground">{t("voidBlockedBySupplierPayments", { steps: voidBlockedSteps.join(", ") })}</p>
+      )}
 
       {bill.status === "VOID" && (
         <Card>
@@ -64,6 +86,12 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
           <div>
             <p className="text-muted-foreground">{t("colPaid")}</p>
             <p>{formatIDR(bill.paidAmount)}</p>
+            {bill.supplierPaidAmount >= 0.005 && (
+              <p className="text-xs text-muted-foreground">
+                {t("paidSupplier")}: {formatIDR(bill.supplierPaidAmount)}
+                {bill.vendorPaidAmount >= 0.005 ? ` · ${t("paidVendor")}: ${formatIDR(bill.vendorPaidAmount)}` : ""}
+              </p>
+            )}
           </div>
           <div>
             <p className="text-muted-foreground">{t("outstanding")}</p>
@@ -137,10 +165,31 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 lg:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>{t("paymentsTitle")}</CardTitle>
+            <CardTitle>{t("supplierPaymentsTitle")}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            {bill.supplierPayments.length === 0 ? (
+              <p className="text-muted-foreground">{t("noSupplierPayments")}</p>
+            ) : (
+              <ul className="space-y-1">
+                {bill.supplierPayments.map((p) => (
+                  <li key={p.id}>
+                    <Link className="hover:underline" href={`/backoffice/supplier-payments/${p.paymentId}`}>
+                      {p.docNumber}
+                    </Link>{" "}
+                    · {day(p.date)} · {p.target} · {formatIDR(p.amount)}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>{t("vendorPaymentsTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="text-sm">
             {bill.allocations.length === 0 ? (
@@ -149,7 +198,10 @@ export function VendorBillDetailClient({ bill, canVoid, userId }: { bill: Bill; 
               <ul className="space-y-1">
                 {bill.allocations.map((a) => (
                   <li key={a.id} className={a.payment.voidedAt ? "text-muted-foreground line-through" : ""}>
-                    {a.payment.docNumber} · {day(a.payment.paidAt)} · {formatIDR(a.amount)}
+                    <Link className="hover:underline" href={`/backoffice/vendor-payments/${a.payment.id}`}>
+                      {a.payment.docNumber}
+                    </Link>{" "}
+                    · {day(a.payment.paidAt)} · {formatIDR(a.amount)}
                   </li>
                 ))}
               </ul>

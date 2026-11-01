@@ -60,10 +60,13 @@ function formatRupiah(value: number): string {
 
 type Props = {
   transfer: StoreTransferDetail;
-  canManage: boolean;
+  /* `store_transfers:approve`. */
+  canApprove: boolean;
+  /* `store_transfers:approve`, or `stores:manage` on a transfer this user created. */
+  canCancel: boolean;
 };
 
-export function StoreTransferDetailClient({ transfer, canManage }: Props) {
+export function StoreTransferDetailClient({ transfer, canApprove: mayApprove, canCancel: mayCancel }: Props) {
   const t = useTranslations("storeTransfers");
   const tDetail = useTranslations("storeTransfers.detail");
   const tApprove = useTranslations("storeTransfers.approve");
@@ -78,8 +81,8 @@ export function StoreTransferDetailClient({ transfer, canManage }: Props) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelling, startCancelTransition] = useTransition();
 
-  const canApprove = canManage && transfer.status === "PENDING";
-  const canCancel = canManage && transfer.status === "PENDING";
+  const canApprove = mayApprove && transfer.status === "PENDING";
+  const canCancel = mayCancel && transfer.status === "PENDING";
 
   function formatDateTime(date: Date): string {
     return new Intl.DateTimeFormat(locale, {

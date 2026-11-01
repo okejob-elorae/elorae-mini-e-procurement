@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { batasBerlaku, formatJarak } from "./ringkasan-toko";
+import { formatJarak } from "./ringkasan-toko";
 
 describe("formatJarak", () => {
   it("di bawah 1 km ditulis dalam meter dengan titik ribuan tidak perlu", () => {
@@ -18,21 +18,13 @@ describe("formatJarak", () => {
   });
 });
 
-describe("batasBerlaku — batas toko menimpa bawaan, kosong ikut bawaan", () => {
-  it("toko punya batas sendiri", () => {
-    expect(batasBerlaku(15_000_000, 20_000_000)).toEqual({ sumber: "TOKO", nilai: 15_000_000 });
-  });
-
-  it("0 adalah batas sah (tidak boleh ada), bukan kosong", () => {
-    expect(batasBerlaku(0, 20_000_000)).toEqual({ sumber: "TOKO", nilai: 0 });
-  });
-
-  it("toko kosong → bawaan", () => {
-    expect(batasBerlaku(null, 20_000_000)).toEqual({ sumber: "BAWAAN", nilai: 20_000_000 });
-  });
-
-  it("toko dan bawaan kosong → tidak dibatasi", () => {
-    expect(batasBerlaku(null, null)).toEqual({ sumber: "TANPA", nilai: null });
+describe("batas kredit di rincian toko memakai pemutus pemeriksaan kredit", () => {
+  // Arti kolom kosong / "Tanpa batas kredit" hanya diputuskan `batasKreditBerlaku`
+  // (diuji di lib/salesman/kredit.test.ts); halaman ini tidak boleh punya salinannya.
+  it("halaman rincian toko membaca batas lewat batasKreditBerlaku", () => {
+    const halaman = readFileSync(path.join(__dirname, "page.tsx"), "utf8");
+    expect(halaman).toContain("batasKreditBerlaku(");
+    expect(halaman).not.toMatch(/creditLimit\s*\?\?/);
   });
 });
 

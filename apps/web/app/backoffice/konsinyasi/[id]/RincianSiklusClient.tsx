@@ -77,11 +77,24 @@ export function RincianSiklusClient({
   data,
   katalog,
   bolehMengelola,
+  bolehMengunci,
+  bolehCatatNota,
+  bolehCatatPajak,
+  bolehBayarGaji,
   bolehCatatBayar,
 }: {
   data: RincianSiklus;
   katalog: PilihanBarang[];
+  /** Laporan SPG/toko — `consignment:manage`. */
   bolehMengelola: boolean;
+  /** Kunci dan buka kunci angka resmi — `consignment:lock`. */
+  bolehMengunci: boolean;
+  /** Nomor nota admin penjualan — `consignment:note_number`. */
+  bolehCatatNota: boolean;
+  /** Nomor faktur pajak admin pajak — `consignment:tax_number`. */
+  bolehCatatPajak: boolean;
+  /** Menandai gaji SPG dibayar — `spg_commission:pay`. */
+  bolehBayarGaji: boolean;
   bolehCatatBayar: boolean;
 }) {
   const t = useTranslations('konsinyasi');
@@ -210,7 +223,7 @@ export function RincianSiklusClient({
                 {t('print')}
               </a>
             </Button>
-            {bolehMengelola ? (
+            {bolehMengunci ? (
             data.terkunci ? (
               <Button
                 variant="outline"
@@ -232,7 +245,7 @@ export function RincianSiklusClient({
         }
       />
 
-      {bolehMengelola && data.terkunci && tolakBuka && (
+      {bolehMengunci && data.terkunci && tolakBuka && (
         <p className="text-sm text-muted-foreground">{td(`err${tolakBuka}`)}</p>
       )}
 
@@ -270,7 +283,7 @@ export function RincianSiklusClient({
             nilai={b.noNota}
             milik={t('ownerSales')}
             aksi={
-              bolehMengelola && data.terkunci && !b.noNota ? (
+              bolehCatatNota && data.terkunci && !b.noNota ? (
                 <Button size="sm" variant="outline" onClick={() => { setNomorTerbuka('NOTA'); setNomor(''); }}>
                   {t('record')}
                 </Button>
@@ -283,7 +296,7 @@ export function RincianSiklusClient({
             milik={t('ownerTax')}
             aksi={
               // Tagihan tanpa PPN tidak punya faktur pajak (tahap pajak dilewati).
-              bolehMengelola && data.terkunci && !b.noFakturPajak && data.tagihan.pakaiPpn ? (
+              bolehCatatPajak && data.terkunci && !b.noFakturPajak && data.tagihan.pakaiPpn ? (
                 <Button size="sm" variant="outline" onClick={() => { setNomorTerbuka('PAJAK'); setNomor(''); }}>
                   {t('record')}
                 </Button>
@@ -446,7 +459,7 @@ export function RincianSiklusClient({
                         <StatusPill tone="settled">
                           {t('paidOn', { date: tanggal(k.dibayarPada) })}
                         </StatusPill>
-                      ) : bolehMengelola && data.terkunci ? (
+                      ) : bolehBayarGaji && data.terkunci ? (
                         // Gaji baru boleh dibayar sesudah angkanya dikunci (penulis menolak BELUM_DIKUNCI).
                         <Button
                           size="sm"

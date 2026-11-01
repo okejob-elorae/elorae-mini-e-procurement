@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { bolehMengelola } from "@/lib/receivables/izin";
+import { bolehMemutuskanBeban, bolehMengelola } from "@/lib/receivables/izin";
 import { bacaStatusHilang, bacaSumberHilang } from "@/lib/spg/hilang";
 import { daftarHilangKantor } from "@/lib/spg/hilang-queries";
 import { DaftarHilangClient } from "./DaftarHilangClient";
@@ -14,16 +14,17 @@ type PageProps = {
 };
 
 /**
- * Barang hilang — kantor. Pengawas SPG (`spg_sales:view`) melihat; yang
- * menetapkan siapa menanggung, mencatat manual, dan menandai pelunasan adalah
- * `receivables:manage`. Halaman memagari dirinya sendiri (salah satu izin).
+ * Barang hilang — kantor. Pengawas SPG (`spg_sales:view`) melihat; mencatat
+ * manual dan menandai pelunasan adalah `receivables:manage`; menetapkan siapa
+ * menanggung adalah `receivables:decide_bearer`. Halaman memagari dirinya
+ * sendiri (salah satu izin).
  */
 export default async function BarangHilangPage({ searchParams }: PageProps) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   const izin = session.user.permissions ?? [];
   const bolehKelola = bolehMengelola(izin);
-  if (!bolehKelola && !hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)) redirect("/backoffice");
+  if (!bolehKelola && !bolehMemutuskanBeban(izin) && !hasPermission(izin, PERMISSIONS.SPG_SALES_VIEW)) redirect("/backoffice");
 
   const sp = await searchParams;
   const status = bacaStatusHilang(sp.status);

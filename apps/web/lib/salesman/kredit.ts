@@ -14,6 +14,12 @@
  *
  * Batas per toko (`Store.creditLimit`, `Store.maxOpenInvoices`) menimpa batas
  * bawaan; kosong berarti ikut bawaan, dan 0 adalah nilai sah ("tidak boleh ada").
+ * Toko yang dicentang "Tanpa batas kredit" (`Store.noCreditLimit`) tidak dinilai
+ * batas nilai maupun batas fakturnya; tagihan lewat janji tetap dinilai.
+ * Batas yang berlaku SELALU dibaca lewat `batasKreditBerlaku` — juga oleh dasar
+ * kredit tim (`creditHoldAtCreate` dan gerbang persetujuan di
+ * `lib/field-sales/writer.ts`), supaya kedua pemeriksaan tidak pernah berbeda
+ * pendapat tentang arti kolom kosong (keputusan pemilik 2026-11-01, pilihan C).
  */
 
 export type ModeKredit = "PERINGATAN" | "TAHAN" | "BLOKIR";
@@ -49,24 +55,88 @@ export type AlasanKredit =
 export type TingkatKredit = "AMAN" | ModeKredit;
 export type HasilKredit = { tingkat: TingkatKredit; alasan: AlasanKredit[] };
 
+/**
+ * Keputusan pemilik yang belum dijawab: apakah batas bawaan di Pengaturan →
+ * Salesman juga berlaku untuk toko KONSINYASI yang kolom batasnya kosong
+ * (gerbang persetujuan transfer konsi). Sementara TIDAK — bawaan itu diatur di
+ * kartu pesanan PUTUS, dan toko konsi berkolom kosong tetap tidak dibatasi
+ * seperti sebelumnya. Ubah di sini saja kalau pemilik memutuskan lain.
+ */
+export const BAWAAN_BERLAKU_UNTUK_KONSI: boolean = false;
+
+/** Batas milik satu toko, apa adanya dari master toko. */
+export type BatasToko = {
+  creditLimit?: number | null;
+  maxOpenInvoices?: number | null;
+  /** Dicentang "Tanpa batas kredit": batas nilai dan batas faktur tidak dinilai. */
+  noCreditLimit?: boolean;
+  /** Tidak diisi = PUTUS (lapis mode hanya menilai toko putus). */
+  termsType?: "PUTUS" | "KONSI";
+};
+
+/**
+ * Satu batas yang berlaku, dengan asalnya — supaya layar bisa menulis "khusus
+ * toko ini", "ikut bawaan", atau "tanpa batas" dari keputusan yang SAMA dengan
+ * pemeriksaannya.
+ * - TOKO: angka di master toko (0 sah: tidak boleh ada).
+ * - BAWAAN: kolom toko kosong, angka bawaan Pengaturan dipakai.
+ * - TANPA_BATAS: toko dicentang "Tanpa batas kredit".
+ * - BAWAAN_KOSONG: kolom toko kosong dan bawaan Pengaturan juga kosong.
+ * - KONSI_KOSONG: toko konsinyasi berkolom kosong (lihat `BAWAAN_BERLAKU_UNTUK_KONSI`).
+ */
+export type BatasBerlaku =
+  | { sumber: "TOKO"; nilai: number }
+  | { sumber: "BAWAAN"; nilai: number }
+  | { sumber: "TANPA_BATAS"; nilai: null }
+  | { sumber: "BAWAAN_KOSONG"; nilai: null }
+  | { sumber: "KONSI_KOSONG"; nilai: null };
+
+export type SumberBatas = BatasBerlaku["sumber"];
+
+const adaAngka = (x: number | null | undefined): x is number => x !== null && x !== undefined;
+
+function satuBatas(milikToko: number | null | undefined, bawaan: number | null, toko: BatasToko): BatasBerlaku {
+  if (toko.noCreditLimit === true) return { sumber: "TANPA_BATAS", nilai: null };
+  if (adaAngka(milikToko)) return { sumber: "TOKO", nilai: milikToko };
+  if (toko.termsType === "KONSI" && !BAWAAN_BERLAKU_UNTUK_KONSI) return { sumber: "KONSI_KOSONG", nilai: null };
+  if (adaAngka(bawaan)) return { sumber: "BAWAAN", nilai: bawaan };
+  return { sumber: "BAWAAN_KOSONG", nilai: null };
+}
+
+/**
+ * Batas nilai dan batas faktur yang berlaku untuk satu toko. SATU-SATUNYA
+ * tempat arti kolom kosong diputuskan: dipakai `nilaiKredit` (HP, saat pesanan
+ * dibuat, panel persetujuan), dasar kredit tim di penulis pesanan, rincian toko,
+ * dan pratinjau persetujuan. Bawaan Pengaturan yang kosong berarti tidak
+ * dibatasi — sama dengan keadaan pabrik.
+ */
+export function batasKreditBerlaku(
+  toko: BatasToko,
+  aturan: Pick<AturanKredit, "batasNilai" | "batasFaktur">,
+): { nilai: BatasBerlaku; faktur: BatasBerlaku } {
+  return {
+    nilai: satuBatas(toko.creditLimit, aturan.batasNilai, toko),
+    faktur: satuBatas(toko.maxOpenInvoices, aturan.batasFaktur, toko),
+  };
+}
+
 export function nilaiKredit(
   keadaan: KeadaanTagihan,
   aturan: AturanKredit,
-  toko: { creditLimit?: number | null; maxOpenInvoices?: number | null },
+  toko: BatasToko,
   nilaiPesanan: number,
 ): HasilKredit {
   const alasan: AlasanKredit[] = [];
   if (keadaan.lewatJanji > 0) {
     alasan.push({ kode: "LEWAT_JANJI", nilai: keadaan.lewatJanji, faktur: keadaan.fakturLewatJanji });
   }
-  const batasNilai = toko.creditLimit ?? aturan.batasNilai;
+  const batas = batasKreditBerlaku(toko, aturan);
   const sisaSesudah = keadaan.sisa + Math.max(0, nilaiPesanan);
-  if (batasNilai !== null && batasNilai !== undefined && sisaSesudah > batasNilai) {
-    alasan.push({ kode: "MELEBIHI_BATAS_NILAI", sisaSesudah, batas: batasNilai });
+  if (batas.nilai.nilai !== null && sisaSesudah > batas.nilai.nilai) {
+    alasan.push({ kode: "MELEBIHI_BATAS_NILAI", sisaSesudah, batas: batas.nilai.nilai });
   }
-  const batasFaktur = toko.maxOpenInvoices ?? aturan.batasFaktur;
-  if (batasFaktur !== null && batasFaktur !== undefined && keadaan.fakturTerbuka >= batasFaktur) {
-    alasan.push({ kode: "MELEBIHI_BATAS_FAKTUR", faktur: keadaan.fakturTerbuka, batas: batasFaktur });
+  if (batas.faktur.nilai !== null && keadaan.fakturTerbuka >= batas.faktur.nilai) {
+    alasan.push({ kode: "MELEBIHI_BATAS_FAKTUR", faktur: keadaan.fakturTerbuka, batas: batas.faktur.nilai });
   }
   return { tingkat: alasan.length === 0 ? "AMAN" : aturan.mode, alasan };
 }

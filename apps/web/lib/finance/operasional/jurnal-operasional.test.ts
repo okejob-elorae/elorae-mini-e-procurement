@@ -57,7 +57,10 @@ import {
   postJurnalBiayaPerjalanan,
   postJurnalGudangRusak,
   postJurnalKirimKonsi,
+  postJurnalPesananKonsi,
+  postJurnalPindahKonsi,
   postJurnalPotongSales,
+  postJurnalReturLapanganKonsi,
   postJurnalReturPemasok,
   postJurnalStokManual,
   selaraskanJurnalBarangHilang,
@@ -67,10 +70,17 @@ import {
   selaraskanJurnalReturKonsi,
   selaraskanJurnalSiklusKonsi,
 } from "./jurnal";
-import { kaitKirimTitipan, kaitSiklusKonsi } from "./kait";
+import { kaitKirimTitipan, kaitPindahKonsiPengiriman, kaitReturLapanganKonsi, kaitSiklusKonsi } from "./kait";
 import { putarBarangRusak } from "./nilai-rusak-queries";
 import { rekonsiliasiPersediaan } from "./rekonsiliasi-persediaan-queries";
-import { cariKirimKonsiTanpaJurnal, cariStokManualTanpaJurnal, PENCARI_OPERASIONAL } from "./sapuan";
+import {
+  cariKirimKonsiTanpaJurnal,
+  cariPesananKonsiTanpaJurnal,
+  cariPindahKonsiTanpaJurnal,
+  cariReturLapanganKonsiTanpaJurnal,
+  cariStokManualTanpaJurnal,
+  PENCARI_OPERASIONAL,
+} from "./sapuan";
 import { postingJurnalOperasionalAman } from "./tertunda";
 
 const tag = `UJC2-${Math.random().toString(36).slice(2, 8)}`;
@@ -199,10 +209,16 @@ afterEach(async () => {
   const klaim = spgId ? await prisma.expenseClaim.findMany({ where: { userId: seededId(spgId) }, select: { id: true } }) : [];
   const adj = barangIds.length ? await prisma.stockAdjustment.findMany({ where: { itemId: { in: seededIds(barangIds) } }, select: { id: true } }) : [];
   const potong = await prisma.stockLossDeduction.findMany({ where: { refId: { startsWith: `${tag}:` }, refType: "KomisiSalesman" }, select: { id: true } });
+  const transfer = tokoIds.length ? await prisma.konsiTransfer.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
+  const pesanan = tokoIds.length ? await prisma.fieldSalesOrder.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
+  const returLapangan = tokoIds.length ? await prisma.fieldReturn.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
   const entitas = [
     ...tokoIds,
     ...siklusIds,
     ...kiriman.map((k) => k.id),
+    ...transfer.map((t) => t.id),
+    ...pesanan.map((p) => p.id),
+    ...returLapangan.map((r) => r.id),
     ...nri.map((n) => n.id),
     ...komisi.map((k) => k.id),
     ...bayar.map((b) => b.id),
@@ -244,6 +260,19 @@ afterEach(async () => {
     await prisma.consignmentShipment.deleteMany({ where: { id: { in: seededIds(kiriman.map((k) => k.id)) } } });
   }
   if (siklusIds.length) await prisma.consignmentCycle.deleteMany({ where: { id: { in: seededIds(siklusIds) } } });
+  // Anak sebelum induk: baris transfer → transfer → baris pesanan → pesanan; baris retur lapangan → returnya.
+  if (transfer.length) {
+    await prisma.konsiTransferLine.deleteMany({ where: { transferId: { in: seededIds(transfer.map((t) => t.id)) } } });
+    await prisma.konsiTransfer.deleteMany({ where: { id: { in: seededIds(transfer.map((t) => t.id)) } } });
+  }
+  if (pesanan.length) {
+    await prisma.fieldSalesOrderLine.deleteMany({ where: { orderId: { in: seededIds(pesanan.map((p) => p.id)) } } });
+    await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: seededIds(pesanan.map((p) => p.id)) } } });
+  }
+  if (returLapangan.length) {
+    await prisma.fieldReturnLine.deleteMany({ where: { returnId: { in: seededIds(returLapangan.map((r) => r.id)) } } });
+    await prisma.fieldReturn.deleteMany({ where: { id: { in: seededIds(returLapangan.map((r) => r.id)) } } });
+  }
   if (nri.length) await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(nri.map((n) => n.id)) } } });
   if (tokoIds.length) await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: seededIds(tokoIds) } } });
   if (komisiSpg.length) await prisma.spgCommission.deleteMany({ where: { id: { in: seededIds(komisiSpg.map((k) => k.id)) } } });
@@ -437,6 +466,299 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
     expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toEqual({ ok: false, code: "BELUM_BERLAKU" });
     h.mulai = null;
     expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toEqual({ ok: false, code: "GL_CUTOVER_NOT_CONFIGURED" });
+  });
+});
+
+describe("konsinyasi: pindah barang per pengiriman (KonsiTransfer)", () => {
+  const PINDAH = SUMBER_OPERASIONAL.PINDAH_KONSI;
+  let nomorTransfer = 0;
+
+  /** Pesanan konsinyasi yang disetujui (persetujuan hanya mencadangkan — tidak berjurnal). */
+  async function pesananKonsi() {
+    const o = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${tag}/KONSI/${urut}`,
+        storeId: tokoId,
+        salesmanId: adminId,
+        orderType: "KONSI",
+        status: "APPROVED",
+        approvedAt: wib("2004-09-01"),
+        subtotal: 0,
+        total: 0,
+      },
+    });
+    const baris = await prisma.fieldSalesOrderLine.create({
+      data: { orderId: o.id, itemId: barangId, productName: `${tag} Kaos`, qty: 100, unitPrice: 0, lineTotal: 0 },
+    });
+    return { orderId: o.id, lineId: baris.id, orderNo: o.orderNo };
+  }
+
+  /**
+   * Bentuk yang ditulis `issueKonsiTransfer` saat pengiriman selesai: satu transfer per pengiriman,
+   * baris = qty terkirim × harga rata-rata gudang saat itu, penyesuaian stok KONSI_TRANSFER TANPA kunci.
+   */
+  async function transfer(p: { orderId: string; lineId: string }, isi: Array<{ qty: number; unitCost: number; itemId?: string }>, createdAt: Date) {
+    nomorTransfer += 1;
+    const shipmentId = `${tag}-SHP-${urut}-${nomorTransfer}`;
+    const t = await prisma.konsiTransfer.create({
+      data: { docNo: `${tag}/KTRF/${urut}/${nomorTransfer}`, orderId: p.orderId, storeId: tokoId, transferredById: adminId, shipmentId, createdAt },
+    });
+    await prisma.konsiTransferLine.createMany({
+      data: isi.map((l) => ({ transferId: t.id, orderLineId: p.lineId, itemId: l.itemId ?? barangId, productName: `${tag} Kaos`, qty: l.qty, unitCost: l.unitCost })),
+    });
+    for (const l of isi) {
+      await prisma.stockAdjustment.create({
+        data: {
+          docNumber: `${tag}-KTRF-${urut}-${nomorTransfer}-${l.itemId ?? barangId}`,
+          itemId: l.itemId ?? barangId,
+          type: "NEGATIVE",
+          qtyChange: -l.qty,
+          reason: `Konsi transfer ${tag}/KTRF/${urut}/${nomorTransfer}`,
+          prevQty: 100,
+          newQty: 100 - l.qty,
+          prevAvgCost: l.unitCost,
+          newAvgCost: l.unitCost,
+          source: "KONSI_TRANSFER",
+          createdAt,
+        },
+      });
+    }
+    return { id: t.id, shipmentId, docNo: t.docNo };
+  }
+
+  it("pesanan dikirim 60 lalu 40: dua jurnal pindah ke persediaan konsinyasi, masing-masing pada hari barangnya pindah; idempoten", async () => {
+    const p = await pesananKonsi();
+    const a = await transfer(p, [{ qty: 60, unitCost: 40_000 }], wib("2004-09-03"));
+    const b = await transfer(p, [{ qty: 40, unitCost: 40_000 }, { qty: 2, unitCost: 10_000, itemId: kainId }], wib("2004-09-10"));
+
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await postJurnalPindahKonsi(b.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(PINDAH, a.id)).toEqual({ INVENTORY_CONSIGNMENT: 2_400_000, INVENTORY_FG: -2_400_000 });
+    // Barang jadi ke persediaan barang jadi, kain ke persediaan bahan — pemisahan yang sama dengan kiriman titipan.
+    expect(await saldoPeran(PINDAH, b.id)).toEqual({ INVENTORY_CONSIGNMENT: 1_620_000, INVENTORY_FG: -1_600_000, INVENTORY: -20_000 });
+
+    const jurnalA = await prisma.journal.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: PINDAH, sourceId: a.id } },
+      select: { date: true, description: true, lines: { select: { chartAccountId: true, storeId: true } } },
+    });
+    expect(jurnalA.date.toISOString()).toBe(wib("2004-09-03").toISOString());
+    expect(jurnalA.description).toContain(a.docNo);
+    expect(jurnalA.description).toContain(p.orderNo);
+    expect(jurnalA.lines.find((l) => l.chartAccountId === h.akun.get("INVENTORY_CONSIGNMENT"))?.storeId).toBe(tokoId);
+
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(PINDAH, a.id)).toBe(1);
+
+    // Sumber pesanan lama tidak menjurnal barang yang sama: penyesuaian pengiriman tidak berkunci `konsi-transfer-line-`.
+    expect(await postJurnalPesananKonsi(p.orderId, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await cariPesananKonsiTanpaJurnal({ sejak: wib("2004-08-01"), sampai: wib("2004-12-31"), batas: 500, ids: [p.orderId] })).toEqual([]);
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.PESANAN_KONSI, p.orderId)).toBe(0);
+  });
+
+  it("pencari: hanya transfer bernilai yang belum berjurnal, dalam cakupan id dan rentang tanggalnya", async () => {
+    const p = await pesananKonsi();
+    const a = await transfer(p, [{ qty: 5, unitCost: 40_000 }], wib("2004-09-03"));
+    const nol = await transfer(p, [{ qty: 5, unitCost: 0 }], wib("2004-09-04"));
+    const opsi = { sejak: wib("2004-09-01"), sampai: wib("2004-09-30"), batas: 500, ids: [a.id, nol.id] };
+
+    const temu = await cariPindahKonsiTanpaJurnal(opsi);
+    expect(temu.map((d) => d.id)).toEqual([a.id]);
+    expect(temu[0].label).toBe(a.docNo);
+    // Pencari dan penulis sepakat: transfer tanpa harga tidak pernah tampil "tanpa jurnal".
+    expect(await postJurnalPindahKonsi(nol.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+    expect(await cariPindahKonsiTanpaJurnal({ ...opsi, ids: [] })).toEqual([]);
+    expect(await cariPindahKonsiTanpaJurnal({ ...opsi, sejak: wib("2004-10-01"), sampai: wib("2004-10-31") })).toEqual([]);
+
+    await postJurnalPindahKonsi(a.id, adminId);
+    expect(await cariPindahKonsiTanpaJurnal(opsi)).toEqual([]);
+  });
+
+  it("gerbang tanggal mulai buku besar: sebelum tanggal mulai tidak dijurnal; tanpa tanggal mulai tidak ada yang dijurnal", async () => {
+    const p = await pesananKonsi();
+    const a = await transfer(p, [{ qty: 1, unitCost: 40_000 }], wib("2004-09-03"));
+    h.mulai = wib("2004-09-05");
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toEqual({ ok: false, code: "BELUM_BERLAKU" });
+    h.mulai = null;
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toEqual({ ok: false, code: "GL_CUTOVER_NOT_CONFIGURED" });
+    expect(await jumlahGenerasi(PINDAH, a.id)).toBe(0);
+  });
+
+  it("kait per pengiriman: menjurnal transfer pengiriman itu, ulangan tidak menambah, tidak pernah melempar; peran belum dipetakan → JOURNAL_PENDING bernomor", async () => {
+    const p = await pesananKonsi();
+    const a = await transfer(p, [{ qty: 3, unitCost: 40_000 }], wib("2004-09-03"));
+
+    delete process.env.JURNAL_OPERASIONAL_KAIT_UJI;
+    try {
+      await kaitPindahKonsiPengiriman(a.shipmentId, adminId);
+      expect(await jumlahGenerasi(PINDAH, a.id)).toBe(0);
+    } finally {
+      process.env.JURNAL_OPERASIONAL_KAIT_UJI = "1";
+    }
+
+    await kaitPindahKonsiPengiriman(a.shipmentId, adminId);
+    expect(await saldoPeran(PINDAH, a.id)).toEqual({ INVENTORY_CONSIGNMENT: 120_000, INVENTORY_FG: -120_000 });
+    // Ulangan (replay penyelesaian yang sama) tidak menambah jurnal.
+    await kaitPindahKonsiPengiriman(a.shipmentId, adminId);
+    expect(await jumlahGenerasi(PINDAH, a.id)).toBe(1);
+    // Pengiriman tanpa transfer (putus, atau konsi tanpa barang terkirim) dan id kosong: diam.
+    await expect(kaitPindahKonsiPengiriman(`${tag}-tanpa-transfer`, adminId)).resolves.toBeUndefined();
+    await expect(kaitPindahKonsiPengiriman("", adminId)).resolves.toBeUndefined();
+
+    const b = await transfer(p, [{ qty: 1, unitCost: 40_000 }], wib("2004-09-04"));
+    const akunKonsi = h.akun.get("INVENTORY_CONSIGNMENT")!;
+    h.akun.delete("INVENTORY_CONSIGNMENT");
+    try {
+      await expect(kaitPindahKonsiPengiriman(b.shipmentId, adminId)).resolves.toBeUndefined();
+    } finally {
+      h.akun.set("INVENTORY_CONSIGNMENT", akunKonsi);
+    }
+    expect(await jumlahGenerasi(PINDAH, b.id)).toBe(0);
+    const tanda = (
+      await prisma.adminNotification.findMany({ where: { category: "JOURNAL_PENDING", createdAt: { gte: mulaiTes } }, select: { title: true, metadata: true } })
+    ).filter((n) => (n.metadata as Record<string, unknown>)?.docId === b.id);
+    expect(tanda).toHaveLength(1);
+    expect(tanda[0].metadata).toMatchObject({ kind: "konsi_pindah", reason: "UNMAPPED_ROLE", role: "INVENTORY_CONSIGNMENT" });
+    expect(tanda[0].title).toContain(b.docNo);
+
+    // Sesudah dipetakan, kait yang sama (mis. ulangan penyelesaian) memostingnya.
+    await kaitPindahKonsiPengiriman(b.shipmentId, adminId);
+    expect(await jumlahGenerasi(PINDAH, b.id)).toBe(1);
+  });
+});
+
+describe("retur lapangan dari toko konsinyasi (FieldReturn)", () => {
+  const RETUR = SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI;
+  let nomorRetur = 0;
+  let nomorKirim = 0;
+
+  /** Biaya kirim barang ini ke toko konsinyasi: satu penyesuaian KONSI_TRANSFER sebelum returnya. */
+  const biayaKirim = (unitCost: number, itemId = barangId) =>
+    prisma.stockAdjustment.create({
+      data: {
+        docNumber: `${tag}-KIRIM-${urut}-${++nomorKirim}`,
+        itemId,
+        type: "NEGATIVE",
+        qtyChange: -10,
+        reason: "Konsi transfer uji",
+        prevQty: 100,
+        newQty: 90,
+        prevAvgCost: unitCost,
+        newAvgCost: unitCost,
+        source: "KONSI_TRANSFER",
+        createdAt: wib("2004-09-02"),
+      },
+    });
+
+  /** Bentuk yang ditinggalkan `approveFieldReturn`: baris retur + masuk gudang utama di kartu stok. */
+  async function returDisetujui(isi: {
+    storeId?: string;
+    itemId?: string;
+    status?: "APPROVED" | "PENDING_APPROVAL";
+    credited: number;
+    sellable: number;
+    rejected: number;
+    nilaiMasuk: number | null;
+  }) {
+    nomorRetur += 1;
+    const itemId = isi.itemId ?? barangId;
+    const disetujui = (isi.status ?? "APPROVED") === "APPROVED";
+    const r = await prisma.fieldReturn.create({
+      data: {
+        docNo: `${tag}/RTL/${urut}/${nomorRetur}`,
+        storeId: isi.storeId ?? tokoId,
+        raisedById: adminId,
+        status: isi.status ?? "APPROVED",
+        approvedAt: disetujui ? wib("2004-09-20") : null,
+        approvedById: disetujui ? adminId : null,
+      },
+    });
+    await prisma.fieldReturnLine.create({
+      data: {
+        returnId: r.id,
+        itemId,
+        qty: isi.credited,
+        reason: "UNSOLD",
+        receivedQty: isi.sellable + isi.rejected,
+        sellableQty: isi.sellable,
+        rejectedQty: isi.rejected,
+        creditedQty: disetujui ? isi.credited : null,
+      },
+    });
+    if (disetujui && isi.sellable > 0) {
+      await prisma.stockLedgerEntry.create({
+        data: {
+          locationType: "MAIN",
+          itemId,
+          type: "IN",
+          refType: "FieldReturn",
+          refId: r.id,
+          refDocNumber: r.docNo,
+          qty: isi.sellable,
+          unitCost: isi.nilaiMasuk === null ? null : isi.nilaiMasuk / isi.sellable,
+          totalCost: isi.nilaiMasuk,
+          balanceQty: 100 + isi.sellable,
+          balanceValue: isi.nilaiMasuk === null ? null : 0,
+        },
+      });
+    }
+    return { id: r.id, docNo: r.docNo };
+  }
+
+  it("barang layak kembali ke kartu stok, konsinyasi keluar pada biaya kirim, barang ditolak gudang jadi selisih; idempoten", async () => {
+    await biayaKirim(40_000);
+    // 5 keluar dari toko; 4 layak masuk gudang pada rata-rata gudang 45.000, 1 ditolak gudang.
+    const r = await returDisetujui({ credited: 5, sellable: 4, rejected: 1, nilaiMasuk: 180_000 });
+    expect(await postJurnalReturLapanganKonsi(r.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(RETUR, r.id)).toEqual({ INVENTORY_FG: 180_000, INVENTORY_CONSIGNMENT: -200_000, INVENTORY_VARIANCE: 20_000 });
+    const konsi = await prisma.journalLine.findFirst({
+      where: { journal: { sourceType: RETUR, sourceId: r.id }, chartAccountId: h.akun.get("INVENTORY_CONSIGNMENT") },
+      select: { storeId: true, journal: { select: { date: true } } },
+    });
+    expect(konsi?.storeId).toBe(tokoId);
+    expect(konsi?.journal.date.toISOString()).toBe(wib("2004-09-20").toISOString());
+    expect(await postJurnalReturLapanganKonsi(r.id, adminId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(RETUR, r.id)).toBe(1);
+  });
+
+  it("toko putus, retur belum disetujui, dan nilai masuk yang tidak tercatat tidak dijurnal; pencari sepakat dengan penulisnya", async () => {
+    await biayaKirim(40_000);
+    const putus = await returDisetujui({ storeId: tokoPutusId, credited: 2, sellable: 2, rejected: 0, nilaiMasuk: 80_000 });
+    const belum = await returDisetujui({ status: "PENDING_APPROVAL", credited: 2, sellable: 2, rejected: 0, nilaiMasuk: 80_000 });
+    const takTercatat = await returDisetujui({ credited: 2, sellable: 2, rejected: 0, nilaiMasuk: null });
+    const sah = await returDisetujui({ credited: 1, sellable: 1, rejected: 0, nilaiMasuk: 40_000 });
+
+    expect(await postJurnalReturLapanganKonsi(putus.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await postJurnalReturLapanganKonsi(belum.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    // Persediaan yang masuk tanpa nilai tidak ditebak nol.
+    expect(await postJurnalReturLapanganKonsi(takTercatat.id, adminId)).toEqual({ ok: false, code: "BIAYA_TIDAK_DIKETAHUI", detail: takTercatat.docNo });
+
+    const opsi = { sejak: wib("2004-09-01"), sampai: wib("2004-09-30"), batas: 500, ids: [putus.id, belum.id, takTercatat.id, sah.id] };
+    expect((await cariReturLapanganKonsiTanpaJurnal(opsi)).map((d) => d.id).sort()).toEqual([takTercatat.id, sah.id].sort());
+    expect(await cariReturLapanganKonsiTanpaJurnal({ ...opsi, ids: [] })).toEqual([]);
+
+    await kaitReturLapanganKonsi(sah.id, adminId);
+    expect(await saldoPeran(RETUR, sah.id)).toEqual({ INVENTORY_FG: 40_000, INVENTORY_CONSIGNMENT: -40_000 });
+    expect((await cariReturLapanganKonsiTanpaJurnal(opsi)).map((d) => d.id)).toEqual([takTercatat.id]);
+  });
+
+  it("retur yang semua angkanya nol tidak dicari selamanya; biaya konsinyasi cadangan tetap dicari", async () => {
+    // Kain dikirim saat harga rata-ratanya nol, dan kembali bernilai nol di kartu stok gudang utama.
+    await biayaKirim(0, kainId);
+    const nol = await returDisetujui({ itemId: kainId, credited: 2, sellable: 2, rejected: 0, nilaiMasuk: 0 });
+    // Semua ditolak gudang, biaya kirimnya nol: tidak ada yang masuk, tidak ada yang keluar bernilai.
+    const ditolakNol = await returDisetujui({ itemId: kainId, credited: 1, sellable: 0, rejected: 1, nilaiMasuk: null });
+    // Kaos tanpa kiriman tercatat: biayanya cadangan dari harga rata-rata gudang (50.000); semua ditolak gudang.
+    const cadangan = await returDisetujui({ credited: 1, sellable: 0, rejected: 1, nilaiMasuk: null });
+
+    const opsi = { sejak: wib("2004-09-01"), sampai: wib("2004-09-30"), batas: 500, ids: [nol.id, ditolakNol.id, cadangan.id] };
+    expect((await cariReturLapanganKonsiTanpaJurnal(opsi)).map((d) => d.id)).toEqual([cadangan.id]);
+
+    expect(await postJurnalReturLapanganKonsi(nol.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await postJurnalReturLapanganKonsi(ditolakNol.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await postJurnalReturLapanganKonsi(cadangan.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(RETUR, cadangan.id)).toEqual({ INVENTORY_CONSIGNMENT: -50_000, INVENTORY_VARIANCE: 50_000 });
+    expect(await cariReturLapanganKonsiTanpaJurnal(opsi)).toEqual([]);
   });
 });
 

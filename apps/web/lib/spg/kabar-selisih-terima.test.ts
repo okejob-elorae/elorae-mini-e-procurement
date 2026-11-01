@@ -18,6 +18,25 @@ vi.mock("@/lib/notifications/kabar-pengguna", async (asli) => ({
 }));
 vi.mock("./titip-tersedia", () => ({ kabariTitipanTersedia: vi.fn(async () => {}) }));
 /*
+ * Rincian antaran (pengantar, resi) hanya tambahan pada kabar kekurangan. Bila
+ * `antaranGagal.sekali` diisi, pembacaannya gagal SEKALI — kabarnya harus tetap
+ * sampai ke salesman.
+ */
+const antaranGagal = vi.hoisted(() => ({ sekali: false }));
+vi.mock("./antaran-queries", async (asli) => {
+  const m = await asli<typeof import("./antaran-queries")>();
+  return {
+    ...m,
+    muatInfoAntaran: vi.fn(async (...args: Parameters<typeof m.muatInfoAntaran>) => {
+      if (antaranGagal.sekali) {
+        antaranGagal.sekali = false;
+        throw new Error("antaran tidak terbaca (uji)");
+      }
+      return m.muatInfoAntaran(...args);
+    }),
+  };
+});
+/*
  * Percobaan transaksi yang DIULANG (MariaDB 1213 di produksi; di Postgres lokal
  * balapan berkunci sama selesai lewat P2002, jadi jalur ini tidak pernah lewat).
  * Bila `uji.selaUlang` diisi: percobaan pertama berjalan penuh lalu dibatalkan,
@@ -50,6 +69,7 @@ vi.mock("@/lib/db/tx-retry", async (asli) => {
 
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { tautanKabar } from "@/lib/notifications/tautan-kabar";
+import { capNotificationText, NOTIFICATION_TEXT_MAX } from "@/lib/notifications/text";
 import { adaSelisih, hitungSelisihTerima, teksSelisih } from "./selisih-terima";
 import { susunKabarSelisih } from "./kabar-selisih-terima";
 import { terimaKiriman } from "./stok-writer";
@@ -107,6 +127,78 @@ describe("selisih terima (murni)", () => {
     expect(titipan.data).toEqual({ storeId: "s1", sourceType: "KONSI_SHIPMENT", sourceId: "k1" });
     expect(tautanKabar(titipan.jenis, titipan.data)).toBe("/pwa/stores/s1");
     expect(tautanKabar("KIRIMAN_DITERIMA_SELISIH", {})).toBe("/pwa/orders");
+  });
+
+  it("a short konsi shipment says it went short IN TRANSIT: sent in that shipment, arrived, and who to check — never the order's unsent remainder", () => {
+    const k = susunKabarSelisih({
+      sourceType: "KONSI_TRANSFER",
+      sourceId: "t1",
+      storeId: "s1",
+      docNo: "DLV/2026/11/0001",
+      namaToko: "Toko Melati",
+      orderId: "o1",
+      selisih: { dikirim: 60, diterima: 57, kurang: 3, rusak: 0 },
+      antaran: {
+        orderId: "o1",
+        orderNo: "KONSI/2026/11/0012",
+        pengiriman: {
+          id: "shp-1",
+          docNo: "DLV/2026/11/0001",
+          cara: "EXPEDITION",
+          pengantar: null,
+          ekspedisi: "JNE",
+          resi: "JNE123",
+          adaBuktiSerahTerima: true,
+        },
+        belumDikirimGudang: 40,
+        dalamPengirimanLain: 0,
+      },
+    });
+    expect(k.judul).toBe("Kiriman DLV/2026/11/0001: kurang 3 pcs");
+    // Siapa yang dicek di depan; jumlah kurangnya tidak diulang (judulnya sudah menyebut).
+    expect(k.isi).toBe(
+      "Kurang di perjalanan — cek ke ekspedisi JNE resi JNE123. " +
+        "Toko Melati: tiba 57 dari 60 pcs yang dikirim gudang di DLV/2026/11/0001. " +
+        "Foto serah terima ada di pengiriman itu.",
+    );
+    expect(k.isi).not.toMatch(/40|Rp/);
+    expect(tautanKabar(k.jenis, k.data)).toBe("/pwa/orders/o1");
+  });
+
+  it("the in-transit notice fits the 191-character body column, so the courier and tracking number survive the cap even with long names", () => {
+    const k = susunKabarSelisih({
+      sourceType: "PUTUS_DELIVERY",
+      sourceId: "d1",
+      storeId: "s1",
+      docNo: "NTG/2026/11/0031",
+      namaToko: "Toko Busana Muslim Sinar Jaya Abadi Cabang Pasar Atom Surabaya Lantai 2 Blok C",
+      orderId: "o1",
+      selisih: { dikirim: 60, diterima: 57, kurang: 3, rusak: 1 },
+      antaran: {
+        orderId: "o1",
+        orderNo: "PUTUS/2026/11/0012",
+        pengiriman: {
+          id: "shp-9",
+          docNo: "DLV/2026/11/0009",
+          cara: "EXPEDITION",
+          pengantar: null,
+          ekspedisi: "J&T Express Cabang Surabaya Timur Rungkut",
+          resi: "JX9876543210123456",
+          adaBuktiSerahTerima: true,
+        },
+        belumDikirimGudang: 0,
+        dalamPengirimanLain: 0,
+      },
+    });
+    expect(Array.from(k.isi).length).toBeLessThanOrEqual(NOTIFICATION_TEXT_MAX);
+    // `sendNotificationToUsers` memotong isi di 191 huruf — yang dipotong tidak boleh resinya.
+    expect(capNotificationText(k.isi)).toBe(k.isi);
+    expect(k.isi.startsWith("Kurang di perjalanan — cek ke ekspedisi J&T Express Cabang Surabaya Timur Rungkut resi JX9876543210123456.")).toBe(true);
+    // Nama toko yang panjang membuat rincian bertoko tidak muat: rincian tanpa nama toko yang dipakai.
+    expect(k.isi).toContain("Gudang mengirim 60 pcs di DLV/2026/11/0009, tiba 57.");
+    expect(k.isi).toContain("Rusak 1 pcs.");
+    expect(k.isi).not.toMatch(/Rp/);
+    expect(Array.from(k.judul).length).toBeLessThanOrEqual(NOTIFICATION_TEXT_MAX);
   });
 });
 
@@ -166,6 +258,7 @@ d("kabar hasil terima kiriman ke salesman (test bed only)", () => {
   beforeEach(() => {
     kabar.kirim.length = 0;
     uji.selaUlang = null;
+    antaranGagal.sekali = false;
   });
 
   afterEach(async () => {
@@ -275,6 +368,29 @@ d("kabar hasil terima kiriman ke salesman (test bed only)", () => {
     expect(k.isi).toBe(`Toko P ${tag}: tiba 8 dari 10 pcs — kurang 2 pcs, rusak 1 pcs.`);
     expect(k.data).toEqual({ orderId: dlv.orderId, storeId: tokoPutus, sourceType: "PUTUS_DELIVERY", sourceId: dlv.id });
     expect(tanpaTag(`${k.judul} ${k.isi}`)).not.toMatch(/Rp|125/);
+  });
+
+  it("the shipment detail is only extra: when it cannot be read, the shortfall notice still reaches the salesman", async () => {
+    const dlv = await pengirimanPutus(10);
+    antaranGagal.sekali = true;
+    const galat = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const r = await terimaKiriman({
+        storeId: tokoPutus,
+        userId: spgPutus,
+        sourceType: "PUTUS_DELIVERY",
+        sourceId: dlv.id,
+        diterima: [{ lineId: dlv.line, qtyReceived: 7 }],
+      });
+      expect(r.ok).toBe(true);
+    } finally {
+      galat.mockRestore();
+    }
+    // Pembacaannya benar-benar dicoba (dan gagal) — bukan dilewati.
+    expect(antaranGagal.sekali).toBe(false);
+    expect(kabar.kirim).toHaveLength(1);
+    expect(kabar.kirim[0]).toMatchObject({ userId: salesPesanan, jenis: "KIRIMAN_DITERIMA_SELISIH", judul: `Kiriman ${dlv.docNo}: kurang 3 pcs` });
+    expect(kabar.kirim[0].isi).toBe(`Toko P ${tag}: tiba 7 dari 10 pcs — kurang 3 pcs.`);
   });
 
   it("an exact receipt tells nobody", async () => {

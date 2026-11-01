@@ -348,6 +348,7 @@ model Store {
   lng            Decimal?       @db.Decimal(10, 7)
   checkinRadiusMeters Int?
   creditLimit    Decimal?       @db.Decimal(15, 2)
+  noCreditLimit  Boolean        @default(false)
   maxOpenInvoices Int?
   storeClass     String?
   isPkp          Boolean        @default(false)

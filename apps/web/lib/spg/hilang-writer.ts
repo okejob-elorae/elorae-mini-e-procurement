@@ -76,11 +76,17 @@ export async function bukaCatatanHilang(input: {
   note: string | null;
   createdById: string;
   idempotencyKey: string;
+  /**
+   * Keterangan asal yang ditambahkan ke catatan kantor, mis. kalimat "kurang di
+   * perjalanan" sebuah antaran (berapa dikirim gudang, berapa tiba, siapa dicek).
+   */
+  keteranganAsal?: string | null;
   sekarang?: Date;
 }): Promise<HasilBukaHilang> {
   const baris = input.baris.filter((b) => Number.isInteger(b.qty) && b.qty > 0);
   if (baris.length === 0) return { ok: false, kode: "TANPA_BARIS" };
   const sekarang = input.sekarang ?? new Date();
+  const keteranganAsal = input.keteranganAsal?.trim() || "";
 
   // Diisi di dalam transaksi; percobaan ulang menyetelnya ulang.
   const sesudah: { notif: AdminNotification | null } = { notif: null };
@@ -152,6 +158,7 @@ export async function bukaCatatanHilang(input: {
           title: `Barang hilang${toko ? ` di ${toko.name}` : ""}: ${totalQty} potong`,
           message:
             `${asal}, senilai ${formatRupiah(dariSen(totalSen))}. ` +
+            (keteranganAsal ? `${keteranganAsal} ` : "") +
             (tanpaNilai > 0 ? `${tanpaNilai} baris belum bernilai — isi totalnya saat memutuskan. ` : "") +
             "Putuskan siapa yang menanggung: toko, SPG, sales, atau Elorae.",
           metadata: { lossId: loss.id },

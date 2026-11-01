@@ -77,6 +77,7 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "fieldSalesOrders.kredit.judul" },
         isi: [
           "Keadaan tagihan toko saat pesanan dibuat dan saat ini: sisa tagihan, faktur yang lewat janji bayar, jumlah faktur belum lunas, dan batas kreditnya. Aturannya (peringatan, tahan, atau blokir) diatur di Pengaturan → Salesman. Pesanan yang ditahan karena tagihan baru bisa disetujui setelah Anda mencentang bahwa tagihan toko sudah diperiksa.",
+          "Batas yang dinilai sama dengan di rincian toko: batas milik toko itu; bila kosong, bawaan di Pengaturan → Salesman; dan tanpa batas bila tokonya dicentang Tanpa batas kredit atau bawaannya juga kosong. Toko tanpa batas tetap diperiksa untuk tagihan yang lewat janji bayar.",
           "Kolom Keadaan per faktur: bila toko sudah berjanji bayar (tukar faktur) dan janjinya lewat, harinya dihitung dari tanggal janji; selain itu dari jatuh tempo faktur. Nomor faktur membuka daftar piutang dengan keadaan yang sama.",
         ],
       },

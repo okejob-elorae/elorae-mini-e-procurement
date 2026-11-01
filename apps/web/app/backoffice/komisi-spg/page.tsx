@@ -14,9 +14,10 @@ const JUMLAH_BULAN = 12;
 
 /**
  * SPG → Komisi SPG: komisi SPG toko PUTUS per bulan WIB. Semua pemegang
- * `spg_sales:view` bisa melihat; menetapkan dan menandai dibayar butuh
- * `receivables:manage` (keuangan). Toko konsinyasi tidak dihitung di sini —
- * komisinya bagian dari siklus konsinyasi.
+ * `spg_sales:view` bisa melihat; menetapkan butuh `receivables:manage`
+ * (keuangan), menandai dibayar butuh `spg_commission:pay` — izin yang sama
+ * dengan aksinya (app/actions/spg-komisi.ts). Toko konsinyasi tidak dihitung
+ * di sini — komisinya bagian dari siklus konsinyasi.
  */
 export default async function KomisiSpgPage({ searchParams }: { searchParams: Promise<{ bulan?: string | string[] }> }) {
   const session = await auth();
@@ -74,6 +75,7 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
       bulanSelesai={data.bulanSelesai}
       aturan={data.aturan}
       bolehKelola={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)}
+      bolehBayar={hasPermission(izin, PERMISSIONS.SPG_COMMISSION_PAY)}
       toko={toko}
       tokoKonsi={data.tokoKonsi}
       ringkas={data.ringkas}

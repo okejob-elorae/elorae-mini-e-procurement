@@ -1,13 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
 import type { DokumenTanpaJurnal, OpsiCariSapuan, SumberSapuan } from "./registri";
 import { cariSemuaTanpaJurnal, jalankanSapuan, rentangSapuan, ringkasLogSapuan } from "./runner";
 
 /*
  * Runner sapuan dengan sumber tiruan — tanpa basis data: lantai tanggal mulai,
- * batas & tanda terpotong, cakupan id, dan galat satu sumber yang tidak
- * menghentikan sumber lain.
+ * batas & tanda terpotong, cakupan id, galat satu sumber yang tidak
+ * menghentikan sumber lain, dan pelaku bawaan dari peran sistem.
  */
+
+const sistem = vi.hoisted(() => ({ adminSistemTertua: vi.fn() }));
+vi.mock("@/lib/users/admin-sistem", () => ({ adminSistemTertua: sistem.adminSistemTertua }));
 
 const hari = (t: string) => new Date(`${t}T00:00:00.000+07:00`);
 
@@ -168,6 +171,50 @@ describe("jalankanSapuan", () => {
     expect(a.diposting).toEqual(["a3"]);
     if (r.dilewati) throw new Error("tidak boleh dilewati");
     expect(r.sumber[0].ditemukan).toBe(1);
+  });
+});
+
+describe("jalankanSapuan — pelaku bawaan", () => {
+  beforeEach(() => {
+    sistem.adminSistemTertua.mockReset();
+  });
+
+  function sumberPencatat(): SumberSapuan & { oleh: string[] } {
+    const s = {
+      sourceType: "A",
+      label: "A",
+      oleh: [] as string[],
+      cariTanpaJurnal: async () => [dok("a1", "2026-08-02")],
+      posting: async (_id: string, olehUserId: string): Promise<GenerateAutoJournalResult> => {
+        s.oleh.push(olehUserId);
+        return { ok: true, journalId: "j", created: true };
+      },
+    };
+    return s;
+  }
+
+  it("tanpa `olehUserId` memposting atas nama admin sistem tertua (peran sistem), bukan kolom peran lama", async () => {
+    sistem.adminSistemTertua.mockResolvedValue({ id: "u-sistem", email: "sistem@uji.local" });
+    const a = sumberPencatat();
+    const r = await jalankanSapuan({ sumber: [a], tanggalMulai: hari("2026-08-01"), sampai: hari("2026-09-01") });
+    expect(r.dilewati).toBeNull();
+    expect(sistem.adminSistemTertua).toHaveBeenCalledOnce();
+    expect(a.oleh).toEqual(["u-sistem"]);
+  });
+
+  it("tanpa admin sistem sama sekali → TANPA_PENGGUNA, tidak ada yang diposting", async () => {
+    sistem.adminSistemTertua.mockResolvedValue(null);
+    const a = sumberPencatat();
+    const r = await jalankanSapuan({ sumber: [a], tanggalMulai: hari("2026-08-01"), sampai: hari("2026-09-01") });
+    expect(r.dilewati).toBe("TANPA_PENGGUNA");
+    expect(a.oleh).toEqual([]);
+  });
+
+  it("`olehUserId` yang diberikan dipakai apa adanya, tanpa mencari admin", async () => {
+    const a = sumberPencatat();
+    await jalankanSapuan({ sumber: [a], tanggalMulai: hari("2026-08-01"), sampai: hari("2026-09-01"), olehUserId: "u-minta" });
+    expect(sistem.adminSistemTertua).not.toHaveBeenCalled();
+    expect(a.oleh).toEqual(["u-minta"]);
   });
 });
 

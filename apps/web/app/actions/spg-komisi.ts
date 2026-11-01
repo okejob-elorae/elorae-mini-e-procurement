@@ -9,8 +9,9 @@ import { kaitBayarKomisiSpg, kaitKomisiSpg } from "@/lib/finance/operasional/kai
 
 /**
  * Komisi SPG toko putus — kantor. Melihat = `spg_sales:view` (halamannya);
- * menetapkan dan menandai dibayar = `receivables:manage`, keuangan yang juga
- * membayar gaji & komisi konsinyasi. Tidak ada izin baru.
+ * menetapkan = `receivables:manage`; menandai dibayar = `spg_commission:pay`
+ * (keputusan pemilik 2026-11-01), izin yang sama dengan menandai gaji & komisi
+ * konsinyasi dibayar — bawaannya hanya admin.
  */
 
 type Gagal<K extends string> = { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" | "INVALID" | K };
@@ -18,10 +19,12 @@ type Gagal<K extends string> = { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" |
 export type HasilTetapkanKomisiAction = { ok: true; ulang: boolean; ditulis: number; dihapus: number } | Gagal<KodeTolakTetapkan>;
 export type HasilBayarKomisiAction = { ok: true } | Gagal<"TIDAK_DITEMUKAN" | "SUDAH_DIBAYAR" | "CATATAN_TERLALU_PANJANG">;
 
-async function penggunaKeuangan(): Promise<{ ok: true; userId: string } | { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" }> {
+async function penggunaKeuangan(
+  izin: string = PERMISSIONS.RECEIVABLES_MANAGE,
+): Promise<{ ok: true; userId: string } | { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" }> {
   const session = await auth();
   if (!session?.user?.id) return { ok: false, code: "UNAUTHORIZED" };
-  if (!hasPermission(session.user.permissions ?? [], PERMISSIONS.RECEIVABLES_MANAGE)) return { ok: false, code: "FORBIDDEN" };
+  if (!hasPermission(session.user.permissions ?? [], izin)) return { ok: false, code: "FORBIDDEN" };
   return { ok: true, userId: session.user.id };
 }
 
@@ -44,7 +47,7 @@ export async function tetapkanKomisiSpgAction(isi: { storeId: unknown; periode: 
 }
 
 export async function tandaiKomisiSpgDibayarAction(isi: { commissionId: unknown; catatan?: unknown }): Promise<HasilBayarKomisiAction> {
-  const g = await penggunaKeuangan();
+  const g = await penggunaKeuangan(PERMISSIONS.SPG_COMMISSION_PAY);
   if (!g.ok) return g;
   if (typeof isi?.commissionId !== "string" || !isi.commissionId) return { ok: false, code: "INVALID" };
   if (isi.catatan !== undefined && isi.catatan !== null && typeof isi.catatan !== "string") return { ok: false, code: "INVALID" };

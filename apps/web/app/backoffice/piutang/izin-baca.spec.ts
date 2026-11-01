@@ -120,18 +120,18 @@ const HALAMAN: { nama: string; buka: () => Promise<unknown>; sah: string[][] }[]
   {
     nama: "pelunasan",
     buka: () => halamanPelunasan(),
-    sah: [["receivables:view"], ["receivables:manage"], ["journals:manage"]],
+    sah: [["receivables:view"], ["receivables:manage"], ["payments:verify"]],
   },
   {
     nama: "pelunasan/[id]",
     buka: () => halamanRincianKlaim(id),
-    sah: [["receivables:view"], ["receivables:manage"], ["journals:manage"]],
+    sah: [["receivables:view"], ["receivables:manage"], ["payments:verify"]],
   },
   {
     // Satu predikat dengan daftar BKM: yang boleh membuka daftar boleh membuka giro.
     nama: "pelunasan/giro",
     buka: () => halamanGiro(),
-    sah: [["receivables:view"], ["receivables:manage"], ["journals:manage"]],
+    sah: [["receivables:view"], ["receivables:manage"], ["payments:verify"]],
   },
   {
     nama: "pelunasan-dasbor",
@@ -141,12 +141,12 @@ const HALAMAN: { nama: string; buka: () => Promise<unknown>; sah: string[][] }[]
   {
     nama: "retur-toko",
     buka: () => halamanRetur(),
-    sah: [["receivables:view"], ["receivables:manage"], ["inventory_opname:count"], ["journals:manage"]],
+    sah: [["receivables:view"], ["receivables:manage"], ["inventory_opname:count"], ["payments:verify"]],
   },
   {
     nama: "retur-toko/[id]",
     buka: () => halamanRincianRetur(id),
-    sah: [["receivables:view"], ["receivables:manage"], ["inventory_opname:count"], ["journals:manage"]],
+    sah: [["receivables:view"], ["receivables:manage"], ["inventory_opname:count"], ["payments:verify"]],
   },
   { nama: "kontrabon", buka: () => halamanKontrabon(), sah: [["receivables:view"], ["receivables:manage"]] },
   {
@@ -191,13 +191,20 @@ describe("halaman modul piutang — pagar baca", () => {
         });
       }
 
-      // Keuangan tidak membuka piutang/kontrabon/beban/dasbor; gudang hanya retur.
-      if (!h.sah.some((izin) => izin.includes("journals:manage"))) {
-        it("refuses finance (journals:manage) where it has no work", async () => {
-          state.sesi = { user: { id: "u1", permissions: ["journals:manage"] } };
+      // Pemeriksa pembayaran tidak membuka piutang/kontrabon/beban/dasbor; gudang hanya retur.
+      if (!h.sah.some((izin) => izin.includes("payments:verify"))) {
+        it("refuses the payment verifier (payments:verify) where it has no work", async () => {
+          state.sesi = { user: { id: "u1", permissions: ["payments:verify"] } };
           await expect(h.buka()).rejects.toThrow(KE_BACKOFFICE);
         });
       }
+      // Memverifikasi pindah dari journals:manage ke payments:verify (keputusan pemilik 2026-11-01):
+      // pekerjaan jurnal saja tidak lagi membuka halaman mana pun di modul ini.
+      it("refuses bookkeeping alone (journals:manage)", async () => {
+        state.sesi = { user: { id: "u1", permissions: ["journals:view", "journals:manage"] } };
+        await expect(h.buka()).rejects.toThrow(KE_BACKOFFICE);
+        expect(state.dibaca).toBe(0);
+      });
       if (!h.sah.some((izin) => izin.includes("inventory_opname:count"))) {
         it("refuses the warehouse (inventory_opname:count) where it has no work", async () => {
           state.sesi = { user: { id: "u1", permissions: ["inventory_opname:count"] } };
