@@ -101,9 +101,10 @@ function splitCents(total: number, weights: number[]): number[] {
  * are split over its lines in proportion to their amounts; the parts of one bill add up to what was
  * paid on it, and the vendor payment journal debits AP by those same allocations. The supplier
  * payable sub-ledger reads the PO part as a credit on that PO's receipts
- * (`lib/purchasing/pembayaran-hutang-queries.ts`), so it stays equal to the general ledger. The
- * step part also covers payments of step work the bill booked itself (`bill-journal.ts`), whose
- * payable no finished-goods receipt holds.
+ * (`lib/purchasing/pembayaran-hutang-queries.ts`) and the step part as paid on that step
+ * (`daftarHutangJasa`), so it stays equal to the general ledger. The step part also covers payments
+ * of step work the bill booked itself (`bill-journal.ts`), whose payable no finished-goods receipt
+ * holds; `billBookedByWoStep` gives the sub-ledger that payable.
  */
 export async function vendorPaidBySource(
   db: Db,
@@ -132,6 +133,89 @@ export async function vendorPaidBySource(
     });
   }
   return { byPo, byWoStep };
+}
+
+/**
+ * The step payable vendor bills booked themselves (`bill-journal.ts`), per WO step: `cents` of AP and
+ * the `qty` pieces it covers. Each bill's amount is its standing `VENDOR_BILL` journal (the AP credit,
+ * less a posted `VENDOR_BILL_REVERSAL`), so the parts add up to the general ledger. That journal holds
+ * one total per bill, so it is split over the bill's step lines by the share `createVendorBill` booked
+ * for each, replayed here: the pieces of the step's WO that no finished-goods receipt booked, less
+ * what the step's bills saved earlier and still live at that moment held. When the replay no longer
+ * adds up to the journal (data changed since), the journal is split by the replayed shares, or by
+ * line amount when none is left.
+ */
+export async function billBookedByWoStep(db: Db, woStepIds: string[]): Promise<Map<string, { cents: number; qty: number }>> {
+  const result = new Map<string, { cents: number; qty: number }>();
+  if (woStepIds.length === 0) return result;
+  const touching = await db.vendorBillLine.findMany({ where: { woStepId: { in: woStepIds } }, select: { billId: true } });
+  const billIds = [...new Set(touching.map((l) => l.billId))];
+  if (billIds.length === 0) return result;
+  const journals = await db.journal.findMany({
+    where: { sourceType: { in: ["VENDOR_BILL", "VENDOR_BILL_REVERSAL"] }, sourceId: { in: billIds }, status: "POSTED" },
+    select: { sourceType: true, sourceId: true, lines: { select: { debit: true, credit: true } } },
+  });
+  // A bill journal credits only AP and its reversal debits only AP, so those sides are the AP amounts.
+  const standing = new Map<string, number>();
+  for (const j of journals) {
+    if (!j.sourceId) continue;
+    const ap =
+      j.sourceType === "VENDOR_BILL" ? j.lines.reduce((s, l) => s + cents(l.credit), 0) : -j.lines.reduce((s, l) => s + cents(l.debit), 0);
+    standing.set(j.sourceId, (standing.get(j.sourceId) ?? 0) + ap);
+  }
+  const booked = new Set([...standing].filter(([, n]) => n !== 0).map(([id]) => id));
+  if (booked.size === 0) return result;
+
+  const stepsOfBooked = await db.vendorBillLine.findMany({
+    where: { billId: { in: [...booked] }, woStepId: { not: null } },
+    select: { woStepId: true },
+  });
+  const history = await db.vendorBillLine.findMany({
+    where: { woStepId: { in: [...new Set(stepsOfBooked.map((l) => l.woStepId!))] } },
+    orderBy: { id: "asc" },
+    select: {
+      billId: true,
+      woStepId: true,
+      qty: true,
+      price: true,
+      amount: true,
+      bill: { select: { createdAt: true, voidedAt: true } },
+      woStep: { select: { woId: true } },
+    },
+  });
+  const unbooked = await unbookedReceiptQtyByWo(db, [...new Set(history.flatMap((l) => (l.woStep ? [l.woStep.woId] : [])))]);
+  const byStep = new Map<string, typeof history>();
+  for (const l of history) byStep.set(l.woStepId!, [...(byStep.get(l.woStepId!) ?? []), l]);
+
+  const perBill = new Map<string, Array<{ woStepId: string; qty: number; weight: number; amount: number }>>();
+  for (const l of history) {
+    if (!booked.has(l.billId)) continue;
+    const at = l.bill.createdAt.getTime();
+    const held = (byStep.get(l.woStepId!) ?? [])
+      .filter((o) => o.billId !== l.billId && o.bill.createdAt.getTime() < at && (o.bill.voidedAt == null || o.bill.voidedAt.getTime() > at))
+      .reduce((s, o) => s + Number(o.qty), 0);
+    const left = Math.max(0, round2((l.woStep ? unbooked.get(l.woStep.woId) ?? 0 : 0) - held));
+    const qty = Math.min(Number(l.qty), left);
+    const rows = perBill.get(l.billId) ?? [];
+    rows.push({ woStepId: l.woStepId!, qty, weight: cents(round2(qty * Number(l.price))), amount: Math.max(0, cents(l.amount)) });
+    perBill.set(l.billId, rows);
+  }
+
+  const wanted = new Set(woStepIds);
+  for (const [billId, rows] of perBill) {
+    const total = standing.get(billId) ?? 0;
+    const sum = rows.reduce((s, r) => s + r.weight, 0);
+    const parts =
+      sum === Math.abs(total) ? rows.map((r) => r.weight) : splitCents(Math.abs(total), sum > 0 ? rows.map((r) => r.weight) : rows.map((r) => r.amount));
+    rows.forEach((r, i) => {
+      if (!wanted.has(r.woStepId)) return;
+      const cur = result.get(r.woStepId) ?? { cents: 0, qty: 0 };
+      cur.cents += Math.sign(total) * parts[i];
+      if (total > 0) cur.qty = round2(cur.qty + r.qty);
+      result.set(r.woStepId, cur);
+    });
+  }
+  return result;
 }
 
 /**

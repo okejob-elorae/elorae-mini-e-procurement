@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import {
   getWorkOrderById,
@@ -121,7 +121,6 @@ export default function EditWorkOrderPage() {
   const tF = useTranslations('workOrders.form');
   const tR = useTranslations('workOrders.formulir');
   const tTolak = useTranslations('productionErrors');
-  const locale = useLocale();
   const router = useRouter();
   const { data: session } = useSession();
   const [wo, setWO] = useState<WO>(null);
@@ -594,17 +593,6 @@ export default function EditWorkOrderPage() {
         session.user.id
       );
       if (!hasil.ok) {
-        if (hasil.code === 'STOK_RENCANA_KURANG') {
-          const angka = new Intl.NumberFormat(locale === 'en' ? 'en-GB' : 'id-ID', { maximumFractionDigits: 2 });
-          toast.error(
-            tTolak.has('STOK_RENCANA_KURANG')
-              ? tTolak('STOK_RENCANA_KURANG', {
-                  daftar: hasil.kurang.map((k) => `${k.barang} (${angka.format(k.qty)} ${k.satuan})`).join(', '),
-                })
-              : tF('updateFailed')
-          );
-          return;
-        }
         toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : tF('updateFailed'));
         // WO sudah bukan draf / sudah tidak ada: layar ubah tidak berlaku lagi.
         if (hasil.code === 'WO_BUKAN_DRAF') router.push(`/backoffice/work-orders/${id}`);

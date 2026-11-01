@@ -486,9 +486,7 @@ export async function createWorkOrder(
 export type KodeTolakUbahWo = 'TANPA_AKSES' | 'DATA_TIDAK_VALID' | 'WO_TIDAK_DITEMUKAN' | 'WO_BUKAN_DRAF' | 'GAGAL';
 export type UbahWorkOrderResult =
   | { ok: true; id: string; docNumber: string }
-  | { ok: false; code: KodeTolakUbahWo }
-  /** Rencana bahan baru melebihi stok: per barang, kekurangannya (2 desimal) dan satuannya. */
-  | { ok: false; code: 'STOK_RENCANA_KURANG'; kurang: Array<{ barang: string; qty: number; satuan: string }> };
+  | { ok: false; code: KodeTolakUbahWo };
 
 class UbahWoDitolak extends Error {
   constructor(readonly code: 'WO_TIDAK_DITEMUKAN' | 'WO_BUKAN_DRAF') {

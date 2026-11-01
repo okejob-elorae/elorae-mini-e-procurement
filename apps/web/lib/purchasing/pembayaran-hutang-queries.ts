@@ -33,7 +33,9 @@ type Klien = Prisma.TransactionClient | typeof prisma;
  *   diterapkan FIFO dari GRN tertua PO itu.
  * - Dibayar per dokumen = Σ alokasi pembayaran pemasok yang BERLAKU, kecuali
  *   pembayaran cermin "Tandai lunas" (nilainya sudah terbaca dari jurnalnya).
- * - Hutang jasa produksi per langkah WO dari `daftarHutangJasa`.
+ * - Hutang jasa produksi per langkah WO dari `daftarHutangJasa` (jurnal
+ *   penerimaan barang jadi + jurnal tagihan vendor yang masih berdiri; dibayar
+ *   termasuk bagian pembayaran Vendor Billing atas langkah itu).
  * - Hutang saldo awal per pemasok dari impor saldo awal `AP` yang berlaku.
  * - Uang muka = bagian pembayaran berlaku yang belum dialokasikan.
  * - Uang muka belum dipotong per dokumen (dasar PPh pembayaran berikutnya) dari
@@ -299,12 +301,28 @@ async function hutangSaldoAwal(klien: Klien, ruang?: string): Promise<{ tanggal:
   return { tanggal, perPemasok };
 }
 
-/** Tanggal penerimaan barang jadi PERTAMA yang menjurnal jasa, per WO — dasar umur hutang jasa. */
+/**
+ * Tanggal penerimaan barang jadi PERTAMA yang menjurnal jasa, per WO — dasar umur hutang jasa. WO
+ * yang jasanya hanya dijurnal tagihan vendor (penerimaannya semua lama) memakai tanggal tagihan
+ * berlaku tertuanya.
+ */
 async function tanggalJasaPerWo(woIds: string[], klien: Klien): Promise<Map<string, string>> {
   const hasil = new Map<string, string>();
   for (const ids of potong(woIds, 500)) {
     const r = await klien.fGReceipt.groupBy({ by: ["woId"], where: { woId: { in: ids }, serviceCost: { not: null } }, _min: { receivedAt: true } });
     for (const x of r) if (x._min.receivedAt) hasil.set(x.woId, tglWib(x._min.receivedAt));
+  }
+  for (const ids of potong(woIds.filter((id) => !hasil.has(id)), 500)) {
+    const baris = await klien.vendorBillLine.findMany({
+      where: { woStep: { woId: { in: ids } }, bill: { status: { not: "VOID" } } },
+      select: { woStep: { select: { woId: true } }, bill: { select: { billDate: true } } },
+    });
+    for (const b of baris) {
+      if (!b.woStep) continue;
+      const t = tglWib(b.bill.billDate);
+      const ada = hasil.get(b.woStep.woId);
+      if (!ada || t < ada) hasil.set(b.woStep.woId, t);
+    }
   }
   return hasil;
 }
