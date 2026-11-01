@@ -2,6 +2,7 @@ import { prisma, Prisma, type PrismaClient } from "@elorae/db";
 import { hitungSisaPiutang, type StatusKlaim } from "@/lib/receivables/rules";
 import { PILIH_POTONGAN, potonganRetur } from "@/lib/receivables/deductions";
 import { kanalMarketplace, KANAL_MARKETPLACE, type KanalJurnal } from "@/lib/finance/journals/kanal";
+import { readReceivableJournalStates } from "@/lib/finance/ar/store-receivable-role";
 import type { EntriHutang, EntriPiutangMarketplace, EntriPiutangToko } from "./jenis";
 import type { BarisStok } from "./persediaan";
 import { dariSen, keSen } from "./jurnal";
@@ -29,8 +30,18 @@ function potong<T>(xs: readonly T[]): T[][] {
  * mengurangi. Pelunasan sesudahnya dijurnal sendiri (DR Bank / CR Piutang),
  * jadi faktur itu harus masih utuh di saldo awal.
  *
+ * Pembayaran kantor (alokasi `Payment`, asal `Receivable.paidAmount`, yang
+ * tidak dikenal `hitungSisaPiutang`) mengikuti aturan yang sama: hanya yang
+ * POSTED dan dibayar SEBELUM tanggal mulai yang mengurangi. Yang sesudahnya
+ * urusan jurnal penerimaannya, dan yang dibatalkan tidak pernah mengurangi.
+ *
  * Hanya faktur bertanggal sebelum tanggal mulai, dan toko KONSINYASI tidak
- * pernah ikut (sama dengan modul piutang).
+ * pernah ikut (sama dengan modul piutang). Faktur yang jurnal fakturnya
+ * mendebit akun LAIN (bentuk lama di AR, laporan laku konsinyasi di
+ * AR_CONSIGNMENT — `readReceivableJournalStates`) juga tidak ikut: piutangnya
+ * sudah di buku besar di akun itu, dan setiap pelunasannya dikredit ke sana.
+ * Aturan yang sama dengan rekonsiliasi piutang toko, jadi saldo awal tidak
+ * pernah membukukannya dua kali.
  */
 export async function hitungPiutangTokoAwal(
   tanggalMulai: Date,
@@ -44,10 +55,15 @@ export async function hitungPiutangTokoAwal(
       ...(opsi.storeIds ? { storeId: { in: opsi.storeIds } } : {}),
     },
     select: {
+      id: true,
       storeId: true,
       amount: true,
       paidBeforeImport: true,
       store: { select: { code: true, name: true } },
+      allocations: {
+        where: { payment: { status: "POSTED", paidAt: { lt: tanggalMulai } } },
+        select: { amount: true },
+      },
       claimLinks: {
         select: {
           settledAmount: true,
@@ -65,8 +81,16 @@ export async function hitungPiutangTokoAwal(
     },
   });
 
+  const diAkunLain = new Set<string>();
+  for (const ids of potong(rows.map((r) => r.id))) {
+    for (const [id, keadaan] of await readReceivableJournalStates(client, ids)) {
+      if (keadaan.role !== null && keadaan.role !== "AR_STORE") diAkunLain.add(id);
+    }
+  }
+
   const perToko = new Map<string, EntriPiutangToko & { sen: number }>();
   for (const r of rows) {
+    if (diAkunLain.has(r.id)) continue;
     const klaimList = r.claimLinks.map((l) => {
       const k = l.paymentClaim;
       const waktuVerifikasi = k.verifiedAt ?? k.updatedAt;
@@ -79,10 +103,12 @@ export async function hitungPiutangTokoAwal(
       };
     });
     const sisa = hitungSisaPiutang(Number(r.amount), klaimList, Number(r.paidBeforeImport));
-    if (sisa <= 0) continue;
+    const dibayarKantorSen = r.allocations.reduce((s, a) => s + keSen(Number(a.amount)), 0);
+    const sisaSen = Math.max(0, keSen(sisa) - dibayarKantorSen);
+    if (sisaSen <= 0) continue;
     const ada = perToko.get(r.storeId) ?? { storeId: r.storeId, kode: r.store.code, nama: r.store.name, faktur: 0, jumlah: 0, sen: 0 };
     ada.faktur += 1;
-    ada.sen += keSen(sisa);
+    ada.sen += sisaSen;
     perToko.set(r.storeId, ada);
   }
   return [...perToko.values()]

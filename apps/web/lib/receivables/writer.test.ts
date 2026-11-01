@@ -11,8 +11,8 @@ import { describe, expect, it, vi } from 'vitest';
 const state = {
   klaim: null as { id: string; status: string } | null,
   updates: [] as { where: unknown; data: Record<string, unknown> }[],
-  links: [] as { receivableId: string }[],
-  receivable: { amount: 10_000_000, claimLinks: [] as unknown[] },
+  links: [] as { receivableId: string; settledAmount?: number }[],
+  receivable: { amount: 10_000_000, claimLinks: [] } as { amount: number; claimLinks: unknown[]; paidAmount?: number },
   receivableUpdates: [] as Record<string, unknown>[],
   jejak: [] as Record<string, unknown>[],
 };
@@ -58,7 +58,7 @@ vi.mock('@elorae/db', () => ({
   Prisma: { Decimal: class { constructor(public value: number) {} } },
 }));
 
-const { putuskanKlaim } = await import('./writer');
+const { putuskanKlaim, selaraskanSisaPiutang } = await import('./writer');
 
 function reset(klaimStatus: string | null) {
   state.klaim = klaimStatus ? { id: 'k1', status: klaimStatus } : null;
@@ -131,6 +131,46 @@ describe('putuskanKlaim', () => {
       olehUserId: 'u1',
       catatan: 'uang belum masuk rekening',
     });
+    expect(state.receivableUpdates[0].settledAt).toBeNull();
+  });
+
+  it('menolak BKM atas faktur yang sudah dibayar di kantor', async () => {
+    // Uang yang masuk lewat pembayaran kantor (`paidAmount`) tidak lewat BKM.
+    // Tanpa ikut dikurangkan, faktur yang sudah lunas di kantor diverifikasi
+    // lunas sekali lagi dan piutang tokonya dikredit dua kali.
+    reset('DIKIRIM');
+    state.receivable = { amount: 10_000_000, claimLinks: [], paidAmount: 10_000_000 };
+    state.links = [{ receivableId: 'r1', settledAmount: 1_000_000 }];
+    const hasil = await putuskanKlaim({ paymentClaimId: 'k1', keputusan: 'TERVERIFIKASI', olehUserId: 'u1' });
+    expect(hasil).toEqual({ ok: false, alasan: 'MELEBIHI_SISA' });
+    expect(state.updates).toHaveLength(0);
+  });
+
+  it('menyimpan sisa yang sudah dikurangi pembayaran kantor', async () => {
+    reset('DIKIRIM');
+    state.receivable = { amount: 10_000_000, claimLinks: [], paidAmount: 4_000_000 };
+    await putuskanKlaim({ paymentClaimId: 'k1', keputusan: 'DITOLAK', olehUserId: 'u1', catatan: 'uang belum masuk' });
+    expect(state.receivableUpdates[0].outstanding).toEqual({ value: 6_000_000 });
+    expect(state.receivableUpdates[0].outstandingAmount).toEqual({ value: 6_000_000 });
+  });
+});
+
+describe('selaraskanSisaPiutang — sesudah pembayaran kantor', () => {
+  it('menulis sisa dan tanggal lunas modul ini saja, bukan kolom pembayaran kantor', async () => {
+    reset(null);
+    state.receivable = { amount: 10_000_000, claimLinks: [], paidAmount: 10_000_000 };
+    expect(await selaraskanSisaPiutang(tx as never, 'r1')).toBe(0);
+    expect(state.receivableUpdates).toHaveLength(1);
+    expect(state.receivableUpdates[0].outstanding).toEqual({ value: 0 });
+    expect(state.receivableUpdates[0].settledAt).toBeInstanceOf(Date);
+    expect(state.receivableUpdates[0]).not.toHaveProperty('outstandingAmount');
+    expect(state.receivableUpdates[0]).not.toHaveProperty('status');
+  });
+
+  it('membuka lagi faktur yang pembayaran kantornya dibatalkan', async () => {
+    reset(null);
+    state.receivable = { amount: 10_000_000, claimLinks: [], paidAmount: 0 };
+    expect(await selaraskanSisaPiutang(tx as never, 'r1')).toBe(10_000_000);
     expect(state.receivableUpdates[0].settledAt).toBeNull();
   });
 });

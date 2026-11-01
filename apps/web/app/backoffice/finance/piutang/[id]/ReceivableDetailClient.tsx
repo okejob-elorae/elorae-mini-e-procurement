@@ -163,6 +163,14 @@ export function ReceivableDetailClient({
    * (server-resolved) already stays false for a SELL_THROUGH row, so this is a defensive narrow, not
    * the real gate. Sell-through journals are retried from the report's own page. */
   const deliveryId = r.source.kind === "DELIVERY" ? r.source.deliveryId : null;
+  /* A MANUAL/IMPORT invoice has no source document of its own, so it opens on the receivables book
+   * filtered to its number. */
+  const sourceHref =
+    r.source.kind === "DELIVERY"
+      ? `/backoffice/field-sales-orders/${r.source.orderId}`
+      : r.source.kind === "SELL_THROUGH"
+        ? `/backoffice/konsi-sell-through/${r.source.sellThroughId}`
+        : `/backoffice/piutang?cari=${encodeURIComponent(r.source.docNo)}`;
 
   /**
    * `stillPending` is read from the action's own returned outcome, never from re-checking
@@ -265,14 +273,7 @@ export function ReceivableDetailClient({
         <h2 className="font-semibold">{t("detail.invoiceFactsTitle")}</h2>
         <div className="flex justify-between gap-4 text-sm">
           <span className="text-muted-foreground">{t("colDocNo")}</span>
-          <Link
-            href={
-              r.source.kind === "DELIVERY"
-                ? `/backoffice/field-sales-orders/${r.source.orderId}`
-                : `/backoffice/konsi-sell-through/${r.source.sellThroughId}`
-            }
-            className="inline-flex items-center gap-1 font-mono hover:underline"
-          >
+          <Link href={sourceHref} className="inline-flex items-center gap-1 font-mono hover:underline">
             {r.source.docNo}
             <ExternalLink className="h-3 w-3" />
           </Link>

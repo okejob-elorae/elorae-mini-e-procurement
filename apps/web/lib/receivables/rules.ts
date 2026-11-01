@@ -109,8 +109,17 @@ export function hitungSisaPiutang(
    * ke Rp10 jt dan toko ditagih untuk uang yang sudah dibayar.
    */
   dibayarSebelumImpor = 0,
+  /**
+   * Uang yang masuk lewat pembayaran kantor (`Receivable.paidAmount` —
+   * Keuangan → Piutang, setoran penagih, pelunasan toko), bukan lewat BKM.
+   * Tanpa itu faktur yang sudah dibayar di kantor tetap tampil terbuka di
+   * layar piutang dan di HP sales, dan BKM bisa melunasinya sekali lagi.
+   * Dikurangkan SEBELUM dibulatkan: pembayaran kantor boleh bersen, dan faktur
+   * bersen yang dilunasi penuh harus bersisa nol, bukan sisa pembulatan.
+   */
+  dibayarKantor = 0,
 ): number {
-  let terbayar = Math.max(0, dibayarSebelumImpor);
+  let terbayar = Math.max(0, dibayarSebelumImpor) + Math.max(0, dibayarKantor);
   for (const klaim of klaimList) {
     const diakui = nilaiDiakui(klaim);
     if (diakui <= 0) continue;

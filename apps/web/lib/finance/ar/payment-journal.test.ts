@@ -13,6 +13,7 @@ vi.mock("@/lib/finance/sales/sweep", async (asli) => ({
 
 import { postPaymentReceiptJournal, postPaymentVoidJournal } from "./payment-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
+import { penandaBebanRetur } from "@/lib/receivables/penanda-beban";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -215,6 +216,28 @@ d("payment-journal (test bed only)", () => {
     receivableIds.push(receivable.id);
     if (opts.revenueJournal) await journalSource("KONSI_SELLTHRU_REVENUE", report.id);
     return { receivableId: receivable.id, sellThroughId: report.id };
+  }
+
+  /*
+   * A return-charge invoice, as `tulisPiutangManual` writes it when a return's shortfall is billed
+   * to the store: MANUAL, backed by nothing, its charge named in the note. It never gets a journal
+   * of its own — the NRI's return journal leaves its value on AR_STORE.
+   */
+  async function makeReturnChargeReceivable(amount: number): Promise<string> {
+    const n = ++seq;
+    const receivable = await prisma.receivable.create({
+      data: {
+        storeId,
+        invoiceNo: `TEST-PJ-BEBAN-${token}-${n}`,
+        source: "MANUAL",
+        invoiceDate: paidAt, dueDate: paidAt,
+        amount, outstanding: amount,
+        originalAmount: amount, outstandingAmount: amount,
+        note: `Selisih retur ditanggung toko. ${penandaBebanRetur(`TEST-PJ-${token}-c${n}`)}`,
+      },
+    });
+    receivableIds.push(receivable.id);
+    return receivable.id;
   }
 
   async function createPayment(
@@ -425,6 +448,26 @@ d("payment-journal (test bed only)", () => {
     expect(reversal!.lines.find((l) => l.chartAccountId === arStoreId)).toMatchObject({ storeId });
     expect(Number(reversal!.lines.find((l) => l.chartAccountId === arStoreId)!.debit)).toBe(200);
     expect(Number(reversal!.lines.find((l) => l.chartAccountId === arConsignmentId)!.debit)).toBe(100);
+  });
+
+  it("a return-charge invoice with no journal of its own is credited on AR_STORE with its store once a cutover is set", async () => {
+    const receivableId = await makeReturnChargeReceivable(250);
+    paymentId = await createPayment("TRANSFER", 250, [{ receivableId, amount: 250 }]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
+    const j = await receiptOf(paymentId);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === bankId)!.debit)).toBe(250);
+    expect(j!.lines.find((l) => l.chartAccountId === arStoreId)).toMatchObject({ memo: "AR_STORE", storeId });
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arStoreId)!.credit)).toBe(250);
+    expect(j!.lines.find((l) => l.chartAccountId === arId)).toBeUndefined();
+    expect(j!.description).not.toContain("sebagian");
+  });
+
+  it("with no GL cutover set, a return-charge invoice is outside the ledger", async () => {
+    const receivableId = await makeReturnChargeReceivable(250);
+    h.mulai = null;
+    paymentId = await createPayment("TRANSFER", 250, [{ receivableId, amount: 250 }]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toEqual({ ok: false, code: "RECEIVABLE_OUTSIDE_LEDGER" });
+    expect(await journalCountFor(paymentId)).toBe(0);
   });
 
   it("a payment with no allocations → refuses RECEIVABLE_OUTSIDE_LEDGER", async () => {

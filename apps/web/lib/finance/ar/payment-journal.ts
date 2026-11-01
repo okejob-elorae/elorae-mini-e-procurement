@@ -69,7 +69,9 @@ type ReceivableVerdict = { gate: ArReceiptGateCode | null; role: StoreReceivable
  * or flagged while none is set, can never get the cutover-gated nota journal, so it reads as outside
  * the ledger rather than holding every payment that touches it for good. A MANUAL/IMPORT invoice is
  * in the ledger once its first-generation `STORE_INVOICE` journal stands, and late while its
- * `faktur_piutang` post is flagged.
+ * `faktur_piutang` post is flagged. A return-charge invoice never gets a journal of its own; it is
+ * in the ledger on AR_STORE once a GL cutover is set, since its NRI's return journal or the opening
+ * balance carries it there (`readReceivableJournalStates`).
  */
 async function classifyReceivables(
   ids: string[],

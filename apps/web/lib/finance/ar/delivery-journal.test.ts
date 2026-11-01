@@ -18,6 +18,16 @@ vi.mock("@/lib/finance/lapangan/kait", async (importActual) => ({
   },
 }));
 
+/*
+ * A completed revenue half debits AR_STORE only for a delivery dated on or after the GL cutover,
+ * so the post reads it. It is shared live config; this stub stands in for the bed's row.
+ */
+const cutover = vi.hoisted(() => ({ mulai: new Date("2026-01-01T00:00:00.000+07:00") as Date | null }));
+vi.mock("@/lib/finance/sales/sweep", async (importActual) => ({
+  ...(await importActual<typeof import("@/lib/finance/sales/sweep")>()),
+  readGlCutover: vi.fn(async () => cutover.mulai),
+}));
+
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "./delivery-journal";
 
 const url = process.env.DATABASE_URL ?? "";
@@ -34,6 +44,7 @@ d("delivery journals (test bed only)", () => {
   let orderId = "";
   let deliveryId = "";
   let arId = "";
+  let legacyArId = "";
   let revId = "";
   let cogsId = "";
   let invId = "";
@@ -42,10 +53,11 @@ d("delivery journals (test bed only)", () => {
   beforeEach(async () => {
     token = Math.floor(Math.random() * 1_000_000);
     storeId = ""; userId = ""; orderId = ""; deliveryId = "";
-    arId = ""; revId = ""; cogsId = ""; invId = "";
+    arId = ""; legacyArId = ""; revId = ""; cogsId = ""; invId = "";
     notaHook.calls = [];
     notaHook.result = null;
-    mappingSnapshot = await snapshotMappings(["AR_STORE", "SALES_REVENUE", "COGS", "INVENTORY"]);
+    cutover.mulai = new Date("2026-01-01T00:00:00.000+07:00");
+    mappingSnapshot = await snapshotMappings(["AR_STORE", "AR", "SALES_REVENUE", "COGS", "INVENTORY"]);
 
     const store = await prisma.store.create({
       data: { code: `TEST-DJ-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -80,6 +92,7 @@ d("delivery journals (test bed only)", () => {
     revId = await mk(`9${token}2`, "PENDAPATAN");
     cogsId = await mk(`9${token}3`, "HPP");
     invId = await mk(`9${token}4`, "ASET");
+    legacyArId = await mk(`9${token}5`, "ASET");
     const map = async (role: string, id: string) =>
       prisma.journalAccountMapping.upsert({
         where: { role: role as never },
@@ -87,6 +100,7 @@ d("delivery journals (test bed only)", () => {
         update: { chartAccountId: id },
       });
     await map("AR_STORE", arId);
+    await map("AR", legacyArId);
     await map("SALES_REVENUE", revId);
     await map("COGS", cogsId);
     await map("INVENTORY", invId);
@@ -99,7 +113,7 @@ d("delivery journals (test bed only)", () => {
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: seededId(deliveryId) } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: seededId(orderId) } });
     await prisma.chartAccount.deleteMany({
-      where: { id: { in: [seededId(arId), seededId(revId), seededId(cogsId), seededId(invId)] } },
+      where: { id: { in: [seededId(arId), seededId(legacyArId), seededId(revId), seededId(cogsId), seededId(invId)] } },
     });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
@@ -172,6 +186,35 @@ d("delivery journals (test bed only)", () => {
     expect(journal!.lines.find((l) => l.chartAccountId === arId)).toMatchObject({ memo: "AR_STORE", storeId });
     expect(Number(journal!.lines.find((l) => l.chartAccountId === arId)!.debit)).toBe(1000);
     expect(Number(journal!.lines.find((l) => l.chartAccountId === revId)!.credit)).toBe(1000);
+    expect(journal!.lines.find((l) => l.chartAccountId === legacyArId)).toBeUndefined();
+  });
+
+  /*
+   * The opening balance already carries a receivable dated before the cutover on AR_STORE unless its
+   * invoice journal stands on AR, so the completed half keeps the old pair's shape there.
+   */
+  it("completes the old pair's revenue half on AR, with no memo or store, for a delivery dated before the cutover", async () => {
+    cutover.mulai = new Date("2026-06-01T00:00:00.000+07:00");
+    await seedJournal("FIELD_DELIVERY_COGS");
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toMatchObject({ ok: true, created: true });
+
+    const journal = await journalOf("FIELD_DELIVERY_REVENUE");
+    expect(journal?.date.getTime()).toBe(D1.getTime());
+    const ar = journal!.lines.find((l) => l.chartAccountId === legacyArId);
+    expect(ar).toMatchObject({ memo: null, storeId: null });
+    expect(Number(ar!.debit)).toBe(1000);
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === revId)!.credit)).toBe(1000);
+    expect(journal!.lines.find((l) => l.chartAccountId === arId)).toBeUndefined();
+  });
+
+  it("completes the old pair's revenue half on AR while no GL cutover is set", async () => {
+    cutover.mulai = null;
+    await seedJournal("FIELD_DELIVERY_COGS");
+    expect(await postFieldDeliveryRevenueJournal(deliveryId, userId)).toMatchObject({ ok: true, created: true });
+
+    const journal = await journalOf("FIELD_DELIVERY_REVENUE");
+    expect(Number(journal!.lines.find((l) => l.chartAccountId === legacyArId)!.debit)).toBe(1000);
+    expect(journal!.lines.find((l) => l.chartAccountId === arId)).toBeUndefined();
   });
 
   it("completes the old pair's COGS half on the delivery's current invoice date", async () => {

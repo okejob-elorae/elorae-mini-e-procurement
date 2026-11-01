@@ -38,6 +38,7 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
   let tokoKonsiId = "";
   let piutangIds: string[] = [];
   let klaimIds: string[] = [];
+  let pembayaranIds: string[] = [];
   let orderIds: string[] = [];
   let tipePemasokId = "";
   let pemasokIds: string[] = [];
@@ -51,6 +52,7 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
     tokoKonsiId = "";
     piutangIds = [];
     klaimIds = [];
+    pembayaranIds = [];
     orderIds = [];
     tipePemasokId = "";
     pemasokIds = [];
@@ -213,6 +215,8 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
     await prisma.settlementLine.deleteMany({ where: { matchedSalesOrderId: { in: seededIds(orderIds) } } });
     await prisma.settlement.deleteMany({ where: { uploadedById: seededId(userId) } });
     await prisma.salesOrder.deleteMany({ where: { id: { in: seededIds(orderIds) } } });
+    await prisma.paymentAllocation.deleteMany({ where: { paymentId: { in: seededIds(pembayaranIds) } } });
+    await prisma.payment.deleteMany({ where: { id: { in: seededIds(pembayaranIds) } } });
     await prisma.paymentClaimReceivable.deleteMany({ where: { paymentClaimId: { in: seededIds(klaimIds) } } });
     await prisma.paymentClaim.deleteMany({ where: { id: { in: seededIds(klaimIds) } } });
     await prisma.receivable.deleteMany({ where: { id: { in: seededIds(piutangIds) } } });
@@ -224,6 +228,46 @@ d("hitungan saldo awal dari modul (basis data uji)", () => {
   it("piutang toko: sisa per tanggal mulai — hanya BKM terverifikasi SEBELUM tanggal mulai mengurangi; konsinyasi dan faktur sesudahnya tidak ikut", async () => {
     const baris = await hitungPiutangTokoAwal(MULAI, { storeIds: [tokoPutusId, tokoKonsiId] });
     expect(baris).toEqual([{ storeId: tokoPutusId, kode: `SA-${token}-P`, nama: `Toko ${token}`, faktur: 2, jumlah: 3_000_000 + 1_000_000 }]);
+  });
+
+  it("piutang toko: pembayaran kantor POSTED sebelum tanggal mulai mengurangi; sesudahnya dan yang dibatalkan tidak", async () => {
+    const bayar = async (no: string, receivableId: string, nilai: number, paidAt: string, status: "POSTED" | "VOIDED") => {
+      const p = await prisma.payment.create({
+        data: {
+          docNo: `SA-${token}-${no}`,
+          storeId: tokoPutusId,
+          paidAt: tgl(paidAt),
+          method: "TRANSFER",
+          amount: nilai,
+          status,
+          recordedById: userId,
+          allocations: { create: [{ receivableId, amount: nilai }] },
+        },
+      });
+      pembayaranIds.push(p.id);
+    };
+    const [r1, r2] = piutangIds;
+    await bayar("P1", r2, 400_000, "2091-02-15", "POSTED"); // sebelum mulai → mengurangi
+    await bayar("P2", r1, 300_000, "2091-03-02", "POSTED"); // sesudah mulai → dijurnal sendiri
+    await bayar("P3", r1, 250_000, "2091-02-20", "VOIDED"); // dibatalkan → tidak pernah mengurangi
+    const baris = await hitungPiutangTokoAwal(MULAI, { storeIds: [tokoPutusId, tokoKonsiId] });
+    expect(baris).toEqual([{ storeId: tokoPutusId, kode: `SA-${token}-P`, nama: `Toko ${token}`, faktur: 2, jumlah: 3_000_000 + 600_000 }]);
+  });
+
+  it("piutang toko: faktur yang jurnal fakturnya mendebit AR (bentuk lama) sudah di buku besar, tidak ikut saldo awal", async () => {
+    // Tanpa memo peran di baris debitnya = bentuk lama, yang mendebit AR.
+    await prisma.journal.create({
+      data: {
+        date: tgl("2091-01-10"),
+        description: "uji faktur bentuk lama",
+        sourceType: "STORE_INVOICE",
+        sourceId: piutangIds[0],
+        postedById: userId,
+        lines: { create: [{ chartAccountId: akun.arMp, debit: 5_000_000, credit: 0 }, { chartAccountId: akun.ekuitas, debit: 0, credit: 5_000_000 }] },
+      },
+    });
+    const baris = await hitungPiutangTokoAwal(MULAI, { storeIds: [tokoPutusId, tokoKonsiId] });
+    expect(baris).toEqual([{ storeId: tokoPutusId, kode: `SA-${token}-P`, nama: `Toko ${token}`, faktur: 1, jumlah: 1_000_000 }]);
   });
 
   it("piutang marketplace: terkirim sebelum mulai dan belum cair per tanggal mulai, per kanal", async () => {

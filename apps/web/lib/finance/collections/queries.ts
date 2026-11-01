@@ -3,6 +3,7 @@ import { daysOverdue, agingBucket, type AgingBucket } from "@/lib/finance/ar/agi
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource } from "@/lib/finance/ar/receivable-source";
 import { getPendingSettlementInvoiceClaimsMap } from "@/lib/finance/ar/queries";
 import { collectionProofUrl } from "./proof-url";
+import { RECEIVABLES_ON_PHONE } from "./phone-scope";
 
 export type CollectionQueueRow = {
   receivableId: string;
@@ -16,9 +17,10 @@ export type CollectionQueueRow = {
   pendingSettlementClaimAmount: number;
 };
 
+/** The phone's collection queue: open receivables assigned to `collectorId`, never a konsi one (`RECEIVABLES_ON_PHONE`). */
 export async function listCollectionQueue(collectorId: string, asOf: Date = new Date()): Promise<CollectionQueueRow[]> {
   const receivables = await prisma.receivable.findMany({
-    where: { collectorId, status: { in: ["OUTSTANDING", "PARTIAL"] } },
+    where: { collectorId, status: { in: ["OUTSTANDING", "PARTIAL"] }, ...RECEIVABLES_ON_PHONE },
     orderBy: { dueDate: "asc" },
     select: {
       id: true,
@@ -209,11 +211,13 @@ export type CollectionAccess =
 /**
  * Like `getReceivableForCollection`, but names the two refusals apart so a screen can show a way
  * out when a receivable was reassigned. `not_assigned` carries NO receivable fields: the caller
- * learns only that the id exists, never anything about another collector's receivable.
+ * learns only that the id exists, never anything about another collector's receivable. A konsi
+ * receivable reads as `missing` even to its own collector, since this only ever serves the phone
+ * (`RECEIVABLES_ON_PHONE`); it is collected from the backoffice.
  */
 export async function getReceivableCollectionAccess(receivableId: string, collectorId: string): Promise<CollectionAccess> {
-  const r = await prisma.receivable.findUnique({
-    where: { id: receivableId },
+  const r = await prisma.receivable.findFirst({
+    where: { id: receivableId, ...RECEIVABLES_ON_PHONE },
     select: {
       id: true,
       collectorId: true,
@@ -244,8 +248,8 @@ export async function getReceivableCollectionAccess(receivableId: string, collec
 }
 
 /**
- * Reads a single receivable scoped to a specific assigned collector. Returns `null` both when the
- * receivable does not exist AND when `collectorId` does not match the assignment, so a collector can
+ * Reads a single receivable scoped to a specific assigned collector. Returns `null` when the
+ * receivable does not exist, is a konsi one, OR is assigned to someone else, so a collector can
  * never even read a receivable that isn't theirs — the same shape as a 404, not a 403, so the caller
  * cannot distinguish "not yours" from "doesn't exist".
  */

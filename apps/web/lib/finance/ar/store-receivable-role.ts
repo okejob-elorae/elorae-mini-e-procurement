@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "@elorae/db";
 import { SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "@/lib/finance/lapangan/aturan";
+import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { SELL_THROUGH_JOURNAL_SOURCE_TYPES } from "@/lib/konsi-sell-through/journal";
+import { idBebanDariCatatan } from "@/lib/receivables/penanda-beban";
 import { RECEIVABLE_SOURCE_SELECT, resolveReceivableSource, ReceivableSourceMissingError } from "./receivable-source";
 
 type AnyClient = PrismaClient | Prisma.TransactionClient;
@@ -13,9 +15,17 @@ type AnyClient = PrismaClient | Prisma.TransactionClient;
  *
  * Every store invoice journal posted today tags its receivable debit with the role's own name as
  * the line memo: AR_STORE for a putus store (the nota journal `FIELD_DELIVERY`, a MANUAL/IMPORT
- * invoice's `STORE_INVOICE`, a completed old-pair revenue half) and AR_CONSIGNMENT for a konsi
- * sell-through report. A journal with no such line is the old shape, which debited AR — the
- * marketplace role — and keeps it: the receivable it booked stays on AR until it is settled.
+ * invoice's `STORE_INVOICE`, an old-pair revenue half completed for a delivery dated on or after
+ * the GL cutover) and AR_CONSIGNMENT for a konsi sell-through report. A journal with no such line
+ * is the old shape, which debited AR — the marketplace role — and keeps it: the receivable it
+ * booked stays on AR until it is settled. So does an old-pair revenue half completed for a delivery
+ * dated before the cutover (`lib/finance/ar/delivery-journal.ts`).
+ *
+ * A return-charge invoice (`tulisPiutangManual` with `penandaBebanRetur` in its note) has no invoice
+ * journal of its own by design (`fakturDijurnalSendiri`): its value stays on AR_STORE because the
+ * return journal of its NRI nets it out of the return credit (`ditagihKeToko`), or, for a return
+ * counted before the cutover, because the opening balance carries it. It reads as AR_STORE whenever
+ * a GL cutover is set, and as unjournaled while none is.
  */
 export type StoreReceivableRole = "AR" | "AR_STORE" | "AR_CONSIGNMENT";
 
@@ -76,22 +86,28 @@ async function journaledRoles(
  *
  * A receivable with no invoice journal (`role: null`) is either still waiting for its journal or
  * predates the ledger, in which case the opening balance carries it on AR_STORE; deciding which is
- * the caller's business.
+ * the caller's business. A return-charge invoice is the exception: see the module comment.
+ *
+ * The GL cutover is read on the global client, and only when a return-charge invoice is asked for.
  */
 export async function readReceivableJournalStates(client: AnyClient, receivableIds: string[]): Promise<Map<string, ReceivableJournalState>> {
   const result = new Map<string, ReceivableJournalState>();
   if (receivableIds.length === 0) return result;
   const rows = await client.receivable.findMany({
     where: { id: { in: receivableIds } },
-    select: { id: true, ...RECEIVABLE_SOURCE_SELECT },
+    select: { id: true, note: true, ...RECEIVABLE_SOURCE_SELECT },
   });
   const backed: Array<{ id: string; kind: ReceivableJournalState["kind"]; sourceId: string }> = [];
+  const returnCharges = new Set<string>();
   for (const row of rows) {
     try {
       const source = resolveReceivableSource(row);
       if (source.kind === "DELIVERY") backed.push({ id: row.id, kind: "DELIVERY", sourceId: source.deliveryId });
       else if (source.kind === "SELL_THROUGH") backed.push({ id: row.id, kind: "SELL_THROUGH", sourceId: source.sellThroughId });
-      else backed.push({ id: row.id, kind: "INVOICE", sourceId: row.id });
+      else {
+        backed.push({ id: row.id, kind: "INVOICE", sourceId: row.id });
+        if (source.origin === "MANUAL" && idBebanDariCatatan(row.note) !== null) returnCharges.add(row.id);
+      }
     } catch (e) {
       if (!(e instanceof ReceivableSourceMissingError)) throw e;
     }
@@ -103,8 +119,10 @@ export async function readReceivableJournalStates(client: AnyClient, receivableI
       roleOf.set(`${kind}:${sourceId}`, role);
     }
   }
+  const chargeRole: StoreReceivableRole | null = returnCharges.size > 0 && (await readGlCutover()) !== null ? "AR_STORE" : null;
   for (const b of backed) {
-    result.set(b.id, { kind: b.kind, sourceId: b.sourceId, role: roleOf.get(`${b.kind}:${b.sourceId}`) ?? null });
+    const role = roleOf.get(`${b.kind}:${b.sourceId}`) ?? (returnCharges.has(b.id) ? chargeRole : null);
+    result.set(b.id, { kind: b.kind, sourceId: b.sourceId, role });
   }
   return result;
 }
@@ -113,7 +131,8 @@ export async function readReceivableJournalStates(client: AnyClient, receivableI
  * The receivables among `receivableIds` whose invoice journal is the old shape and so sits on AR.
  * Every flow that credits a putus store receivable splits its credit by this set: AR for the part
  * settling one of these, AR_STORE for the rest (a receivable with no invoice journal included,
- * since the opening balance carries it on AR_STORE).
+ * since the opening balance carries it on AR_STORE, and a return-charge invoice, which never sits
+ * on AR).
  */
 export async function receivablesBookedOnAr(client: AnyClient, receivableIds: string[]): Promise<Set<string>> {
   const states = await readReceivableJournalStates(client, [...new Set(receivableIds)]);

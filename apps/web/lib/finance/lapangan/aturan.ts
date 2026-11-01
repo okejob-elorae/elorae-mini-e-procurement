@@ -72,7 +72,11 @@ export const SUMBER_BERGENERASI: readonly SumberLapangan[] = [SUMBER_LAPANGAN.BK
  * pendapatan, dan HPP-nya dua kali. Separuh pasangan yang gagal dilengkapi
  * lewat `lib/finance/ar/delivery-journal.ts`, bukan oleh mesin nota; separuh
  * pendapatan yang dilengkapi di sana mendebit `AR_STORE` (satu peran piutang
- * toko), bukan `AR` — pelunasannya mengkredit akun yang didebit jurnalnya.
+ * toko) bila notanya bertanggal sejak tanggal mulai buku besar, dan `AR` —
+ * bentuk pasangan lamanya sendiri — bila sebelumnya atau selama tanggal mulai
+ * belum diisi: saldo awal sudah membawa piutang sebelum tanggal mulai di
+ * `AR_STORE` kecuali jurnal fakturnya berdiri di `AR`. Pelunasannya mengkredit
+ * akun yang didebit jurnalnya.
  */
 export const SUMBER_NOTA_LAMA = {
   PENDAPATAN: "FIELD_DELIVERY_REVENUE",

@@ -159,13 +159,22 @@ d("listCollectionQueue (test bed only)", () => {
     const access = await getReceivableCollectionAccess(`missing-${token}`, collectorId);
     expect(access).toEqual({ status: "missing" });
   });
+
+  it("keeps a konsi store's receivable off the phone queue and its detail, even for its collector", async () => {
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI" } });
+    const rows = await listCollectionQueue(collectorId);
+    expect(rows.map((r) => r.receivableId)).not.toContain(receivableAId);
+    expect(await getReceivableCollectionAccess(receivableAId, collectorId)).toEqual({ status: "missing" });
+    expect(await getReceivableForCollection(receivableAId, collectorId)).toBeNull();
+  });
 });
 
 /*
  * Separate describe block, deliberately not nested in the fixture above: a sell-through-backed
  * receivable resolves its docNo through a different source (`KonsiSellThrough.docNo`, not
- * `FieldSalesDelivery.docNo`) and this pins that every collections read surface renders it
- * instead of throwing on the now-optional `delivery` relation.
+ * `FieldSalesDelivery.docNo`). The backoffice verification reads render it instead of throwing on
+ * the now-optional `delivery` relation; the phone reads never show it at all, because its total
+ * is a konsi figure.
  */
 d("collection queries — sell-through source (test bed only)", () => {
   let token = "";
@@ -228,17 +237,14 @@ d("collection queries — sell-through source (test bed only)", () => {
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
 
-  it("listCollectionQueue resolves a sell-through-backed receivable's docNo", async () => {
+  it("listCollectionQueue leaves a sell-through-backed receivable off the phone queue, even for its collector", async () => {
     const rows = await listCollectionQueue(collectorId);
-    const row = rows.find((r) => r.receivableId === sellThroughRecId);
-    expect(row).toBeDefined();
-    expect(row!.docNo).toBe(`TEST-CQST-KST-${token}`);
+    expect(rows.find((r) => r.receivableId === sellThroughRecId)).toBeUndefined();
   });
 
-  it("getReceivableForCollection resolves a sell-through-backed receivable's docNo", async () => {
-    const result = await getReceivableForCollection(sellThroughRecId, collectorId);
-    expect(result).not.toBeNull();
-    expect(result!.docNo).toBe(`TEST-CQST-KST-${token}`);
+  it("getReceivableCollectionAccess reads a sell-through-backed receivable as missing, even for its collector", async () => {
+    expect(await getReceivableCollectionAccess(sellThroughRecId, collectorId)).toEqual({ status: "missing" });
+    expect(await getReceivableForCollection(sellThroughRecId, collectorId)).toBeNull();
   });
 
   it("listPendingCollections and getCollectionSubmission resolve a sell-through-backed receivable's docNo", async () => {

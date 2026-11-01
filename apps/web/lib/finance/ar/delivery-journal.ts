@@ -4,6 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { KANAL_JURNAL } from "@/lib/finance/journals/kanal";
 import { SEMUA_SUMBER_JURNAL_NOTA, SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "@/lib/finance/lapangan/aturan";
 import { postingNotaKait } from "@/lib/finance/lapangan/kait";
+import { readGlCutover } from "@/lib/finance/sales/sweep";
 
 /**
  * A putus delivery has ONE journal: the nota journal (`FIELD_DELIVERY`, `lib/finance/lapangan`),
@@ -16,9 +17,9 @@ import { postingNotaKait } from "@/lib/finance/lapangan/kait";
  * What they do, decided per delivery under its row lock:
  * - it already has the nota journal, or the half of the old pair asked for → that journal, unchanged;
  * - it holds the OTHER half of the old pair only → the missing half under the old pair's source
- *   type, so the pair completes (its receivable on AR_STORE, see `postLegacyRevenue`). The nota
- *   journal would book the posted half a second time, and the nota engine refuses any delivery
- *   holding an old journal, so this is the only way that half ever posts;
+ *   type, so the pair completes (its receivable on AR_STORE or AR by the delivery's date, see
+ *   `postLegacyRevenue`). The nota journal would book the posted half a second time, and the nota
+ *   engine refuses any delivery holding an old journal, so this is the only way that half ever posts;
  * - it has no journal at all → the nota journal, through the nota hook (`postingNotaKait`).
  *
  * Old-pair halves are dated on the delivery's `invoiceDate`, which is also the date its receivable
@@ -53,10 +54,20 @@ const standing = (journalId: string): GenerateAutoJournalResult => ({ ok: true, 
 
 /**
  * The old pair's revenue half on the delivery total: DR the store receivable / CR SALES_REVENUE.
- * The receivable is AR_STORE, the role every putus store invoice debits today, tagged with its role
- * as memo and with the store, so every flow that settles it credits AR_STORE back
- * (`lib/finance/ar/store-receivable-role.ts`) and the store-receivables reconciliation reads it per
- * store. Only the revenue halves posted before this rule carry AR; those stand as they are.
+ *
+ * For a delivery dated on or after the GL cutover the receivable is AR_STORE, the role every putus
+ * store invoice debits today, tagged with its role as memo and with the store, so every flow that
+ * settles it credits AR_STORE back (`lib/finance/ar/store-receivable-role.ts`) and the
+ * store-receivables reconciliation reads it per store.
+ *
+ * Before the cutover, or while none is set, it is the old pair's own shape — DR AR with no memo or
+ * store, like its sibling halves. The opening balance already carries every receivable dated before
+ * the cutover on AR_STORE unless its invoice journal stands on AR, so an AR_STORE debit there would
+ * book the receivable twice; on AR it joins `receivablesBookedOnAr`, and every BKM, return and
+ * office receipt credits it there.
+ *
+ * The cutover is read on the global client, which never touches the delivery row this transaction
+ * locks.
  */
 async function postLegacyRevenue(
   tx: Prisma.TransactionClient,
@@ -71,12 +82,16 @@ async function postLegacyRevenue(
   const value = Number(delivery.total);
   if (Math.abs(value) < 0.01) return { ok: false, code: "NOTHING_TO_POST" };
   const storeId = delivery.order.storeId;
+  const cutover = await readGlCutover();
+  const onStoreReceivable = cutover !== null && delivery.invoiceDate.getTime() >= cutover.getTime();
   return generateAutoJournal(
     tx,
     SUMBER_NOTA_LAMA.PENDAPATAN,
     deliveryId,
     [
-      { role: "AR_STORE", debit: value, credit: 0, memo: "AR_STORE", storeId },
+      onStoreReceivable
+        ? { role: "AR_STORE", debit: value, credit: 0, memo: "AR_STORE", storeId }
+        : { role: "AR", debit: value, credit: 0 },
       { role: "SALES_REVENUE", debit: 0, credit: value, memo: "SALES_REVENUE", channel: KANAL_JURNAL.PUTUS, storeId },
     ],
     { date: delivery.invoiceDate, description: `Nota tagihan ${delivery.docNo}`, postedById },

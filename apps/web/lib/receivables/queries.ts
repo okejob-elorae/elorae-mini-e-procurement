@@ -69,8 +69,9 @@ const angka = (v: unknown): number => Number(v ?? 0);
  *
  * Sisa yang tersimpan di kolom `outstanding` TIDAK dipercaya di sini — dihitung
  * ulang dari klaim yang menyentuhnya, sesuai aturan bahwa sisa tidak pernah
- * diketik dan tidak pernah dikurangi bertahap. Kolomnya tetap ada sebagai
- * cache untuk penyaringan cepat, bukan sebagai kebenaran.
+ * diketik dan tidak pernah dikurangi bertahap — termasuk uang yang masuk lewat
+ * pembayaran kantor (`paidAmount`). Kolomnya tetap ada sebagai cache untuk
+ * penyaringan cepat, bukan sebagai kebenaran.
  */
 export type LingkupPiutang = {
   /** Penjual faktur (`Receivable.salesmanId`). Untuk layar kantor. */
@@ -94,8 +95,9 @@ export type LingkupPiutang = {
    * yang memang cuma butuh yang terbuka — memilih faktur untuk kontrabon atau
    * BKM — karena satu-satunya risikonya adalah baris yang sudah lunas ikut
    * terbawa lalu tersaring lagi setelah dihitung ulang. Arah sebaliknya tidak
-   * mungkin: penulisnya selalu menulis kolom ini saat sisanya berubah, jadi
-   * yang benar-benar terbuka tidak akan pernah tersaring keluar.
+   * mungkin: penulisnya selalu menulis kolom ini saat sisanya berubah —
+   * termasuk pembayaran kantor dan pembatalannya (`selaraskanSisaPiutang`) —
+   * jadi yang benar-benar terbuka tidak akan pernah tersaring keluar.
    */
   hanyaTerbuka?: boolean;
 };
@@ -159,6 +161,7 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
       amount: true,
       outstanding: true,
       paidBeforeImport: true,
+      paidAmount: true,
       source: true,
       storeId: true,
       store: { select: { name: true } },
@@ -200,7 +203,7 @@ export async function daftarPiutang(opts?: LingkupPiutang): Promise<BarisPiutang
       nilaiDilunasiPiutangIni: angka(link.settledAmount),
     }));
 
-    const sisa = hitungSisaPiutang(angka(r.amount), klaimList, angka(r.paidBeforeImport));
+    const sisa = hitungSisaPiutang(angka(r.amount), klaimList, angka(r.paidBeforeImport), angka(r.paidAmount));
 
     const semuaMenunggu = r.claimLinks.filter((l) => l.paymentClaim.status === 'DIKIRIM');
     const klaimMenunggu = semuaMenunggu[0];

@@ -769,6 +769,17 @@ describe('catatReturToko — NRT dari SPG', () => {
     expect(Number((state.nrtDibuat[0].claimedAmount as { value: number }).value)).toBe(0);
   });
 
+  it('KONSI tanpa markup yang sah: ditolak, tidak dinilai harga katalog', async () => {
+    // Harga katalog (80.000) di tempat harga konsinyasi (96.000) mengecilkan
+    // klaim barang titipan yang kembali tanpa ada yang melihatnya.
+    for (const markupPercent of [null, -5, 1_000]) {
+      state.toko = { termsType: 'KONSI', markupPercent, salesmanId: 'pemegang1' };
+      expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'HARGA_KONSI_TIDAK_SAH' });
+    }
+    expect(state.nrtDibuat).toHaveLength(0);
+    expect(state.gerakBuku).toHaveLength(0);
+  });
+
   it('menolak barang yang tidak ada di master', async () => {
     expect(await catatReturToko({ ...SPG, barisSpg: [{ itemId: 'hantu', qty: 1 }] })).toEqual({
       ok: false,

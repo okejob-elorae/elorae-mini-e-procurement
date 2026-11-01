@@ -3,6 +3,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { isUniqueViolationOn } from "@/lib/db/unique-violation";
 import { roundCents } from "@elorae/db/pricing";
+import { selaraskanSisaPiutang } from "@/lib/receivables/writer";
 import { PaymentError } from "./errors";
 import { sumPendingClaimsOnReceivable } from "./pending-claims";
 
@@ -271,6 +272,13 @@ async function postPayment(input: PostPaymentInput): Promise<{ paymentId: string
         where: { id: a.receivableId },
         data: { status: outstanding === 0 ? "PAID" : "PARTIAL" },
       });
+      /*
+       * The receivables module keeps its own balance (`outstanding`, `settledAt`), which its lists,
+       * the salesman's bills and the BKM guard read. It is recomputed net of `paidAmount` in this
+       * same transaction, so an invoice settled here can never be shown as open or settled again
+       * by a BKM.
+       */
+      await selaraskanSisaPiutang(tx, a.receivableId);
     }
 
     return { paymentId: payment.id, docNo: payment.docNo, replayed: false };

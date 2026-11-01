@@ -14,9 +14,9 @@ import { ringkasRekonsiliasi, type BarisRekonsiliasiToko, type RekonsiliasiPiuta
  * Rekonsiliasi piutang toko — KHUSUS SERVER. Membandingkan saldo akun
  * `AR_STORE` di buku besar (per toko, dari `JournalLine.storeId`) dengan Σ sisa
  * piutang modul piutang (`daftarPiutang`: dihitung ulang dari nol, tanpa toko
- * konsinyasi), dikurangi uang yang masuk lewat pembayaran kantor
- * (`Receivable.paidAmount`, yang dikredit jurnal penerimaannya ke akun yang
- * sama tetapi tidak dikenal `hitungSisaPiutang`) — angka yang sama dengan
+ * konsinyasi, dan sudah dikurangi uang yang masuk lewat pembayaran kantor —
+ * `Receivable.paidAmount`, yang dikredit jurnal penerimaannya ke akun yang
+ * sama) — dalam batas pembulatan rupiah per faktur, angka yang sama dengan
  * `outstandingAmount` yang ditulis `kolomPembayaranKantor`.
  *
  * Faktur yang jurnal fakturnya mendebit akun LAIN (bentuk lama di AR, laporan
@@ -89,12 +89,13 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
   const detail = piutang.length
     ? await prisma.receivable.findMany({
         where: { id: { in: piutang.map((p) => p.id) } },
-        select: { id: true, note: true, source: true, paidAmount: true },
+        select: { id: true, note: true, source: true },
       })
     : [];
   const detailPer = new Map(detail.map((d) => [d.id, d]));
   // Akun yang didebit jurnal faktur setiap piutang: jurnal nota, jurnal `STORE_INVOICE` faktur
-  // manual/impor (generasi pertama = id faktur), atau separuh pendapatan bentuk lama.
+  // manual/impor (generasi pertama = id faktur), atau separuh pendapatan bentuk lama. Faktur
+  // beban retur tidak punya jurnal sendiri dan terbaca AR_STORE begitu tanggal mulai diisi.
   const jurnalFaktur = await readReceivableJournalStates(prisma, piutang.map((p) => p.id));
 
   type Akumulasi = { nama: string; modul: number; diLuar: number; jumlah: number; kredit: number };
@@ -112,7 +113,7 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
     if (peran !== null && peran !== "AR_STORE") continue;
     const a = ambil(p.storeId, p.storeName);
     const d = detailPer.get(p.id);
-    const sisa = Math.max(0, keSen(p.outstanding) - keSen(Number(d?.paidAmount ?? 0)));
+    const sisa = keSen(p.outstanding);
     a.modul += sisa;
     a.jumlah += 1;
     const fakturBeban = d?.source === "MANUAL" && idBebanDariCatatan(d.note) !== null;

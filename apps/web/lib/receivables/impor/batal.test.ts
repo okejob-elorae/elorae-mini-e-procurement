@@ -17,13 +17,19 @@ class Desimal {
   minus(lain: Desimal) {
     return new Desimal(this.n - lain.n);
   }
+  gt(n: number) {
+    return this.n > n;
+  }
 }
 
 const state = {
   jejak: null as { id: string; action: string; metadata: unknown; createdAt: Date } | null,
-  piutang: [] as { id: string; invoiceNo: string; amount: Desimal; outstanding: Desimal }[],
+  piutang: [] as { id: string; invoiceNo: string; amount: Desimal; outstanding: Desimal; paidAmount?: Desimal }[],
   tautanKlaim: [] as { receivableId: string }[],
   tautanKontrabon: [] as { receivableId: string }[],
+  alokasiPembayaran: [] as { receivableId: string }[],
+  setoranToko: [] as { receivableId: string }[],
+  setoranPenagih: [] as { receivableId: string }[],
   hapusPiutang: [] as string[],
   hapusRincian: [] as string[],
   jejakBaru: [] as Record<string, unknown>[],
@@ -41,7 +47,7 @@ const tx = {
     findMany: vi.fn(async (a: { where: { id: { in: string[] } } }) =>
       state.piutang
         .filter((r) => a.where.id.in.includes(r.id))
-        .map((r) => ({ paidBeforeImport: new Desimal(0), ...r })),
+        .map((r) => ({ paidBeforeImport: new Desimal(0), paidAmount: new Desimal(0), ...r })),
     ),
     deleteMany: vi.fn(async (a: { where: { id: { in: string[] } } }) => {
       state.hapusPiutang.push(...a.where.id.in);
@@ -56,6 +62,9 @@ const tx = {
   },
   paymentClaimReceivable: { findMany: vi.fn(async () => state.tautanKlaim) },
   collectionNoteReceivable: { findMany: vi.fn(async () => state.tautanKontrabon) },
+  paymentAllocation: { findMany: vi.fn(async () => state.alokasiPembayaran) },
+  storeSettlementInvoice: { findMany: vi.fn(async () => state.setoranToko) },
+  collectionSubmission: { findMany: vi.fn(async () => state.setoranPenagih) },
 };
 
 vi.mock('@/lib/db/tx-retry', () => ({
@@ -80,6 +89,9 @@ beforeEach(() => {
   ];
   state.tautanKlaim = [];
   state.tautanKontrabon = [];
+  state.alokasiPembayaran = [];
+  state.setoranToko = [];
+  state.setoranPenagih = [];
   state.hapusPiutang = [];
   state.hapusRincian = [];
   state.jejakBaru = [];
@@ -120,6 +132,37 @@ describe('batalkanImpor', () => {
     state.tautanKontrabon = [{ receivableId: 'r1' }];
     const hasil = await batalkanImpor(DASAR);
     expect(hasil.ok).toBe(false);
+    expect(state.hapusPiutang).toHaveLength(0);
+  });
+
+  it('MENOLAK kalau satu faktur sudah dialokasikan pembayaran kantor', async () => {
+    // Pembayaran kantor mengurangi `outstandingAmount`, bukan `outstanding`, jadi
+    // sisanya tampak utuh. Menghapus fakturnya meninggalkan alokasi yang
+    // menunjuk faktur yang tidak ada.
+    state.alokasiPembayaran = [{ receivableId: 'r2' }];
+    const hasil = await batalkanImpor(DASAR);
+    expect(hasil.ok).toBe(false);
+    if (!hasil.ok) {
+      expect(hasil.alasan).toBe('SUDAH_DIPAKAI');
+      expect(hasil.dipakai).toEqual(['INV/2']);
+    }
+    expect(state.hapusPiutang).toHaveLength(0);
+  });
+
+  it('MENOLAK kalau satu faktur sudah masuk setoran pelunasan toko atau setoran penagih', async () => {
+    state.setoranToko = [{ receivableId: 'r1' }];
+    expect((await batalkanImpor(DASAR)).ok).toBe(false);
+    state.setoranToko = [];
+    state.setoranPenagih = [{ receivableId: 'r2' }];
+    expect((await batalkanImpor(DASAR)).ok).toBe(false);
+    expect(state.hapusPiutang).toHaveLength(0);
+  });
+
+  it('MENOLAK kalau faktur sudah dibayar lewat pembayaran kantor, walau alokasinya tidak terbaca', async () => {
+    state.piutang[0].paidAmount = new Desimal(300);
+    const hasil = await batalkanImpor(DASAR);
+    expect(hasil.ok).toBe(false);
+    if (!hasil.ok) expect(hasil.dipakai).toEqual(['INV/1']);
     expect(state.hapusPiutang).toHaveLength(0);
   });
 

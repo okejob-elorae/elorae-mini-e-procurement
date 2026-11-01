@@ -26,6 +26,12 @@ vi.mock("@/lib/finance/pajak/ppn-pengaturan", () => ({
   })),
 }));
 
+/*
+ * Tanggal mulai buku besar basis data bersama juga tidak dibaca: gerbang periode
+ * settlement diuji di `periode/gerbang.test.ts`, di sini yang diuji baris pajaknya.
+ */
+vi.mock("@/lib/finance/periode/gerbang", () => ({ seluruhnyaSebelumTanggalMulai: async () => false }));
+
 vi.mock("@/lib/finance/journals/mapping", async (asli) => {
   const m = await asli<typeof import("@/lib/finance/journals/mapping")>();
   return {
@@ -339,6 +345,20 @@ d("jurnal lama dalam mode PKP (basis data uji)", () => {
   });
 
   it("settlement: PPN biaya marketplace ke PPN masukan, PPh 22 ke pajak dibayar dimuka, kanal di baris", async () => {
+    // Settlement hanya boleh mengkredit piutang yang didebit jurnal pendapatan penjualannya,
+    // jadi barisnya menunjuk pesanan yang jurnal pendapatannya sudah berdiri.
+    const so = await pesanan(100_000, 0);
+    const asal = await postJournal(prisma, {
+      source: { type: "SALESORDER_REVENUE", id: so.id },
+      date: new Date("2026-10-02T03:00:00Z"),
+      description: "uji penjualan asal settlement",
+      postedById: userId,
+      lines: [
+        { chartAccountId: peta.akun.get("AR")!, debit: 100_000, credit: 0 },
+        { chartAccountId: peta.akun.get("SALES_REVENUE")!, debit: 0, credit: 100_000 },
+      ],
+    });
+    jurnalManualIds.push(asal.journalId);
     const s = await prisma.settlement.create({
       data: {
         marketplace: "SHOPEE",
@@ -369,6 +389,8 @@ d("jurnal lama dalam mode PKP (basis data uji)", () => {
               biayaKomisiAms: 0,
               biayaProsesPesanan: 0,
               raw: { "No. Pesanan": `${tag}-1`, "PPh Pasal 22": -500 },
+              matchStatus: "MATCHED",
+              matchedSalesOrderId: so.id,
             },
           ],
         },

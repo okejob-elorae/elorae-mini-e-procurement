@@ -193,6 +193,35 @@ describe('hitungSisaPiutang', () => {
   });
 });
 
+describe('hitungSisaPiutang — uang yang masuk di kantor, bukan lewat BKM', () => {
+  it('faktur yang dibayar penuh di kantor tidak lagi terbuka', () => {
+    // Tanpa ini layar piutang dan HP sales masih menagih faktur yang sudah
+    // dibayar, dan BKM bisa melunasinya sekali lagi.
+    expect(hitungSisaPiutang(1_000_000, [], 0, 1_000_000)).toBe(0);
+  });
+
+  it('pembayaran kantor, BKM terverifikasi, dan bayar sebelum impor sama-sama mengurangi', () => {
+    expect(
+      hitungSisaPiutang(
+        1_000_000,
+        [{ status: 'TERVERIFIKASI', nilaiFaktur: 300_000, potonganRetur: [], nilaiDilunasiPiutangIni: 300_000 }],
+        100_000,
+        250_000,
+      ),
+    ).toBe(350_000);
+  });
+
+  it('faktur bersen yang dilunasi penuh di kantor bersisa nol', () => {
+    // Dibulatkan sesudah dikurangi: 1.000,50 − 1.000,50 = 0, bukan
+    // pembulatan 1.001 dikurangi 1.000,50.
+    expect(hitungSisaPiutang(1_000.5, [], 0, 1_000.5)).toBe(0);
+  });
+
+  it('tidak pernah negatif', () => {
+    expect(hitungSisaPiutang(500_000, [], 0, 700_000)).toBe(0);
+  });
+});
+
 describe('keadaanPiutang — enam keadaan, diperiksa berurutan', () => {
   const HARI_INI = new Date('2026-08-26T00:00:00Z');
   const KEMARIN = new Date('2026-08-20T00:00:00Z');

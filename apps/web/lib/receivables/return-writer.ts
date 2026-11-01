@@ -148,6 +148,11 @@ export type AlasanGagalRetur =
   | "BARIS_WAJIB"
   | "BARANG_TIDAK_DITEMUKAN"
   | "TOKO_TIDAK_DITEMUKAN"
+  /**
+   * NRT SPG toko konsinyasi tanpa markup yang sah: nilai klaimnya tidak bisa
+   * dihitung, dan harga katalog bukan penggantinya.
+   */
+  | "HARGA_KONSI_TIDAK_SAH"
   /** NRT SPG toko putus: foto nota toko wajib. */
   | "FOTO_WAJIB"
   /**
@@ -579,33 +584,38 @@ async function periksaBarisReturPembeli(
  *
  * KONSI: harga = harga konsinyasi toko (`computeStorePrice` KONSI, markup yang
  * sama dengan dokumen konsinyasi lain) — nilai klaimnya dihitung server, tidak
- * pernah diketik dan tidak pernah tampil di HP. PUTUS: harga 0 — barisnya hanya
- * qty, nilainya total nota toko yang diketik (`nilaiDariRincian`).
+ * pernah diketik dan tidak pernah tampil di HP. Barang berharga jual di toko
+ * tanpa markup yang sah ditolak (`HARGA_KONSI_TIDAK_SAH`): `computeStorePrice`
+ * lalu memberi harga katalog bertanda, dan klaim senilai harga katalog
+ * diam-diam mengecilkan barang titipan yang kembali. PUTUS: harga 0 — barisnya
+ * hanya qty, nilainya total nota toko yang diketik (`nilaiDariRincian`).
  */
 async function susunBarisSpg(
   tx: Klien,
   baris: ReturnType<typeof rapikanBarisSpg>,
   toko: { termsType: "PUTUS" | "KONSI"; markupPercent: unknown },
-): Promise<BarisTersusun[] | null> {
+): Promise<BarisTersusun[] | "BARANG_TIDAK_DITEMUKAN" | "HARGA_KONSI_TIDAK_SAH"> {
   const ids = [...new Set(baris.map((b) => b.itemId))];
   const barang = await tx.item.findMany({
     where: { id: { in: ids } },
     select: { id: true, nameId: true, sellingPrice: true, variants: true },
   });
-  if (barang.length !== ids.length) return null;
+  if (barang.length !== ids.length) return "BARANG_TIDAK_DITEMUKAN";
   const perId = new Map(barang.map((b) => [b.id, b]));
   const markup = toko.markupPercent === null || toko.markupPercent === undefined ? null : angka(toko.markupPercent);
 
-  return baris.map((b) => {
+  const hasil: BarisTersusun[] = [];
+  for (const b of baris) {
     const item = perId.get(b.itemId)!;
     const label = variantDetailForSku(item.variants, b.variantSku || null);
     let price = 0;
     if (toko.termsType === "KONSI") {
       const jual = item.sellingPrice === null ? null : angka(item.sellingPrice);
-      const harga = computeStorePrice({ sellingPrice: jual, termsType: "KONSI", markupPercent: markup, priceDiscountPercent: null }).price;
-      price = harga === null ? 0 : Math.round(harga * 100) / 100;
+      const harga = computeStorePrice({ sellingPrice: jual, termsType: "KONSI", markupPercent: markup, priceDiscountPercent: null });
+      if (harga.flagged) return "HARGA_KONSI_TIDAK_SAH";
+      price = harga.price === null ? 0 : Math.round(harga.price * 100) / 100;
     }
-    return {
+    hasil.push({
       itemId: b.itemId,
       variantSku: b.variantSku,
       itemName: label ? `${item.nameId} — ${label}` : item.nameId,
@@ -614,8 +624,9 @@ async function susunBarisSpg(
       condition: b.condition,
       ...(b.storeReceiptLineId ? { storeReceiptLineId: b.storeReceiptLineId } : {}),
       ...(b.spgSaleReturnLineId ? { spgSaleReturnLineId: b.spgSaleReturnLineId } : {}),
-    };
-  });
+    });
+  }
+  return hasil;
 }
 
 /**
@@ -825,7 +836,7 @@ export async function catatReturToko(input: {
           if (!toko) return { ok: false as const, alasan: "TOKO_TIDAK_DITEMUKAN" as const };
           tokoSpg = { name: toko.name, salesmanId: toko.salesmanId };
           const susun = await susunBarisSpg(tx, barisSpg, toko);
-          if (!susun) return { ok: false as const, alasan: "BARANG_TIDAK_DITEMUKAN" as const };
+          if (typeof susun === "string") return { ok: false as const, alasan: susun };
           // Retur pembeli dulu: ia juga menolak baris yang menunjuk DUA asal.
           const pembeli = await periksaBarisReturPembeli(tx, input.storeId, susun);
           if (pembeli) return { ok: false as const, alasan: pembeli };

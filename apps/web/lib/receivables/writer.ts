@@ -34,17 +34,34 @@ const angka = (v: unknown): number => Number(v ?? 0);
  * Sisa satu piutang dihitung dari nol, TANPA menyimpannya — beserta bagian
  * sisa yang hanya ditahan Aturan 2 (`tertahanPiutang`).
  *
+ * Sisanya sudah dikurangi uang pembayaran kantor (`paidAmount`): penjaga BKM
+ * yang membaca ini tidak boleh membiarkan faktur yang sudah dibayar di kantor
+ * dilunasi lagi.
+ *
  * `null` berarti piutangnya tidak ada.
  */
 export async function bacaSisaDanTahanan(
   client: Klien,
   receivableId: string,
 ): Promise<{ sisa: number; tertahan: number } | null> {
+  const rincian = await bacaRincianSisa(client, receivableId);
+  return rincian === null ? null : { sisa: rincian.sisa, tertahan: rincian.tertahan };
+}
+
+/**
+ * `bacaSisaDanTahanan` beserta sisa SEBELUM pembayaran kantor — bahan
+ * `kolomPembayaranKantor`, yang mengurangkan `paidAmount` sendiri dalam sen.
+ */
+async function bacaRincianSisa(
+  client: Klien,
+  receivableId: string,
+): Promise<{ sisa: number; sisaSebelumKantor: number; tertahan: number } | null> {
   const piutang = await client.receivable.findUnique({
     where: { id: receivableId },
     select: {
       amount: true,
       paidBeforeImport: true,
+      paidAmount: true,
       claimLinks: {
         select: {
           settledAmount: true,
@@ -68,7 +85,13 @@ export async function bacaSisaDanTahanan(
     nilaiDilunasiPiutangIni: angka(link.settledAmount),
   }));
   return {
-    sisa: hitungSisaPiutang(angka(piutang.amount), klaimList, angka(piutang.paidBeforeImport)),
+    sisa: hitungSisaPiutang(
+      angka(piutang.amount),
+      klaimList,
+      angka(piutang.paidBeforeImport),
+      angka(piutang.paidAmount),
+    ),
+    sisaSebelumKantor: hitungSisaPiutang(angka(piutang.amount), klaimList, angka(piutang.paidBeforeImport)),
     tertahan: tertahanPiutang(klaimList),
   };
 }
@@ -101,43 +124,70 @@ export async function hitungUlangPiutangDanTahanan(
   client: Klien,
   receivableId: string,
 ): Promise<{ sisa: number; tertahan: number }> {
-  const baca = await bacaSisaDanTahanan(client, receivableId);
+  const baca = await bacaRincianSisa(client, receivableId);
   if (baca === null) return { sisa: 0, tertahan: 0 };
-  const { sisa } = baca;
+  const { sisa, tertahan } = baca;
 
   await client.receivable.update({
     where: { id: receivableId },
     data: {
-      outstanding: new Prisma.Decimal(sisa),
-      // Tanggal lunas ikut dibersihkan kalau sisanya kembali > 0 — misalnya
-      // ketika sebuah klaim dibatalkan setelah sempat terverifikasi.
-      settledAt: sisa === 0 ? new Date() : null,
-      ...(await kolomPembayaranKantor(client, receivableId, sisa)),
+      ...kolomSisa(sisa),
+      ...(await kolomPembayaranKantor(client, receivableId, baca.sisaSebelumKantor)),
     },
   });
 
-  return baca;
+  return { sisa, tertahan };
+}
+
+/**
+ * Selaraskan kolom modul ini (`outstanding`, `settledAt`) sesudah pembayaran
+ * kantor mengubah `paidAmount` — dipanggil penulis pembayaran kantor
+ * (`lib/finance/ar/payment-writer.ts`) dan pembatalannya
+ * (`lib/finance/ar/void-writer.ts`) di dalam transaksinya sendiri.
+ *
+ * Hanya dua kolom itu: `outstandingAmount` dan `status` ditulis penulis
+ * pembayaran kantor sendiri, dengan aturan sennya. Tanpa ini `outstanding`
+ * tertinggal di nilai sebelum dibayar, dan penyaringan `hanyaTerbuka` serta
+ * tanggal lunasnya ikut keliru.
+ *
+ * Mengembalikan sisa yang baru; `null` berarti piutangnya tidak ada.
+ */
+export async function selaraskanSisaPiutang(client: Klien, receivableId: string): Promise<number | null> {
+  const baca = await bacaSisaDanTahanan(client, receivableId);
+  if (baca === null) return null;
+  await client.receivable.update({ where: { id: receivableId }, data: kolomSisa(baca.sisa) });
+  return baca.sisa;
+}
+
+/** Kolom sisa modul ini untuk sisa yang baru dihitung. */
+function kolomSisa(sisa: number): { outstanding: Prisma.Decimal; settledAt: Date | null } {
+  return {
+    outstanding: new Prisma.Decimal(sisa),
+    // Tanggal lunas ikut dibersihkan kalau sisanya kembali > 0 — misalnya
+    // ketika sebuah klaim dibatalkan setelah sempat terverifikasi.
+    settledAt: sisa === 0 ? new Date() : null,
+  };
 }
 
 /**
  * Kolom piutang yang dibaca layar pembayaran kantor (Keuangan → Piutang,
  * batas kredit toko): `outstandingAmount` dan `status`. Ikut sisa yang baru —
- * sisa modul ini dikurangi uang yang dialokasikan lewat pembayaran kantor
- * (`paidAmount`, yang tidak dikenal `hitungSisaPiutang`). Piutang yang
- * dibatalkan (VOIDED) atau dihapusbukukan (WRITTEN_OFF) tidak disentuh:
+ * sisa modul ini SEBELUM pembayaran kantor (`sisaSebelumKantor`) dikurangi uang
+ * yang dialokasikan lewat pembayaran kantor (`paidAmount`), dalam sen. Piutang
+ * yang dibatalkan (VOIDED) atau dihapusbukukan (WRITTEN_OFF) tidak disentuh:
  * keadaannya diputuskan di sana, bukan oleh BKM.
  */
 async function kolomPembayaranKantor(
   client: Klien,
   receivableId: string,
-  sisa: number,
+  sisaSebelumKantor: number,
 ): Promise<{ outstandingAmount?: Prisma.Decimal; status?: 'OUTSTANDING' | 'PARTIAL' | 'PAID' }> {
   const p = await client.receivable.findUnique({
     where: { id: receivableId },
     select: { originalAmount: true, paidAmount: true, status: true },
   });
   if (!p || p.status === 'VOIDED' || p.status === 'WRITTEN_OFF') return {};
-  const sisaSen = Math.max(0, Math.round(sisa * 100) - Math.round(angka(p.paidAmount) * 100));
+  const sisaSen = Math.max(0, Math.round(sisaSebelumKantor * 100) - Math.round(angka(p.paidAmount) * 100));
   const asalSen = Math.round(angka(p.originalAmount) * 100);
   return {
     outstandingAmount: new Prisma.Decimal(sisaSen / 100),

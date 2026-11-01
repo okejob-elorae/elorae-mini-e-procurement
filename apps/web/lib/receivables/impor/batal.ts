@@ -23,6 +23,31 @@ function sisaUtuh(r: { amount: Prisma.Decimal; outstanding: Prisma.Decimal; paid
   return r.outstanding.equals(r.amount.minus(r.paidBeforeImport));
 }
 
+type KlienBaca = Pick<
+  Prisma.TransactionClient,
+  'paymentClaimReceivable' | 'collectionNoteReceivable' | 'paymentAllocation' | 'storeSettlementInvoice' | 'collectionSubmission'
+>;
+
+/**
+ * Faktur di antara `ids` yang ditunjuk dokumen lain: klaim BKM, kontrabon, atau
+ * — karena faktur impor juga terbaca di layar pembayaran kantor (Keuangan →
+ * Piutang) — alokasi pembayaran kantor, setoran pelunasan toko, dan setoran
+ * penagih. Ketiga yang terakhir mengurangi `outstandingAmount`, bukan
+ * `outstanding`, jadi `sisaUtuh` tidak melihatnya.
+ */
+async function fakturDitunjuk(klien: KlienBaca, ids: string[]): Promise<Set<string>> {
+  const where = { receivableId: { in: ids } };
+  const select = { receivableId: true } as const;
+  const daftar = await Promise.all([
+    klien.paymentClaimReceivable.findMany({ where, select }),
+    klien.collectionNoteReceivable.findMany({ where, select }),
+    klien.paymentAllocation.findMany({ where, select }),
+    klien.storeSettlementInvoice.findMany({ where, select }),
+    klien.collectionSubmission.findMany({ where, select }),
+  ]);
+  return new Set(daftar.flat().map((k) => k.receivableId));
+}
+
 type AlasanGagalBatal =
   | 'TIDAK_DITEMUKAN'
   | 'BUKAN_IMPOR'
@@ -38,7 +63,9 @@ export type HasilBatalImpor =
  * Batalkan sebuah batch impor.
  *
  * MENOLAK kalau ada satu saja faktur dari batch itu yang sudah disentuh —
- * masuk kontrabon, dilunasi klaim, atau sudah tidak penuh lagi sisanya.
+ * masuk kontrabon, dilunasi klaim, dialokasikan pembayaran kantor atau setoran
+ * (`fakturDitunjuk`), sudah dibayar lewat pembayaran kantor (`paidAmount`), atau
+ * sudah tidak penuh lagi sisanya.
  *
  * Penolakan itu inti keamanannya. Relasi di modul ini `relationMode = "prisma"`,
  * jadi TIDAK ADA foreign key di basis data yang akan menghentikan penghapusan:
@@ -79,29 +106,19 @@ export async function batalkanImpor(input: {
     // Yang sudah dihapus sebelumnya tidak akan terbaca lagi di sini.
     const masihAda = await tx.receivable.findMany({
       where: { id: { in: ids } },
-      select: { id: true, invoiceNo: true, amount: true, outstanding: true, paidBeforeImport: true },
+      select: { id: true, invoiceNo: true, amount: true, outstanding: true, paidBeforeImport: true, paidAmount: true },
     });
     if (masihAda.length === 0) return { ok: false as const, alasan: 'SUDAH_DIBATALKAN' as const };
 
-    const [klaim, kontrabon] = await Promise.all([
-      tx.paymentClaimReceivable.findMany({
-        where: { receivableId: { in: ids } },
-        select: { receivableId: true },
-      }),
-      tx.collectionNoteReceivable.findMany({
-        where: { receivableId: { in: ids } },
-        select: { receivableId: true },
-      }),
-    ]);
-
     const tersentuh = new Set<string>([
-      ...klaim.map((k) => k.receivableId),
-      ...kontrabon.map((k) => k.receivableId),
+      ...(await fakturDitunjuk(tx, ids)),
       // Sisa yang tidak lagi penuh berarti ada sesuatu yang menyentuhnya,
       // walau tautannya sudah tidak terbaca.
       // "Penuh" berarti sisa saat diimpor: nilai dikurangi yang sudah dibayar
       // sebelum impor — faktur yang diimpor bersisa sebagian belum disentuh.
       ...masihAda.filter((r) => !sisaUtuh(r)).map((r) => r.id),
+      // Uang yang dialokasikan pembayaran kantor, walau alokasinya sudah tidak terbaca.
+      ...masihAda.filter((r) => r.paidAmount.gt(0)).map((r) => r.id),
     ]);
 
     if (tersentuh.size > 0) {
@@ -175,34 +192,21 @@ export async function daftarImpor(batas = 20): Promise<BatchImpor[]> {
   const hidup = semuaId.length
     ? await prisma.receivable.findMany({
         where: { id: { in: semuaId } },
-        select: { id: true, amount: true, outstanding: true, paidBeforeImport: true },
+        select: { id: true, amount: true, outstanding: true, paidBeforeImport: true, paidAmount: true },
       })
     : [];
   const petaHidup = new Map(hidup.map((r) => [r.id, r]));
 
-  const terpakai = new Set<string>();
-  if (semuaId.length) {
-    const [klaim, kontrabon] = await Promise.all([
-      prisma.paymentClaimReceivable.findMany({
-        where: { receivableId: { in: semuaId } },
-        select: { receivableId: true },
-      }),
-      prisma.collectionNoteReceivable.findMany({
-        where: { receivableId: { in: semuaId } },
-        select: { receivableId: true },
-      }),
-    ]);
-    for (const k of klaim) terpakai.add(k.receivableId);
-    for (const k of kontrabon) terpakai.add(k.receivableId);
-  }
+  const terpakai = semuaId.length ? await fakturDitunjuk(prisma, semuaId) : new Set<string>();
 
   return rows.map((r) => {
     const ids = idDari(r.metadata);
     const hidupBatch = ids.filter((id) => petaHidup.has(id));
     const ada = (r.changes ?? {}) as { after?: { masuk?: number; dilewati?: number } };
-    const disentuh = hidupBatch.some(
-      (id) => terpakai.has(id) || !sisaUtuh(petaHidup.get(id)!),
-    );
+    const disentuh = hidupBatch.some((id) => {
+      const p = petaHidup.get(id)!;
+      return terpakai.has(id) || !sisaUtuh(p) || p.paidAmount.gt(0);
+    });
     return {
       auditLogId: r.id,
       saat: r.createdAt.toISOString(),
