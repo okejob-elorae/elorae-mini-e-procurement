@@ -368,6 +368,21 @@ describe("alihkanBeban — mengubah keputusan menyesuaikan faktur bebannya", () 
     expect(await piutangBeban(tokoId)).toHaveLength(0);
   });
 
+  it("MENOLAK mengalihkan kalau faktur bebannya sudah dibayar lewat pembayaran kantor", async () => {
+    const nrt = await buatNrt();
+    await buatBkmDenganPotongan(nrt.id);
+    const beban = await hitungKurang(nrt.id);
+    await putuskanBeban({ chargeId: beban.id, bearer: "TOKO", alasan: "awal", olehUserId: gudangId });
+    const [p] = await piutangBeban(tokoId);
+    // Pembayaran kantor menaikkan paidAmount tanpa BKM atau kontrabon apa pun.
+    await prisma.receivable.update({ where: { id: seededId(p.id) }, data: { paidAmount: 50_000 } });
+
+    expect(
+      await alihkanBeban({ chargeId: beban.id, bearer: "PERUSAHAAN", alasan: "x", olehUserId: gudangId }),
+    ).toEqual({ ok: false, alasan: "PIUTANG_BEBAN_SUDAH_DITAGIH" });
+    expect(await piutangBeban(tokoId)).toHaveLength(1);
+  });
+
   it("menolak SALES tanpa orangnya", async () => {
     const nrt = await buatNrt();
     const beban = await hitungKurang(nrt.id);

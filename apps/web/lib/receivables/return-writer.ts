@@ -1454,21 +1454,30 @@ async function tagihkanBebanKeToko(
  * Hapus faktur beban toko ketika bebannya dialihkan dari toko.
  *
  * Hanya selama belum ada yang menyentuhnya: BKM (status apa pun — klaim yang
- * ditolak pun tetap menautkannya), kontrabon, atau tugas tagih yang masih
- * terbuka. Yang sudah ditagih ditolak: menghapusnya menghapus jejak uang yang
- * mungkin sudah diterima. Barisnya hidup di jejak keputusan pengalihan.
+ * ditolak pun tetap menautkannya), kontrabon, tugas tagih yang masih terbuka,
+ * atau jalur bayar kantor (alokasi pembayaran, setoran toko, setoran penagih,
+ * atau `paidAmount` yang sudah bergerak). Yang sudah ditagih ditolak: menghapusnya
+ * menghapus jejak uang yang mungkin sudah diterima, dan tanpa foreign key
+ * (`relationMode = "prisma"`) baris pembayarannya akan menunjuk faktur yang tidak
+ * ada. Barisnya hidup di jejak keputusan pengalihan.
  */
 async function hapusFakturBeban(tx: Klien, faktur: FakturBeban): Promise<{ ok: true } | Gagal> {
-  const [klaim, kontrabon, tugas] = await Promise.all([
-    tx.paymentClaimReceivable.count({ where: { receivableId: faktur.id } }),
-    tx.collectionNoteReceivable.count({ where: { receivableId: faktur.id } }),
+  const where = { receivableId: faktur.id };
+  const [klaim, kontrabon, alokasi, setoranToko, setoranPenagih, baris, tugas] = await Promise.all([
+    tx.paymentClaimReceivable.count({ where }),
+    tx.collectionNoteReceivable.count({ where }),
+    tx.paymentAllocation.count({ where }),
+    tx.storeSettlementInvoice.count({ where }),
+    tx.collectionSubmission.count({ where }),
+    tx.receivable.findUnique({ where: { id: faktur.id }, select: { paidAmount: true } }),
     tx.collectionTask.findMany({
       where: { storeId: faktur.storeId, status: "TERBUKA" },
       select: { receivableIds: true },
     }),
   ]);
   const diTugas = tugas.some((t) => Array.isArray(t.receivableIds) && (t.receivableIds as unknown[]).includes(faktur.id));
-  if (klaim > 0 || kontrabon > 0 || diTugas) return { ok: false, alasan: "PIUTANG_BEBAN_SUDAH_DITAGIH" };
+  const dibayarKantor = alokasi > 0 || setoranToko > 0 || setoranPenagih > 0 || angka(baris?.paidAmount ?? 0) > 0;
+  if (klaim > 0 || kontrabon > 0 || diTugas || dibayarKantor) return { ok: false, alasan: "PIUTANG_BEBAN_SUDAH_DITAGIH" };
 
   await tx.receivableItem.deleteMany({ where: { receivableId: faktur.id } });
   await tx.receivable.delete({ where: { id: faktur.id } });
