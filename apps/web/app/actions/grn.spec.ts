@@ -95,8 +95,12 @@ import { notifyMaterialArrivedForPo } from "@/lib/notifications/events";
 import { logAudit } from "@/lib/audit";
 import { postGrnJournal, postGrnReversalJournal } from "@/lib/inventory/grn-journal";
 
-const inventoryOnlyReads: Array<[string, () => Promise<unknown>]> = [
+const vendorReturnReads: Array<[string, () => Promise<unknown>]> = [
+  ["getGRNs", () => getGRNs()],
   ["getGRNById", () => getGRNById("g1")],
+];
+
+const inventoryOnlyReads: Array<[string, () => Promise<unknown>]> = [
   ["getRollsByGrnId", () => getRollsByGrnId("g1")],
   ["getFabricRollFilterOptions", () => getFabricRollFilterOptions()],
   ["getFabricRolls", () => getFabricRolls()],
@@ -117,10 +121,7 @@ describe("grn read actions gate", () => {
     mockCount.mockResolvedValue(0);
   });
 
-  describe.each([
-    ["getGRNs", () => getGRNs()] as [string, () => Promise<unknown>],
-    ...inventoryOnlyReads,
-  ])("%s", (_name, call) => {
+  describe.each([...vendorReturnReads, ...inventoryOnlyReads])("%s", (_name, call) => {
     it("rejects an unauthenticated caller and runs no query", async () => {
       mockAuth.mockResolvedValue(null);
       await expect(call()).rejects.toThrow("Unauthorized");
@@ -144,10 +145,13 @@ describe("grn read actions gate", () => {
     });
   });
 
-  it("getGRNs also admits vendor_returns:view, which the vendor-return pages call it under", async () => {
-    mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:view"] } });
-    await expect(getGRNs()).resolves.toBeDefined();
-  });
+  it.each(vendorReturnReads)(
+    "%s also admits vendor_returns:view, which the vendor-return pages call it under",
+    async (_name, call) => {
+      mockAuth.mockResolvedValue({ user: { id: "u1", permissions: ["vendor_returns:view"] } });
+      await expect(call()).resolves.toBeDefined();
+    }
+  );
 
   describe("getGRNs search", () => {
     const expectedOr = [
