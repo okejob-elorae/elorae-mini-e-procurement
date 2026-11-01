@@ -89,6 +89,9 @@ d("catatReturPembeli (test bed only)", () => {
     }
     const toko = () => [storeId, tokoLainId].filter(Boolean).map(seededId);
     await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: toko() } } });
+    // Kedua toko konsinyasi: nota menggerakkan kartu stok toko (`StoreStock` + buku stok). Baris itu
+    // pergi lebih dulu: Restrict tiruan menolak menghapus barang dan toko yang masih dirujuknya.
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: toko() } } });
     const nota = () => saleIds.filter(Boolean).map(seededId);
     if (nota().length) {
       await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: { in: nota() } } });
@@ -97,6 +100,7 @@ d("catatReturPembeli (test bed only)", () => {
     }
     if (itemId) {
       await prisma.salesHistory.deleteMany({ where: { itemId: seededId(itemId) } });
+      await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
       await prisma.item.delete({ where: { id: seededId(itemId) } });
     }
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });

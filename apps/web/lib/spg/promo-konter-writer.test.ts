@@ -70,6 +70,10 @@ d("promo konter kantor (test bed only)", () => {
     await prisma.spgSaleLine.deleteMany({ where: { spgSale: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } } } });
     await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } } });
+    // Nota di toko konsinyasi menggerakkan kartu stok toko (`StoreStock` + buku stok). Baris itu
+    // pergi lebih dulu: Restrict tiruan menolak menghapus barang dan toko yang masih dirujuknya.
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: [seededId(storeId), seededId(storeLainId)] } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(itemId), seededId(item2Id)] } } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(kategoriId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

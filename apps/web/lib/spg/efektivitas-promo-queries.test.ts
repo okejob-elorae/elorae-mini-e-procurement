@@ -123,6 +123,10 @@ d("efektivitas promo konter (test bed only)", () => {
     await prisma.auditLog.deleteMany({ where: { entityType: String(ENTITAS_PROMO_KONTER), entityId: seededId(promoId) } });
     await prisma.counterPromoTarget.deleteMany({ where: { promoId: seededId(promoId) } });
     await prisma.counterPromo.deleteMany({ where: { id: seededId(promoId) } });
+    // Nota di toko B (konsinyasi) menggerakkan kartu stok toko (`StoreStock` + buku stok). Baris itu
+    // pergi lebih dulu: Restrict tiruan menolak menghapus barang dan toko yang masih dirujuknya.
+    await prisma.storeStock.deleteMany({ where: { storeId: { in: seededIds(toko) } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: [seededId(kaosId), seededId(celanaId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(kaosId), seededId(celanaId)] } } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(kategoriId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });

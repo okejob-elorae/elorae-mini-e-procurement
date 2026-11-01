@@ -3,7 +3,8 @@ import { prisma, seededId, seededIds } from "@elorae/db";
 import { kunciBaris } from "@/lib/spg/stok";
 import { bacaDiskonManual, KUNCI_DISKON_MANUAL } from "@/lib/spg/pengaturan";
 import { promoKonterUntukToko } from "@/lib/spg/promo-konter-queries";
-import { getSellableCatalogForSpg } from "@/lib/spg/sale-queries";
+import { getSellableCatalogForSpg, getSpgSaleById } from "@/lib/spg/sale-queries";
+import { rincianNotaSpg } from "@/lib/print/spg-sale-nota-html";
 import { recordSpgSale } from "@/lib/spg/sale-writer";
 import { muatanKirimNotaSpg, muatanPembeli, susunNotaTertahan } from "@/lib/pwa/offline/spg-jual-muatan";
 import { KUNCI_MEMBER, MEMBER_BAWAAN, type AturanMember } from "@/lib/spg/member";
@@ -105,6 +106,10 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
     await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: [seededId(kaosId), seededId(topiId)] } } });
     await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { storeId: seededId(storeId) }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { storeId: seededId(storeId) } });
+    // Nota di toko konsinyasi menggerakkan kartu stok toko (`StoreStock` + buku stok). Baris itu
+    // pergi lebih dulu: Restrict tiruan menolak menghapus barang dan toko yang masih dirujuknya.
+    await prisma.storeStock.deleteMany({ where: { storeId: seededId(storeId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: [seededId(kaosId), seededId(topiId)] } } });
     await prisma.item.deleteMany({ where: { id: { in: [seededId(kaosId), seededId(topiId)] } } });
     await prisma.itemCategory.deleteMany({ where: { id: seededId(kategoriId) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -248,18 +253,57 @@ d("pratinjau keranjang SPG = nota tercatat (test bed only)", () => {
       lines: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty })),
     });
     if (!res.ok) throw new Error(res.code);
-    // Kaos 10% dari 124.875 = 12.487,50 → total persis bersen. Layar dan penulis
-    // nota membulatkannya ke rupiah utuh dengan helper yang sama.
-    expect(p!.ditagih).toBe(Math.round(p!.hasil.total));
-    expect(p!.pembulatan).toBeCloseTo(p!.ditagih - p!.hasil.total, 2);
+    // Kaos 10% dari 124.875 = 12.487,50, tetapi mesin promo membulatkan potongan per
+    // potong ke rupiah utuh (12.488). Harga di toko juga utuh, jadi total persisnya
+    // sudah rupiah utuh: tidak ada yang dibulatkan saat ditagih.
+    expect(p!.pembulatan).toBe(0);
     expect(res.total).toBe(p!.ditagih);
     const tercatat = await prisma.spgSale.findUniqueOrThrow({ where: { id: res.spgSaleId }, include: { lines: true } });
     expect(Number(tercatat.total)).toBe(p!.ditagih);
-    // `subtotal` dan potongan tetap persis: subtotal − potongan = total persis layar.
-    expect(Number(tercatat.subtotal) - Number(tercatat.discountTotal)).toBeCloseTo(p!.hasil.total, 2);
+    expect(Number(tercatat.discountTotal)).toBe(p!.hasil.potonganTotal);
     expect(Number(tercatat.subtotal)).toBe(181_750);
     expect(Number(tercatat.lines.find((l) => l.itemId === kaosId)?.unitPrice)).toBe(124_875);
     expect(Number(tercatat.lines.find((l) => l.itemId === topiId)?.unitPrice)).toBe(56_875);
+  });
+
+  it("toko konsinyasi dengan harga di toko bersen: layar dan nota membulatkan total ke rupiah utuh yang sama", async () => {
+    // Markup 12,25%: kaos 99.900 → 112.137,75, topi 45.500 → 51.073,75 — subtotal 163.211,50.
+    // Kaos 10% = 11.213,775 → 11.214 (mesin promo membulatkan potongan ke rupiah utuh), jadi
+    // total persisnya tetap bersen (151.997,50) dan baru dibulatkan saat ditagih. Bersen 75
+    // per potong: promo global yang ikut berlaku pada salah satu potong pun menyisakan sen.
+    await prisma.store.update({ where: { id: storeId }, data: { termsType: "KONSI", markupPercent: 12.25 } });
+    await buatPromo({ name: "Kaos 10%", type: "PERSEN", value: 10, kategori: kategoriId });
+    const layar = await bukaLayarJual({ [kaosId]: 1, [topiId]: 1 });
+    expect(layar.baris.find((b) => b.row.itemId === kaosId)?.row.price).toBe(112_137.75);
+    expect(layar.baris.find((b) => b.row.itemId === topiId)?.row.price).toBe(51_073.75);
+
+    const p = pratinjauKeranjang({ ...layar, storeId, waktu: new Date(), diskon: null });
+    expect(p?.galatMesin).toBeNull();
+    expect(p!.hasil.subtotal).toBe(163_211.5);
+    // Pembulatan sungguh terjadi — tanpanya kasus ini tidak menguji apa pun.
+    expect(p!.pembulatan).not.toBe(0);
+    expect(p!.pembulatan).toBeCloseTo(p!.ditagih - p!.hasil.total, 2);
+
+    const res = await recordSpgSale({
+      salesmanId,
+      storeId,
+      lines: layar.baris.map((b) => ({ itemId: b.row.itemId, variantSku: null, qty: b.qty })),
+    });
+    if (!res.ok) throw new Error(res.code);
+    expect(res.total).toBe(p!.ditagih);
+    const tercatat = await prisma.spgSale.findUniqueOrThrow({ where: { id: res.spgSaleId }, include: { lines: true } });
+    expect(Number(tercatat.total)).toBe(p!.ditagih);
+    // `subtotal`, potongan, dan nilai bersih baris tetap persis: semuanya berjumlah total
+    // persis layar, sebelum pembulatan.
+    expect(Number(tercatat.subtotal)).toBe(163_211.5);
+    expect(Number(tercatat.discountTotal)).toBe(p!.hasil.potonganTotal);
+    expect(Number(tercatat.subtotal) - Number(tercatat.discountTotal)).toBeCloseTo(p!.hasil.total, 2);
+    expect(tercatat.lines.reduce((s, l) => s + Number(l.lineTotal), 0)).toBeCloseTo(p!.hasil.total, 2);
+    expect(Number(tercatat.lines.find((l) => l.itemId === kaosId)?.unitPrice)).toBe(112_137.75);
+    expect(Number(tercatat.lines.find((l) => l.itemId === topiId)?.unitPrice)).toBe(51_073.75);
+    // Nota yang dicetak membaca pembulatan yang sama dengan yang ditampilkan layar.
+    const detail = await getSpgSaleById(res.spgSaleId);
+    expect(rincianNotaSpg(detail!).pembulatan).toBeCloseTo(p!.pembulatan, 2);
   });
   /**
    * Persis yang dilakukan layar untuk pembeli: tanya keanggotaan nomornya

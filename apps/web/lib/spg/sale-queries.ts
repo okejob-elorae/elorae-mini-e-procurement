@@ -184,7 +184,9 @@ export type SpgSaleDetail = {
   customer: { id: string; name: string; phone: string } | null;
   /**
    * `unitPrice` = harga sebelum potongan; `lineTotal` = BERSIH sesudah seluruh
-   * potongan (jumlah semua baris = `total`); `discount` = potongan baris itu.
+   * potongan; `discount` = potongan baris itu. Jumlah semua `lineTotal` = total
+   * persis (subtotal − `discountTotal`) SEBELUM pembulatan tunai — bukan `total`:
+   * `total` = jumlah itu + `rincianNotaSpg().pembulatan`.
    */
   lines: Array<{
     productName: string;
