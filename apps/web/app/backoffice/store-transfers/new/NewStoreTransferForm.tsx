@@ -247,7 +247,7 @@ export function NewStoreTransferForm({ storeOptions }: Props) {
               <Label htmlFor="transfer-moved-at">{tNew("movedAt")}</Label>
               <TanggalJamInput
                 id="transfer-moved-at"
-                className="min-h-[44px]"
+                className="min-h-[44px] [&_button]:min-h-[44px]"
                 required
                 max={formatMovedAtInput(new Date())}
                 value={movedAt}
