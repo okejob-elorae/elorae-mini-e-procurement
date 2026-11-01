@@ -198,6 +198,17 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/pwa/spg/stocktake",
+    bagian: "pwaSpg",
+    judul: { kunci: "storeStocktakes.spg.title" },
+    isi: [
+      { kunci: "storeStocktakes.spg.subtitle" },
+      "Hanya untuk SPG di toko konsinyasi, dan butuh check-in di toko Anda; dibuka dari tombol Laporan Stok di beranda. Daftarnya berisi barang yang tercatat di toko beserta jumlah seharusnya. Barang yang ditemukan di rak tetapi belum ada di daftar bisa ditambahkan.",
+      { kunci: "storeStocktakes.spg.success.body" },
+      "Hitungan yang sedang diisi tersimpan di HP ini, jadi memuat ulang halaman tidak menghapusnya. Mengirim butuh sinyal. Batas hitung bulanan toko, bila ada, tertulis di beranda.",
+    ],
+  },
+  {
     rute: "/pwa/spg/mutasi",
     bagian: "pwaSpg",
     judul: { kunci: "spgMutasi.judul" },

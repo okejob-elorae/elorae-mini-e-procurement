@@ -62,4 +62,28 @@ export const ENTRI: EntriBantuan[] = [
       },
     ],
   },
+  {
+    rute: "/backoffice/store-stocktakes",
+    bagian: "konsinyasi",
+    judul: { kunci: "storeStocktakes.pageTitle" },
+    isi: [
+      { kunci: "storeStocktakes.subtitle" },
+      "Satu dokumen menghitung stok satu toko konsinyasi. Kantor membukanya dari halaman toko (Mulai perhitungan), sistem membukanya otomatis untuk perhitungan bulanan, atau SPG toko itu membukanya saat mengirim Laporan Stok Toko dari HP. Satu toko hanya punya satu perhitungan terbuka.",
+      "Alurnya Draf → Menunggu Verifikasi → Disetujui, atau Dibatalkan. Kolom Cakupan: Penuh berarti setiap baris sudah dihitung saat disetujui; Sebagian berarti ada baris yang tidak dihitung, dan stok baris itu dibiarkan.",
+      "Melihat butuh izin melihat toko; membuka, menyimpan hitungan, menyetujui, dan membatalkan butuh izin mengelola toko.",
+    ],
+  },
+  {
+    rute: "/backoffice/store-stocktakes/[id]",
+    bagian: "konsinyasi",
+    judul: "Rincian perhitungan stok toko",
+    isi: [
+      "Setiap baris menyandingkan stok seharusnya menurut buku stok toko dengan hasil hitung, beserta selisihnya (Lebih atau Kurang). Selama perhitungan masih berjalan, kantor bisa mengubah hitungan dan menambah barang yang ditemukan di rak tetapi belum tercatat.",
+      "Sebelum disetujui, setiap baris yang berselisih wajib diberi alasan, dan setiap baris yang kurang wajib diberi sebab: Susut atau Penjualan Tidak Tercatat. SPG hanya mengirim angka hitungan; sebab dan alasannya diisi kantor.",
+      "Menyetujui menulis stok toko sesuai hasil hitung tiap baris, ditambah gerakan stok toko yang tercatat sesudah baris itu dihitung, sehingga penjualan atau pengiriman selama perhitungan menunggu tidak terhapus. Bila stok sudah berubah sejak dihitung, dialog persetujuan menyebut barisnya sebagai informasi saja. Persetujuan ditolak selama masih ada retur atau transfer toko yang mengambil barang terhitung sebelum perhitungan dan belum selesai; nama dokumennya disebut.",
+      "Kartu Penjualan dalam Periode menunjukkan barang yang terjual di toko sejak perhitungan yang disetujui sebelumnya. Retur yang masih berjalan saat perhitungan ditandai pada barisnya, karena kekurangannya bisa jadi barang retur, bukan susut.",
+      "Perhitungan penuh yang disetujui di toko konsinyasi juga membuat laporan sell-through toko itu bila bisa. Halaman ini lalu menautkannya, atau menawarkan Buat laporan sell-through bila laporannya belum terbentuk.",
+      { kunci: "storeStocktakes.cancel.confirmDescription" },
+    ],
+  },
 ];

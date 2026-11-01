@@ -13,9 +13,10 @@ const url = process.env.DATABASE_URL ?? "";
 const enabled = process.env.PODF_E2E === "1" && url.includes(":3308");
 const d = enabled ? describe : describe.skip;
 
-const { mockAuth, mockUpload } = vi.hoisted(() => ({
+const { mockAuth, mockUpload, mockPostingNota } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   mockUpload: vi.fn(async (key: string) => `https://r2.test/${key}`),
+  mockPostingNota: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
@@ -23,6 +24,16 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 vi.mock("@/lib/r2", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/r2")>();
   return { ...actual, isConfigured: () => true, uploadToR2: mockUpload };
+});
+/*
+ * A completed delivery's journal posts only through the nota hook, which is off under vitest (and
+ * gated by the GL cutover when on), so a post leaves no journal or flag to count. The spy records
+ * which delivery the hook was asked to post and still calls through.
+ */
+vi.mock("@/lib/finance/lapangan/kait", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/finance/lapangan/kait")>();
+  mockPostingNota.mockImplementation(actual.postingNotaKait);
+  return { ...actual, postingNotaKait: mockPostingNota };
 });
 
 import { approveFieldSalesOrderAction } from "@/app/actions/field-sales-orders";
@@ -382,16 +393,16 @@ d("delivery / POD follow-ups — end to end (opt-in)", () => {
       replayCompare: "linesOnly",
     });
     ids.delivery_S3 = recorded.deliveryId;
-    const j0 = await journalsFor(recorded.deliveryId);
 
     asSalesman();
+    mockPostingNota.mockClear();
     const c1 = await completePodAction(podPayload(S3.id, [{ shipmentLineId: S3.lines[0].id, deliveredQty: 3 }]));
     const s3a = await prisma.deliveryShipment.findUniqueOrThrow({ where: { id: S3.id } });
-    const j1 = await journalsFor(recorded.deliveryId);
+    const notaPosts = mockPostingNota.mock.calls.filter(([deliveryId]) => deliveryId === recorded.deliveryId).length;
     check(
       "C-01",
-      !c1.ok && c1.reason === "REPLAY_MISMATCH" && c1.replay?.lines[0]?.qty === 2 && s3a.status === "IN_TRANSIT" && j1.journals + j1.pending > j0.journals + j0.pending,
-      `${c1.ok ? "ok" : c1.reason} recorded ${JSON.stringify(c1.ok ? null : c1.replay?.lines)}; status ${s3a.status}; journals ${j0.journals}→${j1.journals} (pending ${j0.pending}→${j1.pending})`,
+      !c1.ok && c1.reason === "REPLAY_MISMATCH" && c1.replay?.lines[0]?.qty === 2 && s3a.status === "IN_TRANSIT" && notaPosts > 0,
+      `${c1.ok ? "ok" : c1.reason} recorded ${JSON.stringify(c1.ok ? null : c1.replay?.lines)}; status ${s3a.status}; nota journal posts for the recorded delivery ${notaPosts}`,
     );
 
     const c3 = await completePodAction(podPayload(S3.id, [{ shipmentLineId: S3.lines[0].id, deliveredQty: 0 }]));

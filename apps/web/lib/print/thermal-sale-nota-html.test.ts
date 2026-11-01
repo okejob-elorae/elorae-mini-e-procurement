@@ -18,7 +18,12 @@ function spg(subtotal: number, total: number): SpgSaleDetail {
   return {
     id: "s1", docNo: "SPG-1", salesmanLabel: "Sari", storeName: "Toko A", saleLat: null, saleLng: null,
     subtotal, total, cashReceived: 30000, changeGiven: 0, note: null, createdAtIso: "2026-10-01T03:00:00.000Z",
-    lines: [{ productName: "Kaos", variantSku: "K-M", qty: 1, unitPrice: subtotal, lineTotal: subtotal }],
+    discountTotal: 0, orderPromoName: null, orderDiscount: 0, manualDiscount: 0, manualDiscountReason: null,
+    memberDiscount: 0, memberTier: null, capturedOffline: false, syncedAtIso: null, customer: null,
+    lines: [{
+      productName: "Kaos", variantSku: "K-M", qty: 1, unitPrice: subtotal, lineTotal: subtotal,
+      discount: 0, promoName: null, promoDiscount: 0,
+    }],
   };
 }
 

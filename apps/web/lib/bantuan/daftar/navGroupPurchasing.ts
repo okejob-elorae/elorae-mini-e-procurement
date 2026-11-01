@@ -1,6 +1,6 @@
 import type { EntriBantuan } from "../jenis";
 
-/** Grup menu Pembelian: pesanan pembelian, pembayaran pemasok, retur ke pemasok. */
+/** Grup menu Pembelian: pesanan pembelian, request item, pembayaran pemasok, tagihan vendor, retur ke pemasok. */
 export const ENTRI: EntriBantuan[] = [
   {
     rute: "/backoffice/purchase-orders",
@@ -54,6 +54,23 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/backoffice/item-requests",
+    bagian: "navGroupPurchasing",
+    judul: { kunci: "itemRequests.title" },
+    isi: [
+      { kunci: "itemRequests.subtitle" },
+      "Request dibuat dari perintah kerja yang bahannya kurang untuk resep bahannya (tombol Buat Request Item di WO itu); WO-nya tetap draf dan belum bisa di-Issue sampai stoknya cukup. Setiap baris adalah satu bahan beserta qty yang kurang, berstatus Terbuka, Sudah jadi PO, atau Dibatalkan.",
+      "Centang baris terbuka untuk satu pemasok lalu tekan Buat PO: terbentuk satu PO draf berisi baris yang dipilih, dengan harga terakhir dari pemasok itu sebagai isian awal. Periksa PO-nya sebelum diajukan. Baris yang tidak lagi dibutuhkan bisa dibatalkan.",
+      "Melihat butuh izin melihat request item; membatalkan baris butuh izin mengelolanya, dan membuat PO butuh izin mengelola request item sekaligus izin membuat PO.",
+    ],
+  },
+  {
+    rute: "/backoffice/item-requests/[id]",
+    bagian: "navGroupPurchasing",
+    judul: "Rincian request item",
+    isi: "Satu request: WO sumbernya, tanggalnya, kapan bahannya dibutuhkan, siapa yang membuatnya, dan barisnya beserta statusnya. Baris yang sudah jadi PO menautkan ke PO-nya. Halaman ini hanya untuk dibaca; membuat PO dan membatalkan baris dilakukan dari daftar Request Item.",
+  },
+  {
     rute: "/backoffice/supplier-payments",
     bagian: "navGroupPurchasing",
     judul: { kunci: "supplierPayments.judulHalaman" },
@@ -97,6 +114,39 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Sisa utang setiap pemasok dikelompokkan menurut umur dokumennya: 0–30, 31–60, 61–90, dan lebih dari 90 hari, dihitung dari tanggal GRN, tanggal penerimaan barang jadi pertama (untuk jasa produksi), atau tanggal saldo awal. Uang muka dan lebih bayar tampil sebagai kredit. Klik nama pemasok untuk melihat dokumennya.",
       "Saldonya adalah saldo SAAT INI; mengganti tanggal hanya menggeser cara umur dihitung. Total dibandingkan dengan saldo akun utang usaha di buku besar — selisih biasanya berasal dari jurnal manual ke akun utang usaha, retur atau GRN yang belum berjurnal.",
+    ],
+  },
+  {
+    rute: "/backoffice/vendor-bills",
+    bagian: "navGroupPurchasing",
+    judul: { kunci: "vendorBills.title" },
+    isi: [
+      { kunci: "vendorBills.subtitle" },
+      "Tagihan vendor adalah catatan invoice pemasok: nomor invoice, tanggal, jatuh tempo, dan barang atau jasa yang ditagihnya, dicocokkan dengan barang yang sudah diterima (item PO) dan step proses WO. Utang pemasok sudah tercatat saat barangnya diterima, jadi tagihan tidak membuat utang kedua; harga di tagihan disandingkan dengan harga PO atau ongkos step supaya bedanya terlihat.",
+      "Daftar bisa disaring per pemasok, status (Belum dibayar, Dibayar sebagian, Lunas, Batal), dan tanggal tagihan, atau dicari dengan nomor tagihan maupun nomor invoice vendor.",
+      "Melihat butuh izin melihat tagihan vendor; membuat dan membatalkan tagihan butuh izin mengelolanya.",
+    ],
+  },
+  {
+    rute: "/backoffice/vendor-bills/new",
+    bagian: "navGroupPurchasing",
+    judul: { kunci: "vendorBills.newTitle" },
+    isi: [
+      { kunci: "vendorBills.newSubtitle" },
+      "Hanya yang belum habis ditagih yang muncul, dengan qty diterima, qty yang sudah ditagih, dan sisanya. Qty dan harga yang ditagih boleh diubah; harga yang berbeda dari harga PO atau ongkos step ditandai.",
+      { kunci: "vendorBills.poPaidNotBillable" },
+      { kunci: "vendorBills.dueDateHint" },
+      "Tagihan tidak memposting jurnal untuk barang dan jasa yang utangnya sudah tercatat saat diterima. Satu-satunya pengecualian adalah jasa step WO dari penerimaan barang jadi lama yang belum mencatat ongkos jasanya: untuk bagian itu saja, tagihan memposting biaya jasa produksi dan utangnya.",
+    ],
+  },
+  {
+    rute: "/backoffice/vendor-bills/[id]",
+    bagian: "navGroupPurchasing",
+    judul: "Rincian tagihan vendor",
+    isi: [
+      "Satu tagihan: pemasok, nomor invoice vendor, tanggal dan jatuh tempo, total, yang sudah dibayar, dan sisanya, beserta barisnya dan sumber setiap baris (item PO atau step WO).",
+      "Kartu Pembayaran menampilkan pembayaran yang dialokasikan ke tagihan ini. Kartu Jurnal menampilkan jurnal yang diposting tagihan ini — biasanya kosong, karena utangnya sudah tercatat saat barang diterima.",
+      { kunci: "vendorBills.voidBody" },
     ],
   },
   {

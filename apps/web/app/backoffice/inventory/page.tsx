@@ -10,6 +10,7 @@ import {
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants/pagination';
 import { InventoryPageClient } from './InventoryPageClient';
 import { statusStokDariUrl } from '@/lib/inventory/stock-status';
+import { SARINGAN_SUMBER_BAWAAN } from '@/lib/inventory/jenis-gerakan-stok';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,7 +95,8 @@ export default async function InventoryPage({
   const [invData, grnData, adjData, adjustmentItemList] = await Promise.all([
     getInventorySnapshot(pageOpts),
     getGRNs(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
-    getStockAdjustments(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE }),
+    // Saringan sumber bawaan layar; tanpa `sumber` aksi ini mengembalikan semua sumber.
+    getStockAdjustments(undefined, { page: 1, pageSize: DEFAULT_PAGE_SIZE, sumber: SARINGAN_SUMBER_BAWAAN }),
     getCurrentStockSummary(),
   ]);
 

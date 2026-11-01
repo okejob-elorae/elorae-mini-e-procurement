@@ -69,11 +69,12 @@ describe("report disclosures", () => {
     ).toBe(withPointer);
   });
 
-  it("fills the opening-balance date into the id.json template", () => {
+  it("fills the opening-balance date into the same id.json template the screen renders", () => {
     expect(disclosures.balanceSheetOpeningBody("01 Jun 2026")).toBe(
-      reports.balanceSheet.openingBody.replace("{date}", "01 Jun 2026"),
+      reports.balanceSheet.openingBodySaldoAwal.replace("{date}", "01 Jun 2026"),
     );
     expect(disclosures.balanceSheetOpeningBody("01 Jun 2026")).not.toContain("{");
+    expect(disclosures.balanceSheetOpeningBody("01 Jun 2026")).toContain("Keuangan → Saldo awal");
   });
 
   it("fills the unclassified account count into the id.json template", () => {

@@ -39,6 +39,17 @@ export const ENTRI: EntriBantuan[] = [
     isi: { kunci: "inventory.stockCard.subtitle" },
   },
   {
+    rute: "/backoffice/inventory/movements",
+    bagian: "inventory",
+    judul: { kunci: "stockMovements.title" },
+    isi: [
+      "Riwayat setiap gerakan stok satu barang menurut buku besar stok, di semua lokasi sekaligus: gudang utama, setiap toko, dan setiap van. Pilih barangnya dulu; saringan varian, rentang tanggal, gudang, dan jenis pergerakan mempersempit daftarnya.",
+      "Setiap lokasi tampil sebagai bagiannya sendiri, dengan saldo berjalan di setiap baris dan saldo akhir di bawahnya. Kolom Jenis dan Dokumen menyebut asal gerakannya: penerimaan barang, pengiriman, penjualan SPG atau van, opname, transfer toko, retur, dan sebagainya.",
+      { kunci: "stockMovements.cutoverBanner" },
+      "Barang dengan sangat banyak gerakan hanya menampilkan yang terbaru; yang lebih lama disembunyikan, tetapi saldo akhir setiap lokasi yang tampil tetap benar. Halaman ini hanya untuk dibaca dan butuh izin melihat inventori.",
+    ],
+  },
+  {
     rute: "/backoffice/inventory/grn/new",
     bagian: "inventory",
     judul: { kunci: "inventory.grnForm.pageTitle" },
@@ -131,6 +142,28 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "gudangRusak.kantor.deskripsi" },
       "Diperbaiki: barang keluar dari sini dan masuk stok jual gudang. Dijual obral: keluar dari sini dan nilai jualnya dicatat; stok jual tidak berubah. Dimusnahkan: keluar dari sini tanpa masuk ke mana pun. Memutuskan butuh izin kelola persediaan.",
+    ],
+  },
+  {
+    rute: "/backoffice/deliveries",
+    bagian: "inventory",
+    judul: { kunci: "deliveryShipments.title" },
+    isi: [
+      "Daftar pengiriman barang ke toko untuk pesanan lapangan yang sudah disetujui, putus maupun konsinyasi. Pengiriman dibuat dari halaman pesanannya lewat Buat Pengiriman: pilih metode dan jumlah yang dikemas. Satu pesanan boleh dikirim beberapa kali sampai seluruhnya terkirim.",
+      "Alurnya Dikemas → Dalam Perjalanan → Terkirim, atau Terkirim Sebagian bila toko menerima kurang dari rencana. Lewat ekspedisi: isi nama ekspedisi dan nomor resi di Ubah Pelacakan, lalu Kirim; kantor menyelesaikannya dari daftar ini dengan foto bukti dan jumlah yang diterima per baris. Dibawa salesman: pilih salesman pembawanya, lalu Kirim; salesman itu menyelesaikannya dari HP di toko, dengan foto dan lokasi. Selama dalam perjalanan, pembawanya masih bisa diganti.",
+      "Untuk pesanan putus, tanggal nota dan jatuh tempo diisi sebelum dikirim bila barangnya dibawa salesman, atau saat menyelesaikan bila lewat ekspedisi. Pengiriman yang masih Dikemas bisa dibatalkan dari dialog Ubah Pelacakan.",
+      "Menyelesaikan pengiriman putus mencatat nota tagihan sebesar jumlah yang benar-benar diterima, dan stoknya keluar saat itu. Pengiriman konsinyasi tidak membuat tagihan: jumlah yang diterima pindah ke stok konsinyasi toko.",
+      "Membuka halaman ini butuh izin mengirim barang atau izin bukti terima. Mengatur pelacakan, mengirim, membatalkan, dan mengganti pembawa butuh izin mengirim barang; menyelesaikan butuh izin bukti terima.",
+    ],
+  },
+  {
+    rute: "/backoffice/deliveries/[id]",
+    bagian: "inventory",
+    judul: "Rincian pengiriman",
+    isi: [
+      "Satu pengiriman: toko, pesanan asalnya, pembawa atau ekspedisi beserta resinya, tanggal nota dan jatuh tempo (putus), dan dokumen yang dihasilkannya — catatan pengiriman untuk putus, transfer konsinyasi untuk konsi. Belum dibuat berarti pengirimannya belum selesai.",
+      "Riwayat mencatat kapan dan oleh siapa barangnya dikemas, dikirim, dan diterima. Pengiriman yang diselesaikan tanpa sinyal juga menyebut kapan penyelesaiannya tersinkron.",
+      "Bukti pengiriman berisi foto barang, foto dokumen bertanda tangan beserta nama penerimanya (khusus yang dibawa salesman), dan lokasi saat diselesaikan dengan jaraknya dari titik toko. Tabel barang menyandingkan qty rencana dengan qty terkirim; baris yang diterima kurang ditandai. Halaman ini hanya untuk dibaca.",
     ],
   },
 ];

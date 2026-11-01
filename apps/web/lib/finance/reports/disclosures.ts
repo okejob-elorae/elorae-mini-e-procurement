@@ -61,7 +61,7 @@ export const BALANCE_SHEET_UNBALANCED_NOTE = reports.balanceSheet.unbalancedNote
 export const BALANCE_SHEET_OPENING_TITLE = reports.balanceSheet.openingTitle;
 
 export function balanceSheetOpeningBody(dateLabel: string): string {
-  return fill(reports.balanceSheet.openingBody, { date: dateLabel });
+  return fill(reports.balanceSheet.openingBodySaldoAwal, { date: dateLabel });
 }
 
 /** Day-month-year label for the opening-balance warning, in the business timezone (WIB). */

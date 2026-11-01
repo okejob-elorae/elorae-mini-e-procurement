@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
   bolehMembacaArsip,
   bolehMembacaPelunasan,
@@ -36,10 +37,22 @@ const PAGAR: Record<string, (izin: string[]) => boolean> = {
   "/backoffice/retur-toko": bolehMembacaRetur,
   "/backoffice/beban-selisih": bolehMembacaPiutang,
   "/backoffice/arsip-retur": bolehMembacaArsip,
+  // Layar `/backoffice/finance/*` memagari dirinya dengan satu izin di `page.tsx`-nya.
+  "/backoffice/finance/piutang": (izin) => hasPermission(izin, PERMISSIONS.RECEIVABLES_VIEW),
+  "/backoffice/finance/payments": (izin) => hasPermission(izin, PERMISSIONS.PAYMENTS_MANAGE),
+  "/backoffice/finance/pelunasan": (izin) => hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE),
+  "/backoffice/finance/collections": (izin) => hasPermission(izin, PERMISSIONS.COLLECTIONS_MANAGE),
 };
 
-const DASAR = ["receivables:view", "receivables:manage", "journals:manage", "inventory_opname:count"];
-/** Setiap gabungan keempat izin yang menentukan, ditambah admin dan orang lapangan. */
+const DASAR = [
+  "receivables:view",
+  "receivables:manage",
+  "journals:manage",
+  "inventory_opname:count",
+  "payments:manage",
+  "collections:manage",
+];
+/** Setiap gabungan izin yang menentukan, ditambah admin dan orang lapangan. */
 const GABUNGAN: string[][] = [
   ...Array.from({ length: 1 << DASAR.length }, (_, m) => DASAR.filter((_, i) => m & (1 << i))),
   ["*"],

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { prisma, seededId } from "@elorae/db";
+import { prisma, seededId, seededIds } from "@elorae/db";
 import { recordSpgSale } from "./sale-writer";
 import { getSellableCatalogForSpg } from "./sale-queries";
 
@@ -54,14 +54,14 @@ d("recordSpgSale (test bed only)", () => {
       await prisma.spgSale.findMany({ where: { salesmanId: seededId(salesmanId), storeId: { in: storeIds.map(seededId) } }, select: { id: true } })
     ).map((x) => x.id);
     await prisma.storeStock.deleteMany({ where: { storeId: { in: storeIds.map(seededId) } } });
-    await prisma.storeStockMovement.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.salesHistory.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: itemIds } } });
-    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: saleIds } } });
+    await prisma.storeStockMovement.deleteMany({ where: { itemId: { in: seededIds(itemIds) } } });
+    await prisma.salesHistory.deleteMany({ where: { itemId: { in: seededIds(itemIds) } } });
+    await prisma.spgSaleLine.deleteMany({ where: { itemId: { in: seededIds(itemIds) } } });
+    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: seededIds(saleIds) } } });
     await prisma.spgSale.deleteMany({ where: { salesmanId: seededId(salesmanId), storeId: { in: storeIds.map(seededId) } } });
-    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: itemIds } } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds(itemIds) } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
-    await prisma.item.deleteMany({ where: { id: { in: itemIds } } });
+    await prisma.item.deleteMany({ where: { id: { in: seededIds(itemIds) } } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
     await prisma.store.deleteMany({ where: { id: { in: storeIds.map(seededId) } } });
   });

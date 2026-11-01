@@ -114,6 +114,18 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/backoffice/stores/[id]/konsi-push",
+    bagian: "navGroupMasterData",
+    judul: "Kirim stok ke toko konsinyasi",
+    isi: [
+      { kunci: "stores.konsiPush.description" },
+      "Kantor memilih barang dan jumlahnya tanpa menunggu pesanan salesman. Saran di atas berisi kekurangan asortimen (barang di daftar asortimen toko yang stoknya di toko di bawah target) dan barang yang belum pernah dikirim ke toko ini, hanya yang masih ada stoknya di gudang; barang lain ditambahkan lewat Tambah produk. Jumlah tidak boleh melebihi stok tersedia di gudang.",
+      "Menyimpan membuat satu pesanan konsinyasi yang langsung disetujui, atas nama salesman yang dipilih: stoknya dicadangkan sekarang dan baru berpindah ke toko saat pengirimannya diselesaikan (Inventori → Pengiriman). Satu baris yang stoknya kurang menggagalkan seluruh kiriman, dan salesman itu diberi kabar.",
+      "Bila toko sedang melebihi limit kreditnya, kiriman hanya bisa disimpan oleh pengguna dengan izin override limit kredit, dengan alasan.",
+      "Hanya untuk toko konsinyasi yang aktif; dibuka dari kartu Kirim stok di halaman toko dan butuh izin menyetujui pesanan lapangan.",
+    ],
+  },
+  {
     rute: "/backoffice/stores/kelas",
     bagian: "navGroupMasterData",
     judul: { kunci: "kelasToko.halaman.judul" },
@@ -183,6 +195,18 @@ export const ENTRI: EntriBantuan[] = [
         judul: { kunci: "itemProductInfo.title" },
         isi: { kunci: "itemProductInfo.description" },
       },
+    ],
+  },
+  {
+    rute: "/backoffice/items/import",
+    bagian: "navGroupMasterData",
+    judul: { kunci: "itemImport.title" },
+    isi: [
+      { kunci: "itemImport.subtitle" },
+      { kunci: "itemImport.step1Body" },
+      "Setelah file diunggah, setiap baris diperiksa lebih dulu. Selama masih ada error (disebut per baris dan kolom), tidak ada produk yang dibuat; perbaiki filenya lalu unggah ulang. Pratinjau menunjukkan SKU yang akan disimpan, termasuk yang dibuat otomatis atau diubah dari yang diketik.",
+      "Centang Buat juga produk ini di Jubelio untuk memasukkan produknya ke antrean Jubelio. Artikel tanpa kategori, atau yang kategorinya belum dipetakan ke kategori Jubelio, dilewati dan bisa dibuat di Jubelio nanti dari halaman item.",
+      "Dibuka dari tombol Import Excel di daftar item, dan butuh izin membuat item.",
     ],
   },
   {

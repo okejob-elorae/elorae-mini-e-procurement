@@ -537,4 +537,33 @@ export const ENTRI: EntriBantuan[] = [
       "Kiriman yang gagal karena isinya ditolak menunjukkan alasannya dan bisa dihapus dari HP.",
     ],
   },
+  {
+    rute: "/pwa/deliveries",
+    bagian: "pwaSalesman",
+    judul: { kunci: "pwa.deliveries.title" },
+    isi: [
+      "Pengiriman yang ditugaskan kantor kepada Anda untuk dibawa sendiri ke toko dan sudah keluar dari gudang (Dalam Perjalanan), yang paling lama dikirim di atas. Ketuk satu pengiriman untuk menyelesaikannya di toko. Pengiriman lewat ekspedisi tidak muncul di sini, karena kantor yang menyelesaikannya.",
+      "Dibuka dari tombol Pengiriman Saya di beranda, dan butuh izin bukti terima.",
+    ],
+  },
+  {
+    rute: "/pwa/deliveries/[shipmentId]",
+    bagian: "pwaSalesman",
+    judul: { kunci: "pwa.deliveries.detailTitle" },
+    isi: [
+      "Diisi di toko saat barang diserahkan: jumlah yang diterima toko di setiap baris (boleh kurang dari rencana, tidak boleh lebih), foto bukti barang, foto nota bertanda tangan (Surat Keluar untuk konsinyasi), dan nama penerima yang menandatanganinya.",
+      "Lokasi HP wajib, dan Anda harus berada dalam radius toko. Toko yang belum punya titik lokasi tidak bisa diselesaikan di sini — minta admin mengisinya.",
+      "Menyelesaikan pengiriman putus mencatat nota tagihan sebesar jumlah yang diterima toko. Pengiriman konsinyasi memindahkan barangnya ke stok konsinyasi toko tanpa tagihan.",
+      "Tanpa sinyal, penyelesaian disimpan di HP dan dikirim otomatis saat online (lihat Pengiriman Tertunda). Pengiriman yang ditugaskan ke salesman lain tidak bisa dibuka.",
+    ],
+  },
+  {
+    rute: "/pwa/deliveries/pending",
+    bagian: "pwaSalesman",
+    judul: { kunci: "pwa.deliveries.pending.title" },
+    isi: [
+      "Penyelesaian pengiriman yang dicatat tanpa sinyal dan belum sampai ke kantor. Semuanya dikirim otomatis saat HP online; Coba Lagi hanya mempercepatnya.",
+      "Penyelesaian yang gagal menyebut alasannya dan bisa dihapus dari HP. Bila pengirimannya ternyata sudah tercatat dengan jumlah lain, salinan di HP selalu ditolak: hapus, lalu selesaikan lagi dari halaman pengirimannya.",
+    ],
+  },
 ];

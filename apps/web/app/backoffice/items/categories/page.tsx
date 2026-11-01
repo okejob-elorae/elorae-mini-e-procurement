@@ -148,12 +148,18 @@ export default function ItemCategoriesPage() {
     setIsDialogOpen(true);
   };
 
-  const pesanGagal = (code: 'DUPLICATE_CODE' | 'IN_USE' | 'FAILED', count = 0, kode = '') =>
+  const pesanGagal = (
+    code: 'DUPLICATE_CODE' | 'IN_USE' | 'HAS_COMMISSION_RATES' | 'FAILED',
+    count = 0,
+    kode = '',
+  ) =>
     code === 'DUPLICATE_CODE'
       ? tCat('errDuplicate', { code: kode })
       : code === 'IN_USE'
         ? tCat('errInUse', { count })
-        : tCat('saveFailed');
+        : code === 'HAS_COMMISSION_RATES'
+          ? tCat('errHasCommissionRates')
+          : tCat('saveFailed');
 
   const onSubmit = async (data: FormData) => {
     try {

@@ -1,6 +1,7 @@
 import type { EntriBantuan } from "../jenis";
 import { KELIPATAN_STOK_PORTAL } from "@/lib/field-sales/portal-toko-aturan";
 import { MAKS_PERIKSA_PORTAL_PER_MENIT } from "@/lib/field-sales/portal-toko-batas";
+import { DEFAULT_PAYMENT_REMINDER_DAYS } from "@/lib/purchase-orders/payment-reminder-thresholds";
 
 export const ENTRI: EntriBantuan[] = [
   {
@@ -37,6 +38,7 @@ export const ENTRI: EntriBantuan[] = [
       { judul: { kunci: "settings.itemCodes.title" }, isi: { kunci: "settings.itemCodes.description" } },
       { judul: { kunci: "settings.hub.taxTitle" }, isi: { kunci: "settings.hub.taxDescription" } },
       { judul: { kunci: "settings.uom.title" }, isi: { kunci: "settings.uom.description" } },
+      { judul: { kunci: "settings.paymentReminders.title" }, isi: { kunci: "settings.paymentReminders.description" } },
       { judul: { kunci: "settings.users.title" }, isi: { kunci: "settings.users.description" } },
       { judul: { kunci: "settings.rbac.title" }, isi: { kunci: "settings.rbac.description" } },
       { judul: { kunci: "settings.packRatio.title" }, isi: { kunci: "settings.hub.packRatioDescription" } },
@@ -131,6 +133,17 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/backoffice/settings/purchasing",
+    bagian: "settings",
+    judul: { kunci: "settings.paymentReminders.heading" },
+    isi: [
+      { kunci: "settings.paymentReminders.subtitle" },
+      { kunci: "settings.paymentReminders.fieldHint" },
+      `Bawaannya ${DEFAULT_PAYMENT_REMINDER_DAYS.join(", ")}. Pengingat diperiksa setiap pagi pukul 08.30 WIB untuk PO yang belum lunas, bukan draf, tidak dibatalkan, dan punya jatuh tempo pembayaran, lalu dikirim ke pemegang izin mengubah PO. Bila jatuh tempo sebuah PO berubah, pengingatnya dimulai lagi untuk tanggal yang baru.`,
+      "Dibuka dari kartu Pembelian di Pengaturan. Melihat butuh izin melihat PO; menyimpan butuh izin mengubah PO.",
+    ],
+  },
+  {
     rute: "/backoffice/settings/users",
     bagian: "settings",
     judul: { kunci: "settings.users.title" },
@@ -153,6 +166,45 @@ export const ENTRI: EntriBantuan[] = [
       "Izin Masuk aplikasi HP membuka aplikasi salesman dan SPG; peran SPG juga butuh Jual di konter toko, dan penggunanya wajib diberi satu toko tetap.",
       "Peran ADMIN bertanda Sistem memegang semua izin, termasuk izin yang ditambahkan kemudian, dan tidak bisa diubah atau dihapus. Peran yang masih dipakai pengguna tidak bisa dihapus; pindahkan penggunanya ke peran lain dulu. Membuat dan mengubah peran butuh izin Buat & ubah peran.",
       "Perubahan izin berlaku untuk pengguna peran itu saat sesinya disegarkan — otomatis dalam sekitar satu menit, ketika ia membuka halaman berikutnya; tidak perlu keluar lalu masuk lagi. Setiap pembuatan, perubahan izin, dan penghapusan peran tercatat di jejak audit beserta daftar izin sebelum dan sesudahnya.",
+    ],
+  },
+  {
+    rute: "/backoffice/profile-accounts",
+    bagian: "settings",
+    judul: { kunci: "profileAccounts.title" },
+    isi: [
+      { kunci: "profileAccounts.subtitle" },
+      "Tab Akun mendaftar setiap login beserta perannya. Menu di setiap baris membuka Edit, Reset kata sandi (Anda mengetik kata sandi sementara, minimal 6 karakter, yang sebaiknya diganti pengguna setelah masuk), dan Reset PIN (PIN dihapus; pengguna mengatur PIN baru di Pengaturan → Keamanan).",
+      "Tab Peran mendaftar peran beserta jumlah pengguna dan izinnya. Buat peran meminta nama, keterangan, dan izin; Edit membuka daftar izin peran itu. Peran bertanda Sistem tidak bisa diubah atau dihapus, dan peran yang masih dipakai pengguna tidak bisa dihapus.",
+      "Halaman ini hanya untuk admin. Pengaturan → Pengguna dan Pengaturan → Peran & izin mengelola akun dan peran yang sama.",
+    ],
+  },
+  {
+    rute: "/backoffice/profile-accounts/new",
+    bagian: "settings",
+    judul: { kunci: "profileAccounts.createAccountTitle" },
+    isi: [
+      { kunci: "profileAccounts.createAccountSubtitle" },
+      "Isi nama, email, kata sandi (minimal 6 karakter), dan peran. Email tidak boleh sudah dipakai akun lain. Pilihan Toko penempatan muncul bila perannya SPG.",
+      { kunci: "profileAccounts.formStoreHint" },
+    ],
+  },
+  {
+    rute: "/backoffice/profile-accounts/[id]/edit",
+    bagian: "settings",
+    judul: { kunci: "profileAccounts.editAccountTitle" },
+    isi: [
+      { kunci: "profileAccounts.editAccountSubtitle" },
+      "Email tidak bisa diubah, dan kata sandi serta PIN direset dari daftar Akun Profil, bukan dari sini. Toko penempatan hanya untuk akun SPG. Akun admin terakhir tidak bisa diturunkan ke peran lain.",
+    ],
+  },
+  {
+    rute: "/backoffice/profile-accounts/roles/[id]",
+    bagian: "settings",
+    judul: "Ubah izin peran",
+    isi: [
+      { kunci: "profileAccounts.editRoleSubtitle" },
+      "Centang izin yang dimiliki peran ini lalu tekan Simpan izin; Pilih semua dan Batalkan semua mengubah semuanya sekaligus. Peran sistem hanya bisa dilihat.",
     ],
   },
   {

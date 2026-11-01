@@ -213,6 +213,24 @@ export const ENTRI: EntriBantuan[] = [
     ],
   },
   {
+    rute: "/pwa/notifications",
+    bagian: "pwaBersama",
+    judul: { kunci: "pwa.notifications.title" },
+    isi: [
+      "Semua notifikasi untuk akun Anda, yang terbaru di atas. Yang belum dibaca ditandai, dan jumlahnya tertulis di atas daftar. Mengetuk notifikasi menandainya dibaca lalu membuka halamannya; Tandai semua dibaca menandai semuanya sekaligus, dan Muat lebih banyak memuat yang lebih lama.",
+      "Halaman ini terbuka saat Anda mengetuk pemberitahuan di HP yang tidak menunjuk halaman tertentu. Isinya sama dengan Kabar.",
+    ],
+    kartu: [
+      {
+        judul: { kunci: "pwa.notifications.push.title" },
+        isi: [
+          { kunci: "pwa.notifications.push.body" },
+          "Bila pemberitahuan di HP ini sudah menyala, kartu ini menulis Notifikasi push aktif. Di browser yang tidak mendukung pemberitahuan, kartu ini tidak tampil.",
+        ],
+      },
+    ],
+  },
+  {
     rute: "/pwa/pengumuman",
     bagian: "pwaBersama",
     judul: { kunci: "pwa.pengumuman.judul" },

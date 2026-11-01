@@ -12,6 +12,18 @@ import { DAFTAR_BANTUAN } from "./daftar";
 
 const APP = path.resolve(__dirname, "../../app");
 
+/*
+ * Versi tim dari fitur yang dibangun dua kali. Pemilik memilih versi Max
+ * (2026-10-29), jadi halaman ini akan dihapus dan tidak diberi penjelasan.
+ * Begitu halamannya hilang, tes kedua di bawah mengingatkan untuk mencoretnya.
+ */
+const RETUR_TIM = "retur toko versi tim, akan dihapus: pemilik memilih retur versi Max (NRT/NRI)";
+const PIUTANG_TIM = "piutang & pelunasan versi tim, akan dihapus: pemilik memilih piutang dan BKM versi Max";
+const KONSI_TIM = "laporan konsinyasi versi tim, akan dihapus: pemilik memilih siklus konsinyasi versi Max";
+const TRANSFER_TIM = "transfer toko versi tim, akan dihapus: pemilik memilih mutasi antar toko versi Max";
+const KOMISI_SPG_TIM = "komisi SPG versi tim, akan dihapus: pemilik memilih gaji & komisi SPG versi Max";
+const BAYAR_PEMASOK_TIM = "pembayaran tagihan vendor versi tim, akan dihapus: pemilik memilih pembayaran pemasok versi Max";
+
 /** Halaman yang sengaja tanpa entri, dengan alasannya. */
 const DIKECUALIKAN: Record<string, string> = {
   "/backoffice": "hanya mengalihkan ke beranda",
@@ -20,6 +32,38 @@ const DIKECUALIKAN: Record<string, string> = {
   "/backoffice/sales-orders/[id]/pick-list": "halaman cetak, langsung memanggil print",
   "/backoffice/sales-orders/[id]/packing-slip": "halaman cetak, langsung memanggil print",
   "/pwa/offline": "pemberitahuan sedang tidak ada sinyal",
+
+  "/backoffice/field-returns": RETUR_TIM,
+  "/backoffice/field-returns/[id]": RETUR_TIM,
+  "/pwa/stores/[id]/retur": RETUR_TIM,
+
+  "/backoffice/finance/piutang": PIUTANG_TIM,
+  "/backoffice/finance/piutang/[id]": PIUTANG_TIM,
+  "/backoffice/finance/payments": PIUTANG_TIM,
+  "/backoffice/finance/payments/[id]": PIUTANG_TIM,
+  "/backoffice/finance/pelunasan": PIUTANG_TIM,
+  "/backoffice/finance/pelunasan/[id]": PIUTANG_TIM,
+  "/backoffice/finance/collections": PIUTANG_TIM,
+  "/backoffice/settings/piutang": PIUTANG_TIM,
+  "/pwa/collections": PIUTANG_TIM,
+  "/pwa/collections/[receivableId]": PIUTANG_TIM,
+  "/pwa/pelunasan": PIUTANG_TIM,
+  "/pwa/pelunasan/[storeId]": PIUTANG_TIM,
+  "/pwa/bkm/[settlementId]": PIUTANG_TIM,
+
+  "/backoffice/konsi-sell-through": KONSI_TIM,
+  "/backoffice/konsi-sell-through/[id]": KONSI_TIM,
+
+  "/backoffice/store-transfers": TRANSFER_TIM,
+  "/backoffice/store-transfers/new": TRANSFER_TIM,
+  "/backoffice/store-transfers/[id]": TRANSFER_TIM,
+
+  "/backoffice/spg-commission": KOMISI_SPG_TIM,
+  "/backoffice/settings/spg-commission": KOMISI_SPG_TIM,
+
+  "/backoffice/vendor-payments": BAYAR_PEMASOK_TIM,
+  "/backoffice/vendor-payments/new": BAYAR_PEMASOK_TIM,
+  "/backoffice/vendor-payments/[id]": BAYAR_PEMASOK_TIM,
 };
 
 function halaman(dir: string, rute: string[] = []): string[] {
