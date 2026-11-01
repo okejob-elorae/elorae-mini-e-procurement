@@ -291,7 +291,8 @@
     "navKolPemantauan": "Pemantauan",
     "navKolPerforma": "Performa video",
     "navKolBrand": "Brand",
-    "navKolPeriksa": "Periksa data"
+    "navKolPeriksa": "Periksa data",
+    "navSpgCommissionSellThrough": "Komisi SPG (sell-through)"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -2539,7 +2540,8 @@
       "errInUse": "Masih dipasang di {count} barang, jadi tidak bisa dihapus. Nonaktifkan saja.",
       "codeLocked": "Kode tidak bisa diubah sesudah disimpan.",
       "sortHelp": "Angka kecil tampil lebih dulu di pilihan kategori.",
-      "activeHelp": "Kategori nonaktif tidak ditawarkan saat membuat barang baru, tapi barang lama tetap memakainya."
+      "activeHelp": "Kategori nonaktif tidak ditawarkan saat membuat barang baru, tapi barang lama tetap memakainya.",
+      "errHasCommissionRates": "Kategori ini masih punya tarif komisi SPG, jadi tidak bisa dihapus. Hapus tarifnya dulu di Komisi SPG, atau nonaktifkan kategorinya."
     },
     "detail": {
       "pushStock": "Kirim stok ke Jubelio",
@@ -3945,7 +3947,8 @@
       "posted": "Jurnal pembayaran diposting. Utang dan bank sekarang sudah mencerminkan pembayaran ini.",
       "errForbidden": "Anda tidak punya izin journals:manage untuk memposting jurnal pembayaran ini.",
       "errBadState": "PO ini sudah tidak dalam kondisi tersebut — jurnal pembayarannya sudah diposting atau tanda lunas PO-nya sudah dibatalkan. Halaman sudah dimuat ulang.",
-      "reasonUnknown": "Posting jurnal pembayaran untuk PO ini pernah gagal, tapi alasan percobaan terakhirnya tidak tercatat. Periksa jurnal PO ini dan pemetaan akun di Finance, perbaiki penyebabnya, lalu gunakan \"Posting jurnal pembayaran\"."
+      "reasonUnknown": "Posting jurnal pembayaran untuk PO ini pernah gagal, tapi alasan percobaan terakhirnya tidak tercatat. Periksa jurnal PO ini dan pemetaan akun di Finance, perbaiki penyebabnya, lalu gunakan \"Posting jurnal pembayaran\".",
+      "errPaidViaDocuments": "PO ini sudah dibayar lewat dokumen pembayaran pemasok, jadi jurnal tombol Tandai lunas tidak diposting — memostingnya akan membayar utang yang sama dua kali. Halaman sudah dimuat ulang."
     },
     "journal": {
       "err": {
@@ -4180,7 +4183,8 @@
         "MELEBIHI_UANG_MUKA": "Melebihi uang muka yang tersisa.",
         "FOTO_TIDAK_SAH": "Foto bukti tidak sah. Unggah ulang fotonya.",
         "TANPA_AKSES": "Anda tidak berizin melakukan ini.",
-        "GAGAL": "Gagal menyimpan. Coba lagi."
+        "GAGAL": "Gagal menyimpan. Coba lagi.",
+        "DIBAYAR_LEWAT_TAGIHAN_VENDOR": "Dokumen itu ada di tagihan Vendor Billing yang sudah dibayar lewat Pembayaran Vendor Billing. Bayar sisanya di sana, atau batalkan pembayaran vendornya dulu."
       },
       "uangMukaBelumDipotong": "Uang muka {nilai} belum dipotong PPh — ikut dasar potongan",
       "uangMukaDiterapkanPotong": "Uang muka diterapkan. PPh {nilai} atas uang muka dipotong lewat {nomor}.",
@@ -4348,7 +4352,10 @@
         "VARIAN_TIDAK_VALID": "Varian {barang} tidak cocok dengan data barang. Pilih ulang variannya.",
         "TANPA_AKSES": "Anda tidak punya izin mengubah PO.",
         "GAGAL": "PO gagal disimpan. Coba lagi.",
-        "TAHAP_TIDAK_ADA": "Tahap produksi yang dipilih sudah tidak ada. Lepas tahap, lalu simpan lagi."
+        "TAHAP_TIDAK_ADA": "Tahap produksi yang dipilih sudah tidak ada. Lepas tahap, lalu simpan lagi.",
+        "TERMIN_TIDAK_SAH": "Termin pembayaran harus bilangan bulat dari 0 sampai 365 hari.",
+        "TERMIN_SUDAH_LUNAS": "PO ini sudah dibayar, jadi termin pembayarannya tidak bisa diubah lagi.",
+        "SUDAH_DITAGIH": "PO ini sudah ditagih lewat Vendor Billing. Batalkan tagihannya dulu sebelum mengubah PO."
       }
     },
     "riwayat": {
@@ -5162,7 +5169,8 @@
       "rataRataPerBulan": "Rata-rata per bulan",
       "cakupanData": "Cakupan data",
       "ringkasanForecast": "Ringkasan forecast",
-      "targetPlanKalimat": "Target plan"
+      "targetPlanKalimat": "Target plan",
+      "belumAdaPermintaan": "Belum ada penjualan dalam {lookback} bulan sebelum {tahun} dari impor Excel, pesanan marketplace, penjualan offline, maupun laporan konsinyasi, jadi forecast belum akan menghasilkan artikel."
     },
     "reconciliation": {
       "title": "Rekonsiliasi penjualan",
@@ -6239,7 +6247,8 @@
       "bantuan": "Kosongkan untuk memakai batas bawaan",
       "kosong": "Bawaan",
       "memuat": "Memuat…",
-      "konsi": "Toko konsinyasi tidak punya piutang, jadi tidak dinilai kreditnya."
+      "konsi": "Toko konsinyasi tidak punya piutang, jadi tidak dinilai kreditnya.",
+      "konsiHanyaBatasNilai": "Toko konsinyasi hanya dinilai batas kreditnya (piutang yang ada) saat transfer disetujui. Batas faktur terbuka dan mode kredit tidak berlaku."
     }
   },
   "pwa": {
@@ -6276,7 +6285,8 @@
       "izinCobaLagi": "Sudah diizinkan? Coba check-in lagi",
       "izinMasihDitolak": "Lokasi masih ditolak. Ikuti langkah di atas, lalu coba lagi.",
       "fotoWajib": "Ambil minimal satu foto kunjungan sebelum check-out.",
-      "fotoWajibBuka": "Buka halaman toko untuk memotret"
+      "fotoWajibBuka": "Buka halaman toko untuk memotret",
+      "fieldReturn": "Retur lapangan"
     },
     "catalog": {
       "back": "Kembali",
@@ -9511,7 +9521,8 @@
         "REPLAY_MISMATCH": "Pengiriman ini sudah tercatat dengan tanggal atau jumlah yang berbeda, dan kini muncul di kartu Pengiriman. Untuk mengubah tanggalnya, gunakan Ubah tanggal nota di sana; untuk mengirim sisa jumlah, catat sebagai pengiriman baru.",
         "RESERVATION_MISMATCH": "Cadangan stok order ini tidak lagi sesuai dengan pengirimannya: hilang, sudah dilepas, sudah terpakai, atau lebih kecil dari pengiriman ini. Kemungkinan besar ini akibat pembaruan sistem yang berjalan saat order disetujui. Admin harus memperbaiki order ini sebelum bisa dikirim.",
         "INDEN_BELUM_RILIS": "Pesanan pre-order ini belum bisa dikirim: barangnya belum datang. Rilis dulu pre-order-nya di halaman Pre-order (Inden).",
-        "NOMOR_PIUTANG_DIPAKAI": "Pengiriman tidak dicatat: beberapa nomor nota berikutnya sudah dipakai piutang lain (impor atau faktur manual), jadi nota tidak bisa menjadi piutang. Hubungi admin sistem untuk memeriksa nomor piutang yang bentrok."
+        "NOMOR_PIUTANG_DIPAKAI": "Pengiriman tidak dicatat: beberapa nomor nota berikutnya sudah dipakai piutang lain (impor atau faktur manual), jadi nota tidak bisa menjadi piutang. Hubungi admin sistem untuk memeriksa nomor piutang yang bentrok.",
+        "PERIOD_CLOSED": "Jurnal nota ini, atau tanggal barunya, jatuh di bulan yang sudah ditutup, jadi tanggalnya tidak bisa dikoreksi. Buka kembali bulan itu dahulu, lalu coba lagi."
       },
       "penagihan": {
         "piutangSisa": "Piutang: sisa {nilai}",
@@ -10503,7 +10514,8 @@
       "SETTLEMENT_PENDING": "Pelunasan {docNo} masih menunggu persetujuan untuk piutang ini.",
       "COLLECTION_PENDING": "Ada setoran penagihan yang menunggu verifikasi untuk piutang ini.",
       "ALREADY_SETTLED": "Piutangnya sudah dihapusbukukan.",
-      "VOID_REASON_REQUIRED": "Isi alasan void."
+      "VOID_REASON_REQUIRED": "Isi alasan void.",
+      "INVOICE_NO_TAKEN": "Nomor {detail} sudah dipakai piutang lain (faktur manual atau impor), jadi laporan ini belum bisa ditagihkan. Minta admin keuangan memeriksa piutang bernomor itu."
     }
   },
   "storeTransfers": {
@@ -11433,7 +11445,19 @@
       "CASH_VOUCHER_REVERSAL": "Pembatalan voucher kas & bank",
       "SUPPLIER_PAYMENT_DOC": "Pembayaran pemasok (dokumen)",
       "SUPPLIER_PAYMENT_DOC_REVERSAL": "Pembatalan pembayaran pemasok",
-      "STORE_INVOICE": "Faktur piutang manual/impor"
+      "STORE_INVOICE": "Faktur piutang manual/impor",
+      "PAYMENT_RECEIPT": "Penerimaan pembayaran toko",
+      "PAYMENT_VOID": "Pembatalan pembayaran toko",
+      "KONSI_SELLTHRU_REVENUE": "Nota tagihan konsi",
+      "KONSI_SELLTHRU_COGS": "HPP nota tagihan konsi",
+      "KONSI_SELLTHRU_SHRINKAGE": "Susut konsi",
+      "KONSI_SELLTHRU_SURPLUS": "Surplus konsi",
+      "KONSI_SELLTHRU_REVENUE_VOID": "Pembatalan nota tagihan konsi",
+      "KONSI_SELLTHRU_COGS_VOID": "Pembatalan HPP nota tagihan konsi",
+      "KONSI_SELLTHRU_SHRINKAGE_VOID": "Pembatalan susut konsi",
+      "KONSI_SELLTHRU_SURPLUS_VOID": "Pembatalan surplus konsi",
+      "FIELD_DELIVERY_REVENUE": "Pendapatan nota tagihan (bentuk lama)",
+      "FIELD_DELIVERY_COGS": "HPP nota tagihan (bentuk lama)"
     },
     "tabPosted": "Terposting",
     "tabPending": "Tertunda",
@@ -15957,7 +15981,13 @@
         "salesorder_pack": "Pesanan dikemas",
         "salesorder_ship": "Pesanan dikirim",
         "salesreturn_decision_push": "Keputusan retur"
-      }
+      },
+      "outboxSearchPlaceholder": "Cari ID baris, kiriman, atau isi error…",
+      "outboxSearchLabel": "Cari di antrean kirim",
+      "outboxSearchClear": "Hapus pencarian",
+      "reset": "Atur ulang",
+      "emptyOutboxFiltered": "Tidak ada antrean kirim yang cocok dengan pencarian atau saringan ini.",
+      "clearSearchAndFilter": "Hapus pencarian dan saringan"
     },
     "settings": {
       "title": "Integrasi Jubelio",
@@ -16111,7 +16141,8 @@
       "cancel": "Batal",
       "confirm": "Ya, migrasikan",
       "queued": "{count} barang masuk antrean. Selesai diproses dalam ~5 menit.",
-      "noCategory": "Belum punya kategori"
+      "noCategory": "Belum punya kategori",
+      "queuedSkipped": "{count} barang masuk antrean; {skipped} dilewati karena masih ada di antrean. Selesai diproses dalam ~5 menit."
     },
     "galat": {
       "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini, atau sesi Anda sudah berakhir. Masuk ulang lalu coba lagi.",
@@ -22198,7 +22229,8 @@
     "TANPA_AKSESORI_BOM": "Barang jadi ini tidak punya aksesori di BOM, jadi tidak ada bahan tambahan yang bisa dikeluarkan.",
     "ALASAN_WAJIB": "Tulis alasan pembatalan dulu.",
     "ALASAN_TERLALU_PANJANG": "Alasan pembatalan terlalu panjang (maksimal 190 huruf).",
-    "CACAT_MELEBIHI_SETORAN": "Jumlah cacat tidak boleh lebih dari jumlah disetor."
+    "CACAT_MELEBIHI_SETORAN": "Jumlah cacat tidak boleh lebih dari jumlah disetor.",
+    "STOK_BELUM_CUKUP": "Stok bahan belum cukup untuk menerbitkan perintah kerja ini. Periksa kekurangan bahannya di rincian perintah kerja."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "PO tidak ditemukan.",

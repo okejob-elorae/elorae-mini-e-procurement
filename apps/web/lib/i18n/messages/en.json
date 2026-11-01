@@ -291,7 +291,8 @@
     "navKolPemantauan": "Monitoring",
     "navKolPerforma": "Video performance",
     "navKolBrand": "Brands",
-    "navKolPeriksa": "Data check"
+    "navKolPeriksa": "Data check",
+    "navSpgCommissionSellThrough": "SPG commission (sell-through)"
   },
   "notifications": {
     "title": "Notifications",
@@ -2539,7 +2540,8 @@
       "errInUse": "Still assigned to {count} items, so it cannot be deleted. Deactivate it instead.",
       "codeLocked": "The code cannot be changed after saving.",
       "sortHelp": "Smaller numbers appear first in the category choices.",
-      "activeHelp": "Inactive categories are not offered when creating new goods, but existing goods keep them."
+      "activeHelp": "Inactive categories are not offered when creating new goods, but existing goods keep them.",
+      "errHasCommissionRates": "This category still has SPG commission rates, so it cannot be deleted. Remove its rates under SPG commission first, or deactivate the category."
     },
     "detail": {
       "pushStock": "Push stock to Jubelio",
@@ -3945,7 +3947,8 @@
       "posted": "Payment journal posted. Payables and bank now reflect this payment.",
       "errForbidden": "You do not have the journals:manage permission needed to post this payment journal.",
       "errBadState": "This PO is no longer in that state — the payment journal has been posted or the PO was unmarked. The page has been reloaded.",
-      "reasonUnknown": "A payment journal post failed for this PO, but the latest attempt's reason is not on record. Check this PO's journals and the account mapping in Finance, fix the cause, then use \"Post payment journal\"."
+      "reasonUnknown": "A payment journal post failed for this PO, but the latest attempt's reason is not on record. Check this PO's journals and the account mapping in Finance, fix the cause, then use \"Post payment journal\".",
+      "errPaidViaDocuments": "This PO has been paid through supplier payment documents, so the Mark paid journal was not posted — posting it would pay the same payable twice. The page has been reloaded."
     },
     "journal": {
       "err": {
@@ -4180,7 +4183,8 @@
         "MELEBIHI_UANG_MUKA": "More than the advance left.",
         "FOTO_TIDAK_SAH": "The proof photo is invalid. Upload it again.",
         "TANPA_AKSES": "You do not have permission to do this.",
-        "GAGAL": "Could not save. Try again."
+        "GAGAL": "Could not save. Try again.",
+        "DIBAYAR_LEWAT_TAGIHAN_VENDOR": "That document is on a vendor bill already paid through Vendor Bill Payments. Pay the rest there, or void that vendor payment first."
       },
       "uangMukaBelumDipotong": "Advance {nilai} not yet withheld — included in the withholding base",
       "uangMukaDiterapkanPotong": "Advance applied. {nilai} tax withheld on the advance via {nomor}.",
@@ -4348,7 +4352,10 @@
         "VARIAN_TIDAK_VALID": "The variant of {barang} does not match the item data. Select the variant again.",
         "TANPA_AKSES": "You do not have permission to edit purchase orders.",
         "GAGAL": "The purchase order could not be saved. Try again.",
-        "TAHAP_TIDAK_ADA": "The selected production stage no longer exists. Remove the stage, then save again."
+        "TAHAP_TIDAK_ADA": "The selected production stage no longer exists. Remove the stage, then save again.",
+        "TERMIN_TIDAK_SAH": "Payment terms must be a whole number of days from 0 to 365.",
+        "TERMIN_SUDAH_LUNAS": "This purchase order has been paid, so its payment terms can no longer be changed.",
+        "SUDAH_DITAGIH": "This purchase order has already been billed in Vendor Bills. Void the bill before editing the purchase order."
       }
     },
     "riwayat": {
@@ -5162,7 +5169,8 @@
       "rataRataPerBulan": "Average per month",
       "cakupanData": "Data coverage",
       "ringkasanForecast": "Forecast summary",
-      "targetPlanKalimat": "Plan target"
+      "targetPlanKalimat": "Plan target",
+      "belumAdaPermintaan": "No sales in the {lookback} months before {tahun} from Excel imports, marketplace orders, offline sales or consignment reports, so the forecast will not produce any articles yet."
     },
     "reconciliation": {
       "title": "Sales reconciliation",
@@ -6239,7 +6247,8 @@
       "bantuan": "Leave empty to use the default limit",
       "kosong": "Default",
       "memuat": "Loading…",
-      "konsi": "Consignment stores have no receivables, so their credit is not assessed."
+      "konsi": "Consignment stores have no receivables, so their credit is not assessed.",
+      "konsiHanyaBatasNilai": "A consignment store is checked only against its credit limit (existing receivables) when a transfer is approved. The open-invoice limit and credit modes do not apply."
     }
   },
   "pwa": {
@@ -6276,7 +6285,8 @@
       "izinCobaLagi": "Allowed it? Try checking in again",
       "izinMasihDitolak": "Location is still denied. Follow the steps above, then try again.",
       "fotoWajib": "Take at least one visit photo before checking out.",
-      "fotoWajibBuka": "Open the store page to take a photo"
+      "fotoWajibBuka": "Open the store page to take a photo",
+      "fieldReturn": "Field return"
     },
     "catalog": {
       "back": "Back",
@@ -9511,7 +9521,8 @@
         "REPLAY_MISMATCH": "This delivery was already recorded with different dates or quantities, and it now appears in the Deliveries card. To change its dates, use Edit nota dates there; to deliver any remaining quantity, record it as a new delivery.",
         "RESERVATION_MISMATCH": "This order's stock reservation no longer matches its deliveries: it is missing, released, already used up, or smaller than this delivery. This most likely comes from a system update that ran while the order was being approved. An admin must repair the order before it can be delivered.",
         "INDEN_BELUM_RILIS": "This pre-order cannot be delivered yet: the goods have not arrived. Release the pre-order first on the Pre-orders (Inden) page.",
-        "NOMOR_PIUTANG_DIPAKAI": "Delivery not recorded: the next nota numbers are already used by other receivables (imported or entered manually), so the nota cannot become a receivable. Ask a system administrator to check the clashing receivable numbers."
+        "NOMOR_PIUTANG_DIPAKAI": "Delivery not recorded: the next nota numbers are already used by other receivables (imported or entered manually), so the nota cannot become a receivable. Ask a system administrator to check the clashing receivable numbers.",
+        "PERIOD_CLOSED": "This nota's journal, or its new date, falls in a closed month, so its dates can't be corrected. Reopen that month first, then try again."
       },
       "penagihan": {
         "piutangSisa": "Receivable: {nilai} outstanding",
@@ -10503,7 +10514,8 @@
       "SETTLEMENT_PENDING": "Settlement {docNo} is waiting for approval against this receivable.",
       "COLLECTION_PENDING": "A collection is waiting for verification against this receivable.",
       "ALREADY_SETTLED": "The receivable has been written off.",
-      "VOID_REASON_REQUIRED": "Enter a reason for the void."
+      "VOID_REASON_REQUIRED": "Enter a reason for the void.",
+      "INVOICE_NO_TAKEN": "Number {detail} is already used by another receivable (a manual or imported invoice), so this report can't be invoiced yet. Ask finance to check the receivable with that number."
     }
   },
   "storeTransfers": {
@@ -11433,7 +11445,19 @@
       "CASH_VOUCHER_REVERSAL": "Cash & bank voucher reversal",
       "SUPPLIER_PAYMENT_DOC": "Supplier payment (document)",
       "SUPPLIER_PAYMENT_DOC_REVERSAL": "Supplier payment reversal (document)",
-      "STORE_INVOICE": "Manual/imported store invoice"
+      "STORE_INVOICE": "Manual/imported store invoice",
+      "PAYMENT_RECEIPT": "Store payment receipt",
+      "PAYMENT_VOID": "Store payment reversal",
+      "KONSI_SELLTHRU_REVENUE": "Konsi sell-through invoice",
+      "KONSI_SELLTHRU_COGS": "Konsi sell-through COGS",
+      "KONSI_SELLTHRU_SHRINKAGE": "Konsi shrinkage",
+      "KONSI_SELLTHRU_SURPLUS": "Konsi surplus",
+      "KONSI_SELLTHRU_REVENUE_VOID": "Konsi sell-through invoice reversal",
+      "KONSI_SELLTHRU_COGS_VOID": "Konsi sell-through COGS reversal",
+      "KONSI_SELLTHRU_SHRINKAGE_VOID": "Konsi shrinkage reversal",
+      "KONSI_SELLTHRU_SURPLUS_VOID": "Konsi surplus reversal",
+      "FIELD_DELIVERY_REVENUE": "Field sales invoice revenue (old shape)",
+      "FIELD_DELIVERY_COGS": "Field sales invoice COGS (old shape)"
     },
     "tabPosted": "Posted",
     "tabPending": "Pending",
@@ -15957,7 +15981,13 @@
         "salesorder_pack": "Order packed",
         "salesorder_ship": "Order shipped",
         "salesreturn_decision_push": "Return decision"
-      }
+      },
+      "outboxSearchPlaceholder": "Search row id, entity, or error text…",
+      "outboxSearchLabel": "Search outbox events",
+      "outboxSearchClear": "Clear outbox search",
+      "reset": "Reset",
+      "emptyOutboxFiltered": "No outbox events match this search or filter.",
+      "clearSearchAndFilter": "Clear search and filter"
     },
     "settings": {
       "title": "Jubelio integration",
@@ -16111,7 +16141,8 @@
       "cancel": "Cancel",
       "confirm": "Confirm migrate",
       "queued": "Queued {count} item(s). Worker drains over ~5 min.",
-      "noCategory": "No category yet"
+      "noCategory": "No category yet",
+      "queuedSkipped": "Queued {count} item(s); {skipped} already queued, skipped. Worker drains over ~5 min."
     },
     "galat": {
       "TANPA_AKSES": "You do not have permission for this, or your session has ended. Sign in again and retry.",
@@ -22198,7 +22229,8 @@
     "TANPA_AKSESORI_BOM": "This finished good has no accessories in its BOM, so there are no additional materials to issue.",
     "ALASAN_WAJIB": "Enter a cancellation reason first.",
     "ALASAN_TERLALU_PANJANG": "The cancellation reason is too long (190 characters max).",
-    "CACAT_MELEBIHI_SETORAN": "Rejected quantity cannot exceed the quantity handed over."
+    "CACAT_MELEBIHI_SETORAN": "Rejected quantity cannot exceed the quantity handed over.",
+    "STOK_BELUM_CUKUP": "There is not enough material stock to issue this work order. Check the material shortages on the work order."
   },
   "grnErrors": {
     "PO_TIDAK_DITEMUKAN": "Purchase order not found.",
