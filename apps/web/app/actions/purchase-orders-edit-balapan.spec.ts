@@ -17,8 +17,8 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: sesi.id, email: null, permissions: sesi.izin } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyGRNCreated: async () => {},
   notifyMaterialArrivedForPo: async () => {},
   notifyPOCreated: async () => {},
@@ -145,6 +145,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
     sesi.id = userId;
     sesi.izin = ["*"];
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(itemId) } });
   });
 
@@ -153,6 +154,7 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
       await prisma.gRN.findMany({ where: { supplierId: seededId(supplierId) }, select: { id: true } })
     ).map((g) => g.id);
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(itemId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(itemId) } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grnIds) } } });
     await prisma.pOStatusHistory.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
     await prisma.pOItem.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
@@ -255,18 +257,27 @@ d("edit PO vs Tutup PO / batal / GRN (test bed only)", () => {
     });
   });
 
-  it("balapan di dalam transaksi: edit tertahan sesudah membaca PO, Tutup PO commit → edit konflik, diulang, ditolak", async () => {
+  it("balapan di dalam transaksi: edit tertahan sesudah mengunci PO, Tutup PO menunggu kuncinya → menutup PO yang sudah diedit", async () => {
     const poId = await buatPo();
     await terima(poId, 4);
-    // Panggilan ke-1 = baca awal untuk keputusan PIN; ke-2 = baca DI DALAM transaksi edit.
+    // Panggilan ke-1 = baca awal untuk keputusan PIN; ke-2 = baca DI DALAM transaksi edit, sesudah
+    // `SELECT … FOR UPDATE` atas baris PO (kunci yang sama dengan Tagihan vendor). Tutup PO membaca
+    // PO yang sama di transaksi serializable-nya, jadi menunggu edit commit lalu melihat isinya.
     const [hasilEdit, tutup] = await balapan(
       [0, TAHAN_MS],
       () => edit(poId),
       () => tutupPurchaseOrder({ poId, userId, alasan: "tutup di tengah edit" }),
     );
-    expect(tutup).toMatchObject({ status: "fulfilled", value: { ok: true, qtySisa: 6 } });
-    expect(hasilEdit).toEqual({ status: "fulfilled", value: { ok: false, code: "PO_TERTUTUP" } });
-    expect(await keadaan(poId)).toMatchObject({ status: "CLOSED", grandTotal: 10_000, dipesan: [10], riwayatEdit: 0 });
+    expect(hasilEdit).toEqual({ status: "fulfilled", value: { ok: true, id: poId } });
+    expect(tutup).toMatchObject({ status: "fulfilled", value: { ok: true, qtySisa: 8 } });
+    expect(await keadaan(poId)).toEqual({
+      status: "CLOSED",
+      ditutupManual: true,
+      grandTotal: 12_000,
+      dipesan: [12],
+      diterima: [4],
+      riwayatEdit: 1,
+    });
   });
 
   it("balapan: edit tertahan, pembatalan commit duluan → edit ditolak, PO batal tidak ditulis ulang", async () => {

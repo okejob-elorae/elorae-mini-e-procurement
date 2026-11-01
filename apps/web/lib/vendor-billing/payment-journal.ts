@@ -13,9 +13,10 @@ async function paymentOf(paymentId: string, client: AnyClient) {
 
 /**
  * Dr AP / Cr BANK or CASH for a vendor bill payment. Idempotent by payment id. The AP it debits is
- * the payable booked when the billed goods or WO step work were received — a bill books none of its
- * own (`bill-journal.ts`) — so it is the same AP Supplier payments → Pay settles, and the payment
- * writer refuses a receipt already paid there (`refusePaidThroughSupplierPayments`).
+ * the payable booked when the billed goods or WO step work were received — a bill books one of its
+ * own only for step work no finished-goods receipt booked (`bill-journal.ts`) — so it is the same AP
+ * Supplier payments → Pay settles, and the payment writer refuses a receipt already paid there
+ * (`refusePaidThroughSupplierPayments`).
  */
 export async function postVendorPaymentJournal(
   paymentId: string,

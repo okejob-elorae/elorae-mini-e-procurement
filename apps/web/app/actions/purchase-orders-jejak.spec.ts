@@ -7,7 +7,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * `createdById`/`changedById` dari argumen, jadi siapa pun yang memegang izin
  * PO bisa memanggil aksinya dengan id orang lain dan riwayat status PO —
  * satu-satunya catatan siapa menyetujui atau membatalkan — menyebut orang itu.
- * Tanpa basis data: prisma ditiru, yang diperiksa adalah id yang ditulis.
+ * Sekarang id kiriman yang bukan pengguna sesi ditolak sebelum apa pun ditulis
+ * (`assertActor`; kasusnya per aksi ada di `purchase-orders.spec.ts`), dan yang
+ * ditulis selalu id sesi. Tanpa basis data: prisma ditiru, yang diperiksa adalah
+ * id yang ditulis.
  */
 
 const state = vi.hoisted(() => ({
@@ -22,11 +25,13 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => state.sesi) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
+vi.mock("@/lib/notifications/actor-name", () => ({
   getActorName: vi.fn(async (id: string) => {
     state.aktor.push(id);
     return "Uji";
   }),
+}));
+vi.mock("@/lib/notifications/events", () => ({
   notifyPOCreated: vi.fn(async () => {}),
   notifyPOStatusUpdated: vi.fn(async () => {}),
   notifyPOPaymentToggled: vi.fn(async () => {}),
@@ -52,6 +57,8 @@ vi.mock("@/lib/purchase-orders/mutations", () => ({
 vi.mock("@elorae/db", async (importOriginal) => {
   const asli = await importOriginal<typeof import("@elorae/db")>();
   const klien = {
+    // Kunci baris PO yang diambil edit dan Tagihan vendor.
+    $queryRaw: vi.fn(async () => []),
     purchaseOrder: {
       findUnique: vi.fn(async () => ({
         id: "po-1",
@@ -79,6 +86,12 @@ vi.mock("@elorae/db", async (importOriginal) => {
     },
     item: { findMany: vi.fn(async () => []) },
     gRN: { count: vi.fn(async () => 0) },
+    vendorBillLine: { count: vi.fn(async () => 0) },
+    // Baris Permintaan Barang yang ditautkan ulang saat edit dan dilepas saat PO dibatalkan.
+    itemRequestLine: {
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     auditLog: {
       create: vi.fn(async (a: { data: { userId?: string; action?: string } }) => {
         state.jejak.push(a.data);
@@ -117,15 +130,24 @@ beforeEach(() => {
 });
 
 describe("aksi PO mencatat pelaku dari sesi", () => {
-  it("createPO: pembuat = pengguna sesi, bukan argumen", async () => {
-    await po.createPO(DATA_PO, PALSU);
+  it("id kiriman yang bukan pengguna sesi ditolak, tidak ada yang ditulis", async () => {
+    await expect(po.createPO(DATA_PO, PALSU)).rejects.toThrow(/Forbidden/);
+    await expect(po.updatePO("po-1", DATA_PO, PALSU, "123456")).rejects.toThrow(/Forbidden/);
+    await expect(po.cancelPO("po-1", PALSU, "salah pemasok", "123456")).rejects.toThrow(/Forbidden/);
+    expect(state.pembuat).toEqual([]);
+    expect(state.riwayat).toEqual([]);
+    expect(state.pin).toEqual([]);
+  });
+
+  it("createPO: pembuat = pengguna sesi", async () => {
+    await po.createPO(DATA_PO, SESI);
     await tunggu();
     expect(state.pembuat).toEqual([SESI]);
     expect(state.aktor).toEqual([SESI]);
   });
 
   it("updatePO (PO terkirim, PIN): riwayat 'diedit' atas nama sesi", async () => {
-    await po.updatePO("po-1", DATA_PO, PALSU, "123456");
+    await po.updatePO("po-1", DATA_PO, SESI, "123456");
     expect(state.riwayat).toHaveLength(1);
     expect(state.riwayat[0].changedById).toBe(SESI);
     // PIN yang diperiksa adalah PIN pengguna sesi, bukan PIN pemilik id kiriman.
@@ -135,7 +157,7 @@ describe("aksi PO mencatat pelaku dari sesi", () => {
   it("changePOStatus CLOSED: riwayat status dan jejak tutup atas nama sesi", async () => {
     // CLOSED kini lewat penulis "Tutup PO" (PO kurang kirim, alasan wajib).
     state.statusPo = "PARTIAL";
-    await po.changePOStatus("po-1", "CLOSED", PALSU, "selesai");
+    await po.changePOStatus("po-1", "CLOSED", SESI, "selesai");
     await tunggu();
     expect(state.riwayat.map((r) => r.changedById)).toEqual([SESI]);
     expect(state.jejak).toEqual([expect.objectContaining({ userId: SESI, action: "PO_CLOSED_SHORT" })]);
@@ -143,21 +165,21 @@ describe("aksi PO mencatat pelaku dari sesi", () => {
   });
 
   it("changePOStatus CANCELLED (PIN): riwayat atas nama sesi", async () => {
-    await po.changePOStatus("po-1", "CANCELLED", PALSU, "batal", "123456");
+    await po.changePOStatus("po-1", "CANCELLED", SESI, "batal", "123456");
     expect(state.riwayat.map((r) => r.changedById)).toEqual([SESI]);
     expect(state.pin).toEqual([SESI]);
   });
 
   it("submitPO: yang menyetujui-kirim tercatat dari sesi", async () => {
     state.statusPo = "DRAFT";
-    await po.submitPO("po-1", PALSU);
+    await po.submitPO("po-1", SESI);
     await tunggu();
     expect(state.riwayat.map((r) => [r.status, r.changedById])).toEqual([["SUBMITTED", SESI]]);
     expect(state.aktor).toEqual([SESI]);
   });
 
   it("cancelPO: pembatal tercatat dari sesi", async () => {
-    await po.cancelPO("po-1", PALSU, "salah pemasok", "123456");
+    await po.cancelPO("po-1", SESI, "salah pemasok", "123456");
     expect(state.riwayat.map((r) => [r.status, r.changedById])).toEqual([["CANCELLED", SESI]]);
     expect(state.pin).toEqual([SESI]);
   });

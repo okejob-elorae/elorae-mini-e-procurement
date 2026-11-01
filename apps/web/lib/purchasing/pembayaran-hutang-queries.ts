@@ -11,6 +11,7 @@ import { JEJAK_KAS } from "@/lib/finance/kas/jejak";
 import { bacaSkbPemasok, type SkbPemasok } from "@/lib/finance/pajak/pemotongan";
 import { ID_SALDO_AWAL, kunciDokumenHutang, type SisaDokumen } from "./pembayaran-aturan";
 import { SARING_PEMBAYARAN_DOKUMEN } from "./pembayaran-dokumen-po";
+import { vendorPaidBySource } from "@/lib/vendor-billing/billable";
 import { terapkanFifo } from "./pembayaran-umur";
 import { hitungUangMukaBelumDipotong, susunJejakUangMuka, type DataUangMukaPembayaran } from "./pembayaran-uang-muka";
 
@@ -26,8 +27,10 @@ type Klien = Prisma.TransactionClient | typeof prisma;
  * - Kredit per PO = retur pemasok SELESAI (baris hutang usaha jurnal
  *   `VENDOR_RETURN`-nya — sama dengan yang dibaca tombol lama) +
  *   pembayaran tombol lama "Tandai lunas" yang masih berdiri (jurnal
- *   `SUPPLIER_PAYMENT` `<poId>#<gen>` tanpa pembaliknya), diterapkan FIFO dari
- *   GRN tertua PO itu.
+ *   `SUPPLIER_PAYMENT` `<poId>#<gen>` tanpa pembaliknya) + pembayaran Vendor
+ *   Billing yang berlaku (bagian baris PO tagihannya, `vendorPaidBySource` —
+ *   jurnal `VENDOR_PAYMENT`-nya mendebit hutang usaha sebesar itu juga),
+ *   diterapkan FIFO dari GRN tertua PO itu.
  * - Dibayar per dokumen = Σ alokasi pembayaran pemasok yang BERLAKU, kecuali
  *   pembayaran cermin "Tandai lunas" (nilainya sudah terbaca dari jurnalnya).
  * - Hutang jasa produksi per langkah WO dari `daftarHutangJasa`.
@@ -83,7 +86,7 @@ export type HutangPemasok = {
   dokumen: DokumenHutang[];
   uangMuka: UangMukaPemasok[];
   uangMukaSen: number;
-  /** Kredit PO yang tidak terserap GRN PO itu (lebih bayar lewat tombol lama / retur). */
+  /** Kredit PO yang tidak terserap GRN PO itu (lebih bayar lewat tombol lama / Vendor Billing / retur). */
   lebihBayarSen: number;
   grnBelumBerjurnal: number;
   /** Σ sisa dokumen yang positif. */
@@ -171,7 +174,7 @@ async function susunHutangGrn(
     }
   }
 
-  // Kredit per PO: retur pemasok selesai + pembayaran tombol lama yang berdiri.
+  // Kredit per PO: retur pemasok selesai + pembayaran tombol lama yang berdiri + pembayaran Vendor Billing.
   const poIds = [...new Set(grns.map((g) => g.poId).filter((x): x is string => Boolean(x)))];
   const kreditPo = new Map<string, number>();
   if (poIds.length > 0) {
@@ -204,6 +207,12 @@ async function susunHutangGrn(
       const po = poDariSumberTandaiLunas(j.sourceId);
       if (!po || !poSet.has(po)) continue;
       kreditPo.set(po, (kreditPo.get(po) ?? 0) + j.lines.reduce((s, l) => s + sen(l.debit), 0));
+    }
+    // Pembayaran Vendor Billing: dialokasikan per TAGIHAN, dibagi ke baris tagihan
+    // sebanding nilainya; bagian baris PO menjadi kredit PO itu, seperti tombol lama.
+    for (const ids of potong(poIds, 500)) {
+      const { byPo } = await vendorPaidBySource(klien, { poIds: ids, woStepIds: [] });
+      for (const [po, n] of byPo) kreditPo.set(po, (kreditPo.get(po) ?? 0) + n);
     }
   }
 

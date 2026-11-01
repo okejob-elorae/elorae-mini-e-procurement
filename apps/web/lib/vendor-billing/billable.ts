@@ -60,6 +60,81 @@ export async function billedQtyByWoStep(db: Db, woStepIds: string[]): Promise<Ma
 }
 
 /**
+ * Accepted pieces per WO from finished-goods receipts that booked no service payable: received
+ * before receipts started booking CMT (`FGReceipt.serviceCost` null, never backfilled). Their step
+ * work reaches the books only through a vendor bill (`bill-journal.ts`).
+ */
+export async function unbookedReceiptQtyByWo(db: Db, woIds: string[]): Promise<Map<string, number>> {
+  if (woIds.length === 0) return new Map();
+  const rows = await db.fGReceipt.groupBy({
+    by: ["woId"],
+    where: { woId: { in: woIds }, serviceCost: null },
+    _sum: { qtyAccepted: true },
+  });
+  return new Map(rows.map((r) => [r.woId, Number(r._sum.qtyAccepted ?? 0)]));
+}
+
+function linesOf(scope: { poIds: string[]; woStepIds: string[] }): Prisma.VendorBillLineWhereInput[] {
+  const or: Prisma.VendorBillLineWhereInput[] = [];
+  if (scope.poIds.length > 0) or.push({ poItem: { poId: { in: scope.poIds } } });
+  if (scope.woStepIds.length > 0) or.push({ woStepId: { in: scope.woStepIds } });
+  return or;
+}
+
+const cents = (v: Prisma.Decimal | number) => Math.round(Number(v) * 100);
+
+/** `total` cents split over `weights`, largest remainder first, so the parts add up to `total` exactly. */
+function splitCents(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((s, w) => s + w, 0);
+  if (sum <= 0 || total <= 0) return weights.map(() => 0);
+  const raw = weights.map((w) => (total * w) / sum);
+  const parts = raw.map((r) => Math.floor(r));
+  let left = total - parts.reduce((s, p) => s + p, 0);
+  const order = raw.map((r, i) => ({ i, frac: r - Math.floor(r) })).sort((a, b) => b.frac - a.frac || a.i - b.i);
+  for (let k = 0; left > 0; k = (k + 1) % order.length, left--) parts[order[k].i] += 1;
+  return parts;
+}
+
+/**
+ * What live vendor payments have paid, in cents: per PO for its PO item lines, per WO step for its
+ * step lines. A payment is allocated to a bill, not to a line, so each live bill's live allocations
+ * are split over its lines in proportion to their amounts; the parts of one bill add up to what was
+ * paid on it, and the vendor payment journal debits AP by those same allocations. The supplier
+ * payable sub-ledger reads the PO part as a credit on that PO's receipts
+ * (`lib/purchasing/pembayaran-hutang-queries.ts`), so it stays equal to the general ledger. The
+ * step part also covers payments of step work the bill booked itself (`bill-journal.ts`), whose
+ * payable no finished-goods receipt holds.
+ */
+export async function vendorPaidBySource(
+  db: Db,
+  scope: { poIds: string[]; woStepIds: string[] }
+): Promise<{ byPo: Map<string, number>; byWoStep: Map<string, number> }> {
+  const byPo = new Map<string, number>();
+  const byWoStep = new Map<string, number>();
+  const or = linesOf(scope);
+  if (or.length === 0) return { byPo, byWoStep };
+  const bills = await db.vendorBill.findMany({
+    where: { status: { not: "VOID" }, lines: { some: { OR: or } }, allocations: { some: { payment: { voidedAt: null } } } },
+    select: {
+      allocations: { where: { payment: { voidedAt: null } }, select: { amount: true } },
+      lines: { orderBy: { id: "asc" }, select: { amount: true, woStepId: true, poItem: { select: { poId: true } } } },
+    },
+  });
+  const pos = new Set(scope.poIds);
+  const steps = new Set(scope.woStepIds);
+  for (const b of bills) {
+    const paid = b.allocations.reduce((s, a) => s + cents(a.amount), 0);
+    const parts = splitCents(paid, b.lines.map((l) => Math.max(0, cents(l.amount))));
+    b.lines.forEach((l, i) => {
+      const poId = l.poItem?.poId;
+      if (poId && pos.has(poId)) byPo.set(poId, (byPo.get(poId) ?? 0) + parts[i]);
+      if (l.woStepId && steps.has(l.woStepId)) byWoStep.set(l.woStepId, (byWoStep.get(l.woStepId) ?? 0) + parts[i]);
+    });
+  }
+  return { byPo, byWoStep };
+}
+
+/**
  * Of the given POs and WO steps, those on a live bill that a live vendor payment has (partly) paid.
  * A receipt has one payment path: Supplier payments → Pay must not settle these again
  * (`lib/purchasing/pembayaran-writer.ts`), just as a vendor payment refuses receipts that page
@@ -69,9 +144,7 @@ export async function paidThroughVendorPayments(
   db: Db,
   scope: { poIds: string[]; woStepIds: string[] }
 ): Promise<{ poIds: Set<string>; woStepIds: Set<string> }> {
-  const or: Prisma.VendorBillLineWhereInput[] = [];
-  if (scope.poIds.length > 0) or.push({ poItem: { poId: { in: scope.poIds } } });
-  if (scope.woStepIds.length > 0) or.push({ woStepId: { in: scope.woStepIds } });
+  const or = linesOf(scope);
   if (or.length === 0) return { poIds: new Set(), woStepIds: new Set() };
   const lines = await db.vendorBillLine.findMany({
     where: { OR: or, bill: { status: { not: "VOID" }, allocations: { some: { payment: { voidedAt: null } } } } },
@@ -88,7 +161,10 @@ export async function paidThroughVendorPayments(
 
 /**
  * What a supplier can still bill: received PO items of its live POs, and its WO processing steps
- * on live WOs, each less the qty already on live bills. Fully billed rows drop out.
+ * on live WOs, each less the qty already on live bills. Fully billed rows drop out. A step's `qty`
+ * is the accepted pieces of its WO's finished-goods receipts (`receiveFG` stamps it; null before
+ * the first receipt), so a step bills only work a receipt has taken in, as a PO line bills only
+ * what a GRN received.
  */
 export async function listBillableSources(
   supplierId: string,

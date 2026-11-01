@@ -3,8 +3,8 @@ import type { Prisma } from "@elorae/db";
 import { generateDocNumber } from "@/lib/docNumber";
 import { runSerializable } from "@/lib/db/tx-retry";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
-import { billedQtyByPoItem, billedQtyByWoStep, PENDING_OWNER_DECISION } from "./billable";
-import { postVendorBillReversalJournal } from "./bill-journal";
+import { billedQtyByPoItem, billedQtyByWoStep, PENDING_OWNER_DECISION, unbookedReceiptQtyByWo } from "./billable";
+import { postVendorBillJournal, postVendorBillReversalJournal } from "./bill-journal";
 
 /** A refusal the user can act on; its message is shown as-is. */
 export class VendorBillError extends Error {}
@@ -45,9 +45,14 @@ const addDays = (d: Date, days: number) => new Date(d.getTime() + days * 86_400_
 /**
  * Saves a vendor bill against received PO items and WO steps of one supplier. The caps, the
  * supplier match and the paid-toggle exclusion are re-read inside the serializable transaction, so
- * two bills racing for the same remaining qty cannot both pass. It posts no journal for either kind
- * of line: the payable was booked at receipt — the GRN for PO lines, the finished-goods receipt for
- * WO step work — and the bill only matches the vendor's invoice against it (see `bill-journal.ts`).
+ * two bills racing for the same remaining qty cannot both pass. A PO line posts nothing: the GRN
+ * booked its payable. A step line posts nothing for pieces a finished-goods receipt booked; pieces
+ * from receipts that booked none (`unbookedReceiptQtyByWo`) are booked here, in the same
+ * transaction (see `bill-journal.ts`). Those pieces go to the step's live bills first come, first
+ * served: what earlier live bills already hold is taken from the unbooked pieces before this bill's
+ * share. The rule can only under-book, never book a piece twice: when an earlier bill is voided
+ * while a later one stands, the later one still counts as holding the voided bill's unbooked
+ * pieces, so a new bill does not book them.
  */
 export async function createVendorBill(input: CreateVendorBillInput, userId: string) {
   const data = createVendorBillSchema.parse(input);
@@ -67,6 +72,7 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
 
       const lineRows: Prisma.VendorBillLineCreateWithoutBillInput[] = [];
       const poTerms: number[] = [];
+      let unbookedAmount = 0;
 
       if (poLines.length > 0) {
         // Lock each sourced PO (id order, no deadlock), the lock updatePO takes before rebuilding items.
@@ -132,11 +138,12 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
             stepName: true,
             qty: true,
             servicePrice: true,
-            wo: { select: { docNumber: true, status: true } },
+            wo: { select: { id: true, docNumber: true, status: true } },
           },
         });
         const byId = new Map(steps.map((s) => [s.id, s]));
         const billed = await billedQtyByWoStep(tx, steps.map((s) => s.id));
+        const unbooked = await unbookedReceiptQtyByWo(tx, [...new Set(steps.map((s) => s.wo.id))]);
         for (const l of stepLines) {
           const st = byId.get(l.sourceId);
           if (!st) throw new VendorBillError("Step WO tidak ditemukan, muat ulang halaman");
@@ -147,6 +154,10 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
           if (l.qty > remaining + EPS) {
             throw new VendorBillError(`Qty tagihan ${where} melebihi sisa yang belum ditagih (${remaining})`);
           }
+          // Pieces no finished-goods receipt booked; the step's earlier live bills hold them first.
+          const unbookedLeft = Math.max(0, round2((unbooked.get(st.wo.id) ?? 0) - (billed.get(st.id) ?? 0)));
+          const share = Math.min(l.qty, unbookedLeft);
+          if (share > 0) unbookedAmount = round2(unbookedAmount + round2(share * l.price));
           lineRows.push({
             type: "WO_STEP",
             woStep: { connect: { id: st.id } },
@@ -176,13 +187,18 @@ export async function createVendorBill(input: CreateVendorBillInput, userId: str
         },
         select: { id: true, docNumber: true },
       });
+
+      if (unbookedAmount >= 0.01) {
+        const res = await postVendorBillJournal(bill.id, unbookedAmount, userId, tx);
+        if (!res.ok && res.code !== "NOTHING_TO_POST") throw journalRefusal(res);
+      }
       return bill;
     },
     { timeout: 20_000 }
   );
 }
 
-/** Voids a bill with no live payment allocation, reversing the journal of a bill saved before bills stopped posting one. */
+/** Voids a bill with no live payment allocation and mirrors the journal it posted, if any. */
 export async function voidVendorBill(billId: string, reason: string, userId: string) {
   const why = z.string().trim().min(1).max(500).parse(reason);
   return runSerializable(

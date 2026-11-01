@@ -23,8 +23,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => state.sesi) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: vi.fn(async () => "Uji"),
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn(async () => "Uji") }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyPOCreated: vi.fn(async () => {}),
   notifyPOStatusUpdated: vi.fn(async () => {}),
   notifyPOPaymentToggled: vi.fn(async () => {}),
@@ -52,6 +52,14 @@ vi.mock("@/lib/purchase-orders/tutup", async (importOriginal) => {
 vi.mock("@elorae/db", async (importOriginal) => {
   const asli = await importOriginal<typeof import("@elorae/db")>();
   const klien = {
+    // Kunci baris PO yang diambil edit dan Tagihan vendor; tagihan yang menahan edit; baris
+    // Permintaan Barang yang dilepas lalu ditautkan ulang saat baris PO dibangun kembali.
+    $queryRaw: vi.fn(async () => []),
+    vendorBillLine: { count: vi.fn(async () => 0) },
+    itemRequestLine: {
+      findMany: vi.fn(async () => []),
+      updateMany: vi.fn(async () => ({ count: 0 })),
+    },
     purchaseOrder: {
       findUnique: vi.fn(async () => ({
         id: "po-1",

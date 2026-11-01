@@ -87,6 +87,10 @@ const poIds: string[] = [];
 const grnIds: string[] = [];
 const returIds: string[] = [];
 const imporIds: string[] = [];
+const tagihanIds: string[] = [];
+const bayarVendorIds: string[] = [];
+const barangIds: string[] = [];
+const satuanIds: string[] = [];
 const A: Record<string, string> = {};
 const G: Record<string, string> = {};
 const P: Record<string, string> = {};
@@ -189,9 +193,16 @@ d("pembayaran pemasok sebagian (basis data uji)", () => {
     const j = await prisma.journal.findMany({ where: { postedById: seededId(userId) }, select: { id: true } });
     await prisma.journal.deleteMany({ where: { id: { in: seededIds(j.map((x) => x.id)) } } });
     await prisma.supplierPayment.deleteMany({ where: { supplierId: seededId(pemasokId) } });
+    await prisma.vendorPaymentAllocation.deleteMany({ where: { paymentId: { in: seededIds(bayarVendorIds) } } });
+    await prisma.vendorPayment.deleteMany({ where: { id: { in: seededIds(bayarVendorIds) } } });
+    await prisma.vendorBillLine.deleteMany({ where: { billId: { in: seededIds(tagihanIds) } } });
+    await prisma.vendorBill.deleteMany({ where: { id: { in: seededIds(tagihanIds) } } });
     await prisma.vendorReturn.deleteMany({ where: { id: { in: seededIds(returIds) } } });
     await prisma.gRN.deleteMany({ where: { id: { in: seededIds(grnIds) } } });
+    await prisma.pOItem.deleteMany({ where: { poId: { in: seededIds(poIds) } } });
     await prisma.purchaseOrder.deleteMany({ where: { id: { in: seededIds(poIds) } } });
+    await prisma.item.deleteMany({ where: { id: { in: seededIds(barangIds) } } });
+    await prisma.uOM.deleteMany({ where: { id: { in: seededIds(satuanIds) } } });
     await prisma.openingBalanceImport.deleteMany({ where: { id: { in: seededIds(imporIds) } } });
     await prisma.auditLog.deleteMany({ where: { userId: seededId(userId) } });
     if (pemasokId) await prisma.supplier.deleteMany({ where: { id: seededId(pemasokId) } });
@@ -371,6 +382,69 @@ d("pembayaran pemasok sebagian (basis data uji)", () => {
     ]);
     // Buku pembantu: GRN g7 lunas (retur 100.000 + tombol lama 200.000).
     expect(sisaDok(await dok(), G.g7)).toBe(0);
+  });
+
+  it("pembayaran Vendor Billing mengurangi sisa GRN PO-nya, dibagi ke baris tagihan sebanding nilainya", async () => {
+    await buatPo("6", "CLOSED");
+    await buatGrn("g8", "6", "2008-08-28", 300_000);
+    await buatPo("7", "CLOSED");
+    await buatGrn("g9", "7", "2008-08-29", 100_000);
+    const satuan = await prisma.uOM.create({ data: { code: `UB${token}`, nameId: "Uji bayar", nameEn: "Test" }, select: { id: true } });
+    satuanIds.push(satuan.id);
+    const barang = await prisma.item.create({
+      data: { sku: `BYR-${token}`, nameId: `Kain uji bayar ${token}`, nameEn: "Test fabric", type: "FABRIC", uomId: satuan.id },
+      select: { id: true },
+    });
+    barangIds.push(barang.id);
+    const baris = async (po: string, price: number) =>
+      (await prisma.pOItem.create({ data: { poId: P[po], itemId: barang.id, qty: 10, price, receivedQty: 10, uomId: satuan.id }, select: { id: true } })).id;
+    const b6 = await baris("6", 30_000);
+    const b7 = await baris("7", 10_000);
+    const tagihan = await prisma.vendorBill.create({
+      data: {
+        docNumber: `VB-BYR-${token}`,
+        supplierId: pemasokId,
+        vendorInvoiceNo: `INV-BYR-${token}`,
+        billDate: tgl("2008-09-01"),
+        total: 400_000,
+        paidAmount: 200_000,
+        status: "PARTIAL",
+        createdById: userId,
+        lines: {
+          create: [
+            { type: "PO_ITEM", poItemId: b6, qty: 10, price: 30_000, amount: 300_000, refPrice: 30_000 },
+            { type: "PO_ITEM", poItemId: b7, qty: 10, price: 10_000, amount: 100_000, refPrice: 10_000 },
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    tagihanIds.push(tagihan.id);
+    const bayar = await prisma.vendorPayment.create({
+      data: {
+        docNumber: `VP-BYR-${token}`,
+        supplierId: pemasokId,
+        paidAt: tgl("2008-09-02"),
+        method: "BANK",
+        amount: 200_000,
+        createdById: userId,
+        allocations: { create: { billId: tagihan.id, amount: 200_000 } },
+      },
+      select: { id: true },
+    });
+    bayarVendorIds.push(bayar.id);
+
+    // 200.000 untuk tagihan 400.000: 3/4 ke baris PO 6, 1/4 ke baris PO 7 — kredit PO, FIFO ke GRN-nya.
+    let h = await dok();
+    expect(sisaDok(h, G.g8)).toBe(15_000_000);
+    expect(sisaDok(h, G.g9)).toBe(5_000_000);
+    expect(h.dokumen.find((x) => x.id === G.g8)?.kreditSen).toBe(15_000_000);
+
+    // Pembayaran vendor yang dibatalkan tidak mengurangi lagi.
+    await prisma.vendorPayment.update({ where: { id: bayar.id }, data: { voidedAt: new Date() } });
+    h = await dok();
+    expect(sisaDok(h, G.g8)).toBe(30_000_000);
+    expect(sisaDok(h, G.g9)).toBe(10_000_000);
   });
 
   it("alokasi saldo awal hanya bila impor saldo awal hutang berlaku ada; buku pembantu membacanya per pemasok", async () => {

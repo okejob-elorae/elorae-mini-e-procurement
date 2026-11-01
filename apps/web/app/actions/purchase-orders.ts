@@ -1280,6 +1280,12 @@ export type RetrySupplierPaymentJournalResult =
  * also mark the PO paid once they clear it), so this journal would pay them a
  * second time and must never post. Nothing is pending, the banner no longer shows
  * for such a PO (`paymentJournalPendingWhilePaid`), and the result says why.
+ *
+ * A post that lands finishes what the mark left undone, the same post-commit steps
+ * a successful mark runs: the BYR mirror of the payment in the Supplier payments
+ * register (the mark's own sync ran while no journal stood, so it made none), and
+ * the payment-direction "journal failed" flag, resolved only up to this call's
+ * start so a later failure keeps its own.
  */
 export async function retrySupplierPaymentJournalAction(poId: string): Promise<RetrySupplierPaymentJournalResult> {
   const session = await auth();
@@ -1287,6 +1293,7 @@ export async function retrySupplierPaymentJournalAction(poId: string): Promise<R
     return { ok: false, code: "FORBIDDEN" };
   }
   const actorId = session.user.id;
+  const mulai = new Date();
 
   type Outcome =
     | { kind: "BAD_STATE" }
@@ -1321,6 +1328,10 @@ export async function retrySupplierPaymentJournalAction(poId: string): Promise<R
 
   if (outcome.kind === "FAILED") {
     await notifySupplierPaymentJournalFailure("payment", poId, outcome.failure);
+  }
+  if (outcome.kind === "POSTED") {
+    await selaraskanCerminTandaiLunas(poId, actorId);
+    await tandaiJurnalTertundaSelesai([{ tipe: "pembayaranPemasok", arah: "payment", poId }], { dibuatSebelum: mulai });
   }
 
   revalidatePath("/backoffice/purchase-orders");

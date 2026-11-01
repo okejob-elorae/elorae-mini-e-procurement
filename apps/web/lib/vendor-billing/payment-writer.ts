@@ -27,13 +27,13 @@ export const createVendorPaymentSchema = z
 export type CreateVendorPaymentInput = z.input<typeof createVendorPaymentSchema>;
 
 /**
- * One payment path per receipt. A bill posts no payable of its own: it matches receipts whose
- * payable was booked when the goods arrived (GRN for PO lines, finished-goods receipt for WO step
- * work), and Supplier payments → Pay settles those same receipts with its own Dr AP. Paying a bill
- * whose PO is already marked paid, or whose receipts or WO steps that page already paid, would debit
- * AP and credit cash a second time, so it is refused — read inside the payment's transaction, so a
- * supplier payment committing concurrently conflicts with it. `pembayaran-writer.ts` refuses the
- * converse (`paidThroughVendorPayments`).
+ * One payment path per receipt. A bill matches receipts whose payable was booked when the goods
+ * arrived (GRN for PO lines, finished-goods receipt for WO step work; the bill books its own only
+ * for step work no receipt booked, `bill-journal.ts`), and Supplier payments → Pay settles those
+ * same receipts with its own Dr AP. Paying a bill whose PO is already marked paid, or whose
+ * receipts or WO steps that page already paid, would debit AP and credit cash a second time, so it
+ * is refused — read inside the payment's transaction, so a supplier payment committing concurrently
+ * conflicts with it. `pembayaran-writer.ts` refuses the converse (`paidThroughVendorPayments`).
  */
 async function refusePaidThroughSupplierPayments(tx: Prisma.TransactionClient, billIds: string[]) {
   const lines = await tx.vendorBillLine.findMany({
@@ -68,9 +68,9 @@ async function refusePaidThroughSupplierPayments(tx: Prisma.TransactionClient, b
  * One payment over any number of open bills of one supplier. Each bill's paidAmount moves by a
  * compare-and-swap on the value read here, so two payments racing for one bill cannot both land;
  * the journal (Dr AP / Cr BANK or CASH) posts in the same serializable transaction and a refusal
- * rolls the whole payment back. The AP it debits is the payable booked at receipt — bills book
- * none — which is why a receipt already paid through Supplier payments is refused
- * (`refusePaidThroughSupplierPayments`).
+ * rolls the whole payment back. The AP it debits is the payable booked at receipt — a bill books
+ * none for work a receipt booked — which is why a receipt already paid through Supplier payments
+ * is refused (`refusePaidThroughSupplierPayments`).
  */
 export async function createVendorPayment(input: CreateVendorPaymentInput, userId: string) {
   const parsed = createVendorPaymentSchema.parse(input);

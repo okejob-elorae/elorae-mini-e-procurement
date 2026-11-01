@@ -161,10 +161,10 @@ function tanggalAtauKosong(val: Date | string | null | undefined): Date | undefi
 }
 
 /**
- * Antrean PO luring → `POFormData`. Sengaja tidak memakai
- * `createPurchaseOrderFromOfflinePayload`: helper itu mengubah `variantSku` dan
- * `notes` yang kosong menjadi `null`, yang ditolak `poSchema`, sehingga setiap
- * PO luring gagal disinkronkan. Di sini yang kosong menjadi `undefined`.
+ * Antrean PO luring → `POFormData`. `variantSku` dan `notes` yang kosong menjadi
+ * `undefined` (`poSchema` menolak `null`), satuan yang tidak terbawa diambil dari
+ * master barang, `paymentTermsDays` bernilai `null` berarti termin sengaja
+ * dikosongkan (yang tidak ada ikut termin pemasok), dan `planStageId` dirapikan.
  */
 async function poDariAntrean(payload: OfflinePOCreatePayload): Promise<POFormData> {
   const items = payload.items.map((item) => ({

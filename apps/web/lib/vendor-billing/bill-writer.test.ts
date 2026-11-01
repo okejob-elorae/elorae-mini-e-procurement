@@ -13,7 +13,7 @@ d("Vendor bill writer (test bed only)", () => {
   let tag = "";
   const ids = {
     user: "", supplierType: "", supplier: "", other: "", uom: "", fabric: "", fg: "",
-    po: "", poItem: "", wo: "", step: "", service: "", ap: "",
+    po: "", poItem: "", wo: "", step: "", receipt: "", service: "", ap: "",
   };
   let mappingSnapshot: MappingSnapshot;
 
@@ -60,6 +60,24 @@ d("Vendor bill writer (test bed only)", () => {
       })
     ).id;
     ids.step = (await prisma.workOrderStep.findFirstOrThrow({ where: { woId: ids.wo } })).id;
+    // The step's 80 pieces came in on a finished-goods receipt that booked their CMT payable.
+    ids.receipt = (
+      await prisma.fGReceipt.create({
+        data: {
+          docNumber: `RCPT-${tag}`,
+          woId: ids.wo,
+          receiptType: "GENERIC",
+          qtyReceived: 80,
+          qtyAccepted: 80,
+          materialCost: 0,
+          serviceCost: 960_000,
+          additionalCost: 0,
+          totalCostValue: 960_000,
+          receivedById: ids.user,
+        },
+        select: { id: true },
+      })
+    ).id;
 
     ids.service = (await prisma.chartAccount.create({ data: { code: `9${tag}1`, name: "Biaya Jasa (test)", type: "HPP", depth: 1, isActive: true } })).id;
     ids.ap = (await prisma.chartAccount.create({ data: { code: `9${tag}2`, name: "Hutang (test)", type: "LIABILITAS", depth: 1, isActive: true } })).id;
@@ -84,6 +102,7 @@ d("Vendor bill writer (test bed only)", () => {
       await prisma.vendorBill.deleteMany({ where: { supplierId: { in: suppliers.map(seededId) } } });
     }
     if (ids.wo) {
+      await prisma.fGReceipt.deleteMany({ where: { woId: seededId(ids.wo) } });
       await prisma.workOrderStep.deleteMany({ where: { woId: seededId(ids.wo) } });
       await prisma.workOrder.deleteMany({ where: { id: seededId(ids.wo) } });
     }
@@ -117,7 +136,7 @@ d("Vendor bill writer (test bed only)", () => {
     expect(after.poItems).toHaveLength(1);
   });
 
-  it("posts no journal, not even for WO step lines: the payable was booked at receipt", async () => {
+  it("posts no journal for PO lines or for step work a finished-goods receipt booked", async () => {
     const bill = await createVendorBill(
       {
         ...base(),
@@ -198,11 +217,56 @@ d("Vendor bill writer (test bed only)", () => {
     }
   });
 
-  it("saves a WO step bill while the service cost account is unmapped, since it posts nothing", async () => {
+  it("saves a bill of booked step work while the service cost account is unmapped, since it posts nothing", async () => {
     await prisma.journalAccountMapping.deleteMany({ where: { role: "PRODUCTION_SERVICE_COST" } });
     const bill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user);
     expect(await prisma.vendorBill.count({ where: { supplierId: ids.supplier } })).toBe(1);
     expect(await journalOf(bill.id)).toBeNull();
+  });
+
+  it("books the CMT payable for step work no finished-goods receipt booked, and only for it", async () => {
+    // 50 of the step's 80 pieces came in before receipts booked CMT; the other 30 were booked at receipt.
+    await prisma.fGReceipt.update({
+      where: { id: seededId(ids.receipt) },
+      data: { qtyReceived: 30, qtyAccepted: 30, serviceCost: 360_000, totalCostValue: 360_000 },
+    });
+    await prisma.fGReceipt.create({
+      data: { docNumber: `RCPT0-${tag}`, woId: ids.wo, receiptType: "GENERIC", qtyReceived: 50, qtyAccepted: 50, receivedById: ids.user },
+    });
+
+    await prisma.journalAccountMapping.deleteMany({ where: { role: "PRODUCTION_SERVICE_COST" } });
+    await expect(
+      createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 60, price: 12_500 }] }, ids.user)
+    ).rejects.toThrow("Petakan akun untuk PRODUCTION_SERVICE_COST");
+    expect(await prisma.vendorBill.count({ where: { supplierId: ids.supplier } })).toBe(0);
+    await prisma.journalAccountMapping.create({ data: { role: "PRODUCTION_SERVICE_COST", chartAccountId: ids.service } });
+
+    const first = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 60, price: 12_500 }] }, ids.user);
+    const posted = await journalOf(first.id);
+    expect(posted!.lines.find((l) => l.chartAccountId === ids.service)?.debit.toString()).toBe("625000");
+    expect(posted!.lines.find((l) => l.chartAccountId === ids.ap)?.credit.toString()).toBe("625000");
+
+    // The first bill holds the 50 unbooked pieces, so the rest of the step books nothing more.
+    const second = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INV6-${tag}`, lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 20, price: 12_000 }] },
+      ids.user
+    );
+    expect(await journalOf(second.id)).toBeNull();
+
+    // Voiding mirrors what the bill posted, not its whole step amount (60 × 12.500).
+    await voidVendorBill(first.id, "salah harga", ids.user);
+    const rev = await journalOf(first.id, "VENDOR_BILL_REVERSAL");
+    expect(rev!.lines.find((l) => l.chartAccountId === ids.ap)?.debit.toString()).toBe("625000");
+    expect(rev!.lines.find((l) => l.chartAccountId === ids.service)?.credit.toString()).toBe("625000");
+  });
+
+  it("does not bill a WO step before a finished-goods receipt has accepted its work", async () => {
+    // `receiveFG` stamps the step's qty; a WO with no receipt yet leaves it null.
+    await prisma.workOrderStep.update({ where: { id: seededId(ids.step) }, data: { qty: null } });
+    expect((await listBillableSources(ids.supplier)).woSteps).toEqual([]);
+    await expect(
+      createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 1, price: 12_000 }] }, ids.user)
+    ).rejects.toThrow("melebihi sisa");
   });
 
   it("voids a bill and frees the qty, reversing nothing for a bill that never posted", async () => {
