@@ -396,26 +396,32 @@ export function JubelioAdminClient({ initialPushEnabled }: { initialPushEnabled:
     <div className="space-y-6">
       <PageHeader
         title={t("title")}
+        meta={!pushEnabled && !isAdmin ? tPush("pushDisabledHint") : undefined}
         actions={
           <>
             <Button variant="outline" size="sm" onClick={() => void load()}>
               <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
               {t("refresh")}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => void openBulkDialog()}
-              disabled={bulkPushing || !pushEnabled}
+            <span
+              className="inline-flex"
               title={pushEnabled ? undefined : tPush("pushDisabledHint")}
+              tabIndex={pushEnabled ? undefined : 0}
             >
-              {bulkPushing ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <UploadCloud className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              {bulkPushing ? t("bulkPushQueuing") : t("bulkPushButton")}
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void openBulkDialog()}
+                disabled={bulkPushing || !pushEnabled}
+              >
+                {bulkPushing ? (
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <UploadCloud className="mr-1.5 h-3.5 w-3.5" />
+                )}
+                {bulkPushing ? t("bulkPushQueuing") : t("bulkPushButton")}
+              </Button>
+            </span>
           </>
         }
       />
