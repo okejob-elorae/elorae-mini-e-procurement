@@ -3,6 +3,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { generateAutoJournal } from "@/lib/finance/journal";
 import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
+import { receivablesBookedOnAr } from "@/lib/finance/ar/store-receivable-role";
 import { potonganRetur } from "@/lib/receivables/deductions";
 import { idBebanDariCatatan, penandaBebanRetur } from "@/lib/receivables/penanda-beban";
 import { hppJualTerakhir } from "@/lib/receivables/hpp-retur";
@@ -207,6 +208,20 @@ async function postJurnalNotaDalam(client: Prisma.TransactionClient, deliveryId:
 
 // ── Pelunasan BKM (diselaraskan) ────────────────────────────────────────────
 
+type TautanFaktur = { receivableId: string; settledAmount: unknown };
+
+/**
+ * Bagian nilai faktur sebuah BKM (0–1) yang melunasi piutang berjurnal bentuk
+ * lama — piutang yang berdiri di AR, bukan AR_STORE (`receivablesBookedOnAr`).
+ * Porsinya sama dengan cara modul piutang membagi satu klaim ke fakturnya
+ * (`hitungSisaPiutang`: dilunasi faktur ini ÷ nilai faktur klaim).
+ */
+function porsiPiutangLama(nilaiFaktur: number, tautan: readonly TautanFaktur[], lama: ReadonlySet<string>): number {
+  if (nilaiFaktur <= 0 || lama.size === 0) return 0;
+  const dilunasi = tautan.filter((t) => lama.has(t.receivableId)).reduce((s, t) => s + angka(t.settledAmount), 0);
+  return dilunasi / nilaiFaktur;
+}
+
 export async function selaraskanJurnalKlaim(claimId: string, postedById: string): Promise<HasilJurnalLapangan> {
   const mulai = await readGlCutover();
   const r = await selaraskanJurnal({
@@ -221,10 +236,12 @@ export async function selaraskanJurnalKlaim(claimId: string, postedById: string)
           status: true,
           method: true,
           storeId: true,
+          invoiceAmount: true,
           receivedAmount: true,
           claimedTransferAt: true,
           verifiedAt: true,
           store: { select: { name: true, termsType: true } },
+          receivableLinks: { select: { receivableId: true, settledAmount: true } },
           deductions: {
             select: { amount: true, storeReturnId: true, deductionType: { select: { postingRole: true, pkpOnly: true } } },
           },
@@ -233,12 +250,14 @@ export async function selaraskanJurnalKlaim(claimId: string, postedById: string)
       if (!k) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Pelunasan ${claimId}` };
       const terverifikasi = k.status === "TERVERIFIKASI" && k.store.termsType !== "KONSI";
       const diverifikasi = k.verifiedAt ?? new Date();
+      const lama = terverifikasi ? await receivablesBookedOnAr(tx, k.receivableLinks.map((t) => t.receivableId)) : new Set<string>();
       return {
         sasaran: barisKlaim({
           terverifikasi,
           cara: k.method,
           diterima: angka(k.receivedAmount),
           storeId: k.storeId,
+          porsiAr: porsiPiutangLama(angka(k.invoiceAmount), k.receivableLinks, lama),
           potongan: k.deductions.map((p) => ({
             nilai: angka(p.amount),
             // Penunjuk menggantung tetap retur: Aturan 2 menahannya penuh, jadi tidak pernah mengurangi piutang.
@@ -276,7 +295,12 @@ const PILIH_NRI = {
       storeId: true,
       store: { select: { name: true, termsType: true } },
       charges: { select: { id: true, status: true } },
-      deductions: { select: { amount: true, paymentClaim: { select: { status: true } } } },
+      deductions: {
+        select: {
+          amount: true,
+          paymentClaim: { select: { status: true, invoiceAmount: true, receivableLinks: { select: { receivableId: true, settledAmount: true } } } },
+        },
+      },
     },
   },
 } as const;
@@ -292,6 +316,12 @@ export type NilaiRetur = {
   final: boolean;
   tanggal: Date;
   nilai: NilaiReturBukuBesar;
+  /**
+   * Bagian potongan diakui (`potonganDiakui`) yang melunasi faktur berjurnal
+   * bentuk lama (debit AR): jurnal retur memindahnya dari AR_STORE ke AR.
+   * Nol bila pembacanya tidak menanyakan peran fakturnya (`bacaNilaiReturBanyak`).
+   */
+  potonganPiutangLama: number;
 };
 
 /** Faktur beban selisih yang ditetapkan ke toko, per id beban (penanda di catatan faktur). */
@@ -310,16 +340,25 @@ async function fakturBebanPerBeban(client: Klien, chargeIds: string[]): Promise<
   return hasil;
 }
 
+/** Piutang yang dilunasi BKM terverifikasi yang memotong nota retur hitungan ini. */
+function piutangDipotongRetur(nri: BarisNri): string[] {
+  const nrt = nri.storeReturn && nri.storeReturn.status !== "BATAL" ? nri.storeReturn : null;
+  if (!nrt || nri.status !== "FINAL") return [];
+  return nrt.deductions.filter((p) => p.paymentClaim.status === "TERVERIFIKASI").flatMap((p) => p.paymentClaim.receivableLinks.map((t) => t.receivableId));
+}
+
 /**
  * Nilai jurnal retur satu hitungan gudang. Potongan atas notanya diterjemahkan
  * lewat penerjemah modul piutang (`potonganRetur` + `returTertahan`) — satu
- * penerjemah, bukan salinan.
+ * penerjemah, bukan salinan. `lama` = piutang berjurnal bentuk lama di antara
+ * yang dilunasi BKM-nya (`receivablesBookedOnAr`).
  */
-function nilaiDariBaris(nri: BarisNri, fakturBeban: Map<string, number>): NilaiRetur {
+function nilaiDariBaris(nri: BarisNri, fakturBeban: Map<string, number>, lama: ReadonlySet<string> = new Set()): NilaiRetur {
   const nrt = nri.storeReturn && nri.storeReturn.status !== "BATAL" ? nri.storeReturn : null;
   const toko = nri.store ?? nrt?.store ?? null;
   const final = nri.status === "FINAL";
   let potonganDiakui = 0;
+  let potonganPiutangLama = 0;
   let ditagihKeToko = 0;
   if (nrt && final) {
     const basis = {
@@ -330,7 +369,9 @@ function nilaiDariBaris(nri: BarisNri, fakturBeban: Map<string, number>): NilaiR
     };
     for (const p of nrt.deductions) {
       if (p.paymentClaim.status !== "TERVERIFIKASI") continue;
-      potonganDiakui += angka(p.amount) - returTertahan(potonganRetur([{ amount: p.amount, storeReturnId: nrt.id, storeReturn: basis }]));
+      const diakui = angka(p.amount) - returTertahan(potonganRetur([{ amount: p.amount, storeReturnId: nrt.id, storeReturn: basis }]));
+      potonganDiakui += diakui;
+      potonganPiutangLama += diakui * porsiPiutangLama(angka(p.paymentClaim.invoiceAmount), p.paymentClaim.receivableLinks, lama);
     }
     for (const c of nrt.charges) ditagihKeToko += fakturBeban.get(c.id) ?? 0;
   }
@@ -348,6 +389,7 @@ function nilaiDariBaris(nri: BarisNri, fakturBeban: Map<string, number>): NilaiR
       potonganDiakui,
       ditagihKeToko,
     }),
+    potonganPiutangLama,
   };
 }
 
@@ -384,7 +426,11 @@ export async function bacaBahanRetur(client: Klien, nriId: string): Promise<Baha
     select: { ...PILIH_NRI, items: { select: { id: true, itemId: true, variantSku: true, qty: true, condition: true } } },
   });
   if (!nri) return null;
-  const nilai = nilaiDariBaris(nri, await fakturBebanPerBeban(client, nri.storeReturn?.charges.map((c) => c.id) ?? []));
+  const nilai = nilaiDariBaris(
+    nri,
+    await fakturBebanPerBeban(client, nri.storeReturn?.charges.map((c) => c.id) ?? []),
+    await receivablesBookedOnAr(client, piutangDipotongRetur(nri)),
+  );
 
   // Barang layak: penyesuaian stok yang ditulis hitungan ini (`masukkanKeStok`).
   const stok = nilai.final
@@ -494,6 +540,7 @@ export async function selaraskanJurnalRetur(nriId: string, postedById: string): 
         nilaiRusak: beku ?? b.rusak,
         // HPP saat dijual (uji akuntansi 2, bug 6), dibekukan sejak jurnal pertama.
         hppKembali: hppBeku ?? b.hppKembali,
+        kreditAr: b.potonganPiutangLama,
       });
       return {
         sasaran,

@@ -196,6 +196,27 @@ describe("pelunasan BKM", () => {
     }
   });
 
+  it("bagian yang melunasi faktur berjurnal bentuk lama (debit AR) dikredit ke AR, sisanya ke AR_STORE", () => {
+    const b = barisKlaim({
+      terverifikasi: true,
+      cara: "transfer",
+      diterima: 650_000,
+      storeId: "t1",
+      potongan: [
+        { nilai: 50_000, retur: false, peran: "SALES_DISCOUNT" },
+        { nilai: 300_000, retur: true, peran: "SALES_DISCOUNT" },
+      ],
+      porsiAr: 0.4,
+    });
+    expect(jumlahSen(b)).toBe(0);
+    expect(peta(b)).toEqual({ "BANK||": 650_000, "SALES_DISCOUNT|t1|PUTUS": 50_000, "AR_STORE|t1|": -420_000, "AR||": -280_000 });
+    // Seluruhnya melunasi faktur bentuk lama: tidak ada baris AR_STORE.
+    expect(peta(barisKlaim({ terverifikasi: true, cara: "transfer", diterima: 5_000, storeId: "t1", potongan: [], porsiAr: 1 }))).toEqual({
+      "BANK||": 5_000,
+      "AR||": -5_000,
+    });
+  });
+
   it("tanggal jurnal: tanggal transfer, tidak sebelum tanggal mulai buku besar dan tidak sesudah verifikasi; giro = saat cair", () => {
     const verif = new Date("2026-09-12T05:00:00Z");
     const transfer = new Date("2026-09-08T17:00:00Z");
@@ -271,6 +292,13 @@ describe("retur toko — nilai yang diakui buku besar", () => {
     const nilai = nilaiReturBukuBesar({ nilaiFisik: 111_000, nilaiKlaimNota: 111_000, potonganDiakui: 0, ditagihKeToko: 0 });
     const b = barisRetur({ konsinyasi: false, storeId: "t1", tanggal: HARI, pengaturanPpn: PKP, nilai, stokLayak: [], nilaiRusak: 0 });
     expect(peta(b)).toEqual({ "SALES_RETURN|t1|PUTUS": 100_000, "PPN_KELUARAN||": 11_000, "AR_STORE|t1|": -111_000 });
+  });
+
+  it("kredit retur yang dipakai toko untuk faktur berjurnal bentuk lama dipindah dari AR_STORE ke AR", () => {
+    const nilai = nilaiReturBukuBesar({ nilaiFisik: 300_000, nilaiKlaimNota: 300_000, potonganDiakui: 300_000, ditagihKeToko: 0 });
+    const b = barisRetur({ konsinyasi: false, storeId: "t1", tanggal: HARI, pengaturanPpn: NON_PKP, nilai, stokLayak: [], nilaiRusak: 0, kreditAr: 300_000 });
+    expect(jumlahSen(b)).toBe(0);
+    expect(peta(b)).toEqual({ "SALES_RETURN|t1|PUTUS": 300_000, "AR||": -300_000 });
   });
 
   it("retur dari toko konsinyasi bukan urusan jurnal lapangan", () => {

@@ -59,6 +59,7 @@ const PKP: PengaturanPpn = { ...PPN_BAWAAN, statusPkp: "PKP", tarifPersen: 12, p
 
 const PERAN_UJI: Array<[string, "ASET" | "LIABILITAS" | "PENDAPATAN" | "HPP" | "BEBAN"]> = [
   ["AR_STORE", "ASET"],
+  ["AR", "ASET"],
   ["SALES_REVENUE", "PENDAPATAN"],
   ["PPN_KELUARAN", "LIABILITAS"],
   ["COGS", "HPP"],
@@ -483,6 +484,54 @@ describe("pelunasan BKM dan retur toko — buku besar mengikuti modul piutang", 
     expect(b).toMatchObject({ modul: 1_000_000, bukuBesar: 700_000, kreditRetur: 300_000, selisih: 0 });
   });
 
+  /*
+   * Faktur yang jurnal pendapatannya bentuk lama (mendebit AR, tanpa memo AR_STORE) berdiri di AR.
+   * Setiap pelunasannya — BKM dan retur yang dipotong BKM itu — mengkredit AR juga, jadi AR turun
+   * persis sebesar modul melunasinya dan AR_STORE toko itu tidak pernah minus.
+   */
+  it("faktur berjurnal bentuk lama: BKM dan retur yang melunasinya mengkredit AR, bukan AR_STORE", async () => {
+    const { deliveryId } = await buatNota({ total: 1_000_000, qty: 4, harga: 250_000, biaya: 100_000 });
+    await prisma.journal.create({
+      data: {
+        date: new Date(),
+        description: `${tag} pendapatan bentuk lama`,
+        sourceType: SUMBER_NOTA_LAMA.PENDAPATAN,
+        sourceId: deliveryId,
+        postedById: keuanganId,
+        lines: {
+          create: [
+            { chartAccountId: h.akun.get("AR")!, debit: 1_000_000, credit: 0 },
+            { chartAccountId: h.akun.get("SALES_REVENUE")!, debit: 0, credit: 1_000_000 },
+          ],
+        },
+      },
+    });
+    const barisToko = async () => (await rekonsiliasiPiutangToko({ storeIds: [tokoId] })).baris.find((x) => x.storeId === tokoId);
+    // Faktur bentuk lama bukan isi AR_STORE: tidak ada di rekonsiliasi akun itu.
+    expect(await barisToko()).toBeUndefined();
+
+    const n = await nrt(300_000);
+    const k = await lapor(1_000_000, [{ nilai: 50_000 }, { nilai: 300_000, nrtId: n }]);
+    await verifikasi(k);
+    expect(await saldoPeran(SUMBER_LAPANGAN.BKM, k)).toEqual({ BANK: 650_000, SALES_DISCOUNT: 50_000, AR: -700_000 });
+    expect(await barisToko()).toBeUndefined();
+
+    // Gudang menghitung penuh: potongan retur diakui, kreditnya pindah ke AR — AR_STORE bersih nol.
+    const nri = await hitung(n, 300_000);
+    expect(await saldoPeran(SUMBER_LAPANGAN.RETUR, nri)).toEqual({ SALES_RETURN: 300_000, AR: -300_000 });
+    const ar = (await saldoPeran(SUMBER_NOTA_LAMA.PENDAPATAN, deliveryId)).AR + (await saldoPeran(SUMBER_LAPANGAN.BKM, k)).AR + (await saldoPeran(SUMBER_LAPANGAN.RETUR, nri)).AR;
+    expect(ar).toBe(0);
+    expect(await barisToko()).toBeUndefined();
+
+    // BKM dibatalkan: pelunasan dibalik di AR, kredit retur kembali ke AR_STORE sebagai kredit belum dipakai.
+    const batal = await batalkanKlaim({ paymentClaimId: k, alasan: "salah catat", olehUserId: keuanganId });
+    expect(batal.ok).toBe(true);
+    await kaitKlaimBerubah([k], keuanganId);
+    expect(await saldoPeran(SUMBER_LAPANGAN.BKM, k)).toEqual({});
+    expect(await saldoPeran(SUMBER_LAPANGAN.RETUR, nri)).toEqual({ SALES_RETURN: 300_000, AR_STORE: -300_000 });
+    expect(await barisToko()).toMatchObject({ modul: 0, bukuBesar: -300_000, kreditRetur: 300_000, selisih: 0 });
+  });
+
   it("dua penyelaras yang berpacu atas BKM yang sama hanya menulis satu generasi", async () => {
     const { deliveryId } = await buatNota({ total: 400_000, qty: 1, harga: 400_000, biaya: 100_000 });
     await postJurnalNota(deliveryId, keuanganId);
@@ -635,6 +684,26 @@ describe("saldo awal piutang toko (jurnal OPENING agen saldo awal)", () => {
     expect(b).toMatchObject({ bukuBesar: 800_000, modul: 800_000, kreditRetur: 0, selisih: 0, cocok: true });
     // Faktur impor tidak lahir dari jurnal nota — tampil sebagai penjelas, tidak mengubah rumus.
     expect(b.diLuarJurnal).toBe(500_000);
+  });
+});
+
+describe("pembayaran kantor (Payment) atas nota toko", () => {
+  it("rekonsiliasi mengurangi sisa modul dengan uang yang dialokasikan lewat pembayaran kantor, yang dikredit ke AR_STORE", async () => {
+    const { deliveryId } = await buatNota({ total: 1_000_000, qty: 4, harga: 250_000, biaya: 100_000 });
+    await postJurnalNota(deliveryId, keuanganId);
+    // Penerimaan pembayaran kantor: DR BANK / CR AR_STORE toko itu (bentuk `postPaymentReceiptJournal`).
+    await postJournal(prisma, {
+      source: { type: "PAYMENT_RECEIPT", id: `${tag}-PAY-${++urut}` },
+      date: new Date(),
+      description: `${tag} pembayaran kantor`,
+      postedById: keuanganId,
+      lines: [
+        { chartAccountId: h.akun.get("BANK")!, debit: 400_000, credit: 0 },
+        { chartAccountId: h.akun.get("AR_STORE")!, debit: 0, credit: 400_000, memo: "AR_STORE", storeId: tokoId },
+      ],
+    });
+    await prisma.receivable.updateMany({ where: { deliveryId: seededId(deliveryId) }, data: { paidAmount: 400_000 } });
+    expect(await rekon()).toMatchObject({ modul: 600_000, bukuBesar: 600_000, selisih: 0 });
   });
 });
 

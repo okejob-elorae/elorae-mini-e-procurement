@@ -148,6 +148,7 @@ export function cariReturTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpa
           nilai: b.nilai,
           stokLayak: b.stokLayak,
           nilaiRusak: b.rusak,
+          kreditAr: b.potonganPiutangLama,
         });
         if (sasaran.length > 0) tetap.push(x);
       }

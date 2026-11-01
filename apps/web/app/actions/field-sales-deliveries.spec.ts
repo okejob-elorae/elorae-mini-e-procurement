@@ -592,6 +592,44 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     }
   });
 
+  /*
+   * A nota keyed late into a closed month has its journal shifted forward into an open one, with the
+   * closed date kept only as `originalDate`. Its balances sit on the open posted date, so correcting
+   * the invoice date to another open date touches no closed month and must go through.
+   */
+  it("re-dates a journal shifted out of a closed month, since only its posted date carries balances", async () => {
+    const existing = await prisma.accountingPeriod.findUnique({ where: { year_month: { year: 1998, month: 3 } } });
+    const period = existing ?? (await prisma.accountingPeriod.create({ data: { year: 1998, month: 3, status: "CLOSED" } }));
+    try {
+      if (existing && existing.status !== "CLOSED") await prisma.accountingPeriod.update({ where: { id: existing.id }, data: { status: "CLOSED" } });
+      const journal = await prisma.journal.create({
+        data: {
+          date: new Date("2026-01-01T00:00:00.000+07:00"),
+          originalDate: new Date("1998-03-10T00:00:00.000+07:00"),
+          description: "test nota",
+          sourceType: "FIELD_DELIVERY",
+          sourceId: deliveryId,
+          postedById: userId,
+        },
+      });
+
+      const result = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-02-01",
+        dueDate: "2026-02-15",
+        reason: "wrong month keyed",
+      });
+
+      expect(result).toEqual({ ok: true });
+      const after = await prisma.journal.findUniqueOrThrow({ where: { id: journal.id } });
+      expect(after.date.toISOString().slice(0, 10)).toBe("2026-01-31");
+      expect(after.originalDate).toBeNull();
+    } finally {
+      if (existing) await prisma.accountingPeriod.update({ where: { id: existing.id }, data: { status: existing.status } });
+      else await prisma.accountingPeriod.delete({ where: { id: period.id } });
+    }
+  });
+
   it("refuses to move dates once a verified BKM settled the receivable", async () => {
     const receivable = await prisma.receivable.create({
       data: {

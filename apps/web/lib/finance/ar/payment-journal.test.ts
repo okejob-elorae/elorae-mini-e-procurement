@@ -1,5 +1,16 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { prisma, seededId } from "@elorae/db";
+
+/*
+ * A flagged delivery reads as late only while its cutover-gated nota journal can still post, so the
+ * gate reads the GL cutover. It is shared live config; this stub stands in for the bed's row.
+ */
+const h = vi.hoisted(() => ({ mulai: new Date("2026-01-01T00:00:00.000+07:00") as Date | null }));
+vi.mock("@/lib/finance/sales/sweep", async (asli) => ({
+  ...(await asli<typeof import("@/lib/finance/sales/sweep")>()),
+  readGlCutover: vi.fn(async () => h.mulai),
+}));
+
 import { postPaymentReceiptJournal, postPaymentVoidJournal } from "./payment-journal";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../journals/mapping-test-fixture";
 
@@ -21,6 +32,7 @@ d("payment-journal (test bed only)", () => {
   let revId = "";
   let arId = "";
   let arStoreId = "";
+  let arConsignmentId = "";
   let paymentIds: string[] = [];
   let orderIds: string[] = [];
   let deliveryIds: string[] = [];
@@ -33,10 +45,11 @@ d("payment-journal (test bed only)", () => {
     token = Math.floor(Math.random() * 1_000_000);
     seq = 0;
     storeId = ""; userId = ""; paymentId = "";
-    cashId = ""; bankId = ""; revId = ""; arId = ""; arStoreId = "";
+    cashId = ""; bankId = ""; revId = ""; arId = ""; arStoreId = ""; arConsignmentId = "";
     paymentIds = []; orderIds = []; deliveryIds = []; sellThroughIds = []; receivableIds = []; notificationIds = [];
+    h.mulai = new Date("2026-01-01T00:00:00.000+07:00");
     mappingSnapshot = undefined;
-    mappingSnapshot = await snapshotMappings(["CASH", "BANK", "SALES_REVENUE", "AR", "AR_STORE"]);
+    mappingSnapshot = await snapshotMappings(["CASH", "BANK", "SALES_REVENUE", "AR", "AR_STORE", "AR_CONSIGNMENT"]);
 
     const store = await prisma.store.create({
       data: { code: `TEST-PJ-${token}`, name: "test", address: "test", termsType: "PUTUS" },
@@ -54,6 +67,7 @@ d("payment-journal (test bed only)", () => {
     revId = await mk(`9${token}3`, "PENDAPATAN");
     arId = await mk(`9${token}4`, "ASET");
     arStoreId = await mk(`9${token}5`, "ASET");
+    arConsignmentId = await mk(`9${token}6`, "ASET");
     const map = async (role: string, id: string) =>
       prisma.journalAccountMapping.upsert({
         where: { role: role as never },
@@ -65,6 +79,7 @@ d("payment-journal (test bed only)", () => {
     await map("SALES_REVENUE", revId);
     await map("AR", arId);
     await map("AR_STORE", arStoreId);
+    await map("AR_CONSIGNMENT", arConsignmentId);
   });
 
   afterEach(async () => {
@@ -81,7 +96,7 @@ d("payment-journal (test bed only)", () => {
     await prisma.konsiSellThrough.deleteMany({ where: { id: { in: sellThroughIds.map(seededId) } } });
     await prisma.fieldSalesDelivery.deleteMany({ where: { id: { in: deliveryIds.map(seededId) } } });
     await prisma.fieldSalesOrder.deleteMany({ where: { id: { in: orderIds.map(seededId) } } });
-    await prisma.chartAccount.deleteMany({ where: { id: { in: [cashId, bankId, revId, arId, arStoreId].filter(Boolean) } } });
+    await prisma.chartAccount.deleteMany({ where: { id: { in: [cashId, bankId, revId, arId, arStoreId, arConsignmentId].filter(Boolean) } } });
     await prisma.user.deleteMany({ where: { id: seededId(userId) } });
     await prisma.store.deleteMany({ where: { id: seededId(storeId) } });
   });
@@ -96,8 +111,12 @@ d("payment-journal (test bed only)", () => {
     });
   }
 
-  /* An invoice journal in today's shape: the store receivable debited on AR_STORE, tagged with its role. */
+  /*
+   * An invoice journal in today's shape: the store receivable debited and tagged with its role —
+   * AR_STORE for a putus nota, AR_CONSIGNMENT for a konsi sell-through report.
+   */
   async function storeInvoiceJournal(sourceType: "FIELD_DELIVERY" | "KONSI_SELLTHRU_REVENUE", sourceId: string, amount: number) {
+    const role = sourceType === "KONSI_SELLTHRU_REVENUE" ? "AR_CONSIGNMENT" : "AR_STORE";
     await prisma.journal.create({
       data: {
         date: paidAt,
@@ -107,11 +126,18 @@ d("payment-journal (test bed only)", () => {
         postedById: userId,
         lines: {
           create: [
-            { chartAccountId: arStoreId, debit: amount, credit: 0, memo: "AR_STORE", storeId },
+            { chartAccountId: role === "AR_STORE" ? arStoreId : arConsignmentId, debit: amount, credit: 0, memo: role, storeId },
             { chartAccountId: revId, debit: 0, credit: amount, memo: "SALES_REVENUE", storeId },
           ],
         },
       },
+    });
+  }
+
+  /* The old pair's COGS half on its own — the revenue half then completes it, which no cutover gates. */
+  async function cogsHalf(deliveryId: string) {
+    await prisma.journal.create({
+      data: { date: paidAt, description: "fixture", sourceType: "FIELD_DELIVERY_COGS", sourceId: deliveryId, postedById: userId },
     });
   }
 
@@ -336,6 +362,38 @@ d("payment-journal (test bed only)", () => {
     expect(j!.lines.find((l) => l.chartAccountId === arId)).toBeUndefined();
   });
 
+  it("a flagged delivery whose nota journal can never post (dated before the cutover) is outside, so the rest posts", async () => {
+    const inLedger = await makeReceivable(300, { revenueJournal: true });
+    const stranded = await makeReceivable(200, { revenueJournal: false, pendingFlag: true });
+    h.mulai = new Date("2026-06-01T00:00:00.000+07:00");
+    paymentId = await createPayment("CASH", 500, [
+      { receivableId: inLedger.receivableId, amount: 300 },
+      { receivableId: stranded.receivableId, amount: 200 },
+    ]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toMatchObject({ ok: true, created: true });
+    const j = await receiptOf(paymentId);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === cashId)!.debit)).toBe(300);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arId)!.credit)).toBe(300);
+    expect(j!.description).toContain("sebagian");
+  });
+
+  it("with no GL cutover set, a flagged delivery's nota journal can never post either", async () => {
+    const stranded = await makeReceivable(200, { revenueJournal: false, pendingFlag: true });
+    h.mulai = null;
+    paymentId = await createPayment("CASH", 200, [{ receivableId: stranded.receivableId, amount: 200 }]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toEqual({ ok: false, code: "RECEIVABLE_OUTSIDE_LEDGER" });
+    expect(await journalCountFor(paymentId)).toBe(0);
+  });
+
+  it("a flagged delivery holding the old pair's COGS half is still late before the cutover — its revenue half completes ungated", async () => {
+    const pending = await makeReceivable(200, { revenueJournal: false, pendingFlag: true });
+    await cogsHalf(pending.deliveryId);
+    h.mulai = new Date("2026-06-01T00:00:00.000+07:00");
+    paymentId = await createPayment("CASH", 200, [{ receivableId: pending.receivableId, amount: 200 }]);
+    expect(await postPaymentReceiptJournal(paymentId, userId)).toEqual({ ok: false, code: "RECEIVABLE_REVENUE_NOT_POSTED_YET" });
+    expect(await journalCountFor(paymentId)).toBe(0);
+  });
+
   it("a payment settling an old-shape invoice and a current one credits each the account its journal debited", async () => {
     const old = await makeReceivable(300, { revenueJournal: true });
     const current = await makeReceivable(200, { revenueJournal: false });
@@ -351,7 +409,10 @@ d("payment-journal (test bed only)", () => {
     const j = await receiptOf(paymentId);
     expect(Number(j!.lines.find((l) => l.chartAccountId === cashId)!.debit)).toBe(600);
     expect(Number(j!.lines.find((l) => l.chartAccountId === arId)!.credit)).toBe(300);
-    expect(Number(j!.lines.find((l) => l.chartAccountId === arStoreId)!.credit)).toBe(300);
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arStoreId)!.credit)).toBe(200);
+    /* A konsi sell-through report's receivable sits on AR_CONSIGNMENT, so its share is credited there. */
+    expect(Number(j!.lines.find((l) => l.chartAccountId === arConsignmentId)!.credit)).toBe(100);
+    expect(j!.lines.find((l) => l.chartAccountId === arConsignmentId)).toMatchObject({ memo: "AR_CONSIGNMENT", storeId });
     expect(j!.description).not.toContain("sebagian");
 
     /* The reversal mirrors the store dimension too, so the per-store receivable balance nets back. */
@@ -362,7 +423,8 @@ d("payment-journal (test bed only)", () => {
       include: { lines: true },
     });
     expect(reversal!.lines.find((l) => l.chartAccountId === arStoreId)).toMatchObject({ storeId });
-    expect(Number(reversal!.lines.find((l) => l.chartAccountId === arStoreId)!.debit)).toBe(300);
+    expect(Number(reversal!.lines.find((l) => l.chartAccountId === arStoreId)!.debit)).toBe(200);
+    expect(Number(reversal!.lines.find((l) => l.chartAccountId === arConsignmentId)!.debit)).toBe(100);
   });
 
   it("a payment with no allocations → refuses RECEIVABLE_OUTSIDE_LEDGER", async () => {

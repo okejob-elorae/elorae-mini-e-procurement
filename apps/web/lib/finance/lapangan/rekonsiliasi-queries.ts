@@ -3,9 +3,10 @@ import { formatDateOnlyJakarta } from "@/lib/date-only";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
 import { SARING_JURNAL_BERLAKU } from "@/lib/finance/journals/status-jurnal";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
+import { readReceivableJournalStates } from "@/lib/finance/ar/store-receivable-role";
 import { idBebanDariCatatan } from "@/lib/receivables/penanda-beban";
 import { daftarPiutang } from "@/lib/receivables/queries";
-import { keSen, SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "./aturan";
+import { keSen, SUMBER_LAPANGAN } from "./aturan";
 import { bacaNilaiReturBanyak } from "./jurnal";
 import { ringkasRekonsiliasi, type BarisRekonsiliasiToko, type RekonsiliasiPiutang } from "./rekonsiliasi";
 
@@ -13,7 +14,15 @@ import { ringkasRekonsiliasi, type BarisRekonsiliasiToko, type RekonsiliasiPiuta
  * Rekonsiliasi piutang toko — KHUSUS SERVER. Membandingkan saldo akun
  * `AR_STORE` di buku besar (per toko, dari `JournalLine.storeId`) dengan Σ sisa
  * piutang modul piutang (`daftarPiutang`: dihitung ulang dari nol, tanpa toko
- * konsinyasi).
+ * konsinyasi), dikurangi uang yang masuk lewat pembayaran kantor
+ * (`Receivable.paidAmount`, yang dikredit jurnal penerimaannya ke akun yang
+ * sama tetapi tidak dikenal `hitungSisaPiutang`) — angka yang sama dengan
+ * `outstandingAmount` yang ditulis `kolomPembayaranKantor`.
+ *
+ * Faktur yang jurnal fakturnya mendebit akun LAIN (bentuk lama di AR, laporan
+ * laku konsinyasi di AR_CONSIGNMENT — `readReceivableJournalStates`) tidak ikut:
+ * setiap pelunasannya dikredit ke akun itu juga, jadi saldonya memang tidak
+ * pernah ada di AR_STORE.
  *
  * Keduanya sengaja tidak sama persis: jurnal retur mengkredit piutang sebesar
  * barang yang SAMPAI begitu gudang menghitungnya, sedangkan modul baru
@@ -80,34 +89,13 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
   const detail = piutang.length
     ? await prisma.receivable.findMany({
         where: { id: { in: piutang.map((p) => p.id) } },
-        select: { id: true, deliveryId: true, note: true, source: true },
+        select: { id: true, note: true, source: true, paidAmount: true },
       })
     : [];
   const detailPer = new Map(detail.map((d) => [d.id, d]));
-  // Nota berjurnal: jurnal notanya, atau separuh pendapatan bentuk lama yang mendebit AR_STORE.
-  // Separuh lama yang mendebit AR (sebelum satu peran piutang toko) tidak ada di saldo AR_STORE.
-  const notaBerjurnal = new Set(
-    (
-      await prisma.journal.findMany({
-        where: {
-          sourceType: { in: [SUMBER_LAPANGAN.NOTA, SUMBER_NOTA_LAMA.PENDAPATAN] },
-          sourceId: { in: detail.map((d) => d.deliveryId).filter((x): x is string => Boolean(x)) },
-        },
-        select: { sourceId: true, sourceType: true, lines: { select: { memo: true, debit: true } } },
-      })
-    )
-      .filter((j) => j.sourceType === SUMBER_LAPANGAN.NOTA || j.lines.some((l) => l.memo === "AR_STORE" && Number(l.debit) > 0))
-      .map((j) => j.sourceId),
-  );
-  // Faktur manual/impor yang sudah punya jurnal `STORE_INVOICE` sendiri (generasi pertama = id faktur).
-  const fakturBerjurnal = new Set(
-    (
-      await prisma.journal.findMany({
-        where: { sourceType: SUMBER_LAPANGAN.FAKTUR, sourceId: { in: detail.filter((d) => !d.deliveryId).map((d) => d.id) } },
-        select: { sourceId: true },
-      })
-    ).map((j) => j.sourceId),
-  );
+  // Akun yang didebit jurnal faktur setiap piutang: jurnal nota, jurnal `STORE_INVOICE` faktur
+  // manual/impor (generasi pertama = id faktur), atau separuh pendapatan bentuk lama.
+  const jurnalFaktur = await readReceivableJournalStates(prisma, piutang.map((p) => p.id));
 
   type Akumulasi = { nama: string; modul: number; diLuar: number; jumlah: number; kredit: number };
   const per = new Map<string, Akumulasi>();
@@ -120,15 +108,15 @@ export async function rekonsiliasiPiutangToko(opsi: { storeIds?: string[] } = {}
     return a;
   };
   for (const p of piutang) {
+    const peran = jurnalFaktur.get(p.id)?.role ?? null;
+    if (peran !== null && peran !== "AR_STORE") continue;
     const a = ambil(p.storeId, p.storeName);
-    const sisa = keSen(p.outstanding);
+    const d = detailPer.get(p.id);
+    const sisa = Math.max(0, keSen(p.outstanding) - keSen(Number(d?.paidAmount ?? 0)));
     a.modul += sisa;
     a.jumlah += 1;
-    const d = detailPer.get(p.id);
-    const lewatJurnalNota = d?.deliveryId ? notaBerjurnal.has(d.deliveryId) : false;
     const fakturBeban = d?.source === "MANUAL" && idBebanDariCatatan(d.note) !== null;
-    const lewatJurnalFaktur = d ? fakturBerjurnal.has(d.id) : false;
-    if (!lewatJurnalNota && !fakturBeban && !lewatJurnalFaktur) a.diLuar += sisa;
+    if (peran === null && !fakturBeban) a.diLuar += sisa;
   }
 
   // Kredit retur yang belum dipotong toko, per toko.

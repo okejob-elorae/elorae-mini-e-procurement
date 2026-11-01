@@ -316,6 +316,12 @@ export function peranPotongan(jenis: { postingRole: string | null; pkpOnly: bool
  *   CR AR_STORE = keduanya.
  * Potongan retur TIDAK dijurnal di sini — piutangnya diselesaikan jurnal retur
  * (sekali, tidak dua kali). Status lain = nol: generasi berikutnya membalik.
+ *
+ * Piutang dikredit di akun yang DIDEBIT jurnal fakturnya
+ * (`lib/finance/ar/store-receivable-role.ts`): bagian yang melunasi faktur
+ * berjurnal bentuk lama (`porsiAr` — Σ dilunasi faktur itu ÷ nilai faktur BKM)
+ * dikredit ke AR, sisanya ke AR_STORE. Tanpa itu AR tidak pernah turun dan
+ * AR_STORE toko itu minus sebesar yang sama.
  */
 export function barisKlaim(b: {
   terverifikasi: boolean;
@@ -323,6 +329,8 @@ export function barisKlaim(b: {
   diterima: number;
   storeId: string;
   potongan: ReadonlyArray<{ nilai: number; retur: boolean; peran: PostingRole }>;
+  /** Bagian nilai faktur BKM ini (0–1) yang melunasi piutang berjurnal bentuk lama (debit AR). */
+  porsiAr?: number;
 }): BarisBertanda[] {
   if (!b.terverifikasi) return [];
   const baris: BarisBertanda[] = [];
@@ -337,7 +345,9 @@ export function barisKlaim(b: {
     baris.push({ role: p.peran, sen: s, ...(penjualan ? { channel: PUTUS, storeId: b.storeId } : {}) });
     kredit += s;
   }
-  if (kredit !== 0) baris.push({ role: "AR_STORE", sen: -kredit, storeId: b.storeId });
+  const keAr = Math.round(kredit * Math.min(1, Math.max(0, b.porsiAr ?? 0)));
+  if (kredit - keAr !== 0) baris.push({ role: "AR_STORE", sen: -(kredit - keAr), storeId: b.storeId });
+  if (keAr !== 0) baris.push({ role: "AR", sen: -keAr });
   return gabungBaris(baris);
 }
 
@@ -413,6 +423,7 @@ export function nilaiReturBukuBesar(b: {
  *     dengan harga rata-rata SAAT DIHITUNG, yang tidak digeser retur)
  *   DR SALES_RETURN (DPP fisik diakui) + DR PPN_KELUARAN / CR AR_STORE
  *   DR LOSS_EXPENSE (rugi) / CR AR_STORE
+ *   DR AR_STORE / CR AR (`kreditAr`: potongan diakui atas faktur bentuk lama)
  *
  * HPP yang dibalik tidak boleh melebihi yang dulu dibebankan: barang yang
  * dijual saat rata-ratanya 81.222,22 lalu kembali sesudah rata-rata naik ke
@@ -429,6 +440,13 @@ export function barisRetur(b: {
   nilaiRusak: number;
   /** HPP saat dijual atas seluruh barang yang kembali (layak + rusak); null/undefined = nilai barang masuk. */
   hppKembali?: number | null;
+  /**
+   * Bagian potongan retur ini yang diakui atas faktur berjurnal bentuk lama
+   * (debit AR, `potonganPiutangLama`): kredit retur yang sudah dipakai toko
+   * untuk faktur itu dipindah DR AR_STORE / CR AR, karena faktur itu berdiri
+   * di AR, bukan di AR_STORE.
+   */
+  kreditAr?: number;
 }): BarisBertanda[] {
   if (b.konsinyasi) return [];
   const baris: BarisBertanda[] = [];
@@ -452,6 +470,11 @@ export function barisRetur(b: {
   if (keSen(b.nilai.rugi) > 0) {
     baris.push({ role: "LOSS_EXPENSE", sen: keSen(b.nilai.rugi), channel: PUTUS, storeId: b.storeId });
     baris.push({ role: "AR_STORE", sen: -keSen(b.nilai.rugi), storeId: b.storeId });
+  }
+  const keAr = keSen(b.kreditAr ?? 0);
+  if (keAr > 0) {
+    baris.push({ role: "AR_STORE", sen: keAr, storeId: b.storeId });
+    baris.push({ role: "AR", sen: -keAr });
   }
   return gabungBaris(baris);
 }

@@ -178,11 +178,12 @@ async function voidJournalGaps(id: string, client: AnyClient): Promise<SellThrou
 }
 
 /**
- * DR the store receivable / CR SALES_REVENUE at the invoice total. The receivable is AR_STORE — the
- * one store-receivables role every store invoice debits (a putus nota, a manual or imported
- * invoice, this report), separate from the marketplace AR — tagged with its role as memo and with
- * the store, so a payment receipt credits the same account back (`postPaymentReceiptJournal`) and
- * the reversal mirrors it per store. Reports journaled before this rule carry AR and keep it.
+ * DR the consignment-store receivable / CR SALES_REVENUE at the invoice total. The receivable is
+ * AR_CONSIGNMENT — what a konsi store owes for goods sold off its shelf, the same account the
+ * consignment cycle debits when it locks — kept apart from the putus stores' AR_STORE and from the
+ * marketplace AR. The line is tagged with its role as memo and with the store, so a payment receipt
+ * credits the same account back (`postPaymentReceiptJournal`, `lib/finance/ar/store-receivable-role.ts`)
+ * and the reversal mirrors it per store. Reports journaled before this rule carry AR and keep it.
  */
 export async function postSellThroughRevenueJournal(id: string, postedById: string, client: AnyClient = prisma): Promise<GenerateAutoJournalResult> {
   const doc = await loadInvoicedReport(client, id);
@@ -194,7 +195,7 @@ export async function postSellThroughRevenueJournal(id: string, postedById: stri
     SELL_THROUGH_JOURNAL_SOURCE_TYPES.konsi_sell_through_revenue,
     id,
     [
-      { role: "AR_STORE", debit: value, credit: 0, memo: "AR_STORE", storeId: doc.storeId },
+      { role: "AR_CONSIGNMENT", debit: value, credit: 0, memo: "AR_CONSIGNMENT", storeId: doc.storeId },
       { role: "SALES_REVENUE", debit: 0, credit: value, memo: "SALES_REVENUE", channel: KANAL_JURNAL.KONSINYASI, storeId: doc.storeId },
     ],
     { date: doc.invoiceDate, description: `Nota tagihan konsi ${doc.docNo}`, postedById },

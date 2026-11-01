@@ -384,21 +384,22 @@ export async function updateDeliveryDatesAction(input: {
 
     /**
      * A journal is never moved into or out of a CLOSED month: that month's figures are already
-     * reported. The posted date, the date it was shifted away from (`originalDate`) and the new
-     * invoice date must all lie in open months. `lockPeriodForPosting` also locks those months'
-     * period rows until this transaction ends — earliest month first, the order every poster and
-     * the month close take them in — so a month closing concurrently waits for the re-date or sees
-     * it. A nota with no journal yet moves nothing in the GL and is not checked: its post dates on
-     * the corrected invoice date and follows the closed-period rule then.
+     * reported. The journal's posted date and the new invoice date must both lie in open months.
+     * `originalDate` is not one of them: it only records the date a journal was shifted AWAY from
+     * when it was keyed into a closed month (owner rule 38), and the journal's balances live on its
+     * posted date, already in an open month — so a nota keyed late into a closed month can still
+     * have its invoice date corrected to an open date. `lockPeriodForPosting` also locks those
+     * months' period rows until this transaction ends — earliest month first, the order every
+     * poster and the month close take them in — so a month closing concurrently waits for the
+     * re-date or sees it. A nota with no journal yet moves nothing in the GL and is not checked:
+     * its post dates on the corrected invoice date and follows the closed-period rule then.
      */
     const journals = await tx.journal.findMany({
       where: { sourceType: { in: [...SEMUA_SUMBER_JURNAL_NOTA] }, sourceId: before.id },
-      select: { date: true, originalDate: true },
+      select: { date: true },
     });
     if (journals.length > 0) {
-      const touched = [parsedInvoiceDate, ...journals.flatMap((j) => (j.originalDate ? [j.date, j.originalDate] : [j.date]))].sort(
-        (a, b) => a.getTime() - b.getTime(),
-      );
+      const touched = [parsedInvoiceDate, ...journals.map((j) => j.date)].sort((a, b) => a.getTime() - b.getTime());
       for (const date of touched) {
         if ((await lockPeriodForPosting(tx, date)) === "CLOSED") return { kind: "PERIOD_CLOSED" };
       }

@@ -53,10 +53,10 @@ const standing = (journalId: string): GenerateAutoJournalResult => ({ ok: true, 
 
 /**
  * The old pair's revenue half on the delivery total: DR the store receivable / CR SALES_REVENUE.
- * The receivable is AR_STORE, the one store-receivables role every store invoice debits today,
- * tagged with its role as memo and with the store, so `postPaymentReceiptJournal` credits AR_STORE
- * back and the store-receivables reconciliation reads it per store. Only the revenue halves posted
- * before this rule carry AR; those stand as they are.
+ * The receivable is AR_STORE, the role every putus store invoice debits today, tagged with its role
+ * as memo and with the store, so every flow that settles it credits AR_STORE back
+ * (`lib/finance/ar/store-receivable-role.ts`) and the store-receivables reconciliation reads it per
+ * store. Only the revenue halves posted before this rule carry AR; those stand as they are.
  */
 async function postLegacyRevenue(
   tx: Prisma.TransactionClient,

@@ -1,6 +1,9 @@
-import { prisma } from "@elorae/db";
+import { prisma, type Prisma, type PrismaClient } from "@elorae/db";
 import { JENIS_TERTUNDA_LAPANGAN, SUMBER_LAPANGAN, SUMBER_NOTA_LAMA } from "@/lib/finance/lapangan/aturan";
+import { readGlCutover } from "@/lib/finance/sales/sweep";
 import type { ArJournalKind } from "./post-ar-journal-safely";
+
+type AnyClient = PrismaClient | Prisma.TransactionClient;
 
 export type ArJournalPendingFlag = { reason: string | null; role: string | null };
 
@@ -142,13 +145,44 @@ export async function isFieldDeliveryJournalRetryable(kind: FieldDeliveryJournal
 }
 
 /**
+ * The deliveries among `deliveryIds` whose missing journal can still post — what a retry
+ * (`lib/finance/ar/delivery-journal.ts`) would actually reach. A delivery holding one half of the
+ * old pair gets the other half, which no cutover gates. Any other delivery can only get the nota
+ * journal, and `postJurnalNota` never posts one dated before `finance.glCutoverDate`, or any at all
+ * while no cutover is set (BELUM_BERLAKU / GL_CUTOVER_NOT_CONFIGURED). A flag on such a delivery
+ * records a failure no retry can ever cure, so it must not read as "posting soon".
+ */
+export async function deliveriesWhoseJournalCanStillPost(deliveryIds: string[], client: AnyClient = prisma): Promise<Set<string>> {
+  const result = new Set<string>();
+  if (deliveryIds.length === 0) return result;
+  const halves = await client.journal.findMany({
+    where: { sourceType: { in: [SUMBER_NOTA_LAMA.PENDAPATAN, SUMBER_NOTA_LAMA.HPP] }, sourceId: { in: deliveryIds } },
+    select: { sourceId: true },
+  });
+  for (const j of halves) if (j.sourceId) result.add(j.sourceId);
+  const rest = deliveryIds.filter((id) => !result.has(id));
+  if (rest.length === 0) return result;
+  const cutover = await readGlCutover();
+  if (!cutover) return result;
+  const open = await client.fieldSalesDelivery.findMany({
+    where: { id: { in: rest }, invoiceDate: { gte: cutover } },
+    select: { id: true },
+  });
+  for (const d of open) result.add(d.id);
+  return result;
+}
+
+/**
  * Whether the receivable detail page should still show the journal-pending banner for one delivery
- * journal kind: flagged (the retry gate, unchanged) AND no journal posted for it.
+ * journal kind: flagged (the retry gate, unchanged), no journal posted for it, AND a retry could
+ * still post one (`deliveriesWhoseJournalCanStillPost`).
  *
  * The flag alone cannot drive the banner. `JOURNAL_PENDING` rows are append-only, so after a retry
  * that posts the journal the gate still reads "still pending", and the banner would never clear.
  * The journal's own existence is the only signal that the retry landed. It is NEVER the gate on its
  * own: a backfilled delivery has no journal either, and the flag is what proves a post was attempted.
+ * A delivery dated before the GL cutover keeps its flag for good, since the nota journal never posts
+ * for it; offering it a retry would promise a journal that cannot come.
  */
 export async function isFieldDeliveryJournalStillPending(
   kind: FieldDeliveryJournalKind,
@@ -159,5 +193,6 @@ export async function isFieldDeliveryJournalStillPending(
     where: { sourceType: { in: FIELD_DELIVERY_POSTED_BY[kind] }, sourceId: deliveryId },
     select: { id: true },
   });
-  return posted === null;
+  if (posted !== null) return false;
+  return (await deliveriesWhoseJournalCanStillPost([deliveryId])).has(deliveryId);
 }
