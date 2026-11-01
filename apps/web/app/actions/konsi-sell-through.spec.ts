@@ -47,7 +47,7 @@ const d = isProd ? describe.skip : describe;
 /* Every case drives several real serializable writers end to end, well past vitest's 5s default. */
 const SLOW = 60_000;
 
-const MAPPED_ROLES: PostingRole[] = ["AR", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_VARIANCE"];
+const MAPPED_ROLES: PostingRole[] = ["AR_CONSIGNMENT", "SALES_REVENUE", "COGS", "INVENTORY", "INVENTORY_VARIANCE"];
 
 d("konsi sell-through actions (test bed only)", () => {
   const fx = createSellThroughFixtures();
@@ -85,7 +85,7 @@ d("konsi sell-through actions (test bed only)", () => {
 
     const mapRole = (role: PostingRole, chartAccountId: string) =>
       prisma.journalAccountMapping.upsert({ where: { role }, create: { role, chartAccountId }, update: { chartAccountId } });
-    await mapRole("AR", arId);
+    await mapRole("AR_CONSIGNMENT", arId);
     await mapRole("SALES_REVENUE", salesRevenueId);
     await mapRole("COGS", cogsId);
     await mapRole("INVENTORY", inventoryId);

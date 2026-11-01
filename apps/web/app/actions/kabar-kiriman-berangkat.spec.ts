@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /*
- * Kabar "barang berangkat ke toko" dipasang di tiga aksi yang membuat barang keluar gudang
- * menuju toko: pengiriman putus, persetujuan pesanan (konsi), dan kirim titipan konsinyasi.
+ * Kabar "barang berangkat ke toko" dipasang di aksi yang membuat barang keluar gudang menuju
+ * toko: pengiriman putus yang dicatat tangan, penyelesaian pengiriman (putus dan konsi, dari
+ * kantor maupun HP pembawa), dan kirim titipan konsinyasi. Persetujuan pesanan konsi TIDAK
+ * mengabari: ia hanya mencadangkan stok, barangnya baru pindah saat pengirimannya selesai.
  * Yang diuji di sini hanya KAITANNYA — dipanggil sesudah sukses, dengan dokumen dan pelaku yang
  * benar, dan tidak dipanggil saat aksinya gagal. Sekali-per-dokumen dan penerimanya diuji di
  * `lib/spg/pesanan-menuju-toko.test.ts` terhadap basis data sungguhan.
@@ -15,6 +17,8 @@ const h = vi.hoisted(() => ({
   approve: vi.fn(),
   kirimTitipan: vi.fn(),
   deliveryLookup: vi.fn(async () => null),
+  completeShipment: vi.fn(),
+  shipmentLookup: vi.fn(async (): Promise<unknown> => null),
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: h.auth }));
@@ -28,7 +32,29 @@ vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: vi
 vi.mock("@/app/actions/audit", () => ({ logPrint: vi.fn() }));
 vi.mock("@elorae/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@elorae/db")>()),
-  prisma: { fieldSalesDelivery: { findUnique: h.deliveryLookup }, fieldSalesOrder: { findUnique: vi.fn(async () => null) } },
+  prisma: {
+    fieldSalesDelivery: { findUnique: h.deliveryLookup },
+    fieldSalesOrder: { findUnique: vi.fn(async () => null) },
+    deliveryShipment: { findUnique: h.shipmentLookup },
+  },
+}));
+vi.mock("@/lib/delivery/shipment-writer", () => ({
+  createDeliveryShipment: vi.fn(),
+  updateShipmentTracking: vi.fn(),
+  reassignShipmentCarrier: vi.fn(),
+  shipDeliveryShipment: vi.fn(),
+  completeDeliveryShipment: h.completeShipment,
+  cancelDeliveryShipment: vi.fn(),
+}));
+vi.mock("@/lib/delivery/shipment-queries", () => ({
+  listDeliveryShipments: vi.fn(),
+  getDeliveryShipment: vi.fn(),
+  listMyDeliveries: vi.fn(),
+}));
+vi.mock("@/lib/finance/ar/post-ar-journal-safely", () => ({ postArJournalSafely: vi.fn(async () => {}) }));
+vi.mock("@/lib/finance/ar/delivery-journal", () => ({
+  postFieldDeliveryRevenueJournal: vi.fn(),
+  postFieldDeliveryCogsJournal: vi.fn(),
 }));
 vi.mock("@/lib/field-sales/delivery/writer", () => ({
   recordFieldSalesDelivery: h.recordDelivery,
@@ -46,6 +72,9 @@ vi.mock("@/lib/jubelio/antre-push-stok", () => ({ antrekanPushStok: vi.fn(async 
 import { recordDeliveryAction } from "./field-sales-deliveries";
 import { approveFieldSalesOrderAction } from "./field-sales-orders";
 import { kirimTitipanAction } from "./konsinyasi";
+import { completeShipmentAction } from "./delivery-shipments";
+import { completePodAction } from "@/app/pwa/deliveries/actions";
+import { DeliveryShipmentError } from "@/lib/delivery/errors";
 import { DeliveryError } from "@/lib/field-sales/errors";
 import { InvalidOrderTransitionError } from "@/lib/field-sales/errors";
 
@@ -80,15 +109,64 @@ describe("pengiriman putus", () => {
 });
 
 describe("persetujuan pesanan", () => {
-  it("an approved order is passed on as a possible konsi shipment", async () => {
+  it("an approval tells no one — a konsi approval only reserves; the goods leave when its shipment completes", async () => {
     h.approve.mockResolvedValue({ ok: true });
     expect(await approveFieldSalesOrderAction("order-9")).toEqual({ ok: true });
-    expect(h.kabarkan).toHaveBeenCalledWith({ sourceType: "KONSI_ORDER", sourceId: "order-9", pelakuId: KANTOR });
+    expect(h.kabarkan).not.toHaveBeenCalled();
   });
 
   it("a refused approval tells no one", async () => {
     h.approve.mockRejectedValue(new InvalidOrderTransitionError("REJECTED", "APPROVED"));
     expect(await approveFieldSalesOrderAction("order-9")).toEqual({ ok: false, reason: "INVALID_TRANSITION" });
+    expect(h.kabarkan).not.toHaveBeenCalled();
+  });
+});
+
+describe("penyelesaian pengiriman", () => {
+  const selesai = (deliveredQty: number) => ({
+    shipmentId: "shp-1",
+    proofPhotoUrl: "https://bukti/foto.jpg",
+    proofPhotoR2Key: "delivery-proofs/shp-1/1.jpg",
+    lines: [{ shipmentLineId: "sl-1", deliveredQty }],
+  });
+  const selesaiHp = (deliveredQty: number) => ({ ...selesai(deliveredQty), gps: { lat: -6.2, lng: 106.8 } });
+  const konsi = { orderId: "order-9", order: { orderType: "KONSI" } };
+
+  it("a completed PUTUS shipment tells the store's SPG about its delivery document", async () => {
+    h.completeShipment.mockResolvedValue({ ok: true, deliveryId: "dlv-7" });
+    expect(await completeShipmentAction(selesai(2))).toEqual({ ok: true });
+    expect(h.kabarkan).toHaveBeenCalledTimes(1);
+    expect(h.kabarkan).toHaveBeenCalledWith({ sourceType: "PUTUS_DELIVERY", sourceId: "dlv-7", pelakuId: KANTOR });
+  });
+
+  it("a completed KONSI shipment tells the store's SPG about its order", async () => {
+    h.completeShipment.mockResolvedValue({ ok: true, deliveryId: "" });
+    h.shipmentLookup.mockResolvedValue(konsi);
+    expect(await completeShipmentAction(selesai(2))).toEqual({ ok: true });
+    expect(h.kabarkan).toHaveBeenCalledTimes(1);
+    expect(h.kabarkan).toHaveBeenCalledWith({ sourceType: "KONSI_ORDER", sourceId: "order-9", pelakuId: KANTOR });
+  });
+
+  it("the carrier's phone completion of a KONSI shipment tells the SPG too", async () => {
+    h.completeShipment.mockResolvedValue({ ok: true, deliveryId: "" });
+    h.shipmentLookup.mockResolvedValue(konsi);
+    expect(await completePodAction(selesaiHp(3))).toEqual({ ok: true });
+    expect(h.kabarkan).toHaveBeenCalledWith({ sourceType: "KONSI_ORDER", sourceId: "order-9", pelakuId: KANTOR });
+  });
+
+  it("a KONSI shipment that delivered nothing tells no one", async () => {
+    h.completeShipment.mockResolvedValue({ ok: true, deliveryId: "" });
+    h.shipmentLookup.mockResolvedValue(konsi);
+    expect(await completeShipmentAction(selesai(0))).toEqual({ ok: true });
+    expect(await completePodAction(selesaiHp(0))).toEqual({ ok: true });
+    expect(h.kabarkan).not.toHaveBeenCalled();
+  });
+
+  it("a refused completion tells no one", async () => {
+    h.completeShipment.mockRejectedValue(new DeliveryShipmentError("INVALID_STATE"));
+    h.shipmentLookup.mockResolvedValue(konsi);
+    expect(await completeShipmentAction(selesai(2))).toMatchObject({ ok: false, reason: "INVALID_STATE" });
+    expect(await completePodAction(selesaiHp(2))).toMatchObject({ ok: false, reason: "INVALID_STATE" });
     expect(h.kabarkan).not.toHaveBeenCalled();
   });
 });

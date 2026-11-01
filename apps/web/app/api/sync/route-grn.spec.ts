@@ -15,8 +15,8 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: "user-gudang", email: null, permissions: sesi.permissions } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifySupplierCreated: async () => {},
   notifyPOCreated: async () => {},
 }));

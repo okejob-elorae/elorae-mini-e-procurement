@@ -18,8 +18,6 @@ import {
   type KonsiPushErrorCode,
 } from "@/lib/field-sales/errors";
 import { KreditBelumDiperiksaError } from "@/lib/field-sales/kredit-pesanan";
-import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
-import { kaitPesananKonsiDisetujui } from "@/lib/finance/operasional/kait";
 
 export type ActionResult =
   | { ok: true }
@@ -147,15 +145,8 @@ export async function approveFieldSalesOrderAction(
   }
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${orderId}`);
-  // Persetujuan konsi hanya mencadangkan stok; barangnya berangkat saat pengiriman selesai. Kabar
-  // ke SPG toko masih dipicu di sini (sekali per pesanan) sampai kabarnya dikaitkan ke selesainya
-  // pengiriman. Pesanan putus disaring penerimanya.
-  void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: orderId, pelakuId: g.userId });
-  // Jurnal pindah-ke-toko konsinyasi: persetujuan tidak memindahkan stok lagi, jadi kait ini tidak
-  // menemukan transfer dan tidak memposting apa pun sampai jurnalnya dikaitkan ke selesainya
-  // pengiriman (sesudah commit, tidak pernah melempar). Pesanan putus disaring penulisnya —
-  // jurnalnya di nota tagihan.
-  await kaitPesananKonsiDisetujui(orderId, g.userId);
+  // Persetujuan konsi hanya mencadangkan stok: barangnya baru pindah ke toko saat pengirimannya
+  // selesai, jadi kabar ke SPG toko dikirim dari aksi penyelesaian pengiriman, bukan di sini.
   return { ok: true };
 }
 

@@ -1,30 +1,40 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DOC_TYPE_GROUP } from "@/lib/doc-numbers/doc-type-groups";
 
 /**
  * Pengaturan → Nomor dokumen (sesi dan Prisma ditiru, tanpa basis data):
- * - layar memuat SEMUA jenis dokumen generator, termasuk yang barisnya belum ada;
+ * - layar memuat SEMUA jenis dokumen generator: jenis yang barisnya belum ada
+ *   disemai dulu (`createMany` + `skipDuplicates`), baris yang ada tidak disentuh;
  * - simpan menolak dengan kode (tidak melempar) dan tidak menulis apa pun bila
  *   satu baris salah;
  * - izin kelola diperiksa di server.
  */
 
 type Sesi = { user: { id: string; permissions: string[] } } | null;
+type Semai = { data: Array<Record<string, unknown>>; skipDuplicates?: boolean };
 const keadaan = vi.hoisted(() => ({
   sesi: null as Sesi,
   baris: [] as Array<Record<string, unknown>>,
   upsert: [] as Array<Record<string, unknown>>,
+  semai: [] as Semai[],
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => keadaan.sesi) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: vi.fn(async () => "Uji"),
-  notifyDocNumberAltered: vi.fn(async () => {}),
-}));
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn(async () => "Uji") }));
+vi.mock("@/lib/notifications/events", () => ({ notifyDocNumberAltered: vi.fn(async () => {}) }));
 vi.mock("@elorae/db", () => ({
   prisma: {
     docNumberConfig: {
       findMany: vi.fn(async () => keadaan.baris),
+      /* INSERT IGNORE: hanya jenis yang belum punya baris yang bertambah. */
+      createMany: vi.fn(async (args: Semai) => {
+        keadaan.semai.push(args);
+        const ada = new Set(keadaan.baris.map((b) => b.docType));
+        const baru = args.data.filter((b) => !ada.has(b.docType));
+        keadaan.baris = [...keadaan.baris, ...baru.map((b) => ({ id: `semai-${String(b.docType)}`, ...b }))];
+        return { count: baru.length };
+      }),
       upsert: vi.fn((args: Record<string, unknown>) => {
         keadaan.upsert.push(args);
         return args;
@@ -35,6 +45,7 @@ vi.mock("@elorae/db", () => ({
 }));
 
 const { getDocNumberConfigs, simpanNomorDokumenAction } = await import("./doc-numbers");
+const SEMUA_JENIS = Object.keys(DOC_TYPE_GROUP).sort();
 
 const KELOLA = ["settings_documents:view", "settings_documents:manage"];
 
@@ -42,17 +53,38 @@ beforeEach(() => {
   keadaan.sesi = { user: { id: "u1", permissions: KELOLA } };
   keadaan.baris = [];
   keadaan.upsert = [];
+  keadaan.semai = [];
 });
 
 describe("getDocNumberConfigs", () => {
-  it("melengkapi jenis yang belum punya baris dengan bawaan generator", async () => {
+  it("menyemai jenis yang belum punya baris dengan bawaan generator, lalu membaca ulang", async () => {
     keadaan.baris = [
       { id: "c1", docType: "PO", prefix: "PO/", resetPeriod: "YEARLY", padding: 4, lastNumber: 48, year: 2026, month: 10 },
     ];
     const hasil = await getDocNumberConfigs();
-    expect(hasil).toHaveLength(15);
+    expect(keadaan.semai).toHaveLength(1);
+    expect(keadaan.semai[0].skipDuplicates).toBe(true);
+    expect(keadaan.semai[0].data.map((b) => b.docType).sort()).toEqual(SEMUA_JENIS);
+    expect(hasil.map((b) => b.docType).sort()).toEqual(SEMUA_JENIS);
+    // Penghitung baris yang sudah ada tidak disentuh semaian.
     expect(hasil.find((b) => b.docType === "PO")).toMatchObject({ id: "c1", lastNumber: 48 });
-    expect(hasil.find((b) => b.docType === "DELIVERY")).toMatchObject({ id: "", prefix: "DLV/", resetPeriod: "MONTHLY", lastNumber: 0 });
+    expect(hasil.find((b) => b.docType === "DELIVERY")).toMatchObject({ prefix: "DLV/", resetPeriod: "MONTHLY", lastNumber: 0 });
+  });
+
+  it("semua jenis sudah punya baris → tidak menyemai", async () => {
+    keadaan.baris = SEMUA_JENIS.map((docType, i) => ({
+      id: `c${i}`,
+      docType,
+      prefix: `${docType}/`,
+      resetPeriod: "YEARLY",
+      padding: 4,
+      lastNumber: 1,
+      year: 2026,
+      month: 10,
+    }));
+    const hasil = await getDocNumberConfigs();
+    expect(keadaan.semai).toHaveLength(0);
+    expect(hasil).toHaveLength(SEMUA_JENIS.length);
   });
 
   it("tanpa izin lihat ditolak", async () => {
@@ -99,7 +131,7 @@ describe("simpanNomorDokumenAction", () => {
   });
 
   it("jenis asing ditolak", async () => {
-    expect(await simpanNomorDokumenAction([{ docType: "BKM" as never, prefix: "BKM/", resetPeriod: "YEARLY", padding: 4 }])).toEqual({
+    expect(await simpanNomorDokumenAction([{ docType: "BUKAN_JENIS" as never, prefix: "BJ/", resetPeriod: "YEARLY", padding: 4 }])).toEqual({
       ok: false,
       code: "JENIS_TIDAK_DIKENAL",
     });

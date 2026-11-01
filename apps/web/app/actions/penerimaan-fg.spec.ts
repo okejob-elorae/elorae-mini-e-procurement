@@ -18,8 +18,8 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: sesi.id, email: null, permissions: ["*"] } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyWOCreated: async () => {},
   notifyWOStatusUpdated: async () => {},
   notifyWOMaterialsIssued: async () => {},
@@ -198,14 +198,17 @@ d("penerimaan barang jadi (test bed only)", () => {
     sesi.id = userId;
     ppnUji.statusPkp = "BELUM_DITETAPKAN";
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(fgId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(fgId) } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(fgId) } });
   });
 
   afterAll(async () => {
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(fgId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(fgId) } });
     await prisma.rejectedGoodsLedger.deleteMany({ where: { itemId: seededId(fgId) } });
     await prisma.itemPriceChangeLog.deleteMany({ where: { itemId: seededId(fgId) } });
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(kancingId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(kancingId) } });
     await prisma.fGReceipt.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
     await prisma.materialIssue.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
     await prisma.workOrderStep.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
@@ -287,14 +290,14 @@ d("penerimaan barang jadi (test bed only)", () => {
         },
         userId,
       );
-      const gerak = await prisma.stockMovement.findMany({
-        where: { itemId: seededId(fgId), refType: "FG_RECEIPT" },
+      const gerak = await prisma.stockLedgerEntry.findMany({
+        where: { itemId: seededId(fgId), refType: "FGReceipt" },
         orderBy: { qty: "asc" },
-        select: { qty: true, unitCost: true, totalCost: true },
+        select: { qty: true, totalCost: true },
       });
-      expect(gerak.map((g) => [Number(g.qty), Number(g.unitCost), Number(g.totalCost)])).toEqual([
-        [10, 10_000, 100_000],
-        [30, 10_000, 300_000],
+      expect(gerak.map((g) => [Number(g.qty), Number(g.totalCost)])).toEqual([
+        [10, 100_000],
+        [30, 300_000],
       ]);
       expect((await penerimaan(woId))[0].biaya).toBe(400_000);
     });
@@ -531,6 +534,7 @@ d("penerimaan barang jadi (test bed only)", () => {
     it("harga ketik di layar tidak dipakai: dua baris gudang 6 @ 1.000 + 4 @ 1.300 → 11.200, sama dengan kartu stok", async () => {
       woId = await buatWo("ISSUED", { bahan: false });
       await prisma.stockMovement.deleteMany({ where: { itemId: seededId(kancingId) } });
+      await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(kancingId) } });
       await prisma.inventoryValue.deleteMany({ where: { itemId: seededId(kancingId) } });
       await prisma.inventoryValue.createMany({
         data: [
@@ -545,8 +549,8 @@ d("penerimaan barang jadi (test bed only)", () => {
         items: [{ itemId: kancingId, qty: 10, uomId, unitPrice: 2_500 }],
       });
       expect(hasil).toMatchObject({ ok: true, totalCost: 11_200 });
-      const gerak = await prisma.stockMovement.findMany({
-        where: { itemId: seededId(kancingId), refType: "WO_ISSUE" },
+      const gerak = await prisma.stockLedgerEntry.findMany({
+        where: { itemId: seededId(kancingId), refType: "MaterialIssue" },
         select: { totalCost: true },
       });
       expect(gerak.reduce((s, g) => s + Number(g.totalCost), 0)).toBe(11_200);

@@ -29,8 +29,8 @@ vi.mock("next/cache", () => ({
     }
   },
 }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyWOCreated: async () => {},
   notifyWOStatusUpdated: async () => {},
   notifyWOMaterialsIssued: async () => {},
@@ -103,7 +103,7 @@ async function balapan<A, B>(pertama: () => Promise<A>, kedua: () => Promise<B>)
   }
 }
 
-const { keluarkanBahan, updateWorkOrder, issueAdditionalMaterials } = await import("./production");
+const { keluarkanBahan, updateWorkOrder, issueAdditionalMaterials, terbitkanWorkOrder } = await import("./production");
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -207,6 +207,7 @@ d("ubah WO, keluarkan bahan berkunci, bahan tambahan (test bed only)", () => {
   afterAll(async () => {
     await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(woIds) } } });
     await prisma.stockMovement.deleteMany({ where: { itemId: seededId(kancingId) } });
+    await prisma.stockLedgerEntry.deleteMany({ where: { itemId: seededId(kancingId) } });
     await prisma.materialIssue.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
     await prisma.workOrderStep.deleteMany({ where: { woId: { in: seededIds(woIds) } } });
     await prisma.workOrder.deleteMany({ where: { id: { in: seededIds(woIds) } } });
@@ -380,14 +381,17 @@ d("ubah WO, keluarkan bahan berkunci, bahan tambahan (test bed only)", () => {
       expect((await keadaanWo(woId)).plannedQty).toBe(100);
     });
 
-    it("rencana 500 dari stok 100 → STOK_RENCANA_KURANG: kancing kurang 400; WO tidak berubah", async () => {
+    it("rencana 500 dari stok 100 → tersimpan, WO tetap DRAF; menerbitkannya yang ditolak STOK_BELUM_CUKUP", async () => {
       woId = await buatWo("DRAFT");
-      expect(await updateWorkOrder(woId, dataWo(500), userId)).toEqual({
-        ok: false,
-        code: "STOK_RENCANA_KURANG",
-        kurang: [{ barang: "Kancing uji", qty: 400, satuan: kodeSatuan }],
+      expect(await updateWorkOrder(woId, dataWo(500), userId)).toEqual({ ok: true, id: woId, docNumber: `WO-UW-${token}-${urut}` });
+      expect(await keadaanWo(woId)).toMatchObject({
+        status: "DRAFT",
+        plannedQty: 500,
+        rencanaKancing: { plannedQty: 500, issuedQty: 0, returnedQty: 0 },
       });
-      expect((await keadaanWo(woId)).plannedQty).toBe(100);
+      expect(await terbitkanWorkOrder(woId)).toEqual({ ok: false, code: "STOK_BELUM_CUKUP" });
+      expect((await keadaanWo(woId)).status).toBe("DRAFT");
+      expect(await stok()).toBe(100);
     });
 
     it("WO sudah terbit DAN rencana 500 melebihi stok 100 → WO_BUKAN_DRAF (bukan pesan stok); tidak ada → WO_TIDAK_DITEMUKAN", async () => {

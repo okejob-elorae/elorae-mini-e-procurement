@@ -14,10 +14,8 @@ vi.mock("@/lib/auth", () => ({
   auth: vi.fn(async () => ({ user: { id: sesi.id, email: null, permissions: ["*"] } })),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
-  notifyItemCreated: async () => {},
-}));
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({ notifyItemCreated: async () => {} }));
 vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn(async () => ({ ok: true })) }));
 
 const { updateItem } = await import("./items");
@@ -97,8 +95,8 @@ d("harga jual manual di formulir barang (test bed only)", () => {
 
   const antrean = () => prisma.jubelioOutbox.count({ where: { entityId: seededId(itemId), entityType: "product_push" } });
 
-  it("isian margin/biaya tambahan dari klien lama diabaikan: harga tidak dihitung ulang, kolomnya tidak ditimpa", async () => {
-    await updateItem(itemId, isian({ targetMarginPercent: 80, additionalCost: 5_000 }));
+  it("formulir tanpa isian margin/biaya tambahan: harga tidak dihitung ulang, kolomnya tidak ditimpa", async () => {
+    await updateItem(itemId, isian());
     expect(await barang()).toEqual({ harga: 50_000, margin: 40, biaya: 1_000 });
     expect(await prisma.itemPriceChangeLog.count({ where: { itemId: seededId(itemId) } })).toBe(0);
     // Tidak ada yang berubah untuk Jubelio → tidak ada kiriman produk.
@@ -107,7 +105,7 @@ d("harga jual manual di formulir barang (test bed only)", () => {
   });
 
   it("harga jual diubah manual → tersimpan apa adanya, riwayat MANUAL_EDIT, dan dikirim ke Jubelio", async () => {
-    await updateItem(itemId, isian({ sellingPrice: 65_000, targetMarginPercent: 10 }));
+    await updateItem(itemId, isian({ sellingPrice: 65_000 }));
     expect(await barang()).toEqual({ harga: 65_000, margin: 40, biaya: 1_000 });
     const log = await prisma.itemPriceChangeLog.findMany({
       where: { itemId: seededId(itemId) },

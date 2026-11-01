@@ -17,7 +17,7 @@ import { DOC_TYPE_GROUP, type DocTypeGroup } from "@/lib/doc-numbers/doc-type-gr
 import { periksaIsianNomor, type GalatIsianNomor } from "@/app/backoffice/settings/documents/jenis-dokumen";
 
 export type DocNumberConfigRow = {
-  /** Kosong bila barisnya belum tersimpan — layar menampilkan bawaan generator. */
+  /** Selalu terisi: jenis yang belum punya baris disemai dengan bawaan generator sebelum dibaca. */
   id: string;
   docType: DocType;
   prefix: string;

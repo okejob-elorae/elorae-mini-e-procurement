@@ -22,7 +22,7 @@ describe("getInventoryValueSnapshot gate", () => {
 
   it("rejects an unauthenticated caller and runs no query", async () => {
     mockAuth.mockResolvedValue(null);
-    await expect(getInventoryValueSnapshot()).rejects.toThrow("Forbidden");
+    await expect(getInventoryValueSnapshot()).rejects.toThrow("Unauthorized");
     expect(mockFindMany).not.toHaveBeenCalled();
   });
 
@@ -47,7 +47,7 @@ describe("getCOGSRawVsFinished gate", () => {
 
   it("rejects an unauthenticated caller and runs no query", async () => {
     mockAuth.mockResolvedValue(null);
-    await expect(getCOGSRawVsFinished()).rejects.toThrow("Forbidden");
+    await expect(getCOGSRawVsFinished()).rejects.toThrow("Unauthorized");
     expect(mockFindMany).not.toHaveBeenCalled();
   });
 
@@ -81,13 +81,13 @@ describe("exportInventorySnapshotReport csv", () => {
     ]);
     const res = await exportInventorySnapshotReport("csv");
     const data = "data" in res ? res.data : "";
-    expect(data.startsWith(`${UTF8_BOM}SKU,Name,Type,UOM,Qty On Hand,Avg Cost,Total Value,% of Total\n`)).toBe(true);
-    expect(data).toContain(`"S1","'=cmd","FABRIC","PCS","4","10","40","100"`);
+    expect(data.startsWith(`${UTF8_BOM}SKU,Nama,Jenis,Satuan,Stok di tangan,Harga rata-rata,Nilai,% dari total\n`)).toBe(true);
+    expect(data).toContain(`"S1","'=cmd","Kain","PCS","4","10","40","100"`);
   });
 
   it("keeps the header row when there is nothing to export", async () => {
     mockFindMany.mockResolvedValue([]);
     const res = await exportInventorySnapshotReport("csv");
-    expect("data" in res && res.data).toBe(`${UTF8_BOM}SKU,Name,Type,UOM,Qty On Hand,Avg Cost,Total Value,% of Total\n`);
+    expect("data" in res && res.data).toBe(`${UTF8_BOM}SKU,Nama,Jenis,Satuan,Stok di tangan,Harga rata-rata,Nilai,% dari total\n`);
   });
 });

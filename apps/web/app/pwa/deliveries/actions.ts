@@ -10,6 +10,7 @@ import { DeliveryError } from "@/lib/field-sales/errors";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
+import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
 
 const ERROR_TAG = "pwa/deliveries";
 
@@ -27,6 +28,37 @@ async function postDeliveryJournals(deliveryId: string, postedById: string): Pro
   await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
     postFieldDeliveryCogsJournal(deliveryId, postedById),
   );
+}
+
+/**
+ * Same body as `notifyStoreSpg` in `@/app/actions/delivery-shipments`, duplicated for the same
+ * reason as `postDeliveryJournals` above — keep the two in sync by hand. A PUTUS completion
+ * notifies the store's SPG on its delivery document; a KONSI completion on its order, and only
+ * when the shipment delivered something, since approve only reserves and this is where the goods
+ * leave for the store. The notifier never throws and notifies once per document.
+ */
+async function notifyStoreSpg(
+  shipmentId: string,
+  deliveryId: string,
+  deliveredAny: boolean,
+  actorId: string,
+): Promise<void> {
+  if (deliveryId) {
+    void kabarkanKirimanBerangkat({ sourceType: "PUTUS_DELIVERY", sourceId: deliveryId, pelakuId: actorId });
+    return;
+  }
+  if (!deliveredAny) return;
+  try {
+    const shipment = await prisma.deliveryShipment.findUnique({
+      where: { id: shipmentId },
+      select: { orderId: true, order: { select: { orderType: true } } },
+    });
+    if (shipment?.order.orderType === "KONSI") {
+      void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: shipment.orderId, pelakuId: actorId });
+    }
+  } catch (error) {
+    console.error(`[${ERROR_TAG}] SPG notice lookup failed`, error);
+  }
 }
 
 export async function listMyDeliveriesAction(): Promise<
@@ -92,6 +124,12 @@ export async function completePodAction(input: {
      * entry and no repair path.
      */
     if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
+    await notifyStoreSpg(
+      input.shipmentId,
+      result.deliveryId,
+      input.lines.some((line) => line.deliveredQty > 0),
+      session.user.id,
+    );
 
     return { ok: true };
   } catch (error) {
@@ -100,9 +138,10 @@ export async function completePodAction(input: {
        * Same reasoning as `completeShipmentAction`: the refused replay's delivery is real and its
        * journals may never have posted, so they post here before the refusal goes back. It
        * matters most on this path — the offline queue classifies REPLAY_MISMATCH as terminal and
-       * never resubmits.
+       * never resubmits. The SPG notice follows it for the same reason.
        */
       await postDeliveryJournals(error.replay.deliveryId, session.user.id);
+      await notifyStoreSpg(input.shipmentId, error.replay.deliveryId, true, session.user.id);
     }
     return mapError(error, ERROR_TAG);
   }

@@ -18,6 +18,7 @@ import { DeliveryError } from "@/lib/field-sales/errors";
 import { formatDateOnlyJakarta, parseDateOnly } from "@/lib/date-only";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
+import { kabarkanKirimanBerangkat } from "@/lib/spg/pesanan-menuju-toko";
 
 export type { ShipmentActionReason, ShipmentActionResult };
 
@@ -55,6 +56,39 @@ async function postDeliveryJournals(deliveryId: string, postedById: string): Pro
   await postArJournalSafely("field_delivery_cogs", deliveryId, () =>
     postFieldDeliveryCogsJournal(deliveryId, postedById),
   );
+}
+
+/**
+ * Tells the store's SPG that goods are on their way, after the completion committed. A PUTUS
+ * completion notifies on its delivery document, exactly as a hand-entered delivery does. A KONSI
+ * completion notifies on its order: approve only reserves, so this is the first point the goods
+ * have actually left for the store — and only when the shipment delivered something. The notifier
+ * never throws and notifies once per document, so a replay or a second shipment of the same order
+ * sends nothing new. Never exported, for the same reason as `postDeliveryJournals`, and
+ * `app/pwa/deliveries/actions.ts` holds its own copy — keep the two in sync by hand.
+ */
+async function notifyStoreSpg(
+  shipmentId: string,
+  deliveryId: string,
+  deliveredAny: boolean,
+  actorId: string,
+): Promise<void> {
+  if (deliveryId) {
+    void kabarkanKirimanBerangkat({ sourceType: "PUTUS_DELIVERY", sourceId: deliveryId, pelakuId: actorId });
+    return;
+  }
+  if (!deliveredAny) return;
+  try {
+    const shipment = await prisma.deliveryShipment.findUnique({
+      where: { id: shipmentId },
+      select: { orderId: true, order: { select: { orderType: true } } },
+    });
+    if (shipment?.order.orderType === "KONSI") {
+      void kabarkanKirimanBerangkat({ sourceType: "KONSI_ORDER", sourceId: shipment.orderId, pelakuId: actorId });
+    }
+  } catch (error) {
+    console.error(`[${ERROR_TAG}] SPG notice lookup failed`, error);
+  }
 }
 
 /**
@@ -241,6 +275,12 @@ export async function completeShipmentAction(input: {
      * that doesn't exist.
      */
     if (result.deliveryId) await postDeliveryJournals(result.deliveryId, session.user.id);
+    await notifyStoreSpg(
+      input.shipmentId,
+      result.deliveryId,
+      input.lines.some((line) => line.deliveredQty > 0),
+      session.user.id,
+    );
 
     revalidatePath("/backoffice/deliveries");
     await revalidateShipmentOrder(input.shipmentId);
@@ -252,9 +292,11 @@ export async function completeShipmentAction(input: {
        * receivable raised — and a crash before the posts above means its journals never posted.
        * The shipment stays IN_TRANSIT, so only a resubmit with the recorded quantities would reach
        * that success path, and nothing guarantees one ever comes. Posted here, before the refusal
-       * goes back; `replay.deliveryId` is never "" (a konsi completion records no delivery).
+       * goes back; `replay.deliveryId` is never "" (a konsi completion records no delivery). The
+       * SPG notice follows it for the same reason.
        */
       await postDeliveryJournals(error.replay.deliveryId, session.user.id);
+      await notifyStoreSpg(input.shipmentId, error.replay.deliveryId, true, session.user.id);
     }
     return mapError(error, ERROR_TAG);
   }

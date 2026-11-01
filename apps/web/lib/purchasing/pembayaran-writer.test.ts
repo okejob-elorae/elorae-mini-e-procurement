@@ -60,8 +60,8 @@ vi.mock("@/lib/production/hutang-jasa-queries", async () => {
 });
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { id: sesi.id, permissions: ["*"] } })) }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Uji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Uji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyPOCreated: async () => {},
   notifyPOStatusUpdated: async () => {},
   notifyPOPaymentToggled: async () => {},

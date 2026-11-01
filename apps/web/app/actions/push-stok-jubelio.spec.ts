@@ -24,11 +24,14 @@ vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/app/actions/security/pin-auth", () => ({
   verifyPinForAction: vi.fn(async () => ({ success: true, userId: sesi.id })),
 }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyStockAdjustmentCreated: async () => {},
   notifyGRNCreated: async () => {},
   notifyMaterialArrivedForPo: async () => {},
+  notifyWOCreated: async () => {},
+  notifyWOStatusUpdated: async () => {},
+  notifyWOMaterialsIssued: async () => {},
   notifyWOCompleted: async () => {},
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: async () => {} }));
@@ -224,13 +227,15 @@ d("push stok ke Jubelio sesudah dokumen stok (test bed only)", () => {
 
   it("GRN: hanya barang terpetakan di GRN itu yang diantrekan", async () => {
     sebagai(["inventory:manage"]);
-    const grn = await createGRN({
+    const hasil = await createGRN({
       supplierId,
       items: [
         { itemId: terpetakan, qty: 5, unitCost: 40_000 },
         { itemId: lepas, qty: 3, unitCost: 40_000 },
       ],
     });
+    if (!hasil.success) throw new Error(`GRN ditolak: ${hasil.code}`);
+    const grn = hasil.grn;
     grnIds.push(grn.id);
 
     expect(await antrean()).toEqual([
@@ -277,6 +282,7 @@ d("push stok ke Jubelio sesudah dokumen stok (test bed only)", () => {
 
     sebagai(["work_orders:manage"]);
     const r = await receiveFG({ woId, qtyReceived: 4, qtyRejected: 0 }, userId);
+    if (!r.success) throw new Error(`penerimaan ditolak: ${r.code}`);
 
     expect(await antrean()).toEqual([
       { entityId: terpetakan, status: "PENDING", payload: { sumber: "FG_RECEIPT", ref: r.docNumber } },

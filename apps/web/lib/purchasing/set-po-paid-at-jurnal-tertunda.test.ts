@@ -13,8 +13,8 @@ import { prisma, seededId, seededIds } from "@elorae/db";
 const { mockAuth } = vi.hoisted(() => ({ mockAuth: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
-vi.mock("@/app/actions/notifications", () => ({
-  getActorName: async () => "Penguji Keuangan",
+vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: async () => "Penguji Keuangan" }));
+vi.mock("@/lib/notifications/events", () => ({
   notifyPOCreated: async () => {},
   notifyPOStatusUpdated: async () => {},
   notifyPOPaymentToggled: async () => {},
