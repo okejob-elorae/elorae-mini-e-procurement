@@ -403,6 +403,13 @@ Branch `timotiusmax` = this master (82205090) + Max's two months of work (archiv
 - The backoffice menu lives in `lib/nav/menu.ts`, not in `BackofficeShell`. Help text lives in the Bantuan panel, not on screen.
 - Raw SQL goes through `packages/db/src/sql-dialect.ts` (Max also ran PostgreSQL locally; prod is MariaDB). Case-insensitive search uses `lib/db/cari-teks.ts`, never `mode: "insensitive"`.
 
+**Still open after the Phase A fix rounds (2026-11-01):**
+- Konsi goods shipped through a delivery shipment post NO consignment move journal (DR `INVENTORY_CONSIGNMENT` / CR `INVENTORY`). `issueKonsiTransfer` writes `KONSI_TRANSFER` adjustments without the `konsi-transfer-line-<lineId>` key that Max's `postJurnalPesananKonsi` and its sweep look for, and that writer posts once per ORDER, so it cannot express partial shipments. The fix is a per-`KonsiTransfer` source, and in the SAME change the team's konsi sell-through, shrinkage and return journals must credit `INVENTORY_CONSIGNMENT` — doing only one half drives one account negative. The SPG receipt (`lib/spg/kiriman.ts`, unique per order) and titipan stock (`lib/konsinyasi/stok-di-toko.ts`) still read APPROVED quantities. All of it waits on one owner answer: does the SPG receive konsi goods per shipment or once per order? `kaitPesananKonsiDisetujui` has no caller. Harmless while the GL cutover is unarmed.
+- A delivery date correction that would cross the GL cutover is refused (`CROSSES_GL_CUTOVER`), because every receivable engine keys on that comparison.
+- A return-charge invoice (MANUAL, `penandaBebanRetur` in its note) reads as booked on `AR_STORE` once a cutover is set, without checking that its NRI's return journal posted.
+- `packages/db/src/superseded-items.ts` still has MySQL-only backtick raw SQL.
+- Receivables paid in the office before the dual-column sync keep a stale stored `outstanding` until recomputed; screens recompute, but the invoice print reads the stored column.
+
 ## What NOT to do
 
 - Don't put EPIC-XX refs in commits, PRs, branch names, or shared specs.
