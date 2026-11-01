@@ -330,10 +330,30 @@ d("koreksiStokKonsi — kiriman konsinyasi lama yang belum keluar dari gudang", 
     await prisma.inventoryValue.updateMany({ where: { itemId: seededId(itemId) }, data: { qtyOnHand: 46, reservedQty: 6, totalValue: 1_840_000 } });
 
     const lap = await koreksiStokKonsi({ terapkan: true, sertakanTertimpa: true, ...cakupan() });
-    expect(lap.baris.map((b) => [b.keadaan, b.cadanganLama])).toEqual([["MENUNGGU_KIRIM", 6]]);
+    expect(lap.baris.map((b) => [b.keadaan, b.cadanganLama, b.sudahKeluar])).toEqual([["MENUNGGU_KIRIM", 6, 4]]);
+    // 4 pcs yang sudah berangkat terkirim dan sudah dipotong; hanya 6 sisanya yang menunggu.
+    expect(lap.perBarang[0]).toMatchObject({ menungguKirim: 6, terkirim: 4, sudahDipotong: 4, cadanganDilepas: 0, selisih: 0 });
     expect(lap.diterapkan).toMatchObject({ barisDipotong: 0 });
     expect(await gudang()).toEqual({ qty: 46, reserved: 6, nilai: 1_840_000 });
     expect(await cadanganBaris(orderId)).toMatchObject({ state: "RESERVED" });
+  });
+
+  it("pesanan yang dikirim sebagian lalu sisanya ditutup (cadangan RELEASED): yang berangkat sudah dipotong, sisanya dilepas", async () => {
+    await stokAwal([{ variantSku: null, qty: 50 }]);
+    const orderId = await pesananLama("", 10);
+    // Kirim 4 pcs, lalu tutup sisa 6 (seperti closeFieldSalesOrderRemainder → releaseFieldSalesOrder).
+    const rsv = await cadanganBaris(orderId);
+    await prisma.stockReservation.update({ where: { id: rsv.id }, data: { consumedQty: 4, state: "RELEASED", resolvedAt: new Date() } });
+    await prisma.fieldSalesOrderLine.update({ where: { id: rsv.fieldSalesLineId! }, data: { deliveredQty: 4, cancelledQty: 6 } });
+    await prisma.inventoryValue.updateMany({ where: { itemId: seededId(itemId) }, data: { qtyOnHand: 46, reservedQty: 0, totalValue: 1_840_000 } });
+
+    const lap = await koreksiStokKonsi({ terapkan: true, sertakanTertimpa: true, ...cakupan() });
+    expect(lap.baris.map((b) => [b.keadaan, b.cadanganLama, b.sudahKeluar])).toEqual([["CADANGAN_DILEPAS", 0, 4]]);
+    expect(lap.perBarang[0]).toMatchObject({ terkirim: 10, sudahDipotong: 4, cadanganDilepas: 6, menungguKirim: 0, selisih: 0 });
+    expect(lap.diterapkan).toMatchObject({ barisDipotong: 0 });
+    expect(await gudang()).toEqual({ qty: 46, reserved: 0, nilai: 1_840_000 });
+    expect(await cadanganBaris(orderId)).toMatchObject({ state: "RELEASED" });
+    expect(await prisma.stockAdjustment.count({ where: { itemId, source: "KONSI_TRANSFER" } })).toBe(0);
   });
 
   it("pesanan yang selesai dikirim (cadangan CONSUMED): sudah dipotong, tidak dipotong lagi", async () => {

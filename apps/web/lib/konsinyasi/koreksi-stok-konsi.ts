@@ -20,7 +20,9 @@ import { runSerializable } from "@/lib/db/tx-retry";
  * berikutnya ditolak karena cadangannya sudah habis, atau memotong dua kali untuk baris yang
  * sebagian sudah dikirim. Baris yang masih menunggu tampil sebagai MENUNGGU_KIRIM; yang sudah
  * selesai (cadangan CONSUMED, atau dipotong penulis lama berkunci `konsi-transfer-line-<baris>`)
- * sebagai SUDAH_DIPOTONG.
+ * sebagai SUDAH_DIPOTONG. Untuk baris yang dikirim sebagian, ringkasan per barang memisahkan pcs
+ * yang sudah berangkat (`consumedQty` cadangannya: terkirim dan sudah dipotong) dari sisanya
+ * (menunggu kirim, atau cadangan dilepas bila sisa pesanannya ditutup).
  *
  * Retur tidak dikoreksi: NRI yang sudah menambah stok memang benar menurut aturan baru (barang
  * kembali dari gudang lain). Hanya sisi kirim yang hilang.
@@ -73,6 +75,12 @@ export type BarisKoreksiKonsi = {
   keadaan: KeadaanBarisKoreksi;
   /** Pesanan yang cadangannya masih RESERVED: sisa yang masih ditahan untuk pengiriman (informasi). */
   cadanganLama: number;
+  /**
+   * Pcs baris ini yang sudah keluar dari gudang utama. SUDAH_DIPOTONG = seluruh qty. Pesanan yang
+   * menunggu kirim atau sisanya dilepas = yang sudah berangkat lewat pengiriman sebagian
+   * (`consumedQty` cadangannya). Selain itu 0.
+   */
+  sudahKeluar: number;
   /** Untuk TERTIMPA: sumber penetapan ulang angka gudang yang TERAKHIR sesudah tanggal kirim. */
   sumberHitungUlang: string | null;
 };
@@ -82,7 +90,10 @@ export type RingkasanBarangKoreksi = {
   sku: string;
   nama: string;
   variantSku: string;
-  /** Tanpa baris MENUNGGU_KIRIM: barang itu belum tentu berangkat. */
+  /**
+   * Tanpa pcs yang masih MENUNGGU_KIRIM: barang itu belum tentu berangkat. Pcs yang sudah berangkat
+   * dari pesanan yang dikirim sebagian ikut dihitung (sekaligus sebagai sudah dipotong).
+   */
   terkirim: number;
   sudahDipotong: number;
   /** terkirim − sudah dipotong − cadangan dilepas (sisa yang belum diselesaikan). */
@@ -90,9 +101,16 @@ export type RingkasanBarangKoreksi = {
   akanDipotong: number;
   tertimpa: number;
   variantTidakPasti: number;
-  /** Baris pesanan yang cadangannya sudah dilepas tanpa memotong (tidak masuk selisih). */
+  /**
+   * Pcs pesanan yang cadangannya dilepas tanpa memotong (tutup sisa pesanan, atau koreksi lama
+   * sesudah opname). Ikut terkirim, tidak masuk selisih. Pcs yang sudah berangkat sebelum sisanya
+   * dilepas masuk sudah dipotong, bukan ke sini.
+   */
   cadanganDilepas: number;
-  /** Baris pesanan MENUNGGU_KIRIM (pcs): diurus alur pengiriman, tidak masuk terkirim maupun selisih. */
+  /**
+   * Pcs pesanan MENUNGGU_KIRIM yang belum berangkat: diurus alur pengiriman, tidak masuk terkirim
+   * maupun selisih.
+   */
   menungguKirim: number;
   /**
    * Cadangan RESERVED milik baris TERTIMPA. Selalu 0: hanya kiriman yang bisa TERTIMPA, dan kiriman
@@ -191,14 +209,20 @@ export async function koreksiStokKonsi(opsi: {
   const idBarisKiriman = kiriman.flatMap((k) => k.items.map((i) => i.id));
   const sudah = await kunciYangAda([...idBarisPesanan.map(konsiTransferKeyForLine), ...idBarisKiriman.map(kunciKiriman)]);
 
-  const cadangan = new Map<string, { state: string; sisa: number }>();
+  const cadangan = new Map<string, { state: string; sisa: number; dipakai: number }>();
   for (const k of potong(idBarisPesanan)) {
     const rows = await prisma.stockReservation.findMany({
       where: { fieldSalesLineId: { in: k } },
       select: { fieldSalesLineId: true, state: true, qty: true, consumedQty: true },
     });
     for (const r of rows) {
-      if (r.fieldSalesLineId) cadangan.set(r.fieldSalesLineId, { state: r.state, sisa: Number(r.qty) - Number(r.consumedQty) });
+      if (r.fieldSalesLineId) {
+        cadangan.set(r.fieldSalesLineId, {
+          state: r.state,
+          sisa: Number(r.qty) - Number(r.consumedQty),
+          dipakai: Number(r.consumedQty),
+        });
+      }
     }
   }
 
@@ -249,9 +273,11 @@ export async function koreksiStokKonsi(opsi: {
       const berkunci = sudah.has(konsiTransferKeyForLine(l.id));
       // Selesai: dipotong penulis lama (berkunci), atau cadangannya habis dipakai pengiriman
       // (CONSUMED). RELEASED tanpa kunci = sisa yang dilepas tanpa memotong. Selain itu — cadangan
-      // masih RESERVED, atau tidak ada sama sekali — barisnya milik alur pengiriman.
-      const keadaan: KeadaanBarisKoreksi =
-        berkunci || c?.state === "CONSUMED" ? "SUDAH_DIPOTONG" : c?.state === "RELEASED" ? "CADANGAN_DILEPAS" : "MENUNGGU_KIRIM";
+      // masih RESERVED, atau tidak ada sama sekali — barisnya milik alur pengiriman. Pengiriman
+      // sebagian memakai cadangan tanpa mengubah keadaannya, jadi yang sudah berangkat dibaca dari
+      // `consumedQty`-nya, bukan dari keadaan.
+      const selesai = berkunci || c?.state === "CONSUMED";
+      const keadaan: KeadaanBarisKoreksi = selesai ? "SUDAH_DIPOTONG" : c?.state === "RELEASED" ? "CADANGAN_DILEPAS" : "MENUNGGU_KIRIM";
       baris.push({
         sumber: "PESANAN",
         dokumenId: o.id,
@@ -264,6 +290,7 @@ export async function koreksiStokKonsi(opsi: {
         tanggal,
         keadaan,
         cadanganLama: c && c.state === "RESERVED" ? c.sisa : 0,
+        sudahKeluar: selesai ? l.qty : Math.min(l.qty, c?.dipakai ?? 0),
         sumberHitungUlang: hitungUlangSesudah(l.itemId, tanggal),
       });
     }
@@ -291,6 +318,7 @@ export async function koreksiStokKonsi(opsi: {
         tanggal: k.shippedAt,
         keadaan: sudahDipotong ? "SUDAH_DIPOTONG" : tidakPasti ? "VARIAN_TIDAK_PASTI" : keadaanKiriman(itemId, k.shippedAt),
         cadanganLama: 0,
+        sudahKeluar: sudahDipotong ? i.qty : 0,
         sumberHitungUlang: hitungUlangSesudah(itemId, k.shippedAt),
       });
     }
@@ -347,14 +375,20 @@ export async function koreksiStokKonsi(opsi: {
       };
       ringkas.set(k, r);
     }
+    // Pesanan yang dikirim sebagian: pcs yang sudah berangkat terkirim DAN sudah dipotong; hanya
+    // sisanya yang menunggu kirim atau dilepas. Selisihnya tetap 0.
     if (b.keadaan === "MENUNGGU_KIRIM") {
-      r.menungguKirim += b.qty;
+      r.terkirim += b.sudahKeluar;
+      r.sudahDipotong += b.sudahKeluar;
+      r.menungguKirim += b.qty - b.sudahKeluar;
       continue;
     }
     r.terkirim += b.qty;
     if (b.keadaan === "SUDAH_DIPOTONG") r.sudahDipotong += b.qty;
-    else if (b.keadaan === "CADANGAN_DILEPAS") r.cadanganDilepas += b.qty;
-    else r.selisih += b.qty;
+    else if (b.keadaan === "CADANGAN_DILEPAS") {
+      r.sudahDipotong += b.sudahKeluar;
+      r.cadanganDilepas += b.qty - b.sudahKeluar;
+    } else r.selisih += b.qty;
     if (b.keadaan === "AKAN_DIPOTONG") r.akanDipotong += b.qty;
     if (b.keadaan === "TERTIMPA") {
       r.tertimpa += b.qty;

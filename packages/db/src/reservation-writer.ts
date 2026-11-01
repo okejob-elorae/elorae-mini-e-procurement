@@ -64,8 +64,12 @@ function hasTx(client: AnyClient): client is PrismaClient {
 }
 
 /**
- * Picks the row EVERY reserve in this file lands on, Jubelio and field sales alike, and is the
- * fallback behind resolveReservedInventory for every consume and release.
+ * Picks the row every FIELD-SALES reserve in this file lands on (reserveFieldSalesOrder,
+ * reserveKonsiFieldSalesOrder) and the row the konsi transfer in pindahkanSatuBaris cuts, and is
+ * the fallback behind resolveReservedInventory for every consume and release, Jubelio included.
+ * Jubelio reserves (reserveOrder) go through barisStokPesanan instead, which must pick the same
+ * variantless row ("" first, then the lowest-id null) so that a Jubelio consume or release falling
+ * back here stays on the row it reserved against. Changing either rule means changing both.
  * Variantless rows may key on null OR "": prefers the exact "" row, then null. A bare OR
  * findFirst can pick the sibling and orphan reservedQty. NULLs are distinct under the unique
  * index, so two null rows can exist; the id tie-break keeps every reserve on one row.
@@ -111,6 +115,8 @@ export async function resolveReservedInventory(
  * per-varian lain, varian itu memang tidak tercatat dan tetap ditolak.
  * Tidak pernah membuat baris. `kunci` = variantSku yang dicatat di
  * StockReservation, jadi kirim dan batal mengenai baris yang sama persis.
+ * Untuk kunci "" pilihannya HARUS sama dengan `findReservationInventory`: cadangan
+ * tanpa `inventoryValueId` (atau yang barisnya hilang) jatuh ke sana saat kirim/batal.
  * Retur marketplace yang diterima (`acceptReturnItem`) memakai aturan yang sama,
  * supaya barang kembali ke baris tempat ia dijual.
  */
