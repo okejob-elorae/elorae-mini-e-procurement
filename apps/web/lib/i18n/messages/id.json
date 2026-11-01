@@ -9522,7 +9522,8 @@
         "RESERVATION_MISMATCH": "Cadangan stok order ini tidak lagi sesuai dengan pengirimannya: hilang, sudah dilepas, sudah terpakai, atau lebih kecil dari pengiriman ini. Kemungkinan besar ini akibat pembaruan sistem yang berjalan saat order disetujui. Admin harus memperbaiki order ini sebelum bisa dikirim.",
         "INDEN_BELUM_RILIS": "Pesanan pre-order ini belum bisa dikirim: barangnya belum datang. Rilis dulu pre-order-nya di halaman Pre-order (Inden).",
         "NOMOR_PIUTANG_DIPAKAI": "Pengiriman tidak dicatat: beberapa nomor nota berikutnya sudah dipakai piutang lain (impor atau faktur manual), jadi nota tidak bisa menjadi piutang. Hubungi admin sistem untuk memeriksa nomor piutang yang bentrok.",
-        "PERIOD_CLOSED": "Jurnal nota ini, atau tanggal barunya, jatuh di bulan yang sudah ditutup, jadi tanggalnya tidak bisa dikoreksi. Buka kembali bulan itu dahulu, lalu coba lagi."
+        "PERIOD_CLOSED": "Jurnal nota ini, atau tanggal barunya, jatuh di bulan yang sudah ditutup, jadi tanggalnya tidak bisa dikoreksi. Buka kembali bulan itu dahulu, lalu coba lagi.",
+        "CROSSES_GL_CUTOVER": "Tanggal baru memindahkan nota ini ke sisi lain tanggal mulai buku besar, jadi piutangnya akan terhitung dua kali. Pilih tanggal di sisi yang sama dengan tanggal lama, atau minta keuangan menangani koreksinya."
       },
       "penagihan": {
         "piutangSisa": "Piutang: sisa {nilai}",

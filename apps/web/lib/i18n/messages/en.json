@@ -9522,7 +9522,8 @@
         "RESERVATION_MISMATCH": "This order's stock reservation no longer matches its deliveries: it is missing, released, already used up, or smaller than this delivery. This most likely comes from a system update that ran while the order was being approved. An admin must repair the order before it can be delivered.",
         "INDEN_BELUM_RILIS": "This pre-order cannot be delivered yet: the goods have not arrived. Release the pre-order first on the Pre-orders (Inden) page.",
         "NOMOR_PIUTANG_DIPAKAI": "Delivery not recorded: the next nota numbers are already used by other receivables (imported or entered manually), so the nota cannot become a receivable. Ask a system administrator to check the clashing receivable numbers.",
-        "PERIOD_CLOSED": "This nota's journal, or its new date, falls in a closed month, so its dates can't be corrected. Reopen that month first, then try again."
+        "PERIOD_CLOSED": "This nota's journal, or its new date, falls in a closed month, so its dates can't be corrected. Reopen that month first, then try again.",
+        "CROSSES_GL_CUTOVER": "The new date moves this nota to the other side of the ledger start date, which would count its receivable twice. Pick a date on the same side as the old one, or ask finance to handle the correction."
       },
       "penagihan": {
         "piutangSisa": "Receivable: {nilai} outstanding",

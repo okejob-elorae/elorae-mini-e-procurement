@@ -23,6 +23,7 @@ import { kaitNotaTerbit } from "@/lib/finance/lapangan/kait";
 import { postArJournalSafely } from "@/lib/finance/ar/post-ar-journal-safely";
 import { postFieldDeliveryRevenueJournal, postFieldDeliveryCogsJournal } from "@/lib/finance/ar/delivery-journal";
 import { isFieldDeliveryJournalRetryable } from "@/lib/finance/ar/journal-pending";
+import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { logPrint } from "./audit";
 
 const AUDIT_REASON_MAX_LENGTH = 191;
@@ -45,6 +46,8 @@ export type DeliveryActionResult =
         | "RECEIVABLE_HAS_PAYMENTS"
         /** Koreksi tanggal nota yang jurnalnya (atau tanggal barunya) jatuh di bulan yang sudah ditutup. */
         | "PERIOD_CLOSED"
+        /** Koreksi tanggal nota yang memindahkannya ke sisi lain tanggal mulai buku besar. */
+        | "CROSSES_GL_CUTOVER"
         | "SHIPMENT_IN_FLIGHT"
         | "REPLAY_MISMATCH"
         /** Pesanan pre-order yang jendelanya belum dirilis: stoknya belum dicadangkan. */
@@ -334,18 +337,36 @@ export async function updateDeliveryDatesAction(input: {
     return { ok: false, reason: "INVALID_DATES" };
   }
 
+  /* Read once, outside the transaction: the cutover is a hand-set setting, not part of the row being corrected. */
+  const cutover = await readGlCutover();
+
   const outcome = await runSerializable<
     | { kind: "OK"; orderId: string }
     | { kind: "NOT_FOUND" }
     | { kind: "CONFLICT" }
     | { kind: "HAS_PAYMENTS" }
     | { kind: "PERIOD_CLOSED" }
+    | { kind: "CROSSES_GL_CUTOVER" }
   >(async (tx) => {
     const before = await tx.fieldSalesDelivery.findUnique({
       where: { id: input.deliveryId },
       select: { id: true, orderId: true, invoiceDate: true, dueDate: true },
     });
     if (!before) return { kind: "NOT_FOUND" };
+
+    /**
+     * REFUSE a correction that moves the nota to the other side of the GL cutover. Every engine
+     * that books this receivable keys on that comparison: the nota journal posts only for
+     * `invoiceDate >= cutover`, the opening balance (`hitungPiutangTokoAwal`) carries every
+     * receivable dated before it, and a completed old-pair half picks AR_STORE or AR by it. Moving
+     * a pre-cutover nota forward leaves its sisa in the posted opening AND lets the nota journal
+     * post it a second time; moving a journaled nota back leaves its journal standing while the
+     * next opening re-post counts it again. Nothing reconciles either afterwards, so this fails
+     * closed like the payment and closed-period guards beside it, before any write.
+     */
+    if (cutover && (before.invoiceDate.getTime() >= cutover.getTime()) !== (parsedInvoiceDate.getTime() >= cutover.getTime())) {
+      return { kind: "CROSSES_GL_CUTOVER" };
+    }
 
     /**
      * REFUSE once live money has been applied: a payment receipt (`paidAmount`) or a verified BKM
@@ -483,6 +504,7 @@ export async function updateDeliveryDatesAction(input: {
   if (outcome.kind === "CONFLICT") return { ok: false, reason: "CONFLICT" };
   if (outcome.kind === "HAS_PAYMENTS") return { ok: false, reason: "RECEIVABLE_HAS_PAYMENTS" };
   if (outcome.kind === "PERIOD_CLOSED") return { ok: false, reason: "PERIOD_CLOSED" };
+  if (outcome.kind === "CROSSES_GL_CUTOVER") return { ok: false, reason: "CROSSES_GL_CUTOVER" };
 
   revalidatePath("/backoffice/field-sales-orders");
   revalidatePath(`/backoffice/field-sales-orders/${outcome.orderId}`);

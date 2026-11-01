@@ -12,6 +12,7 @@ const {
   adminNotificationCreateMock,
   journalPostStub,
   notaHook,
+  cutoverStub,
 } = vi.hoisted(() => ({
   mockAuth: vi.fn(),
   staleSnapshot: { value: null as { invoiceDate: Date; dueDate: Date } | null },
@@ -30,7 +31,18 @@ const {
   journalPostStub: { active: false, calls: [] as Array<{ kind: string; docId: string }> },
   /* Records every delivery handed to the nota journal hook; the hook itself is off under vitest. */
   notaHook: { calls: [] as string[] },
+  /* A GL cutover for one test, without writing the real `finance.glCutoverDate` row onto the shared
+   * bed — the cron's own arming switch. `undefined` (the default) reads the real setting. */
+  cutoverStub: { value: undefined as Date | null | undefined },
 }));
+
+vi.mock("@/lib/finance/sales/sweep", async (importActual) => {
+  const actual = await importActual<typeof import("@/lib/finance/sales/sweep")>();
+  return {
+    ...actual,
+    readGlCutover: async () => (cutoverStub.value === undefined ? actual.readGlCutover() : cutoverStub.value),
+  };
+});
 vi.mock("@/lib/auth", () => ({ auth: mockAuth }));
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }));
 vi.mock("@/lib/notifications/admin-fanout", () => ({ fanOutAdminNotification: mockFanOut }));
@@ -326,6 +338,42 @@ d("updateDeliveryDatesAction (test bed only)", () => {
     expect(result).toEqual({ ok: false, reason: "INVALID_REQUEST" });
     expect(await currentDates()).toMatchObject({ dueDate: DUE.toISOString() });
     expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+  });
+
+  it("refuses a correction that moves the nota across the GL cutover, in either direction", async () => {
+    cutoverStub.value = new Date("2026-04-15T00:00:00.000+07:00");
+    try {
+      const forward = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-04-20",
+        dueDate: "2026-05-20",
+        reason: "moves past the cutover",
+      });
+      expect(forward).toEqual({ ok: false, reason: "CROSSES_GL_CUTOVER" });
+      expect(await currentDates()).toMatchObject({ invoiceDate: INVOICE.toISOString(), dueDate: DUE.toISOString() });
+      expect(await prisma.auditLog.count({ where: { entityId: seededId(deliveryId) } })).toBe(0);
+
+      // Same side of the cutover is still a normal correction.
+      const sameSide = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-04-10",
+        dueDate: "2026-05-10",
+        reason: "stays before the cutover",
+      });
+      expect(sameSide).toEqual({ ok: true });
+
+      cutoverStub.value = new Date("2026-04-05T00:00:00.000+07:00");
+      const backward = await updateDeliveryDatesAction({
+        deliveryId,
+        invoiceDate: "2026-04-01",
+        dueDate: "2026-05-01",
+        reason: "moves back before the cutover",
+      });
+      expect(backward).toEqual({ ok: false, reason: "CROSSES_GL_CUTOVER" });
+      expect(await currentDates()).toMatchObject({ invoiceDate: new Date("2026-04-10T00:00:00.000+07:00").toISOString() });
+    } finally {
+      cutoverStub.value = undefined;
+    }
   });
 
   it("accepts a reason of exactly 191 characters", async () => {
