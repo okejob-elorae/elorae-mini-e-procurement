@@ -15,6 +15,22 @@ import {
 import { bacaInfoProduk, periksaInfoProduk, type InfoProdukBarang } from "./info-produk";
 import { bacaKgPerRoll, periksaKgPerRoll } from "./kg-per-roll";
 import { bacaKomisiPerPcs, periksaKomisiPerPcs } from "./komisi-spg";
+import { MARGIN_MAKS } from "./rekomendasi-harga";
+
+/** Batas kolom `Item.additionalCost` (Decimal(15,2)). */
+const BIAYA_TAMBAHAN_MAKS = 9_999_999_999_999.99;
+
+/**
+ * Margin / biaya tambahan dari kiriman formulir: tidak ada = tidak disentuh
+ * (`undefined`), kosong = dikosongkan (`null`), bukan angka = NaN (ditolak
+ * `validateItemPayload`, bukan diam-diam dijadikan 0).
+ */
+function bacaAngkaRekomendasi(val: unknown): number | null | undefined {
+  if (val === undefined) return undefined;
+  if (val === null || (typeof val === 'string' && val.trim() === '')) return null;
+  const n = typeof val === 'number' ? val : typeof val === 'string' ? Number(val.trim().replace(',', '.')) : Number.NaN;
+  return Number.isFinite(n) ? n : Number.NaN;
+}
 
 export type ItemFormData = {
   sku?: string;
@@ -27,10 +43,15 @@ export type ItemFormData = {
   variants?: Array<Record<string, string>>;
   reorderPoint?: number;
   overReceiveThreshold?: number;
-  /** Harga jual — selalu diisi manual pemilik; sistem tidak pernah menghitungnya. */
+  /** Harga jual — selalu diketik pengguna; sistem tidak pernah menghitung atau menimpanya. */
   sellingPrice?: number;
-  targetMarginPercent?: number;
-  additionalCost?: number;
+  /**
+   * Target margin (%) dan biaya tambahan per pcs (barang jadi) — HANYA bahan
+   * rekomendasi harga (`lib/items/rekomendasi-harga.ts`); menyimpannya tidak
+   * pernah mengubah harga jual. `undefined` = tidak disentuh, `null` = dikosongkan.
+   */
+  targetMarginPercent?: number | null;
+  additionalCost?: number | null;
   /** Optional Pantone of a colour-specific material; finished goods carry colour per variant instead. */
   pantoneTcx?: string | null;
   /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). `undefined` = tidak disentuh. */
@@ -69,6 +90,12 @@ function validateItemPayload(p: ReturnType<typeof normalizeItemPayload>): assert
   }
   if (p.sellingPrice != null && (Number.isNaN(p.sellingPrice) || p.sellingPrice < 0)) {
     throw new Error('sellingPrice: Must be 0 or greater');
+  }
+  if (p.targetMarginPercent != null && !(p.targetMarginPercent >= 0 && p.targetMarginPercent <= MARGIN_MAKS)) {
+    throw new Error("targetMarginPercent: Target margin harus 0 sampai 999,99");
+  }
+  if (p.additionalCost != null && !(p.additionalCost >= 0 && p.additionalCost <= BIAYA_TAMBAHAN_MAKS)) {
+    throw new Error("additionalCost: Biaya tambahan harus 0 atau lebih");
   }
   const infoProduk = periksaInfoProduk(p);
   if (infoProduk) throw new Error(infoProduk);
@@ -140,8 +167,9 @@ export function normalizeItemPayload(data: unknown): ItemFormData {
       sellingPriceNum !== undefined && !Number.isNaN(sellingPriceNum) && sellingPriceNum >= 0
         ? sellingPriceNum
         : undefined,
-    // Margin target & biaya tambahan barang tidak lagi dibaca (harga jual manual):
-    // kiriman klien lama yang masih membawanya diabaikan, kolomnya tidak disentuh.
+    // Bahan rekomendasi harga saja (barang jadi); tidak pernah menggeser harga jual.
+    targetMarginPercent: raw.type === 'FINISHED_GOOD' ? bacaAngkaRekomendasi(raw.targetMarginPercent) : undefined,
+    additionalCost: raw.type === 'FINISHED_GOOD' ? bacaAngkaRekomendasi(raw.additionalCost) : undefined,
     sku: raw.sku != null ? String(raw.sku) : undefined,
     pantoneTcx:
       raw.type !== 'FINISHED_GOOD' && typeof raw.pantoneTcx === 'string' && raw.pantoneTcx.trim()

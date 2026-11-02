@@ -1,9 +1,8 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { ItemType, prisma, recalcItemSellingPrice } from '@elorae/db';
+import { ItemType, prisma } from '@elorae/db';
 import { auth } from '@/lib/auth';
-import { apiFetch } from '@/lib/internal-api';
 import { generateSKU as generateSKUFromLib } from '@/lib/sku-generator';
 import { PERMISSIONS, requirePermission } from '@/lib/rbac';
 import { notifyItemCreated } from '@/lib/notifications/events';
@@ -150,61 +149,28 @@ export async function updateItem(id: string, data: ItemFormData): Promise<ItemSa
     throw error;
   }
 
-  if (txResult.outboxRowId) {
-    void apiFetch("POST", `/jubelio/outbox/enqueue/${txResult.outboxRowId}`, {
-      userId: session.user.id,
-    }).catch(() => {});
-  } else {
-    enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
-  }
+  // A typed selling price reaches Jubelio through the ordinary edit push (sellingPrice is in its diff).
+  enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
 
   revalidatePath('/backoffice/items');
   revalidatePath(`/backoffice/items/${id}`);
   return { success: true, item: txResult.updated.serialized };
 }
 
+/*
+ * The selling price changes ONLY because someone typed it (owner decision 2026-11-01): target
+ * margin and additional cost are saved as inputs for the price recommendation on the item form
+ * and never re-price the item. Every typed change is logged MANUAL_EDIT, whatever else changed.
+ */
 async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
   return prisma.$transaction(async (tx) => {
-    const beforeItem = await tx.item.findUnique({
-      where: { id },
-      select: {
-        targetMarginPercent: true,
-        additionalCost: true,
-        sellingPrice: true,
-      },
-    });
-    if (!beforeItem) throw new Error("Item not found");
     // Items with many variants/consumption rules push updateItemLib past Prisma's
     // 5s default; helper adds a few more ops on top. 15s gives headroom.
-
     const updated = await updateItemLib(tx, id, data, { olehUserId: userId });
 
-    const toNumOrNull = (v: unknown): number | null => (v == null ? null : Number(v));
-    const beforeMargin = toNumOrNull(beforeItem.targetMarginPercent);
-    const afterMargin = toNumOrNull(data.targetMarginPercent);
-    const beforeExtras = toNumOrNull(beforeItem.additionalCost);
-    const afterExtras = toNumOrNull(data.additionalCost);
-    const beforeSelling = toNumOrNull(beforeItem.sellingPrice);
-    const afterSelling = toNumOrNull(data.sellingPrice);
-
-    // The item form no longer sends margin or extra cost (selling prices are typed by hand): an
-    // absent field is "unchanged", never "cleared", or every save would re-price the item.
-    const marginChanged = data.targetMarginPercent !== undefined && beforeMargin !== afterMargin;
-    const extrasChanged = data.additionalCost !== undefined && beforeExtras !== afterExtras;
-    const sellingPriceChanged = beforeSelling !== afterSelling;
-
-    let outboxRowId: string | null = null;
-
-    if (marginChanged || extrasChanged) {
-      const recalc = await recalcItemSellingPrice(tx, {
-        itemId: id,
-        trigger: "MARGIN_CHANGE",
-        changedById: userId,
-      });
-      if (recalc.applied) {
-        outboxRowId = recalc.outboxRowId;
-      }
-    } else if (sellingPriceChanged) {
+    const beforeSelling = updated.before.sellingPrice;
+    const afterSelling = updated.after.sellingPrice;
+    if (beforeSelling !== afterSelling) {
       await tx.itemPriceChangeLog.create({
         data: {
           itemId: id,
@@ -220,7 +186,7 @@ async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
         },
       });
     }
-    return { updated, outboxRowId };
+    return { updated };
   }, { timeout: 15000 });
 }
 

@@ -2,8 +2,12 @@ import { Prisma, prisma, transferKonsiStock, type KonsiTransferShortLine } from 
 import { runSerializable } from '@/lib/db/tx-retry';
 import { denganNomorUnik } from '@/lib/receivables/nomor';
 import { bentrokKunciKiriman } from '@/lib/receivables/idempoten';
-import { bagiKomisi } from './aturan';
 import { catatJejak, JEJAK, type IsiJejak } from '@/lib/receivables/jejak';
+import { JENIS_KABAR, kabariPengguna, type Kabar } from "@/lib/notifications/kabar-pengguna";
+import { formatIDR } from "@/lib/sales-orders/format";
+import { commissionRates, spgSaleMovements } from "@/lib/spg-commission/laporan-queries";
+import { commissionPerSpg, konsiReportKey, payoutMonth, salesMonthLabelId, salesMonthNoteId, type SalesReport } from "@/lib/spg-commission/payout";
+import { resolveRate } from "@/lib/spg-commission/resolve-rate";
 import { endOfTodayJakarta, formatDateOnlyJakarta } from "@/lib/date-only";
 import { keSen } from "./promo-elorae";
 import { ringkasanBayarToko, totalTagihanBeku } from "./queries";
@@ -541,11 +545,15 @@ export async function catatLaporan(input: {
 
 /**
  * KEPUTUSAN SEMENTARA PEMILIK (2026-10-06, "ikuti usulan Claude dulu, nanti
- * saya tindak lanjuti"): siapa yang dibagi komisi saat sebuah siklus dikunci
- * ULANG (sesudah buka kunci).
- * - `PESERTA_KUNCI_PERTAMA` — peserta kunci pertama (yang sudah punya baris
- *   gaji). SPG yang pindah toko sesudahnya tetap memegang barisnya, dan SPG
- *   yang baru ditugaskan tidak ikut dibagi — ia tidak bekerja di bulan itu.
+ * saya tindak lanjuti"): siapa yang mendapat baris gaji (gaji pokok) saat sebuah
+ * siklus dikunci ULANG (sesudah buka kunci). Komisinya sendiri sejak 2026-11-01
+ * selalu milik yang menjual (tarif kategori × penjualan masing-masing SPG), apa
+ * pun pilihan di bawah.
+ * - `PESERTA_KUNCI_PERTAMA` — peserta kunci pertama (baris gaji yang bertanda
+ *   `salaried`). SPG yang pindah toko sesudahnya tetap memegang barisnya, dan
+ *   SPG yang baru ditugaskan tidak ikut dibagi — ia tidak bekerja di bulan itu.
+ *   Penjual dari toko lain (baris `salaried = false`) tidak pernah menjadi
+ *   peserta karena dikunci ulang.
  * - `SPG_SAAT_INI` — aturan lama: SPG yang bertugas saat mengunci ulang; baris
  *   SPG yang sudah pindah dan belum dibayar dihapus.
  */
@@ -560,6 +568,11 @@ export const PESERTA_KOMISI_KUNCI_ULANG: 'PESERTA_KUNCI_PERTAMA' | 'SPG_SAAT_INI
  *
  * Menuntut kedua laporan sudah masuk: mengunci dengan satu laporan berarti
  * mengunci angka yang belum pernah dibandingkan dengan apa pun.
+ *
+ * Mengunci juga langkah kantor MENGECEK laporan penjualan SPG siklus ini: komisi
+ * SPG-nya (tarif per kategori × potong yang dijual masing-masing SPG) dibayar di
+ * bulan WIB saat dikunci, dengan catatan bulan penjualan siklusnya. Setiap SPG
+ * yang mendapat baris dikabari sesudah transaksi.
  */
 export async function kunciAngka(input: {
   cycleId: string;
@@ -573,7 +586,10 @@ export async function kunciAngka(input: {
     return { ok: false, alasan: 'NILAI_TIDAK_VALID' };
   }
 
-  return runSerializable(async (tx) => {
+  let kabar: { userId: string; kabar: Kabar }[] = [];
+  const hasil = await runSerializable(async (tx) => {
+    // Callback ini bisa diulang: kabar dari percobaan yang gagal tidak boleh ikut terkirim.
+    kabar = [];
     const siklus = await tx.consignmentCycle.findUnique({
       where: { id: input.cycleId },
       select: {
@@ -586,9 +602,9 @@ export async function kunciAngka(input: {
         promoBorneByElorae: true,
         lossChargedToStore: true,
         vatApplied: true,
-        store: { select: { consignmentVat: true } },
+        store: { select: { consignmentVat: true, name: true } },
         reports: { select: { source: true } },
-        commissions: { select: { id: true, spgUserId: true, total: true, deduction: true, paidAt: true } },
+        commissions: { select: { id: true, spgUserId: true, total: true, deduction: true, paidAt: true, salaried: true } },
       },
     });
     if (!siklus) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
@@ -598,18 +614,41 @@ export async function kunciAngka(input: {
       return { ok: false as const, alasan: 'LAPORAN_BELUM_LENGKAP' as const };
     }
 
-    // Tarif komisi diambil dari master barang saat mengunci, lalu DISALIN ke
-    // baris resmi. Kalau tarifnya diubah bulan depan, komisi bulan ini tidak
-    // ikut berubah — yang sudah dibayarkan harus tetap bisa dijelaskan.
+    /*
+     * Komisi SPG — satu hitungan untuk semua SPG (keputusan pemilik 2026-11-01,
+     * `lib/spg-commission/payout.ts`): tarif per KATEGORI barang yang berlaku di
+     * bulan penjualan siklus ini (Pengaturan → Komisi SPG) × potong yang dijual
+     * masing-masing SPG di kasir, paling banyak angka resmi barang itu. Bukan
+     * tarif di master barang, dan tidak dibagi rata. Mengunci = kantor mengecek
+     * laporannya, jadi bulan kunci = bulan pembayaran komisinya.
+     *
+     * Tarif yang dipakai tiap barang DISALIN ke baris resmi (`commissionPerPcs`)
+     * hanya sebagai riwayat — tidak ada angka yang dihitung dari kolom itu.
+     */
+    const waktuKunci = new Date();
+    const bulanJual = `${siklus.periodYear}-${String(siklus.periodMonth).padStart(2, "0")}`;
     const idBarang = baris.map((b) => b.itemId).filter((x): x is string => Boolean(x));
+    const [tarifKategori, gerakSpg, kategoriBarang] = await Promise.all([
+      commissionRates(tx),
+      spgSaleMovements(tx, [siklus.storeId], bulanJual),
+      idBarang.length > 0
+        ? tx.item.findMany({ where: { id: { in: idBarang } }, select: { id: true, categoryId: true } })
+        : Promise.resolve([] as { id: string; categoryId: string | null }[]),
+    ]);
     const tarif = new Map<string, number>();
-    if (idBarang.length > 0) {
-      const rows = await tx.item.findMany({
-        where: { id: { in: idBarang } },
-        select: { id: true, commissionPerPcs: true },
-      });
-      for (const r of rows) tarif.set(r.id, angka(r.commissionPerPcs));
+    for (const r of kategoriBarang) {
+      tarif.set(r.id, r.categoryId ? (resolveRate(tarifKategori, r.categoryId, bulanJual)?.amountPerPiece ?? 0) : 0);
     }
+    const laporanKomisi: SalesReport = {
+      key: konsiReportKey(siklus.id),
+      kind: "KONSI",
+      storeId: siklus.storeId,
+      salesMonth: bulanJual,
+      checkedAt: waktuKunci,
+      official: baris.flatMap((b) => (b.itemId ? [{ itemId: b.itemId, qty: b.qty }] : [])),
+      movements: gerakSpg.get(siklus.storeId) ?? [],
+    };
+    const komisiPerSpg = new Map(commissionPerSpg(laporanKomisi, tarifKategori).map((k) => [k.salesmanId, k]));
 
     await tx.consignmentSold.deleteMany({ where: { cycleId: siklus.id } });
     await tx.consignmentSold.createMany({
@@ -638,30 +677,49 @@ export async function kunciAngka(input: {
     const idBertugas = new Set(bertugas.map((s) => s.id));
 
     /*
-     * Siapa yang dibagi komisinya. Kunci pertama: SPG yang bertugas. Kunci
-     * ulang (sudah ada baris gaji): `PESERTA_KOMISI_KUNCI_ULANG`.
+     * Siapa yang mendapat baris gaji (gaji pokok). Kunci pertama: SPG yang
+     * bertugas. Kunci ulang (sudah ada baris gaji): `PESERTA_KOMISI_KUNCI_ULANG`
+     * — dengan `PESERTA_KUNCI_PERTAMA`, hanya baris yang bertanda `salaried`.
+     * Penjual bulan itu yang bukan peserta mendapat baris hanya kalau komisinya
+     * lebih dari nol — komisinya milik yang menjual — dengan gaji pokok nol dan
+     * `salaried = false`, supaya kunci ulang tidak pernah memberinya gaji pokok.
+     * Baris Rp 0 untuk orang dari toko lain tidak dibuat: ia tidak membayar apa
+     * pun, dan hanya menahan tahap "bayar SPG" siklus yang tokonya tanpa SPG.
      */
     const pesertaLama = PESERTA_KOMISI_KUNCI_ULANG === 'PESERTA_KUNCI_PERTAMA' && siklus.commissions.length > 0;
-    let spg: { id: string }[] = bertugas;
+    let peserta: { id: string }[] = bertugas;
     if (pesertaLama) {
-      const idLama = [...new Set(siklus.commissions.map((k) => k.spgUserId))];
-      const orang = await tx.user.findMany({ where: { id: { in: idLama } }, orderBy: { name: 'asc' }, select: { id: true } });
+      const idLama = [...new Set(siklus.commissions.filter((k) => k.salaried).map((k) => k.spgUserId))];
+      const orang = idLama.length
+        ? await tx.user.findMany({ where: { id: { in: idLama } }, orderBy: { name: 'asc' }, select: { id: true } })
+        : [];
       const dikenal = new Set(orang.map((o) => o.id));
       // Baris yang orangnya sudah tidak ada tetap ikut — ia tetap baris gaji siklus ini.
-      spg = [...orang, ...idLama.filter((id) => !dikenal.has(id)).map((id) => ({ id }))];
+      peserta = [...orang, ...idLama.filter((id) => !dikenal.has(id)).map((id) => ({ id }))];
     }
+    const idPeserta = new Set(peserta.map((s) => s.id));
+    const penjualLain = [...komisiPerSpg.values()]
+      .filter((k) => k.amount > 0 && !idPeserta.has(k.salesmanId))
+      .map((k) => k.salesmanId)
+      .sort();
+    const spg: { id: string; pokok: boolean }[] = [
+      ...peserta.map((s) => ({ id: s.id, pokok: true })),
+      ...penjualLain.map((id) => ({ id, pokok: false })),
+    ];
     const idSpg = new Set(spg.map((s) => s.id));
-    // Untuk jejak: baris SPG yang sudah tidak bertugas di sini, dan SPG bertugas yang tidak ikut.
+    // Untuk jejak: baris peserta yang orangnya sudah tidak bertugas di sini, dan SPG bertugas yang tidak bergaji pokok.
     const komisiSpgPindah = siklus.commissions
-      .filter((k) => idSpg.has(k.spgUserId) && !idBertugas.has(k.spgUserId))
+      .filter((k) => idPeserta.has(k.spgUserId) && !idBertugas.has(k.spgUserId))
       .map((k) => ({ id: k.id, spgUserId: k.spgUserId, total: angka(k.total) }));
-    const spgBaruTidakIkut = bertugas.filter((b) => !idSpg.has(b.id)).map((b) => b.id);
+    const spgBaruTidakIkut = bertugas.filter((b) => !idPeserta.has(b.id)).map((b) => b.id);
 
     /*
-     * Aturan lama (`SPG_SAAT_INI`): baris gaji SPG yang tidak lagi bertugas di
-     * toko ini DIHAPUS — sesudah potongan barang hilangnya dilepas, di transaksi
-     * ini. Dengan `PESERTA_KUNCI_PERTAMA` tidak ada yang terhapus di sini (semua
-     * baris lama adalah peserta). Baris yang SUDAH dibayar tidak pernah disentuh.
+     * Baris gaji yang tidak lagi mendapat bagian DIHAPUS — sesudah potongan
+     * barang hilangnya dilepas, di transaksi ini. Aturan lama (`SPG_SAAT_INI`):
+     * baris SPG yang tidak lagi bertugas di toko ini. `PESERTA_KUNCI_PERTAMA`:
+     * baris penjual dari toko lain yang komisinya kini nol (penjualannya
+     * dikembalikan pembeli, atau barangnya kehilangan tarif) — peserta tidak
+     * pernah terhapus. Baris yang SUDAH dibayar tidak pernah disentuh.
      */
     const komisiDihapus: { id: string; spgUserId: string; total: number; potonganHilangDilepas: number }[] = [];
     for (const k of siklus.commissions) {
@@ -674,13 +732,7 @@ export async function kunciAngka(input: {
     // tidak dihitung ulang — angka yang sudah dibayarkan harus tetap bisa dijelaskan.
     const sudahDibayar = new Set(siklus.commissions.filter((k) => k.paidAt !== null).map((k) => k.spgUserId));
 
-    const { totalKomisi, perSpg } = bagiKomisi(
-      baris.map((b) => ({
-        qty: b.qty,
-        commissionPerPcs: b.itemId ? (tarif.get(b.itemId) ?? 0) : 0,
-      })),
-      spg.length,
-    );
+    const totalKomisi = spg.reduce((n, s) => n + (komisiPerSpg.get(s.id)?.amount ?? 0), 0);
 
     /*
      * Beban barang hilang milik SPG dipotong dari gaji + komisinya DI SINI dan
@@ -690,10 +742,11 @@ export async function kunciAngka(input: {
      * dibayarkan = `total − deduction`. Membuka kunci melepasnya lagi.
      */
     let totalPotonganHilang = 0;
-    for (const [i, s] of spg.entries()) {
+    for (const s of spg) {
       if (sudahDibayar.has(s.id)) continue;
-      const komisi = perSpg[i] ?? 0;
-      const pokok = input.gajiPokokPerSpg ?? 0;
+      const hitung = komisiPerSpg.get(s.id);
+      const komisi = hitung?.amount ?? 0;
+      const pokok = s.pokok ? (input.gajiPokokPerSpg ?? 0) : 0;
       const gaji = await tx.consignmentCommission.upsert({
         where: { cycleId_spgUserId: { cycleId: siklus.id, spgUserId: s.id } },
         create: {
@@ -702,11 +755,13 @@ export async function kunciAngka(input: {
           baseSalary: D(pokok),
           commission: D(komisi),
           total: D(pokok + komisi),
+          salaried: s.pokok,
         },
         update: {
           baseSalary: D(pokok),
           commission: D(komisi),
           total: D(pokok + komisi),
+          salaried: s.pokok,
         },
         select: { id: true },
       });
@@ -721,6 +776,20 @@ export async function kunciAngka(input: {
       });
       await tx.consignmentCommission.update({ where: { id: gaji.id }, data: { deduction: D(potong) } });
       totalPotonganHilang += potong;
+      kabar.push({
+        userId: s.id,
+        kabar: {
+          jenis: JENIS_KABAR.KOMISI_SPG,
+          judul: `Gaji & komisi penjualan ${salesMonthLabelId(bulanJual)} dikunci`,
+          isi:
+            `${siklus.store.name}: ` +
+            (pokok > 0 ? `gaji pokok ${formatIDR(pokok)} + ` : "") +
+            `komisi ${formatIDR(komisi)} (${hitung?.pieces ?? 0} potong)` +
+            (potong > 0 ? `, dipotong beban barang hilang ${formatIDR(potong)}` : "") +
+            `. Dibayar ${salesMonthLabelId(payoutMonth(waktuKunci))} setelah kantor menandainya.`,
+          data: { cycleId: siklus.id },
+        },
+      });
     }
 
     /*
@@ -753,7 +822,7 @@ export async function kunciAngka(input: {
     await tx.consignmentCycle.update({
       where: { id: siklus.id },
       data: {
-        lockedAt: new Date(),
+        lockedAt: waktuKunci,
         lockedById: input.olehUserId,
         promoBorneByElorae: D(promo.total),
         lossChargedToStore: D(bebanHilang),
@@ -786,6 +855,14 @@ export async function kunciAngka(input: {
           lossChargedToStore: bebanHilang,
           vatApplied: pakaiPpn,
           potonganHilangSpg: Math.round(totalPotonganHilang * 100) / 100,
+          // Komisi milik yang menjual: potong dan rupiahnya per SPG, dengan tarif kategori bulan penjualan.
+          komisiPerSpg: spg.map((s) => ({
+            spgUserId: s.id,
+            bergaji: s.pokok,
+            potong: komisiPerSpg.get(s.id)?.pieces ?? 0,
+            komisi: komisiPerSpg.get(s.id)?.amount ?? 0,
+            potongTanpaTarif: komisiPerSpg.get(s.id)?.noRatePieces ?? 0,
+          })),
           // Baris SPG yang sudah pindah toko tetap miliknya; SPG baru tidak ikut dibagi.
           komisiSpgPindah,
           spgBaruTidakIkut,
@@ -796,11 +873,18 @@ export async function kunciAngka(input: {
         jumlahBaris: baris.length,
         komisiDihapus: komisiDihapus.length,
         aturanPeserta: pesertaLama ? 'PESERTA_KUNCI_PERTAMA' : 'SPG_SAAT_INI',
+        aturanKomisi: "TARIF_KATEGORI",
+        bulanJual,
+        bulanBayar: payoutMonth(waktuKunci),
+        catatanKomisi: salesMonthNoteId(bulanJual),
       },
     });
 
     return { ok: true as const, totalKomisi, jumlahSpg: spg.length };
   });
+
+  if (hasil.ok) for (const k of kabar) await kabariPengguna(k.userId, k.kabar);
+  return hasil;
 }
 
 /**
@@ -889,14 +973,17 @@ export async function bukaKunci(input: {
  *
  * Hanya untuk siklus yang TERKUNCI: sebelum dikunci (termasuk sesudah kuncinya
  * dibuka) baris gajinya masih bisa dihitung ulang atau dihapus, jadi angka yang
- * dibayarkan belum pasti.
+ * dibayarkan belum pasti. SPG-nya dikabari sesudah transaksi, seperti komisi
+ * toko putus.
  */
 export async function bayarKomisi(input: {
   commissionId: string;
   olehUserId: string;
   catatan?: string | null;
 }): Promise<{ ok: true } | Gagal> {
-  return runSerializable(async (tx) => {
+  let kabar: { userId: string; kabar: Kabar } | null = null;
+  const hasil = await runSerializable(async (tx) => {
+    kabar = null;
     const k = await tx.consignmentCommission.findUnique({
       where: { id: input.commissionId },
       select: {
@@ -906,7 +993,7 @@ export async function bayarKomisi(input: {
         spgUserId: true,
         total: true,
         deduction: true,
-        cycle: { select: { lockedAt: true } },
+        cycle: { select: { lockedAt: true, periodYear: true, periodMonth: true, store: { select: { name: true } } } },
       },
     });
     if (!k) return { ok: false as const, alasan: 'TIDAK_DITEMUKAN' as const };
@@ -936,8 +1023,27 @@ export async function bayarKomisi(input: {
       reason: input.catatan,
     });
 
+    const bulanJual = `${k.cycle.periodYear}-${String(k.cycle.periodMonth).padStart(2, "0")}`;
+    const diterima = Math.max(0, angka(k.total) - angka(k.deduction));
+    kabar = {
+      userId: k.spgUserId,
+      kabar: {
+        jenis: JENIS_KABAR.KOMISI_SPG,
+        judul: `Gaji & komisi penjualan ${salesMonthLabelId(bulanJual)} dibayar`,
+        isi:
+          angka(k.deduction) > 0
+            ? `${k.cycle.store.name}: ${formatIDR(diterima)} sudah dibayar (gaji & komisi ${formatIDR(angka(k.total))} dipotong beban barang hilang ${formatIDR(angka(k.deduction))}).`
+            : `${k.cycle.store.name}: gaji & komisi ${formatIDR(angka(k.total))} sudah dibayar.`,
+        data: { cycleId: k.cycleId },
+      },
+    };
+
     return { ok: true as const };
   });
+
+  const terkirim = kabar as { userId: string; kabar: Kabar } | null;
+  if (hasil.ok && terkirim) await kabariPengguna(terkirim.userId, terkirim.kabar);
+  return hasil;
 }
 
 /**

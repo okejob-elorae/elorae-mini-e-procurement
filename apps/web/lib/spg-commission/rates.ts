@@ -1,14 +1,17 @@
-import { prisma, type Prisma } from "@elorae/db";
+import { prisma, sqlId, type Prisma } from "@elorae/db";
 import { SpgCommissionRateError } from "./errors";
 import { compareYearMonth, isYearMonth, wibYearMonth } from "./month";
 
 /**
  * SPG commission rates: a flat whole-rupiah amount per piece for one item category, effective from
- * a WIB month until a later row for the same category takes over (see `resolveRate`).
+ * a WIB month until a later row for the same category takes over (see `resolveRate`). The month is
+ * the SALES month: a report's pieces are paid at the rate of the month they were sold in, whenever
+ * the office checks the report (`payout.ts`).
  *
- * Months before the current WIB month are closed: their recaps have been read, so a rate edit may
- * only take effect from the current month onward. Permission gating lives in the calling action,
- * never here (this module sits on DB specs' import chain, so it must not import `@/lib/auth`).
+ * Months before the current WIB month are closed: their sales are over, so a rate edit may only
+ * take effect from the current month onward, and a report checked later still pays what its month
+ * earned. Permission gating lives in the calling action, never here (this module sits on DB specs'
+ * import chain, so it must not import `@/lib/auth`).
  */
 
 /** `amountPerPiece` is `DECIMAL(15, 2)`, so a whole-rupiah value has at most 13 integer digits. */
@@ -82,7 +85,7 @@ export async function setRate(input: SetRateInput, now: Date = new Date()): Prom
 
   const row = await prisma.$transaction(async (tx) => {
     const locked = await tx.$queryRaw<{ isActive: unknown }[]>`
-      SELECT \`isActive\` FROM \`ItemCategory\` WHERE \`id\` = ${itemCategoryId} FOR UPDATE
+      SELECT ${sqlId("isActive")} FROM ${sqlId("ItemCategory")} WHERE ${sqlId("id")} = ${itemCategoryId} FOR UPDATE
     `;
     const category = locked[0];
     if (!category) throw new SpgCommissionRateError("CATEGORY_NOT_FOUND", itemCategoryId);

@@ -121,6 +121,31 @@ describe("pindah ke toko konsinyasi", () => {
     });
     expect(per(sebagian)).toEqual({ INVENTORY_CONSIGNMENT: 4_000_000, INVENTORY_FG: -4_000_000 });
   });
+
+  it("konfirmasi sampai pesanan lama: baris yang gudangnya sudah diopname mengkredit Selisih persediaan, bukan persediaan gudang", () => {
+    const opname = barisPindahKonsiPengiriman({
+      storeId: "s1",
+      baris: [{ qty: 10, unitCost: 40_000, tipeBarang: "FINISHED_GOOD", sudahDiopname: true }],
+    });
+    expect(per(opname)).toEqual({ INVENTORY_CONSIGNMENT: 40_000_000, INVENTORY_VARIANCE: -40_000_000 });
+    expect(opname.find((x) => x.role === "INVENTORY_CONSIGNMENT")?.storeId).toBe("s1");
+    expect(seimbang(opname)).toBe(0);
+
+    // Campuran: satu baris biasa (gudang dipotong saat konfirmasi), satu sudah diopname.
+    const campur = barisPindahKonsiPengiriman({
+      storeId: "s1",
+      baris: [
+        { qty: 4, unitCost: 40_000, tipeBarang: "FINISHED_GOOD" },
+        { qty: 6, unitCost: 40_000, tipeBarang: "FINISHED_GOOD", sudahDiopname: true },
+      ],
+    });
+    expect(per(campur)).toEqual({ INVENTORY_CONSIGNMENT: 40_000_000, INVENTORY_FG: -16_000_000, INVENTORY_VARIANCE: -24_000_000 });
+    expect(campur.filter((x) => x.role === "INVENTORY_CONSIGNMENT")).toHaveLength(1);
+    expect(seimbang(campur)).toBe(0);
+
+    // Baris rusak tetap dilewati, ditandai atau tidak.
+    expect(barisPindahKonsiPengiriman({ storeId: "s1", baris: [{ qty: 0, unitCost: 40_000, tipeBarang: "FINISHED_GOOD", sudahDiopname: true }] })).toEqual([]);
+  });
 });
 
 describe("retur dari toko konsinyasi", () => {

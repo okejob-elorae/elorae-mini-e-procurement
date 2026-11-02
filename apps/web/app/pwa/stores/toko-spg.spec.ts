@@ -93,6 +93,15 @@ vi.mock("@/lib/stores/catatan-queries", () => ({
   catatanTokoUntuk: catat("catatanTokoUntuk", []),
 }));
 vi.mock("@/lib/field-sales/inden-queries", () => ({ jendelaIndenTerbuka: catat("jendelaIndenTerbuka", []) }));
+vi.mock("@/lib/field-sales/konsi-transfer/pesanan-lama", () => ({
+  bacaPesananKonsiCadanganLama: catat("bacaPesananKonsiCadanganLama", new Map()),
+  muatPenerimaToko: catat("muatPenerimaToko", {
+    penerima: "TANPA_PENERIMA",
+    pemegangTokoId: null,
+    namaPemegang: null,
+    jumlahSpg: 0,
+  }),
+}));
 
 // Komponen klien tidak dirender — yang diuji hanya pagar dan isi props-nya.
 vi.mock("@/app/pwa/stores/[id]/BukanTokoSaya", () => ({ BukanTokoSaya: function BukanTokoSaya() { return null; } }));
@@ -107,6 +116,7 @@ vi.mock("@/app/pwa/stores/[id]/TombolPortalToko", () => ({ TombolPortalToko: () 
 vi.mock("@/app/pwa/stores/[id]/CatatanToko", () => ({ CatatanToko: () => null }));
 vi.mock("@/app/pwa/stores/[id]/TombolPreorder", () => ({ TombolPreorder: () => null }));
 vi.mock("@/app/pwa/stores/[id]/LanjutSetelahCheckIn", () => ({ LanjutSetelahCheckIn: () => null }));
+vi.mock("@/app/pwa/stores/[id]/PesananLamaToko", () => ({ PesananLamaToko: () => null }));
 vi.mock("@/app/pwa/stores/StoreList", () => ({
   StoreList: function StoreList() {
     return null;
@@ -168,6 +178,8 @@ describe("halaman toko PWA — SPG hanya tokonya sendiri", () => {
     expect(props.store.markupPercent).toBeNull();
     expect(props.orders).toEqual([]);
     expect(state.dibaca).not.toContain("getStoreOrderSummary");
+    // Pesanan konsi lama dikonfirmasi SPG dari Terima kiriman, bukan dari halaman toko ini.
+    expect(state.dibaca).not.toContain("bacaPesananKonsiCadanganLama");
   });
 
   it("salesman tetap membuka toko mana pun selama kunci mati, lengkap dengan markup", async () => {
@@ -179,6 +191,7 @@ describe("halaman toko PWA — SPG hanya tokonya sendiri", () => {
     expect(props.spg).toBe(false);
     expect(props.store.markupPercent).toBe(25);
     expect(props.store.paymentTempo).toBe(30);
+    expect(state.dibaca).toContain("bacaPesananKonsiCadanganLama");
   });
 
   it("salesman di toko orang lain saat kunci menyala tetap melihat BukanTokoSaya", async () => {
@@ -187,6 +200,7 @@ describe("halaman toko PWA — SPG hanya tokonya sendiri", () => {
     const hasil = await buka("toko-lain");
     expect(cari(hasil as ReactNode, "BukanTokoSaya")).not.toBeNull();
     expect(cari(hasil as ReactNode, "StoreDetailShell")).toBeNull();
+    expect(state.dibaca).not.toContain("bacaPesananKonsiCadanganLama");
   });
 });
 

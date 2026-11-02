@@ -1050,6 +1050,7 @@ model KonsiTransfer {
   transferredById String
   note            String?             @db.Text
   shipmentId      String?             @unique
+  oldOrderArrival Boolean             @default(false)
   createdAt       DateTime            @default(now())
   order           FieldSalesOrder     @relation(fields: [orderId], references: [id])
   store           Store               @relation(fields: [storeId], references: [id])
@@ -1070,6 +1071,7 @@ model KonsiTransferLine {
   productName String
   qty         Decimal       @db.Decimal(10, 2)
   unitCost    Decimal       @db.Decimal(15, 2)
+  mainCountedByOpnameId String?
   transfer    KonsiTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
   item        Item          @relation(fields: [itemId], references: [id])
 
@@ -4398,6 +4400,7 @@ model ConsignmentCommission {
   commission Decimal   @default(0) @db.Decimal(15, 2)
   total      Decimal   @default(0) @db.Decimal(15, 2)
   deduction  Decimal   @default(0) @db.Decimal(15, 2)
+  salaried   Boolean   @default(true)
   paidAt     DateTime?
   paidById   String?
   note       String?   @db.MediumText
@@ -6057,6 +6060,18 @@ model SpgCommission {
 
   @@unique([userId, storeId, period])
   @@index([period])
+}
+
+model SpgSalesCheck {
+  id          String   @id @default(cuid())
+  storeId     String
+  period      String   @db.VarChar(7)
+  checkedById String
+  checkedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([storeId, period])
+  @@index([checkedAt])
 }
 
 model DamagedStockMovement {

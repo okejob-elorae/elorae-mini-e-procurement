@@ -77,6 +77,31 @@ describe("Terima kiriman — pesanan untuk toko ini", () => {
     expect(html).toContain("pesananAsal(KONSI/2026/11/0012)");
   });
 
+  it("pesanan konsi lama: tombol hitung-dan-konfirmasi hanya sesudah check-in, tanpa rupiah", () => {
+    const lama: NonNullable<Props["pesanan"]> = [
+      {
+        ...PESANAN[0],
+        id: "o-lama",
+        orderNo: "KONSI/2026/08/0003",
+        status: "PESANAN_LAMA",
+        belumDikirimGudang: 0,
+        dikemas: 0,
+        dalamPerjalanan: 0,
+      },
+    ];
+    const sebelum = gambar({ pesanan: lama });
+    expect(sebelum).toContain("status.PESANAN_LAMA");
+    expect(sebelum).toContain("ringkasLama(1,7)");
+    expect(sebelum).toContain("lamaPerluCheckIn");
+    expect(sebelum).not.toContain("/pwa/spg/terima/pesanan-lama/");
+    expect(sebelum).not.toMatch(/Rp/);
+
+    const sesudah = gambar({ pesanan: lama, sudahCheckIn: true });
+    expect(sesudah).toContain('href="/pwa/spg/terima/pesanan-lama/o-lama"');
+    expect(sesudah).toContain("konfirmasiSampai");
+    expect(sesudah).not.toContain("lamaPerluCheckIn");
+  });
+
   it("tanpa pesanan → bagiannya tidak tampil", () => {
     expect(gambar({ pesanan: [] })).not.toContain("pesanan-toko");
   });

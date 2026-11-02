@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ClipboardList } from "lucide-react";
+import { ClipboardList, PackageCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { dinamis } from "@/lib/i18n/dinamis";
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { PesananMenujuHp, StatusPesananMenuju } from "@/lib/spg/pesanan-menuju-toko";
 
 const NADA: Record<StatusPesananMenuju, string> = {
+  PESANAN_LAMA: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
   DALAM_PERJALANAN: "bg-primary/15 text-foreground",
   DIKIRIM_SEBAGIAN: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300",
   DISETUJUI: "bg-sky-500/15 text-sky-800 dark:text-sky-300",
@@ -27,8 +29,13 @@ const TAMPIL_AWAL = 4;
  * Sisa pesanan yang disetujui dibagi ke tempatnya: dalam perjalanan, sedang
  * dikemas, dan "belum dikirim gudang" — yang terakhir masih di gudang, jadi
  * SPG tidak menunggunya di dus yang sedang datang dan tidak menghitungnya kurang.
+ *
+ * Pesanan konsinyasi LAMA yang cadangannya masih ditahan tidak akan datang lewat
+ * pengiriman — barangnya biasanya sudah lama di toko. SPG menghitung yang ada
+ * dan mengonfirmasinya dari tombol di barisnya (butuh check-in, seperti menerima
+ * kiriman).
  */
-export function BagianPesananMenuju({ pesanan }: { pesanan: PesananMenujuHp[] }) {
+export function BagianPesananMenuju({ pesanan, sudahCheckIn = false }: { pesanan: PesananMenujuHp[]; sudahCheckIn?: boolean }) {
   const t = useTranslations("pwa.spgTerima.pesanan");
   if (pesanan.length === 0) return null;
   return (
@@ -39,7 +46,7 @@ export function BagianPesananMenuju({ pesanan }: { pesanan: PesananMenujuHp[] })
       <div className="beranda-kartu beranda-kartu-daftar">
         <ul className="divide-y">
           {pesanan.map((p) => (
-            <BarisPesanan key={p.id} p={p} />
+            <BarisPesanan key={p.id} p={p} sudahCheckIn={sudahCheckIn} />
           ))}
         </ul>
       </div>
@@ -47,11 +54,12 @@ export function BagianPesananMenuju({ pesanan }: { pesanan: PesananMenujuHp[] })
   );
 }
 
-function BarisPesanan({ p }: { p: PesananMenujuHp }) {
+function BarisPesanan({ p, sudahCheckIn }: { p: PesananMenujuHp; sudahCheckIn: boolean }) {
   const t = useTranslations("pwa.spgTerima.pesanan");
   const td = dinamis(t);
   const [semua, setSemua] = useState(false);
   const tampil = semua ? p.barang : p.barang.slice(0, TAMPIL_AWAL);
+  const lama = p.status === "PESANAN_LAMA";
   return (
     <li className="space-y-2 px-4 py-3">
       <div className="flex items-start gap-3">
@@ -62,7 +70,7 @@ function BarisPesanan({ p }: { p: PesananMenujuHp }) {
           <p className="truncate font-medium leading-tight">{p.orderNo}</p>
           <p className="text-xs text-muted-foreground">{t("dipesan", { tanggal: p.tanggalLabel })}</p>
           <p className="text-sm font-semibold">
-            {t(p.status === "MENUNGGU_PERSETUJUAN" ? "ringkas" : "ringkasSisa", { count: p.barang.length, pcs: p.jumlahPcs })}
+            {t(p.status === "MENUNGGU_PERSETUJUAN" ? "ringkas" : lama ? "ringkasLama" : "ringkasSisa", { count: p.barang.length, pcs: p.jumlahPcs })}
           </p>
         </div>
       </div>
@@ -92,6 +100,21 @@ function BarisPesanan({ p }: { p: PesananMenujuHp }) {
         <Button type="button" variant="link" className="h-auto px-0" aria-expanded={semua} onClick={() => setSemua((x) => !x)}>
           {semua ? t("lebihSedikit") : t("lihatSemua", { count: p.barang.length })}
         </Button>
+      ) : null}
+      {lama ? (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">{t("lamaPenjelasan")}</p>
+          {sudahCheckIn ? (
+            <Button asChild className="w-full">
+              <Link href={`/pwa/spg/terima/pesanan-lama/${encodeURIComponent(p.id)}`}>
+                <PackageCheck className="h-4 w-4" aria-hidden />
+                {t("konfirmasiSampai")}
+              </Link>
+            </Button>
+          ) : (
+            <p className="text-xs font-medium text-amber-800 dark:text-amber-300">{t("lamaPerluCheckIn")}</p>
+          )}
+        </div>
       ) : null}
     </li>
   );

@@ -50,6 +50,10 @@ export type HPPBreakdown = {
   marginPercent: number | null;
   marginAmount: number | null;
   additionalCost: number | null;
+  /**
+   * HARGA REKOMENDASI dari markup WO (subtotal × (1 + markup) + biaya tambahan) — bukan harga
+   * jual barang dan tidak pernah ditulis ke barang; harga jual diketik di halaman barang.
+   */
   sellingPrice: number | null;
 };
 

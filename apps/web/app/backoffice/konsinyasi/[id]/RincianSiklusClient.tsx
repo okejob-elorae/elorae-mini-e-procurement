@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { ArrowLeft, Loader2, Lock, LockOpen, Plus, Printer, Sparkles, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -55,6 +55,7 @@ import { NADA_TAHAP } from '../tahap';
 import { TagihanKonsiCard } from "./TagihanKonsiCard";
 import { PencocokanBukuCard } from "./PencocokanBukuCard";
 import { alasanTolakBukaKunci } from "./buka-kunci";
+import { formatYearMonth } from "@/app/backoffice/settings/spg-commission/format";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -99,6 +100,7 @@ export function RincianSiklusClient({
 }) {
   const t = useTranslations('konsinyasi');
   const td = dinamis(t);
+  const locale = useLocale();
   const router = useRouter();
   const [pending, startTransition] = useTransition();
 
@@ -414,6 +416,16 @@ export function RincianSiklusClient({
             <p className="text-sm text-muted-foreground">
               {b.tenggatSpg ? t('salaryDue', { date: tanggal(b.tenggatSpg) }) : t('salaryNoDue')}
             </p>
+            {/* Komisi milik bulan penjualan, dibayar di bulan angkanya dikunci (laporannya dicek). */}
+            <p className="text-sm text-muted-foreground">
+              {data.komisiBulan.bulanBayar
+                ? t("salaryCommissionNote", {
+                    salesMonth: formatYearMonth(data.komisiBulan.bulanJual, locale),
+                    payoutMonth: formatYearMonth(data.komisiBulan.bulanBayar, locale),
+                  })
+                : t("salaryCommissionNoteUnlocked", { salesMonth: formatYearMonth(data.komisiBulan.bulanJual, locale) })}
+            </p>
+            <p className="text-xs text-muted-foreground">{t("salaryCommissionRule")}</p>
           </CardHeader>
           <CardContent className="px-0">
             <Table>
@@ -431,6 +443,9 @@ export function RincianSiklusClient({
                   <TableRow key={k.id} className={cn(!k.dibayarPada && b.gajiTerlambat && 'bg-destructive/[0.06]')}>
                     <TableCell className="font-medium">
                       {k.spgNama ?? '—'}
+                      {!k.bergaji ? (
+                        <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{t("salaryNotParticipant")}</span>
+                      ) : null}
                       {/* Brief bilang beban selisih "BISA dipotong dari komisi" —
                           bisa, bukan harus. Jadi angkanya tidak dikurangkan
                           otomatis; ia hanya muncul di sini, di titik pembayaran,

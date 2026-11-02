@@ -1,27 +1,35 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { bulanWib } from "@/lib/salesman/pengaturan";
-import { JEJAK_KOMISI_SPG } from "./komisi";
+import { salesMonthNoteId } from "@/lib/spg-commission/payout";
+import { bulanSebelum, DASAR_TARIF_KATEGORI, JEJAK_KOMISI_SPG } from "./komisi";
 import { payloadGajiHp } from "./komisi-hp";
-import { daftarKomisiKantor } from "./komisi-queries";
-import { tandaiKomisiDibayar, tetapkanKomisiToko } from "./komisi-writer";
-import { KUNCI_KOMISI_PUTUS } from "./pengaturan";
-import { gajiKomisiSpg, tokoSpg } from "./queries";
+import { daftarKomisiKantor, komisiResmiSaya, perkiraanKomisiHp } from "./komisi-queries";
+import { batalkanTandaDicek, tandaiKomisiDibayar, tandaiLaporanDicek, tetapkanKomisiToko } from "./komisi-writer";
+import { tokoSpg } from "./queries";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
 const d = isProd ? describe.skip : describe;
 
 /**
- * Komisi SPG toko putus terhadap basis data sungguhan: hitungan dari nota dan
- * pengembalian sebulan WIB, penetapan (ulang) dengan jejak, penjaga bayar di
- * bawah balapan, halaman kantor, dan isi HP yang tidak pernah membawa rupiah
- * rekan. Semua baris diseed di sini; penghapusan lewat `seededId(s)`.
+ * Komisi SPG toko putus terhadap basis data sungguhan, dengan SATU hitungan (keputusan pemilik
+ * 2026-11-01): tarif per kategori bulan penjualan × potong yang dijual masing-masing SPG. Laporan
+ * dicek dulu ("Tandai laporan dicek" — bulan dicek = bulan pembayaran), baru ditetapkan dan
+ * dibayar; batal dicek hanya selama belum ada yang dibayar; HP tidak pernah membawa rupiah rekan.
+ * `Item.commissionPerPcs` diisi angka yang akan kelihatan kalau masih dibaca. Semua baris diseed di
+ * sini; penghapusan lewat `seededId(s)`.
  */
 d("komisi SPG toko putus (test bed only)", () => {
   const tag = `KSP${Math.random().toString(36).slice(2, 8)}`;
-  const PERIODE = "2026-08";
+  const BULAN_INI = bulanWib(new Date());
+  /** Dua bulan lalu: sudah selesai, dan masih di jendela antrean "menunggu dicek". */
+  const PERIODE = bulanSebelum(bulanSebelum(BULAN_INI));
+  const SEBELUM = bulanSebelum(PERIODE);
+  const SESUDAH = bulanSebelum(BULAN_INI);
   let uomId = "";
+  let katKaos = "";
+  let katTopi = "";
   let kaos = "";
   let topi = "";
   let putus = "";
@@ -32,24 +40,28 @@ d("komisi SPG toko putus (test bed only)", () => {
   let spgK = "";
   let kantor = "";
   const nota: string[] = [];
-  let setelanAwal: string | null = null;
   let nomor = 0;
 
   const tokoIds = () => seededIds([putus, putusKosong, konsi].filter(Boolean));
 
   beforeAll(async () => {
-    const ada = await prisma.systemSetting.findUnique({ where: { key: KUNCI_KOMISI_PUTUS }, select: { value: true } });
-    setelanAwal = ada?.value ?? null;
-
     uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
-    const barang = async (kode: string, komisi: number) =>
+    const kategori = async (kode: string, tarif: number) => {
+      const id = (await prisma.itemCategory.create({ data: { code: `${tag}-${kode}`, name: `${kode} ${tag}`, isActive: true } })).id;
+      await prisma.spgCommissionRate.create({ data: { itemCategoryId: id, amountPerPiece: tarif, effectiveFrom: "2020-01", createdById: "uji" } });
+      return id;
+    };
+    katKaos = await kategori("KAOS", 2_500);
+    katTopi = await kategori("TOPI", 1_000);
+    const barang = async (kode: string, categoryId: string) =>
       (
         await prisma.item.create({
-          data: { sku: `${tag}-${kode}`, nameId: `${kode} ${tag}`, nameEn: kode, type: "FINISHED_GOOD", uomId, sellingPrice: 50_000, commissionPerPcs: komisi },
+          // Tarif barang sengaja besar: kalau masih dibaca, angka mana pun akan memuatnya.
+          data: { sku: `${tag}-${kode}`, nameId: `${kode} ${tag}`, nameEn: kode, type: "FINISHED_GOOD", uomId, categoryId, sellingPrice: 50_000, commissionPerPcs: 99_999 },
         })
       ).id;
-    kaos = await barang("KAOS", 2_000);
-    topi = await barang("TOPI", 1_500);
+    kaos = await barang("KAOS", katKaos);
+    topi = await barang("TOPI", katTopi);
 
     const toko = async (kode: string, termsType: "PUTUS" | "KONSI") =>
       (await prisma.store.create({ data: { code: `${tag}-${kode}`, name: `Toko ${kode} ${tag}`, address: "uji", termsType } })).id;
@@ -66,7 +78,10 @@ d("komisi SPG toko putus (test bed only)", () => {
   });
 
   afterEach(async () => {
-    const audit = await prisma.auditLog.findMany({ where: { entityType: "SpgCommission" }, select: { id: true, metadata: true } });
+    const audit = await prisma.auditLog.findMany({
+      where: { entityType: { in: ["SpgCommission", "SpgSalesCheck"] } },
+      select: { id: true, metadata: true },
+    });
     const milikUji = audit
       .filter((a) => {
         const m = a.metadata as Record<string, unknown> | null;
@@ -75,29 +90,20 @@ d("komisi SPG toko putus (test bed only)", () => {
       .map((a) => a.id);
     await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
     await prisma.spgCommission.deleteMany({ where: { storeId: { in: tokoIds() } } });
+    await prisma.spgSalesCheck.deleteMany({ where: { storeId: { in: tokoIds() } } });
     await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: { in: seededIds(nota) } } });
-    await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(nota) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(nota) } } });
     nota.length = 0;
   });
 
   afterAll(async () => {
-    if (setelanAwal === null) await prisma.systemSetting.deleteMany({ where: { key: seededId(KUNCI_KOMISI_PUTUS) } });
-    else await prisma.systemSetting.update({ where: { key: KUNCI_KOMISI_PUTUS }, data: { value: setelanAwal } });
     await prisma.user.deleteMany({ where: { id: { in: seededIds([spgA, spgB, spgK, kantor].filter(Boolean)) } } });
     await prisma.store.deleteMany({ where: { id: { in: tokoIds() } } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds([kaos, topi].filter(Boolean)) } } });
+    await prisma.spgCommissionRate.deleteMany({ where: { itemCategoryId: { in: seededIds([katKaos, katTopi].filter(Boolean)) } } });
+    await prisma.itemCategory.deleteMany({ where: { id: { in: seededIds([katKaos, katTopi].filter(Boolean)) } } });
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
   });
-
-  async function aturan(nilai: Record<string, unknown> | null) {
-    if (nilai === null) {
-      await prisma.systemSetting.deleteMany({ where: { key: seededId(KUNCI_KOMISI_PUTUS) } });
-      return;
-    }
-    const v = JSON.stringify(nilai);
-    await prisma.systemSetting.upsert({ where: { key: KUNCI_KOMISI_PUTUS }, create: { key: KUNCI_KOMISI_PUTUS, value: v }, update: { value: v } });
-  }
 
   async function jual(salesmanId: string, storeId: string, waktu: Date, baris: { itemId: string; qty: number }[]) {
     const s = await prisma.spgSale.create({
@@ -133,17 +139,22 @@ d("komisi SPG toko putus (test bed only)", () => {
     });
   }
 
-  /** Agustus: Ani 3 kaos + 1 topi; Budi 5 kaos, 2 dikembalikan; nota di luar bulan diabaikan. */
-  async function agustus() {
-    await jual(spgA, putus, new Date("2026-08-10T10:00:00+07:00"), [
+  const wib = (s: string) => new Date(`${s}+07:00`);
+
+  /** Ani 3 kaos + 1 topi; Budi 5 kaos, 2 dikembalikan; nota di luar bulan diabaikan. Ani 8.500, Budi 7.500. */
+  async function bulanJual() {
+    await jual(spgA, putus, wib(`${PERIODE}-10T10:00:00`), [
       { itemId: kaos, qty: 3 },
       { itemId: topi, qty: 1 },
     ]);
-    const b = await jual(spgB, putus, new Date("2026-08-31T23:30:00+07:00"), [{ itemId: kaos, qty: 5 }]);
-    await kembalikan(b, putus, 2, new Date("2026-08-31T23:45:00+07:00"));
-    await jual(spgA, putus, new Date("2026-07-31T23:30:00+07:00"), [{ itemId: kaos, qty: 10 }]);
-    await jual(spgB, putus, new Date("2026-09-01T00:10:00+07:00"), [{ itemId: kaos, qty: 10 }]);
+    const b = await jual(spgB, putus, wib(`${PERIODE}-28T23:30:00`), [{ itemId: kaos, qty: 5 }]);
+    await kembalikan(b, putus, 2, wib(`${PERIODE}-28T23:45:00`));
+    await jual(spgA, putus, wib(`${SEBELUM}-28T23:30:00`), [{ itemId: kaos, qty: 10 }]);
+    await jual(spgB, putus, wib(`${SESUDAH}-01T00:10:00`), [{ itemId: kaos, qty: 10 }]);
   }
+
+  const cek = () => tandaiLaporanDicek({ storeId: putus, periode: PERIODE, olehUserId: kantor });
+  const tetapkan = () => tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor });
 
   const baris = (storeId = putus) =>
     prisma.spgCommission.findMany({
@@ -154,95 +165,173 @@ d("komisi SPG toko putus (test bed only)", () => {
 
   const jejak = async () => {
     const semua = await prisma.auditLog.findMany({
-      where: { entityType: "SpgCommission" },
+      where: { entityType: { in: ["SpgCommission", "SpgSalesCheck"] } },
       orderBy: { createdAt: "asc" },
-      select: { action: true, entityId: true, changes: true, metadata: true },
+      select: { action: true, entityId: true, changes: true, metadata: true, reason: true },
     });
     return semua.filter((a) => (a.metadata as Record<string, unknown> | null)?.storeId === putus);
   };
 
-  it("defaults to PER_SPG: each SPG's own net pieces × rate, WIB month bounds, audit with before = null", async () => {
-    await aturan(null);
-    await agustus();
+  const laporanKantor = async () =>
+    (await daftarKomisiKantor(BULAN_INI, new Date())).putus.find((l) => l.storeId === putus && l.bulanJual === PERIODE);
 
-    const h = await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor });
-    expect(h).toEqual({ ok: true, ulang: false, ditulis: 2, dihapus: 0, totalToko: 13_500 });
+  it("dicek lalu ditetapkan: tarif kategori × potong masing-masing SPG, dibayar di bulan dicek dengan catatan bulan penjualan", async () => {
+    await bulanJual();
 
+    expect(await cek()).toEqual({ ok: true, bulanBayar: BULAN_INI });
+    const j1 = await jejak();
+    expect(j1.map((x) => x.action)).toEqual([JEJAK_KOMISI_SPG.LAPORAN_DICEK]);
+    expect(j1[0].metadata).toMatchObject({ period: PERIODE, bulanBayar: BULAN_INI, catatan: salesMonthNoteId(PERIODE), totalToko: 16_000 });
+
+    expect(await tetapkan()).toEqual({ ok: true, ulang: false, ditulis: 2, dihapus: 0, totalToko: 16_000 });
     const r = await baris();
     expect(r.map((x) => [x.userId, x.unitsSold, Number(x.commission), x.basis, x.lockedById, x.paidAt])).toEqual([
-      [spgA, 4, 7_500, "PER_SPG", kantor, null],
-      [spgB, 3, 6_000, "PER_SPG", kantor, null],
+      [spgA, 4, 8_500, DASAR_TARIF_KATEGORI, kantor, null],
+      [spgB, 3, 7_500, DASAR_TARIF_KATEGORI, kantor, null],
     ]);
-
-    const j = await jejak();
-    expect(j.map((x) => x.action)).toEqual([JEJAK_KOMISI_SPG.DITETAPKAN, JEJAK_KOMISI_SPG.DITETAPKAN]);
-    expect(j.find((x) => x.entityId === r[0].id)?.changes).toEqual({ before: null, after: { unitsSold: 4, commission: 7_500, basis: "PER_SPG", deduction: 0 } });
+    const j2 = (await jejak()).filter((x) => x.action === JEJAK_KOMISI_SPG.DITETAPKAN);
+    expect(j2.find((x) => x.entityId === r[0].id)?.changes).toEqual({
+      before: null,
+      after: { unitsSold: 4, commission: 8_500, basis: DASAR_TARIF_KATEGORI, deduction: 0 },
+    });
   });
 
-  it("BAGI_RATA splits the store's net commission between the store's SPGs", async () => {
-    await aturan({ aktif: true, dasar: "BAGI_RATA" });
-    await agustus();
-    expect((await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor })).ok).toBe(true);
-    const r = await baris();
-    expect(r.map((x) => [Number(x.commission), x.basis])).toEqual([
-      [6_750, "BAGI_RATA"],
-      [6_750, "BAGI_RATA"],
+  it("menolak menetapkan dan membayar laporan yang belum dicek — termasuk baris aturan lama", async () => {
+    await bulanJual();
+    expect(await tetapkan()).toEqual({ ok: false, code: "LAPORAN_BELUM_DICEK" });
+    const lama = await prisma.spgCommission.create({
+      data: { userId: spgA, storeId: putus, period: PERIODE, unitsSold: 4, commission: 7_500, basis: "PER_SPG", lockedById: kantor },
+    });
+    expect(await tandaiKomisiDibayar({ commissionId: lama.id, olehUserId: kantor })).toEqual({ ok: false, code: "LAPORAN_BELUM_DICEK" });
+    // Dicek lalu ditetapkan ulang: baris lama diganti hitungan tarif kategori sebelum bisa dibayar.
+    expect((await cek()).ok).toBe(true);
+    expect(await tetapkan()).toMatchObject({ ok: true, ulang: true });
+    expect((await baris()).map((x) => [x.userId, Number(x.commission), x.basis])).toEqual([
+      [spgA, 8_500, DASAR_TARIF_KATEGORI],
+      [spgB, 7_500, DASAR_TARIF_KATEGORI],
     ]);
   });
 
-  it("re-locks after a late receipt, with the replaced figures in the trail, and the office sees the drift first", async () => {
-    await aturan({ aktif: true, dasar: "PER_SPG" });
-    await agustus();
-    await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor });
+  it("baris aturan lama yang laporannya sudah dicek tetap ditolak dibayar sampai ditetapkan ulang dengan tarif kategori", async () => {
+    await bulanJual();
+    const lama = await prisma.spgCommission.create({
+      data: { userId: spgA, storeId: putus, period: PERIODE, unitsSold: 4, commission: 7_500, basis: "BAGI_RATA", lockedById: kantor },
+    });
+    expect((await cek()).ok).toBe(true);
+    // Dicek saja belum cukup: angkanya masih dari tarif barang / dibagi rata.
+    expect(await tandaiKomisiDibayar({ commissionId: lama.id, olehUserId: kantor })).toEqual({ ok: false, code: "ATURAN_LAMA" });
+    expect((await prisma.spgCommission.findUniqueOrThrow({ where: { id: lama.id } })).paidAt).toBeNull();
+    expect((await jejak()).some((x) => x.action === JEJAK_KOMISI_SPG.DIBAYAR)).toBe(false);
 
-    // Nota dari antrean HP yang baru tersinkron, bertanggal Agustus.
-    await jual(spgA, putus, new Date("2026-08-20T12:00:00+07:00"), [{ itemId: kaos, qty: 2 }]);
-    const kantorLihat = (await daftarKomisiKantor(PERIODE, new Date())).toko.find((t) => t.storeId === putus);
-    expect(kantorLihat?.berbeda).toBe(true);
-    expect(kantorLihat?.baris.find((b) => b.userId === spgA)).toMatchObject({ potong: 6, komisi: 11_500, status: "DITETAPKAN" });
+    expect(await tetapkan()).toMatchObject({ ok: true, ulang: true });
+    const ani = (await baris()).find((x) => x.userId === spgA)!;
+    expect(ani.id).toBe(lama.id);
+    expect([Number(ani.commission), ani.basis]).toEqual([8_500, DASAR_TARIF_KATEGORI]);
+    expect(await tandaiKomisiDibayar({ commissionId: ani.id, olehUserId: kantor })).toEqual({ ok: true });
+  });
 
-    const h = await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor });
-    expect(h).toMatchObject({ ok: true, ulang: true, ditulis: 2 });
+  it("menolak mencek toko × bulan yang komisinya sudah dibayar dengan aturan lama — bulan itu tidak dihitung dua kali", async () => {
+    await bulanJual();
+    await prisma.spgCommission.create({
+      data: {
+        userId: spgA,
+        storeId: putus,
+        period: PERIODE,
+        unitsSold: 4,
+        commission: 7_500,
+        basis: "PER_SPG",
+        lockedById: kantor,
+        paidAt: new Date(),
+        paidById: kantor,
+      },
+    });
+    expect(await cek()).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
+    expect(await prisma.spgSalesCheck.count({ where: { storeId: seededId(putus), period: PERIODE } })).toBe(0);
+    expect((await jejak()).some((x) => x.action === JEJAK_KOMISI_SPG.LAPORAN_DICEK)).toBe(false);
+    // Antrean "menunggu dicek" tidak menawarkannya.
+    const kantorBulanIni = await daftarKomisiKantor(BULAN_INI, new Date());
+    expect(kantorBulanIni.menungguCek.some((m) => m.storeId === putus && m.bulanJual === PERIODE)).toBe(false);
+  });
+
+  it("tandai dicek menolak bulan berjalan, toko konsinyasi, toko tanpa penjualan, dan dicek dua kali — juga bersamaan", async () => {
+    await bulanJual();
+    expect(await tandaiLaporanDicek({ storeId: putus, periode: BULAN_INI, olehUserId: kantor })).toEqual({ ok: false, code: "BULAN_BELUM_SELESAI" });
+    expect(await tandaiLaporanDicek({ storeId: putus, periode: "2026-8", olehUserId: kantor })).toEqual({ ok: false, code: "PERIODE_TIDAK_SAH" });
+    expect(await tandaiLaporanDicek({ storeId: konsi, periode: PERIODE, olehUserId: kantor })).toEqual({ ok: false, code: "BUKAN_TOKO_PUTUS" });
+    expect(await tandaiLaporanDicek({ storeId: putusKosong, periode: PERIODE, olehUserId: kantor })).toEqual({ ok: false, code: "TANPA_PENJUALAN" });
+
+    const hasil = await Promise.all([cek(), cek()]);
+    expect(hasil.filter((h) => h.ok)).toHaveLength(1);
+    expect(hasil.filter((h) => !h.ok)).toEqual([{ ok: false, code: "SUDAH_DICEK" }]);
+    expect(await prisma.spgSalesCheck.count({ where: { storeId: seededId(putus), period: PERIODE } })).toBe(1);
+  });
+
+  it("batal dicek menghapus komisi yang belum dibayar dengan jejaknya; dicek dan ditetapkan lagi tidak menggandakan; ditolak sesudah ada yang dibayar", async () => {
+    await bulanJual();
+    await cek();
+    await tetapkan();
+
+    expect(await batalkanTandaDicek({ storeId: putus, periode: PERIODE, olehUserId: kantor, alasan: " " })).toEqual({ ok: false, code: "ALASAN_WAJIB" });
+    expect(await batalkanTandaDicek({ storeId: putus, periode: PERIODE, olehUserId: kantor, alasan: "nota HP belum masuk" })).toEqual({ ok: true, dihapus: 2 });
+    expect(await baris()).toEqual([]);
+    expect(await prisma.spgSalesCheck.count({ where: { storeId: seededId(putus), period: PERIODE } })).toBe(0);
+    const batal = (await jejak()).filter((x) => x.action === JEJAK_KOMISI_SPG.LAPORAN_BATAL_DICEK);
+    expect(batal).toHaveLength(1);
+    expect(batal[0]).toMatchObject({ reason: "nota HP belum masuk", changes: { after: null } });
+    expect(await batalkanTandaDicek({ storeId: putus, periode: PERIODE, olehUserId: kantor, alasan: "lagi" })).toEqual({ ok: false, code: "BELUM_DICEK" });
+
+    // Dicek ulang dan ditetapkan ulang: tetap satu baris per SPG, angka yang sama.
+    await cek();
+    await tetapkan();
+    expect((await baris()).map((x) => [x.userId, Number(x.commission)])).toEqual([
+      [spgA, 8_500],
+      [spgB, 7_500],
+    ]);
+    expect(await prisma.spgSalesCheck.count({ where: { storeId: seededId(putus), period: PERIODE } })).toBe(1);
+
+    const [ani] = await baris();
+    expect(await tandaiKomisiDibayar({ commissionId: ani.id, olehUserId: kantor })).toEqual({ ok: true });
+    expect(await batalkanTandaDicek({ storeId: putus, periode: PERIODE, olehUserId: kantor, alasan: "terlambat" })).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
+    expect(await prisma.spgSalesCheck.count({ where: { storeId: seededId(putus), period: PERIODE } })).toBe(1);
+  });
+
+  it("ditetapkan ulang sesudah nota yang menyusul, dengan angka lama di jejak; kantor melihat bedanya lebih dulu", async () => {
+    await bulanJual();
+    await cek();
+    await tetapkan();
+
+    // Nota dari antrean HP yang baru tersinkron, bertanggal di bulan penjualan.
+    await jual(spgA, putus, wib(`${PERIODE}-20T12:00:00`), [{ itemId: kaos, qty: 2 }]);
+    const lihat = await laporanKantor();
+    expect(lihat?.berbeda).toBe(true);
+    expect(lihat?.baris.find((b) => b.userId === spgA)).toMatchObject({ potong: 6, komisi: 13_500, status: "DITETAPKAN" });
+
+    expect(await tetapkan()).toMatchObject({ ok: true, ulang: true, ditulis: 2 });
     const r = await baris();
     expect(r.map((x) => [x.userId, Number(x.commission)])).toEqual([
-      [spgA, 11_500],
-      [spgB, 6_000],
+      [spgA, 13_500],
+      [spgB, 7_500],
     ]);
     const ulang = (await jejak()).filter((x) => x.action === JEJAK_KOMISI_SPG.DITETAPKAN_ULANG);
-    expect(ulang).toHaveLength(2);
     expect(ulang.find((x) => x.entityId === r[0].id)?.changes).toEqual({
-      before: { unitsSold: 4, commission: 7_500, basis: "PER_SPG", deduction: 0 },
-      after: { unitsSold: 6, commission: 11_500, basis: "PER_SPG", deduction: 0 },
+      before: { unitsSold: 4, commission: 8_500, basis: DASAR_TARIF_KATEGORI, deduction: 0 },
+      after: { unitsSold: 6, commission: 13_500, basis: DASAR_TARIF_KATEGORI, deduction: 0 },
     });
-    expect((await daftarKomisiKantor(PERIODE, new Date())).toko.find((t) => t.storeId === putus)?.berbeda).toBe(false);
+    expect((await laporanKantor())?.berbeda).toBe(false);
   });
 
-  it("refuses an unfinished month, a consignment store, a switched-off rule, and a store without SPG", async () => {
-    await aturan({ aktif: true, dasar: "PER_SPG" });
-    expect(await tetapkanKomisiToko({ storeId: putus, periode: bulanWib(new Date()), olehUserId: kantor })).toEqual({ ok: false, code: "BULAN_BELUM_SELESAI" });
-    expect(await tetapkanKomisiToko({ storeId: putus, periode: "2026-8", olehUserId: kantor })).toEqual({ ok: false, code: "PERIODE_TIDAK_SAH" });
-    expect(await tetapkanKomisiToko({ storeId: konsi, periode: PERIODE, olehUserId: kantor })).toEqual({ ok: false, code: "BUKAN_TOKO_PUTUS" });
-    expect(await tetapkanKomisiToko({ storeId: putusKosong, periode: PERIODE, olehUserId: kantor })).toEqual({ ok: false, code: "TANPA_SPG" });
-    await aturan({ aktif: false, dasar: "PER_SPG" });
-    expect(await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor })).toEqual({ ok: false, code: "KOMISI_MATI" });
-    expect(await baris()).toEqual([]);
-  });
-
-  it("two first locks at once end with one row per SPG", async () => {
-    await aturan({ aktif: true, dasar: "PER_SPG" });
-    await agustus();
-    const [a, b] = await Promise.all([
-      tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor }),
-      tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor }),
-    ]);
+  it("dua penetapan pertama bersamaan berakhir dengan satu baris per SPG", async () => {
+    await bulanJual();
+    await cek();
+    const [a, b] = await Promise.all([tetapkan(), tetapkan()]);
     expect(a.ok && b.ok).toBe(true);
-    expect((await baris()).map((x) => Number(x.commission))).toEqual([7_500, 6_000]);
+    expect((await baris()).map((x) => Number(x.commission))).toEqual([8_500, 7_500]);
   });
 
-  it("marks paid exactly once under a race, then refuses to re-lock the store's month", async () => {
-    await aturan({ aktif: true, dasar: "PER_SPG" });
-    await agustus();
-    await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor });
+  it("dibayar tepat sekali di bawah balapan, lalu bulan toko itu tidak bisa ditetapkan ulang", async () => {
+    await bulanJual();
+    await cek();
+    await tetapkan();
     const [ani] = await baris();
 
     const hasil = await Promise.all([
@@ -254,10 +343,9 @@ d("komisi SPG toko putus (test bed only)", () => {
 
     const dibayar = (await jejak()).filter((x) => x.action === JEJAK_KOMISI_SPG.DIBAYAR);
     expect(dibayar).toHaveLength(1);
-    expect((dibayar[0].changes as { before: unknown }).before).toEqual({ paidAt: null });
-    expect((await baris())[0].paidAt).not.toBeNull();
+    expect(dibayar[0].metadata).toMatchObject({ bulanBayar: BULAN_INI, catatan: salesMonthNoteId(PERIODE) });
 
-    expect(await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor })).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
+    expect(await tetapkan()).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
     expect(await tandaiKomisiDibayar({ commissionId: "tidak-ada", olehUserId: kantor })).toEqual({ ok: false, code: "TIDAK_DITEMUKAN" });
     expect(await tandaiKomisiDibayar({ commissionId: ani.id, olehUserId: kantor, catatan: "x".repeat(501) })).toEqual({
       ok: false,
@@ -265,67 +353,68 @@ d("komisi SPG toko putus (test bed only)", () => {
     });
   });
 
-  it("lists PUTUS stores with their SPGs for the office, and consignment stores only as a link", async () => {
-    await aturan({ aktif: true, dasar: "PER_SPG" });
-    await agustus();
-    const data = await daftarKomisiKantor(PERIODE, new Date());
-    const t = data.toko.find((x) => x.storeId === putus);
-    expect(t?.baris.map((b) => [b.userId, b.potong, b.komisi, b.status])).toEqual([
-      [spgA, 4, 7_500, "BELUM"],
-      [spgB, 3, 6_000, "BELUM"],
+  it("kantor: menunggu dicek dulu, lalu masuk bulan pembayaran berjalan; toko konsi menunggu dikunci di siklusnya", async () => {
+    await bulanJual();
+    await jual(spgK, konsi, wib(`${PERIODE}-12T10:00:00`), [{ itemId: topi, qty: 2 }]);
+
+    const sebelum = await daftarKomisiKantor(BULAN_INI, new Date());
+    expect(sebelum.menungguCek.find((m) => m.storeId === putus && m.bulanJual === PERIODE)).toMatchObject({
+      potongToko: 7,
+      totalToko: 16_000,
+      jumlahPenerima: 2,
+      adaResmiLama: false,
+    });
+    expect(sebelum.menungguCek.some((m) => m.storeId === putusKosong)).toBe(false);
+    expect(sebelum.konsiMenungguKunci.find((k) => k.storeId === konsi && k.bulanJual === PERIODE)).toMatchObject({ cycleId: null });
+    expect(sebelum.putus.some((l) => l.storeId === putus)).toBe(false);
+
+    await cek();
+    const sesudah = await daftarKomisiKantor(BULAN_INI, new Date());
+    expect(sesudah.menungguCek.some((m) => m.storeId === putus && m.bulanJual === PERIODE)).toBe(false);
+    const l = sesudah.putus.find((x) => x.storeId === putus && x.bulanJual === PERIODE);
+    expect(l?.dicek).not.toBeNull();
+    expect(l?.baris.map((b) => [b.userId, b.potong, b.komisi, b.status])).toEqual([
+      [spgA, 4, 8_500, "BELUM"],
+      [spgB, 3, 7_500, "BELUM"],
     ]);
-    expect(t).toMatchObject({ potongToko: 7, totalToko: 13_500, adaResmi: false });
-    expect(data.toko.some((x) => x.storeId === putusKosong)).toBe(false);
-    expect(data.toko.some((x) => x.storeId === konsi)).toBe(false);
-    expect(data.tokoKonsi.find((x) => x.storeId === konsi)).toMatchObject({ jumlahSpg: 1, siklusId: null });
-    expect(data.bulanSelesai).toBe(true);
+    // Bulan penjualannya sendiri bukan bulan pembayarannya.
+    expect((await daftarKomisiKantor(PERIODE, new Date())).putus.some((x) => x.storeId === putus)).toBe(false);
   });
 
   describe("HP SPG", () => {
     const fmt = { bulan: (p: string) => p, tanggal: (iso: string) => iso.slice(0, 10) };
 
-    async function bulanIni() {
+    async function bulanBerjalan() {
       await jual(spgA, putus, new Date(), [{ itemId: kaos, qty: 2 }]);
       await jual(spgB, putus, new Date(), [{ itemId: kaos, qty: 4 }]);
     }
 
-    it("PER_SPG: only her own share and pieces reach the phone — never a colleague's rupiah, name or id", async () => {
-      await aturan({ aktif: true, dasar: "PER_SPG" });
-      await agustus();
-      await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor });
-      await bulanIni();
+    it("hanya bagiannya sendiri yang sampai ke HP — tidak pernah rupiah, nama, atau id rekan", async () => {
+      await bulanJual();
+      await cek();
+      await tetapkan();
+      await bulanBerjalan();
 
       const toko = await tokoSpg(spgA);
-      const g = await gajiKomisiSpg(spgA, toko, new Date());
-      expect(g.perkiraan).toMatchObject({ jenis: "PUTUS", dasar: "PER_SPG", bagianSaya: 4_000, potongSaya: 2, totalToko: 4_000 });
-      expect(g.resmi.filter((r) => r.jenis === "PUTUS").map((r) => [r.periode, r.komisi, r.potong])).toEqual([[PERIODE, 7_500, 4]]);
+      const perkiraan = await perkiraanKomisiHp(spgA, toko!, new Date());
+      expect(perkiraan).toMatchObject({ jenis: "PUTUS", dasar: "PER_SPG", bagianSaya: 5_000, potongSaya: 2, totalToko: 5_000, potongToko: null });
+      const resmi = await komisiResmiSaya(spgA);
+      expect(resmi.filter((r) => r.jenis === "PUTUS").map((r) => [r.bulanJual, r.bulanBayar, r.komisi, r.potong, r.aturanLama])).toEqual([
+        [PERIODE, BULAN_INI, 8_500, 4, false],
+      ]);
 
-      const json = JSON.stringify(payloadGajiHp(g, false, fmt));
+      const json = JSON.stringify(payloadGajiHp({ perkiraan, resmi }, false, fmt));
       expect(json).not.toContain(spgB);
       expect(json).not.toContain("Budi");
-      // Komisi Budi bulan ini (8.000) dan Agustus (6.000), dan total toko (12.000 / 13.500).
-      for (const angka of ["8000", "6000", "12000", "13500"]) expect(json).not.toContain(angka);
-      expect(JSON.parse(json).perkiraan).toMatchObject({ bagianSaya: 4_000, totalToko: null, potongToko: null });
+      // Komisi Budi bulan ini (10.000) dan bulan penjualan (7.500), dan total toko (15.000 / 16.000).
+      for (const angka of ["10000", "7500", "15000", "16000"]) expect(json).not.toContain(angka);
+      expect(JSON.parse(json).resmi[0]).toMatchObject({ bulanJualLabel: PERIODE, bulanBayarLabel: BULAN_INI });
     });
 
-    it("BAGI_RATA: her share and the store total, still nothing of the colleague by name or id", async () => {
-      await aturan({ aktif: true, dasar: "BAGI_RATA" });
-      await bulanIni();
-      const g = await gajiKomisiSpg(spgB, await tokoSpg(spgB), new Date());
-      expect(g.perkiraan).toMatchObject({ dasar: "BAGI_RATA", totalToko: 12_000, bagianSaya: 6_000, potongToko: 6, jumlahSpg: 2 });
-      const json = JSON.stringify(payloadGajiHp(g, false, fmt));
-      expect(json).not.toContain(spgA);
-      expect(json).not.toContain("Ani");
-    });
-
-    it("no estimate at a PUTUS store while the rule is off; a consignment store is always split evenly", async () => {
-      await aturan({ aktif: false, dasar: "PER_SPG" });
-      await bulanIni();
-      expect((await gajiKomisiSpg(spgA, await tokoSpg(spgA), new Date())).perkiraan).toBeNull();
-
+    it("toko konsinyasi memakai hitungan yang sama: potong sendiri × tarif kategori", async () => {
       await jual(spgK, konsi, new Date(), [{ itemId: topi, qty: 2 }]);
-      const k = await gajiKomisiSpg(spgK, await tokoSpg(spgK), new Date());
-      expect(k.perkiraan).toMatchObject({ jenis: "KONSI", dasar: "BAGI_RATA", bagianSaya: 3_000, totalToko: 3_000, jumlahSpg: 1 });
+      const k = await perkiraanKomisiHp(spgK, (await tokoSpg(spgK))!, new Date());
+      expect(k).toMatchObject({ jenis: "KONSI", dasar: "PER_SPG", bagianSaya: 2_000, potongSaya: 2, totalToko: 2_000, jumlahSpg: 1 });
     });
   });
 });

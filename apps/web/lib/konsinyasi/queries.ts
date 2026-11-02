@@ -12,6 +12,7 @@ import type { PenandaCocok } from "./pencocokan";
 import { promoEloraeSiklus } from "./promo-elorae-queries";
 import { keSen, totalTagihanKonsi } from "./promo-elorae";
 import { stokDiToko, type SumberStokToko } from "./stok-di-toko";
+import { payoutMonth } from "@/lib/spg-commission/payout";
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -198,10 +199,21 @@ export type RincianSiklus = {
   laporanSpg: { itemName: string; itemId: string | null; qty: number }[] | null;
   laporanToko: { itemName: string; itemId: string | null; qty: number }[] | null;
   banding: BarisBanding[];
+  /** `komisiPerPcs`: tarif kategori yang berlaku saat dikunci, disalin sebagai riwayat. */
   resmi: { itemId: string | null; itemName: string; qty: number; price: number; amount: number; komisiPerPcs: number }[];
+  /**
+   * Bulan komisi SPG siklus ini: penjualannya (bulan siklus) dan pembayarannya — bulan WIB saat
+   * angkanya dikunci, yaitu saat kantor mengecek laporannya; null selama belum/tidak dikunci.
+   */
+  komisiBulan: { bulanJual: string; bulanBayar: string | null };
   komisi: {
     id: string;
     spgNama: string | null;
+    /**
+     * Peserta bergaji pokok siklus ini (SPG yang bertugas saat kunci pertama). False = penjual
+     * dari toko lain: komisinya dari penjualannya sendiri, tanpa gaji pokok.
+     */
+    bergaji: boolean;
     gajiPokok: number;
     komisi: number;
     total: number;
@@ -338,6 +350,7 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
           total: true,
           deduction: true,
           paidAt: true,
+          salaried: true,
           spgUser: { select: { name: true } },
         },
       },
@@ -490,9 +503,14 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       amount: angka(s.amount),
       komisiPerPcs: angka(s.commissionPerPcs),
     })),
+    komisiBulan: {
+      bulanJual: `${c.periodYear}-${String(c.periodMonth).padStart(2, "0")}`,
+      bulanBayar: c.lockedAt ? payoutMonth(c.lockedAt) : null,
+    },
     komisi: c.commissions.map((k) => ({
       id: k.id,
       spgNama: k.spgUser?.name ?? null,
+      bergaji: k.salaried,
       gajiPokok: angka(k.baseSalary),
       komisi: angka(k.commission),
       total: angka(k.total),

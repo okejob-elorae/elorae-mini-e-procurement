@@ -13,6 +13,9 @@ import { bacaPesananKonsiLama } from "./antaran-queries";
  *                     disetujui tanpa pengiriman (`bacaPesananKonsiLama`) — tetap
  *                     diterima sekali per pesanan. Pesanan aturan baru tidak
  *                     pernah terbuka di sini: persetujuan hanya mencadangkan.
+ *                     Pesanan lama yang cadangannya MASIH ditahan tidak terbuka
+ *                     di sini juga: SPG mengonfirmasi yang sudah sampai dari
+ *                     "Pesanan untuk toko ini" (`konfirmasiSampaiPesananLama`).
  * - KONSI_SHIPMENT  : kiriman modul konsinyasi (`ConsignmentShipment`); barisnya
  *                     boleh tanpa `itemId` (diketik nama saja).
  * - MUTASI          : mutasi dari toko lain (`StoreTransfer`) yang sudah DIKIRIM
@@ -85,7 +88,9 @@ export async function muatKiriman(
   }
   if (sourceType === "KONSI_TRANSFER") {
     // Hanya antaran yang lahir dari pengiriman. Transfer lama tanpa pengiriman
-    // (stok keluar saat disetujui) diterima lewat pesanannya (`KONSI_ORDER`).
+    // (stok keluar saat disetujui) diterima lewat pesanannya (`KONSI_ORDER`), dan
+    // transfer konfirmasi sampai pesanan lama (`oldOrderArrival`) sudah dihitung
+    // saat dikonfirmasi — tanda terimanya dibuat bersamanya, tidak dibuka di sini.
     const t = await klien.konsiTransfer.findFirst({
       where: { id: sourceId, storeId, shipmentId: { not: null } },
       select: {

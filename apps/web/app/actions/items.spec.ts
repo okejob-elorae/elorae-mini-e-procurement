@@ -14,7 +14,6 @@ vi.mock("@/lib/notifications/events", () => ({ notifyItemCreated: vi.fn() }));
 vi.mock("@elorae/db", () => ({
   ItemType: {},
   prisma: { $transaction: mockTx },
-  recalcItemSellingPrice: vi.fn(),
 }));
 vi.mock("@/lib/items/mutations", async () => {
   const actual = await vi.importActual<typeof import("@/lib/items/mutations")>("@/lib/items/mutations");

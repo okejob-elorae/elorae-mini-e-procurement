@@ -1,217 +1,68 @@
 import { describe, expect, it } from "vitest";
+import { commissionPerSpg, putusReportKey, type SalesReport } from "@/lib/spg-commission/payout";
 import {
-  bacaPeriodeKomisi,
+  aturanLama,
+  bacaBulanBayar,
+  bacaDasarResmi,
   BULAN_LALU,
   bulanSebelum,
   bulanSudahSelesai,
-  hitungKomisiToko,
+  DASAR_TARIF_KATEGORI,
   periodeSah,
   rencanaTetapkan,
   rentangBulanWib,
   statusResmi,
   sudahBerbeda,
+  susunKomisiToko,
   validasiAturanKomisiPutus,
   type BarisResmiAda,
   type OrangKomisi,
 } from "./komisi";
-import { bacaKomisiPutus } from "./pengaturan";
+
+/**
+ * Bagian murni komisi SPG Max yang tersisa: menyusun hasil satu hitungan (tarif per kategori ×
+ * potong masing-masing SPG, `lib/spg-commission/payout.ts`) untuk kantor, aturan penetapan resmi
+ * toko putus, dan bulan. Angkanya sendiri diuji di `lib/spg-commission/payout.test.ts`.
+ */
 
 const ani: OrangKomisi = { userId: "u-ani", nama: "Ani", ditugaskan: true };
 const budi: OrangKomisi = { userId: "u-budi", nama: "Budi", ditugaskan: true };
-const citra: OrangKomisi = { userId: "u-citra", nama: "Citra", ditugaskan: false };
 
-describe("hitungKomisiToko — BAGI_RATA", () => {
-  it("splits the store's net commission evenly between assigned SPGs, remainder to the first by name", () => {
-    const h = hitungKomisiToko({
-      dasar: "BAGI_RATA",
-      orang: [budi, ani],
-      jual: [
-        { salesmanId: "u-budi", itemId: "kaos", qty: 3, commissionPerPcs: 1_000 },
-        { salesmanId: "u-ani", itemId: "kaos", qty: 2, commissionPerPcs: 1_000 },
-        { salesmanId: "u-ani", itemId: "topi", qty: 1, commissionPerPcs: 1 },
-      ],
-      kembali: [],
-    });
-    expect(h.totalToko).toBe(5_001);
-    expect(h.potongToko).toBe(6);
-    expect(h.perSpg.map((p) => [p.nama, p.potong, p.komisi, p.penerima])).toEqual([
-      ["Ani", 3, 2_501, true],
-      ["Budi", 3, 2_500, true],
+const rates = [{ itemCategoryId: "kaos", effectiveFrom: "2026-01", amountPerPiece: 1_000 }];
+
+function laporan(jual: SalesReport["movements"]): SalesReport {
+  return {
+    key: putusReportKey("toko", "2026-09"),
+    kind: "PUTUS",
+    storeId: "toko",
+    salesMonth: "2026-09",
+    checkedAt: new Date("2026-10-03T03:00:00.000Z"),
+    official: null,
+    movements: jual,
+  };
+}
+
+describe("susunKomisiToko", () => {
+  it("penerima = yang menjual, masing-masing dari potongnya sendiri; SPG bertugas yang tidak menjual tampil dengan nol", () => {
+    const hitung = commissionPerSpg(laporan([{ salesmanId: "u-ani", itemId: "kaos-1", categoryId: "kaos", qty: 3 }]), rates);
+    const hasil = susunKomisiToko(hitung, [ani, budi]);
+    expect(hasil.perSpg.map((p) => [p.userId, p.potong, p.komisi, p.penerima])).toEqual([
+      ["u-ani", 3, 3_000, true],
+      ["u-budi", 0, 0, false],
     ]);
-    expect(h.perSpg.reduce((n, p) => n + p.komisi, 0)).toBe(h.totalToko);
+    expect([hasil.potongToko, hasil.totalToko, hasil.potongTanpaTarif]).toEqual([3, 3_000, 0]);
   });
 
-  it("nets shopper returns of the same month per item and never goes below zero", () => {
-    const h = hitungKomisiToko({
-      dasar: "BAGI_RATA",
-      orang: [ani],
-      jual: [
-        { salesmanId: "u-ani", itemId: "kaos", qty: 4, commissionPerPcs: 1_000 },
-        { salesmanId: "u-ani", itemId: "celana", qty: 1, commissionPerPcs: 2_000 },
-      ],
-      kembali: [
-        { salesmanId: "u-ani", itemId: "kaos", qty: 1 },
-        { salesmanId: "u-ani", itemId: "celana", qty: 3 },
-        // Barang yang tidak laku bulan ini: pengembaliannya tidak mengurangi apa pun.
-        { salesmanId: "u-ani", itemId: "jaket", qty: 2 },
-      ],
-    });
-    expect(h.potongToko).toBe(3);
-    expect(h.totalToko).toBe(3_000);
-    expect(h.perSpg[0]).toMatchObject({ potong: 3, komisi: 3_000 });
+  it("penjual yang tidak ada di daftar orang tetap dihitung, namanya id-nya", () => {
+    const hitung = commissionPerSpg(laporan([{ salesmanId: "u-pindah", itemId: "kaos-1", categoryId: "kaos", qty: 2 }]), rates);
+    expect(susunKomisiToko(hitung, [ani]).perSpg[0]).toMatchObject({ userId: "u-pindah", nama: "u-pindah", ditugaskan: false, penerima: true, komisi: 2_000 });
   });
 
-  it("gives a seller who no longer works at the store no share, but keeps her pieces in the store total", () => {
-    const h = hitungKomisiToko({
-      dasar: "BAGI_RATA",
-      orang: [ani, citra],
-      jual: [
-        { salesmanId: "u-citra", itemId: "kaos", qty: 4, commissionPerPcs: 500 },
-        { salesmanId: "u-ani", itemId: "kaos", qty: 2, commissionPerPcs: 500 },
-      ],
-      kembali: [],
-    });
-    expect(h.totalToko).toBe(3_000);
-    expect(h.perSpg.map((p) => [p.nama, p.potong, p.komisi, p.penerima])).toEqual([
-      ["Ani", 2, 3_000, true],
-      ["Citra", 4, 0, false],
-    ]);
-  });
-
-  it("has no recipients when the store has no assigned SPG", () => {
-    const h = hitungKomisiToko({
-      dasar: "BAGI_RATA",
-      orang: [citra],
-      jual: [{ salesmanId: "u-citra", itemId: "kaos", qty: 1, commissionPerPcs: 500 }],
-      kembali: [],
-    });
-    expect(h.totalToko).toBe(500);
-    expect(h.perSpg.filter((p) => p.penerima)).toEqual([]);
-  });
-
-  it("does not leave floating-point dust on cent rates", () => {
-    const h = hitungKomisiToko({
-      dasar: "BAGI_RATA",
-      orang: [ani],
-      jual: [{ salesmanId: "u-ani", itemId: "kaos", qty: 3, commissionPerPcs: 0.1 }],
-      kembali: [],
-    });
-    expect(h.totalToko).toBe(0.3);
-    expect(h.perSpg[0].komisi).toBe(0.3);
-  });
-});
-
-describe("hitungKomisiToko — bawaan pemilik", () => {
-  it("defaults to PER_SPG: pieces each SPG sold herself × the item rate", () => {
-    const { dasar } = bacaKomisiPutus(null);
-    expect(dasar).toBe("PER_SPG");
-    const h = hitungKomisiToko({
-      dasar,
-      orang: [ani, budi],
-      jual: [
-        { salesmanId: "u-ani", itemId: "kaos", qty: 1, commissionPerPcs: 3_000 },
-        { salesmanId: "u-budi", itemId: "kaos", qty: 4, commissionPerPcs: 3_000 },
-      ],
-      kembali: [],
-    });
-    expect(h.perSpg.map((p) => [p.nama, p.potong, p.komisi])).toEqual([
-      ["Ani", 1, 3_000],
-      ["Budi", 4, 12_000],
-    ]);
-  });
-});
-
-describe("hitungKomisiToko — potongan", () => {
-  it("subtracts a deduction from that SPG only, after the basis, never below zero", () => {
-    const h = hitungKomisiToko({
-      dasar: "PER_SPG",
-      orang: [ani, budi],
-      jual: [
-        { salesmanId: "u-ani", itemId: "kaos", qty: 2, commissionPerPcs: 1_000 },
-        { salesmanId: "u-budi", itemId: "kaos", qty: 3, commissionPerPcs: 1_000 },
-      ],
-      kembali: [],
-      potongan: [
-        { userId: "u-ani", jumlah: 500, keterangan: "barang hilang" },
-        { userId: "u-ani", jumlah: 250, keterangan: "barang hilang" },
-        { userId: "u-budi", jumlah: 5_000, keterangan: "barang hilang" },
-      ],
-    });
-    expect(h.perSpg.map((p) => [p.nama, p.komisiKotor, p.potongan, p.potonganSisa, p.komisi])).toEqual([
-      ["Ani", 2_000, 750, 0, 1_250],
-      ["Budi", 3_000, 3_000, 2_000, 0],
-    ]);
-    expect(h.totalToko).toBe(5_000);
-    expect(h.totalPotongan).toBe(3_750);
-  });
-
-  it("applies deductions to each share under BAGI_RATA, and ignores zero or negative entries", () => {
-    const h = hitungKomisiToko({
-      dasar: "BAGI_RATA",
-      orang: [ani, budi],
-      jual: [{ salesmanId: "u-ani", itemId: "kaos", qty: 4, commissionPerPcs: 1_000 }],
-      kembali: [],
-      potongan: [
-        { userId: "u-budi", jumlah: 300, keterangan: "barang hilang" },
-        { userId: "u-ani", jumlah: -100, keterangan: "salah" },
-        { userId: "u-ani", jumlah: 0, keterangan: "kosong" },
-      ],
-    });
-    expect(h.perSpg.map((p) => [p.nama, p.komisiKotor, p.komisi])).toEqual([
-      ["Ani", 2_000, 2_000],
-      ["Budi", 2_000, 1_700],
-    ]);
-  });
-
-  it("an empty list changes nothing", () => {
-    const tanpa = hitungKomisiToko({ dasar: "PER_SPG", orang: [ani], jual: [{ salesmanId: "u-ani", itemId: "k", qty: 1, commissionPerPcs: 10 }], kembali: [] });
-    const kosong = hitungKomisiToko({ dasar: "PER_SPG", orang: [ani], jual: [{ salesmanId: "u-ani", itemId: "k", qty: 1, commissionPerPcs: 10 }], kembali: [], potongan: [] });
-    expect(kosong).toEqual(tanpa);
-  });
-});
-
-describe("hitungKomisiToko — PER_SPG", () => {
-  it("pays each SPG from her own notes, returns reduce the original seller", () => {
-    const h = hitungKomisiToko({
-      dasar: "PER_SPG",
-      orang: [ani, budi],
-      jual: [
-        { salesmanId: "u-ani", itemId: "kaos", qty: 3, commissionPerPcs: 2_000 },
-        { salesmanId: "u-budi", itemId: "kaos", qty: 5, commissionPerPcs: 2_000 },
-      ],
-      kembali: [{ salesmanId: "u-budi", itemId: "kaos", qty: 2 }],
-    });
-    expect(h.perSpg.map((p) => [p.nama, p.potong, p.komisi, p.penerima])).toEqual([
-      ["Ani", 3, 6_000, true],
-      ["Budi", 3, 6_000, true],
-    ]);
-    expect(h.totalToko).toBe(12_000);
-    expect(h.potongToko).toBe(6);
-  });
-
-  it("still pays a seller who has moved to another store, and an assigned SPG without sales gets zero", () => {
-    const h = hitungKomisiToko({
-      dasar: "PER_SPG",
-      orang: [ani, citra],
-      jual: [{ salesmanId: "u-citra", itemId: "kaos", qty: 2, commissionPerPcs: 1_500 }],
-      kembali: [],
-    });
-    expect(h.perSpg.map((p) => [p.nama, p.komisi, p.penerima])).toEqual([
-      ["Ani", 0, true],
-      ["Citra", 3_000, true],
-    ]);
-  });
-
-  it("counts a seller missing from the people list under her id rather than dropping her pieces", () => {
-    const h = hitungKomisiToko({
-      dasar: "PER_SPG",
-      orang: [],
-      jual: [{ salesmanId: "u-x", itemId: "kaos", qty: 1, commissionPerPcs: 100 }],
-      kembali: [],
-    });
-    expect(h.perSpg).toEqual([
-      { userId: "u-x", nama: "u-x", ditugaskan: false, potong: 1, komisiKotor: 100, potongan: 0, potonganSisa: 0, komisi: 100, penerima: true },
-    ]);
+  it("potong tanpa tarif tetap penerima, komisinya nol dan dilaporkan", () => {
+    const hitung = commissionPerSpg(laporan([{ salesmanId: "u-ani", itemId: "topi-1", categoryId: null, qty: 4 }]), rates);
+    const hasil = susunKomisiToko(hitung, [ani]);
+    expect(hasil.perSpg[0]).toMatchObject({ penerima: true, potong: 4, komisi: 0, potongTanpaTarif: 4 });
+    expect(hasil.potongTanpaTarif).toBe(4);
   });
 });
 
@@ -235,28 +86,32 @@ describe("bulan", () => {
     expect(bulanSudahSelesai("2026-11", "2026-10")).toBe(false);
   });
 
-  it("defaults the page to the last finished month", () => {
-    const pilihan = ["2026-10", "2026-09", "2026-08"];
-    expect(bacaPeriodeKomisi(undefined, pilihan)).toBe("2026-09");
-    expect(bacaPeriodeKomisi("2026-08", pilihan)).toBe("2026-08");
-    expect(bacaPeriodeKomisi(["2026-10"], pilihan)).toBe("2026-10");
-    expect(bacaPeriodeKomisi("2025-01", pilihan)).toBe("2026-09");
+  it("halaman dibuka di bulan PEMBAYARAN berjalan, tempat laporan bulan lalu dicek", () => {
+    const pilihan = ["2026-11", "2026-10", "2026-09"];
+    expect(bacaBulanBayar(undefined, pilihan)).toBe("2026-11");
+    expect(bacaBulanBayar("2026-09", pilihan)).toBe("2026-09");
+    expect(bacaBulanBayar(["2026-10"], pilihan)).toBe("2026-10");
+    expect(bacaBulanBayar("2025-01", pilihan)).toBe("2026-11");
   });
 
-  it("`?bulan=lalu` (tautan Beranda) is the month before the current WIB month", () => {
-    expect(bacaPeriodeKomisi(BULAN_LALU, ["2026-10", "2026-09", "2026-08"])).toBe("2026-09");
+  it("`?bulan=lalu` (tautan Beranda): penjualan bulan lalu dibayar bulan ini, jadi yang dibuka bulan berjalan", () => {
+    expect(bacaBulanBayar(BULAN_LALU, ["2026-11", "2026-10"])).toBe("2026-11");
     expect(bulanSebelum("2026-10")).toBe("2026-09");
     expect(bulanSebelum("2026-01")).toBe("2025-12");
   });
 });
 
 describe("rencanaTetapkan", () => {
-  const hasil = hitungKomisiToko({
-    dasar: "BAGI_RATA",
-    orang: [ani, budi],
-    jual: [{ salesmanId: "u-ani", itemId: "kaos", qty: 3, commissionPerPcs: 1_000 }],
-    kembali: [],
-  });
+  const hasil = susunKomisiToko(
+    commissionPerSpg(
+      laporan([
+        { salesmanId: "u-ani", itemId: "kaos-1", categoryId: "kaos", qty: 3 },
+        { salesmanId: "u-budi", itemId: "kaos-1", categoryId: "kaos", qty: 1 },
+      ]),
+      rates,
+    ),
+    [ani, budi],
+  );
   const resmi = (u: string, ubah: Partial<BarisResmiAda> = {}): BarisResmiAda => ({
     id: `r-${u}`,
     userId: u,
@@ -267,11 +122,11 @@ describe("rencanaTetapkan", () => {
     ...ubah,
   });
 
-  it("writes one row per recipient on the first lock", () => {
+  it("writes one row per seller on the first lock, with the category-rate basis", () => {
     const r = rencanaTetapkan(hasil, []);
-    expect(r.ok && r.tulis.map((t) => [t.userId, t.isi.commission, t.isi.unitsSold, t.sebelum])).toEqual([
-      ["u-ani", 1_500, 3, null],
-      ["u-budi", 1_500, 0, null],
+    expect(r.ok && r.tulis.map((t) => [t.userId, t.isi.commission, t.isi.unitsSold, t.isi.basis, t.sebelum])).toEqual([
+      ["u-ani", 3_000, 3, DASAR_TARIF_KATEGORI, null],
+      ["u-budi", 1_000, 1, DASAR_TARIF_KATEGORI, null],
     ]);
     expect(r.ok && r.hapus).toEqual([]);
   });
@@ -288,30 +143,24 @@ describe("rencanaTetapkan", () => {
     expect(rencanaTetapkan(hasil, [resmi("u-ani"), resmi("u-budi", { paidAt: new Date() })])).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
   });
 
-  it("refuses a store without recipients", () => {
-    const kosong = hitungKomisiToko({ dasar: "BAGI_RATA", orang: [], jual: [], kembali: [] });
-    expect(rencanaTetapkan(kosong, [])).toEqual({ ok: false, code: "TANPA_SPG" });
+  it("refuses a store with no seller", () => {
+    expect(rencanaTetapkan(susunKomisiToko([], [ani]), [])).toEqual({ ok: false, code: "TANPA_SPG" });
   });
 });
 
-describe("sudahBerbeda / statusResmi", () => {
-  const hasil = hitungKomisiToko({
-    dasar: "PER_SPG",
-    orang: [ani],
-    jual: [{ salesmanId: "u-ani", itemId: "kaos", qty: 2, commissionPerPcs: 1_000 }],
-    kembali: [],
-  });
-  const baris: BarisResmiAda = { id: "r", userId: "u-ani", unitsSold: 2, commission: 2_000, basis: "PER_SPG", paidAt: null };
+describe("sudahBerbeda / statusResmi / dasar", () => {
+  const hasil = susunKomisiToko(commissionPerSpg(laporan([{ salesmanId: "u-ani", itemId: "kaos-1", categoryId: "kaos", qty: 2 }]), rates), [ani]);
+  const baris: BarisResmiAda = { id: "r", userId: "u-ani", unitsSold: 2, commission: 2_000, basis: DASAR_TARIF_KATEGORI, paidAt: null };
 
   it("is false before anything is locked and when the locked numbers still match", () => {
     expect(sudahBerbeda(hasil, [])).toBe(false);
     expect(sudahBerbeda(hasil, [baris])).toBe(false);
   });
 
-  it("is true when the amount, pieces, basis or recipients changed", () => {
+  it("is true when the amount, pieces or recipients changed, or the row was set with the old rule", () => {
     expect(sudahBerbeda(hasil, [{ ...baris, commission: 1_000 }])).toBe(true);
     expect(sudahBerbeda(hasil, [{ ...baris, unitsSold: 3 }])).toBe(true);
-    expect(sudahBerbeda(hasil, [{ ...baris, basis: "BAGI_RATA" }])).toBe(true);
+    expect(sudahBerbeda(hasil, [{ ...baris, basis: "PER_SPG" }])).toBe(true);
     expect(sudahBerbeda(hasil, [baris, { ...baris, id: "r2", userId: "u-lain" }])).toBe(true);
   });
 
@@ -320,9 +169,17 @@ describe("sudahBerbeda / statusResmi", () => {
     expect(statusResmi({ paidAt: null })).toBe("DITETAPKAN");
     expect(statusResmi({ paidAt: "2026-10-02T00:00:00Z" })).toBe("DIBAYAR");
   });
+
+  it("reads the stored basis; only TARIF_KATEGORI is the current rule", () => {
+    expect(bacaDasarResmi(DASAR_TARIF_KATEGORI)).toBe(DASAR_TARIF_KATEGORI);
+    expect(bacaDasarResmi("PER_SPG")).toBe("PER_SPG");
+    expect(bacaDasarResmi("apa saja")).toBe("BAGI_RATA");
+    expect(aturanLama(DASAR_TARIF_KATEGORI)).toBe(false);
+    expect(aturanLama("PER_SPG")).toBe(true);
+  });
 });
 
-describe("validasiAturanKomisiPutus", () => {
+describe("validasiAturanKomisiPutus (kartu lama)", () => {
   it("accepts only a boolean switch and one of the two bases", () => {
     expect(validasiAturanKomisiPutus({ aktif: false, dasar: "PER_SPG" })).toEqual({ aktif: false, dasar: "PER_SPG" });
     expect(validasiAturanKomisiPutus({ aktif: "ya", dasar: "PER_SPG" })).toBeNull();

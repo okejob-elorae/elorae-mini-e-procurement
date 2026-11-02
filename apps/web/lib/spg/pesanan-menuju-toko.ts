@@ -1,5 +1,6 @@
 import { prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
+import { bacaPesananKonsiCadanganLama } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { sisaBarisPesanan, type BarisPengirimanBerjalan } from "./antaran";
 import { muatKiriman, type JenisKiriman } from "./kiriman";
 
@@ -21,17 +22,24 @@ import { muatKiriman, type JenisKiriman } from "./kiriman";
  * pindah ke daftar "Terima kiriman", dan sisa yang ditutup kantor hilang dari
  * sini begitu saja.
  *
+ * PESANAN KONSI LAMA yang cadangannya masih ditahan (`bacaPesananKonsiCadanganLama`)
+ * tampil dengan statusnya sendiri: tidak ada pengiriman yang akan datang —
+ * barangnya biasanya sudah lama di toko — jadi SPG yang menghitung dan
+ * mengonfirmasi yang sudah sampai. Sisanya tidak dibagi ke "belum dikirim gudang".
+ *
  * Komponen klien hanya boleh `import type` dari berkas ini (menarik Prisma).
  */
 
 /**
+ * - PESANAN_LAMA         : pesanan konsi lama yang cadangannya masih ditahan — konfirmasi
+ *                          barang yang sudah sampai (`/pwa/spg/terima/pesanan-lama/<id>`).
  * - MENUNGGU_PERSETUJUAN : pesanan belum disetujui kantor.
  * - DISETUJUI            : disetujui, belum ada barang yang berangkat (boleh sedang dikemas).
  * - DIKIRIM_SEBAGIAN     : sebagian sudah diserahkan ke toko; yang tampil sisanya.
  * - DALAM_PERJALANAN     : ada pengiriman yang sedang di jalan menuju toko.
  */
-export type StatusPesananMenuju = "MENUNGGU_PERSETUJUAN" | "DISETUJUI" | "DIKIRIM_SEBAGIAN" | "DALAM_PERJALANAN";
-export const STATUS_PESANAN_MENUJU: StatusPesananMenuju[] = ["DALAM_PERJALANAN", "DIKIRIM_SEBAGIAN", "DISETUJUI", "MENUNGGU_PERSETUJUAN"];
+export type StatusPesananMenuju = "PESANAN_LAMA" | "MENUNGGU_PERSETUJUAN" | "DISETUJUI" | "DIKIRIM_SEBAGIAN" | "DALAM_PERJALANAN";
+export const STATUS_PESANAN_MENUJU: StatusPesananMenuju[] = ["PESANAN_LAMA", "DALAM_PERJALANAN", "DIKIRIM_SEBAGIAN", "DISETUJUI", "MENUNGGU_PERSETUJUAN"];
 
 export type BarangPesananMenuju = { kunci: string; nama: string; varian: string; pcs: number };
 
@@ -68,13 +76,19 @@ export type BarisPesananMentah = {
   lines: { id?: string; itemId: string; variantSku: string | null; productName: string; qty: number; deliveredQty: number; cancelledQty: number }[];
   /** Pengiriman pesanan ini yang masih berjalan (PACKED / IN_TRANSIT). */
   shipments?: BarisPengirimanBerjalan[];
+  /**
+   * Hanya untuk pesanan konsi LAMA yang cadangannya masih ditahan: sisa yang bisa dikonfirmasi
+   * per id baris (`bacaPesananKonsiCadanganLama`). Ada = statusnya PESANAN_LAMA.
+   */
+  sisaLama?: Readonly<Record<string, number>>;
 };
 
 /**
  * Murni: baris pesanan mentah → daftar yang tampil. Per barang × ukuran,
  * jumlahnya yang BELUM sampai toko (dipesan − diserahkan − dibatalkan); pesanan
- * tanpa sisa tidak tampil. Urutan: yang sedang di jalan dulu, lalu dikirim
- * sebagian, disetujui, menunggu — yang terlama dulu di tiap status.
+ * tanpa sisa tidak tampil. Urutan: pesanan lama yang menunggu konfirmasi
+ * dulu, lalu yang sedang di jalan, dikirim sebagian, disetujui, menunggu — yang
+ * terlama dulu di tiap status.
  */
 export function susunPesananMenuju(baris: readonly BarisPesananMentah[]): PesananMenujuToko[] {
   const hasil: PesananMenujuToko[] = [];
@@ -82,6 +96,7 @@ export function susunPesananMenuju(baris: readonly BarisPesananMentah[]): Pesana
     const menunggu = o.status === "PENDING_APPROVAL";
     if (!menunggu && !(o.status === "APPROVED" && (o.deliveryStatus === "PENDING" || o.deliveryStatus === "PARTIAL"))) continue;
     const pengiriman = o.shipments ?? [];
+    const lama = !menunggu && o.sisaLama !== undefined;
     const perBarang = new Map<string, BarangPesananMenuju>();
     let dikemas = 0;
     let dalamPerjalanan = 0;
@@ -91,7 +106,10 @@ export function susunPesananMenuju(baris: readonly BarisPesananMentah[]): Pesana
       if (l.deliveredQty > 0) adaTerkirim = true;
       const s = menunggu
         ? { sisa: Math.max(0, l.qty - l.cancelledQty), dikemas: 0, dalamPerjalanan: 0, belumDikirimGudang: 0 }
-        : sisaBarisPesanan(l, pengiriman);
+        : lama
+          ? // Tidak ada pengiriman yang akan datang: sisa pesanan lama tidak "di gudang" maupun "di jalan".
+            { sisa: Math.max(0, o.sisaLama?.[l.id ?? ""] ?? 0), dikemas: 0, dalamPerjalanan: 0, belumDikirimGudang: 0 }
+          : sisaBarisPesanan(l, pengiriman);
       if (s.sisa <= 0) continue;
       dikemas += s.dikemas;
       dalamPerjalanan += s.dalamPerjalanan;
@@ -107,11 +125,13 @@ export function susunPesananMenuju(baris: readonly BarisPesananMentah[]): Pesana
     if (jumlahPcs <= 0) continue;
     const status: StatusPesananMenuju = menunggu
       ? "MENUNGGU_PERSETUJUAN"
-      : dalamPerjalanan > 0
-        ? "DALAM_PERJALANAN"
-        : adaTerkirim || o.deliveryStatus === "PARTIAL"
-          ? "DIKIRIM_SEBAGIAN"
-          : "DISETUJUI";
+      : lama
+        ? "PESANAN_LAMA"
+        : dalamPerjalanan > 0
+          ? "DALAM_PERJALANAN"
+          : adaTerkirim || o.deliveryStatus === "PARTIAL"
+            ? "DIKIRIM_SEBAGIAN"
+            : "DISETUJUI";
     hasil.push({
       id: o.id,
       orderNo: o.orderNo,
@@ -190,7 +210,16 @@ export async function pesananMenujuToko(storeId: string): Promise<PesananMenujuT
       },
     },
   });
-  return susunPesananMenuju(baris);
+  // Pesanan konsi lama yang cadangannya masih ditahan — definisinya di SATU tempat.
+  const lama = await bacaPesananKonsiCadanganLama(prisma, {
+    orderIds: baris.filter((o) => o.orderType === "KONSI" && o.status === "APPROVED").map((o) => o.id),
+  });
+  return susunPesananMenuju(
+    baris.map((o) => {
+      const l = lama.get(o.id);
+      return l ? { ...o, sisaLama: Object.fromEntries(l.baris.map((b) => [b.lineId, b.sisa])) } : o;
+    }),
+  );
 }
 
 // ─── Kabar saat barang berangkat ─────────────────────────────────────────────

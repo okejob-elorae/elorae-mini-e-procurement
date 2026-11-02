@@ -43,6 +43,15 @@ function segarkan() {
   revalidatePath('/backoffice/konsinyasi');
 }
 
+/** Kunci, buka kunci, dan bayar gaji mengubah komisi SPG — layar komisi kantor dan HP SPG ikut segar. */
+function segarkanKomisi() {
+  segarkan();
+  revalidatePath("/backoffice/komisi-spg");
+  revalidatePath("/backoffice/spg-commission");
+  revalidatePath("/pwa/spg/gaji");
+  revalidatePath("/pwa");
+}
+
 function tanggalWib(teks: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(teks)) return null;
   const d = new Date(`${teks}T00:00:00+07:00`);
@@ -233,7 +242,7 @@ export async function kunciAngkaAction(
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     // Penjualan siklus + gaji SPG ke buku besar (sesudah commit, tidak pernah melempar).
     await kaitSiklusKonsi(cycleId, userId);
-    segarkan();
+    segarkanKomisi();
     return { ok: true };
   } catch (err) {
     console.error('kunciAngka gagal:', err);
@@ -250,7 +259,7 @@ export async function bukaKunciAction(cycleId: string): Promise<HasilAksiKonsi> 
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     // Jurnal siklus dan gaji SPG-nya dibalik (generasi penyesuaian), tidak dihapus.
     await kaitSiklusKonsi(cycleId, userId);
-    segarkan();
+    segarkanKomisi();
     return { ok: true };
   } catch (err) {
     console.error('bukaKunci gagal:', err);
@@ -269,7 +278,7 @@ export async function bayarKomisiAction(
     const hasil = await bayarKomisi({ commissionId, olehUserId: userId, catatan });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
     await kaitBayarGajiKonsi(commissionId, userId);
-    segarkan();
+    segarkanKomisi();
     return { ok: true };
   } catch (err) {
     console.error('bayarKomisi gagal:', err);

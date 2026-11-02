@@ -70,7 +70,7 @@ import {
   selaraskanJurnalReturKonsi,
   selaraskanJurnalSiklusKonsi,
 } from "./jurnal";
-import { kaitKirimTitipan, kaitPindahKonsiPengiriman, kaitReturLapanganKonsi, kaitSiklusKonsi } from "./kait";
+import { kaitKirimTitipan, kaitPindahKonsiPengiriman, kaitPindahKonsiTransfer, kaitReturLapanganKonsi, kaitSiklusKonsi } from "./kait";
 import { putarBarangRusak } from "./nilai-rusak-queries";
 import { rekonsiliasiPersediaan } from "./rekonsiliasi-persediaan-queries";
 import {
@@ -624,6 +624,91 @@ describe("konsinyasi: pindah barang per pengiriman (KonsiTransfer)", () => {
     // Sesudah dipetakan, kait yang sama (mis. ulangan penyelesaian) memostingnya.
     await kaitPindahKonsiPengiriman(b.shipmentId, adminId);
     expect(await jumlahGenerasi(PINDAH, b.id)).toBe(1);
+  });
+});
+
+describe("konsinyasi: konfirmasi sampai pesanan konsi lama (KonsiTransfer tanpa pengiriman)", () => {
+  const PINDAH = SUMBER_OPERASIONAL.PINDAH_KONSI;
+  let nomor = 0;
+
+  /**
+   * Bentuk yang ditulis `konfirmasiSampaiPesananLama` lewat `issueKonsiTransfer`: transfer tanpa
+   * pengiriman bertanda `oldOrderArrival`; baris yang gudangnya sudah diopname sesudah pesanan
+   * disetujui membawa `mainCountedByOpnameId` dan tidak memotong kartu stok gudang.
+   */
+  async function sampai(isi: Array<{ qty: number; unitCost: number; itemId?: string; opnameId?: string | null }>, createdAt: Date) {
+    nomor += 1;
+    const o = await prisma.fieldSalesOrder.create({
+      data: {
+        orderNo: `${tag}/KONSI-LAMA/${urut}/${nomor}`,
+        storeId: tokoId,
+        salesmanId: adminId,
+        orderType: "KONSI",
+        status: "APPROVED",
+        approvedAt: wib("2004-08-01"),
+        subtotal: 0,
+        total: 0,
+      },
+    });
+    const baris = await prisma.fieldSalesOrderLine.create({
+      data: { orderId: o.id, itemId: barangId, productName: `${tag} Kaos`, qty: 100, unitPrice: 0, lineTotal: 0 },
+    });
+    const t = await prisma.konsiTransfer.create({
+      data: { docNo: `${tag}/KTRF-LAMA/${urut}/${nomor}`, orderId: o.id, storeId: tokoId, transferredById: adminId, oldOrderArrival: true, createdAt },
+    });
+    await prisma.konsiTransferLine.createMany({
+      data: isi.map((l) => ({
+        transferId: t.id,
+        orderLineId: baris.id,
+        itemId: l.itemId ?? barangId,
+        productName: `${tag} Kaos`,
+        qty: l.qty,
+        unitCost: l.unitCost,
+        mainCountedByOpnameId: l.opnameId ?? null,
+      })),
+    });
+    return { id: t.id, docNo: t.docNo, orderNo: o.orderNo };
+  }
+
+  it("biasa: DR persediaan konsinyasi / CR persediaan gudang, bertanggal konfirmasinya, satu jurnal per transfer", async () => {
+    const a = await sampai([{ qty: 10, unitCost: 40_000 }], wib("2004-11-05"));
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(PINDAH, a.id)).toEqual({ INVENTORY_CONSIGNMENT: 400_000, INVENTORY_FG: -400_000 });
+    const j = await prisma.journal.findUniqueOrThrow({
+      where: { sourceType_sourceId: { sourceType: PINDAH, sourceId: a.id } },
+      select: { date: true, description: true },
+    });
+    expect(j.date.toISOString()).toBe(wib("2004-11-05").toISOString());
+    expect(j.description).toContain(a.orderNo);
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toMatchObject({ ok: true, created: false });
+  });
+
+  it("gudang sudah diopname sesudah disetujui: kreditnya Selisih persediaan (akun jurnal opname), TIDAK persediaan gudang", async () => {
+    const a = await sampai(
+      [
+        { qty: 6, unitCost: 40_000, opnameId: `${tag}-OPN` },
+        { qty: 2, unitCost: 10_000, itemId: kainId },
+      ],
+      wib("2004-11-06"),
+    );
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    // Baris yang sudah diopname: 240.000 dari Selisih; kain biasa: 20.000 dari persediaan bahan.
+    expect(await saldoPeran(PINDAH, a.id)).toEqual({ INVENTORY_CONSIGNMENT: 260_000, INVENTORY_VARIANCE: -240_000, INVENTORY: -20_000 });
+  });
+
+  it("gerbang tanggal mulai buku besar sama dengan saudaranya; kait per transfer tidak pernah melempar dan idempoten", async () => {
+    const a = await sampai([{ qty: 1, unitCost: 40_000 }], wib("2004-11-07"));
+    h.mulai = wib("2004-11-08");
+    expect(await postJurnalPindahKonsi(a.id, adminId)).toEqual({ ok: false, code: "BELUM_BERLAKU" });
+    h.mulai = wib("2004-01-01");
+    await kaitPindahKonsiTransfer(a.id, adminId);
+    await kaitPindahKonsiTransfer(a.id, adminId);
+    expect(await jumlahGenerasi(PINDAH, a.id)).toBe(1);
+    await expect(kaitPindahKonsiTransfer("", adminId)).resolves.toBeUndefined();
+    // Sapuan menemukan transfer konfirmasi seperti transfer pengiriman.
+    const b = await sampai([{ qty: 1, unitCost: 40_000 }], wib("2004-11-07"));
+    const temu = await cariPindahKonsiTanpaJurnal({ sejak: wib("2004-11-01"), sampai: wib("2004-11-30"), batas: 500, ids: [a.id, b.id] });
+    expect(temu.map((d) => d.id)).toEqual([b.id]);
   });
 });
 

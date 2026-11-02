@@ -120,7 +120,9 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
             }),
             // Barang konsinyasi yang berpindah ke toko: baris `KonsiTransfer`, bertanggal
             // transfernya — satu per pengiriman yang selesai, sebesar yang diserahkan.
-            // Transfer lama tanpa pengiriman (stok keluar saat disetujui) ikut juga.
+            // Transfer lama tanpa pengiriman (stok keluar saat disetujui) ikut juga,
+            // begitu pula konfirmasi sampai pesanan lama (`oldOrderArrival`), yang
+            // tanda terima buku tokonya dibuat bersamanya.
             prisma.konsiTransferLine.findMany({
               where: { transfer: { storeId, createdAt: { lt: akhir } } },
               select: { itemId: true, qty: true, transfer: { select: { id: true, orderId: true, shipmentId: true, createdAt: true } } },

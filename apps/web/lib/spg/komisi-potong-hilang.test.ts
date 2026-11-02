@@ -4,10 +4,9 @@ import { bayarKomisi, bukaKunci, kunciAngka } from "@/lib/konsinyasi/writer";
 import { rincianSiklus } from "@/lib/konsinyasi/queries";
 import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "./hilang";
 import { payloadGajiHp } from "./komisi-hp";
-import { daftarKomisiKantor } from "./komisi-queries";
-import { kalimatKomisi, tandaiKomisiDibayar, tetapkanKomisiToko } from "./komisi-writer";
-import { KUNCI_BARANG_HILANG, KUNCI_KOMISI_PUTUS } from "./pengaturan";
-import { gajiKomisiSpg, tokoSpg } from "./queries";
+import { daftarKomisiKantor, komisiResmiSaya } from "./komisi-queries";
+import { kalimatKomisi, tandaiKomisiDibayar, tandaiLaporanDicek, tetapkanKomisiToko } from "./komisi-writer";
+import { KUNCI_BARANG_HILANG } from "./pengaturan";
 
 const url = process.env.DATABASE_URL ?? "";
 const isProd = url.includes(":3307") || url.includes("api.elorae.cloud");
@@ -18,13 +17,15 @@ const d = isProd ? describe.skip : describe;
  * putus saat komisi DITETAPKAN, di toko konsinyasi saat siklus DIKUNCI — paling
  * banyak `maksPotongPersen` dari pembayaran itu. Menetapkan ulang / membuka
  * kunci melepas potongan lalu memotong lagi, jadi angkanya stabil dan sisa
- * beban tidak pernah terpotong dua kali. Basis data sungguhan; semua baris
- * diseed di sini dan dihapus lewat `seededId(s)`.
+ * beban tidak pernah terpotong dua kali. Komisinya dari satu hitungan: tarif
+ * kategori × potong yang dijual masing-masing SPG (toko putus dicek dulu).
+ * Basis data sungguhan; semua baris diseed di sini dan dihapus lewat `seededId(s)`.
  */
 d("potongan barang hilang dari komisi SPG (test bed only)", () => {
   const tag = `KPH${Math.random().toString(36).slice(2, 8)}`;
   const PERIODE = "2026-08";
   let uomId = "";
+  let katId = "";
   let kaos = "";
   let putus = "";
   let konsi = "";
@@ -46,17 +47,19 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
   }
 
   beforeAll(async () => {
-    for (const key of [KUNCI_KOMISI_PUTUS, KUNCI_BARANG_HILANG]) {
+    for (const key of [KUNCI_BARANG_HILANG]) {
       const ada = await prisma.systemSetting.findUnique({ where: { key }, select: { value: true } });
       setelanAwal.set(key, ada?.value ?? null);
     }
-    await setel(KUNCI_KOMISI_PUTUS, { aktif: true, dasar: "PER_SPG" });
     await setel(KUNCI_BARANG_HILANG, { dasarNilai: "HARGA_ELORAE", maksPotongPersen: 50, dariOpname: false });
 
     uomId = (await prisma.uOM.create({ data: { code: `U-${tag}`, nameId: "pcs", nameEn: "pcs" } })).id;
+    // Tarif komisi per kategori: Rp 2.000 per kaos.
+    katId = (await prisma.itemCategory.create({ data: { code: `K-${tag}`, name: `Kaos ${tag}`, isActive: true } })).id;
+    await prisma.spgCommissionRate.create({ data: { itemCategoryId: katId, amountPerPiece: 2_000, effectiveFrom: "2020-01", createdById: "uji" } });
     kaos = (
       await prisma.item.create({
-        data: { sku: `${tag}-KAOS`, nameId: `Kaos ${tag}`, nameEn: "Tee", type: "FINISHED_GOOD", uomId, sellingPrice: 50_000, commissionPerPcs: 2_000 },
+        data: { sku: `${tag}-KAOS`, nameId: `Kaos ${tag}`, nameEn: "Tee", type: "FINISHED_GOOD", uomId, categoryId: katId, sellingPrice: 50_000 },
       })
     ).id;
     const toko = async (kode: string, termsType: "PUTUS" | "KONSI") =>
@@ -73,7 +76,10 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
 
   afterEach(async () => {
     // Jejak komisi SPG (termasuk baris yang sudah dihapus saat ditetapkan ulang) dikenali dari tokonya.
-    const audit = await prisma.auditLog.findMany({ where: { entityType: "SpgCommission" }, select: { id: true, metadata: true } });
+    const audit = await prisma.auditLog.findMany({
+      where: { entityType: { in: ["SpgCommission", "SpgSalesCheck"] } },
+      select: { id: true, metadata: true },
+    });
     const milikUji = audit
       .filter((a) => {
         const m = a.metadata as Record<string, unknown> | null;
@@ -82,6 +88,7 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
       .map((a) => a.id);
     await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
     await prisma.spgCommission.deleteMany({ where: { storeId: { in: tokoIds() } } });
+    await prisma.spgSalesCheck.deleteMany({ where: { storeId: { in: tokoIds() } } });
     await prisma.spgSalePromo.deleteMany({ where: { spgSaleId: { in: (await prisma.spgSale.findMany({ where: { id: { in: seededIds(nota) } }, select: { id: true } })).map((x) => x.id) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(nota) } } });
     nota.length = 0;
@@ -116,6 +123,10 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
     await prisma.user.deleteMany({ where: { id: { in: seededIds([spgA, spgB, spgK, kantor].filter(Boolean)) } } });
     await prisma.store.deleteMany({ where: { id: { in: tokoIds() } } });
     if (kaos) await prisma.item.delete({ where: { id: seededId(kaos) } });
+    if (katId) {
+      await prisma.spgCommissionRate.deleteMany({ where: { itemCategoryId: seededId(katId) } });
+      await prisma.itemCategory.delete({ where: { id: seededId(katId) } });
+    }
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
   });
 
@@ -166,11 +177,15 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
   };
   const potonganRef = (refType: string, refId: string) => prisma.stockLossDeduction.findMany({ where: { refType, refId }, select: { amount: true } });
   const sekarang = new Date("2026-09-05T10:00:00+07:00");
+  /** Dicek 5 September: komisi penjualan Agustus dibayar September. */
+  const BULAN_BAYAR = "2026-09";
+  const cek = () => tandaiLaporanDicek({ storeId: putus, periode: PERIODE, olehUserId: kantor, sekarang });
 
   it("toko putus: dipotong saat ditetapkan (batas 50%), stabil saat ditetapkan ulang, tampil di kantor dan HP, dibayar bersih", async () => {
     await jual(spgA, putus, 4); // komisi 8.000
     const loss = await bebankan(spgA, 5_000);
 
+    expect(await cek()).toEqual({ ok: true, bulanBayar: BULAN_BAYAR });
     const r1 = await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor, sekarang });
     expect(r1.ok).toBe(true);
     const baris = await prisma.spgCommission.findUniqueOrThrow({
@@ -186,8 +201,8 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
     expect((await potonganRef(REF_KOMISI_SPG_PUTUS, baris.id)).map((p) => Number(p.amount))).toEqual([4_000]);
     expect(await bagianDari(loss)).toEqual({ dipotong: 4_000, lunas: false });
 
-    const kantorList = await daftarKomisiKantor(PERIODE, sekarang);
-    const tokoUji = kantorList.toko.find((t) => t.storeId === putus)!;
+    const kantorList = await daftarKomisiKantor(BULAN_BAYAR, sekarang);
+    const tokoUji = kantorList.putus.find((t) => t.storeId === putus && t.bulanJual === PERIODE)!;
     const ani = tokoUji.baris.find((b) => b.userId === spgA)!;
     expect(ani.resmi?.commission).toBe(8_000);
     expect(ani.resmi?.deduction).toBe(4_000);
@@ -195,10 +210,10 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
     // Komisi kotor yang dibandingkan, jadi potongan tidak membuat hitungan tampak berbeda.
     expect(tokoUji.berbeda).toBe(false);
 
-    const toko = await tokoSpg(spgA);
-    const hp = payloadGajiHp(await gajiKomisiSpg(spgA, toko, sekarang), false, { bulan: (p) => p, tanggal: (i) => i });
+    const hp = payloadGajiHp({ perkiraan: null, resmi: await komisiResmiSaya(spgA) }, false, { bulan: (p) => p, tanggal: (i) => i });
     const resmiHp = hp.resmi.find((r) => r.jenis === "PUTUS")!;
     expect([resmiHp.total, resmiHp.potonganHilang, resmiHp.diterima]).toEqual([8_000, 4_000, 4_000]);
+    expect([resmiHp.bulanJualLabel, resmiHp.bulanBayarLabel]).toEqual([PERIODE, BULAN_BAYAR]);
 
     const bayar = await tandaiKomisiDibayar({ commissionId: baris.id, olehUserId: kantor });
     expect(bayar.ok).toBe(true);
@@ -217,6 +232,7 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
     const notaB = await jual(spgB, putus, 3); // komisi 6.000
     const lossB = await bebankan(spgB, 2_000);
 
+    expect((await cek()).ok).toBe(true);
     expect((await tetapkanKomisiToko({ storeId: putus, periode: PERIODE, olehUserId: kantor, sekarang })).ok).toBe(true);
     const barisB = await prisma.spgCommission.findUniqueOrThrow({
       where: { userId_storeId_period: { userId: spgB, storeId: putus, period: PERIODE } },
@@ -244,6 +260,8 @@ d("potongan barang hilang dari komisi SPG (test bed only)", () => {
       });
     }
     const loss = await bebankan(spgK, 10_000);
+    // Komisi konsinyasi dari penjualan SPG itu sendiri di kasir: 10 kaos × Rp 2.000.
+    await jual(spgK, konsi, 10);
     const kunci = () =>
       kunciAngka({ cycleId: siklusId, olehUserId: kantor, gajiPokokPerSpg: 30_000, baris: [{ itemId: kaos, itemName: `Kaos ${tag}`, qty: 10, price: 50_000 }] });
 

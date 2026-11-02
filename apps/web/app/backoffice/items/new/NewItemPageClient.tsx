@@ -9,7 +9,12 @@ import { createItem, saveConsumptionRules } from '@/app/actions/items';
 import type { ItemFormData } from '@/lib/items/mutations';
 import { toast } from 'sonner';
 
-export function NewItemPageClient() {
+export function NewItemPageClient({
+  bawaanRekomendasi,
+}: {
+  /** Margin dan biaya tambahan bawaan (Pengaturan Jubelio) untuk rekomendasi harga. */
+  bawaanRekomendasi?: { margin: number | null; biaya: number | null };
+}) {
   const router = useRouter();
   const tItems = useTranslations('items');
   const tDetail = useTranslations('itemDetail');
@@ -50,7 +55,7 @@ export function NewItemPageClient() {
   return (
     <div className="space-y-6">
       <PageHeader title={tItems('newPage.title')} />
-      <ItemForm onSubmit={handleSubmit} isLoading={isLoading} />
+      <ItemForm onSubmit={handleSubmit} isLoading={isLoading} bawaanRekomendasi={bawaanRekomendasi} />
     </div>
   );
 }

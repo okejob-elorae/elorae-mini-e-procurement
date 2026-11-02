@@ -80,10 +80,22 @@ import { labelJenisBarang } from "@/app/backoffice/items/tampilan-barang";
 import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
 import { bacaKomisiPerPcs } from "@/lib/items/komisi-spg";
 import type { HppBarang } from "@/lib/items/hpp-barang";
+import type { HppTerbaru } from "@/lib/items/riwayat-hpp";
+import {
+  bacaAngkaOpsional,
+  formatRupiahSen,
+  MARGIN_MAKS,
+  rekomendasiHargaJual,
+} from "@/lib/items/rekomendasi-harga";
 import { formatRupiah } from "@/lib/format/rupiah";
 import { formatDisplayDate } from "@/lib/date-only";
 
 type ItemFormData = z.infer<typeof itemSchema>;
+/**
+ * Target margin dan biaya tambahan barang jadi — bahan rekomendasi harga saja
+ * (keputusan pemilik 2026-11-01). null = dikosongkan (ikut bawaan Pengaturan Jubelio).
+ */
+type IsianRekomendasi = { targetMarginPercent?: number | null; additionalCost?: number | null };
 /** Info produk untuk pembeli (barang jadi): bahan, cara rawat, tabel ukuran (null = ikut bawaan kategori). */
 type InfoProdukIsian = {
   material?: string | null;
@@ -188,13 +200,27 @@ interface ItemFormProps {
       size?: string | null;
     }>;
   };
-  onSubmit: (data: ItemFormData & InfoProdukIsian, consumptionRules?: ConsumptionRuleData[]) => Promise<void>;
+  onSubmit: (
+    data: Omit<ItemFormData, 'targetMarginPercent' | 'additionalCost'> & InfoProdukIsian & IsianRekomendasi,
+    consumptionRules?: ConsumptionRuleData[]
+  ) => Promise<void>;
   isLoading?: boolean;
-  /** HPP per pcs barang jadi (hanya dibaca, di samping harga jual). Tidak ada di barang baru. */
+  /** Rata-rata stok + rincian penerimaan terakhir barang jadi (hanya dibaca). Tidak ada di barang baru. */
   hpp?: HppBarang | null;
+  /** HPP peristiwa biaya terbaru — dasar rekomendasi harga. null = belum ada HPP. */
+  hppTerbaru?: HppTerbaru | null;
+  /** Margin dan biaya tambahan bawaan (Pengaturan Jubelio) bila barang tidak punya sendiri. */
+  bawaanRekomendasi?: { margin: number | null; biaya: number | null };
 }
 
-export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null }: ItemFormProps) {
+export function ItemForm({
+  initialData,
+  onSubmit,
+  isLoading = false,
+  hpp = null,
+  hppTerbaru = null,
+  bawaanRekomendasi = { margin: null, biaya: null },
+}: ItemFormProps) {
   const tValidation = useTranslations('validation');
   const tToasts = useTranslations('toasts');
   const tInfo = useTranslations("itemProductInfo");
@@ -314,12 +340,31 @@ export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null 
     initialData?.commissionPerPcs != null && initialData.commissionPerPcs > 0 ? String(initialData.commissionPerPcs) : "",
   );
   const [pilihanTabel, setPilihanTabel] = useState<PilihanTabelUkuran[]>([]);
+  // Bahan rekomendasi harga (barang jadi). Kosong = ikut bawaan Pengaturan Jubelio.
+  const [marginTeks, setMarginTeks] = useState(
+    initialData?.targetMarginPercent != null ? String(initialData.targetMarginPercent) : "",
+  );
+  const [biayaTeks, setBiayaTeks] = useState(
+    initialData?.additionalCost != null ? String(initialData.additionalCost) : "",
+  );
+  const rekomendasi = useMemo(
+    () =>
+      rekomendasiHargaJual({
+        hppTerbaru,
+        marginBarang: bacaAngkaOpsional(marginTeks),
+        biayaBarang: bacaAngkaOpsional(biayaTeks),
+        marginBawaan: bawaanRekomendasi.margin,
+        biayaBawaan: bawaanRekomendasi.biaya,
+      }),
+    [hppTerbaru, marginTeks, biayaTeks, bawaanRekomendasi.margin, bawaanRekomendasi.biaya],
+  );
 
   const {
     register,
     handleSubmit,
     watch,
     control,
+    setValue,
     formState: { errors },
   } = useForm<ItemFormData>({
     resolver: zodResolver(itemSchemaT) as Resolver<ItemFormData>,
@@ -720,6 +765,23 @@ export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null 
       return;
     }
 
+    // Target margin & biaya tambahan: bahan rekomendasi harga saja (barang jadi); tidak
+    // pernah mengubah harga jual. Kosong = ikut bawaan Pengaturan Jubelio.
+    let isianRekomendasi: IsianRekomendasi = {};
+    if (itemType === ItemType.FINISHED_GOOD) {
+      const margin = bacaAngkaOpsional(marginTeks);
+      if (margin != null && !(margin >= 0 && margin <= MARGIN_MAKS)) {
+        toast.error(tForm('marginTidakSah'));
+        return;
+      }
+      const biaya = bacaAngkaOpsional(biayaTeks);
+      if (biaya != null && !(biaya >= 0)) {
+        toast.error(tForm('biayaTambahanTidakSah'));
+        return;
+      }
+      isianRekomendasi = { targetMarginPercent: margin, additionalCost: biaya };
+    }
+
     // Info produk hanya untuk barang jadi; jenis lain tidak menyentuh kolomnya.
     const infoProduk: InfoProdukIsian =
       itemType === ItemType.FINISHED_GOOD
@@ -737,6 +799,7 @@ export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null 
         ...dataWithSku,
         variants,
         ...infoProduk,
+        ...isianRekomendasi,
         pantoneTcx: itemType === ItemType.FINISHED_GOOD ? null : pantone?.tcx ?? null,
       },
       itemType === ItemType.FINISHED_GOOD ? stripConsumptionRuleRows(consumptionRules) : undefined
@@ -1011,7 +1074,9 @@ export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null 
             </div>
           )}
 
-          {/* Harga (barang jadi saja): harga jual diisi manual pemilik; HPP per pcs hanya dibaca. */}
+          {/* Harga (barang jadi saja): harga jual SELALU diketik sendiri. HPP terbaru dan
+              rekomendasinya hanya dibaca; "Pakai rekomendasi" hanya mengisi kolom (keputusan
+              pemilik 2026-11-01) — harga baru tersimpan hanya saat Simpan ditekan. */}
           {itemType === ItemType.FINISHED_GOOD && (
             <div className="space-y-4 border-t pt-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1035,9 +1100,63 @@ export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null 
                       {errors.sellingPrice.message}
                     </p>
                   )}
+                  <RekomendasiHarga
+                    hasil={rekomendasi}
+                    locale={locale}
+                    hargaSekarang={watch('sellingPrice')}
+                    onPakai={(harga) => setValue('sellingPrice', harga, { shouldDirty: true, shouldValidate: true })}
+                  />
                 </div>
 
-                {initialData?.id && <HppPerPcs hpp={hpp} locale={locale} />}
+                {initialData?.id && <HppPerPcs hpp={hpp} hppTerbaru={hppTerbaru} locale={locale} />}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="targetMarginPercent">
+                    {tForm('targetMargin')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
+                  </Label>
+                  <Input
+                    id="targetMarginPercent"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    max={MARGIN_MAKS}
+                    autoComplete="off"
+                    value={marginTeks}
+                    onChange={(e) => setMarginTeks(e.target.value)}
+                    placeholder={
+                      bawaanRekomendasi.margin != null
+                        ? tForm('placeholderBawaan', { nilai: `${angkaRingkas(bawaanRekomendasi.margin)}%` })
+                        : ''
+                    }
+                    className="max-w-[12rem] tabular-nums"
+                  />
+                  <p className="text-xs text-muted-foreground">{tForm('targetMarginHint')}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="additionalCost">
+                    {tForm('additionalCost')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
+                  </Label>
+                  <Input
+                    id="additionalCost"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    autoComplete="off"
+                    value={biayaTeks}
+                    onChange={(e) => setBiayaTeks(e.target.value)}
+                    placeholder={
+                      bawaanRekomendasi.biaya != null
+                        ? tForm('placeholderBawaan', { nilai: formatRupiahSen(bawaanRekomendasi.biaya) })
+                        : '0'
+                    }
+                    className="max-w-[12rem] tabular-nums"
+                  />
+                  <p className="text-xs text-muted-foreground">{tForm('additionalCostHint')}</p>
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -1554,14 +1673,30 @@ export function ItemForm({ initialData, onSubmit, isLoading = false, hpp = null 
   );
 }
 
+const angkaRingkas = (n: number) => n.toLocaleString("id-ID", { maximumFractionDigits: 2 });
+
 /**
- * HPP per pcs barang jadi — hanya dibaca, di samping harga jual. Pemilik
- * menetapkan harga jual sendiri dari angka ini (keputusan pemilik 2026-10-08),
- * jadi tidak ada saran harga atau margin di sini. Penjelasan HPP ada di Bantuan.
+ * HPP terbaru barang jadi — hanya dibaca, di samping harga jual. Angka utamanya
+ * HPP SEBENARNYA peristiwa biaya terbaru (keputusan pemilik 2026-11-01: 50.000
+ * tampak 50.000, 55.000 tampak 55.000), bukan rata-rata stok; rata-rata stok
+ * sekarang ditampilkan di bawahnya sebagai pembanding. Seluruh riwayatnya ada di
+ * tab "Riwayat HPP". Penjelasan HPP ada di Bantuan.
  */
-function HppPerPcs({ hpp, locale }: { hpp: HppBarang | null; locale: string }) {
+function HppPerPcs({
+  hpp,
+  hppTerbaru,
+  locale,
+}: {
+  hpp: HppBarang | null;
+  hppTerbaru: HppTerbaru | null;
+  locale: string;
+}) {
   const tForm = useTranslations("itemForm");
-  const r = hpp?.rincian ?? null;
+  // Rincian bahan/jahit/tambahan hanya bila HPP terbaru adalah penerimaan yang sama.
+  const r =
+    hpp?.rincian && hppTerbaru?.jenis === "PRODUKSI" && hpp.rincian.penerimaan === hppTerbaru.dokumen
+      ? hpp.rincian
+      : null;
   const bagian = r
     ? [
         tForm("hppBahan", { nilai: formatRupiah(r.bahanPerPcs) }),
@@ -1571,19 +1706,79 @@ function HppPerPcs({ hpp, locale }: { hpp: HppBarang | null; locale: string }) {
     : null;
   return (
     <div className="space-y-2">
-      <p className="text-sm leading-none font-medium">{tForm("hppPerPcs")}</p>
+      <p className="text-sm leading-none font-medium">{tForm("hppTerbaru")}</p>
       <p className="flex h-9 items-center text-base font-semibold tabular-nums">
-        {hpp?.perPcs != null ? (
-          formatRupiah(hpp.perPcs)
+        {hppTerbaru ? (
+          formatRupiahSen(hppTerbaru.perPcs)
         ) : (
           <span className="text-sm font-normal text-muted-foreground">{tForm("hppBelumAda")}</span>
         )}
       </p>
-      {r && bagian && (
+      {hppTerbaru && (
         <p className="text-xs text-muted-foreground">
-          {tForm("hppDari", { wo: r.wo, tanggal: formatDisplayDate(r.tanggal, locale) })} {bagian}
+          {tForm("hppTerbaruDari", { dokumen: hppTerbaru.dokumen, tanggal: formatDisplayDate(hppTerbaru.tanggal, locale) })}
+          {bagian ? ` — ${bagian}` : ""}
         </p>
       )}
+      {hpp?.sumber === "STOK" && hpp.perPcs != null && (
+        <p className="text-xs text-muted-foreground">{tForm("rataRataStok", { nilai: formatRupiahSen(hpp.perPcs) })}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Rekomendasi harga jual dari HPP terbaru × (1 + margin) + biaya tambahan
+ * (`lib/items/rekomendasi-harga.ts`). "Pakai rekomendasi" hanya MENGISI kolom
+ * harga jual; tidak ada yang tersimpan sebelum Simpan ditekan. Bila belum bisa
+ * dihitung, disebut persis apa yang kurang.
+ */
+function RekomendasiHarga({
+  hasil,
+  locale,
+  hargaSekarang,
+  onPakai,
+}: {
+  hasil: ReturnType<typeof rekomendasiHargaJual>;
+  locale: string;
+  hargaSekarang: number | undefined;
+  onPakai: (harga: number) => void;
+}) {
+  const tForm = useTranslations("itemForm");
+  if (!hasil.ada) {
+    return (
+      <div className="space-y-0.5 text-xs text-muted-foreground">
+        <p className="font-medium text-foreground">{tForm("rekomendasiBelum")}</p>
+        {hasil.kurang.includes("HPP") && <p>{tForm("kurangHpp")}</p>}
+        {hasil.kurang.includes("MARGIN") && <p>{tForm("kurangMargin")}</p>}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm">{tForm("rekomendasi", { harga: formatRupiahSen(hasil.harga) })}</p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onPakai(hasil.harga)}
+          disabled={hargaSekarang === hasil.harga}
+        >
+          {tForm("pakaiRekomendasi")}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {tForm("rekomendasiRumus", {
+          hpp: formatRupiahSen(hasil.hpp),
+          dokumen: hasil.dokumen,
+          tanggal: formatDisplayDate(hasil.tanggal, locale),
+          margin: angkaRingkas(hasil.margin),
+          sumberMargin: hasil.marginBawaan ? "BAWAAN" : "BARANG",
+          biaya: formatRupiahSen(hasil.biaya),
+          sumberBiaya: hasil.sumberBiaya,
+        })}
+      </p>
     </div>
   );
 }

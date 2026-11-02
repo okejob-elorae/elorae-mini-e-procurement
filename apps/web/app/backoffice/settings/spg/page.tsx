@@ -6,12 +6,10 @@ import {
   bacaAturanShift,
   bacaBarangHilang,
   bacaDiskonManual,
-  bacaKomisiPutus,
   bacaTitipPesan,
   bacaTutupHari,
   KUNCI_BARANG_HILANG,
   KUNCI_DISKON_MANUAL,
-  KUNCI_KOMISI_PUTUS,
   KUNCI_SHIFT,
   KUNCI_TITIP_PESAN,
   KUNCI_TUTUP_HARI,
@@ -20,7 +18,7 @@ import { JudulPengaturanSpg } from "./JudulPengaturanSpg";
 import { JudulKelompok } from "../DaftarIsiPengaturan";
 import { DiskonManualCard } from "./DiskonManualCard";
 import { ShiftCard } from "./ShiftCard";
-import { KomisiPutusCard } from "./KomisiPutusCard";
+import { KomisiSpgCard } from "./KomisiSpgCard";
 import { TitipPesanCard } from "./TitipPesanCard";
 import { TutupHariCard } from "./TutupHariCard";
 import { BarangHilangCard } from "./BarangHilangCard";
@@ -38,7 +36,9 @@ export const dynamic = "force-dynamic";
 /**
  * Pengaturan → SPG: aturan kerja SPG di konter. Setiap kartu memakai izin
  * pemilik keputusannya — promo/diskon/member oleh pengelola promo, jadwal dan tutup
- * hari oleh pengelola toko, komisi oleh keuangan — tanpa izin baru.
+ * hari oleh pengelola toko, beban barang hilang oleh keuangan, aturan mutasi oleh
+ * penyetuju mutasi. Komisi SPG tidak diatur di sini: tarifnya per kategori di
+ * Pengaturan → Komisi SPG (kartunya hanya menautkan ke sana).
  */
 export default async function PengaturanSpgPage() {
   const session = await auth();
@@ -52,7 +52,6 @@ export default async function PengaturanSpgPage() {
         in: [
           KUNCI_DISKON_MANUAL,
           KUNCI_SHIFT,
-          KUNCI_KOMISI_PUTUS,
           KUNCI_TITIP_PESAN,
           KUNCI_TUTUP_HARI,
           KUNCI_BARANG_HILANG,
@@ -98,8 +97,8 @@ export default async function PengaturanSpgPage() {
       </div>
 
       <JudulKelompok kunci="settings.spg.toc.komisiBeban" />
-      <div id="komisi-putus" className={jangkar}>
-        <KomisiPutusCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaKomisiPutus(nilai(KUNCI_KOMISI_PUTUS))} />
+      <div id="komisi" className={jangkar}>
+        <KomisiSpgCard bolehAturTarif={hasPermission(izin, PERMISSIONS.SPG_COMMISSION_MANAGE)} />
       </div>
       <div id="barang-hilang" className={jangkar}>
         <BarangHilangCard bolehUbah={hasPermission(izin, PERMISSIONS.RECEIVABLES_MANAGE)} nilai={bacaBarangHilang(nilai(KUNCI_BARANG_HILANG))} />

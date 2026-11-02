@@ -4,6 +4,7 @@ import { generateDocNumber } from "@/lib/docNumber";
 import { recordFieldSalesDelivery, findRecordedDelivery } from "@/lib/field-sales/delivery/writer";
 import { evaluateCheckinRadius, resolveEffectiveRadius, parseRadiusSetting } from "@/lib/pwa/checkin-radius";
 import { issueKonsiTransfer } from "@/lib/field-sales/konsi-transfer/writer";
+import { muatPesananKonsiCadanganLama } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { DeliveryError, KonsiTransferReservationMismatchError } from "@/lib/field-sales/errors";
 import { nextDeliveryStatus } from "@/lib/field-sales/delivery/plan";
 import { isR2KeyInFolder } from "@/lib/r2-key";
@@ -51,6 +52,16 @@ export async function createDeliveryShipment(input: {
      * completion after the goods have left.
      */
     if (order.status !== "APPROVED") throw new DeliveryShipmentError("INVALID_STATE");
+    /**
+     * An old konsi order whose reservation is still held (approved before the per-shipment flow
+     * reached production) is settled at the store, not shipped: its goods usually reached the
+     * store long ago, and a shipment would cut main stock for them again — twice, if the warehouse
+     * was re-counted since. The store confirms what arrived; the office may only close the rest as
+     * "tidak jadi dikirim" (`lib/field-sales/konsi-transfer/pesanan-lama-writer.ts`).
+     */
+    if (order.orderType === "KONSI" && (await muatPesananKonsiCadanganLama(tx, order.id))) {
+      throw new DeliveryShipmentError("KONSI_PESANAN_LAMA");
+    }
 
     const packer = await tx.user.findUnique({
       where: { id: input.packedById },
@@ -366,7 +377,8 @@ export async function completeDeliveryShipment(input: {
    * `shipment.order.orderType` — two different fields on two different rows. A KONSI order shipped
    * by EXPEDITION skips this whole block; a KONSI order carried by a salesman passes through its
    * location and proof gates like any other, the two being independent sections. What a konsi
-   * order skips is the accounting path — no invoice, no receivable, no journal — and with it the
+   * order skips is the accounting path — no invoice, no receivable, no sales journal (its
+   * consignment move journal is posted by the completion actions after commit) — and with it the
    * date source, on both methods; its stock still moves, in the konsi tail below.
    */
   let effectiveInvoiceDate: Date | undefined;
@@ -578,8 +590,12 @@ export async function completeDeliveryShipment(input: {
      * Konsi stock moves HERE, at completion, one `KonsiTransfer` per shipment — approve only
      * reserved it. All of it is one transaction, so the status, the stock move and the order-line
      * counters land together or not at all. The CAS runs FIRST: a concurrent second completion
-     * loses it and throws before any stock moves. No `FieldSalesDelivery`, no `Receivable`, no
-     * journal — a konsi transfer is a stock move, not a sale.
+     * loses it and throws before any stock moves. No `FieldSalesDelivery` and no `Receivable` — a
+     * konsi transfer is a stock move, not a sale — and no journal INSIDE this transaction: the
+     * consignment move journal (DR `INVENTORY_CONSIGNMENT` / CR `INVENTORY`, source
+     * `CONSIGNMENT_TRANSFER`, one per `KonsiTransfer`) is posted AFTER commit by
+     * `kaitPindahKonsiPengiriman`, from `completeShipmentAction` and `completePodAction`. Never add
+     * a second journal here — it would post twice.
      */
     await runSerializable(async (tx) => {
       const result = await tx.deliveryShipment.updateMany({

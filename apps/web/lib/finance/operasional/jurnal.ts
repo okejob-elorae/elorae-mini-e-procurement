@@ -281,6 +281,13 @@ export function postJurnalPesananKonsi(orderId: string, postedById: string, clie
  * sama dengan nilai keluar kartu stok gudang utama dokumen itu. Transfer lama
  * yang dibuat saat persetujuan (sebelum ada pengiriman) ikut dijurnal dengan
  * cara yang sama; tanggalnya jatuh sebelum tanggal mulai buku besar.
+ *
+ * Transfer KONFIRMASI SAMPAI pesanan konsinyasi lama (`oldOrderArrival`, tanpa
+ * pengiriman) juga satu jurnal per transfer, bertanggal konfirmasinya, dengan
+ * gerbang tanggal mulai yang sama. Barisnya yang barangnya sudah diopname di
+ * gudang sendiri sesudah pesanan disetujui (`mainCountedByOpnameId`) tidak
+ * memotong kartu stok gudang, jadi mengkredit INVENTORY_VARIANCE — akun yang
+ * sudah didebit jurnal opname itu — bukan persediaan gudang.
  */
 export function postJurnalPindahKonsi(transferId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
   return postSekali(client, SUMBER_OPERASIONAL.PINDAH_KONSI, transferId, postedById, async () => {
@@ -292,16 +299,25 @@ export function postJurnalPindahKonsi(transferId: string, postedById: string, cl
         createdAt: true,
         store: { select: { name: true } },
         order: { select: { orderNo: true } },
-        lines: { select: { qty: true, unitCost: true, item: { select: { type: true } } } },
+        oldOrderArrival: true,
+        lines: { select: { qty: true, unitCost: true, mainCountedByOpnameId: true, item: { select: { type: true } } } },
       },
     });
     if (!t) return null;
     return {
       tanggal: t.createdAt,
-      deskripsi: `Pindah barang konsinyasi ${t.docNo} (${t.order.orderNo}) ke ${t.store.name}`,
+      deskripsi: t.oldOrderArrival
+        ? `Barang pesanan konsinyasi lama ${t.order.orderNo} sampai di ${t.store.name} (${t.docNo})`
+        : `Pindah barang konsinyasi ${t.docNo} (${t.order.orderNo}) ke ${t.store.name}`,
       baris: barisPindahKonsiPengiriman({
         storeId: t.storeId,
-        baris: t.lines.map((l) => ({ qty: angka(l.qty), unitCost: angka(l.unitCost), tipeBarang: l.item.type })),
+        baris: t.lines.map((l) => ({
+          qty: angka(l.qty),
+          unitCost: angka(l.unitCost),
+          tipeBarang: l.item.type,
+          // Hanya transfer konfirmasi sampai yang boleh membawa tanda ini (penulisnya menolak yang lain).
+          sudahDiopname: t.oldOrderArrival && Boolean(l.mainCountedByOpnameId),
+        })),
       }),
     };
   });

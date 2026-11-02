@@ -211,7 +211,7 @@ export function TerimaClient({
         </section>
       )}
 
-      <BagianPesananMenuju pesanan={pesanan} />
+      <BagianPesananMenuju pesanan={pesanan} sudahCheckIn={sudahCheckIn} />
       <BagianRusak rusak={rusak} />
       <BagianRusakPembeli rusak={rusakPembeli} />
     </div>

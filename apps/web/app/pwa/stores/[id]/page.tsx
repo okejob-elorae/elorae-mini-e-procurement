@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { getStore, listVisitsForStore, getActiveVisit, listVisitPhotos } from "@/lib/stores/queries";
 import { getPendingStoreChangeRequest } from "@/lib/store-changes/queries";
@@ -25,6 +26,8 @@ import { LanjutSetelahCheckIn } from "./LanjutSetelahCheckIn";
 import { kehadiranSpgToko, tampilKehadiran } from "@/lib/spg/kehadiran-toko";
 import { KehadiranSpgToko } from "./KehadiranSpgToko";
 import { LaporDariToko } from "./UbinLapor";
+import { bacaPesananKonsiCadanganLama, muatPenerimaToko } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
+import { PesananLamaToko } from "./PesananLamaToko";
 
 export const dynamic = "force-dynamic";
 
@@ -97,6 +100,37 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
     console.error("[toko] catatan toko gagal dimuat", e);
     return null;
   });
+
+  // Pesanan konsinyasi LAMA yang cadangannya masih ditahan: "konfirmasi barang sudah sampai".
+  // Salesman saja — SPG mengonfirmasinya dari Terima kiriman. Kartu pelengkap: kalau gagal
+  // dimuat, halaman toko tetap tampil tanpa kartu ini.
+  const pesananLama = tokoTetap
+    ? null
+    : await (async () => {
+        const [lama, penerima] = await Promise.all([
+          bacaPesananKonsiCadanganLama(prisma, { storeIds: [store.id] }),
+          muatPenerimaToko(prisma, store.id),
+        ]);
+        if (lama.size === 0) return null;
+        return (
+          <PesananLamaToko
+            storeId={store.id}
+            pesanan={[...lama.values()].map((o) => ({
+              id: o.orderId,
+              orderNo: o.orderNo,
+              disetujuiLabel: formatDisplayDate(o.approvedAt),
+              jumlahBarang: o.baris.length,
+              pcs: o.jumlahPcs,
+            }))}
+            penerima={penerima.penerima}
+            sayaPemegang={penerima.pemegangTokoId === session.user.id}
+            sudahCheckIn={activeForStore !== null}
+          />
+        );
+      })().catch((e: unknown) => {
+        console.error("[toko] pesanan konsi lama gagal dimuat", e);
+        return null;
+      });
 
   // Tautan portal pesan mandiri: hanya pemegang toko yang membagikannya ke tokonya sendiri.
   const portalToko =
@@ -227,6 +261,7 @@ export default async function PwaStoreDetail({ params }: { params: Promise<{ id:
          */
         catatanToko={
           <>
+            {pesananLama}
             {!tokoTetap && !activeForStore ? <LaporDariToko storeId={store.id} termsType={store.termsType} /> : null}
             <KehadiranSpgToko baris={tampilKehadiran(kehadiranSpg)} />
             {catatanToko}

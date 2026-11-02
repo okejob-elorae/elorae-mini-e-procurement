@@ -43,6 +43,7 @@ export type ActionResult =
         exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number };
         creditLimit: number;
         orderTotal: number;
+        sumber?: "TOKO" | "BAWAAN";
       };
     };
 
@@ -118,7 +119,7 @@ export async function approveFieldSalesOrderAction(
       return {
         ok: false,
         reason: "CREDIT_LIMIT_EXCEEDED",
-        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal },
+        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal, ...(e.sumber ? { sumber: e.sumber } : {}) },
       };
     }
     if (e instanceof KreditBelumDiperiksaError) {
@@ -183,6 +184,7 @@ export type KonsiPushActionResult =
         exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number };
         creditLimit: number;
         orderTotal: number;
+        sumber?: "TOKO" | "BAWAAN";
       };
     };
 
@@ -244,7 +246,7 @@ export async function createKonsiPushOrderAction(input: unknown): Promise<KonsiP
       return {
         ok: false,
         reason: "CREDIT_LIMIT_EXCEEDED",
-        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal },
+        credit: { exposure: e.exposure, creditLimit: e.creditLimit, orderTotal: e.orderTotal, ...(e.sumber ? { sumber: e.sumber } : {}) },
       };
     }
     console.error("[konsi-push] unexpected failure", e);

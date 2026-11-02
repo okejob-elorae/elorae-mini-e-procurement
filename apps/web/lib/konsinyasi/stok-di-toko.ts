@@ -32,7 +32,9 @@ import {
  *   (transfer dibuat saat pengiriman selesai), sebesar yang diserahkan — bukan
  *   jumlah yang disetujui. Pesanan lama yang disetujui sebelum transfer dicatat
  *   (`bacaPesananKonsiLama`, tanpa transfer sama sekali) tetap dihitung dari
- *   baris pesanannya, bertanggal disetujui.
+ *   baris pesanannya, bertanggal disetujui. Pesanan lama yang cadangannya masih
+ *   ditahan (`bacaPesananKonsiCadanganLama`) masuk toko hanya lewat transfer
+ *   konfirmasi sampainya, sebesar yang dihitung toko.
  *
  * Kenapa tidak dijumlah atau dicampur: keduanya menghitung barang yang SAMA.
  * Kiriman yang diterima SPG sudah masuk buku sebagai TERIMA, dan penjualannya
@@ -339,7 +341,10 @@ export async function muatStokDiToko(storeIds: string[], sekarang = new Date()):
       // per pengiriman yang selesai (bukti terima), sebesar yang diserahkan. Di
       // titik yang sama stok gudang utama dipotong (KONSI_TRANSFER) — toko ini
       // gudang lain, jadi setiap potong ada di SATU tempat saja. Transfer lama
-      // tanpa pengiriman (stok keluar saat disetujui) ikut di sini juga.
+      // tanpa pengiriman (stok keluar saat disetujui) ikut di sini juga, begitu
+      // pula konfirmasi sampai pesanan lama yang cadangannya dulu ditahan
+      // (`oldOrderArrival`, bertanggal konfirmasinya) — sisa yang belum
+      // dikonfirmasi masih di gudang sendiri dan di "dalam proses", tidak di sini.
       prisma.konsiTransferLine.findMany({
         where: { transfer: { storeId: { in: idTitipan } } },
         select: { itemId: true, variantSku: true, qty: true, transfer: { select: { storeId: true, createdAt: true } } },
@@ -532,7 +537,10 @@ async function muatTersediaGudang(itemIds: string[]): Promise<Map<string, number
  *   sedang dikemas, atau sedang di jalan. Persetujuan konsi hanya mencadangkan.
  *   Pesanan konsi LAMA (stok keluar saat disetujui) tidak ikut: migrasi
  *   `20260923000000_konsi_transfer_at_shipment_completion` menandainya
- *   terkirim penuh (DELIVERED), dan barangnya sudah terhitung di toko.
+ *   terkirim penuh (DELIVERED), dan barangnya sudah terhitung di toko. Pesanan
+ *   lama yang cadangannya masih ditahan IKUT, sebesar sisa yang belum
+ *   dikonfirmasi sampai: belum terhitung di toko, dan hilang dari sini begitu
+ *   dikonfirmasi (terkirim naik) atau ditutup kantor (dibatalkan naik).
  * - Toko berbuku saja: kiriman yang sudah diserahkan tapi belum diterima SPG
  *   (antaran konsinyasi, pengiriman putus, …). Untuk toko TITIPAN, antaran yang
  *   sudah diserahkan SUDAH dihitung sebagai stok di toko.

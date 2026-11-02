@@ -24,10 +24,16 @@ import { hitungSelisihTerima, type SelisihTerima } from "@/lib/spg/selisih-terim
 // ── Tahap & keadaan (murni) ───────────────────────────────────────────────
 
 /**
- * Keadaan yang dibaca salesman, lebih halus dari `status`. Pesanan PUTUS yang
- * sudah disetujui masih punya perjalanan (belum dikirim → sebagian → terkirim /
- * ditutup); pesanan KONSI selesai saat disetujui, karena transfer konsinyasi
- * tercatat saat itu dan tidak ada dokumen kirim sesudahnya.
+ * Keadaan yang dibaca salesman, lebih halus dari `status`. Pesanan yang sudah
+ * disetujui, PUTUS maupun KONSI, masih punya perjalanan (belum dikirim →
+ * sebagian → terkirim / ditutup) yang dibaca dari `deliveryStatus`: persetujuan
+ * konsi hanya mencadangkan stok, barangnya pindah ke toko saat pengirimannya
+ * selesai (satu `KonsiTransfer` per pengiriman). `KONSI_DISETUJUI` = konsi
+ * disetujui yang belum satu pun pengirimannya selesai. Pesanan konsi lama yang
+ * stoknya dulu keluar saat disetujui sudah ditandai DELIVERED (migrasi
+ * `20260923000000`), jadi terbaca Terkirim; pesanan konsi lama yang cadangannya
+ * masih ditahan maju lewat konfirmasi sampai dari toko
+ * (`konfirmasiSampaiPesananLama`), yang menaikkan terkirim seperti pengiriman.
  */
 export type KeadaanPesanan =
   | "MENUNGGU"
@@ -51,7 +57,6 @@ type BentukPesanan = {
 export function keadaanPesanan(o: BentukPesanan): KeadaanPesanan {
   if (o.status === "PENDING_APPROVAL") return "MENUNGGU";
   if (o.status === "REJECTED") return "DITOLAK";
-  if (o.orderType === "KONSI") return "KONSI_DISETUJUI";
   switch (o.deliveryStatus) {
     case "PARTIAL":
       return "DIKIRIM_SEBAGIAN";
@@ -60,20 +65,19 @@ export function keadaanPesanan(o: BentukPesanan): KeadaanPesanan {
     case "CLOSED":
       return "DITUTUP";
     default:
-      return "BELUM_DIKIRIM";
+      return o.orderType === "KONSI" ? "KONSI_DISETUJUI" : "BELUM_DIKIRIM";
   }
 }
 
 /**
  * Tab tempat sebuah pesanan tinggal. Satu pesanan tepat di satu tab.
  *
- * "Disetujui" = disetujui dan MASIH menunggu barang (PUTUS belum/sebagian
- * dikirim) — persis angka "Siap dikirim" di kartu beranda, supaya ketukan dari
- * sana membuka daftar yang jumlahnya sama. Kiriman sebagian ikut di sini:
- * sisanya masih ditunggu toko. "Dikirim" = perjalanannya sudah selesai: PUTUS
- * terkirim penuh atau sisanya ditutup kantor, dan KONSI yang disetujui (barang
- * konsinyasi keluar saat disetujui — `getStoreSentItems` menghitungnya sebagai
- * terkirim dengan alasan yang sama).
+ * "Disetujui" = disetujui dan MASIH menunggu barang (PUTUS maupun KONSI,
+ * belum/sebagian dikirim) — persis angka "Siap dikirim" di kartu beranda,
+ * supaya ketukan dari sana membuka daftar yang jumlahnya sama. Kiriman
+ * sebagian ikut di sini: sisanya masih ditunggu toko. "Dikirim" =
+ * perjalanannya sudah selesai: terkirim penuh atau sisanya ditutup kantor,
+ * putus maupun konsi.
  */
 export function tahapPesanan(o: BentukPesanan): TahapPesanan {
   switch (keadaanPesanan(o)) {
@@ -83,6 +87,7 @@ export function tahapPesanan(o: BentukPesanan): TahapPesanan {
       return "ditolak";
     case "BELUM_DIKIRIM":
     case "DIKIRIM_SEBAGIAN":
+    case "KONSI_DISETUJUI":
       return "disetujui";
     default:
       return "dikirim";
@@ -486,7 +491,11 @@ async function penerimaanTokoPesanan(
   order: { id: string; orderNo: string },
   deliveryIds: string[],
 ): Promise<PenerimaanTokoPesanan[]> {
-  const antaran = await prisma.konsiTransfer.findMany({ where: { orderId: order.id, storeId, shipmentId: { not: null } }, select: { id: true } });
+  // Antaran pengiriman, dan konfirmasi sampai pesanan lama (tanpa pengiriman) yang diterima SPG.
+  const antaran = await prisma.konsiTransfer.findMany({
+    where: { orderId: order.id, storeId, OR: [{ shipmentId: { not: null } }, { oldOrderArrival: true }] },
+    select: { id: true },
+  });
   const antaranIds = antaran.map((t) => t.id);
   const rows = await prisma.storeReceipt.findMany({
     where: {

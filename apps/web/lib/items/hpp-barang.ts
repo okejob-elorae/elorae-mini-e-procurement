@@ -5,11 +5,13 @@
  * `./hpp-barang-queries.ts` (khusus server).
  *
  * Pemilik menetapkan harga jual sendiri dari HPP (keputusan pemilik
- * 2026-10-08: "harga jual biar saya yang mengisi sendiri, tidak otomatis"),
- * jadi di sini tidak ada saran harga dan tidak ada margin — rumus harga adalah
- * hak pemilik.
+ * 2026-10-08: "harga jual biar saya yang mengisi sendiri, tidak otomatis";
+ * ditegaskan 2026-11-01). Sejak 2026-11-01 formulir menampilkan HPP TERBARU
+ * (`./riwayat-hpp.ts`) sebagai angka utama dan saran harganya
+ * (`./rekomendasi-harga.ts`, hanya mengisi kolom); berkas ini tinggal memberi
+ * rata-rata stok sebagai pembanding dan rincian penerimaan terakhir.
  *
- * - Angka utama = Σ `InventoryValue.totalValue` ÷ Σ `qtyOnHand` atas baris
+ * - `perPcs` = Σ `InventoryValue.totalValue` ÷ Σ `qtyOnHand` atas baris
  *   ber-qty > 0 (semua varian): biaya rata-rata barang yang sekarang di gudang.
  * - Stok 0 → nilai persediaan penerimaan barang jadi terakhir ÷ pcs lolosnya.
  * - Rincian dari penerimaan terakhir: bahan, jahit (semua jasa langkah WO),

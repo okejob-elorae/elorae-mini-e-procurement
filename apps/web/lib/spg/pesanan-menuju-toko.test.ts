@@ -203,6 +203,26 @@ describe("susunPesananMenuju (murni)", () => {
     expect(daftar).toHaveLength(3);
     expect(hitungPesananDiproses(daftar)).toBe(3);
   });
+
+  it("an old konsi order still holding its reservation reads 'confirm it arrived', first, with nothing split into warehouse or road", () => {
+    const daftar = susunPesananMenuju([
+      baris({ id: "jalan", status: "APPROVED", approvedAt: lalu(1), lines: [kemeja("KL-M", 2, { id: "lj" })], shipments: [{ status: "IN_TRANSIT", lines: [{ orderLineId: "lj", plannedQty: 2 }] }] }),
+      baris({
+        id: "lama",
+        orderType: "KONSI",
+        status: "APPROVED",
+        approvedAt: new Date("2026-08-01T03:00:00.000Z"),
+        deliveryStatus: "PARTIAL",
+        lines: [kemeja("KL-M", 10, { id: "l1", deliveredQty: 4 }), kemeja("KL-L", 5, { id: "l2" })],
+        // The helper's own remainder per line wins (the line counters alone would say 6 and 5).
+        sisaLama: { l1: 6, l2: 3 },
+      }),
+    ]);
+    expect(daftar.map((p) => p.status)).toEqual(["PESANAN_LAMA", "DALAM_PERJALANAN"]);
+    expect(daftar[0]).toMatchObject({ jumlahPcs: 9, belumDikirimGudang: 0, dikemas: 0, dalamPerjalanan: 0 });
+    // No price key reaches the SPG phone for it either.
+    expect(kunciSemua(pesananMenujuUntukHp(daftar, () => "x")).filter((k) => KUNCI_HARGA.test(k))).toEqual([]);
+  });
 });
 
 describe("pesananMenujuUntukHp (muatan HP SPG)", () => {

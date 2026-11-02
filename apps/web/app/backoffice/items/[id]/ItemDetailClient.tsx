@@ -29,14 +29,24 @@ import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 import { ItemType } from '@/lib/constants/enums';
 import { PriceHistoryTable } from './PriceHistoryTable';
+import { RiwayatHppTable } from './RiwayatHppTable';
 import { alamatLabel } from "@/lib/items/label";
 import { GaleriBelumSimpanContext } from '@/components/items/ItemGalleryEditor';
 import type { HppBarang } from "@/lib/items/hpp-barang";
+import type { HppTerbaru, RiwayatHpp } from "@/lib/items/riwayat-hpp";
 
 type ItemDetailClientProps = {
   initialData: Parameters<typeof ItemForm>[0]['initialData'];
-  /** HPP per pcs barang jadi (hanya dibaca); null untuk bahan/aksesoris. */
+  /** Rata-rata stok + rincian penerimaan terakhir barang jadi (hanya dibaca); null untuk bahan/aksesoris. */
   hpp?: HppBarang | null;
+  /** HPP peristiwa biaya terbaru (dasar rekomendasi harga); null = belum ada. */
+  hppTerbaru?: HppTerbaru | null;
+  /** Halaman pertama riwayat HPP; null = penonton tanpa izin lihat barang. */
+  riwayatHppAwal?: RiwayatHpp | null;
+  /** Margin dan biaya tambahan bawaan (Pengaturan Jubelio) untuk rekomendasi. */
+  bawaanRekomendasi?: { margin: number | null; biaya: number | null };
+  /** Kode satuan barang (mis. PCS, M) untuk judul kolom riwayat HPP. */
+  satuan?: string | null;
   itemType: ItemType;
   nameId: string;
   nameEn: string;
@@ -50,6 +60,10 @@ type ItemDetailClientProps = {
 export function ItemDetailClient({
   initialData,
   hpp = null,
+  hppTerbaru = null,
+  riwayatHppAwal = null,
+  bawaanRekomendasi,
+  satuan = null,
   itemType,
   nameId,
   nameEn,
@@ -230,16 +244,35 @@ export function ItemDetailClient({
       <Tabs defaultValue="details" className="space-y-4">
         <TabsList>
           <TabsTrigger value="details">{tItems('detail.tabDetails')}</TabsTrigger>
+          {riwayatHppAwal && <TabsTrigger value="hpp-history">{tDetail('tabRiwayatHpp')}</TabsTrigger>}
           <TabsTrigger value="price-history">{tDetail('tabRiwayatHarga')}</TabsTrigger>
         </TabsList>
         {/* Tetap terpasang saat tab lain dibuka: isian formulir dan gambar yang
             belum disimpan tidak boleh hilang hanya karena melihat riwayat harga. */}
         <TabsContent value="details" forceMount className="space-y-4 data-[state=inactive]:hidden">
           <GaleriBelumSimpanContext.Provider value={setGaleriBelumSimpan}>
-            <ItemForm initialData={initialData} hpp={hpp} onSubmit={handleSubmit} isLoading={isSaving} />
+            <ItemForm
+              initialData={initialData}
+              hpp={hpp}
+              hppTerbaru={hppTerbaru}
+              bawaanRekomendasi={bawaanRekomendasi}
+              onSubmit={handleSubmit}
+              isLoading={isSaving}
+            />
             {gallerySlot}
           </GaleriBelumSimpanContext.Provider>
         </TabsContent>
+        {riwayatHppAwal && initialData?.id && (
+          <TabsContent value="hpp-history">
+            <RiwayatHppTable
+              itemId={initialData.id}
+              awal={riwayatHppAwal}
+              terbaru={hppTerbaru}
+              rataRataStok={hpp?.sumber === 'STOK' ? hpp.perPcs : null}
+              satuan={satuan}
+            />
+          </TabsContent>
+        )}
         <TabsContent value="price-history">
           {initialData?.id ? (
             <PriceHistoryTable itemId={initialData.id} />

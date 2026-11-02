@@ -31,7 +31,7 @@ export const DAFTAR_ISI_SPG: KelompokDaftarIsi[] = [
     id: "komisi-beban",
     judul: "settings.spg.toc.komisiBeban",
     kartu: [
-      { id: "komisi-putus", judul: "pengaturanKomisiPutusSpg.judul" },
+      { id: "komisi", judul: "pengaturanKomisiPutusSpg.judul" },
       { id: "barang-hilang", judul: "pengaturanBarangHilang.judul" },
     ],
   },

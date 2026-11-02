@@ -26,6 +26,27 @@ function teksAlasan(a: AlasanKredit, t: T): string {
   }
 }
 
+/**
+ * Batas kredit beserta asalnya — dibaca dari keputusan resolver yang SAMA dengan
+ * pemeriksaannya (`batasKreditBerlaku`), supaya penyetuju tahu apakah batas itu
+ * milik toko, ikut bawaan Pengaturan, atau toko memang tanpa batas.
+ */
+function teksBatasNilai(kredit: PanelKredit, t: T): string {
+  switch (kredit.sumberBatasNilai) {
+    case "TOKO":
+      return kredit.batasNilai === null ? t("tanpaBatas") : t("batasMilikToko", { nilai: formatIDR(kredit.batasNilai) });
+    case "BAWAAN":
+      return kredit.batasNilai === null ? t("tanpaBatas") : t("batasIkutBawaan", { nilai: formatIDR(kredit.batasNilai) });
+    case "TANPA_BATAS":
+      return t("batasTanpaBatas");
+    case "BAWAAN_KOSONG":
+      return t("batasBawaanKosong");
+    case "KONSI_KOSONG":
+      // Panel ini hanya untuk pesanan PUTUS; dijaga supaya tetap terbaca.
+      return t("tanpaBatas");
+  }
+}
+
 const KELAS_TINGKAT: Record<TingkatKredit, string> = {
   AMAN: "border-emerald-500/40 text-emerald-700 dark:text-emerald-400",
   PERINGATAN: "border-amber-500/50 text-amber-700 dark:text-amber-400",
@@ -118,7 +139,7 @@ export function KreditPanel({
                 <div>
                   <dt className="text-xs text-muted-foreground">{t("batasNilai")}</dt>
                   <dd className="font-medium tabular-nums">
-                    {kredit.batasNilai === null ? t("tanpaBatas") : formatIDR(kredit.batasNilai)}
+                    {teksBatasNilai(kredit, t)}
                   </dd>
                 </div>
               </dl>

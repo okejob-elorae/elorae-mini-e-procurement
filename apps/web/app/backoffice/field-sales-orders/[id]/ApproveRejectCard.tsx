@@ -129,7 +129,7 @@ export function ApproveRejectCard({
    * (e.g. an appealed-line final price pushed the order over limit after the preview was
    * computed) or absent.
    */
-  const [serverCreditRefusal, setServerCreditRefusal] = useState<{ exposure: number; limit: number } | null>(null);
+  const [serverCreditRefusal, setServerCreditRefusal] = useState<{ exposure: number; limit: number; sumber?: "TOKO" | "BAWAAN" } | null>(null);
   const [kreditDiperiksa, setKreditDiperiksa] = useState(false);
 
   if (!canApprove || status !== "PENDING_APPROVAL") return null;
@@ -230,7 +230,7 @@ export function ApproveRejectCard({
     } else if (r.reason === "INVALID_FINAL_PRICE") {
       toast.error(t("errInvalidFinalPrice"));
     } else if (r.reason === "CREDIT_LIMIT_EXCEEDED") {
-      setServerCreditRefusal({ exposure: r.credit?.exposure.total ?? 0, limit: r.credit?.creditLimit ?? 0 });
+      setServerCreditRefusal({ exposure: r.credit?.exposure.total ?? 0, limit: r.credit?.creditLimit ?? 0, sumber: r.credit?.sumber });
       const figures = { exposure: formatRupiah(r.credit?.exposure.total ?? 0), limit: formatRupiah(r.credit?.creditLimit ?? 0) };
       toast.error(canOverrideCredit ? t("creditLimitExceeded", figures) : t("creditOverLimitNoOverride", figures));
     } else if (r.reason === "KREDIT_BELUM_DIPERIKSA") {
@@ -403,7 +403,7 @@ export function ApproveRejectCard({
                   limit: formatRupiah(serverCreditRefusal?.limit ?? creditCheck?.limit ?? 0),
                 })}
               </p>
-              {creditCheck?.sumber === "BAWAAN" && (
+              {(serverCreditRefusal?.sumber ?? creditCheck?.sumber) === "BAWAAN" && (
                 <p className="text-xs text-muted-foreground">{t("creditLimitFromDefault")}</p>
               )}
               {canOverrideCredit && (

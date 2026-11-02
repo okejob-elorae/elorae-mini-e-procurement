@@ -12,6 +12,13 @@ export type IssueKonsiTransferLine = {
   variantSku: string;
   productName: string;
   qty: number;
+  /**
+   * Only on an old-order arrival (`oldOrderArrival`): the APPROVED main-warehouse StockOpname that
+   * counted this item AFTER the order was approved. That count already left these pcs out of
+   * `qtyOnHand`, so the line adds them to the store and releases the reservation WITHOUT cutting
+   * main stock a second time. A shipment completion never passes it.
+   */
+  mainCountedByOpnameId?: string | null;
 };
 
 /**
@@ -21,6 +28,15 @@ export type IssueKonsiTransferLine = {
  * DELIVERED quantity for that shipment, not the order-line quantity, so the reservation approve
  * created is consumed PARTIALLY: a short or refused delivery never lands units at the store, and
  * a second shipment against the same line draws down the same reservation further.
+ *
+ * The second caller is an OLD-ORDER ARRIVAL (`oldOrderArrival`, no shipment): a konsi order
+ * approved before the per-shipment flow reached production, whose reservation is still RESERVED,
+ * confirmed at the store by its SPG or holding salesman (`konfirmasiSampaiPesananLama`). Same
+ * transfer, same reservation draw-down, same store stock and ledger, so stok titipan, pencocokan
+ * and the consignment move journal (`CONSIGNMENT_TRANSFER`, one per transfer) all see it — with one
+ * difference per line: a line whose item the main warehouse already re-counted after approve
+ * (`mainCountedByOpnameId`) keeps main `qtyOnHand` as the count left it and only releases the
+ * reservation, and its journal credits the opname variance account instead of warehouse inventory.
  *
  * qtyOnHand and reservedQty must decrement TOGETHER. The reservation approve created already
  * covers this line's qty, so decrementing one without the other would leave stock reserved
@@ -34,10 +50,22 @@ export async function issueKonsiTransfer(
   tx: TxClient,
   input: {
     order: { id: string; storeId: string; lines: IssueKonsiTransferLine[] };
-    shipmentId: string;
+    /** The completed delivery shipment; null only for an old-order arrival. */
+    shipmentId: string | null;
     transferredById: string;
+    /** An old-order arrival confirmed at the store (no shipment). */
+    oldOrderArrival?: boolean;
   },
 ): Promise<{ transferId: string; docNo: string }> {
+  const oldOrderArrival = input.oldOrderArrival === true;
+  /*
+   * Exactly one of the two: a shipment completion always names its shipment, an arrival never has
+   * one. Refused before anything is written — a shipment transfer without its shipment would be
+   * invisible to the SPG receipt list, and an arrival tied to a shipment would be received twice.
+   */
+  if (oldOrderArrival === (input.shipmentId !== null && input.shipmentId !== "")) {
+    throw new Error("issueKonsiTransfer: a transfer is either a shipment's or an old-order arrival, never both or neither");
+  }
   const docNo = await generateDocNumber("KONSITRF", tx);
 
   const transfer = await tx.konsiTransfer.create({
@@ -45,13 +73,23 @@ export async function issueKonsiTransfer(
       docNo,
       orderId: input.order.id,
       storeId: input.order.storeId,
-      shipmentId: input.shipmentId,
+      shipmentId: oldOrderArrival ? null : input.shipmentId,
+      oldOrderArrival,
       transferredById: input.transferredById,
     },
     select: { id: true },
   });
 
-  const lineData: Array<{ transferId: string; orderLineId: string; itemId: string; variantSku: string; productName: string; qty: number; unitCost: number }> = [];
+  const lineData: Array<{
+    transferId: string;
+    orderLineId: string;
+    itemId: string;
+    variantSku: string;
+    productName: string;
+    qty: number;
+    unitCost: number;
+    mainCountedByOpnameId: string | null;
+  }> = [];
 
   for (const l of input.order.lines) {
     /**
@@ -59,6 +97,9 @@ export async function issueKonsiTransfer(
      * no-op and a negative one would move stock INTO main, so neither is left to the caller.
      */
     if (!Number.isInteger(l.qty) || l.qty <= 0) throw new KonsiTransferReservationMismatchError(l.id, 0);
+    /* Only an arrival may skip the main cut; a shipment always moves its pcs out of main. */
+    const mainCountedByOpnameId = oldOrderArrival && l.mainCountedByOpnameId ? l.mainCountedByOpnameId : null;
+    if (!oldOrderArrival && l.mainCountedByOpnameId) throw new Error("issueKonsiTransfer: only an old-order arrival may skip the main-stock cut");
 
     /**
      * Partial consume of the reservation approve created, folded into one guarded statement so a
@@ -100,26 +141,34 @@ export async function issueKonsiTransfer(
     const avgCost = main.avgCost.toNumber();
     const newQty = prevQty - l.qty;
 
-    /*
-     * qtyOnHand and reservedQty decrement TOGETHER — see the module doc above. moveMainStock
-     * only moves qtyOnHand (and records the ledger entry for it); reservedQty is not a stock
-     * movement and gets no ledger entry, so it stays a separate atomic decrement immediately
-     * after, pinned to the same row moveMainStock just wrote.
-     */
-    await moveMainStock(tx, {
-      itemId: l.itemId,
-      variantSku: l.variantSku,
-      qtyDelta: -l.qty,
-      totalValue: newQty * avgCost,
-      totalCost: -l.qty * avgCost,
-      balanceValue: newQty * avgCost,
-      inventoryValueId: main.id,
-      refType: "KonsiTransfer" satisfies StockLedgerRefType,
-      refId: transfer.id,
-      refDocNumber: docNo,
-      createdById: input.transferredById,
-    });
+    if (mainCountedByOpnameId === null) {
+      /*
+       * qtyOnHand and reservedQty decrement TOGETHER — see the module doc above. moveMainStock
+       * only moves qtyOnHand (and records the ledger entry for it); reservedQty is not a stock
+       * movement and gets no ledger entry, so it stays a separate atomic decrement immediately
+       * after, pinned to the same row moveMainStock just wrote.
+       */
+      await moveMainStock(tx, {
+        itemId: l.itemId,
+        variantSku: l.variantSku,
+        qtyDelta: -l.qty,
+        totalValue: newQty * avgCost,
+        totalCost: -l.qty * avgCost,
+        balanceValue: newQty * avgCost,
+        inventoryValueId: main.id,
+        refType: "KonsiTransfer" satisfies StockLedgerRefType,
+        refId: transfer.id,
+        refDocNumber: docNo,
+        createdById: input.transferredById,
+      });
+    }
 
+    /*
+     * An arrival whose item the warehouse already re-counted reaches here WITHOUT a qtyOnHand
+     * write: the count set qtyOnHand without these pcs and never touched reservedQty, so the
+     * reservation is all that is left to resolve — a release, written exactly as the normal path's
+     * decrement is, on the reserved row. Never a second qtyOnHand cut.
+     */
     await tx.inventoryValue.update({
       where: { id: main.id },
       data: {
@@ -128,21 +177,23 @@ export async function issueKonsiTransfer(
       },
     });
 
-    await tx.stockAdjustment.create({
-      data: {
-        docNumber: await generateDocNumber("ADJ", tx),
-        itemId: l.itemId,
-        type: "NEGATIVE",
-        qtyChange: -l.qty,
-        reason: `Konsi transfer ${docNo}`,
-        prevQty,
-        newQty,
-        prevAvgCost: avgCost,
-        newAvgCost: avgCost,
-        createdById: input.transferredById,
-        source: "KONSI_TRANSFER" satisfies StockAdjustmentSource,
-      },
-    });
+    if (mainCountedByOpnameId === null) {
+      await tx.stockAdjustment.create({
+        data: {
+          docNumber: await generateDocNumber("ADJ", tx),
+          itemId: l.itemId,
+          type: "NEGATIVE",
+          qtyChange: -l.qty,
+          reason: `Konsi transfer ${docNo}`,
+          prevQty,
+          newQty,
+          prevAvgCost: avgCost,
+          newAvgCost: avgCost,
+          createdById: input.transferredById,
+          source: "KONSI_TRANSFER" satisfies StockAdjustmentSource,
+        },
+      });
+    }
 
     /*
      * StoreStock keys on "" for variantless, never null — the composite unique must be DB-enforced.
@@ -199,6 +250,7 @@ export async function issueKonsiTransfer(
       productName: l.productName,
       qty: l.qty,
       unitCost: avgCost,
+      mainCountedByOpnameId,
     });
   }
 

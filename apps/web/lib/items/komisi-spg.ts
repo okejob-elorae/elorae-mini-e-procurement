@@ -1,7 +1,12 @@
 /*
  * Komisi SPG per pcs (`Item.commissionPerPcs`, Decimal 15,2, wajib, bawaan 0)
- * dari formulir barang. Dipakai komisi SPG konsinyasi dan toko putus
- * (`lib/spg/komisi*`, `lib/konsinyasi`). Murni, aman di klien.
+ * dari formulir barang. Murni, aman di klien.
+ *
+ * KOLOM LAMA: sejak keputusan pemilik 2026-11-01 tidak ada angka komisi yang
+ * dihitung dari kolom ini. Komisi SPG — toko konsinyasi dan toko putus —
+ * memakai tarif per KATEGORI barang (Pengaturan → Komisi SPG,
+ * `lib/spg-commission/payout.ts`). Kolomnya dipertahankan karena berisi isian
+ * lama; validasi di sini hanya menjaga isian formulir barang tetap sah.
  *
  * Tiga keadaan seperti kg per roll: `undefined` = isian tidak dikirim (kolom
  * tidak disentuh), kosong/`null` = 0 (kolomnya tidak boleh kosong), angka =

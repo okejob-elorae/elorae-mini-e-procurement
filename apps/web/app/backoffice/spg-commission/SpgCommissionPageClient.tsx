@@ -91,6 +91,17 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
   }, [recap]);
   const rates = useMemo(() => ratesByDetail(recap?.events ?? []), [recap]);
   const totals = useMemo(() => sumRecapRows(recap?.rows ?? []), [recap]);
+  /* The sales months each SPG's payout this month comes from — the "Komisi penjualan …" note. */
+  const salesMonthsBySpg = useMemo(() => {
+    const bySpg = new Map<string, Set<string>>();
+    for (const event of recap?.events ?? []) {
+      if (!event.salesMonth) continue;
+      const set = bySpg.get(event.salesmanId) ?? new Set<string>();
+      set.add(event.salesMonth);
+      bySpg.set(event.salesmanId, set);
+    }
+    return bySpg;
+  }, [recap]);
 
   const monthLabel = formatYearMonth(month, locale);
   const isLatestMonth = compareYearMonth(month, currentMonth) >= 0;
@@ -280,6 +291,10 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                         const toggleLabel = t(isOpen ? "collapse" : "expand", { name });
                         const breakdown = detailBySpg.get(row.salesmanId) ?? [];
                         const noRateLabel = t("rowNoRate", { count: formatPieces(row.noRatePieces) });
+                        const salesMonths = Array.from(salesMonthsBySpg.get(row.salesmanId) ?? [])
+                          .sort((a, b) => compareYearMonth(a, b))
+                          .map((m) => formatYearMonth(m, locale))
+                          .join(", ");
                         return (
                           <Fragment key={row.salesmanId}>
                             <TableRow
@@ -306,6 +321,11 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                                 <span className="block truncate font-medium" title={name}>
                                   {name}
                                 </span>
+                                {salesMonths !== "" && (
+                                  <span className="block truncate text-xs text-muted-foreground" title={salesMonths}>
+                                    {t("rowSalesMonths", { months: salesMonths })}
+                                  </span>
+                                )}
                                 {row.noRatePieces > 0 && (
                                   <span className="block truncate text-xs text-amber-700 dark:text-amber-400">
                                     {noRateLabel}

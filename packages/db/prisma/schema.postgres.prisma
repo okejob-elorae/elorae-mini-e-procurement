@@ -3349,6 +3349,7 @@ model ConsignmentCommission {
   commission Decimal   @default(0) @db.Decimal(15, 2)
   total      Decimal   @default(0) @db.Decimal(15, 2)
   deduction  Decimal   @default(0) @db.Decimal(15, 2)
+  salaried   Boolean   @default(true)
   paidAt     DateTime?
   paidById   String?
   note       String?   @db.Text
@@ -5063,6 +5064,30 @@ model SpgCommission {
 
   @@unique([userId, storeId, period])
   @@index([period])
+}
+
+model SpgSalesCheck {
+  id          String   @id @default(cuid())
+  storeId     String
+  period      String   @db.VarChar(7)
+  checkedById String
+  checkedAt   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([storeId, period])
+  @@index([checkedAt])
+}
+
+model SpgCommissionRate {
+  id             String   @id @default(cuid())
+  itemCategoryId String
+  amountPerPiece Decimal  @db.Decimal(15, 2)
+  effectiveFrom  String   @db.VarChar(7)
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([itemCategoryId, effectiveFrom])
 }
 
 model DamagedStockMovement {

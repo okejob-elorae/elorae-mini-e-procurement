@@ -75,6 +75,17 @@ export function kaitPindahKonsiPengiriman(shipmentId: string, userId: string): P
   });
 }
 
+/**
+ * Barang pesanan konsinyasi LAMA dikonfirmasi sudah sampai di toko
+ * (`konfirmasiSampaiPesananLama`): satu `KonsiTransfer` tanpa pengiriman, satu
+ * jurnal pindah — sumber yang sama dengan pengiriman yang selesai
+ * (`CONSIGNMENT_TRANSFER`), jadi sapuan terjadwal juga menyelamatkannya bila kait
+ * ini mati sebelum sempat memposting.
+ */
+export function kaitPindahKonsiTransfer(transferId: string, userId: string): Promise<void> {
+  return satu("pindah konsinyasi pesanan lama", SUMBER_OPERASIONAL.PINDAH_KONSI, transferId, userId);
+}
+
 /** Retur lapangan disetujui — hanya toko konsinyasi yang dijurnal (penulisnya menyaring). */
 export function kaitReturLapanganKonsi(returnId: string, userId: string): Promise<void> {
   return satu("retur lapangan konsinyasi", SUMBER_OPERASIONAL.RETUR_LAPANGAN_KONSI, returnId, userId);

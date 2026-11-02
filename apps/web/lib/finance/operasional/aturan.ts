@@ -190,17 +190,35 @@ export function barisPindahKonsi(b: { storeId: string; keluar: readonly NilaiBar
  * seperti `barisPindahKonsi`. Baris ber-qty nol/negatif atau tanpa angka
  * dilewati — penulisnya menolak keduanya, jadi baris begitu adalah data rusak
  * yang tidak boleh membalik arah jurnal.
+ *
+ * Transfer konfirmasi sampai PESANAN KONSI LAMA (`oldOrderArrival`) memakai
+ * bentuk yang sama, dengan satu beda per baris: baris yang barangnya sudah
+ * diopname di gudang sendiri SESUDAH pesanannya disetujui (`sudahDiopname`,
+ * `KonsiTransferLine.mainCountedByOpnameId`) tidak memotong kartu stok gudang —
+ * opname itu yang sudah mengeluarkannya, dan jurnal opnamenya sudah mengkredit
+ * persediaan gudang ke Selisih persediaan. Baris itu karenanya mengkredit
+ * INVENTORY_VARIANCE (peran jurnal selisih opname), tidak pernah persediaan
+ * gudang — mengkredit persediaan lagi = mengeluarkan barang yang sama dua kali.
+ *   DR INVENTORY_CONSIGNMENT / CR INVENTORY_VARIANCE
  */
 export function barisPindahKonsiPengiriman(b: {
   storeId: string;
-  baris: ReadonlyArray<{ qty: number; unitCost: number; tipeBarang: string | null | undefined }>;
+  baris: ReadonlyArray<{ qty: number; unitCost: number; tipeBarang: string | null | undefined; sudahDiopname?: boolean }>;
 }): BarisBertanda[] {
   const keluar: NilaiBarang[] = [];
+  let senDiopname = 0;
   for (const l of b.baris) {
     if (!Number.isFinite(l.qty) || !Number.isFinite(l.unitCost) || l.qty <= 0 || l.unitCost < 0) continue;
-    keluar.push({ tipeBarang: l.tipeBarang, nilai: l.qty * l.unitCost });
+    if (l.sudahDiopname) senDiopname += keSen(l.qty * l.unitCost);
+    else keluar.push({ tipeBarang: l.tipeBarang, nilai: l.qty * l.unitCost });
   }
-  return barisPindahKonsi({ storeId: b.storeId, keluar });
+  const gudang = barisPindahKonsi({ storeId: b.storeId, keluar });
+  if (senDiopname === 0) return gudang;
+  return gabungBaris([
+    ...gudang,
+    { role: "INVENTORY_CONSIGNMENT", sen: senDiopname, storeId: b.storeId },
+    { role: "INVENTORY_VARIANCE", sen: -senDiopname },
+  ]);
 }
 
 /**

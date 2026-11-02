@@ -2,11 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { prisma, seededId } from "@elorae/db";
 
 /*
- * Harga jual diisi MANUAL oleh pemilik (keputusan pemilik 2026-10-08): menyimpan
- * formulir barang tidak pernah menghitung harga jual sendiri, isian margin lama
- * tidak lagi ditulis, dan perubahan harga manual tetap tercatat di riwayat harga
- * serta tetap dikirim ke Jubelio untuk barang yang tersambung. Sesi ditiru,
- * basis data uji nyata.
+ * Harga jual diketik MANUAL (keputusan pemilik 2026-10-08, ditegaskan lagi
+ * 2026-11-01): menyimpan formulir barang tidak pernah menghitung harga jual
+ * sendiri. Target margin dan biaya tambahan disimpan sebagai bahan rekomendasi
+ * harga saja — mengubahnya tidak menggeser harga. Perubahan harga ketikan
+ * tercatat MANUAL_EDIT di riwayat harga dan tetap dikirim ke Jubelio untuk
+ * barang yang tersambung. Sesi ditiru, basis data uji nyata.
  */
 
 const sesi = vi.hoisted(() => ({ id: "" }));
@@ -63,6 +64,11 @@ d("harga jual manual di formulir barang (test bed only)", () => {
     sesi.id = userId;
     await prisma.jubelioOutbox.deleteMany({ where: { entityId: seededId(itemId) } });
     await prisma.itemPriceChangeLog.deleteMany({ where: { itemId: seededId(itemId) } });
+    // Setiap tes mulai dari keadaan yang sama, apa pun yang disimpan tes sebelumnya.
+    await prisma.item.update({
+      where: { id: seededId(itemId) },
+      data: { sellingPrice: 50_000, targetMarginPercent: 40, additionalCost: 1_000 },
+    });
   });
 
   afterAll(async () => {
@@ -115,5 +121,38 @@ d("harga jual manual di formulir barang (test bed only)", () => {
       { triggerReason: "MANUAL_EDIT", oldSellingPrice: 50_000, newSellingPrice: 65_000, changedById: userId, marginPercentUsed: null },
     ]);
     await vi.waitFor(async () => expect(await antrean()).toBe(1), { timeout: 3_000 });
+  });
+
+  it("target margin dan biaya tambahan baru disimpan sebagai bahan rekomendasi; harga jual TIDAK berubah", async () => {
+    // Dulu: margin berubah → harga dihitung ulang 20.000 × 1,45 + 2.000 = 31.000 dan menimpa 50.000.
+    await updateItem(itemId, isian({ targetMarginPercent: 45, additionalCost: 2_000 }));
+    expect(await barang()).toEqual({ harga: 50_000, margin: 45, biaya: 2_000 });
+    expect(await prisma.itemPriceChangeLog.count({ where: { itemId: seededId(itemId) } })).toBe(0);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(await antrean()).toBe(0);
+  });
+
+  it("margin dikosongkan → kolomnya kosong (ikut margin bawaan untuk rekomendasi), harga tetap", async () => {
+    await updateItem(itemId, isian({ targetMarginPercent: null, additionalCost: null }));
+    expect(await barang()).toEqual({ harga: 50_000, margin: null, biaya: null });
+    expect(await prisma.itemPriceChangeLog.count({ where: { itemId: seededId(itemId) } })).toBe(0);
+  });
+
+  it("harga diketik bersamaan dengan margin baru → harga ketikan yang tersimpan, riwayat MANUAL_EDIT", async () => {
+    await updateItem(itemId, isian({ sellingPrice: 99_000, targetMarginPercent: 45 }));
+    expect(await barang()).toEqual({ harga: 99_000, margin: 45, biaya: 1_000 });
+    const log = await prisma.itemPriceChangeLog.findMany({
+      where: { itemId: seededId(itemId) },
+      select: { triggerReason: true, oldSellingPrice: true, newSellingPrice: true },
+    });
+    expect(log.map((l) => ({ ...l, oldSellingPrice: Number(l.oldSellingPrice), newSellingPrice: Number(l.newSellingPrice) }))).toEqual([
+      { triggerReason: "MANUAL_EDIT", oldSellingPrice: 50_000, newSellingPrice: 99_000 },
+    ]);
+    await vi.waitFor(async () => expect(await antrean()).toBe(1), { timeout: 3_000 });
+  });
+
+  it("margin yang bukan angka ditolak, harga dan margin lama tetap", async () => {
+    await expect(updateItem(itemId, isian({ targetMarginPercent: "abc" }))).rejects.toThrow(/targetMarginPercent/);
+    expect(await barang()).toEqual({ harga: 50_000, margin: 40, biaya: 1_000 });
   });
 });

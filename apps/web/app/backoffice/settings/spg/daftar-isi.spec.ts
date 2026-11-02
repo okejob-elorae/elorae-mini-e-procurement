@@ -29,7 +29,7 @@ describe("daftar isi Pengaturan → SPG", () => {
   });
 
   it("setiap kartu dirender sekali", () => {
-    for (const kartu of ["DiskonManualCard", "MemberCard", "TutupHariCard", "TitipPesanCard", "ShiftCard", "HariKerjaSpgCard", "KomisiPutusCard", "BarangHilangCard", "AturanMutasiCard"]) {
+    for (const kartu of ["DiskonManualCard", "MemberCard", "TutupHariCard", "TitipPesanCard", "ShiftCard", "HariKerjaSpgCard", "KomisiSpgCard", "BarangHilangCard", "AturanMutasiCard"]) {
       expect(halaman.split(`<${kartu}`).length - 1, kartu).toBe(1);
     }
   });
@@ -56,6 +56,15 @@ describe("daftar isi Pengaturan → SPG", () => {
     expect(halaman).toContain("<JudulPengaturanSpg bolehBukaTarget={hasPermission(izin, PERMISSIONS.FIELD_SALES_ORDERS_VIEW)} />");
     const judul = readFileSync(path.join(__dirname, "JudulPengaturanSpg.tsx"), "utf8");
     expect(judul).toMatch(/bolehBukaTarget \? \(\s*<Link href=\{TAUTAN_TARGET_SPG\}/);
+  });
+
+  it("kartu komisi tidak lagi menyimpan aturan apa pun; tautan tarifnya hanya untuk pengatur tarif (spg_commission:manage)", () => {
+    expect(halaman).toContain("<KomisiSpgCard bolehAturTarif={hasPermission(izin, PERMISSIONS.SPG_COMMISSION_MANAGE)} />");
+    expect(halaman).not.toContain("KomisiPutusCard");
+    expect(halaman).not.toContain("KUNCI_KOMISI_PUTUS");
+    const kartu = readFileSync(path.join(__dirname, "KomisiSpgCard.tsx"), "utf8");
+    expect(kartu).not.toContain("simpanKomisiPutusSpg");
+    expect(kartu).toMatch(/bolehAturTarif \? \(\s*<Button asChild variant="outline">\s*<Link href="\/backoffice\/settings\/spg-commission">/);
   });
 
   it("aturan mutasi bisa diubah oleh yang sama dengan penyimpannya (`simpanAturanMutasi`: store_transfers:approve)", () => {

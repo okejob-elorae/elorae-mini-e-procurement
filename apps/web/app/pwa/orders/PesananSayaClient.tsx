@@ -48,7 +48,7 @@ export const NADA_KEADAAN: Record<KeadaanPesanan, string> = {
   DIKIRIM_SEBAGIAN: "bg-primary/15 text-foreground",
   TERKIRIM: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
   DITUTUP: "bg-muted text-muted-foreground",
-  KONSI_DISETUJUI: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  KONSI_DISETUJUI: "bg-primary/15 text-foreground",
 };
 
 export function PesananSayaClient({

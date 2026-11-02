@@ -172,6 +172,25 @@ describe("approveFieldSalesOrderAction (unit — writer mocked)", () => {
     });
   });
 
+  it("forwards the limit's source when the refusal carries it", async () => {
+    mockHasPermission.mockReturnValue(true);
+    const { CreditLimitExceededError } = await import("@/lib/field-sales/errors");
+    mockApprove.mockRejectedValue(
+      new CreditLimitExceededError({ receivableOutstanding: 100, undeliveredOrderResidual: 200, total: 300 }, 250, 400, "BAWAAN"),
+    );
+    const result = await approveFieldSalesOrderAction("order-1");
+    expect(result).toEqual({
+      ok: false,
+      reason: "CREDIT_LIMIT_EXCEEDED",
+      credit: {
+        exposure: { receivableOutstanding: 100, undeliveredOrderResidual: 200, total: 300 },
+        creditLimit: 250,
+        orderTotal: 400,
+        sumber: "BAWAAN",
+      },
+    });
+  });
+
   it("passes creditOverrideReason through to the writer", async () => {
     mockHasPermission.mockReturnValue(true);
     mockApprove.mockResolvedValue({ ok: true });

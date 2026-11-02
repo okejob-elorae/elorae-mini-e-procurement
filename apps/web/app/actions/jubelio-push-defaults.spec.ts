@@ -1,24 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /*
- * Nilai bawaan push Jubelio tidak lagi memuat margin dan biaya tambahan:
- * harga jual diisi manual pemilik (keputusan pemilik 2026-10-08), jadi
- * menyimpan nilai bawaan tidak pernah menghitung ulang harga barang.
+ * Margin dan biaya tambahan bawaan kembali bisa diisi (keputusan pemilik
+ * 2026-11-01) — sebagai bahan REKOMENDASI harga jual di halaman barang saja.
+ * Menyimpannya tidak pernah menghitung ulang atau menimpa harga jual barang
+ * mana pun; harga akhir tetap diketik sendiri.
  */
 
 vi.mock("@elorae/db", () => ({
   prisma: {
     jubelioPushDefaults: { findFirst: vi.fn(), update: vi.fn() },
-    item: { count: vi.fn(), findMany: vi.fn() },
+    item: { count: vi.fn(), findMany: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+    itemPriceChangeLog: { create: vi.fn() },
+    jubelioOutbox: { create: vi.fn() },
     $transaction: vi.fn(),
   },
-  recalcItemSellingPrice: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn() }));
 
-import { prisma, recalcItemSellingPrice } from "@elorae/db";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { apiFetch } from "@/lib/internal-api";
 import * as aksi from "./jubelio-push-defaults";
@@ -50,13 +52,31 @@ const BARIS = {
   useSerialNumber: false,
   // Prisma mengembalikan Decimal; tiruannya cukup objek ber-toString.
   buyPrice: { toString: () => "0" },
-  defaultMarginPercent: { toString: () => "10" },
-  defaultAdditionalCost: { toString: () => "500" },
+  defaultMarginPercent: { toString: () => "40" },
+  defaultAdditionalCost: { toString: () => "2000" },
   updatedAt: new Date("2003-01-02T03:00:00.000Z"),
   updatedById: null,
 };
 
-describe("nilai bawaan push Jubelio tanpa margin", () => {
+function isianDari(lain: Record<string, unknown> = {}) {
+  const { id: _id, updatedAt: _u, updatedById: _b, ...isian } = BARIS;
+  void _id;
+  void _u;
+  void _b;
+  return { ...isian, buyPrice: 0, defaultMarginPercent: 40, defaultAdditionalCost: 2_000, ...lain } as never;
+}
+
+function tidakAdaHargaYangDisentuh() {
+  expect(prisma.item.findMany).not.toHaveBeenCalled();
+  expect(prisma.item.update).not.toHaveBeenCalled();
+  expect(prisma.item.updateMany).not.toHaveBeenCalled();
+  expect(prisma.itemPriceChangeLog.create).not.toHaveBeenCalled();
+  expect(prisma.jubelioOutbox.create).not.toHaveBeenCalled();
+  expect(prisma.$transaction).not.toHaveBeenCalled();
+  expect(apiFetch).not.toHaveBeenCalled();
+}
+
+describe("nilai bawaan push Jubelio: margin dan biaya tambahan sebagai bahan rekomendasi", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fn(auth).mockResolvedValue({ user: { id: "u1", permissions: ["*"] } });
@@ -64,39 +84,65 @@ describe("nilai bawaan push Jubelio tanpa margin", () => {
     fn(prisma.jubelioPushDefaults.update).mockResolvedValue(BARIS);
   });
 
-  it("memuat: margin dan biaya tambahan bawaan tidak dikirim ke layar (dan tidak ada Decimal mentah)", async () => {
+  it("memuat: margin dan biaya tambahan bawaan dikirim sebagai angka (tanpa Decimal mentah)", async () => {
     const r = await aksi.getJubelioPushDefaults();
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.data).not.toHaveProperty("defaultMarginPercent");
-    expect(r.data).not.toHaveProperty("defaultAdditionalCost");
+    expect(r.data.defaultMarginPercent).toBe(40);
+    expect(r.data.defaultAdditionalCost).toBe(2_000);
     expect(r.data.buyPrice).toBe(0);
   });
 
-  it("menyimpan: kolom margin tidak ditulis walau klien lama mengirimnya, dan tidak ada harga barang yang dihitung ulang", async () => {
-    const { id: _id, updatedAt: _u, updatedById: _b, ...isian } = BARIS;
-    void _id;
-    void _u;
-    void _b;
-    const r = await aksi.saveJubelioPushDefaults({
-      ...isian,
-      buyPrice: 0,
-      defaultMarginPercent: 25,
-      defaultAdditionalCost: 2_000,
-    } as never);
+  it("memuat: kolom kosong tetap null", async () => {
+    fn(prisma.jubelioPushDefaults.findFirst).mockResolvedValue({ ...BARIS, defaultMarginPercent: null, defaultAdditionalCost: null });
+    const r = await aksi.getJubelioPushDefaults();
+    expect(r.ok && r.data.defaultMarginPercent).toBeNull();
+    expect(r.ok && r.data.defaultAdditionalCost).toBeNull();
+  });
+
+  it("menyimpan: margin dan biaya bawaan ditulis, dan TIDAK ada harga jual barang yang dihitung ulang", async () => {
+    const r = await aksi.saveJubelioPushDefaults(isianDari({ defaultMarginPercent: 25, defaultAdditionalCost: 1_500 }));
     expect(r.ok).toBe(true);
     const data = fn(prisma.jubelioPushDefaults.update).mock.calls[0][0].data as Record<string, unknown>;
-    expect(data).not.toHaveProperty("defaultMarginPercent");
-    expect(data).not.toHaveProperty("defaultAdditionalCost");
+    expect(data.defaultMarginPercent).toBe(25);
+    expect(data.defaultAdditionalCost).toBe(1_500);
     expect(data.updatedById).toBe("u1");
-    expect(recalcItemSellingPrice).not.toHaveBeenCalled();
-    expect(prisma.item.findMany).not.toHaveBeenCalled();
-    expect(prisma.$transaction).not.toHaveBeenCalled();
-    expect(apiFetch).not.toHaveBeenCalled();
+    tidakAdaHargaYangDisentuh();
     if (r.ok) expect(r.data).not.toHaveProperty("fanOutCount");
   });
 
-  it("penghitung barang yang ikut margin bawaan sudah tidak ada", () => {
+  it("menyimpan: dikosongkan → null", async () => {
+    await aksi.saveJubelioPushDefaults(isianDari({ defaultMarginPercent: null, defaultAdditionalCost: null }));
+    const data = fn(prisma.jubelioPushDefaults.update).mock.calls[0][0].data as Record<string, unknown>;
+    expect(data.defaultMarginPercent).toBeNull();
+    expect(data.defaultAdditionalCost).toBeNull();
+    tidakAdaHargaYangDisentuh();
+  });
+
+  it("layar lama yang tidak mengirim margin/biaya tidak mengosongkan kolomnya", async () => {
+    const lama = { ...(isianDari() as Record<string, unknown>) };
+    delete lama.defaultMarginPercent;
+    delete lama.defaultAdditionalCost;
+    await aksi.saveJubelioPushDefaults(lama as never);
+    const data = fn(prisma.jubelioPushDefaults.update).mock.calls[0][0].data as Record<string, unknown>;
+    expect(data).not.toHaveProperty("defaultMarginPercent");
+    expect(data).not.toHaveProperty("defaultAdditionalCost");
+  });
+
+  it.each([
+    [{ defaultMarginPercent: -1 }],
+    [{ defaultMarginPercent: 1_000 }],
+    [{ defaultMarginPercent: Number.NaN }],
+    [{ defaultAdditionalCost: -5 }],
+    [{ defaultMarginPercent: "40" }],
+  ])("isian tidak sah %o → ISIAN_TIDAK_SAH, tidak ada yang ditulis", async (salah) => {
+    const r = await aksi.saveJubelioPushDefaults(isianDari(salah));
+    expect(r).toMatchObject({ ok: false, code: "ISIAN_TIDAK_SAH" });
+    expect(prisma.jubelioPushDefaults.update).not.toHaveBeenCalled();
+    tidakAdaHargaYangDisentuh();
+  });
+
+  it("penghitung barang yang ikut margin bawaan (untuk hitung ulang massal) tetap tidak ada", () => {
     expect("getMarginFallbackItemCount" in aksi).toBe(false);
   });
 });

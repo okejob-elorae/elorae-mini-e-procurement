@@ -595,6 +595,12 @@ export type KonsiReserveResult = { reserved: number; skipped: number; shortLines
  * line by line, and a remainder that never ships is released by closing the order's remainder
  * (`releaseFieldSalesOrder`). A RESERVED reservation of this source therefore belongs to the
  * delivery flow — nothing else may cut stock against it or release it.
+ *
+ * The one other owner of such a reservation is an OLD konsi order approved before the
+ * per-shipment flow reached production (`bacaPesananKonsiCadanganLama` in apps/web): it never
+ * ships, so the store confirming what arrived draws it down through the SAME `issueKonsiTransfer`
+ * (`oldOrderArrival`), and the office's "tidak jadi dikirim" releases the rest through
+ * `releaseFieldSalesOrder` — both in `apps/web/lib/field-sales/konsi-transfer/pesanan-lama-writer.ts`.
  */
 export async function reserveKonsiFieldSalesOrder(
   client: AnyClient,

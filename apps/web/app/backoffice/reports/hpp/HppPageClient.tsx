@@ -251,7 +251,8 @@ export function HppPageClient({
                       <TableHead className="text-right whitespace-normal">{t("hppPcs")}</TableHead>
                       <TableHead className="hidden 2xl:table-cell">{t("ppnStatus")}</TableHead>
                       <TableHead className="text-right whitespace-normal">{t("marginPercent")}</TableHead>
-                      <TableHead className="text-right whitespace-normal">{t("sellingPrice")}</TableHead>
+                      {/* Hitungan markup WO, bukan harga jual barang (harga jual diketik di halaman barang). */}
+                      <TableHead className="text-right whitespace-normal">{t("hargaRekomendasi")}</TableHead>
                       <TableHead className="sticky right-0 bg-card">
                         <span className="sr-only">{t("detail")}</span>
                       </TableHead>

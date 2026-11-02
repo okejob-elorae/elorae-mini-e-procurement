@@ -117,15 +117,15 @@ export function bandingkanLaporan(
 export type BarisTerjual = { qty: number; commissionPerPcs: number };
 
 /**
- * Bagi komisi antar SPG satu toko.
+ * Bagi komisi antar SPG satu toko — ATURAN LAMA, bukan lagi sumber angka komisi.
  *
- * Komisi dihitung dari angka RESMI yang sudah dikunci, bukan dari laporan mana
- * pun — itulah gunanya mengunci. Kalau satu toko punya lebih dari satu SPG,
- * komisinya dibagi rata; gaji pokok tetap utuh masing-masing.
+ * Sejak keputusan pemilik 2026-11-01 komisi SPG dihitung satu cara untuk semua
+ * toko (`lib/spg-commission/payout.ts`): tarif per kategori × potong yang dijual
+ * masing-masing SPG, bukan tarif barang dibagi rata. `kunciAngka` tidak lagi
+ * memanggil fungsi ini; ia tinggal karena perkiraan lama di `lib/spg/stok.ts`
+ * masih mengimpornya. Jangan dipakai untuk angka baru.
  *
  * Sisa pembagian yang tidak habis diberikan ke SPG pertama, bukan dibuang.
- * Membuangnya berarti total yang dibayarkan tidak pernah sama dengan komisi
- * yang dihitung, dan selisih receh itu muncul lagi setiap bulan.
  */
 export function bagiKomisi(
   terjual: BarisTerjual[],

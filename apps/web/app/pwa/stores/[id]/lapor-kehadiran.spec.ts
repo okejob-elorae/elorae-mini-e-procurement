@@ -1,19 +1,40 @@
 import { Fragment, isValidElement, type ReactElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { formatDisplayDate } from "@/lib/date-only";
 
 /*
- * Halaman toko salesman: ubin lapor pelunasan/retur di luar kunjungan dan
- * kartu kehadiran SPG hari ini, keduanya di slot tepat di bawah ringkasan toko.
+ * Halaman toko salesman: ubin lapor pelunasan/retur di luar kunjungan,
+ * kartu kehadiran SPG hari ini, dan kartu pesanan konsinyasi lama yang
+ * menunggu konfirmasi sampai — semuanya di slot tepat di bawah ringkasan toko.
  * Selama kunjungan, ubin lapor ada di kartu Kunjungan berjalan (bukan di sini).
- * SPG tidak mendapat keduanya dan kehadiran tidak dibaca untuknya.
- * Tanpa basis data — semua tiruan.
+ * SPG tidak mendapat semuanya, dan kehadiran maupun pesanan lama tidak dibaca
+ * untuknya. Tanpa basis data — semua tiruan.
  */
+
+type PesananLamaTiruan = {
+  orderId: string;
+  orderNo: string;
+  storeId: string;
+  salesmanId: string;
+  approvedAt: Date;
+  createdAt: Date;
+  baris: Array<{ lineId: string; itemId: string; variantSku: string; productName: string; sisa: number }>;
+  jumlahPcs: number;
+};
 
 const state = vi.hoisted(() => ({
   sesi: null as { user: { id: string; permissions: string[] } } | null,
   tokoTetap: null as string | null,
   aktif: null as null | { id: string; storeId: string },
   kehadiranDibaca: [] as Array<{ storeId: string; sekarang: Date }>,
+  pesananLama: [] as PesananLamaTiruan[],
+  pesananLamaDibaca: [] as string[][],
+  penerima: { penerima: "SALESMAN", pemegangTokoId: "sales-1", namaPemegang: "Budi", jumlahSpg: 0 } as {
+    penerima: "SPG" | "SALESMAN" | "TANPA_PENERIMA";
+    pemegangTokoId: string | null;
+    namaPemegang: string | null;
+    jumlahSpg: number;
+  },
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => state.sesi) }));
@@ -76,6 +97,13 @@ vi.mock("@/lib/stores/catatan-queries", () => ({
   catatanTokoUntuk: vi.fn(async () => []),
 }));
 vi.mock("@/lib/field-sales/inden-queries", () => ({ jendelaIndenTerbuka: vi.fn(async () => []) }));
+vi.mock("@/lib/field-sales/konsi-transfer/pesanan-lama", () => ({
+  bacaPesananKonsiCadanganLama: vi.fn(async (_klien: unknown, lingkup: { storeIds?: readonly string[] }) => {
+    state.pesananLamaDibaca.push([...(lingkup.storeIds ?? [])]);
+    return new Map(state.pesananLama.map((o) => [o.orderId, o]));
+  }),
+  muatPenerimaToko: vi.fn(async () => state.penerima),
+}));
 vi.mock("@/lib/spg/kehadiran-toko", async (asli) => ({
   ...(await asli<typeof import("@/lib/spg/kehadiran-toko")>()),
   kehadiranSpgToko: vi.fn(async (storeId: string, sekarang: Date) => {
@@ -117,6 +145,11 @@ vi.mock("@/app/pwa/stores/[id]/UbinLapor", () => ({
     return null;
   },
 }));
+vi.mock("@/app/pwa/stores/[id]/PesananLamaToko", () => ({
+  PesananLamaToko: function PesananLamaToko() {
+    return null;
+  },
+}));
 
 const halamanToko = (await import("@/app/pwa/stores/[id]/page")).default;
 const buka = (id: string) => halamanToko({ params: Promise.resolve({ id }) });
@@ -148,6 +181,9 @@ beforeEach(() => {
   state.tokoTetap = null;
   state.aktif = null;
   state.kehadiranDibaca = [];
+  state.pesananLama = [];
+  state.pesananLamaDibaca = [];
+  state.penerima = { penerima: "SALESMAN", pemegangTokoId: "sales-1", namaPemegang: "Budi", jumlahSpg: 0 };
 });
 
 describe("halaman toko salesman — lapor dari toko dan kehadiran SPG", () => {
@@ -181,5 +217,60 @@ describe("halaman toko salesman — lapor dari toko dan kehadiran SPG", () => {
     expect(cari(slot, "LaporDariToko")).toBeNull();
     expect(cari(slot, "KehadiranSpgToko")?.props.baris).toEqual([]);
     expect(state.kehadiranDibaca).toEqual([]);
+  });
+});
+
+describe("halaman toko salesman — pesanan konsinyasi lama menunggu konfirmasi sampai", () => {
+  const approvedAt = new Date("2026-08-10T03:00:00.000Z");
+  const pesananLama = (): PesananLamaTiruan => ({
+    orderId: "o-1",
+    orderNo: "KONSI/2026/0007",
+    storeId: "toko-1",
+    salesmanId: "sales-1",
+    approvedAt,
+    createdAt: approvedAt,
+    baris: [
+      { lineId: "l-1", itemId: "i-1", variantSku: "KAOS-M", productName: "Kaos Uji", sisa: 4 },
+      { lineId: "l-2", itemId: "i-1", variantSku: "KAOS-L", productName: "Kaos Uji", sisa: 2 },
+    ],
+    jumlahPcs: 6,
+  });
+
+  it("pemegang yang check-in di toko ini: kartunya di slot, dibaca hanya untuk toko ini, tanpa harga", async () => {
+    state.aktif = { id: "v-1", storeId: "toko-1" };
+    state.pesananLama = [pesananLama()];
+    const kartu = cari(await slotBawahRingkasan(), "PesananLamaToko");
+    expect(kartu?.props).toEqual({
+      storeId: "toko-1",
+      pesanan: [
+        { id: "o-1", orderNo: "KONSI/2026/0007", disetujuiLabel: formatDisplayDate(approvedAt), jumlahBarang: 2, pcs: 6 },
+      ],
+      penerima: "SALESMAN",
+      sayaPemegang: true,
+      sudahCheckIn: true,
+    });
+    expect(JSON.stringify(kartu?.props)).not.toMatch(/harga|price|total/i);
+    expect(state.pesananLamaDibaca).toEqual([["toko-1"]]);
+  });
+
+  it("salesman lain tanpa kunjungan di toko ini: kartu tetap tampil, tetapi bukan pemegang dan belum check-in", async () => {
+    state.sesi = { user: { id: "sales-9", permissions: ["pwa:access"] } };
+    state.aktif = { id: "v-2", storeId: "toko-lain" };
+    state.pesananLama = [pesananLama()];
+    const kartu = cari(await slotBawahRingkasan(), "PesananLamaToko");
+    expect(kartu?.props).toMatchObject({ penerima: "SALESMAN", sayaPemegang: false, sudahCheckIn: false });
+  });
+
+  it("tanpa pesanan lama: tidak ada kartu", async () => {
+    expect(cari(await slotBawahRingkasan(), "PesananLamaToko")).toBeNull();
+    expect(state.pesananLamaDibaca).toEqual([["toko-1"]]);
+  });
+
+  it("SPG di tokonya: pesanan lama tidak dibaca di halaman toko (dikonfirmasi dari Terima kiriman)", async () => {
+    state.sesi = { user: { id: "spg-1", permissions: ["pwa:access", "spg_sales:record"] } };
+    state.tokoTetap = "toko-1";
+    state.pesananLama = [pesananLama()];
+    expect(cari(await slotBawahRingkasan(), "PesananLamaToko")).toBeNull();
+    expect(state.pesananLamaDibaca).toEqual([]);
   });
 });

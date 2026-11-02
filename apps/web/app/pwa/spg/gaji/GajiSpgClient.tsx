@@ -12,22 +12,20 @@ import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 /**
  * Gaji & komisi SPG.
  *
- * Dua jenis angka, dan layar menjaganya tetap terpisah: PERKIRAAN komisi bulan
- * berjalan (penjualan bersih yang sudah dicatat × tarif komisi barang, dengan
- * dasar yang disebut terang) dan angka RESMI per bulan — siklus konsinyasi
- * yang dikunci kantor, atau komisi toko putus yang ditetapkan kantor. Hanya
- * yang resmi yang dibayar. Beban barang hilang yang ditetapkan kantor ke SPG
- * ini dipotong dari angka resmi saat dikunci/ditetapkan — barisnya menyebut
- * potongan dan yang diterima.
+ * Dua jenis angka, dan layar menjaganya tetap terpisah: PERKIRAAN komisi bulan berjalan (potong
+ * yang SPG ini jual sendiri × tarif per kategori bulan ini) dan pembayaran RESMI — siklus
+ * konsinyasi yang dikunci kantor, atau komisi toko putus yang ditetapkan kantor sesudah laporan
+ * penjualannya dicek. Hanya yang resmi yang dibayar, di bulan laporannya dicek; setiap baris
+ * menyebut bulan penjualannya ("Komisi penjualan Oktober 2026"). Beban barang hilang yang
+ * ditetapkan kantor ke SPG ini dipotong dari angka resmi saat dikunci/ditetapkan — barisnya
+ * menyebut potongan dan yang diterima.
  */
 export function GajiSpgClient({
-  konsi,
   perkiraan,
   resmi,
   bebanHilang,
 }: PayloadGajiHp & { bebanHilang: { sisa: number; maksPotongPersen: number } | null }) {
   const t = useTranslations("pwa.spgGaji");
-  const bagiRata = perkiraan?.dasar === "BAGI_RATA";
   return (
     <div className="space-y-4 p-4">
       <Button asChild variant="ghost" size="sm" className="-ml-2">
@@ -45,24 +43,23 @@ export function GajiSpgClient({
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h2 className="beranda-judul">{t("estimateTitle", { month: perkiraan.bulanLabel })}</h2>
             <Badge variant="secondary" className="shrink-0">
-              {bagiRata ? t("basisShared") : t("basisOwn")}
+              {t("basisOwn")}
             </Badge>
           </div>
           <p className="text-3xl font-semibold tabular-nums">{formatIDR(perkiraan.bagianSaya)}</p>
-          <p className="text-xs opacity-80">
-            {!bagiRata
-              ? t("estimateOwnPcs", { pcs: perkiraan.potongSaya })
-              : perkiraan.jumlahSpg > 1
-                ? t("estimateSharedPcs", { total: formatIDR(perkiraan.totalToko ?? 0), pcs: perkiraan.potongToko ?? 0, count: perkiraan.jumlahSpg })
-                : t("estimateAlonePcs", { pcs: perkiraan.potongToko ?? 0 })}
-          </p>
-          {(bagiRata ? perkiraan.potongToko : perkiraan.potongSaya) === 0 ? (
+          {perkiraan.potongSaya === 0 ? (
             <p className="text-xs opacity-80">{t("estimateNoSales")}</p>
+          ) : (
+            <p className="text-xs opacity-80">{t("estimateOwnPcs", { pcs: perkiraan.potongSaya })}</p>
+          )}
+          {perkiraan.potongTanpaTarif > 0 ? (
+            <p className="text-xs opacity-80">{t("estimateNoRate", { pcs: perkiraan.potongTanpaTarif })}</p>
           ) : null}
+          <p className="text-xs opacity-80">{t("estimateRule")}</p>
         </section>
       ) : (
         <section className="beranda-kartu">
-          <p className="text-sm text-muted-foreground">{konsi ? t("estimateEmpty") : t("estimatePutusOff")}</p>
+          <p className="text-sm text-muted-foreground">{t("estimateEmpty")}</p>
         </section>
       )}
 
@@ -87,9 +84,12 @@ export function GajiSpgClient({
               <li key={r.kunci} className="beranda-kartu space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="font-medium">{r.bulanLabel}</p>
+                    <p className="font-medium">{t("salesMonthNote", { month: r.bulanJualLabel })}</p>
                     <p className="text-xs text-muted-foreground">{r.toko}</p>
                     <p className="text-xs text-muted-foreground">{r.jenis === "PUTUS" ? t("kindPutus") : t("kindKonsi")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {r.bulanBayarLabel ? t("payoutMonth", { month: r.bulanBayarLabel }) : t("payoutPending")}
+                    </p>
                   </div>
                   {r.dibayarLabel ? (
                     <Badge variant="secondary" className="shrink-0 bg-emerald-500/15 text-emerald-800 dark:text-emerald-300">
@@ -133,10 +133,10 @@ export function GajiSpgClient({
                     </>
                   ) : null}
                 </dl>
-                {r.jenis === "PUTUS" ? (
+                {r.jenis === "PUTUS" || r.aturanLama ? (
                   <p className="text-xs text-muted-foreground">
-                    {r.dasar === "PER_SPG" ? t("basisOwn") : t("basisShared")}
-                    {r.ditetapkanLabel ? ` · ${t("lockedOn", { date: r.ditetapkanLabel })}` : ""}
+                    {r.aturanLama ? t("oldRule") : t("basisOwn")}
+                    {r.jenis === "PUTUS" && r.ditetapkanLabel ? ` · ${t("lockedOn", { date: r.ditetapkanLabel })}` : ""}
                   </p>
                 ) : null}
               </li>

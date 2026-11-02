@@ -9,6 +9,7 @@ import { jubelioCreateEligibility } from '@/lib/items/jubelio-create-eligibility
 import { ItemDetailClient } from './ItemDetailClient';
 import { ItemGalleryEditor } from '@/components/items/ItemGalleryEditor';
 import { bacaHppBarang } from "@/lib/items/hpp-barang-queries";
+import { bacaHppTerbaru, bacaRiwayatHpp } from "@/lib/items/riwayat-hpp-queries";
 
 export const dynamic = 'force-dynamic';
 
@@ -88,8 +89,21 @@ export default async function ItemDetailPage({
 
   const images = await getItemImages(item.id);
   const jubelioStockPushEnabled = await isJubelioStockPushEnabled(prisma);
-  // HPP per pcs di samping harga jual (barang jadi saja, hanya dibaca).
-  const hpp = item.type === ItemType.FINISHED_GOOD ? await bacaHppBarang(prisma, item.id) : null;
+  const barangJadi = item.type === ItemType.FINISHED_GOOD;
+  // Rata-rata stok dan rincian penerimaan terakhir (barang jadi saja, hanya dibaca).
+  const hpp = barangJadi ? await bacaHppBarang(prisma, item.id) : null;
+  // Riwayat HPP (setiap penerimaan/pembelian, angka tersimpan) dan HPP terbaru — dasar rekomendasi harga.
+  const bolehLihatHpp = hasPermission(perms, PERMISSIONS.ITEMS_VIEW);
+  const riwayatHppAwal = bolehLihatHpp ? await bacaRiwayatHpp(prisma, item.id) : null;
+  const hppTerbaru = riwayatHppAwal ? await bacaHppTerbaru(prisma, item.id, riwayatHppAwal) : null;
+  // Margin dan biaya tambahan bawaan (Pengaturan Jubelio) — dipakai rekomendasi bila barang tidak punya sendiri.
+  const bawaan = barangJadi
+    ? await prisma.jubelioPushDefaults.findFirst({ select: { defaultMarginPercent: true, defaultAdditionalCost: true } })
+    : null;
+  const bawaanRekomendasi = {
+    margin: bawaan?.defaultMarginPercent != null ? Number(bawaan.defaultMarginPercent) : null,
+    biaya: bawaan?.defaultAdditionalCost != null ? Number(bawaan.defaultAdditionalCost) : null,
+  };
   const canManage = hasPermission(perms, PERMISSIONS.ITEMS_MANAGE);
   const jubelioCreateState = hasPermission(perms, PERMISSIONS.ITEMS_EDIT)
     ? await jubelioCreateEligibility(item.id)
@@ -104,6 +118,10 @@ export default async function ItemDetailPage({
     <ItemDetailClient
       initialData={initialData}
       hpp={hpp}
+      hppTerbaru={hppTerbaru}
+      riwayatHppAwal={riwayatHppAwal}
+      bawaanRekomendasi={bawaanRekomendasi}
+      satuan={item.uom?.code ?? null}
       itemType={item.type as ItemType}
       nameId={item.nameId}
       nameEn={item.nameEn}

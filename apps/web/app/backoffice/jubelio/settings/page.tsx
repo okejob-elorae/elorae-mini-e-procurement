@@ -157,7 +157,8 @@ export default function JubelioSettingsPage() {
     }
   };
 
-  // Nilai bawaan tidak menyentuh harga barang: harga jual diisi manual pemilik.
+  // Nilai bawaan tidak menyentuh harga barang: margin dan biaya tambahan bawaan hanya
+  // bahan rekomendasi harga di halaman barang; harga jual tetap diketik sendiri.
   const handleSaveDefaults = async () => {
     if (!defaultsDraft) return;
     setIsSavingDefaults(true);
@@ -330,29 +331,52 @@ export default function JubelioSettingsPage() {
               <p className="text-sm text-muted-foreground">{t("defaults.loadError")}</p>
             )
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              <NumField label={t("defaults.field.sellTaxId")} value={defaultsDraft.sellTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellTaxId: v ?? 0 })} />
-              <NumField label={t("defaults.field.buyTaxId")} value={defaultsDraft.buyTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyTaxId: v ?? 0 })} />
-              <NumField label={t("defaults.field.salesAcctId")} value={defaultsDraft.salesAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, salesAcctId: v ?? 0 })} />
-              <NumField label={t("defaults.field.cogsAcctId")} value={defaultsDraft.cogsAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, cogsAcctId: v ?? 0 })} />
-              <NumField label={t("defaults.field.invtAcctId")} value={defaultsDraft.invtAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, invtAcctId: v ?? 0 })} />
-              <NumField label={t("defaults.field.purchAcctId")} value={defaultsDraft.purchAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, purchAcctId: v })} nullable />
-              <NumField label={t("defaults.field.uomId")} value={defaultsDraft.uomId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, uomId: v ?? 0 })} />
-              <StrField label={t("defaults.field.brandId")} value={defaultsDraft.brandId ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandId: v || null })} />
-              <StrField label={t("defaults.field.brandName")} value={defaultsDraft.brandName ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandName: v || null })} />
-              <StrField label={t("defaults.field.sellUnit")} value={defaultsDraft.sellUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellUnit: v })} />
-              <StrField label={t("defaults.field.buyUnit")} value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
-              <NumField label={t("defaults.field.packageWeight")} value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
-              <NumField label={t("defaults.field.buyPrice")} value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
-              <NumField label={t("defaults.field.rop")} value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
-              <NumField label={t("defaults.field.storePriorityQtyTreshold")} value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
-              <BoolField label={t("defaults.field.sellThis")} value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />
-              <BoolField label={t("defaults.field.buyThis")} value={defaultsDraft.buyThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyThis: v })} />
-              <BoolField label={t("defaults.field.stockThis")} value={defaultsDraft.stockThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, stockThis: v })} />
-              <BoolField label={t("defaults.field.dropshipThis")} value={defaultsDraft.dropshipThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, dropshipThis: v })} />
-              <BoolField label={t("defaults.field.isActive")} value={defaultsDraft.isActive} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, isActive: v })} />
-              <BoolField label={t("defaults.field.useSingleImageSet")} value={defaultsDraft.useSingleImageSet} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSingleImageSet: v })} />
-              <BoolField label={t("defaults.field.useSerialNumber")} value={defaultsDraft.useSerialNumber} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSerialNumber: v })} />
+            <div className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <NumField label={t("defaults.field.sellTaxId")} value={defaultsDraft.sellTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellTaxId: v ?? 0 })} />
+                <NumField label={t("defaults.field.buyTaxId")} value={defaultsDraft.buyTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyTaxId: v ?? 0 })} />
+                <NumField label={t("defaults.field.salesAcctId")} value={defaultsDraft.salesAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, salesAcctId: v ?? 0 })} />
+                <NumField label={t("defaults.field.cogsAcctId")} value={defaultsDraft.cogsAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, cogsAcctId: v ?? 0 })} />
+                <NumField label={t("defaults.field.invtAcctId")} value={defaultsDraft.invtAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, invtAcctId: v ?? 0 })} />
+                <NumField label={t("defaults.field.purchAcctId")} value={defaultsDraft.purchAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, purchAcctId: v })} nullable />
+                <NumField label={t("defaults.field.uomId")} value={defaultsDraft.uomId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, uomId: v ?? 0 })} />
+                <StrField label={t("defaults.field.brandId")} value={defaultsDraft.brandId ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandId: v || null })} />
+                <StrField label={t("defaults.field.brandName")} value={defaultsDraft.brandName ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandName: v || null })} />
+                <StrField label={t("defaults.field.sellUnit")} value={defaultsDraft.sellUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellUnit: v })} />
+                <StrField label={t("defaults.field.buyUnit")} value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
+                <NumField label={t("defaults.field.packageWeight")} value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
+                <NumField label={t("defaults.field.buyPrice")} value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
+                <NumField label={t("defaults.field.rop")} value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
+                <NumField label={t("defaults.field.storePriorityQtyTreshold")} value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
+                <BoolField label={t("defaults.field.sellThis")} value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />
+                <BoolField label={t("defaults.field.buyThis")} value={defaultsDraft.buyThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyThis: v })} />
+                <BoolField label={t("defaults.field.stockThis")} value={defaultsDraft.stockThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, stockThis: v })} />
+                <BoolField label={t("defaults.field.dropshipThis")} value={defaultsDraft.dropshipThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, dropshipThis: v })} />
+                <BoolField label={t("defaults.field.isActive")} value={defaultsDraft.isActive} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, isActive: v })} />
+                <BoolField label={t("defaults.field.useSingleImageSet")} value={defaultsDraft.useSingleImageSet} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSingleImageSet: v })} />
+                <BoolField label={t("defaults.field.useSerialNumber")} value={defaultsDraft.useSerialNumber} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSerialNumber: v })} />
+              </div>
+              {/* Bahan rekomendasi harga jual di halaman barang — menyimpannya tidak mengubah harga mana pun. */}
+              <div className="space-y-3 border-t pt-4">
+                <div className="space-y-1">
+                  <p className="text-sm font-medium">{t("defaults.rekomendasiJudul")}</p>
+                  <p className="text-xs text-muted-foreground">{t("defaults.rekomendasiKeterangan")}</p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <NumField
+                    label={t("defaults.field.defaultMarginPercent")}
+                    value={defaultsDraft.defaultMarginPercent}
+                    onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultMarginPercent: v })}
+                    nullable
+                  />
+                  <NumField
+                    label={t("defaults.field.defaultAdditionalCost")}
+                    value={defaultsDraft.defaultAdditionalCost}
+                    onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultAdditionalCost: v })}
+                    nullable
+                  />
+                </div>
+              </div>
             </div>
           )}
         </CardContent>

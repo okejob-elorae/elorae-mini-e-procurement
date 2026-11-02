@@ -28,6 +28,7 @@ import { ApproveRejectCard, type AppealedLine, type LineRef, type OverCommittedL
 import { barisBanding } from "./baris-banding";
 import { DeliveriesCard } from "./DeliveriesCard";
 import { KonsiShipmentsCard } from "./KonsiShipmentsCard";
+import { KonsiPesananLamaCard, type PesananLamaKantor } from "./KonsiPesananLamaCard";
 import { KonsiSuggestionsCard, type StagedAddition } from "./KonsiSuggestionsCard";
 import { KreditPanel } from "./KreditPanel";
 import type { PanelKredit } from "@/lib/field-sales/kredit-panel";
@@ -52,8 +53,13 @@ type Props = {
   canViewShipments: boolean;
   konsiSuggestions: KonsiSuggestion[];
   konsiAssortmentGaps: KonsiAssortmentGapSuggestion[];
-  creditCheck: { exposure: number; limit: number; overLimit: boolean } | null;
+  creditCheck: { exposure: number; limit: number; overLimit: boolean; sumber?: "TOKO" | "BAWAAN" } | null;
   shipments: OrderShipmentSummary[];
+  /**
+   * Pesanan konsinyasi LAMA yang cadangannya masih ditahan, atau yang sudah pernah dikonfirmasi
+   * sampai oleh toko; null = pesanan biasa (atau gagal dimuat). Kartunya menggantikan kartu pengiriman.
+   */
+  pesananLama?: PesananLamaKantor | null;
   /** Panel kredit toko (PUTUS saja); null = konsinyasi atau gagal dimuat. */
   kredit: PanelKredit | null;
   /** Faktur panel kredit dengan janji bayar + keadaan per jatuh tempo; null = gagal dimuat (kolom lama). */
@@ -90,6 +96,7 @@ export function FieldSalesOrderDetailClient({
   konsiAssortmentGaps,
   creditCheck,
   shipments,
+  pesananLama = null,
   kredit,
   fakturKredit = null,
   kreditDitahan,
@@ -158,7 +165,11 @@ export function FieldSalesOrderDetailClient({
 
   const formatDate = (date: Date) => formatDisplayDateTime(date, locale);
 
-  const legacyKonsiTransfer = order.legacyKonsiTransfer;
+  /*
+   * A confirmed old-order arrival is also a transfer without a shipment, so the order query reports
+   * it as `legacyKonsiTransfer`; it is not an approve-time transfer and has no surat keluar to print.
+   */
+  const legacyKonsiTransfer = pesananLama ? null : order.legacyKonsiTransfer;
   /**
    * An order the previous consignment flow delivered in full at approve: no shipment, nothing
    * outstanding, DELIVERED. The backfill is what makes a legacy order read this way; an order
@@ -166,6 +177,7 @@ export function FieldSalesOrderDetailClient({
    */
   const legacyKonsiDelivered =
     isKonsi &&
+    !pesananLama &&
     order.status === "APPROVED" &&
     order.deliveryStatus === "DELIVERED" &&
     shipments.length === 0 &&
@@ -339,7 +351,14 @@ export function FieldSalesOrderDetailClient({
         />
       )}
 
-      {isKonsi ? (
+      {isKonsi && pesananLama ? (
+        <KonsiPesananLamaCard
+          orderId={order.id}
+          deliveryStatus={order.deliveryStatus}
+          pesananLama={pesananLama}
+          canDeliver={canDeliver}
+        />
+      ) : isKonsi ? (
         <KonsiShipmentsCard
           orderId={order.id}
           storeName={order.storeName}
@@ -408,7 +427,9 @@ export function FieldSalesOrderDetailClient({
       <Card className="p-4">
         {/* A legacy order moved stock at approve — its card explains that instead of this note. */}
         {isKonsi && !legacyKonsiDelivered && (
-          <p className="text-xs text-muted-foreground mb-2">{t("konsiTransferNote")}</p>
+          <p className="text-xs text-muted-foreground mb-2">
+            {pesananLama ? t("pesananLama.catatanBaris") : t("konsiTransferNote")}
+          </p>
         )}
         <Table>
           <TableHeader>

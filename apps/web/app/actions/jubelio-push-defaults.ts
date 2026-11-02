@@ -34,6 +34,14 @@ export type JubelioPushDefaultsState = {
   useSingleImageSet: boolean;
   useSerialNumber: boolean;
   buyPrice: number;
+  /**
+   * Margin (%) dan biaya tambahan per pcs bawaan — HANYA bahan rekomendasi harga
+   * jual di halaman barang, untuk barang yang tidak punya margin/biaya sendiri
+   * (keputusan pemilik 2026-11-01). Menyimpannya tidak mengubah harga jual
+   * barang mana pun. null = belum diisi.
+   */
+  defaultMarginPercent: number | null;
+  defaultAdditionalCost: number | null;
   updatedAt: string;
   updatedById: string | null;
 };
@@ -45,20 +53,24 @@ export type JubelioPushDefaultsInput = Omit<
 
 type BarisBawaan = NonNullable<Awaited<ReturnType<typeof prisma.jubelioPushDefaults.findFirst>>>;
 
-/**
- * Margin dan biaya tambahan bawaan tidak dikirim ke layar: harga jual diisi
- * manual pemilik (keputusan pemilik 2026-10-08), jadi keduanya tidak dipakai
- * lagi. Kolomnya dibiarkan di basis data.
- */
+/** Batas kolom `defaultMarginPercent` (Decimal(5,2)) dan `defaultAdditionalCost` (Decimal(15,2)). */
+const MARGIN_BAWAAN_MAKS = 999.99;
+const BIAYA_BAWAAN_MAKS = 9_999_999_999_999.99;
+
 function serialize(row: BarisBawaan): JubelioPushDefaultsState {
-  const { defaultMarginPercent: _margin, defaultAdditionalCost: _biaya, ...sisa } = row;
-  void _margin;
-  void _biaya;
   return {
-    ...sisa,
+    ...row,
     buyPrice: Number(row.buyPrice),
+    defaultMarginPercent: row.defaultMarginPercent != null ? Number(row.defaultMarginPercent) : null,
+    defaultAdditionalCost: row.defaultAdditionalCost != null ? Number(row.defaultAdditionalCost) : null,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** null/undefined lolos; angka harus terhingga dan di dalam batas kolomnya. */
+function angkaBawaanSah(v: unknown, maks: number): boolean {
+  if (v == null) return true;
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= maks;
 }
 
 // Baris tunggal (singleton) yang hilang = BAWAAN_BELUM_ADA, bukan Error mentah.
@@ -92,19 +104,25 @@ async function simpanBawaan(
   const ada = await prisma.jubelioPushDefaults.findFirst({ select: { id: true } });
   if (!ada) return gagalJubelio("BAWAAN_BELUM_ADA", RINCIAN_TANPA_BARIS);
 
-  // Klien lama bisa masih mengirim margin/biaya tambahan bawaan: dibuang, kolomnya
-  // tidak disentuh, dan tidak ada harga barang yang dihitung ulang.
-  const {
-    defaultMarginPercent: _margin,
-    defaultAdditionalCost: _biaya,
-    ...isian
-  } = input as JubelioPushDefaultsInput & { defaultMarginPercent?: unknown; defaultAdditionalCost?: unknown };
-  void _margin;
-  void _biaya;
+  // Margin dan biaya tambahan bawaan hanya bahan rekomendasi harga: menyimpannya
+  // TIDAK menghitung ulang harga jual barang mana pun. Klien yang tidak
+  // mengirimnya (layar lama) tidak mengosongkan kolomnya.
+  const { defaultMarginPercent, defaultAdditionalCost, ...isian } = input;
+  if (!angkaBawaanSah(defaultMarginPercent, MARGIN_BAWAAN_MAKS)) {
+    return gagalJubelio("ISIAN_TIDAK_SAH", "defaultMarginPercent: 0–999.99");
+  }
+  if (!angkaBawaanSah(defaultAdditionalCost, BIAYA_BAWAAN_MAKS)) {
+    return gagalJubelio("ISIAN_TIDAK_SAH", "defaultAdditionalCost: >= 0");
+  }
 
   const row = await prisma.jubelioPushDefaults.update({
     where: { id: "singleton" },
-    data: { ...isian, updatedById: session.user.id },
+    data: {
+      ...isian,
+      ...(defaultMarginPercent !== undefined ? { defaultMarginPercent } : {}),
+      ...(defaultAdditionalCost !== undefined ? { defaultAdditionalCost } : {}),
+      updatedById: session.user.id,
+    },
   });
 
   revalidatePath("/backoffice/jubelio/settings");

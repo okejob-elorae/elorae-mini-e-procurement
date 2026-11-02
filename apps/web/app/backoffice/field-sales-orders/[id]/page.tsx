@@ -16,7 +16,13 @@ import { muatPanelKredit, type PanelKredit } from "@/lib/field-sales/kredit-pane
 import { bolehMembacaPiutang } from "@/lib/receivables/izin";
 import { batasKreditBerlaku } from "@/lib/salesman/kredit";
 import { bacaAturanKreditDb } from "@/lib/salesman/tagihan-toko";
+import {
+  muatKedatanganPesananLama,
+  muatPenerimaToko,
+  muatPesananKonsiCadanganLama,
+} from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { FieldSalesOrderDetailClient } from "./FieldSalesOrderDetailClient";
+import type { PesananLamaKantor } from "./KonsiPesananLamaCard";
 import { muatTautanPesanan, penagihanSesuaiIzin, type FakturKreditTampil, type PiutangKiriman } from "./tautan-pesanan";
 
 export const dynamic = "force-dynamic";
@@ -148,6 +154,40 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
   }
 
   /*
+   * Pesanan konsinyasi LAMA (cadangannya masih ditahan, disetujui sebelum alur per antaran) — atau
+   * yang sudah pernah dikonfirmasi sampai: kartunya menggantikan kartu pengiriman, karena pesanan
+   * ini diselesaikan toko, tidak dikirim. Gagal memuat tidak menjatuhkan halaman: kartu
+   * pengiriman tampil seperti biasa, dan penulis pengiriman tetap menolak pesanan lama.
+   */
+  let pesananLama: PesananLamaKantor | null = null;
+  if (order.orderType === "KONSI" && order.status === "APPROVED") {
+    try {
+      const [lama, kedatangan] = await Promise.all([muatPesananKonsiCadanganLama(prisma, id), muatKedatanganPesananLama(prisma, id)]);
+      if (lama || kedatangan.length > 0) {
+        const storeId =
+          lama?.storeId ?? (await prisma.fieldSalesOrder.findUnique({ where: { id }, select: { storeId: true } }))?.storeId ?? null;
+        const penerima = storeId ? await muatPenerimaToko(prisma, storeId) : null;
+        pesananLama = {
+          menunggu: lama !== null,
+          baris: (lama?.baris ?? []).map((b) => ({ lineId: b.lineId, productName: b.productName, variantSku: b.variantSku, sisa: b.sisa })),
+          penerima: penerima?.penerima ?? "TANPA_PENERIMA",
+          namaPemegang: penerima?.namaPemegang ?? null,
+          kedatangan: kedatangan.map((k) => ({
+            transferId: k.transferId,
+            docNo: k.docNo,
+            createdAt: k.createdAt,
+            oleh: k.oleh,
+            pcs: k.pcs,
+            pcsSesudahOpname: k.pcsSesudahOpname,
+          })),
+        };
+      }
+    } catch (error) {
+      console.error("[field-sales-orders] pesanan konsi lama failed", { orderId: id, error });
+    }
+  }
+
+  /*
    * Panel kredit (PUTUS saja): catatan saat pesanan dibuat + tagihan toko sekarang.
    * Sama seperti saran konsinyasi: gagal memuatnya tidak boleh menjatuhkan halaman,
    * tapi pesanan yang DITAHAN tetap butuh centang di kartu persetujuan — jadi
@@ -207,6 +247,7 @@ export default async function FieldSalesOrderDetailPage({ params }: PageProps) {
       konsiAssortmentGaps={konsiAssortmentGaps}
       creditCheck={creditCheck}
       shipments={shipments}
+      pesananLama={pesananLama}
       kredit={kredit}
       fakturKredit={fakturKredit}
       kreditDitahan={kreditDitahan}

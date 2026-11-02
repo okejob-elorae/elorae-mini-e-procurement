@@ -23,6 +23,15 @@ import type { JenisKiriman } from "./kiriman";
  * sampai dikirim, CONSUMED hanya lewat pengiriman (yang membuat transfer
  * berpengiriman), dan RELEASED kalau sisanya ditutup. Jadi tidak satu pun
  * pesanan aturan baru lolos sebagai pesanan lama.
+ *
+ * JENIS LAMA YANG LAIN — disetujui dengan aturan paling awal, cadangannya MASIH
+ * RESERVED tanpa pengiriman — dikenali `bacaPesananKonsiCadanganLama`
+ * (`lib/field-sales/konsi-transfer/pesanan-lama.ts`) dan diselesaikan dengan
+ * konfirmasi "sudah sampai" dari toko. Cadangannya yang RESERVED membuatnya
+ * gugur dari sini; begitu dikonfirmasi sampai, transfernya (tanpa pengiriman,
+ * `oldOrderArrival`) juga membuatnya gugur dari sini — pesanan yang sudah habis
+ * dikonfirmasi bercadangan CONSUMED dengan transfer tanpa pengiriman, persis
+ * bentuk jenis ini, dan tanpa penanda itu akan diterima SPG sekali lagi.
  */
 
 type Klien = Prisma.TransactionClient | typeof prisma;
@@ -41,10 +50,12 @@ export async function bacaPesananKonsiLama(klien: Klien, orderIds: readonly stri
   if (ids.length === 0) return hasil;
 
   const [transfer, baris] = await Promise.all([
-    klien.konsiTransfer.findMany({ where: { orderId: { in: ids } }, select: { orderId: true, shipmentId: true } }),
+    klien.konsiTransfer.findMany({ where: { orderId: { in: ids } }, select: { orderId: true, shipmentId: true, oldOrderArrival: true } }),
     klien.fieldSalesOrderLine.findMany({ where: { orderId: { in: ids } }, select: { id: true, orderId: true } }),
   ]);
-  const berpengiriman = new Set(transfer.filter((t) => t.shipmentId !== null).map((t) => t.orderId));
+  // Transfer berpengiriman (aturan baru) dan transfer konfirmasi sampai (pesanan lama yang
+  // cadangannya dulu ditahan) sama-sama berarti pesanan ini BUKAN jenis yang diterima per pesanan.
+  const berpengiriman = new Set(transfer.filter((t) => t.shipmentId !== null || t.oldOrderArrival).map((t) => t.orderId));
   const adaTransfer = new Set(transfer.map((t) => t.orderId));
   const calon = ids.filter((id) => !berpengiriman.has(id));
   if (calon.length === 0) return hasil;

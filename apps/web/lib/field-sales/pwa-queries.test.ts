@@ -51,18 +51,26 @@ describe("keadaan & tahap pesanan", () => {
     expect(keadaanPesanan({ status: "APPROVED", orderType: "PUTUS", deliveryStatus: "PARTIAL" })).toBe("DIKIRIM_SEBAGIAN");
     expect(keadaanPesanan({ status: "APPROVED", orderType: "PUTUS", deliveryStatus: "DELIVERED" })).toBe("TERKIRIM");
     expect(keadaanPesanan({ status: "APPROVED", orderType: "PUTUS", deliveryStatus: "CLOSED" })).toBe("DITUTUP");
+    expect(keadaanPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "PARTIAL" })).toBe("DIKIRIM_SEBAGIAN");
+    expect(keadaanPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "DELIVERED" })).toBe("TERKIRIM");
+    expect(keadaanPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "CLOSED" })).toBe("DITUTUP");
   });
 
-  it("tab 'disetujui' = persis 'siap dikirim' di beranda (PUTUS disetujui, belum/sebagian dikirim)", () => {
+  it("tab 'disetujui' = persis 'siap dikirim' di beranda (disetujui, belum/sebagian dikirim — putus maupun konsi)", () => {
     const disetujui = SEMUA.filter((o) => tahapPesanan(o) === "disetujui");
     expect(disetujui).toEqual([
       { status: "APPROVED", orderType: "PUTUS", deliveryStatus: "PENDING" },
       { status: "APPROVED", orderType: "PUTUS", deliveryStatus: "PARTIAL" },
+      { status: "APPROVED", orderType: "KONSI", deliveryStatus: "PENDING" },
+      { status: "APPROVED", orderType: "KONSI", deliveryStatus: "PARTIAL" },
     ]);
   });
 
-  it("konsi yang disetujui jatuh di tab 'dikirim'", () => {
-    expect(tahapPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "PENDING" })).toBe("dikirim");
+  it("konsi disetujui ada di 'disetujui' sampai pengirimannya selesai atau sisanya ditutup", () => {
+    expect(tahapPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "PENDING" })).toBe("disetujui");
+    expect(tahapPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "PARTIAL" })).toBe("disetujui");
+    expect(tahapPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "DELIVERED" })).toBe("dikirim");
+    expect(tahapPesanan({ status: "APPROVED", orderType: "KONSI", deliveryStatus: "CLOSED" })).toBe("dikirim");
   });
 
   it("syarat Prisma setiap tab memilih tepat pesanan yang dipilah ke tab itu", () => {
@@ -89,7 +97,7 @@ describe("keadaan & tahap pesanan", () => {
         { status: "APPROVED", orderType: "KONSI", deliveryStatus: "PENDING", jumlah: 3 },
         { status: "REJECTED", orderType: "PUTUS", deliveryStatus: "PENDING", jumlah: 4 },
       ]),
-    ).toEqual({ semua: 10, menunggu: 2, disetujui: 1, dikirim: 3, ditolak: 4 });
+    ).toEqual({ semua: 10, menunggu: 2, disetujui: 4, dikirim: 0, ditolak: 4 });
   });
 });
 
@@ -391,7 +399,7 @@ d("pesananSaya & pesananSayaById (test bed only)", () => {
     expect(r.baris.map((b) => b.id)).not.toContain(id.milikB);
     expect(r.baris).toHaveLength(7);
     expect(r.baris[0].id).toBe(id.konsiDisetujui);
-    expect(r.jumlah).toEqual({ semua: 7, menunggu: 2, disetujui: 2, dikirim: 2, ditolak: 1 });
+    expect(r.jumlah).toEqual({ semua: 7, menunggu: 2, disetujui: 3, dikirim: 1, ditolak: 1 });
     expect(r.adaLagi).toBe(false);
   });
 

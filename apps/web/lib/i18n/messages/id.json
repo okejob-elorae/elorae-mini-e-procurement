@@ -292,7 +292,7 @@
     "navKolPerforma": "Performa video",
     "navKolBrand": "Brand",
     "navKolPeriksa": "Periksa data",
-    "navSpgCommissionSellThrough": "Komisi SPG (sell-through)"
+    "navSpgCommissionSellThrough": "Rekap komisi SPG"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -792,7 +792,7 @@
       "title": "Komisi SPG",
       "description": "Rupiah tetap per pcs untuk tiap kategori barang",
       "heading": "Tarif Komisi SPG",
-      "subtitle": "SPG mendapat rupiah tetap per pcs untuk tiap kategori barang, dihitung hanya dari penjualan POS SPG yang dikonfirmasi laporan sell-through yang disetujui; mengubah tarif tidak pernah mengubah bulan yang sudah lewat.",
+      "subtitle": "SPG mendapat rupiah tetap per pcs untuk tiap kategori barang, dari penjualan masing-masing SPG di toko putus dan toko konsinyasi. Tarif berlaku untuk penjualan bulan itu; mengubah tarif tidak pernah mengubah bulan yang sudah lewat.",
       "currentMonth": "Bulan berjalan: {month}",
       "noCode": "Tanpa kode",
       "perPiece": "{amount} / pcs",
@@ -802,7 +802,7 @@
       "amountLabel": "Nominal per pcs",
       "monthLabel": "Berlaku mulai",
       "save": "Simpan",
-      "hintCurrentMonth": "Berlaku untuk semua laporan yang disetujui pada {month}, termasuk yang sudah disetujui.",
+      "hintCurrentMonth": "Berlaku untuk penjualan {month}, termasuk yang sudah tercatat, sampai laporannya dicek dan komisinya ditetapkan.",
       "hintFutureMonth": "Mulai berlaku {month}.",
       "hintReplaces": "Menggantikan tarif {amount} yang sudah diatur untuk {month}.",
       "hintUntil": "Berlaku sampai {month}, saat tarif {amount} yang diatur untuk bulan itu mulai berlaku.",
@@ -2125,7 +2125,8 @@
       "REPLAY_MISMATCH": "Pengiriman ini sudah tercatat dengan tanggal atau jumlah yang berbeda. Periksa nilai tercatat yang ditampilkan lalu kirim ulang untuk menyelesaikannya.",
       "RESERVATION_MISMATCH": "Cadangan stok order ini tidak lagi sesuai dengan pengirimannya: hilang, sudah dilepas, sudah terpakai, atau lebih kecil dari pengiriman ini. Kemungkinan besar ini akibat pembaruan sistem yang berjalan saat order disetujui. Admin harus memperbaiki order ini sebelum bisa dikirim.",
       "INVALID_FILE_TYPE": "Jenis file tidak didukung. Gunakan JPEG, PNG, atau WEBP.",
-      "FILE_TOO_LARGE": "Foto terlalu besar (maks 10MB). Coba foto yang lebih kecil."
+      "FILE_TOO_LARGE": "Foto terlalu besar (maks 10MB). Coba foto yang lebih kecil.",
+      "KONSI_PESANAN_LAMA": "Pesanan konsinyasi lama ini tidak dikirim lewat pengiriman. Toko yang mengonfirmasi barang yang sudah sampai; kantor hanya bisa menandai sisanya tidak jadi dikirim."
     }
   },
   "production": {
@@ -2549,6 +2550,33 @@
       "description": "Tambahkan item baru ke katalog",
       "createdToast": "Item berhasil dibuat",
       "createFailed": "Gagal membuat item"
+    },
+    "riwayatHpp": {
+      "terbaru": "HPP terbaru",
+      "perSatuan": "per {satuan}",
+      "jumlahSatuan": "{jumlah} {satuan}",
+      "belumAda": "Belum ada HPP: barang ini belum pernah diterima dari produksi atau dibeli.",
+      "rataRataStok": "Rata-rata stok sekarang: {nilai} — pembanding saja; rekomendasi harga memakai HPP terbaru.",
+      "kosong": "Belum ada penerimaan barang jadi atau pembelian untuk barang ini.",
+      "colTanggal": "Tanggal",
+      "colDokumen": "Dokumen",
+      "colVarian": "Varian",
+      "colJumlah": "Jumlah ({satuan})",
+      "colHpp": "HPP per {satuan}",
+      "colRataRata": "Rata-rata stok sesudahnya",
+      "jenis": {
+        "PRODUKSI": "Penerimaan barang jadi",
+        "PEMBELIAN": "Pembelian"
+      },
+      "dariWo": "WO {nomor}",
+      "dariPo": "PO {nomor}",
+      "catatan": {
+        "TANPA_BAHAN": "Tanpa bahan (lebih produksi) — tidak dipakai sebagai HPP terbaru.",
+        "DITOLAK_PEMILIK": "Ditolak pemilik — stoknya sudah dikeluarkan lagi; tidak dipakai sebagai HPP terbaru."
+      },
+      "tanpaNilai": "Nilainya tidak tercatat",
+      "muatLagi": "Muat lagi",
+      "gagalMuat": "Riwayat HPP gagal dimuat. Coba lagi."
     }
   },
   "itemImport": {
@@ -4559,7 +4587,7 @@
     "title": "HPP (Harga Pokok Produksi)",
     "subtitle": "Harga pokok produksi per perintah kerja — biaya kain, aksesoris, dan jasa",
     "cardTitle": "HPP per Perintah Kerja",
-    "cardDescription": "Rincian biaya per perintah kerja: kain, aksesoris, jasa, markup, dan harga jual.",
+    "cardDescription": "Rincian biaya per perintah kerja: kain, aksesoris, jasa, markup, dan harga rekomendasi.",
     "filters": "Filter",
     "finishedGood": "Barang jadi",
     "dateFrom": "Tanggal dari",
@@ -4600,11 +4628,11 @@
     "noFinishedGoods": "Tidak ada barang jadi ditemukan.",
     "helpAriaLabel": "Bagaimana HPP dihitung?",
     "helpTitle": "Cara perhitungan HPP",
-    "helpIntro": "HPP (Harga Pokok Produksi) menjumlahkan biaya kain, aksesoris, dan jasa per pcs sebagaimana tercatat: sebagian biaya sudah termasuk PPN, sebagian belum (lihat kolom Status PPN dan kolom \"Harga sudah ber-PPN\" di rincian). Harga jual = HPP × (1 + markup%) + biaya tambahan. Markup dihitung dari HPP, bukan dari harga jual.",
+    "helpIntro": "HPP (Harga Pokok Produksi) menjumlahkan biaya kain, aksesoris, dan jasa per pcs sebagaimana tercatat: sebagian biaya sudah termasuk PPN, sebagian belum (lihat kolom Status PPN dan kolom \"Harga sudah ber-PPN\" di rincian). Harga rekomendasi = HPP × (1 + markup%) + biaya tambahan — hanya saran; harga jual barang tetap diketik di halaman barang. Markup dihitung dari HPP, bukan dari harga jual.",
     "helpWhenStored": "Saat produksi menerima barang jadi (melalui penerimaan Work Order), sistem menyimpan pada setiap penerimaan:",
     "helpMaterialCost": "Biaya material — total biaya material yang dikeluarkan untuk produksi tersebut",
     "helpAvgCostPerUnit": "Rata-rata biaya per unit — total biaya (mis. material + CMT jika ada) dibagi kuantitas diterima",
-    "helpTableExplanation": "Tabel menampilkan per perintah kerja: statusnya, lapisan biaya, HPP per pcs, status PPN (Campuran bila sebagian biaya sudah ber-PPN dan sebagian belum), markup, dan harga jual. HPP/pcs di tabel dan di rincian adalah angka yang sama. Rincian juga menyebut berapa HPP-nya bila semua biaya termasuk PPN: biaya yang belum ber-PPN dinaikkan sebesar tarif PPN. Perintah kerja yang dibatalkan disembunyikan kecuali dipilih di saringan status.",
+    "helpTableExplanation": "Tabel menampilkan per perintah kerja: statusnya, lapisan biaya, HPP per pcs, status PPN (Campuran bila sebagian biaya sudah ber-PPN dan sebagian belum), markup, dan harga rekomendasi. HPP/pcs di tabel dan di rincian adalah angka yang sama. Rincian juga menyebut berapa HPP-nya bila semua biaya termasuk PPN: biaya yang belum ber-PPN dinaikkan sebesar tarif PPN. Perintah kerja yang dibatalkan disembunyikan kecuali dipilih di saringan status.",
     "helpFuture": "Tenaga kerja/CMT dan overhead dapat ditambahkan di pembaruan mendatang melalui WO atau aturan alokasi.",
     "backToDashboard": "Kembali ke beranda",
     "setMarginSelected": "Atur markup ({count} dipilih)",
@@ -4644,7 +4672,8 @@
     "statusSemua": "Semua status",
     "jumlahWo": "{count} perintah kerja",
     "detailDesc": "Rincian biaya per pcs untuk perintah kerja ini",
-    "bulkDesc": "Markup diterapkan ke setiap perintah kerja yang dipilih"
+    "bulkDesc": "Markup diterapkan ke setiap perintah kerja yang dipilih",
+    "hargaRekomendasi": "Harga rekomendasi"
   },
   "productionColors": {
     "titleAll": "Warna",
@@ -7149,28 +7178,19 @@
     },
     "spgGaji": {
       "title": "Gaji & komisi",
-      "subtitle": "Perkiraan bulan berjalan dan angka resmi yang sudah dikunci kantor.",
+      "subtitle": "Perkiraan komisi bulan berjalan dan pembayaran resmi yang sudah dicatat kantor.",
       "estimateTitle": "Perkiraan komisi {month}",
-      "estimateShared": "Komisi toko {total}, dibagi rata {count} SPG.",
-      "estimateAlone": "Dari penjualan yang sudah Anda catat bulan ini.",
-      "estimateNote": "Perkiraan dari tarif komisi tiap barang. Yang dibayar adalah angka resmi setelah kantor mengunci bulan ini.",
       "estimateEmpty": "Belum ada penjualan bulan ini, jadi belum ada perkiraan komisi.",
-      "estimatePutus": "Perkiraan komisi dihitung untuk toko konsinyasi. Gaji dan komisi Anda tampil di bawah setelah kantor mencatatnya.",
-      "officialTitle": "Resmi per bulan",
+      "officialTitle": "Pembayaran resmi",
       "officialEmpty": "Belum ada gaji & komisi yang dicatat kantor.",
       "paidOn": "Dibayar {date}",
       "unpaid": "Belum dibayar",
       "base": "Gaji pokok",
       "commission": "Komisi",
       "total": "Total",
-      "basisShared": "Dibagi rata",
       "basisOwn": "Dari penjualan Anda",
-      "estimateSharedPcs": "Komisi toko {total} dari {pcs} potong terjual bersih, dibagi rata {count} SPG.",
-      "estimateAlonePcs": "Dari {pcs} potong terjual bersih di toko ini bulan ini.",
       "estimateOwnPcs": "Dari {pcs} potong yang Anda jual sendiri bulan ini, sesudah dikurangi barang yang dikembalikan pembeli.",
       "estimateNoSales": "Belum ada penjualan bulan ini.",
-      "estimateNotePutus": "Perkiraan dari tarif komisi tiap barang. Yang dibayar adalah angka yang ditetapkan kantor setelah bulan ini selesai.",
-      "estimatePutusOff": "Komisi SPG di toko ini belum berlaku. Gaji dan komisi Anda tampil di bawah setelah kantor mencatatnya.",
       "lockedOn": "Ditetapkan {date}",
       "kindPutus": "Komisi toko putus",
       "kindKonsi": "Gaji & komisi konsinyasi",
@@ -7179,7 +7199,13 @@
       "received": "Diterima",
       "lossOpenTitle": "Sisa beban barang hilang",
       "lossOpenNote": "Dipotong dari gaji/komisi resmi Anda, paling banyak {pct}% dari setiap pembayaran, sampai lunas.",
-      "lossOpenLink": "Lihat rinciannya"
+      "lossOpenLink": "Lihat rinciannya",
+      "estimateNoRate": "{pcs} potong belum punya tarif komisi — kantor perlu mengatur tarif kategorinya.",
+      "estimateRule": "Tarif komisi per kategori barang bulan ini, dari penjualan Anda sendiri. Komisinya dibayar di bulan laporan penjualannya dicek kantor.",
+      "salesMonthNote": "Komisi penjualan {month}",
+      "payoutMonth": "Pembayaran {month}",
+      "payoutPending": "Laporannya sedang diperiksa ulang kantor",
+      "oldRule": "Dihitung dengan aturan lama (tarif barang)"
     },
     "spgJual": {
       "back": "Beranda",
@@ -7701,7 +7727,8 @@
           "MENUNGGU_PERSETUJUAN": "Menunggu persetujuan",
           "DISETUJUI": "Disetujui, belum dikirim",
           "DIKIRIM_SEBAGIAN": "Dikirim sebagian",
-          "DALAM_PERJALANAN": "Dalam perjalanan"
+          "DALAM_PERJALANAN": "Dalam perjalanan",
+          "PESANAN_LAMA": "Pesanan lama — konfirmasi barang sudah sampai"
         },
         "inden": "Pre-order",
         "pcs": "{count} pcs",
@@ -7709,7 +7736,11 @@
         "lebihSedikit": "Tampilkan lebih sedikit",
         "belumDikirimGudang": "Belum dikirim gudang: {pcs} pcs",
         "dikemas": "Sedang dikemas gudang: {pcs} pcs",
-        "dalamPerjalanan": "Dalam perjalanan: {pcs} pcs"
+        "dalamPerjalanan": "Dalam perjalanan: {pcs} pcs",
+        "ringkasLama": "Belum dikonfirmasi: {count} barang · {pcs} pcs",
+        "lamaPenjelasan": "Pesanan ini disetujui dengan aturan lama dan barangnya belum tercatat di toko. Barangnya tidak akan datang lewat pengiriman — hitung yang sudah ada di toko, lalu konfirmasi.",
+        "konfirmasiSampai": "Hitung dan konfirmasi",
+        "lamaPerluCheckIn": "Check-in dulu di toko untuk mengonfirmasi."
       },
       "pesananAsal": "Pesanan {orderNo}"
     },
@@ -7855,7 +7886,7 @@
         "semua": "Semua pesanan Anda.",
         "menunggu": "Belum diputuskan kantor.",
         "disetujui": "Sudah disetujui, barangnya belum semua dikirim.",
-        "dikirim": "Sudah terkirim, sisanya ditutup, atau konsinyasi yang disetujui.",
+        "dikirim": "Sudah terkirim atau sisanya ditutup.",
         "ditolak": "Ditolak kantor atau dibatalkan Anda. Alasannya tertulis di tiap pesanan."
       },
       "empty": "Tidak ada pesanan di sini.",
@@ -9394,6 +9425,79 @@
       "bukanHariKerja": "Bukan hari kerja SPG",
       "belum": "Belum datang",
       "belumJadwal": "Belum datang · jadwal masuk {jam}"
+    },
+    "pesananLama": {
+      "judul": "Konfirmasi barang sampai",
+      "pesanan": "Pesanan {orderNo}",
+      "disetujui": "disetujui {tanggal}",
+      "penjelasan": "Pesanan ini disetujui dengan aturan lama dan barangnya belum tercatat di toko. Hitung barang dari pesanan ini yang benar-benar ada di toko, lalu isi jumlahnya di tiap baris. Angka inilah yang masuk stok toko.",
+      "opnameTokoSesudah": "Toko ini sudah opname pada {tanggal}, sesudah pesanan ini disetujui. Kalau barangnya sudah ikut terhitung di opname itu, isi 0 untuk barang tersebut supaya tidak terhitung dua kali.",
+      "semuaAda": "Semua ada",
+      "barisJudul": "Barang pesanan · {count} baris",
+      "sisa": "Belum dikonfirmasi {qty}",
+      "isiJumlah": "Isi jumlah yang ada",
+      "lebihBaris": "Lebih dari yang belum dikonfirmasi",
+      "tetapMenungguBaris": "Sisa {n} tetap menunggu",
+      "semuaSampai": "Semua sudah sampai",
+      "kurangi": "Kurangi {name}",
+      "tambah": "Tambah {name}",
+      "jumlahUntuk": "Jumlah {name} yang ada di toko",
+      "totalSisa": "Belum dikonfirmasi",
+      "totalAda": "Ada di toko",
+      "tetapMenunggu": "Sisa {pcs} pcs tetap menunggu konfirmasi berikutnya — tidak dicatat sebagai barang hilang.",
+      "catatanLabel": "Catatan (opsional)",
+      "catatanContoh": "Mis. sebagian barang sudah terjual sebelum dihitung",
+      "simpan": "Konfirmasi sudah sampai",
+      "perluCheckIn": "Check-in dulu di toko untuk mengonfirmasi.",
+      "perluIsiSemua": "Isi jumlah di setiap baris dulu.",
+      "lebihDariSisa": "Jumlah tidak boleh lebih dari yang belum dikonfirmasi.",
+      "perluLebihDariNol": "Isi minimal satu barang yang sudah ada di toko.",
+      "penghalang": {
+        "TOKO_BER_SPG": "Toko ini punya SPG — barangnya dikonfirmasi SPG toko dari menu Terima kiriman.",
+        "BUKAN_PEMEGANG": "Hanya salesman pemegang toko ini yang bisa mengonfirmasi."
+      },
+      "checkInJudul": "Check-in dulu di toko",
+      "checkInIsi": "Menghitung dan mengonfirmasi barang hanya bisa dilakukan setelah Anda check-in di toko.",
+      "checkInTombol": "Ke beranda untuk check-in",
+      "checkInIsiSalesman": "Mengonfirmasi barang hanya bisa dilakukan saat Anda sedang check-in di toko ini.",
+      "checkInTombolSalesman": "Ke halaman toko untuk check-in",
+      "konfirmasiJudul": "Konfirmasi barang sudah sampai?",
+      "konfirmasiIsi": "{pcs} pcs dari pesanan {orderNo} masuk stok toko ini.",
+      "konfirmasiSisa": "Sisa {pcs} pcs tetap menunggu — konfirmasi lagi bila barangnya ada, atau kantor menandainya tidak jadi dikirim.",
+      "konfirmasiFinal": "Setelah disimpan, konfirmasi ini tidak bisa diubah.",
+      "batal": "Periksa lagi",
+      "ok": "Konfirmasi",
+      "menyimpan": "Menyimpan…",
+      "tersimpan": "{pcs} pcs dari pesanan {orderNo} sudah masuk stok toko.",
+      "tidakDitemukanJudul": "Pesanan tidak bisa dibuka",
+      "tidakDitemukanIsi": "Pesanan ini sudah selesai dikonfirmasi, ditutup kantor, atau bukan untuk toko ini.",
+      "kembaliKeDaftar": "Kembali",
+      "err": {
+        "FORBIDDEN": "Akun Anda tidak bisa mengonfirmasi barang sampai. Konfirmasi hanya dari HP SPG toko atau salesman pemegang toko.",
+        "VALIDATION": "Isian belum lengkap atau tidak valid. Periksa lagi.",
+        "TIDAK_DITEMUKAN": "Pesanan ini sudah tidak menunggu konfirmasi — mungkin sudah dikonfirmasi atau ditutup kantor.",
+        "BUKAN_PENERIMA": "Anda bukan yang mengonfirmasi pesanan ini: toko ber-SPG dikonfirmasi SPG-nya, toko tanpa SPG oleh salesman pemegangnya.",
+        "TANPA_KUNJUNGAN": "Anda belum check-in di toko ini. Check-in dulu, lalu simpan lagi.",
+        "JUMLAH_TIDAK_VALID": "Setiap baris harus diisi bilangan bulat 0 atau lebih. Muat ulang halaman bila barisnya berubah.",
+        "LEBIH_DARI_SISA": "Jumlah tidak boleh lebih dari yang belum dikonfirmasi.",
+        "KOSONG": "Isi minimal satu barang yang sudah ada di toko.",
+        "STOK_GUDANG_KURANG": "Stok gudang untuk barang ini lebih kecil dari jumlah yang Anda konfirmasi. Hubungi kantor untuk memeriksa stok gudangnya.",
+        "CADANGAN_BERUBAH": "Pesanan ini baru saja berubah. Muat ulang halaman, lalu hitung lagi.",
+        "BARIS_GUDANG_HILANG": "Data stok gudang barang ini tidak ditemukan. Hubungi kantor.",
+        "KUNCI_DIPAKAI": "Formulir ini sudah dipakai untuk konfirmasi lain. Muat ulang halaman.",
+        "NETWORK": "Tidak tersambung ke server. Periksa sinyal, lalu simpan lagi — konfirmasi yang sama tidak akan tercatat dua kali.",
+        "GENERIC": "Konfirmasi gagal disimpan. Coba lagi."
+      },
+      "kartu": {
+        "judul": "Pesanan lama — konfirmasi barang sudah sampai · {count}",
+        "disetujui": "Disetujui {tanggal}",
+        "ringkas": "{count} barang · {pcs} pcs belum dikonfirmasi",
+        "tombol": "Hitung dan konfirmasi",
+        "perluCheckIn": "Check-in dulu di toko ini untuk mengonfirmasi.",
+        "olehSpg": "Dikonfirmasi SPG toko ini dari HP-nya.",
+        "olehPemegang": "Dikonfirmasi salesman pemegang toko ini.",
+        "tanpaPenerima": "Toko ini belum punya SPG maupun pemegang — minta kantor menetapkan pemegang toko."
+      }
     }
   },
   "fieldSalesOrders": {
@@ -9775,7 +9879,37 @@
     "lihatSemuaPesanan": "Lihat semua pesanan",
     "daftarJudul": "Daftar pesanan",
     "judulHalaman": "Pesanan lapangan",
-    "creditLimitFromDefault": "Toko ini tidak punya batas kredit sendiri, jadi memakai batas bawaan di Pengaturan → Salesman."
+    "creditLimitFromDefault": "Toko ini tidak punya batas kredit sendiri, jadi memakai batas bawaan di Pengaturan → Salesman.",
+    "pesananLama": {
+      "judul": "Pesanan konsinyasi lama",
+      "lencanaMenunggu": "Menunggu konfirmasi toko",
+      "penjelasan": "Pesanan ini disetujui dengan aturan lama: persetujuannya hanya mencadangkan stok, dan barangnya biasanya sudah lama sampai di toko. Toko yang mengonfirmasi barang yang sudah sampai — barang itu pindah dari gudang ke stok toko saat dikonfirmasi. Kantor hanya bisa menandai sisanya tidak jadi dikirim.",
+      "penerimaSPG": "Dikonfirmasi SPG toko ini dari HP (Terima kiriman).",
+      "penerimaSALESMAN": "Toko ini tidak punya SPG — dikonfirmasi {nama} (pemegang toko) dari HP saat berkunjung.",
+      "pemegangTanpaNama": "pemegang toko",
+      "penerimaTANPA_PENERIMA": "Toko ini tidak punya SPG dan belum punya pemegang. Tetapkan pemegang toko supaya salesmannya bisa mengonfirmasi, atau tandai sisanya tidak jadi dikirim.",
+      "sisaJudul": "Belum dikonfirmasi · {pcs} pcs",
+      "kolomSisa": "Belum dikonfirmasi",
+      "riwayatJudul": "Sudah dikonfirmasi sampai",
+      "riwayatKosong": "Belum ada barang yang dikonfirmasi sampai.",
+      "kolomDokumen": "Dokumen",
+      "kolomTanggal": "Tanggal",
+      "kolomOleh": "Oleh",
+      "kolomPcs": "Pcs",
+      "sesudahOpname": "{pcs} pcs hanya ditambahkan ke toko — gudang sudah diopname sesudah pesanan disetujui, jadi stok gudang tidak dipotong lagi.",
+      "tidakJadiDikirim": "Tidak jadi dikirim",
+      "dialogJudul": "Tandai sisa tidak jadi dikirim?",
+      "dialogIsi": "Sisa {pcs} pcs yang belum dikonfirmasi toko ditutup dan cadangan stoknya dilepas. Tindakan ini dicatat dan tidak bisa dibatalkan.",
+      "alasanLabel": "Alasan (wajib diisi)",
+      "berhasil": "Sisa pesanan ditandai tidak jadi dikirim.",
+      "catatanBaris": "Transfer konsinyasi — bukan penjualan; barang berpindah dari gudang utama ke stok toko saat toko mengonfirmasi barangnya sudah sampai.",
+      "err": {
+        "FORBIDDEN": "Anda tidak punya izin untuk menutup sisa pesanan.",
+        "VALIDATION": "Isian tidak valid. Muat ulang halaman.",
+        "TIDAK_DITEMUKAN": "Pesanan ini sudah tidak menunggu konfirmasi toko. Muat ulang halaman.",
+        "ALASAN_WAJIB": "Tulis alasannya (paling banyak 500 karakter)."
+      }
+    }
   },
   "fieldReturns": {
     "pageTitle": "Retur Lapangan",
@@ -11054,17 +11188,17 @@
   },
   "spgCommission": {
     "loading": "Memuat rekap komisi SPG…",
-    "pageTitle": "Komisi SPG",
-    "subtitle": "Rupiah tetap per pcs untuk setiap kategori barang. Hanya penjualan POS SPG yang dikonfirmasi laporan sell-through yang disetujui yang dihitung; laporan yang dibatalkan setelah bulannya tercatat sebagai minus di bulan pembatalan.",
+    "pageTitle": "Rekap komisi SPG",
+    "subtitle": "Rekap komisi per bulan pembayaran: tarif per kategori barang × potong yang dijual masing-masing SPG, untuk toko putus (laporan yang dicek di bulan ini) dan toko konsinyasi (siklus yang dikunci di bulan ini). Setiap SPG dibayar dari penjualannya sendiri; bulan penjualannya tercatat di bawah namanya.",
     "prevMonth": "Bulan sebelumnya",
     "nextMonth": "Bulan berikutnya",
-    "monthLabel": "Bulan rekap",
+    "monthLabel": "Bulan pembayaran",
     "loadErrorTitle": "Gagal memuat rekap komisi",
     "loadErrorMessage": "Terjadi kesalahan saat membaca bulan ini. Coba lagi.",
     "retry": "Coba lagi",
-    "listTitle": "Komisi per SPG — {month}",
-    "emptyTitle": "Tidak ada penjualan SPG yang terkonfirmasi di {month}",
-    "emptyBody": "Penjualan POS SPG dihitung setelah dikonfirmasi laporan sell-through yang disetujui.",
+    "listTitle": "Komisi per SPG — dibayar {month}",
+    "emptyTitle": "Tidak ada komisi yang dibayar {month}",
+    "emptyBody": "Komisi muncul di sini setelah laporan penjualan SPG toko putus dicek, atau angka resmi siklus konsinyasi dikunci, di bulan ini.",
     "colExpand": "Rincian",
     "colSpg": "SPG",
     "colStores": "Toko",
@@ -11086,7 +11220,7 @@
     "noRateShort": "Tanpa tarif",
     "noRate": {
       "title": "Pcs tanpa tarif komisi",
-      "description": "Pcs ini terkonfirmasi di {month} tetapi tidak menghasilkan komisi: barangnya tanpa kategori, atau kategorinya belum punya tarif yang berlaku untuk bulan itu.",
+      "description": "Pcs ini terkonfirmasi untuk pembayaran {month} tetapi tidak menghasilkan komisi: barangnya tanpa kategori, atau kategorinya belum punya tarif untuk bulan penjualannya.",
       "uncategorizedHint": "Barang tanpa kategori tidak menghasilkan komisi sampai diberi kategori.",
       "setRates": "Atur tarif komisi",
       "askAdmin": "Minta admin mengatur tarif komisi untuk kategori ini."
@@ -11096,7 +11230,8 @@
       "excel": "Ekspor Excel",
       "started": "Ekspor dimulai",
       "failed": "Ekspor gagal"
-    }
+    },
+    "rowSalesMonths": "Penjualan {months}"
   },
   "financeSettlements": {
     "forecastInput": "Unggah setiap bulan: settlement inilah yang membuat forecast penjualan menghitung pesanan marketplace bulan itu.",
@@ -13916,7 +14051,7 @@
     "stockRequestsUnheld": "Permintaan stok SPG di toko tanpa pemegang",
     "amountPoValue": "nilai PO {nilai}",
     "claimsAwaitingOthers": "BKM Anda menunggu admin keuangan lain",
-    "spgCommissionsUnset": "Komisi SPG toko putus bulan lalu belum ditetapkan",
+    "spgCommissionsUnset": "Laporan penjualan SPG toko putus bulan lalu belum dicek atau komisinya belum ditetapkan",
     "productionStepsOverdue": "Proses produksi terlambat",
     "productionStepsDueToday": "Proses produksi jatuh tempo hari ini",
     "taxDueSoon": "Setoran pajak jatuh tempo ≤ 3 hari",
@@ -14974,12 +15109,12 @@
     "lockConfirm": "Kunci",
     "pickItem": "Pilih dari katalog",
     "baseSalary": "Gaji pokok per SPG",
-    "baseSalaryHint": "Gaji pokok utuh masing-masing; komisinya yang dibagi rata.",
+    "baseSalaryHint": "Gaji pokok utuh untuk setiap SPG yang bertugas; komisinya dari penjualan masing-masing SPG.",
     "officialTotal": "Total resmi: {value}",
-    "commissionFromMaster": "Tarif komisi per pcs diambil dari master barang saat mengunci, lalu disalin ke baris resmi — mengubah tarifnya bulan depan tidak mengubah komisi bulan ini.",
+    "commissionFromMaster": "Komisi SPG dihitung saat mengunci: tarif per kategori barang bulan penjualan (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG di kasir, paling banyak angka resmi ini. Tarif yang dipakai disalin ke baris resmi sebagai riwayat.",
     "officialTitle": "Angka resmi",
     "lockedBy": "dikunci {name}, {date}",
-    "commissionRate": "Komisi/pcs",
+    "commissionRate": "Tarif kategori/pcs",
     "okLocked": "Angka dikunci; komisi SPG sudah dihitung.",
     "okUnlocked": "Kunci dibuka.",
     "salaryTitle": "Gaji & komisi SPG",
@@ -15192,7 +15327,11 @@
     "colSize": "Ukuran",
     "colAtStore": "Di toko",
     "stockSourceBook": "Sumber: buku stok SPG",
-    "stockSourceTitipan": "Sumber: hitungan titipan"
+    "stockSourceTitipan": "Sumber: hitungan titipan",
+    "salaryCommissionNote": "Komisi penjualan {salesMonth} · dibayar {payoutMonth} (bulan angka resmi dikunci).",
+    "salaryCommissionNoteUnlocked": "Komisi penjualan {salesMonth} · bulan pembayarannya ditentukan saat angka resmi dikunci lagi.",
+    "salaryCommissionRule": "Komisi = tarif per kategori barang (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG di kasir, paling banyak angka resmi. Gaji pokok utuh untuk setiap SPG yang bertugas.",
+    "salaryNotParticipant": "Bukan SPG toko ini — komisi dari penjualannya sendiri, tanpa gaji pokok."
   },
   "jenisPotongan": {
     "pageTitle": "Jenis potongan",
@@ -15764,7 +15903,11 @@
       "KOL_BRAND_COLLAB_DELETED": "Brand KOL dihapus",
       "KOL_CALENDAR_FEED_CREATED": "Tautan langganan Kalender Kreatif dibuat",
       "KOL_CALENDAR_FEED_REVOKED": "Tautan langganan Kalender Kreatif dicabut",
-      "STORE_SHIPMENT_HANDED_OVER_NOTIFIED": "SPG toko dikabari barang sudah diserahkan"
+      "STORE_SHIPMENT_HANDED_OVER_NOTIFIED": "SPG toko dikabari barang sudah diserahkan",
+      "SPG_SALES_REPORT_CHECKED": "Laporan penjualan SPG ditandai dicek",
+      "SPG_SALES_REPORT_UNCHECKED": "Tanda dicek laporan penjualan SPG dibatalkan",
+      "KONSI_OLD_ORDER_ARRIVAL_CONFIRMED": "Barang pesanan konsinyasi lama dikonfirmasi sampai",
+      "KONSI_OLD_ORDER_REMAINDER_NOT_SENT": "Sisa pesanan konsinyasi lama tidak jadi dikirim"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -15875,7 +16018,8 @@
       "KolPerangkat": "Perangkat pemantau",
       "KolTugasPantau": "Antrean pemantauan",
       "KolBrandCollab": "Riwayat brand KOL",
-      "KolCalendarFeed": "Langganan Kalender Kreatif"
+      "KolCalendarFeed": "Langganan Kalender Kreatif",
+      "SpgSalesCheck": "Laporan penjualan SPG"
     },
     "fields": {
       "value": "Nilai",
@@ -16127,7 +16271,9 @@
           "useSerialNumber": "Pakai nomor seri"
         },
         "confirmTitle": "Hitung ulang harga jual?",
-        "confirmAction": "Simpan dan hitung ulang"
+        "confirmAction": "Simpan dan hitung ulang",
+        "rekomendasiJudul": "Rekomendasi harga jual",
+        "rekomendasiKeterangan": "Dipakai untuk rekomendasi harga di halaman barang yang tidak punya margin atau biaya tambahan sendiri. Menyimpan tidak mengubah harga jual barang mana pun."
       },
       "danger": {
         "heading": "Zona berbahaya",
@@ -19798,29 +19944,19 @@
   },
   "komisiSpg": {
     "judul": "Komisi SPG",
-    "deskripsi": "Komisi SPG toko putus per bulan: potong yang terjual bersih × tarif komisi barang. Keuangan menetapkan angka bulan yang sudah selesai, lalu menandai dibayar. SPG melihat bagiannya sendiri di HP.",
-    "ringkas": "Hitungan {hitung} · ditetapkan {resmi} · dibayar {dibayar} · {belum} toko belum ditetapkan",
-    "pilihBulan": "Bulan",
-    "dasarAktif": {
-      "PER_SPG": "Dasar: potong yang dijual SPG itu sendiri (bawaan).",
-      "BAGI_RATA": "Dasar: komisi toko dibagi rata antar SPG yang bertugas di toko itu."
-    },
-    "ubahPengaturan": "Ubah di Pengaturan → SPG",
-    "mati": "Komisi SPG toko putus sedang dimatikan di Pengaturan → SPG. Hitungan di bawah hanya gambaran dan bulan baru tidak bisa ditetapkan. Komisi yang sudah ditetapkan tetap bisa ditandai dibayar.",
-    "bulanBerjalan": "Bulan ini belum selesai — angkanya masih bertambah. Komisi bisa ditetapkan mulai tanggal 1 bulan depan.",
-    "kosongJudul": "Belum ada komisi SPG toko putus",
-    "kosongIsi": "Tidak ada toko putus yang punya SPG, nota SPG, atau komisi yang ditetapkan untuk {bulan}.",
+    "deskripsi": "Komisi SPG toko putus dan toko konsinyasi per bulan pembayaran: tarif per kategori barang × potong yang dijual masing-masing SPG. Laporan penjualan dicek dulu (toko konsinyasi: saat angka siklusnya dikunci), lalu komisinya dibayar di bulan dicek dengan catatan bulan penjualannya. SPG melihat bagiannya sendiri di HP.",
+    "pilihBulan": "Bulan pembayaran",
     "tokoNonaktif": "Toko nonaktif",
     "tokoRingkas": "{pcs} potong terjual bersih · komisi {total}",
     "tetapkan": "Tetapkan",
     "tetapkanUlang": "Tetapkan ulang",
     "alasan": {
-      "bulanBerjalan": "Bulan belum selesai.",
-      "mati": "Komisi toko putus sedang dimatikan.",
       "sudahDibayar": "Sudah ada yang dibayar — tidak bisa ditetapkan ulang.",
-      "tanpaSpg": "Toko ini tidak punya SPG yang menerima komisi."
+      "tanpaSpg": "Toko ini tidak punya SPG yang menerima komisi.",
+      "belumDicek": "Laporannya belum dicek.",
+      "aturanLamaBayar": "Ditetapkan dengan aturan lama — tetapkan ulang dulu sebelum membayar."
     },
-    "berbeda": "Hitungan sekarang berbeda dari yang ditetapkan — ada nota atau pengembalian yang masuk sesudahnya, SPG toko berganti, atau dasarnya diubah. Tetapkan ulang sebelum membayar.",
+    "berbeda": "Hitungan sekarang berbeda dari yang ditetapkan — ada nota atau pengembalian yang masuk sesudahnya, atau komisinya ditetapkan dengan aturan lama. Tetapkan ulang sebelum membayar.",
     "berbedaDibayar": "Hitungan sekarang berbeda dari yang ditetapkan, tapi sudah ada yang dibayar, jadi bulan ini tidak bisa ditetapkan ulang. Selisihnya perlu diselesaikan di luar sistem.",
     "kolom": {
       "spg": "SPG",
@@ -19829,16 +19965,13 @@
       "ditetapkan": "Ditetapkan",
       "status": "Status",
       "aksi": "Aksi",
-      "toko": "Toko"
+      "toko": "Toko",
+      "gaji": "Gaji pokok",
+      "komisi": "Komisi dikunci",
+      "jumlah": "Total"
     },
     "bukanSpgToko": "Tidak lagi bertugas di toko ini",
     "tidakMenerima": "Tidak mendapat bagian",
-    "rincianPotongan": "{kotor} − potongan {potongan}",
-    "resmiRincian": "{pcs} potong · {dasar}",
-    "dasarPendek": {
-      "PER_SPG": "nota sendiri",
-      "BAGI_RATA": "dibagi rata"
-    },
     "status": {
       "belum": "Belum ditetapkan",
       "ditetapkan": "Ditetapkan {tanggal}",
@@ -19860,55 +19993,82 @@
     "bayarBerhasil": "Komisi {nama} ditandai dibayar.",
     "konsi": {
       "judul": "Toko konsinyasi",
-      "isi": "Komisi SPG di toko konsinyasi dihitung dan dibayar di siklus konsinyasi, bersama gaji pokoknya.",
-      "kosong": "Tidak ada toko konsinyasi yang punya SPG.",
-      "jumlahSpg": "SPG",
-      "bukaSiklus": "Buka siklus {bulan}",
-      "bukaDaftar": "Buka konsinyasi"
+      "isi": "Toko konsinyasi dicek saat angka resmi siklusnya dikunci, dan gaji & komisinya ditandai dibayar di siklus itu. Komisinya memakai hitungan yang sama: tarif per kategori × penjualan masing-masing SPG.",
+      "dikunci": "Angka resmi dikunci {tanggal} — itulah tanda laporannya dicek.",
+      "bayarDiSiklus": "Gaji & komisinya ditandai dibayar di siklus konsinyasinya.",
+      "tanpaBaris": "Siklus ini tidak punya baris gaji SPG.",
+      "berbeda": "Hitungan sekarang berbeda dari angka yang dikunci — ada nota atau pengembalian dari HP yang masuk sesudah dikunci, atau siklus ini dikunci dengan aturan lama (tarif barang, dibagi rata). Untuk membetulkannya, buka kunci lalu kunci ulang di siklusnya, selama belum ada gaji yang dibayar, nomor nota, faktur pajak, atau pembayaran toko.",
+      "berbedaDibayar": "Hitungan sekarang berbeda dari angka yang dikunci, tapi sudah ada gaji yang dibayar, jadi siklus ini tidak bisa dikunci ulang. Selisihnya perlu diselesaikan di luar sistem.",
+      "bukanPeserta": "Bukan SPG toko ini — komisi dari penjualannya sendiri, tanpa gaji pokok."
     },
     "err": {
       "UNAUTHORIZED": "Sesi berakhir. Silakan masuk lagi.",
-      "FORBIDDEN": "Hanya keuangan (izin piutang: kelola) yang bisa menetapkan atau membayar komisi.",
+      "FORBIDDEN": "Anda tidak punya izin untuk tindakan ini.",
       "INVALID": "Isian tidak sah.",
       "PERIODE_TIDAK_SAH": "Bulan tidak sah.",
-      "BULAN_BELUM_SELESAI": "Bulan ini belum selesai — tetapkan mulai tanggal 1 bulan depan.",
+      "BULAN_BELUM_SELESAI": "Bulan penjualan itu belum selesai — laporannya bisa dicek mulai tanggal 1 bulan berikutnya.",
       "TOKO_TIDAK_DITEMUKAN": "Toko tidak ditemukan.",
       "BUKAN_TOKO_PUTUS": "Toko ini konsinyasi — komisinya ada di siklus konsinyasi.",
-      "KOMISI_MATI": "Komisi SPG toko putus sedang dimatikan di Pengaturan → SPG.",
       "TANPA_SPG": "Toko ini tidak punya SPG yang menerima komisi.",
       "SUDAH_DIBAYAR": "Sudah ada komisi yang dibayar. Muat ulang halaman untuk melihat keadaan terbaru.",
       "TIDAK_DITEMUKAN": "Komisi ini sudah tidak ada. Muat ulang halaman.",
-      "CATATAN_TERLALU_PANJANG": "Catatan paling banyak 500 huruf."
+      "CATATAN_TERLALU_PANJANG": "Catatan paling banyak 500 huruf.",
+      "LAPORAN_BELUM_DICEK": "Laporan penjualan bulan itu belum dicek. Tandai laporan dicek dulu.",
+      "ATURAN_LAMA": "Komisi ini ditetapkan dengan aturan lama (tarif barang). Tetapkan ulang dengan tarif per kategori sebelum membayar.",
+      "TANPA_PENJUALAN": "Tidak ada penjualan SPG di toko ini pada bulan itu.",
+      "SUDAH_DICEK": "Laporan ini sudah dicek. Muat ulang halaman.",
+      "BELUM_DICEK": "Laporan ini belum dicek. Muat ulang halaman.",
+      "ALASAN_WAJIB": "Tulis alasannya.",
+      "ALASAN_TERLALU_PANJANG": "Alasan paling banyak 500 huruf."
     },
     "bebanHilangSisa": "Beban barang hilang {jumlah} — dipotong saat komisi ditetapkan",
     "resmiPotonganHilang": "Dipotong beban barang hilang {potongan} · dibayar {dibayar}",
     "bayarPotonganHilang": "Sudah dipotong beban barang hilang {potongan}.",
-    "bawaanBulanSelesai": "Bawaannya bulan terakhir yang sudah selesai"
+    "ringkasBayar": "Ditetapkan {resmi} · dibayar {dibayar} · {belum} laporan belum ditetapkan · {tunggu} menunggu dicek",
+    "aturTarif": "Atur tarif per kategori",
+    "aturan": "Komisi SPG = tarif per kategori barang di bulan penjualan × potong yang dijual masing-masing SPG, untuk toko putus dan toko konsinyasi. Komisi dibayar di bulan laporan penjualannya dicek, dengan catatan bulan penjualannya.",
+    "bulanBerjalanBayar": "Ini bulan pembayaran berjalan: laporan yang dicek hari ini masuk ke sini.",
+    "laporan": {
+      "kosongJudul": "Belum ada komisi untuk dibayar {bulan}",
+      "kosongIsi": "Belum ada laporan penjualan SPG toko putus yang dicek, dan belum ada siklus konsinyasi yang dikunci, di bulan ini.",
+      "catatan": "Komisi penjualan {bulan}",
+      "dicek": "Laporan dicek {tanggal} oleh {nama}",
+      "dicekTanpaNama": "Laporan dicek {tanggal}",
+      "lama": "Ditetapkan dengan aturan lama (tarif barang) tanpa tanda dicek."
+    },
+    "tunggu": {
+      "judul": "Menunggu dicek",
+      "isi": "Penjualan SPG bulan yang sudah selesai. Begitu laporannya dicek, komisinya masuk pembayaran {bulan}.",
+      "kosong": "Tidak ada laporan penjualan SPG yang menunggu dicek.",
+      "bulanJual": "Bulan penjualan",
+      "penerima": "{n} SPG",
+      "lama": "Sudah ditetapkan dengan aturan lama — cek laporannya, lalu tetapkan ulang."
+    },
+    "tanpaTarifCatatan": "{pcs} potong belum punya tarif komisi (barang tanpa kategori atau kategorinya belum bertarif), jadi komisinya 0.",
+    "konsiTunggu": {
+      "isi": "Toko konsinyasi: dicek dengan mengunci angka resmi di siklusnya.",
+      "buka": "Buka siklus",
+      "bukaDaftar": "Buka konsinyasi"
+    },
+    "tandaiDicek": "Tandai laporan dicek",
+    "dicekJudul": "Tandai laporan {toko} — {bulan} dicek?",
+    "dicekIsi": "Komisinya ({total}) masuk pembayaran {bulanBayar} dengan catatan \"Komisi penjualan {bulan}\". Sesudah dicek, komisinya bisa ditetapkan.",
+    "dicekBerhasil": "Laporan ditandai dicek — komisinya masuk pembayaran {bulan}.",
+    "resmiRincianBaru": "{pcs} potong",
+    "resmiAturanLama": "aturan lama",
+    "batalDicek": "Batalkan tanda dicek",
+    "batalDicekJudul": "Batalkan tanda dicek {toko} — {bulan}?",
+    "batalDicekIsi": "Komisi yang sudah ditetapkan dari laporan ini dihapus dan SPG-nya dikabari. Laporannya bisa dicek dan ditetapkan lagi sesudahnya.",
+    "batalDicekAlasan": "Alasan",
+    "batalDicekContoh": "Mis. ada nota dari HP yang belum masuk",
+    "batalDicekBerhasil": "Tanda dicek dibatalkan."
   },
   "pengaturanKomisiPutusSpg": {
-    "judul": "Komisi SPG toko putus",
-    "penjelasan": "SPG di toko putus mendapat komisi: tarif komisi tiap barang (master barang) × potong yang terjual bersih, sesudah dikurangi barang yang dikembalikan pembeli. Angkanya ditetapkan dan dibayar keuangan per bulan di SPG → Komisi SPG.",
-    "aktif": "Komisi SPG toko putus berlaku",
-    "aktifIsi": "Kalau dimatikan, HP SPG toko putus tidak menampilkan perkiraan komisi dan bulan baru tidak bisa ditetapkan. Yang sudah ditetapkan tetap bisa dibayar.",
-    "dasarLabel": "Cara menghitung",
-    "dasar": {
-      "PER_SPG": "Dari potong yang ia jual sendiri (bawaan)",
-      "BAGI_RATA": "Dibagi rata antar SPG toko"
-    },
-    "dasarIsi": {
-      "PER_SPG": "Setiap SPG mendapat komisi dari nota yang ia catat sendiri. Yang menjual lebih banyak mendapat lebih banyak.",
-      "BAGI_RATA": "Komisi seluruh toko dijumlahkan lalu dibagi sama rata ke SPG yang bertugas di toko itu — seperti komisi di toko konsinyasi."
-    },
-    "catatan": "Toko konsinyasi tidak diatur di sini: komisinya selalu dibagi rata dan dibayar lewat siklus konsinyasi. Perubahan berlaku untuk bulan yang belum ditetapkan.",
-    "tanpaIzin": "Hanya keuangan (izin piutang: kelola) yang bisa mengubah aturan ini.",
+    "judul": "Komisi SPG",
+    "penjelasan": "Komisi SPG — di toko putus dan toko konsinyasi — dihitung satu cara: tarif per kategori barang (Pengaturan → Komisi SPG) di bulan penjualan × potong yang dijual masing-masing SPG, sesudah dikurangi barang yang dikembalikan pembeli. Tarif komisi di master barang tidak dipakai lagi.",
+    "catatan": "Komisi dibayar di bulan laporan penjualannya dicek kantor, dengan catatan bulan penjualannya (mis. penjualan Oktober yang dicek 5 November dibayar November). Laporan toko putus dicek di SPG → Komisi SPG; toko konsinyasi saat angka siklusnya dikunci.",
     "bukaKomisi": "Buka Komisi SPG",
-    "simpan": "Simpan",
-    "tersimpan": "Aturan komisi tersimpan.",
-    "err": {
-      "UNAUTHORIZED": "Sesi berakhir. Silakan masuk lagi.",
-      "FORBIDDEN": "Hanya keuangan (izin piutang: kelola) yang bisa mengubah aturan ini.",
-      "INVALID": "Isian tidak sah."
-    }
+    "aturTarif": "Atur tarif per kategori"
   },
   "spgRusak": {
     "form": {
@@ -22862,9 +23022,9 @@
     "reorderPoint": "Titik pesan ulang",
     "sellingPrice": "Harga jual",
     "targetMargin": "Target margin (%)",
-    "targetMarginHint": "Kosongkan untuk memakai bawaan pengaturan push Jubelio.",
+    "targetMarginHint": "Hanya untuk rekomendasi harga; tidak pernah mengubah harga jual. Kosongkan untuk memakai margin bawaan di Pengaturan Jubelio.",
     "additionalCost": "Biaya tambahan per pcs (Rp)",
-    "additionalCostHint": "Tambahan tetap per pcs (kemasan, dll.).",
+    "additionalCostHint": "Biaya per pcs di luar HPP, hanya untuk rekomendasi harga. Biaya tambahan di perintah kerja sudah termasuk HPP. Kosongkan untuk memakai bawaan di Pengaturan Jubelio.",
     "variantsTitle": "Varian (opsional)",
     "noAttributes": "Belum ada atribut.",
     "addAttribute": "Tambah atribut",
@@ -22914,7 +23074,18 @@
     "hppBahan": "bahan {nilai}",
     "hppJahit": "jahit {nilai}",
     "hppTambahan": "tambahan {nilai}",
-    "hppDari": "Penerimaan terakhir ({wo}, {tanggal}):"
+    "placeholderBawaan": "Bawaan {nilai}",
+    "rekomendasi": "Rekomendasi: {harga}",
+    "rekomendasiRumus": "HPP terbaru {hpp} — {dokumen} {tanggal} × margin {margin}%{sumberMargin, select, BAWAAN { (bawaan)} other {}} + biaya tambahan {biaya}{sumberBiaya, select, BAWAAN { (bawaan)} other {}}",
+    "pakaiRekomendasi": "Pakai rekomendasi",
+    "rekomendasiBelum": "Belum ada rekomendasi harga.",
+    "kurangHpp": "Belum ada HPP — muncul setelah barang ini diterima dari produksi atau dibeli.",
+    "kurangMargin": "Belum ada margin — isi target margin di bawah, atau margin bawaan di Pengaturan Jubelio.",
+    "hppTerbaru": "HPP terbaru",
+    "hppTerbaruDari": "{dokumen}, {tanggal}",
+    "rataRataStok": "Rata-rata stok sekarang {nilai}",
+    "marginTidakSah": "Target margin harus angka 0 sampai 999,99.",
+    "biayaTambahanTidakSah": "Biaya tambahan harus angka 0 atau lebih."
   },
   "itemList": {
     "filterCategory": "Saring kategori",
@@ -22942,13 +23113,14 @@
     "cancel": "Batal",
     "pushConfirm": "Kirim sekarang",
     "kembali": "Kembali ke daftar barang",
-    "tabRiwayatHarga": "Riwayat harga",
+    "tabRiwayatHarga": "Riwayat harga jual",
     "pushStockConfirmV2": "Kirim stok barang ini sekarang ke Jubelio?",
     "tersimpan": "Barang tersimpan.",
     "tersimpanGaleriBelum": "Barang tersimpan, tetapi gambar galeri belum. Tekan Simpan gambar sebelum meninggalkan halaman.",
     "gagalSimpan": "Barang gagal disimpan.",
     "dibuat": "Barang ditambahkan.",
-    "gagalBuat": "Barang gagal ditambahkan."
+    "gagalBuat": "Barang gagal ditambahkan.",
+    "tabRiwayatHpp": "Riwayat HPP"
   },
   "spgTerkait": {
     "titip": "Titip pesan pembeli",

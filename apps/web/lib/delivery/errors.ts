@@ -54,6 +54,13 @@ export type DeliveryShipmentErrorCode =
    */
   | "KONSI_NOT_RESERVED"
   /**
+   * Packing a shipment for an OLD konsi order whose reservation is still held — approved before
+   * the per-shipment flow reached production (`bacaPesananKonsiCadanganLama`). Such an order is
+   * settled by the store confirming what arrived; the office may only close the rest as "tidak jadi
+   * dikirim". Refused before anything is written.
+   */
+  | "KONSI_PESANAN_LAMA"
+  /**
    * A KONSI completion whose line has no main-warehouse InventoryValue row to move stock out of.
    * Approve's reservation needed that row too, so in practice it was removed after approve. The
    * whole completion rolls back.

@@ -113,7 +113,7 @@ export function DetailPesananClient({
   const langkahBerikut =
     p.keadaan === "MENUNGGU"
       ? td("stepNextApproval")
-      : p.keadaan === "BELUM_DIKIRIM" || p.keadaan === "DIKIRIM_SEBAGIAN"
+      : p.keadaan === "BELUM_DIKIRIM" || p.keadaan === "DIKIRIM_SEBAGIAN" || p.keadaan === "KONSI_DISETUJUI"
         ? td("stepNextDelivery")
         : null;
 
@@ -320,7 +320,7 @@ function Keterangan({
         </>,
       );
     case "KONSI_DISETUJUI":
-      return kotak("selesai", <p>{td("noticeKonsi")}</p>);
+      return kotak("jalan", <p>{td("noticeKonsi")}</p>);
     default:
       return null;
   }

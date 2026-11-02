@@ -5,8 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Coins, Loader2, Store } from "lucide-react";
-import { tandaiKomisiSpgDibayarAction, tetapkanKomisiSpgAction } from "@/app/actions/spg-komisi";
+import { ClipboardCheck, Coins, Loader2, Store } from "lucide-react";
+import {
+  batalkanTandaDicekAction,
+  tandaiKomisiSpgDibayarAction,
+  tandaiLaporanDicekAction,
+  tetapkanKomisiSpgAction,
+} from "@/app/actions/spg-komisi";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -31,30 +36,33 @@ import { dinamis } from "@/lib/i18n/dinamis";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { namaBulan } from "@/lib/salesman/komisi";
 import type { StatusKomisi } from "@/lib/spg/komisi";
-import type { TokoKonsiKomisi } from "@/lib/spg/komisi-queries";
-import type { AturanKomisiPutus, DasarKomisi } from "@/lib/spg/pengaturan";
+import type { KonsiMenungguKunciKantor, MenungguCekKantor } from "@/lib/spg/komisi-queries";
 import { cn } from "@/lib/utils";
 
-export type TokoKomisiTampil = {
+export type LaporanPutusTampil = {
   storeId: string;
   nama: string;
   kode: string;
   aktif: boolean;
+  bulanJual: string;
+  /** Null untuk komisi aturan lama yang ditetapkan tanpa tanda dicek. */
+  dicek: { label: string; oleh: string | null } | null;
   potongToko: number;
   totalToko: number;
+  potongTanpaTarif: number;
   adaResmi: boolean;
   adaDibayar: boolean;
   semuaDibayar: boolean;
   berbeda: boolean;
+  aturanLama: boolean;
   baris: {
     userId: string;
     nama: string;
     ditugaskan: boolean;
     penerima: boolean;
     potong: number;
-    komisiKotor: number;
-    potongan: number;
     komisi: number;
+    potongTanpaTarif: number;
     status: StatusKomisi;
     resmi: {
       id: string;
@@ -62,7 +70,7 @@ export type TokoKomisiTampil = {
       /** Beban barang hilang yang dipotong saat ditetapkan. */
       deduction: number;
       unitsSold: number;
-      basis: DasarKomisi;
+      aturanLama: boolean;
       ditetapkanLabel: string;
       dibayarLabel: string | null;
       note: string | null;
@@ -72,152 +80,311 @@ export type TokoKomisiTampil = {
   }[];
 };
 
+export type KonsiTampil = {
+  cycleId: string;
+  noKonsi: string;
+  nama: string;
+  kode: string;
+  bulanJual: string;
+  dikunciLabel: string;
+  /** Komisi menurut hitungan sekarang (tarif kategori × penjualan masing-masing SPG). */
+  totalHitung: number;
+  /** Komisi yang tersimpan saat dikunci — yang dibayar. */
+  totalTersimpan: number;
+  potongTanpaTarif: number;
+  /** Hitungan sekarang tidak sama dengan yang tersimpan (per SPG). */
+  berbeda: boolean;
+  adaDibayar: boolean;
+  semuaDibayar: boolean;
+  baris: {
+    id: string;
+    nama: string;
+    /** False = penjual dari toko lain: komisi saja, tanpa gaji pokok. */
+    bergaji: boolean;
+    gajiPokok: number;
+    komisi: number;
+    komisiHitung: number;
+    total: number;
+    potonganHilang: number;
+    dibayarLabel: string | null;
+  }[];
+};
+
 type Props = {
-  periode: string;
+  /** Bulan PEMBAYARAN yang dibuka. */
+  bulan: string;
+  bulanIni: string;
   pilihan: string[];
-  bulanSelesai: boolean;
-  aturan: AturanKomisiPutus;
-  /** Menetapkan komisi — `receivables:manage`. */
+  /** Menandai laporan dicek, membatalkannya, dan menetapkan komisi — `receivables:manage`. */
   bolehKelola: boolean;
   /** Menandai komisi dibayar — `spg_commission:pay`. */
   bolehBayar: boolean;
-  toko: TokoKomisiTampil[];
-  tokoKonsi: TokoKonsiKomisi[];
-  ringkas: { totalHitung: number; totalResmi: number; totalDibayar: number; tokoBelum: number };
+  /** Mengatur tarif per kategori — `spg_commission:manage`. */
+  bolehAturTarif: boolean;
+  putus: LaporanPutusTampil[];
+  konsi: KonsiTampil[];
+  menungguCek: MenungguCekKantor[];
+  konsiMenungguKunci: KonsiMenungguKunciKantor[];
+  ringkas: { totalDitetapkan: number; totalDibayar: number; belumDitetapkan: number; menungguCek: number };
 };
 
 /**
- * Komisi SPG toko putus satu bulan. Bulan dipilih lewat alamat (`?bulan=`),
- * jadi bulan tertentu bisa dibuka ulang dan dibagikan. Angka "hitungan"
- * dihitung langsung dari nota; angka "ditetapkan" adalah yang dibayar.
+ * Komisi SPG satu BULAN PEMBAYARAN. Bulan dipilih lewat alamat (`?bulan=`), jadi bulan tertentu
+ * bisa dibuka ulang dan dibagikan. Komisi milik bulan penjualannya tetapi dibayar di bulan
+ * laporannya dicek: setiap laporan menyebut "Komisi penjualan …". Angka "hitungan" dihitung
+ * langsung dengan satu hitungan komisi; angka "ditetapkan" adalah yang dibayar.
  */
-export function KomisiSpgClient({ periode, pilihan, bulanSelesai, aturan, bolehKelola, bolehBayar, toko, tokoKonsi, ringkas }: Props) {
+export function KomisiSpgClient({
+  bulan,
+  bulanIni,
+  pilihan,
+  bolehKelola,
+  bolehBayar,
+  bolehAturTarif,
+  putus,
+  konsi,
+  menungguCek,
+  konsiMenungguKunci,
+  ringkas,
+}: Props) {
   const t = useTranslations("komisiSpg");
-  const td = dinamis(t);
   const tBulan = dinamis(useTranslations("komisiSalesman"));
   const router = useRouter();
   const [pindah, mulaiPindah] = useTransition();
-  const bulanLabel = namaBulan(tBulan, periode, "panjang");
+  const label = (b: string) => namaBulan(tBulan, b, "panjang");
+  const kosong = putus.length === 0 && konsi.length === 0;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title={t("judul")}
-        // Bawaan halaman ini bulan yang sudah selesai (Kinerja SPG: bulan berjalan) — disebut terang.
-        meta={`${t("bawaanBulanSelesai")} · ${t("ringkas", {
-          hitung: formatIDR(ringkas.totalHitung),
-          resmi: formatIDR(ringkas.totalResmi),
+        meta={t("ringkasBayar", {
+          resmi: formatIDR(ringkas.totalDitetapkan),
           dibayar: formatIDR(ringkas.totalDibayar),
-          belum: ringkas.tokoBelum,
-        })}`}
+          belum: ringkas.belumDitetapkan,
+          tunggu: ringkas.menungguCek,
+        })}
       />
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-        <Select value={periode} onValueChange={(v) => mulaiPindah(() => router.replace(`/backoffice/komisi-spg?bulan=${v}`))}>
-          <SelectTrigger className="w-full sm:w-[200px]" aria-label={t("pilihBulan")}>
+        <Select value={bulan} onValueChange={(v) => mulaiPindah(() => router.replace(`/backoffice/komisi-spg?bulan=${v}`))}>
+          <SelectTrigger className="w-full sm:w-[220px]" aria-label={t("pilihBulan")}>
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             {pilihan.map((b) => (
               <SelectItem key={b} value={b}>
-                {namaBulan(tBulan, b, "panjang")}
+                {label(b)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
         {pindah ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden /> : null}
-        <p className="text-sm text-muted-foreground">
-          {td(`dasarAktif.${aturan.dasar}`)}{" "}
-          <Link href="/backoffice/settings/spg" className="underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground">
-            {t("ubahPengaturan")}
+        {bolehAturTarif ? (
+          <Link
+            href="/backoffice/settings/spg-commission"
+            className="text-sm text-muted-foreground underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
+          >
+            {t("aturTarif")}
           </Link>
-        </p>
+        ) : null}
       </div>
 
-      {!aturan.aktif ? (
-        <Alert>
-          <AlertDescription>{t("mati")}</AlertDescription>
-        </Alert>
-      ) : null}
-      {!bulanSelesai ? (
-        <Alert>
-          <AlertDescription>{t("bulanBerjalan")}</AlertDescription>
-        </Alert>
-      ) : null}
+      <Alert>
+        <AlertDescription>
+          {t("aturan")}
+          {bulan === bulanIni ? ` ${t("bulanBerjalanBayar")}` : ""}
+        </AlertDescription>
+      </Alert>
 
-      {toko.length === 0 ? (
+      <KartuMenunggu
+        menungguCek={menungguCek}
+        konsiMenungguKunci={konsiMenungguKunci}
+        bulanIniLabel={label(bulanIni)}
+        label={label}
+        bolehKelola={bolehKelola}
+      />
+
+      {kosong ? (
         <Card>
           <CardContent>
-            <EmptyState icon={Coins} title={t("kosongJudul")} description={t("kosongIsi", { bulan: bulanLabel })} />
+            <EmptyState icon={Coins} title={t("laporan.kosongJudul", { bulan: label(bulan) })} description={t("laporan.kosongIsi")} />
           </CardContent>
         </Card>
-      ) : (
-        toko.map((tk) => (
-          <KartuToko key={tk.storeId} toko={tk} periode={periode} bulanLabel={bulanLabel} bulanSelesai={bulanSelesai} aktif={aturan.aktif} bolehKelola={bolehKelola} bolehBayar={bolehBayar} />
-        ))
-      )}
+      ) : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Store className="h-5 w-5" aria-hidden />
-            {t("konsi.judul")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className={tokoKonsi.length === 0 ? undefined : "px-0"}>
-          {tokoKonsi.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("konsi.kosong")}</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("kolom.toko")}</TableHead>
-                    <TableHead className="text-right">{t("konsi.jumlahSpg")}</TableHead>
-                    <TableHead className="text-right">{t("kolom.aksi")}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {tokoKonsi.map((k) => (
-                    <TableRow key={k.storeId}>
-                      <TableCell className="whitespace-normal">
-                        <span className="font-medium">{k.nama}</span>
-                        <span className="block text-xs text-muted-foreground">{k.kode}</span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{k.jumlahSpg}</TableCell>
-                      <TableCell className="text-right">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={k.siklusId ? `/backoffice/konsinyasi/${k.siklusId}` : "/backoffice/konsinyasi"}>
-                            {k.siklusId ? t("konsi.bukaSiklus", { bulan: bulanLabel }) : t("konsi.bukaDaftar")}
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {putus.map((l) => (
+        <KartuPutus key={`${l.storeId}:${l.bulanJual}`} laporan={l} label={label} bolehKelola={bolehKelola} bolehBayar={bolehBayar} />
+      ))}
+
+      {konsi.map((k) => (
+        <KartuKonsi key={k.cycleId} siklus={k} label={label} />
+      ))}
     </div>
   );
 }
 
-function KartuToko({
-  toko,
-  periode,
-  bulanLabel,
-  bulanSelesai,
-  aktif,
+function KartuMenunggu({
+  menungguCek,
+  konsiMenungguKunci,
+  bulanIniLabel,
+  label,
+  bolehKelola,
+}: {
+  menungguCek: MenungguCekKantor[];
+  konsiMenungguKunci: KonsiMenungguKunciKantor[];
+  bulanIniLabel: string;
+  label: (b: string) => string;
+  bolehKelola: boolean;
+}) {
+  const t = useTranslations("komisiSpg");
+  const ada = menungguCek.length > 0 || konsiMenungguKunci.length > 0;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ClipboardCheck className="h-5 w-5" aria-hidden />
+          {t("tunggu.judul")}
+        </CardTitle>
+        <CardDescription>{t("tunggu.isi", { bulan: bulanIniLabel })}</CardDescription>
+      </CardHeader>
+      <CardContent className={ada ? "px-0" : undefined}>
+        {!ada ? (
+          <p className="text-sm text-muted-foreground">{t("tunggu.kosong")}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("kolom.toko")}</TableHead>
+                  <TableHead>{t("tunggu.bulanJual")}</TableHead>
+                  <TableHead className="text-right">{t("kolom.potong")}</TableHead>
+                  <TableHead className="text-right">{t("kolom.hitungan")}</TableHead>
+                  <TableHead className="text-right">{t("kolom.aksi")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {menungguCek.map((m) => (
+                  <TableRow key={`${m.storeId}:${m.bulanJual}`}>
+                    <TableCell className="min-w-[10rem] whitespace-normal">
+                      <span className="font-medium">{m.nama}</span>
+                      <span className="block text-xs text-muted-foreground">
+                        {m.kode} · {t("tunggu.penerima", { n: m.jumlahPenerima })}
+                      </span>
+                      {m.adaResmiLama ? <span className="block text-xs text-amber-800 dark:text-amber-300">{t("tunggu.lama")}</span> : null}
+                      {m.potongTanpaTarif > 0 ? (
+                        <span className="block text-xs text-amber-800 dark:text-amber-300">{t("tanpaTarifCatatan", { pcs: m.potongTanpaTarif })}</span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{label(m.bulanJual)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{m.potongToko}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatIDR(m.totalToko)}</TableCell>
+                    <TableCell className="text-right">
+                      {bolehKelola ? (
+                        <TombolDicek storeId={m.storeId} nama={m.nama} bulanJual={m.bulanJual} total={m.totalToko} bulanIniLabel={bulanIniLabel} label={label} />
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {konsiMenungguKunci.map((k) => (
+                  <TableRow key={`konsi:${k.storeId}:${k.bulanJual}`}>
+                    <TableCell className="min-w-[10rem] whitespace-normal">
+                      <span className="font-medium">{k.nama}</span>
+                      <span className="block text-xs text-muted-foreground">{t("konsiTunggu.isi")}</span>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">{label(k.bulanJual)}</TableCell>
+                    <TableCell className="text-right">—</TableCell>
+                    <TableCell className="text-right">—</TableCell>
+                    <TableCell className="text-right">
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={k.cycleId ? `/backoffice/konsinyasi/${k.cycleId}` : "/backoffice/konsinyasi"}>
+                          {k.cycleId ? t("konsiTunggu.buka") : t("konsiTunggu.bukaDaftar")}
+                        </Link>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TombolDicek({
+  storeId,
+  nama,
+  bulanJual,
+  total,
+  bulanIniLabel,
+  label,
+}: {
+  storeId: string;
+  nama: string;
+  bulanJual: string;
+  total: number;
+  bulanIniLabel: string;
+  label: (b: string) => string;
+}) {
+  const t = useTranslations("komisiSpg");
+  const td = dinamis(t);
+  const router = useRouter();
+  const [sibuk, mulai] = useTransition();
+  const [buka, setBuka] = useState(false);
+
+  const tandai = () =>
+    mulai(async () => {
+      const r = await tandaiLaporanDicekAction({ storeId, periode: bulanJual });
+      if (!r.ok) {
+        toast.error(td(`err.${r.code}`));
+        if (r.code === "SUDAH_DICEK" || r.code === "SUDAH_DIBAYAR") router.refresh();
+        return;
+      }
+      setBuka(false);
+      toast.success(t("dicekBerhasil", { bulan: label(r.bulanBayar) }));
+      router.refresh();
+    });
+
+  return (
+    <>
+      <Button size="sm" onClick={() => setBuka(true)} disabled={sibuk}>
+        {t("tandaiDicek")}
+      </Button>
+      <AlertDialog open={buka} onOpenChange={(v) => !sibuk && setBuka(v)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("dicekJudul", { toko: nama, bulan: label(bulanJual) })}</AlertDialogTitle>
+            <AlertDialogDescription>{t("dicekIsi", { total: formatIDR(total), bulanBayar: bulanIniLabel, bulan: label(bulanJual) })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sibuk}>{t("batal")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={sibuk}
+              onClick={(e) => {
+                e.preventDefault();
+                tandai();
+              }}
+            >
+              {sibuk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {t("tandaiDicek")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function KartuPutus({
+  laporan,
+  label,
   bolehKelola,
   bolehBayar,
 }: {
-  toko: TokoKomisiTampil;
-  periode: string;
-  bulanLabel: string;
-  bulanSelesai: boolean;
-  aktif: boolean;
+  laporan: LaporanPutusTampil;
+  label: (b: string) => string;
   bolehKelola: boolean;
   bolehBayar: boolean;
 }) {
@@ -226,23 +393,21 @@ function KartuToko({
   const router = useRouter();
   const [sibuk, mulai] = useTransition();
   const [buka, setBuka] = useState(false);
-  const penerima = toko.baris.filter((b) => b.penerima);
-  const totalPenerima = penerima.reduce((n, b) => n + b.komisi, 0);
+  const penerima = laporan.baris.filter((b) => b.penerima);
+  const bulanLabel = label(laporan.bulanJual);
 
-  // Alasan pertama yang menahan tombol, menurut urutan yang paling menentukan.
-  const alasan = !bulanSelesai
-    ? t("alasan.bulanBerjalan")
-    : !aktif
-      ? t("alasan.mati")
-      : toko.adaDibayar
-        ? t("alasan.sudahDibayar")
-        : penerima.length === 0
-          ? t("alasan.tanpaSpg")
-          : null;
+  // Alasan pertama yang menahan tombol Tetapkan, menurut urutan yang paling menentukan.
+  const alasan = !laporan.dicek
+    ? t("alasan.belumDicek")
+    : laporan.adaDibayar
+      ? t("alasan.sudahDibayar")
+      : penerima.length === 0
+        ? t("alasan.tanpaSpg")
+        : null;
 
   const tetapkan = () =>
     mulai(async () => {
-      const r = await tetapkanKomisiSpgAction({ storeId: toko.storeId, periode });
+      const r = await tetapkanKomisiSpgAction({ storeId: laporan.storeId, periode: laporan.bulanJual });
       if (!r.ok) {
         toast.error(td(`err.${r.code}`));
         return;
@@ -257,25 +422,43 @@ function KartuToko({
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           <Coins className="h-5 w-5" aria-hidden />
-          {toko.nama}
-          <span className="text-sm font-normal text-muted-foreground">{toko.kode}</span>
-          {!toko.aktif ? <Badge variant="outline">{t("tokoNonaktif")}</Badge> : null}
+          {laporan.nama}
+          <span className="text-sm font-normal text-muted-foreground">{laporan.kode}</span>
+          {!laporan.aktif ? <Badge variant="outline">{t("tokoNonaktif")}</Badge> : null}
         </CardTitle>
-        <CardDescription>{t("tokoRingkas", { pcs: toko.potongToko, total: formatIDR(toko.totalToko) })}</CardDescription>
+        <CardDescription>
+          <span className="block font-medium text-foreground">{t("laporan.catatan", { bulan: bulanLabel })}</span>
+          <span className="block">
+            {laporan.dicek
+              ? laporan.dicek.oleh
+                ? t("laporan.dicek", { tanggal: laporan.dicek.label, nama: laporan.dicek.oleh })
+                : t("laporan.dicekTanpaNama", { tanggal: laporan.dicek.label })
+              : t("laporan.lama")}
+          </span>
+          <span className="block">{t("tokoRingkas", { pcs: laporan.potongToko, total: formatIDR(laporan.totalToko) })}</span>
+        </CardDescription>
         {bolehKelola ? (
-          <CardAction className="flex flex-col items-end gap-1">
-            <Button onClick={() => setBuka(true)} disabled={alasan !== null || sibuk} variant={toko.adaResmi ? "outline" : "default"}>
+          <CardAction className="flex flex-col items-end gap-2">
+            <Button onClick={() => setBuka(true)} disabled={alasan !== null || sibuk} variant={laporan.adaResmi ? "outline" : "default"}>
               {sibuk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {toko.adaResmi ? t("tetapkanUlang") : t("tetapkan")}
+              {laporan.adaResmi ? t("tetapkanUlang") : t("tetapkan")}
             </Button>
             {alasan ? <p className="max-w-[16rem] text-right text-xs text-muted-foreground">{alasan}</p> : null}
+            {laporan.dicek && !laporan.adaDibayar ? (
+              <TombolBatalDicek storeId={laporan.storeId} nama={laporan.nama} bulanJual={laporan.bulanJual} bulanLabel={bulanLabel} />
+            ) : null}
           </CardAction>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-3 px-0">
-        {toko.berbeda ? (
+        {laporan.potongTanpaTarif > 0 ? (
           <p className="mx-6 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
-            {toko.adaDibayar ? t("berbedaDibayar") : t("berbeda")}
+            {t("tanpaTarifCatatan", { pcs: laporan.potongTanpaTarif })}
+          </p>
+        ) : null}
+        {laporan.berbeda ? (
+          <p className="mx-6 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+            {laporan.adaDibayar ? t("berbedaDibayar") : t("berbeda")}
           </p>
         ) : null}
         <div className="overflow-x-auto">
@@ -291,7 +474,7 @@ function KartuToko({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {toko.baris.map((b) => (
+              {laporan.baris.map((b) => (
                 <TableRow key={b.userId} className={cn(!b.penerima && "text-muted-foreground")}>
                   <TableCell className="min-w-[10rem] whitespace-normal">
                     <span className="font-medium">{b.nama}</span>
@@ -304,20 +487,14 @@ function KartuToko({
                     ) : null}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{b.potong}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {b.penerima ? formatIDR(b.komisi) : "—"}
-                    {b.potongan > 0 ? (
-                      <span className="block text-xs text-muted-foreground">
-                        {t("rincianPotongan", { kotor: formatIDR(b.komisiKotor), potongan: formatIDR(b.potongan) })}
-                      </span>
-                    ) : null}
-                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{b.penerima ? formatIDR(b.komisi) : "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     {b.resmi ? (
                       <>
                         {formatIDR(b.resmi.commission)}
                         <span className="block text-xs text-muted-foreground">
-                          {t("resmiRincian", { pcs: b.resmi.unitsSold, dasar: td(`dasarPendek.${b.resmi.basis}`) })}
+                          {t("resmiRincianBaru", { pcs: b.resmi.unitsSold })}
+                          {b.resmi.aturanLama ? ` · ${t("resmiAturanLama")}` : ""}
                         </span>
                         {b.resmi.deduction > 0 ? (
                           <span className="block text-xs text-amber-800 dark:text-amber-300">
@@ -338,15 +515,19 @@ function KartuToko({
                   </TableCell>
                   {bolehBayar ? (
                     <TableCell className="text-right">
-                      {b.resmi && b.status === "DITETAPKAN" ? (
+                      {/* Membayar butuh laporan yang dicek dan baris bertarif kategori (penulis menolak
+                          LAPORAN_BELUM_DICEK dan ATURAN_LAMA). */}
+                      {b.resmi && b.status === "DITETAPKAN" && laporan.dicek && !b.resmi.aturanLama ? (
                         <TombolBayar
                           commissionId={b.resmi.id}
                           nama={b.nama}
                           jumlah={Math.max(0, b.resmi.commission - b.resmi.deduction)}
                           potongan={b.resmi.deduction}
                           bulanLabel={bulanLabel}
-                          berbeda={toko.berbeda}
+                          berbeda={laporan.berbeda}
                         />
+                      ) : b.resmi && b.status === "DITETAPKAN" && laporan.dicek && b.resmi.aturanLama ? (
+                        <span className="block max-w-[12rem] text-right text-xs text-muted-foreground">{t("alasan.aturanLamaBayar")}</span>
                       ) : null}
                     </TableCell>
                   ) : null}
@@ -356,10 +537,10 @@ function KartuToko({
             <TableFooter>
               <TableRow>
                 <TableCell className="font-medium">{t("total")}</TableCell>
-                <TableCell className="text-right tabular-nums">{toko.potongToko}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatIDR(totalPenerima)}</TableCell>
+                <TableCell className="text-right tabular-nums">{laporan.potongToko}</TableCell>
+                <TableCell className="text-right tabular-nums">{formatIDR(laporan.totalToko)}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {toko.adaResmi ? formatIDR(toko.baris.reduce((n, b) => n + (b.resmi?.commission ?? 0), 0)) : "—"}
+                  {laporan.adaResmi ? formatIDR(laporan.baris.reduce((n, b) => n + (b.resmi?.commission ?? 0), 0)) : "—"}
                 </TableCell>
                 <TableCell />
                 {bolehBayar ? <TableCell /> : null}
@@ -372,12 +553,17 @@ function KartuToko({
       <AlertDialog open={buka} onOpenChange={(v) => !sibuk && setBuka(v)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("konfirmasiJudul", { toko: toko.nama, bulan: bulanLabel })}</AlertDialogTitle>
+            <AlertDialogTitle>{t("konfirmasiJudul", { toko: laporan.nama, bulan: bulanLabel })}</AlertDialogTitle>
             <AlertDialogDescription>
-              {t("konfirmasiIsi", { n: penerima.length, total: formatIDR(totalPenerima) })}
-              {toko.adaResmi ? ` ${t("konfirmasiUlang")}` : ""}
+              {t("konfirmasiIsi", { n: penerima.length, total: formatIDR(laporan.totalToko) })}
+              {laporan.adaResmi ? ` ${t("konfirmasiUlang")}` : ""}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {laporan.potongTanpaTarif > 0 ? (
+            <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+              {t("tanpaTarifCatatan", { pcs: laporan.potongTanpaTarif })}
+            </p>
+          ) : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={sibuk}>{t("batal")}</AlertDialogCancel>
             <AlertDialogAction
@@ -388,11 +574,174 @@ function KartuToko({
               }}
             >
               {sibuk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {toko.adaResmi ? t("tetapkanUlang") : t("tetapkan")}
+              {laporan.adaResmi ? t("tetapkanUlang") : t("tetapkan")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </Card>
+  );
+}
+
+function TombolBatalDicek({ storeId, nama, bulanJual, bulanLabel }: { storeId: string; nama: string; bulanJual: string; bulanLabel: string }) {
+  const t = useTranslations("komisiSpg");
+  const td = dinamis(t);
+  const router = useRouter();
+  const [sibuk, mulai] = useTransition();
+  const [buka, setBuka] = useState(false);
+  const [alasan, setAlasan] = useState("");
+  const idAlasan = `batal-dicek-${storeId}-${bulanJual}`;
+
+  const batalkan = () =>
+    mulai(async () => {
+      const r = await batalkanTandaDicekAction({ storeId, periode: bulanJual, alasan: alasan.trim() });
+      if (!r.ok) {
+        toast.error(td(`err.${r.code}`));
+        if (r.code === "SUDAH_DIBAYAR" || r.code === "BELUM_DICEK") router.refresh();
+        return;
+      }
+      setBuka(false);
+      setAlasan("");
+      toast.success(t("batalDicekBerhasil"));
+      router.refresh();
+    });
+
+  return (
+    <>
+      <Button size="sm" variant="ghost" onClick={() => setBuka(true)} disabled={sibuk}>
+        {t("batalDicek")}
+      </Button>
+      <AlertDialog open={buka} onOpenChange={(v) => !sibuk && setBuka(v)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("batalDicekJudul", { toko: nama, bulan: bulanLabel })}</AlertDialogTitle>
+            <AlertDialogDescription>{t("batalDicekIsi")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor={idAlasan}>{t("batalDicekAlasan")}</Label>
+            <Textarea
+              id={idAlasan}
+              value={alasan}
+              onChange={(e) => setAlasan(e.target.value)}
+              maxLength={500}
+              placeholder={t("batalDicekContoh")}
+              disabled={sibuk}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={sibuk}>{t("batal")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={sibuk || alasan.trim() === ""}
+              onClick={(e) => {
+                e.preventDefault();
+                batalkan();
+              }}
+            >
+              {sibuk ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {t("batalDicek")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function KartuKonsi({ siklus, label }: { siklus: KonsiTampil; label: (b: string) => string }) {
+  const t = useTranslations("komisiSpg");
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          <Store className="h-5 w-5" aria-hidden />
+          {siklus.nama}
+          <span className="text-sm font-normal text-muted-foreground">{siklus.noKonsi}</span>
+        </CardTitle>
+        <CardDescription>
+          <span className="block font-medium text-foreground">{t("laporan.catatan", { bulan: label(siklus.bulanJual) })}</span>
+          <span className="block">{t("konsi.dikunci", { tanggal: siklus.dikunciLabel })}</span>
+          <span className="block">{t("konsi.bayarDiSiklus")}</span>
+        </CardDescription>
+        <CardAction>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/backoffice/konsinyasi/${siklus.cycleId}`}>{t("konsiTunggu.buka")}</Link>
+          </Button>
+        </CardAction>
+      </CardHeader>
+      <CardContent className="space-y-3 px-0">
+        {siklus.berbeda ? (
+          <p className="mx-6 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+            {siklus.adaDibayar ? t("konsi.berbedaDibayar") : t("konsi.berbeda")}
+          </p>
+        ) : null}
+        {siklus.potongTanpaTarif > 0 ? (
+          <p className="mx-6 rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+            {t("tanpaTarifCatatan", { pcs: siklus.potongTanpaTarif })}
+          </p>
+        ) : null}
+        {siklus.baris.length === 0 ? (
+          <p className="mx-6 text-sm text-muted-foreground">{t("konsi.tanpaBaris")}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("kolom.spg")}</TableHead>
+                  <TableHead className="text-right">{t("kolom.gaji")}</TableHead>
+                  <TableHead className="text-right">{t("kolom.hitungan")}</TableHead>
+                  <TableHead className="text-right">{t("kolom.komisi")}</TableHead>
+                  <TableHead className="text-right">{t("kolom.jumlah")}</TableHead>
+                  <TableHead>{t("kolom.status")}</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {siklus.baris.map((b) => (
+                  <TableRow key={b.id}>
+                    <TableCell className="min-w-[10rem] whitespace-normal">
+                      <span className="font-medium">{b.nama}</span>
+                      {!b.bergaji ? <span className="block text-xs text-muted-foreground">{t("konsi.bukanPeserta")}</span> : null}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatIDR(b.gajiPokok)}</TableCell>
+                    <TableCell
+                      className={cn(
+                        "text-right tabular-nums",
+                        Math.round(b.komisiHitung * 100) !== Math.round(b.komisi * 100) && "text-amber-800 dark:text-amber-300",
+                      )}
+                    >
+                      {formatIDR(b.komisiHitung)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{formatIDR(b.komisi)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatIDR(b.total)}
+                      {b.potonganHilang > 0 ? (
+                        <span className="block text-xs text-amber-800 dark:text-amber-300">
+                          {t("resmiPotonganHilang", {
+                            potongan: formatIDR(b.potonganHilang),
+                            dibayar: formatIDR(Math.max(0, b.total - b.potonganHilang)),
+                          })}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="min-w-[9rem] whitespace-normal">
+                      <StatusBaris status={b.dibayarLabel ? "DIBAYAR" : "DITETAPKAN"} ditetapkan={siklus.dikunciLabel} dibayar={b.dibayarLabel} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+              <TableFooter>
+                <TableRow>
+                  <TableCell className="font-medium">{t("total")}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatIDR(siklus.baris.reduce((n, b) => n + b.gajiPokok, 0))}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatIDR(siklus.totalHitung)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatIDR(siklus.totalTersimpan)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatIDR(siklus.baris.reduce((n, b) => n + b.total, 0))}</TableCell>
+                  <TableCell />
+                </TableRow>
+              </TableFooter>
+            </Table>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
@@ -444,7 +793,7 @@ function TombolBayar({
       const r = await tandaiKomisiSpgDibayarAction({ commissionId, catatan: catatan.trim() || null });
       if (!r.ok) {
         toast.error(td(`err.${r.code}`));
-        if (r.code === "SUDAH_DIBAYAR") router.refresh();
+        if (r.code === "SUDAH_DIBAYAR" || r.code === "LAPORAN_BELUM_DICEK" || r.code === "ATURAN_LAMA") router.refresh();
         return;
       }
       setBuka(false);
