@@ -113,8 +113,9 @@ export type FieldSalesOrderDetail = FieldSalesOrderListItem & {
   deliveries: FieldSalesDeliverySummary[];
   /**
    * The approve-time transfer of a konsi order approved before stock moved at shipment
-   * completion (`shipmentId: null`) — per-shipment transfers are not surfaced here. `null` for
-   * every konsi order approved since.
+   * completion (`shipmentId: null`) — per-shipment transfers are not surfaced here, and neither is
+   * an old order's arrival confirmation (`oldOrderArrival`), which also has no shipment but is not
+   * an approve-time transfer and has no surat keluar. `null` for every konsi order approved since.
    */
   legacyKonsiTransfer: {
     docNo: string;
@@ -342,7 +343,7 @@ export async function getFieldSalesOrderById(id: string): Promise<FieldSalesOrde
         },
       },
       konsiTransfers: {
-        where: { shipmentId: null },
+        where: { shipmentId: null, oldOrderArrival: false },
         orderBy: { createdAt: "asc" },
         select: {
           docNo: true,

@@ -3,7 +3,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import { JENIS_KABAR, kabariPengguna, type Kabar } from "@/lib/notifications/kabar-pengguna";
-import { payoutMonth, salesMonthLabelId, salesMonthNoteId } from "@/lib/spg-commission/payout";
+import { confirmsAnyPiece, payoutMonth, salesMonthLabelId, salesMonthNoteId } from "@/lib/spg-commission/payout";
 import {
   aturanLama,
   bulanSudahSelesai,
@@ -165,8 +165,9 @@ export async function tandaiLaporanDicek(input: {
       });
       if (dibayar) return { ok: false, code: "SUDAH_DIBAYAR" };
 
-      const { hasil } = await hitunganPutus(tx, toko.id, input.periode, sekarang);
-      if (!hasil.perSpg.some((p) => p.penerima)) return { ok: false, code: "TANPA_PENJUALAN" };
+      const { laporan, hasil } = await hitunganPutus(tx, toko.id, input.periode, sekarang);
+      // Satu definisi dengan antrean "menunggu dicek" dan Beranda (`pasanganPutusTertunda`).
+      if (!confirmsAnyPiece(laporan)) return { ok: false, code: "TANPA_PENJUALAN" };
 
       const waktu = sekarang;
       const cek = await tx.spgSalesCheck.create({

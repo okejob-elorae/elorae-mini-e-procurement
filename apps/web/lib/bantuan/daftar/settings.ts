@@ -166,7 +166,7 @@ export const ENTRI: EntriBantuan[] = [
       "Membuat peran sendiri: tekan Buat peran, beri nama (mis. ADMIN_GUDANG) dan keterangan, lalu centang izinnya. Bila peran baru mirip peran yang sudah ada, pakai Mulai dari peran yang ada untuk menyalin izinnya sebagai titik awal, lalu tambah atau kurangi. Kotak cari menyaring izin menurut nama, keterangan, atau nama menu.",
       "Izin dikelompokkan menurut bidang kerja: Beranda & laporan, Penjualan marketplace, Pesanan lapangan & toko, Tim lapangan (HP), SPG, Piutang & pelunasan, Konsinyasi, Keuangan & pajak, Pembelian & pemasok, Gudang & stok, Produksi, Kreatif, Data master, Pengaturan & keamanan, dan Sistem. Setiap izin punya satu kalimat keterangan dan baris Membuka yang menyebut menu yang muncul karenanya. Izin Lihat membuka halamannya; izin seperti Buat, Ubah, atau Setujui hanya menambah tombol di halaman itu, jadi editor mengingatkan Perlu juga bila izin Lihat-nya belum dicentang.",
       "Izin Masuk aplikasi HP membuka aplikasi salesman dan SPG; peran SPG juga butuh Jual di konter toko, dan penggunanya wajib diberi satu toko tetap.",
-      "Sebagian izin adalah persetujuan atau keputusan manager: menyetujui hitungan stok toko, menyetujui transfer antar toko dan memutuskan selisihnya, memutuskan siapa menanggung selisih retur dan barang hilang, mengunci angka konsinyasi, dan menandai gaji serta komisi SPG dibayar. Bawaannya hanya admin yang memegangnya; Anda boleh memberikannya ke peran lain di sini. Periksa pembayaran (mencocokkan BKM, giro, setoran penagih, dan pelunasan toko dengan mutasi rekening) dipegang admin dan peran Keuangan — siapa pun tidak bisa memeriksa pembayaran yang ia laporkan, catat, atau setorkan sendiri.",
+      "Sebagian izin adalah persetujuan atau keputusan manager: menyetujui hitungan stok toko, menyetujui transfer antar toko dan memutuskan selisihnya, memutuskan siapa menanggung selisih retur dan barang hilang, mengunci angka konsinyasi (juga menyetujui dan membatalkan laporan sell-through toko konsinyasi, yang menagih toko), dan menandai gaji serta komisi SPG dibayar. Bawaannya hanya admin yang memegangnya; Anda boleh memberikannya ke peran lain di sini. Periksa pembayaran (mencocokkan BKM, giro, setoran penagih, dan pelunasan toko dengan mutasi rekening) dipegang admin dan peran Keuangan — siapa pun tidak bisa memeriksa pembayaran yang ia laporkan, catat, atau setorkan sendiri.",
       "Tiga peran kantor bawaan: Keuangan (periksa pembayaran, jurnal, dan laporan keuangan), Admin Penjualan (nomor nota konsinyasi), dan Admin Pajak (nomor faktur pajak). Ketiganya bukan admin dan tidak memegang izin persetujuan; tambah atau kurangi izinnya sesuai kebutuhan.",
       "Peran ADMIN bertanda Sistem memegang semua izin, termasuk izin yang ditambahkan kemudian, dan tidak bisa diubah atau dihapus. Peran yang masih dipakai pengguna tidak bisa dihapus; pindahkan penggunanya ke peran lain dulu. Membuat dan mengubah peran butuh izin Buat & ubah peran.",
       "Perubahan izin berlaku untuk pengguna peran itu saat sesinya disegarkan — otomatis dalam sekitar satu menit, ketika ia membuka halaman berikutnya; tidak perlu keluar lalu masuk lagi. Setiap pembuatan, perubahan izin, dan penghapusan peran tercatat di jejak audit beserta daftar izin sebelum dan sesudahnya.",
@@ -244,6 +244,16 @@ export const ENTRI: EntriBantuan[] = [
       },
       { judul: { kunci: "biayaPerjalanan.pengaturan.judul" }, isi: { kunci: "biayaPerjalanan.pengaturan.penjelasan" } },
       { judul: { kunci: "absensi.pengaturan.judul" }, isi: { kunci: "absensi.pengaturan.penjelasan" } },
+    ],
+  },
+  {
+    rute: "/backoffice/settings/spg-commission",
+    bagian: "settings",
+    judul: { kunci: "settings.spgCommission.heading" },
+    isi: [
+      { kunci: "settings.spgCommission.subtitle" },
+      "Satu tarif rupiah per potong untuk setiap kategori barang, berlaku mulai bulan yang dipilih sampai ada tarif kategori itu yang lebih baru. Tarif ini satu-satunya dasar komisi SPG, di toko putus maupun konsinyasi; tarif komisi di master barang tidak dipakai lagi.",
+      "Bulan yang sudah lewat tertutup: tarif baru hanya berlaku mulai bulan berjalan. Komisi memakai tarif bulan PENJUALAN, jadi laporan yang baru dicek bulan depan tetap dibayar dengan tarif bulannya. Barang tanpa kategori, atau yang kategorinya belum bertarif, tidak menghasilkan komisi. Mengubah tarif butuh izin mengatur tarif komisi SPG.",
     ],
   },
   {

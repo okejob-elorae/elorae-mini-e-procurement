@@ -7,6 +7,7 @@ import {
   recapMonthOptions,
   shiftYearMonth,
   storeLabel,
+  sumPayoutRows,
   sumRecapRows,
 } from "./recap-display";
 
@@ -94,6 +95,21 @@ describe("sumRecapRows", () => {
 
   it("is all zeros for no rows", () => {
     expect(sumRecapRows([])).toEqual({ pieces: 0, earned: 0, reversed: 0, net: 0 });
+  });
+});
+
+describe("sumPayoutRows", () => {
+  it("sums the stored, unset, paid and computed figures apart", () => {
+    expect(
+      sumPayoutRows([
+        { pieces: 20, setAmount: 45_000, unsetAmount: 0, paidAmount: 45_000, net: 40_000 },
+        { pieces: 7, setAmount: 0, unsetAmount: 14_000, paidAmount: 0, net: 14_000 },
+      ]),
+    ).toEqual({ pieces: 27, setAmount: 45_000, unsetAmount: 14_000, paidAmount: 45_000, net: 54_000 });
+  });
+
+  it("is all zeros for no rows", () => {
+    expect(sumPayoutRows([])).toEqual({ pieces: 0, setAmount: 0, unsetAmount: 0, paidAmount: 0, net: 0 });
   });
 });
 

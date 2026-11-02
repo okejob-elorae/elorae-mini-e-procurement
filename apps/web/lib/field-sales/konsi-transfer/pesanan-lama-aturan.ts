@@ -135,3 +135,27 @@ export function periksaHitunganSampai(
 
 /** Panjang alasan "tidak jadi dikirim" — kolom `FieldSalesOrder.closeReason` bertipe teks. */
 export const BATAS_ALASAN_BATAL_KIRIM = 500;
+
+/**
+ * Saat angka hitungan sebuah opname toko versi tim (`StoreStocktake`) mewakili rak: `countFinishedAt`,
+ * atau `approvedAt` untuk hitungan yang disimpan sebelum kolom itu ada — patokan yang sama dengan
+ * `COUNTED_SINCE_MOVE` di transfer antar toko. Bukan `countedAt`: itu saat dokumennya DIBUKA.
+ * Null = belum ada angka hitungan.
+ */
+export function saatHitungOpnameToko(o: { countFinishedAt: Date | null; approvedAt: Date | null }): Date | null {
+  return o.countFinishedAt ?? o.approvedAt;
+}
+
+/**
+ * Saat opname toko paling akhir yang SESUDAH `sejak` (pesanan disetujui), atau null bila tidak ada —
+ * untuk peringatan "isi 0 kalau barangnya sudah ikut terhitung" di HP. Saat yang sama dengan
+ * `sejak` tidak dihitung: hitungan itu belum bisa memuat barang yang baru disetujui.
+ */
+export function opnameTokoTerakhirSesudah(sejak: Date, saat: ReadonlyArray<Date | null | undefined>): Date | null {
+  let terakhir: Date | null = null;
+  for (const s of saat) {
+    if (!s || Number.isNaN(s.getTime()) || s.getTime() <= sejak.getTime()) continue;
+    if (!terakhir || s.getTime() > terakhir.getTime()) terakhir = s;
+  }
+  return terakhir;
+}

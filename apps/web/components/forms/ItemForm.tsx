@@ -78,7 +78,6 @@ import type { PilihanTabelUkuran } from "@/lib/items/size-chart-queries";
 import { rapikanNamaBarang } from "@/app/backoffice/items/nama-barang";
 import { labelJenisBarang } from "@/app/backoffice/items/tampilan-barang";
 import { bacaAngkaIsian, satuanKg } from "@/lib/purchase-orders/rincian-warna";
-import { bacaKomisiPerPcs } from "@/lib/items/komisi-spg";
 import type { HppBarang } from "@/lib/items/hpp-barang";
 import type { HppTerbaru } from "@/lib/items/riwayat-hpp";
 import {
@@ -102,8 +101,6 @@ type InfoProdukIsian = {
   careInstructions?: string | null;
   sizeChartId?: string | null;
   kgPerRoll?: number | null;
-  /** Komisi SPG per pcs (barang jadi); bahan/aksesori selalu 0. */
-  commissionPerPcs?: number | null;
 };
 /** Nilai pilihan "ikut bawaan kategori" di pemilih tabel ukuran. */
 const IKUT_KATEGORI = "__kategori__";
@@ -183,7 +180,11 @@ interface ItemFormProps {
     sizeChartId?: string | null;
     /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). */
     kgPerRoll?: number | null;
-    /** Komisi SPG per pcs (barang jadi). */
+    /**
+     * Komisi SPG per pcs lama (barang jadi) — hanya ditampilkan sebagai riwayat.
+     * Sejak keputusan pemilik 2026-11-01 komisi SPG memakai tarif per kategori;
+     * formulir tidak pernah mengirim kolom ini, jadi isinya tidak tersentuh.
+     */
     commissionPerPcs?: number | null;
     consumptionRules?: Array<{
       materialId: string;
@@ -336,9 +337,9 @@ export function ItemForm({
   const [careInstructions, setCareInstructions] = useState(initialData?.careInstructions ?? "");
   const [sizeChartId, setSizeChartId] = useState(initialData?.sizeChartId ?? "");
   const [kgPerRoll, setKgPerRoll] = useState(initialData?.kgPerRoll != null ? String(initialData.kgPerRoll) : "");
-  const [komisiSpg, setKomisiSpg] = useState(
-    initialData?.commissionPerPcs != null && initialData.commissionPerPcs > 0 ? String(initialData.commissionPerPcs) : "",
-  );
+  // Komisi SPG per pcs lama: hanya dibaca. Bukan sumber angka komisi mana pun lagi.
+  const komisiSpgLama =
+    initialData?.commissionPerPcs != null && initialData.commissionPerPcs > 0 ? initialData.commissionPerPcs : null;
   const [pilihanTabel, setPilihanTabel] = useState<PilihanTabelUkuran[]>([]);
   // Bahan rekomendasi harga (barang jadi). Kosong = ikut bawaan Pengaturan Jubelio.
   const [marginTeks, setMarginTeks] = useState(
@@ -758,13 +759,6 @@ export function ItemForm({
       }
     }
 
-    // Komisi SPG per pcs: barang jadi saja; kosong = 0. Bahan/aksesori selalu 0 (tidak dijual SPG).
-    const komisi = itemType === ItemType.FINISHED_GOOD ? bacaKomisiPerPcs(komisiSpg) : 0;
-    if (komisi === undefined || !Number.isFinite(komisi) || komisi < 0) {
-      toast.error(tForm('komisiSpgTidakSah'));
-      return;
-    }
-
     // Target margin & biaya tambahan: bahan rekomendasi harga saja (barang jadi); tidak
     // pernah mengubah harga jual. Kosong = ikut bawaan Pengaturan Jubelio.
     let isianRekomendasi: IsianRekomendasi = {};
@@ -783,15 +777,16 @@ export function ItemForm({
     }
 
     // Info produk hanya untuk barang jadi; jenis lain tidak menyentuh kolomnya.
+    // Komisi SPG per pcs tidak dikirim: kolom lamanya dibiarkan apa adanya
+    // (`lib/items/mutations.ts` tidak menyentuh kolom yang tidak dikirim).
     const infoProduk: InfoProdukIsian =
       itemType === ItemType.FINISHED_GOOD
         ? {
             material: material.trim() || null,
             careInstructions: careInstructions.trim() || null,
             sizeChartId: sizeChartId || null,
-            commissionPerPcs: komisi,
           }
-        : { kgPerRoll: kgRoll, commissionPerPcs: 0 };
+        : { kgPerRoll: kgRoll };
 
     await onSubmit(
       // Finished goods carry colour per variant; only a material gets a Pantone (#410).
@@ -1159,20 +1154,17 @@ export function ItemForm({
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="commissionPerPcs">
-                  {tForm('komisiSpg')} <span className="text-xs text-muted-foreground">({tForm('optional')})</span>
-                </Label>
-                <Input
-                  id="commissionPerPcs"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  value={komisiSpg}
-                  onChange={(e) => setKomisiSpg(e.target.value)}
-                  placeholder="0"
-                  className="max-w-[12rem] tabular-nums"
-                />
-              </div>
+              {/* Komisi SPG per pcs lama: hanya riwayat, tampil bila pernah diisi. Komisi SPG
+                  toko konsi maupun putus memakai tarif per kategori (keputusan pemilik 2026-11-01). */}
+              {komisiSpgLama != null && (
+                <div className="space-y-2">
+                  <p className="text-sm leading-none font-medium">{tForm("komisiSpgLama")}</p>
+                  <p className="flex h-9 items-center text-base tabular-nums text-muted-foreground">
+                    {formatRupiahSen(komisiSpgLama)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{tForm("komisiSpgTidakDipakai")}</p>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

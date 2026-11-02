@@ -506,6 +506,41 @@ d("recordFieldSalesDelivery (test bed only)", () => {
     expect(order.note).toBe("titip di kasir");
   });
 
+  /** Turns the fixture into a konsi order approved at `approvedAt`, its two reservations konsi ones. */
+  const jadikanKonsi = async (approvedAt: Date) => {
+    await prisma.fieldSalesOrder.update({ where: { id: orderId }, data: { orderType: "KONSI", approvedAt, approvedById: userId } });
+    await prisma.stockReservation.updateMany({
+      where: { fieldSalesLineId: { in: [seededId(lineAId), seededId(lineBId)] } },
+      data: { source: "FIELD_SALES_KONSI" },
+    });
+  };
+
+  it("refuses to close an OLD konsi order whose reservation is still held, and writes nothing", async () => {
+    // Approved long before the per-shipment flow reached production: only "tidak jadi dikirim" closes it.
+    await jadikanKonsi(new Date("2026-08-01T03:00:00Z"));
+    const err = await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "stok habis" }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DeliveryError);
+    expect((err as DeliveryError).code).toBe("KONSI_PESANAN_LAMA");
+
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId }, include: { lines: true } });
+    expect(order.deliveryStatus).toBe("PENDING");
+    expect(order.closedAt).toBeNull();
+    expect(order.lines.every((l) => l.cancelledQty === 0)).toBe(true);
+    const rsv = await prisma.stockReservation.findMany({ where: { fieldSalesLineId: { in: [seededId(lineAId), seededId(lineBId)] } } });
+    expect(rsv.map((r) => r.state)).toEqual(["RESERVED", "RESERVED"]);
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.reservedQty)).toBe(10);
+  });
+
+  it("still closes a konsi order approved under the per-shipment flow", async () => {
+    await jadikanKonsi(new Date());
+    await closeFieldSalesOrderRemainder({ orderId, closedById: userId, reason: "stok habis" });
+    const order = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.deliveryStatus).toBe("CLOSED");
+    const inv = await prisma.inventoryValue.findUniqueOrThrow({ where: { id: invId } });
+    expect(Number(inv.reservedQty)).toBe(0);
+  });
+
   it("creates a receivable for the delivery at full outstanding", async () => {
     const res = await recordFieldSalesDelivery({
       orderId,

@@ -5,6 +5,7 @@ import { kembaliAman } from "@/lib/pwa/kembali-setelah-checkin";
 import { getActiveVisit } from "@/lib/stores/queries";
 import { getStoreCountState, readCountSchedule } from "@/lib/konsi-count-schedule/queries";
 import { ringkasanSpg, tokoSpg } from "@/lib/spg/queries";
+import { salesMonthLabelId } from "@/lib/spg-commission/payout";
 import { hariWib, labelMasuk, labelMasukUntuk } from "@/lib/spg/beranda-spg";
 import { prisma } from "@elorae/db";
 import { shiftHariIni } from "@/lib/spg/shift-queries";
@@ -172,7 +173,15 @@ export default async function PwaHome({ searchParams }: { searchParams: Promise<
       notaHariIni: r.notaHariIni.map((n) => ({ id: n.id, docNo: n.docNo, jam: jam(n.waktu), total: n.total, jumlahBarang: n.jumlahBarang })),
       gaji: {
         perkiraan: r.gajiKomisi.perkiraan ? { totalToko: r.gajiKomisi.perkiraan.totalToko, bagianSaya: r.gajiKomisi.perkiraan.bagianSaya } : null,
-        terakhir: resmi ? { periode: resmi.periode, total: resmi.total, dibayar: resmi.dibayar !== null } : null,
+        // Bulan pembayaran (laporannya dicek) dan bulan penjualannya, persis layar Gaji & komisi.
+        terakhir: resmi
+          ? {
+              bulanJualLabel: salesMonthLabelId(resmi.bulanJual),
+              bulanBayarLabel: resmi.bulanBayar ? salesMonthLabelId(resmi.bulanBayar) : null,
+              total: resmi.total,
+              dibayar: resmi.dibayar !== null,
+            }
+          : null,
       },
       pengumuman,
       shift,

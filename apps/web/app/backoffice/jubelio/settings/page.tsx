@@ -37,6 +37,7 @@ import {
 import { AlertTriangle, Loader2, RefreshCw, Cloud } from "lucide-react";
 import { toast } from "sonner";
 import { formatDisplayDateTime } from "@/lib/date-only";
+import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import type { GagalJubelio } from "../galat-jubelio";
 import { RincianGalat, usePesanGalatJubelio } from "../RincianGalat";
 
@@ -44,7 +45,11 @@ export default function JubelioSettingsPage() {
   const t = useTranslations("jubelio.settings");
   const pesanGalat = usePesanGalatJubelio();
   const locale = useLocale();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
+  // Halaman dibuka dengan izin melihat Pengaturan; setiap tindakan di sini (perbarui token,
+  // impor katalog, simpan nilai bawaan, hapus produk) menuntut izin kelola pengguna &
+  // keamanan di server — tombolnya memeriksa izin yang sama.
+  const bolehUbah = hasPermission(session?.user?.permissions ?? [], PERMISSIONS.SETTINGS_SECURITY_MANAGE);
   const router = useRouter();
   const [tokenState, setTokenState] = useState<JubelioTokenState | null>(null);
   // Galat muat tampil di kartunya sendiri, bukan toast (dulu toast bertumpuk tiap render ulang).
@@ -200,6 +205,10 @@ export default function JubelioSettingsPage() {
     <div className="space-y-6">
       <PageHeader title={t("title")} />
 
+      {status === "authenticated" && !bolehUbah && (
+        <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("hanyaLihat")}</p>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
@@ -231,7 +240,7 @@ export default function JubelioSettingsPage() {
               <p className="text-sm text-muted-foreground">{t("token.none")}</p>
             )}
 
-            <Button onClick={() => void handleRefresh()} disabled={isRefreshing} size="sm">
+            <Button onClick={() => void handleRefresh()} disabled={!bolehUbah || isRefreshing} size="sm">
               {isRefreshing ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -250,14 +259,14 @@ export default function JubelioSettingsPage() {
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={() => void handleSync(true)}
-                disabled={isSyncing}
+                disabled={!bolehUbah || isSyncing}
                 size="sm"
                 variant="outline"
               >
                 {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
                 {t("catalog.preview")}
               </Button>
-              <Button onClick={() => setImportOpen(true)} disabled={isSyncing} size="sm">
+              <Button onClick={() => setImportOpen(true)} disabled={!bolehUbah || isSyncing} size="sm">
                 {isSyncing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
                 {t("catalog.import")}
               </Button>
@@ -333,28 +342,28 @@ export default function JubelioSettingsPage() {
           ) : (
             <div className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                <NumField label={t("defaults.field.sellTaxId")} value={defaultsDraft.sellTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellTaxId: v ?? 0 })} />
-                <NumField label={t("defaults.field.buyTaxId")} value={defaultsDraft.buyTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyTaxId: v ?? 0 })} />
-                <NumField label={t("defaults.field.salesAcctId")} value={defaultsDraft.salesAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, salesAcctId: v ?? 0 })} />
-                <NumField label={t("defaults.field.cogsAcctId")} value={defaultsDraft.cogsAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, cogsAcctId: v ?? 0 })} />
-                <NumField label={t("defaults.field.invtAcctId")} value={defaultsDraft.invtAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, invtAcctId: v ?? 0 })} />
-                <NumField label={t("defaults.field.purchAcctId")} value={defaultsDraft.purchAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, purchAcctId: v })} nullable />
-                <NumField label={t("defaults.field.uomId")} value={defaultsDraft.uomId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, uomId: v ?? 0 })} />
-                <StrField label={t("defaults.field.brandId")} value={defaultsDraft.brandId ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandId: v || null })} />
-                <StrField label={t("defaults.field.brandName")} value={defaultsDraft.brandName ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandName: v || null })} />
-                <StrField label={t("defaults.field.sellUnit")} value={defaultsDraft.sellUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellUnit: v })} />
-                <StrField label={t("defaults.field.buyUnit")} value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
-                <NumField label={t("defaults.field.packageWeight")} value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
-                <NumField label={t("defaults.field.buyPrice")} value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
-                <NumField label={t("defaults.field.rop")} value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
-                <NumField label={t("defaults.field.storePriorityQtyTreshold")} value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
-                <BoolField label={t("defaults.field.sellThis")} value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />
-                <BoolField label={t("defaults.field.buyThis")} value={defaultsDraft.buyThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyThis: v })} />
-                <BoolField label={t("defaults.field.stockThis")} value={defaultsDraft.stockThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, stockThis: v })} />
-                <BoolField label={t("defaults.field.dropshipThis")} value={defaultsDraft.dropshipThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, dropshipThis: v })} />
-                <BoolField label={t("defaults.field.isActive")} value={defaultsDraft.isActive} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, isActive: v })} />
-                <BoolField label={t("defaults.field.useSingleImageSet")} value={defaultsDraft.useSingleImageSet} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSingleImageSet: v })} />
-                <BoolField label={t("defaults.field.useSerialNumber")} value={defaultsDraft.useSerialNumber} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSerialNumber: v })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.sellTaxId")} value={defaultsDraft.sellTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellTaxId: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.buyTaxId")} value={defaultsDraft.buyTaxId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyTaxId: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.salesAcctId")} value={defaultsDraft.salesAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, salesAcctId: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.cogsAcctId")} value={defaultsDraft.cogsAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, cogsAcctId: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.invtAcctId")} value={defaultsDraft.invtAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, invtAcctId: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.purchAcctId")} value={defaultsDraft.purchAcctId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, purchAcctId: v })} nullable />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.uomId")} value={defaultsDraft.uomId} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, uomId: v ?? 0 })} />
+                <StrField disabled={!bolehUbah} label={t("defaults.field.brandId")} value={defaultsDraft.brandId ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandId: v || null })} />
+                <StrField disabled={!bolehUbah} label={t("defaults.field.brandName")} value={defaultsDraft.brandName ?? ""} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, brandName: v || null })} />
+                <StrField disabled={!bolehUbah} label={t("defaults.field.sellUnit")} value={defaultsDraft.sellUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellUnit: v })} />
+                <StrField disabled={!bolehUbah} label={t("defaults.field.buyUnit")} value={defaultsDraft.buyUnit} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyUnit: v })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.packageWeight")} value={defaultsDraft.packageWeight} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, packageWeight: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.buyPrice")} value={defaultsDraft.buyPrice} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyPrice: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.rop")} value={defaultsDraft.rop} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, rop: v ?? 0 })} />
+                <NumField disabled={!bolehUbah} label={t("defaults.field.storePriorityQtyTreshold")} value={defaultsDraft.storePriorityQtyTreshold} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, storePriorityQtyTreshold: v ?? 0 })} />
+                <BoolField disabled={!bolehUbah} label={t("defaults.field.sellThis")} value={defaultsDraft.sellThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, sellThis: v })} />
+                <BoolField disabled={!bolehUbah} label={t("defaults.field.buyThis")} value={defaultsDraft.buyThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, buyThis: v })} />
+                <BoolField disabled={!bolehUbah} label={t("defaults.field.stockThis")} value={defaultsDraft.stockThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, stockThis: v })} />
+                <BoolField disabled={!bolehUbah} label={t("defaults.field.dropshipThis")} value={defaultsDraft.dropshipThis} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, dropshipThis: v })} />
+                <BoolField disabled={!bolehUbah} label={t("defaults.field.isActive")} value={defaultsDraft.isActive} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, isActive: v })} />
+                <BoolField disabled={!bolehUbah} label={t("defaults.field.useSingleImageSet")} value={defaultsDraft.useSingleImageSet} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSingleImageSet: v })} />
+                <BoolField disabled={!bolehUbah} label={t("defaults.field.useSerialNumber")} value={defaultsDraft.useSerialNumber} onChange={(v) => setDefaultsDraft({ ...defaultsDraft, useSerialNumber: v })} />
               </div>
               {/* Bahan rekomendasi harga jual di halaman barang — menyimpannya tidak mengubah harga mana pun. */}
               <div className="space-y-3 border-t pt-4">
@@ -364,12 +373,14 @@ export default function JubelioSettingsPage() {
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   <NumField
+                    disabled={!bolehUbah}
                     label={t("defaults.field.defaultMarginPercent")}
                     value={defaultsDraft.defaultMarginPercent}
                     onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultMarginPercent: v })}
                     nullable
                   />
                   <NumField
+                    disabled={!bolehUbah}
                     label={t("defaults.field.defaultAdditionalCost")}
                     value={defaultsDraft.defaultAdditionalCost}
                     onChange={(v) => setDefaultsDraft({ ...defaultsDraft, defaultAdditionalCost: v })}
@@ -384,7 +395,7 @@ export default function JubelioSettingsPage() {
           <p className="text-xs text-muted-foreground">
             {defaults ? t("defaults.lastSaved", { when: formatDisplayDateTime(defaults.updatedAt, locale) }) : "—"}
           </p>
-          <Button onClick={() => void handleSaveDefaults()} disabled={isSavingDefaults || !defaultsDraft}>
+          <Button onClick={() => void handleSaveDefaults()} disabled={!bolehUbah || isSavingDefaults || !defaultsDraft}>
             {isSavingDefaults ? t("defaults.saving") : t("defaults.save")}
           </Button>
         </CardContent>
@@ -414,10 +425,10 @@ export default function JubelioSettingsPage() {
                   value={groupIdInput}
                   onChange={(e) => setGroupIdInput(e.target.value)}
                   placeholder={t("cleanup.placeholder")}
-                  disabled={isDeleting}
+                  disabled={!bolehUbah || isDeleting}
                 />
               </div>
-              <Button variant="destructive" onClick={handleRequestDelete} disabled={isDeleting}>
+              <Button variant="destructive" onClick={handleRequestDelete} disabled={!bolehUbah || isDeleting}>
                 {isDeleting ? t("cleanup.deleting") : t("cleanup.delete")}
               </Button>
             </div>
@@ -476,11 +487,12 @@ export default function JubelioSettingsPage() {
   );
 }
 
-function NumField({ label, value, onChange, nullable }: {
+function NumField({ label, value, onChange, nullable, disabled }: {
   label: string;
   value: number | null;
   onChange: (v: number | null) => void;
   nullable?: boolean;
+  disabled?: boolean;
 }) {
   const id = useId();
   return (
@@ -490,6 +502,7 @@ function NumField({ label, value, onChange, nullable }: {
         id={id}
         type="number"
         value={value ?? ""}
+        disabled={disabled}
         onChange={(e) => {
           const raw = e.target.value;
           if (raw === "") { if (nullable) onChange(null); else onChange(0); return; }
@@ -501,29 +514,31 @@ function NumField({ label, value, onChange, nullable }: {
   );
 }
 
-function StrField({ label, value, onChange }: {
+function StrField({ label, value, onChange, disabled }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  disabled?: boolean;
 }) {
   const id = useId();
   return (
     <div className="space-y-1">
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} type="text" value={value} onChange={(e) => onChange(e.target.value)} />
+      <Input id={id} type="text" value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
 
-function BoolField({ label, value, onChange }: {
+function BoolField({ label, value, onChange, disabled }: {
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   const id = useId();
   return (
     <div className="flex items-center gap-2 self-end pb-2">
-      <Checkbox id={id} checked={value} onCheckedChange={(v) => onChange(v === true)} />
+      <Checkbox id={id} checked={value} disabled={disabled} onCheckedChange={(v) => onChange(v === true)} />
       <Label htmlFor={id} className="font-medium">{label}</Label>
     </div>
   );

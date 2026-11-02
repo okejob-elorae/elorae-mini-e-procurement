@@ -56,7 +56,11 @@ export type ItemFormData = {
   pantoneTcx?: string | null;
   /** Bahan bersatuan kg: kg per roll (kolom Roll di PO). `undefined` = tidak disentuh. */
   kgPerRoll?: number | null;
-  /** Komisi SPG per pcs (barang jadi). `undefined` = tidak disentuh; `null`/kosong = 0. */
+  /**
+   * Komisi SPG per pcs (barang jadi) — kolom lama, bukan sumber angka komisi sejak
+   * 2026-11-01 (tarif per kategori). Formulir barang tidak lagi mengirimnya.
+   * `undefined` = tidak disentuh; `null`/kosong = 0.
+   */
   commissionPerPcs?: number | null;
 } & InfoProdukBarang;
 
@@ -371,7 +375,8 @@ export async function updateItem(
     },
   });
 
-  // Komisi SPG per pcs menentukan gaji orang: perubahannya tercatat di transaksi yang sama.
+  // Kolom lama komisi SPG per pcs: kalau ada pemanggil yang masih mengubahnya,
+  // perubahannya tetap tercatat di transaksi yang sama.
   const komisiLama = Number(existing.commissionPerPcs ?? 0);
   if (opsi.olehUserId && rest.commissionPerPcs != null && rest.commissionPerPcs !== komisiLama) {
     await client.auditLog.create({

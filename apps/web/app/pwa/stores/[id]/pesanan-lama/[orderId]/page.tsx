@@ -2,7 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { formatDisplayDate } from "@/lib/date-only";
-import { muatPenerimaToko, muatPesananKonsiCadanganLama } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
+import { muatOpnameTokoSesudah, muatPenerimaToko, muatPesananKonsiCadanganLama } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { peranPenerimaLama } from "@/lib/field-sales/konsi-transfer/pesanan-lama-aturan";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { tokoTerkunci } from "@/lib/salesman/queries";
@@ -43,14 +43,11 @@ export default async function PesananLamaTokoPage({ params }: { params: Promise<
     getActiveVisit(userId),
   ]);
 
-  // Opname toko SESUDAH pesanan disetujui: barangnya mungkin sudah ikut terhitung di sana.
+  // Opname toko SESUDAH pesanan disetujui — opname versi tim (StoreStocktake) maupun buku SPG
+  // (StoreOpname): barangnya mungkin sudah ikut terhitung di sana.
   const opnameToko =
     lama && lama.storeId === id
-      ? await prisma.storeOpname.findFirst({
-          where: { storeId: id, countedAt: { gt: lama.approvedAt } },
-          orderBy: { countedAt: "desc" },
-          select: { countedAt: true },
-        })
+      ? await muatOpnameTokoSesudah(prisma, { storeId: id, sejak: lama.approvedAt, itemIds: lama.baris.map((b) => b.itemId) })
       : null;
   const pesanan =
     lama && lama.storeId === id
@@ -58,7 +55,7 @@ export default async function PesananLamaTokoPage({ params }: { params: Promise<
           orderId: lama.orderId,
           orderNo: lama.orderNo,
           disetujuiLabel: formatDisplayDate(lama.approvedAt),
-          opnameTokoSesudah: opnameToko ? formatDisplayDate(opnameToko.countedAt) : null,
+          opnameTokoSesudah: opnameToko ? formatDisplayDate(opnameToko) : null,
           // Tanpa harga: hanya nama, varian, dan pcs yang sampai ke HP.
           baris: lama.baris.map((b) => ({ lineId: b.lineId, productName: b.productName, variantSku: b.variantSku, sisa: b.sisa })),
         }

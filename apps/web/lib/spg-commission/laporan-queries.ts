@@ -200,3 +200,138 @@ export async function putusReportOf(client: Client, storeId: string, salesMonth:
     movements: movements.get(storeId) ?? [],
   };
 }
+
+/**
+ * Several putus store × month pairs as reports, checked or not, with one movement read per month;
+ * returned in the order asked. Each pair's `checkedAt` is the check when there is one, else the
+ * moment asked about — it only dates the report, never changes its pieces.
+ */
+export async function putusReportsOf(
+  client: Client,
+  pairs: ReadonlyArray<{ storeId: string; salesMonth: string; checkedAt: Date }>,
+): Promise<SalesReport[]> {
+  if (pairs.length === 0) return [];
+  const movements = await movementsFor(client, pairs);
+  return pairs.map((p) => ({
+    key: putusReportKey(p.storeId, p.salesMonth),
+    kind: "PUTUS" as const,
+    storeId: p.storeId,
+    salesMonth: p.salesMonth,
+    checkedAt: p.checkedAt,
+    official: null,
+    movements: movements(p.storeId, p.salesMonth),
+  }));
+}
+
+/** One stored `SpgCommission` row — the figure the office set with "Tetapkan", which is what is paid. */
+export type StoredPutusCommission = {
+  id: string;
+  userId: string;
+  storeId: string;
+  period: string;
+  unitsSold: number;
+  /* Gross whole rupiah; what the SPG receives is `commission − deduction`. */
+  commission: number;
+  deduction: number;
+  basis: string;
+  lockedAt: Date;
+  paidAt: Date | null;
+  note: string | null;
+};
+
+export type PutusPayoutReport = SalesReport & {
+  kind: "PUTUS";
+  /* The check that puts the month in this payout month; null for a commission set under the old rule without one. */
+  check: { id: string; checkedAt: Date; checkedById: string } | null;
+  /* The month's stored rows; empty while a checked month is not set yet ("belum ditetapkan"). */
+  stored: StoredPutusCommission[];
+};
+
+const pairKey = (storeId: string, period: string) => `${storeId}\u0000${period}`;
+
+/**
+ * Every putus store × sales month PAID in one payout month, with its stored `SpgCommission` rows:
+ * each month checked in it (`SpgSalesCheck.checkedAt`), plus each commission set under the old
+ * rule without a check in any month, which belongs to the payout month its rows were last set in
+ * (`lockedAt`). Komisi SPG and the recap both read through here, so the two list the same months
+ * with the same stored figures. `storeIds` limits the stores read (an empty array reads none).
+ */
+export async function putusPayoutReports(
+  client: Client,
+  where: { paidIn: { start: Date; end: Date }; storeIds?: string[] },
+): Promise<PutusPayoutReport[]> {
+  const { paidIn, storeIds } = where;
+  const storeFilter = storeIds !== undefined ? { storeId: { in: storeIds } } : {};
+  const [checked, setInMonth] = await Promise.all([
+    checkedPutusReports(client, { checkedIn: paidIn, storeIds }),
+    client.spgCommission.findMany({
+      where: { lockedAt: { gte: paidIn.start, lt: paidIn.end }, ...storeFilter },
+      select: { storeId: true, period: true },
+    }),
+  ]);
+
+  const checkedPairs = new Set(checked.map((r) => pairKey(r.storeId, r.salesMonth)));
+  const candidates = [
+    ...new Map(setInMonth.map((r) => [pairKey(r.storeId, r.period), { storeId: r.storeId, period: r.period }])).values(),
+  ].filter((p) => !checkedPairs.has(pairKey(p.storeId, p.period)));
+  const checkedElsewhere = candidates.length
+    ? await client.spgSalesCheck.findMany({
+        where: { OR: candidates.map((p) => ({ storeId: p.storeId, period: p.period })) },
+        select: { storeId: true, period: true },
+      })
+    : [];
+  const elsewhere = new Set(checkedElsewhere.map((c) => pairKey(c.storeId, c.period)));
+  const unchecked = candidates.filter((p) => !elsewhere.has(pairKey(p.storeId, p.period)));
+
+  const pairs = [...checked.map((r) => ({ storeId: r.storeId, period: r.salesMonth })), ...unchecked];
+  const rows = pairs.length
+    ? await client.spgCommission.findMany({
+        where: { OR: pairs.map((p) => ({ storeId: p.storeId, period: p.period })) },
+        orderBy: [{ lockedAt: "asc" }, { id: "asc" }],
+        select: {
+          id: true,
+          userId: true,
+          storeId: true,
+          period: true,
+          unitsSold: true,
+          commission: true,
+          deduction: true,
+          basis: true,
+          lockedAt: true,
+          paidAt: true,
+          note: true,
+        },
+      })
+    : [];
+  const storedByPair = new Map<string, StoredPutusCommission[]>();
+  for (const r of rows) {
+    const key = pairKey(r.storeId, r.period);
+    storedByPair.set(key, [...(storedByPair.get(key) ?? []), { ...r, commission: Number(r.commission), deduction: Number(r.deduction) }]);
+  }
+  const storedOf = (storeId: string, period: string) => storedByPair.get(pairKey(storeId, period)) ?? [];
+
+  // An old-rule month belongs to the payout month its rows were LAST set in — one month, never two.
+  const oldRule = unchecked.flatMap((p) => {
+    const lastSet = storedOf(p.storeId, p.period).reduce<Date | null>((t, r) => (t === null || r.lockedAt > t ? r.lockedAt : t), null);
+    if (lastSet === null || lastSet < paidIn.start || lastSet >= paidIn.end) return [];
+    return [{ storeId: p.storeId, salesMonth: p.period, checkedAt: lastSet }];
+  });
+  const oldRuleReports = await putusReportsOf(client, oldRule);
+
+  return [
+    ...checked.map(
+      (r): PutusPayoutReport => ({
+        key: r.key,
+        kind: "PUTUS",
+        storeId: r.storeId,
+        salesMonth: r.salesMonth,
+        checkedAt: r.checkedAt,
+        official: null,
+        movements: r.movements,
+        check: { id: r.checkId, checkedAt: r.checkedAt, checkedById: r.checkedById },
+        stored: storedOf(r.storeId, r.salesMonth),
+      }),
+    ),
+    ...oldRuleReports.map((r): PutusPayoutReport => ({ ...r, kind: "PUTUS", check: null, stored: storedOf(r.storeId, r.salesMonth) })),
+  ];
+}

@@ -1,5 +1,6 @@
 import { isValidElement, type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { formatDisplayDate } from "@/lib/date-only";
 
 /*
  * Halaman "konfirmasi barang pesanan lama sampai" untuk salesman (`/pwa/stores/<id>/pesanan-lama/<orderId>`).
@@ -18,6 +19,8 @@ const state = vi.hoisted(() => ({
   jumlahSpg: 0,
   aktifDi: null as string | null,
   pesananToko: "toko-1",
+  opnameToko: null as Date | null,
+  opnameDiminta: [] as Array<{ storeId: string; sejak: Date; itemIds: readonly string[] }>,
   dibaca: [] as string[],
 }));
 
@@ -30,16 +33,7 @@ vi.mock("next/navigation", () => ({
     throw new Error("__NOT_FOUND__");
   },
 }));
-vi.mock("@elorae/db", () => ({
-  prisma: {
-    storeOpname: {
-      findFirst: vi.fn(async () => {
-        state.dibaca.push("storeOpname");
-        return null;
-      }),
-    },
-  },
-}));
+vi.mock("@elorae/db", () => ({ prisma: {} }));
 vi.mock("@/lib/pwa/peran", () => ({ ambilTokoTetap: vi.fn(async () => state.tokoTetap) }));
 vi.mock("@/lib/salesman/queries", () => ({ tokoTerkunci: vi.fn(async () => state.terkunci) }));
 vi.mock("@/lib/stores/queries", () => ({
@@ -70,6 +64,11 @@ vi.mock("@/lib/field-sales/konsi-transfer/pesanan-lama", () => ({
       namaPemegang: null,
       jumlahSpg: state.jumlahSpg,
     };
+  }),
+  muatOpnameTokoSesudah: vi.fn(async (_klien: unknown, input: { storeId: string; sejak: Date; itemIds: readonly string[] }) => {
+    state.dibaca.push("opnameToko");
+    state.opnameDiminta.push(input);
+    return state.opnameToko;
   }),
 }));
 
@@ -102,6 +101,8 @@ beforeEach(() => {
   state.jumlahSpg = 0;
   state.aktifDi = null;
   state.pesananToko = "toko-1";
+  state.opnameToko = null;
+  state.opnameDiminta = [];
   state.dibaca = [];
 });
 
@@ -135,6 +136,17 @@ describe("konfirmasi pesanan lama oleh salesman — kunci toko sendiri", () => {
       baris: [{ lineId: "l-1", productName: "Kaos Uji", variantSku: "KAOS-M", sisa: 6 }],
     });
     expect(JSON.stringify(props.pesanan)).not.toMatch(/harga|price|total|subtotal/i);
+    expect((props.pesanan as Record<string, unknown>).opnameTokoSesudah).toBeNull();
+  });
+
+  it("opname toko sesudah pesanan disetujui dibaca lewat satu pemuat (opname tim + buku SPG), untuk barang pesanan ini saja", async () => {
+    state.aktifDi = "toko-1";
+    const opname = new Date("2026-09-02T03:00:00.000Z");
+    state.opnameToko = opname;
+    const hasil = await buka("toko-1", "o-1");
+    expect(state.opnameDiminta).toEqual([{ storeId: "toko-1", sejak: new Date("2026-08-10T03:00:00.000Z"), itemIds: ["i-1"] }]);
+    const props = (hasil as ReactElement<Record<string, unknown>>).props;
+    expect((props.pesanan as Record<string, unknown>).opnameTokoSesudah).toBe(formatDisplayDate(opname));
   });
 
   it("kunci mati: salesman lain boleh membuka (seperti halaman toko), tetapi diberi tahu bukan pemegang", async () => {
@@ -154,7 +166,7 @@ describe("konfirmasi pesanan lama oleh salesman — kunci toko sendiri", () => {
     state.pesananToko = "toko-lain";
     const hasil = await buka("toko-1", "o-1");
     expect((hasil as ReactElement<Record<string, unknown>>).props.pesanan).toBeNull();
-    expect(state.dibaca).not.toContain("storeOpname");
+    expect(state.dibaca).not.toContain("opnameToko");
   });
 
   it("SPG toko ini diarahkan ke layarnya sendiri sebelum apa pun dibaca", async () => {

@@ -13,6 +13,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { antrekanPushStok } from "@/lib/jubelio/antre-push-stok";
 import { DeliveryError, type DeliveryErrorCode, type DeliveryReplayDetail } from "../errors";
 import { IndenBelumRilisError } from "../inden";
+import { muatPesananKonsiCadanganLama } from "../konsi-transfer/pesanan-lama";
 import { outstandingQty, nextDeliveryStatus, allocateDeliveryDiscounts } from "./plan";
 
 /**
@@ -662,6 +663,18 @@ export async function closeFieldSalesOrderRemainder(input: {
 
     const openLines = order.lines.filter((l) => outstandingQty(l) > 0);
     if (openLines.length === 0) throw new DeliveryError("INVALID_STATE");
+
+    /**
+     * An OLD konsi order whose reservation is still held closes only through "tidak jadi dikirim"
+     * (`batalKirimPesananLama`), which writes its audit row in the same transaction. This path
+     * would release the same reservation with no trail, and it is reachable through
+     * `closeRemainderAction` directly and from the shipments card the office detail page falls
+     * back to when the old-order card fails to load. Read inside this transaction, from the one
+     * definition every other screen and writer uses.
+     */
+    if (order.orderType === "KONSI" && (await muatPesananKonsiCadanganLama(tx, order.id))) {
+      throw new DeliveryError("KONSI_PESANAN_LAMA");
+    }
 
     /**
      * Refused, not netted, while a shipment is still PACKED or IN_TRANSIT. The release below flips

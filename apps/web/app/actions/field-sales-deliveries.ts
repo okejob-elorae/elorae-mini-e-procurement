@@ -61,7 +61,9 @@ export type DeliveryActionResult =
          * Sisa pesanan cukup tetapi cadangan stoknya sudah habis dikonsumsi atau tidak ada
          * (pesanan yang disetujui image lama di jendela deploy). Bukan "melebihi sisa".
          */
-        | "RESERVATION_MISMATCH";
+        | "RESERVATION_MISMATCH"
+        /** Pesanan konsinyasi lama: sisanya ditutup lewat "Tidak jadi dikirim", bukan pengiriman atau tutup sisa. */
+        | "KONSI_PESANAN_LAMA";
       shortLines?: Array<{ orderLineId: string; requested: number; onHand: number; available: number }>;
       replay?: SerializedReplay;
       invoiceNo?: string;

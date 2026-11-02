@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Loader2, MessageCircle, PencilLine, Store, XCircle } from "lucide-react";
+import { Loader2, MessageCircle, PackageCheck, PencilLine, Store, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { batalkanPesananSayaAction } from "../actions";
 import { PANJANG_ALASAN_BATAL_MAKS } from "@/lib/field-sales/ganti-pesanan";
+import type { PenerimaDiharapkan } from "@/lib/field-sales/konsi-transfer/pesanan-lama-aturan";
 import type {
   BarisDetailPesananSaya,
   CatatanKredit,
@@ -72,6 +73,23 @@ export type DetailPesananView = {
   digantiDengan?: { id: string; orderNo: string } | null;
 };
 
+/**
+ * Pesanan konsinyasi LAMA yang cadangannya masih ditahan (`bacaPesananKonsiCadanganLama`): barangnya
+ * tidak dikirim lagi lewat pengiriman — yang sudah ada di toko dikonfirmasi di toko, oleh SPG-nya
+ * atau (toko tanpa SPG) salesman pemegang toko; sisanya hanya bisa ditandai kantor "tidak jadi
+ * dikirim". Hanya hitungan pcs: tidak ada harga konsinyasi di HP.
+ */
+export type PesananLamaTampil = {
+  penerima: PenerimaDiharapkan;
+  /** Saya pemegang toko pesanan ini — yang mengonfirmasi bila tokonya tanpa SPG. */
+  sayaPemegang: boolean;
+  /** Layar hitung dan konfirmasi untuk pemegang toko tanpa SPG. */
+  href: string;
+  jumlahBarang: number;
+  /** Pcs yang belum dikonfirmasi sampai. */
+  pcs: number;
+};
+
 /** Kotak keterangan di bawah judul: apa yang sedang terjadi pada pesanan ini. */
 const NADA_KOTAK = {
   tunggu: "bg-amber-500/10 text-amber-800 dark:text-amber-300",
@@ -91,6 +109,7 @@ export function DetailPesananClient({
   bisaBatal = false,
   salinanWa = null,
   terimaTokoKonsi = null,
+  pesananLama = null,
 }: {
   pesanan: DetailPesananView;
   /** Pengiriman + bukti terimanya (PUTUS saja); tanggalnya sudah diformat server. */
@@ -103,19 +122,25 @@ export function DetailPesananClient({
   bisaBatal?: boolean;
   /** Salinan pesanan untuk toko lewat WhatsApp; null untuk pesanan yang ditolak/dibatalkan. */
   salinanWa?: { tautan: string; adaNomor: boolean } | null;
+  /** KONSI lama yang cadangannya masih ditahan: dikonfirmasi di toko, tidak dikirim; null = bukan. */
+  pesananLama?: PesananLamaTampil | null;
 }) {
   const t = useTranslations("pwa.pesananSaya");
   const td = useTranslations("pwa.pesananSaya.detail");
   const tUbah = useTranslations("pwa.ubahPesanan");
-  const putusDisetujui = p.orderType === "PUTUS" && p.status === "APPROVED";
+  // Setiap pesanan yang disetujui punya pembagian terkirim/sisa/batal per baris: PUTUS lewat
+  // pengiriman, KONSI lewat pengiriman per antaran, dan KONSI lama lewat konfirmasi sampai di toko.
+  const barisTerbagi = p.status === "APPROVED";
   const alasanTolak = p.rejectReason?.trim();
   const alasanTutup = p.closeReason?.trim();
   const langkahBerikut =
     p.keadaan === "MENUNGGU"
       ? td("stepNextApproval")
-      : p.keadaan === "BELUM_DIKIRIM" || p.keadaan === "DIKIRIM_SEBAGIAN" || p.keadaan === "KONSI_DISETUJUI"
-        ? td("stepNextDelivery")
-        : null;
+      : pesananLama
+        ? td("stepNextKonsiLama")
+        : p.keadaan === "BELUM_DIKIRIM" || p.keadaan === "DIKIRIM_SEBAGIAN" || p.keadaan === "KONSI_DISETUJUI"
+          ? td("stepNextDelivery")
+          : null;
 
   return (
     <div className="space-y-4 p-4">
@@ -149,7 +174,11 @@ export function DetailPesananClient({
         </p>
       </header>
 
-      <Keterangan p={p} alasanTolak={alasanTolak} alasanTutup={alasanTutup} />
+      {pesananLama ? (
+        <KeteranganKonsiLama lama={pesananLama} />
+      ) : (
+        <Keterangan p={p} alasanTolak={alasanTolak} alasanTutup={alasanTutup} />
+      )}
 
       {salinanWa || alamatUbah || bisaBatal ? (
         <section aria-label={tUbah("tindakanLabel")} className="flex flex-col gap-2">
@@ -184,7 +213,7 @@ export function DetailPesananClient({
         <h2 className="beranda-judul px-4 pt-4">{td("linesTitle", { count: p.baris.length })}</h2>
         <ul className="mt-1 divide-y">
           {p.baris.map((b) => (
-            <BarisBarang key={b.id} b={b} putusDisetujui={putusDisetujui} />
+            <BarisBarang key={b.id} b={b} terbagi={barisTerbagi} lama={pesananLama !== null} />
           ))}
         </ul>
       </section>
@@ -326,17 +355,53 @@ function Keterangan({
   }
 }
 
-function BarisBarang({ b, putusDisetujui }: { b: BarisDetailPesananSaya; putusDisetujui: boolean }) {
+/**
+ * Keterangan pesanan konsinyasi LAMA: tidak ada pengiriman yang ditunggu. Menyebut siapa yang
+ * mengonfirmasi di toko — dan bila itu Anda (pemegang toko tanpa SPG), langsung ke layarnya.
+ */
+function KeteranganKonsiLama({ lama }: { lama: PesananLamaTampil }) {
   const td = useTranslations("pwa.pesananSaya.detail");
+  const tKartu = useTranslations("pwa.pesananLama.kartu");
+  const olehSaya = lama.penerima === "SALESMAN" && lama.sayaPemegang;
+  const oleh = olehSaya ? "SAYA" : lama.penerima;
+  return (
+    <div className={cn("space-y-2 rounded-lg px-3 py-2 text-sm leading-relaxed", NADA_KOTAK.tunggu)}>
+      <p className="font-medium">{td("noticeKonsiLama")}</p>
+      <p>{td(`noticeKonsiLamaOleh.${oleh}`)}</p>
+      <p className="font-semibold">{tKartu("ringkas", { count: lama.jumlahBarang, pcs: lama.pcs })}</p>
+      {olehSaya ? (
+        <Button asChild className="w-full">
+          <Link href={lama.href}>
+            <PackageCheck className="h-4 w-4" aria-hidden />
+            {tKartu("tombol")}
+          </Link>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+type KunciBagian = "delivered" | "outstanding" | "cancelled";
+
+function BarisBarang({ b, terbagi, lama }: { b: BarisDetailPesananSaya; terbagi: boolean; lama: boolean }) {
+  const td = useTranslations("pwa.pesananSaya.detail");
+  const tLama = useTranslations("pwa.pesananLama");
   const tBonus = useTranslations("promoBonus");
-  // Pembagian kirim/batal hanya bermakna untuk PUTUS yang sudah disetujui; konsi tidak punya kiriman.
-  const bagian = putusDisetujui
+  // Pembagian terkirim/sisa/batal hanya bermakna untuk pesanan yang sudah disetujui. Pesanan konsi
+  // lama tidak dikirim: yang "terkirim" adalah yang dikonfirmasi sampai di toko.
+  const bagian = terbagi
     ? [
         b.deliveredQty > 0 ? { kunci: "delivered", qty: b.deliveredQty, nada: "text-emerald-700 dark:text-emerald-400" } : null,
         b.outstanding > 0 ? { kunci: "outstanding", qty: b.outstanding, nada: "text-primary" } : null,
         b.cancelledQty > 0 ? { kunci: "cancelled", qty: b.cancelledQty, nada: "text-muted-foreground" } : null,
-      ].filter((x): x is { kunci: "delivered" | "outstanding" | "cancelled"; qty: number; nada: string } => x !== null)
+      ].filter((x): x is { kunci: KunciBagian; qty: number; nada: string } => x !== null)
     : [];
+  const labelBagian = (kunci: KunciBagian, qty: number) =>
+    lama && kunci === "delivered"
+      ? td("arrived", { qty })
+      : lama && kunci === "outstanding"
+        ? tLama("sisa", { qty })
+        : td(kunci, { qty });
 
   return (
     <li className="space-y-1.5 px-4 py-3">
@@ -369,7 +434,7 @@ function BarisBarang({ b, putusDisetujui }: { b: BarisDetailPesananSaya; putusDi
         <p className="flex flex-wrap gap-x-3 text-xs font-medium tabular-nums">
           {bagian.map((x) => (
             <span key={x.kunci} className={x.nada}>
-              {td(x.kunci, { qty: x.qty })}
+              {labelBagian(x.kunci, x.qty)}
             </span>
           ))}
         </p>

@@ -3,7 +3,9 @@ import { matchKey } from "@/lib/items/match-key";
 import {
   bacaBatasPesananLama,
   KUNCI_PESANAN_LAMA_SEBELUM,
+  opnameTokoTerakhirSesudah,
   penerimaDiharapkan,
+  saatHitungOpnameToko,
   sisaBarisLama,
   type PenerimaDiharapkan,
 } from "./pesanan-lama-aturan";
@@ -196,6 +198,47 @@ export async function opnameGudangSesudah(
 
 export function kunciOpname(itemId: string, variantSku: string | null): string {
   return `${itemId}::${matchKey(variantSku)}`;
+}
+
+/**
+ * Opname TOKO terakhir yang menghitung barang pesanan lama ini SESUDAH pesanannya disetujui, atau
+ * null — untuk peringatan "isi 0 kalau barangnya sudah ikut terhitung" di HP SPG dan salesman
+ * pemegang toko. Konfirmasi sampai menambah DUA buku toko, jadi kedua jenis opname toko dibaca:
+ * - `StoreStocktake` (opname toko versi tim, keputusan pemilik no. 5): persetujuannya menetapkan
+ *   `StoreStock` = hitungan + setiap gerak SESUDAH saat hitungnya (`sumMovementsSinceCountCents`),
+ *   dan transfer konfirmasi sampai (tanpa pengiriman) tidak pernah dikecualikan di sana. Barang
+ *   yang sudah terhitung di rak bertambah lagi, lalu hitungan berikutnya membacanya sebagai
+ *   kekurangan yang ditagih laporan SHELF_COUNT sebagai terjual. Hitungan yang BELUM disetujui ikut
+ *   (selain yang dibatalkan): persetujuannya nanti menambahkan konfirmasi ini dengan cara yang sama.
+ *   Saat hitungnya `saatHitungOpnameToko`, bukan `countedAt` (saat dokumen dibuka).
+ * - `StoreOpname` (buku stok SPG versi Max), yang ditambah konfirmasi lewat gerak TERIMA.
+ * Hanya opname yang benar-benar menghitung salah satu barang pesanan ini — dicocokkan per BARANG,
+ * bukan per varian: peringatan berlebih lebih murah daripada diam. Cakupannya satu toko dan daftar
+ * barang ini; daftar kosong tidak membaca apa pun.
+ */
+export async function muatOpnameTokoSesudah(
+  klien: Klien,
+  input: { storeId: string; sejak: Date; itemIds: readonly string[] },
+): Promise<Date | null> {
+  const itemIds = [...new Set(input.itemIds.filter(Boolean))];
+  if (typeof input.storeId !== "string" || input.storeId === "" || itemIds.length === 0) return null;
+  const [opnameSpg, opnameTim] = await Promise.all([
+    klien.storeOpname.findFirst({
+      where: { storeId: input.storeId, countedAt: { gt: input.sejak }, lines: { some: { itemId: { in: itemIds } } } },
+      orderBy: { countedAt: "desc" },
+      select: { countedAt: true },
+    }),
+    klien.storeStocktake.findMany({
+      where: {
+        storeId: input.storeId,
+        status: { not: "CANCELLED" },
+        OR: [{ countFinishedAt: { gt: input.sejak } }, { countFinishedAt: null, approvedAt: { gt: input.sejak } }],
+        lines: { some: { countedQty: { not: null }, itemId: { in: itemIds } } },
+      },
+      select: { countFinishedAt: true, approvedAt: true },
+    }),
+  ]);
+  return opnameTokoTerakhirSesudah(input.sejak, [opnameSpg?.countedAt, ...opnameTim.map(saatHitungOpnameToko)]);
 }
 
 export type KedatanganPesananLama = {

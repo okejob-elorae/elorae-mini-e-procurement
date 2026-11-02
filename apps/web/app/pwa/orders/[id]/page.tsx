@@ -1,12 +1,14 @@
 import { notFound, redirect } from "next/navigation";
+import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { ambilTokoTetap } from "@/lib/pwa/peran";
 import { formatDisplayDateTime } from "@/lib/date-only";
 import { pesananSayaById, salinanDariDetail } from "@/lib/field-sales/pwa-queries";
 import { alamatUbahPesanan } from "@/lib/field-sales/ganti-pesanan";
 import { kirimanPesananSaya } from "@/lib/field-sales/delivery/bukti-terima-queries";
+import { muatPenerimaToko, muatPesananKonsiCadanganLama } from "@/lib/field-sales/konsi-transfer/pesanan-lama";
 import { pwaAccessGuard } from "@/lib/pwa/guard";
-import { DetailPesananClient } from "./DetailPesananClient";
+import { DetailPesananClient, type PesananLamaTampil } from "./DetailPesananClient";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,25 @@ export default async function DetailPesananSayaPage({ params }: { params: Promis
   // Salinan WA untuk toko — tidak untuk pesanan yang ditolak/dibatalkan (null).
   const salinanWa = await salinanDariDetail(d, session.user.id);
   const menunggu = d.status === "PENDING_APPROVAL";
+  /*
+   * Pesanan konsinyasi LAMA yang cadangannya masih ditahan (satu definisi untuk semua layar,
+   * `bacaPesananKonsiCadanganLama`): barangnya tidak dikirim lagi — pengirimannya ditolak — dan
+   * yang sudah ada di toko dikonfirmasi DI toko, oleh SPG-nya atau, untuk toko tanpa SPG, oleh
+   * salesman pemegang toko. Tanpa ini layarnya menyebut "menunggu pengiriman" yang tidak akan
+   * pernah datang. Hanya hitungan pcs yang dikirim ke HP, tanpa harga konsinyasi.
+   */
+  const lama = d.orderType === "KONSI" && d.status === "APPROVED" ? await muatPesananKonsiCadanganLama(prisma, d.id) : null;
+  const penerimaLama = lama ? await muatPenerimaToko(prisma, d.storeId) : null;
+  const pesananLama: PesananLamaTampil | null =
+    lama && penerimaLama
+      ? {
+          penerima: penerimaLama.penerima,
+          sayaPemegang: penerimaLama.pemegangTokoId === session.user.id,
+          href: `/pwa/stores/${encodeURIComponent(d.storeId)}/pesanan-lama/${encodeURIComponent(d.id)}`,
+          jumlahBarang: lama.baris.length,
+          pcs: lama.jumlahPcs,
+        }
+      : null;
   // Hasil hitung SPG di toko per kiriman — potong saja, tanpa rupiah (juga untuk KONSI).
   const terimaToko = (sourceType: "PUTUS_DELIVERY" | "KONSI_ORDER", sourceId: string) => {
     const r = d.penerimaanToko.find((x) => x.sourceType === sourceType && x.sourceId === sourceId);
@@ -86,6 +107,7 @@ export default async function DetailPesananSayaPage({ params }: { params: Promis
         terimaToko: terimaToko("PUTUS_DELIVERY", k.id),
       }))}
       terimaTokoKonsi={d.orderType === "KONSI" ? terimaToko("KONSI_ORDER", d.id) : null}
+      pesananLama={pesananLama}
     />
   );
 }

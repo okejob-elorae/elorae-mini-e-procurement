@@ -17,15 +17,14 @@ const APP = path.resolve(__dirname, "../../app");
  * (2026-10-29), jadi halaman ini akan dihapus dan tidak diberi penjelasan.
  * Begitu halamannya hilang, tes kedua di bawah mengingatkan untuk mencoretnya.
  * Yang kemudian dipertahankan pemilik (2026-11-01) keluar dari daftar ini dan
- * mendapat entri sendiri: Pengaturan → Piutang (pengingat jatuh tempo) dan
- * riwayat Pembayaran Vendor Billing.
+ * mendapat entri sendiri: Pengaturan → Piutang (pengingat jatuh tempo),
+ * riwayat Pembayaran Vendor Billing, dan komisi SPG versi tim (rekap komisi
+ * dan tarif per kategori — hitungannya kini dipakai toko konsi dan putus).
  */
 const RETUR_TIM = "retur toko versi tim, akan dihapus: pemilik memilih retur versi Max (NRT/NRI)";
 const PIUTANG_TIM = "piutang & pelunasan versi tim, akan dihapus: pemilik memilih piutang dan BKM versi Max";
 const KONSI_TIM = "laporan konsinyasi versi tim, akan dihapus: pemilik memilih siklus konsinyasi versi Max";
 const TRANSFER_TIM = "transfer toko versi tim, akan dihapus: pemilik memilih mutasi antar toko versi Max";
-const KOMISI_SPG_TIM =
-  "komisi SPG versi tim: hitungannya dipakai untuk toko konsi dan putus (keputusan pemilik 2026-11-01), penjelasan menyusul setelah halamannya disatukan dengan Gaji & komisi SPG";
 const AKUN_PROFIL = "alamat lama Akun Profil, hanya mengalihkan ke Pengaturan → Pengguna";
 
 /** Halaman yang sengaja tanpa entri, dengan alasannya. */
@@ -67,9 +66,6 @@ const DIKECUALIKAN: Record<string, string> = {
   "/backoffice/store-transfers": TRANSFER_TIM,
   "/backoffice/store-transfers/new": TRANSFER_TIM,
   "/backoffice/store-transfers/[id]": TRANSFER_TIM,
-
-  "/backoffice/spg-commission": KOMISI_SPG_TIM,
-  "/backoffice/settings/spg-commission": KOMISI_SPG_TIM,
 };
 
 function halaman(dir: string, rute: string[] = []): string[] {

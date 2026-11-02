@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CommissionRate } from "./compute";
 import {
   commissionPerSpg,
+  confirmsAnyPiece,
   konsiReportKey,
   payoutMonth,
   putusReportKey,
@@ -98,6 +99,14 @@ describe("komisi SPG — satu hitungan (keputusan pemilik 2026-11-01)", () => {
   it("barang tanpa kategori, atau kategori tanpa tarif, tidak berkomisi dan dilaporkan", () => {
     const hasil = commissionPerSpg(putus({ movements: [jual("dewi", "x", null, 3), jual("dewi", "topi-1", "topi", 2)] }), rates);
     expect(hasil).toEqual([{ salesmanId: "dewi", pieces: 5, amount: 0, noRatePieces: 5 }]);
+  });
+
+  it("laporan yang seluruh penjualannya dikembalikan pembeli tidak mengonfirmasi potong apa pun — ada atau tidak ada tarif", () => {
+    expect(confirmsAnyPiece(putus())).toBe(true);
+    expect(confirmsAnyPiece(putus({ movements: [jual("dewi", "kemeja-1", "kemeja", 3), jual("dewi", "kemeja-1", "kemeja", -3)] }))).toBe(false);
+    expect(confirmsAnyPiece(putus({ movements: [] }))).toBe(false);
+    // Barang tanpa kategori tetap potong terkonfirmasi (komisinya 0, tetapi laporannya bisa dicek).
+    expect(confirmsAnyPiece(putus({ movements: [jual("dewi", "x", null, 2)] }))).toBe(true);
   });
 
   it("tidak ada angka dari tarif barang: gerakan penjualan tidak membawa `commissionPerPcs`, hanya kategori", () => {

@@ -284,6 +284,28 @@ d("konsi queries (test bed only)", () => {
     expect(shipmentTransfer.shipmentId).toBe(shipment.shipmentId);
   });
 
+  it("getFieldSalesOrderById never surfaces an old order's arrival confirmation as legacyKonsiTransfer", async () => {
+    /*
+     * An arrival confirmation has no shipment either, but it is not an approve-time transfer: the
+     * office must not be offered to print it as one.
+     */
+    const order = await seedOrder({ orderType: "KONSI", status: "APPROVED" });
+    transferOrderId = order.id;
+    await prisma.konsiTransfer.create({
+      data: {
+        docNo: `KONSITRF/TEST/${Math.random().toString(36).slice(2, 10)}`,
+        orderId: order.id,
+        storeId,
+        transferredById: salesmanId,
+        oldOrderArrival: true,
+        lines: { create: [{ itemId, variantSku: "", productName: "T", qty: 1, unitCost: 1000 }] },
+      },
+    });
+
+    const detail = await getFieldSalesOrderById(order.id);
+    expect(detail!.legacyKonsiTransfer).toBeNull();
+  });
+
   it("getFieldSalesOrderById exposes addedById per line so the admin-added badge has something to read", async () => {
     /*
      * The writer specs assert addedById straight off the row via Prisma, which stays green even if

@@ -247,11 +247,24 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "komisiSpg.judul" },
     isi: [
       { kunci: "komisiSpg.deskripsi" },
-      "Dasar pembagian antar SPG di satu toko dan menyalakan komisi ini diatur di Pengaturan → SPG. Komisi bisa ditetapkan mulai tanggal 1 bulan berikutnya. Menetapkan butuh izin mengelola piutang; menandai dibayar butuh izin membayar gaji & komisi SPG, yang bawaannya hanya dipegang admin. Bulan yang sudah ada pembayarannya tidak bisa ditetapkan ulang.",
+      "Satu hitungan untuk toko putus dan konsinyasi (keputusan pemilik 2026-11-01): tarif per kategori barang bulan penjualannya (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG sendiri, dikurangi retur pembeli dari notanya. Barang yang kategorinya belum bertarif bulan itu tidak menghasilkan komisi.",
+      "Halaman disusun per BULAN PEMBAYARAN: komisi dibayar di bulan laporannya dicek, dengan catatan bulan penjualannya — penjualan Oktober yang dicek awal November tampil di November sebagai Komisi penjualan Oktober 2026.",
+      "Toko putus, tiga langkah: Tandai laporan dicek (hanya untuk bulan penjualan yang sudah selesai), Tetapkan, lalu Tandai dibayar. Mengecek, membatalkan tanda dicek, dan menetapkan butuh izin mengelola piutang; menandai dibayar butuh izin membayar gaji & komisi SPG, yang bawaannya hanya dipegang admin. Tanda dicek boleh dibatalkan dengan alasan selama belum ada komisi toko × bulan itu yang dibayar — baris yang sudah ditetapkan ikut terhapus. Menetapkan boleh diulang selama belum ada yang dibayar. Baris yang ditetapkan dengan aturan lama (tarif per barang atau dibagi rata) harus ditetapkan ulang sebelum bisa dibayar, dan bulan yang sudah dibayar dengan aturan lama tidak bisa dicek lagi.",
+      "Toko konsinyasi: laporannya dicek saat kantor mengunci angka resmi siklusnya (Konsinyasi), dan dibayar di siklus itu; di sini tampil angkanya. Kartunya memperingatkan bila hitungan sekarang berbeda dari angka yang dikunci.",
       "Beban barang hilang yang ditanggung SPG dipotong dari komisinya saat ditetapkan; batas potongannya diatur di Pengaturan → SPG.",
-      "Komisi tidak terbentuk sendiri: baris resminya baru ada setelah keuangan menekan Tetapkan per toko. Beranda mengingatkan pemegang izin mengelola piutang dengan jumlah toko putus ber-SPG yang komisi bulan lalunya belum ditetapkan; tautannya membuka bulan lalu di halaman ini.",
+      "Komisi tidak terbentuk sendiri: baris resminya baru ada setelah laporan dicek dan ditetapkan. Beranda mengingatkan pemegang izin mengelola piutang dengan jumlah toko putus ber-SPG yang laporan bulan lalunya belum dicek atau belum ditetapkan; tautannya membuka halaman ini.",
     ],
     kartu: [{ judul: { kunci: "komisiSpg.konsi.judul" }, isi: { kunci: "komisiSpg.konsi.isi" } }],
+  },
+  {
+    rute: "/backoffice/spg-commission",
+    bagian: "navGroupSpg",
+    judul: { kunci: "spgCommission.pageTitle" },
+    isi: [
+      { kunci: "spgCommission.subtitle" },
+      "Halaman ini hanya membaca, dari hitungan yang sama dengan Komisi SPG: siklus konsinyasi yang dikunci dan laporan toko putus yang dicek di bulan pembayaran yang dipilih. Angka resmi, penetapan, dan pembayaran tetap di SPG → Komisi SPG dan di siklus konsinyasi.",
+      "Setiap baris SPG bisa dibuka untuk rincian per kategori barang beserta tarifnya. Potong dari barang yang kategorinya belum bertarif di bulan penjualannya disebut terpisah dan tidak menghasilkan komisi; tarifnya diatur di Pengaturan → Komisi SPG oleh pemegang izin mengatur tarif. Ekspor mengikuti bulan pembayaran yang sama.",
+    ],
   },
   {
     rute: "/backoffice/spg-requests",

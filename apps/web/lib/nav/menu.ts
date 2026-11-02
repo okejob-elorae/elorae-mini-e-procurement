@@ -62,11 +62,6 @@ export interface NavItem {
    */
   section?: string;
   children?: NavChild[];
-  /**
-   * Hanya tampil bagi peran lama ADMIN. Tidak ada entri yang memakainya lagi sejak Akun Profil
-   * ditutup (keputusan pemilik 2026-11-01); hapus bersama pemeriksaannya di `BackofficeShell`.
-   */
-  adminOnly?: boolean;
 }
 
 /**
@@ -252,7 +247,8 @@ export const navItems: NavItem[] = [
       { labelKey: "navSpgPelanggan", href: "/backoffice/spg-pelanggan", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navJadwalShiftSpg", href: "/backoffice/jadwal-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navKomisiSpg", href: "/backoffice/komisi-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
-      // Rekap komisi per pcs dari penjualan POS yang dikonfirmasi laporan sell-through.
+      // Rekap komisi SPG per bulan pembayaran — hitungan yang sama dengan Komisi SPG
+      // (`lib/spg-commission/payout.ts`), toko putus dan konsinyasi.
       { labelKey: "navSpgCommissionSellThrough", href: "/backoffice/spg-commission", permission: PERMISSIONS.SPG_SALES_VIEW },
       { labelKey: "navSpgRequests", href: "/backoffice/spg-requests", permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.STORES_MANAGE] },
       { labelKey: "navSpgLostSales", href: "/backoffice/spg-lost-sales", permission: PERMISSIONS.SPG_SALES_VIEW },
@@ -265,11 +261,12 @@ export const navItems: NavItem[] = [
         permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.INVENTORY_MANAGE],
       },
       // Pengawas SPG melihat; mencatat = receivables:manage; memutuskan penanggung =
-      // receivables:decide_bearer (keputusan manager), yang tetap membuka halamannya lewat salah satu izin ini.
+      // receivables:decide_bearer (keputusan manager). Ketiganya membuka halamannya sendiri — sama dengan
+      // pagar `barang-hilang/page.tsx` dan `[id]/page.tsx`, dan `ANTREAN_KANTOR.stockLossOpen.bolehBuka`.
       {
         labelKey: "navBarangHilang",
         href: "/backoffice/barang-hilang",
-        permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE],
+        permission: [PERMISSIONS.SPG_SALES_VIEW, PERMISSIONS.RECEIVABLES_MANAGE, PERMISSIONS.RECEIVABLES_DECIDE_BEARER],
       },
     ],
   },

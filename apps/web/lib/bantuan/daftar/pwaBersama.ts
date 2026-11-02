@@ -108,6 +108,7 @@ export const ENTRI: EntriBantuan[] = [
       "Semua tentang satu toko: alamat, kontak, tombol telepon, WhatsApp, peta, lalu check-in. Pekerjaan di toko terbuka setelah check-in, yang butuh lokasi HP; check-in tanpa sinyal dicatat di HP dan terkirim sendiri begitu ada sinyal. Check-in di toko ini menutup kunjungan yang masih terbuka di toko lain.",
       "Salesman: setelah check-in, Buat pesanan, Rencana kirim, Tukar barang (khusus toko putus), Daftar periksa, Harga pesaing, Lapor pelunasan (khusus toko putus), dan Lapor retur ada di kartu Kunjungan berjalan; tanpa check-in kedua ubin lapor tampil di bawah ringkasan toko. Formulirnya terbuka dengan toko ini terpilih bila Anda boleh melapor untuk toko ini. Tanpa check-in katalog tetap bisa dibuka untuk dilihat saja. Tombol Pesanan jarak jauh muncul bila kantor mengizinkan pesanan lewat WhatsApp atau telepon, tombol Portal pesan toko hanya untuk pemegang toko, dan tombol pre-order hanya untuk toko putus selama ada pre-order yang dibuka.",
       "SPG membuka layar ini sebagai Toko saya (menu Lainnya). SPG tidak mengambil pesanan dan tidak menagih: setelah check-in yang tersedia daftar periksa (dengan panduan display), harga pesaing, foto kunjungan, ubah data toko, dan catatan toko.",
+      "Toko konsinyasi dengan pesanan lama yang cadangannya masih ditahan menampilkan kartu Pesanan lama — konfirmasi barang sudah sampai. Pemegang toko tanpa SPG mengonfirmasinya dari sana saat check-in; di toko ber-SPG kartunya hanya memberi tahu bahwa SPG yang mengonfirmasi.",
     ],
     kartu: [
       {

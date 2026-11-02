@@ -123,4 +123,4 @@ export type CatalogSyncResult = {
   errors: CatalogSyncError[];
 };
 
-export const SYNC_FIELDS = ["nameId", "nameEn", "description", "variants", "sellingPrice"] as const;
+export const SYNC_FIELDS = ["nameId", "nameEn", "description", "variants"] as const;

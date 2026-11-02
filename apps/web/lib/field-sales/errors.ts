@@ -97,7 +97,15 @@ export type DeliveryErrorCode =
    * remedy is an admin repair of the order — for that race, the per-order hand-run of the backfill
    * migration's statements — before it can be delivered.
    */
-  | "RESERVATION_MISMATCH";
+  | "RESERVATION_MISMATCH"
+  /**
+   * Close remainder refused on an OLD konsi order whose reservation is still held — approved
+   * before the per-shipment flow reached production (`bacaPesananKonsiCadanganLama`). Its
+   * remainder is closed only through "tidak jadi dikirim" (`batalKirimPesananLama`), which writes
+   * the `KONSI_OLD_ORDER_REMAINDER_NOT_SENT` audit row in the same transaction; the generic close
+   * would release the same reservation with no trail. Refused before anything is written.
+   */
+  | "KONSI_PESANAN_LAMA";
 
 export type DeliveryReplayDetail = {
   deliveryId: string;

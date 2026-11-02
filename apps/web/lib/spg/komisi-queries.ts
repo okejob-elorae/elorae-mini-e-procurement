@@ -2,14 +2,15 @@ import { prisma, type Prisma } from "@elorae/db";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import type { CommissionRate } from "@/lib/spg-commission/compute";
 import {
-  checkedPutusReports,
   commissionRates,
   lockedKonsiReports,
+  putusPayoutReports,
   putusReportOf,
+  putusReportsOf,
   spgSaleMovements,
   wibMonthRange,
 } from "@/lib/spg-commission/laporan-queries";
-import { commissionPerSpg, payoutMonth, type SalesReport } from "@/lib/spg-commission/payout";
+import { commissionPerSpg, confirmsAnyPiece, payoutMonth, type SalesReport } from "@/lib/spg-commission/payout";
 import type { DasarKomisi } from "./pengaturan";
 import { sisaBebanHilangPerOrang } from "./hilang-db";
 import {
@@ -453,10 +454,17 @@ async function tokoBerjualan(db: Klien, bulan: readonly string[]): Promise<{ sto
 /**
  * Toko putus × bulan penjualan yang masih perlu ditindaklanjuti kantor: berpenjualan SPG, belum
  * ada yang dibayar, dan belum dicek — atau sudah dicek tapi belum ditetapkan.
+ *
+ * Hanya bulan yang hitungannya MENGONFIRMASI potong untuk seorang SPG (`confirmsAnyPiece`): bulan
+ * yang seluruh notanya dikembalikan pembeli tidak bisa dicek (`TANPA_PENJUALAN`) maupun ditetapkan
+ * (`TANPA_SPG`), jadi tidak pernah masuk antrean — kalau masuk, tombolnya selalu gagal dan baris
+ * Beranda tidak pernah habis. Laporannya (`laporan`, bertanggal `sekarang`) ikut dikembalikan
+ * supaya halaman tidak membacanya dua kali.
  */
 async function pasanganPutusTertunda(
   db: Klien,
   bulan: readonly string[],
+  sekarang: Date,
   sudahDibaca?: Awaited<ReturnType<typeof tokoBerjualan>>,
 ) {
   const berjualan = (sudahDibaca ?? (await tokoBerjualan(db, bulan))).filter((p) => p.termsType === "PUTUS");
@@ -469,69 +477,46 @@ async function pasanganPutusTertunda(
   const dibayar = new Set(resmi.filter((r) => r.paidAt !== null).map((r) => kunciPasangan(r.storeId, r.period)));
   const ditetapkan = new Set(resmi.map((r) => kunciPasangan(r.storeId, r.period)));
   const lama = new Set(resmi.filter((r) => r.paidAt === null && aturanLama(r.basis)).map((r) => kunciPasangan(r.storeId, r.period)));
-  return berjualan
+  const calon = berjualan
     .filter((p) => !dibayar.has(kunciPasangan(p.storeId, p.periode)))
     .map((p) => {
       const k = kunciPasangan(p.storeId, p.periode);
       return { storeId: p.storeId, periode: p.periode, dicek: dicek.has(k), ditetapkan: ditetapkan.has(k), adaResmiLama: lama.has(k) };
     })
     .filter((p) => !p.dicek || !p.ditetapkan);
+  const laporan = await putusReportsOf(
+    db,
+    calon.map((p) => ({ storeId: p.storeId, salesMonth: p.periode, checkedAt: sekarang })),
+  );
+  return calon.map((p, i) => ({ ...p, laporan: laporan[i] })).filter((p) => confirmsAnyPiece(p.laporan));
 }
 
 /**
  * Komisi SPG satu BULAN PEMBAYARAN untuk kantor: setiap toko putus × bulan penjualan yang dicek di
  * bulan itu dan setiap siklus konsinyasi yang angkanya dikunci di bulan itu, plus antrean yang
- * menunggu dicek. Komisi aturan lama (ditetapkan tanpa tanda dicek) tampil di bulan ditetapkannya.
+ * menunggu dicek. Komisi aturan lama (ditetapkan tanpa tanda dicek) tampil di bulan terakhir
+ * ditetapkannya.
  */
 export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise<DaftarKomisiKantor> {
   const bulanIni = bulanWib(sekarang);
   const rentang = wibMonthRange(bulan);
   const bulanAntrean = bulanSelesaiTerakhir(bulanIni, BULAN_MENUNGGU_CEK);
 
-  const [putusDicek, konsiDikunci, rates, ditetapkanBulanIni, berjualan] = await Promise.all([
-    checkedPutusReports(prisma, { checkedIn: rentang }),
+  // Toko putus × bulan penjualan yang dibayar bulan ini — dicek di bulan ini, atau komisi aturan
+  // lama yang terakhir ditetapkan di bulan ini tanpa tanda dicek — dengan baris resminya. Satu
+  // pemuat dengan rekap komisi (`getCommissionRecap`), jadi keduanya memuat bulan yang sama.
+  const [laporanPutus, konsiDikunci, rates, berjualan] = await Promise.all([
+    putusPayoutReports(prisma, { paidIn: rentang }),
     lockedKonsiReports(prisma, { lockedIn: rentang }),
     commissionRates(prisma),
-    prisma.spgCommission.findMany({ where: { lockedAt: { gte: rentang.start, lt: rentang.end } }, select: { storeId: true, period: true } }),
     tokoBerjualan(prisma, bulanAntrean),
   ]);
-  const tertunda = await pasanganPutusTertunda(prisma, bulanAntrean, berjualan);
+  const tertunda = await pasanganPutusTertunda(prisma, bulanAntrean, sekarang, berjualan);
 
-  // Komisi aturan lama: ditetapkan di bulan ini tanpa tanda dicek di bulan mana pun.
-  const pasanganDicek = new Set(putusDicek.map((r) => kunciPasangan(r.storeId, r.salesMonth)));
-  const calonLama = [
-    ...new Map(ditetapkanBulanIni.map((r) => [kunciPasangan(r.storeId, r.period), { storeId: r.storeId, periode: r.period }])).values(),
-  ].filter((p) => !pasanganDicek.has(kunciPasangan(p.storeId, p.periode)));
-  const cekLain = calonLama.length
-    ? await prisma.spgSalesCheck.findMany({ where: { OR: calonLama.map((p) => ({ storeId: p.storeId, period: p.periode })) }, select: { storeId: true, period: true } })
-    : [];
-  const dicekLain = new Set(cekLain.map((c) => kunciPasangan(c.storeId, c.period)));
-  const lama = calonLama.filter((p) => !dicekLain.has(kunciPasangan(p.storeId, p.periode)));
-
-  const pasanganPutus = [...putusDicek.map((r) => ({ storeId: r.storeId, periode: r.salesMonth })), ...lama];
-  const resmi = pasanganPutus.length
-    ? await prisma.spgCommission.findMany({
-        where: { OR: pasanganPutus.map((p) => ({ storeId: p.storeId, period: p.periode })) },
-        select: { id: true, userId: true, storeId: true, period: true, unitsSold: true, commission: true, deduction: true, basis: true, lockedAt: true, paidAt: true, note: true },
-      })
-    : [];
-  const resmiPer = new Map<string, typeof resmi>();
-  for (const r of resmi) {
-    const k = kunciPasangan(r.storeId, r.period);
-    resmiPer.set(k, [...(resmiPer.get(k) ?? []), r]);
-  }
-
-  const laporanLama = await Promise.all(
-    lama.map((p) => {
-      const rows = resmiPer.get(kunciPasangan(p.storeId, p.periode)) ?? [];
-      const terakhir = rows.reduce((t, r) => (r.lockedAt > t ? r.lockedAt : t), rows[0]?.lockedAt ?? rentang.start);
-      return putusReportOf(prisma, p.storeId, p.periode, terakhir);
-    }),
-  );
-  const laporanPutus: SalesReport[] = [...putusDicek, ...laporanLama];
-  const pemegang = new Map(laporanPutus.map((l) => [l.key, (resmiPer.get(kunciPasangan(l.storeId, l.salesMonth)) ?? []).map((r) => r.userId)]));
+  const resmi = laporanPutus.flatMap((l) => l.stored);
+  const pemegang = new Map(laporanPutus.map((l) => [l.key, l.stored.map((r) => r.userId)]));
   const tertundaBelumDicek = tertunda.filter((p) => !p.dicek);
-  const laporanTertunda = await Promise.all(tertundaBelumDicek.map((p) => putusReportOf(prisma, p.storeId, p.periode, sekarang)));
+  const laporanTertunda: SalesReport[] = tertundaBelumDicek.map((p) => p.laporan);
 
   const [hasilPutus, hasilKonsi, hasilTertunda] = await Promise.all([
     susunLaporan(prisma, laporanPutus, rates, pemegang),
@@ -581,7 +566,7 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
   const toko = new Map(tokoSemua.map((t) => [t.id, t]));
   const namaToko = (id: string) => toko.get(id)?.name ?? id;
 
-  const pemeriksa = [...new Set(putusDicek.map((r) => r.checkedById))];
+  const pemeriksa = [...new Set(laporanPutus.flatMap((l) => (l.check ? [l.check.checkedById] : [])))];
   const orangCek = pemeriksa.length ? await prisma.user.findMany({ where: { id: { in: pemeriksa } }, select: { id: true, name: true, email: true } }) : [];
   const namaPemeriksa = new Map(orangCek.map((u) => [u.id, namaOrang(u)]));
 
@@ -592,9 +577,9 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
 
   const putus: LaporanPutusKantor[] = laporanPutus.map((l) => {
     const hasil = hasilPutus.get(l.key)!;
-    const rows = resmiPer.get(kunciPasangan(l.storeId, l.salesMonth)) ?? [];
+    const rows = l.stored;
     const perUser = new Map(rows.map((r) => [r.userId, r]));
-    const cek = putusDicek.find((p) => p.key === l.key) ?? null;
+    const cek = l.check;
     const t = toko.get(l.storeId);
     return {
       storeId: l.storeId,
@@ -729,11 +714,11 @@ export async function daftarKomisiKantor(bulan: string, sekarang: Date): Promise
 
 /**
  * Toko PUTUS yang komisi SPG bulan penjualan `periode`-nya masih perlu ditindaklanjuti: ada nota
- * SPG bulan itu, belum ada yang dibayar, dan laporannya belum dicek atau sudah dicek tapi belum
- * ditetapkan. Definisi yang sama dengan antrean di halaman Komisi SPG.
+ * SPG bulan itu yang mengonfirmasi potong, belum ada yang dibayar, dan laporannya belum dicek atau
+ * sudah dicek tapi belum ditetapkan. Definisi yang sama dengan antrean di halaman Komisi SPG.
  */
-export async function tokoKomisiPutusBelumDitetapkan(periode: string, db: Klien = prisma): Promise<string[]> {
-  return [...new Set((await pasanganPutusTertunda(db, [periode])).map((p) => p.storeId))];
+export async function tokoKomisiPutusBelumDitetapkan(periode: string, db: Klien = prisma, sekarang = new Date()): Promise<string[]> {
+  return [...new Set((await pasanganPutusTertunda(db, [periode], sekarang)).map((p) => p.storeId))];
 }
 
 /** Angka baris Beranda "komisi SPG toko putus bulan lalu belum ditetapkan". */

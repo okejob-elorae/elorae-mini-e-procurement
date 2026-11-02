@@ -162,6 +162,7 @@ export const ENTRI: EntriBantuan[] = [
           "Pesanan sales untuk toko Anda yang barangnya belum sampai, supaya Anda tahu apa yang akan datang: yang menunggu persetujuan kantor, yang sudah disetujui, yang sedang dalam perjalanan, dan yang baru sampai sebagian (yang tampil sisanya). Putus dan konsinyasi dibaca dengan cara yang sama.",
           "Sisa pesanan yang disetujui dibagi menurut tempatnya: dalam perjalanan, sedang dikemas, dan belum dikirim gudang. Belum dikirim gudang berarti barangnya masih di gudang — tidak ada di dus yang sedang datang dan bukan kekurangan; kalau ditunggu, tanyakan ke gudang.",
           "Hanya nomor, tanggal, status, dan jumlah potong per barang yang ditampilkan — tanpa harga. Untuk setiap pengiriman Anda mendapat dua kabar: saat barang berangkat (dalam perjalanan, beserta pengantar atau ekspedisi dan resinya) dan saat barang diserahkan di toko (silakan hitung dan terima); kiriman yang dicatat kantor sekali jalan, seperti kiriman titipan, hanya memberi satu kabar. Sesudah diserahkan, kirimannya muncul di daftar Menunggu diterima.",
+          "Pesanan untuk toko ini juga memuat Pesanan lama — konfirmasi barang sudah sampai: pesanan konsinyasi lama yang barangnya tidak akan datang lewat pengiriman. Tombol Hitung dan konfirmasi membuka formulir hitungnya (butuh check-in).",
         ],
       },
       {
@@ -188,6 +189,16 @@ export const ENTRI: EntriBantuan[] = [
       "Belum dikirim gudang: sisa pesanan yang belum masuk pengiriman mana pun — barangnya masih di gudang. Itu bukan kekurangan dan tidak pernah tercatat sebagai barang hilang; jangan dihitung kurang di antaran ini, dan tanyakan ke gudang kalau ditunggu.",
       "Barang rusak dicatat lewat Ada yang rusak? dengan keterangan dan foto; barang itu dihitung diterima tetapi tidak masuk stok toko sampai gudang memutuskan. Bila toko sudah opname sesudah kiriman berangkat, barang yang sudah ikut terhitung di opname itu diisi 0 supaya tidak terhitung dua kali.",
       "Setelah disimpan, penerimaan tidak bisa diubah. Butuh check-in; tanpa sinyal, penerimaan disimpan di HP dan terkirim sendiri.",
+    ],
+  },
+  {
+    rute: "/pwa/spg/terima/pesanan-lama/[id]",
+    bagian: "pwaSpg",
+    judul: "Konfirmasi barang pesanan lama sampai",
+    isi: [
+      "Untuk pesanan konsinyasi LAMA — disetujui sebelum alur pengiriman per antaran berjalan (23 September 2026) — yang stoknya masih dicadangkan di gudang. Barangnya biasanya sudah lama ada di toko, jadi tidak akan datang lewat pengiriman. Hitung barang dari pesanan itu yang benar-benar ada di toko dan isi jumlahnya per baris (Semua ada mengisi semuanya sama dengan yang belum dikonfirmasi); jumlah itulah yang masuk stok toko.",
+      "Mengisi kurang dari yang belum dikonfirmasi boleh: sisanya tetap menunggu untuk dikonfirmasi lagi nanti, atau ditutup kantor sebagai tidak jadi dikirim — tidak pernah dicatat sebagai barang hilang. Lebih dari yang belum dikonfirmasi tidak bisa disimpan.",
+      "Bila toko sudah opname sesudah pesanan disetujui, barang yang sudah ikut terhitung di opname itu diisi 0 supaya tidak terhitung dua kali. Butuh check-in dan sinyal; setelah disimpan, konfirmasi tidak bisa diubah.",
     ],
   },
   {
@@ -521,8 +532,9 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Perkiraan komisi bulan ini",
         isi: [
-          "Perkiraan dihitung dari tarif komisi tiap barang dan potong terjual bersih bulan berjalan, sesudah dikurangi barang yang dikembalikan pembeli. Di toko konsinyasi komisi seluruh toko dibagi rata antar SPG yang bertugas; di toko putus kantor memilih dasarnya, dari penjualan Anda sendiri atau dibagi rata.",
-          "Yang dibayar hanya angka resmi: di toko konsinyasi setelah kantor mengunci bulan itu, di toko putus setelah kantor menetapkannya sesudah bulan selesai.",
+          "Perkiraan = tarif komisi per kategori barang × potong yang Anda jual sendiri bulan berjalan, sesudah dikurangi barang yang dikembalikan pembeli dari nota Anda. Sama untuk toko konsinyasi dan toko putus; barang yang kategorinya belum bertarif tidak menghasilkan komisi.",
+          "Yang dibayar hanya angka resmi, di bulan kantor mengecek laporannya, dengan catatan bulan penjualannya — misalnya penjualan Oktober yang dicek awal November dibayar November sebagai Komisi penjualan Oktober. Di toko konsinyasi laporannya dicek saat kantor mengunci bulan itu, di toko putus saat kantor menandai laporannya dicek sesudah bulan selesai.",
+          "Komisi tetap milik bulan penjualannya: tarif yang dipakai adalah tarif bulan penjualan itu, kapan pun laporannya dicek.",
         ],
       },
       {
@@ -531,7 +543,7 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "pwa.spgGaji.officialTitle" },
-        isi: "Gaji dan komisi yang sudah dicatat kantor per bulan: gaji & komisi konsinyasi dari bulan yang dikunci, atau komisi toko putus yang ditetapkan kantor. Bila ada potongan beban barang hilang, barisnya menyebut potongan dan jumlah yang diterima; lencananya menunjukkan sudah dibayar atau belum.",
+        isi: "Gaji dan komisi yang sudah dicatat kantor per bulan pembayaran, masing-masing dengan bulan penjualannya: gaji & komisi konsinyasi dari bulan yang dikunci, atau komisi toko putus yang ditetapkan kantor. Bila ada potongan beban barang hilang, barisnya menyebut potongan dan jumlah yang diterima; lencananya menunjukkan sudah dibayar atau belum.",
       },
     ],
   },

@@ -88,7 +88,11 @@ export type DataBerandaSpg = {
   notaHariIni: { id: string; docNo: string; jam: string; total: number; jumlahBarang: number }[];
   gaji: {
     perkiraan: { totalToko: number; bagianSaya: number } | null;
-    terakhir: { periode: string; total: number; dibayar: boolean } | null;
+    /**
+     * Pembayaran resmi terbaru menurut bulan PEMBAYARANNYA — sama dengan layar Gaji & komisi.
+     * Nama bulan sudah diformat server; `bulanBayarLabel` null selama kantor membuka lagi laporannya.
+     */
+    terakhir: { bulanJualLabel: string; bulanBayarLabel: string | null; total: number; dibayar: boolean } | null;
   };
   /** Shift hari ini dari jadwal kantor; null = belum dijadwalkan. */
   shift: { jenis: "KERJA"; label: string; mulai: string; selesai: string } | { jenis: "LIBUR" } | null;
@@ -191,6 +195,7 @@ export function SpgHomeShell({
   kembali?: string | null;
 }) {
   const t = useTranslations("pwa.spgBeranda");
+  const tGaji = useTranslations("pwa.spgGaji");
   const tMenu = useTranslations("pwaMenu");
   const tStocktake = useTranslations("storeStocktakes.spg");
   const { toko, kunjungan } = data;
@@ -468,12 +473,20 @@ export function SpgHomeShell({
             {data.gaji.perkiraan
               ? t("payEstimate", { amount: formatIDR(data.gaji.perkiraan.bagianSaya) })
               : data.gaji.terakhir
-                ? t(data.gaji.terakhir.dibayar ? "payLastPaid" : "payLastUnpaid", {
-                    period: data.gaji.terakhir.periode,
-                    amount: formatIDR(data.gaji.terakhir.total),
-                  })
+                ? data.gaji.terakhir.bulanBayarLabel
+                  ? t(data.gaji.terakhir.dibayar ? "payLastPaid" : "payLastUnpaid", {
+                      period: tGaji("payoutMonth", { month: data.gaji.terakhir.bulanBayarLabel }),
+                      amount: formatIDR(data.gaji.terakhir.total),
+                    })
+                  : t("payLastPending", { amount: formatIDR(data.gaji.terakhir.total) })
                 : t("payNone")}
           </span>
+          {/* Bulan penjualannya sebagai catatan — dibayar di bulan laporannya dicek kantor. */}
+          {!data.gaji.perkiraan && data.gaji.terakhir ? (
+            <span className="block text-xs text-muted-foreground">
+              {tGaji("salesMonthNote", { month: data.gaji.terakhir.bulanJualLabel })}
+            </span>
+          ) : null}
         </span>
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       </Link>

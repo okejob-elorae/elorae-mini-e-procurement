@@ -125,6 +125,8 @@ let barangId = "";
 let kainId = "";
 let pemasokId = "";
 let siklusId = "";
+let kategoriId = "";
+let notaSpgIds: string[] = [];
 let invIds: string[] = [];
 let lossIds: string[] = [];
 let mulaiTes = new Date();
@@ -169,6 +171,8 @@ beforeEach(async () => {
   kainId = "";
   pemasokId = "";
   siklusId = "";
+  kategoriId = "";
+  notaSpgIds = [];
   invIds = [];
   lossIds = [];
   mulaiTes = new Date(Date.now() - 1000);
@@ -180,8 +184,9 @@ beforeEach(async () => {
   spgId = (
     await prisma.user.create({ data: { email: `${tag.toLowerCase()}-spg${urut}@uji.local`, name: `${tag} SPG ${urut}`, passwordHash: "x", assignedStoreId: tokoId } })
   ).id;
+  // Tarif di master barang sengaja beda dari tarif kategori: komisi SPG tidak pernah dihitung dari kolom ini.
   barangId = (
-    await prisma.item.create({ data: { sku: `${tag}-FG-${urut}`, nameId: `${tag} Kaos`, nameEn: `${tag} Tee`, type: "FINISHED_GOOD", uomId, commissionPerPcs: 2_000 } })
+    await prisma.item.create({ data: { sku: `${tag}-FG-${urut}`, nameId: `${tag} Kaos`, nameEn: `${tag} Tee`, type: "FINISHED_GOOD", uomId, commissionPerPcs: 7_777 } })
   ).id;
   kainId = (await prisma.item.create({ data: { sku: `${tag}-KN-${urut}`, nameId: `${tag} Kain`, nameEn: `${tag} Fabric`, type: "FABRIC", uomId } })).id;
   invIds.push(
@@ -278,12 +283,21 @@ afterEach(async () => {
   if (komisiSpg.length) await prisma.spgCommission.deleteMany({ where: { id: { in: seededIds(komisiSpg.map((k) => k.id)) } } });
   if (retur.length) await prisma.vendorReturn.deleteMany({ where: { id: { in: seededIds(retur.map((r) => r.id)) } } });
   if (klaim.length) await prisma.expenseClaim.deleteMany({ where: { id: { in: seededIds(klaim.map((k) => k.id)) } } });
+  // Nota kasir SPG sebelum barang dan SPG-nya: barisnya menunjuk barang, notanya menunjuk SPG.
+  if (notaSpgIds.length) {
+    await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: seededIds(notaSpgIds) } } });
+    await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(notaSpgIds) } } });
+  }
   if (barangIds.length) {
     await prisma.stockLedgerEntry.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
     await prisma.stockMovement.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
     await prisma.stockAdjustment.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
     await prisma.inventoryValue.deleteMany({ where: { itemId: { in: seededIds(barangIds) } } });
     await prisma.item.deleteMany({ where: { id: { in: seededIds(barangIds) } } });
+  }
+  if (kategoriId) {
+    await prisma.spgCommissionRate.deleteMany({ where: { itemCategoryId: seededId(kategoriId) } });
+    await prisma.itemCategory.deleteMany({ where: { id: seededId(kategoriId) } });
   }
   if (spgId) await prisma.user.delete({ where: { id: seededId(spgId) } });
   if (pemasokId) await prisma.supplier.delete({ where: { id: seededId(pemasokId) } });
@@ -333,6 +347,33 @@ async function siklusDenganLaporan(qty: number) {
 const kunci = (qty: number) =>
   kunciAngka({ cycleId: siklusId, olehUserId: adminId, gajiPokokPerSpg: 1_000_000, baris: [{ itemId: barangId, itemName: `${tag} Kaos`, qty, price: 75_000 }] });
 
+/**
+ * Bahan komisi SPG versi tim (`lib/spg-commission/payout.ts`): tarif per KATEGORI barang yang
+ * berlaku di bulan penjualan siklus (September 2004) dan nota kasir SPG toko ini di bulan itu.
+ * Komisinya = potong yang dijual SPG × tarif, paling banyak angka resmi yang dikunci.
+ */
+async function komisiKategori(perPcs: number, pcsDiKasir: number) {
+  kategoriId = (await prisma.itemCategory.create({ data: { code: `${tag}-KAT-${urut}`, name: `${tag} Kaos`, isActive: true } })).id;
+  await prisma.item.update({ where: { id: barangId }, data: { categoryId: kategoriId } });
+  await prisma.spgCommissionRate.create({ data: { itemCategoryId: kategoriId, amountPerPiece: perPcs, effectiveFrom: "2004-09", createdById: adminId } });
+  const nota = await prisma.spgSale.create({
+    data: {
+      docNo: `${tag}-NSPG-${urut}`,
+      salesmanId: spgId,
+      storeId: tokoId,
+      subtotal: 0,
+      total: 0,
+      cashReceived: 0,
+      changeGiven: 0,
+      createdById: spgId,
+      createdAt: new Date("2004-09-15T10:00:00+07:00"),
+      lines: { create: [{ itemId: barangId, productName: `${tag} Kaos`, qty: pcsDiKasir, unitPrice: 100_000, lineTotal: 100_000 * pcsDiKasir }] },
+    },
+    select: { id: true },
+  });
+  notaSpgIds.push(nota.id);
+}
+
 describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
   it("kiriman titipan memindahkan biaya kartu stok ke persediaan konsinyasi; idempoten", async () => {
     const id = await kirim(4);
@@ -351,6 +392,8 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
     const kiriman = await kirim(4);
     await postJurnalKirimKonsi(kiriman, adminId);
     await siklusDenganLaporan(3);
+    // SPG toko ini menjual 3 potong di kasir; tarif kategorinya Rp 2.000 per potong.
+    await komisiKategori(2_000, 3);
     expect(await kunci(3)).toMatchObject({ ok: true, jumlahSpg: 1 });
 
     expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: true });
@@ -369,6 +412,7 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
     expect(pendapatan?.journal.date.toISOString()).toBe("2004-09-29T17:00:00.000Z");
 
     expect(await selaraskanJurnalKomisiKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: true });
+    // Gaji pokok 1.000.000 + 3 potong × Rp 2.000 tarif kategori (bukan Rp 7.777 di master barang).
     expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({ SPG_COMMISSION_EXPENSE: 1_006_000, COMMISSION_PAYABLE: -1_006_000 });
     // Diselaraskan lagi tanpa perubahan: tidak ada generasi baru.
     expect(await selaraskanJurnalSiklusKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: false });
@@ -389,6 +433,7 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
       COGS: 100_000,
       INVENTORY_CONSIGNMENT: -100_000,
     });
+    // Kasir tetap 3 potong, tapi komisi konsi dibatasi angka resmi yang dikunci (2): 2 × Rp 2.000.
     expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({ SPG_COMMISSION_EXPENSE: 1_004_000, COMMISSION_PAYABLE: -1_004_000 });
     expect(await jumlahGenerasi(SUMBER_OPERASIONAL.SIKLUS_KONSI, siklusId)).toBe(3);
 

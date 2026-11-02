@@ -177,6 +177,15 @@ export function commissionPerSpg(report: SalesReport, rates: readonly Commission
   return Array.from(bySpg.values()).sort((a, b) => compareId(a.salesmanId, b.salesmanId));
 }
 
+/**
+ * Whether the report confirms at least one piece to some SPG — what "Tandai laporan dicek" and
+ * "Tetapkan" need (`TANPA_PENJUALAN`, `TANPA_SPG`). A month whose sales were all returned by
+ * shoppers confirms none. Pieces never depend on the rates, so none are read.
+ */
+export function confirmsAnyPiece(report: SalesReport): boolean {
+  return commissionPerSpg(report, []).some((r) => r.pieces > 0);
+}
+
 /** The report's totals: confirmed pieces, whole-rupiah commission, and pieces without a rate. */
 export function reportTotals(perSpg: readonly SpgReportCommission[]): { pieces: number; amount: number; noRatePieces: number } {
   return perSpg.reduce(

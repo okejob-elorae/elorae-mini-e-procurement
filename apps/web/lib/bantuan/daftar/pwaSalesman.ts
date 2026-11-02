@@ -334,7 +334,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "pwa.pesananSaya.title" },
     isi: [
       { kunci: "pwa.pesananSaya.subtitle" },
-      "Tab Menunggu berisi pesanan yang belum diputuskan kantor; Disetujui berisi pesanan yang sudah disetujui tetapi barangnya belum semua dikirim; Dikirim berisi pesanan yang sudah terkirim, yang sisanya ditutup, atau konsinyasi yang disetujui; Ditolak/batal berisi pesanan yang ditolak kantor atau Anda batalkan, dengan alasannya di tiap pesanan.",
+      "Tab Menunggu berisi pesanan yang belum diputuskan kantor; Disetujui berisi pesanan yang sudah disetujui tetapi barangnya belum semua dikirim; Dikirim berisi pesanan yang sudah terkirim atau yang sisanya ditutup, putus maupun konsinyasi (barang konsinyasi berangkat per pengiriman, bukan saat disetujui); Ditolak/batal berisi pesanan yang ditolak kantor atau Anda batalkan, dengan alasannya di tiap pesanan.",
       "Pesanan konsinyasi tidak menampilkan nilai rupiah di aplikasi ini. Lencana \"Ditahan: cek tagihan\" berarti kantor memeriksa tagihan toko dulu sebelum menyetujui.",
     ],
   },
@@ -564,6 +564,15 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Penyelesaian pengiriman yang dicatat tanpa sinyal dan belum sampai ke kantor. Semuanya dikirim otomatis saat HP online; Coba Lagi hanya mempercepatnya.",
       "Penyelesaian yang gagal menyebut alasannya dan bisa dihapus dari HP. Bila pengirimannya ternyata sudah tercatat dengan jumlah lain, salinan di HP selalu ditolak: hapus, lalu selesaikan lagi dari halaman pengirimannya.",
+    ],
+  },
+  {
+    rute: "/pwa/stores/[id]/pesanan-lama/[orderId]",
+    bagian: "pwaSalesman",
+    judul: "Konfirmasi barang pesanan lama sampai",
+    isi: [
+      "Untuk toko konsinyasi TANPA SPG: salesman pemegang toko mengonfirmasi barang pesanan konsinyasi lama (disetujui sebelum 23 September 2026, stoknya masih dicadangkan di gudang) yang sudah ada di toko, saat sedang check-in di toko itu. Toko ber-SPG dikonfirmasi SPG-nya; salesman lain dan kantor tidak bisa mengonfirmasi. Saat kunci 'hanya toko sendiri' menyala, halaman ini hanya terbuka untuk pemegang toko.",
+      "Hitung barang pesanan itu yang benar-benar ada di toko dan isi jumlahnya per baris; jumlah itulah yang masuk stok toko. Kurang dari yang belum dikonfirmasi boleh — sisanya tetap menunggu atau ditutup kantor sebagai tidak jadi dikirim, tidak pernah dicatat sebagai barang hilang. Lebih tidak bisa disimpan. Butuh sinyal; setelah disimpan tidak bisa diubah.",
     ],
   },
 ];

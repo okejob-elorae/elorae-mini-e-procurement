@@ -6,8 +6,7 @@ import { bacaTargetBulan, bulanWib, KUNCI_TARGET } from "@/lib/salesman/pengatur
 import { kirimanMenunggu } from "./kiriman";
 import { kunciKiriman } from "./beranda-spg";
 import { hampirHabis, kunciBaris } from "./stok";
-import { komisiPutusResmiSaya, perkiraanKomisiHp, type PerkiraanKomisiHp } from "./komisi-queries";
-import type { DasarKomisi } from "./pengaturan";
+import { komisiResmiSaya, perkiraanKomisiHp, type KomisiResmiHp, type PerkiraanKomisiHp } from "./komisi-queries";
 
 /**
  * Kueri layar SPG. SEMUA dibatasi ke toko tetap SPG (`User.assignedStoreId`)
@@ -133,85 +132,23 @@ export async function terlarisToko(storeId: string, hariIni: Date, batas = 5): P
 
 export type GajiKomisi = {
   /**
-   * Angka resmi, terbaru dulu: gaji + komisi siklus konsinyasi
-   * (`ConsignmentCommission`) dan komisi toko putus yang ditetapkan kantor
-   * (`SpgCommission`). Hanya milik SPG ini.
+   * Angka resmi milik SPG ini, terbaru dulu menurut bulan PEMBAYARANNYA (bulan laporannya dicek
+   * kantor): gaji + komisi siklus konsinyasi dan komisi toko putus. Dibaca dari kueri yang sama
+   * dengan layar Gaji & komisi (`komisiResmiSaya`), jadi beranda dan layar itu tidak pernah
+   * menyebut bulan yang berbeda untuk pembayaran yang sama. Setiap baris membawa `bulanBayar` dan
+   * `bulanJual` sebagai catatan — "komisi penjualan Oktober" dibayar November.
    */
-  resmi: {
-    kunci: string;
-    jenis: "KONSI" | "PUTUS";
-    siklusId: string | null;
-    periode: string;
-    toko: string;
-    gaji: number;
-    komisi: number;
-    total: number;
-    /** Beban barang hilang yang dipotong dari pembayaran ini (dibekukan saat dikunci/ditetapkan). */
-    potonganHilang: number;
-    /** PUTUS: potong bersih dan dasar yang dipakai saat ditetapkan. */
-    potong: number | null;
-    dasar: DasarKomisi | null;
-    ditetapkan: string | null;
-    dibayar: string | null;
-  }[];
+  resmi: KomisiResmiHp[];
   /** Perkiraan bulan berjalan — toko konsinyasi, dan toko putus selama komisinya aktif. */
   perkiraan: PerkiraanKomisiHp | null;
 };
 
 export async function gajiKomisiSpg(userId: string, toko: TokoSpg | null, hariIni: Date): Promise<GajiKomisi> {
-  const [konsi, putus, perkiraan] = await Promise.all([
-    prisma.consignmentCommission.findMany({
-      where: { spgUserId: userId },
-      orderBy: [{ cycle: { periodYear: "desc" } }, { cycle: { periodMonth: "desc" } }],
-      take: 6,
-      select: {
-        cycleId: true,
-        baseSalary: true,
-        commission: true,
-        total: true,
-        deduction: true,
-        paidAt: true,
-        cycle: { select: { periodYear: true, periodMonth: true, store: { select: { name: true } } } },
-      },
-    }),
-    komisiPutusResmiSaya(userId, 6),
+  const [resmi, perkiraan] = await Promise.all([
+    komisiResmiSaya(userId, 6),
     toko ? perkiraanKomisiHp(userId, toko, hariIni) : Promise.resolve(null),
   ]);
-
-  const resmi: GajiKomisi["resmi"] = [
-    ...konsi.map((r) => ({
-      kunci: `konsi:${r.cycleId}`,
-      jenis: "KONSI" as const,
-      siklusId: r.cycleId,
-      periode: `${r.cycle.periodYear}-${String(r.cycle.periodMonth).padStart(2, "0")}`,
-      toko: r.cycle.store.name,
-      gaji: angka(r.baseSalary),
-      komisi: angka(r.commission),
-      total: angka(r.total),
-      potonganHilang: angka(r.deduction),
-      potong: null,
-      dasar: null,
-      ditetapkan: null,
-      dibayar: r.paidAt ? r.paidAt.toISOString() : null,
-    })),
-    ...putus.map((r) => ({
-      kunci: `putus:${r.id}`,
-      jenis: "PUTUS" as const,
-      siklusId: null,
-      periode: r.periode,
-      toko: r.toko,
-      gaji: 0,
-      komisi: r.komisi,
-      total: r.komisi,
-      potonganHilang: r.potonganHilang,
-      potong: r.potong,
-      dasar: r.dasar,
-      ditetapkan: r.ditetapkan,
-      dibayar: r.dibayar,
-    })),
-  ].sort((a, b) => b.periode.localeCompare(a.periode) || a.jenis.localeCompare(b.jenis));
-
-  return { resmi: resmi.slice(0, 6), perkiraan };
+  return { resmi, perkiraan };
 }
 
 export type RingkasanSpg = {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hasPermission, PERMISSIONS } from "@/lib/rbac";
+import { getRequiredPermission, hasPermission, PERMISSIONS } from "@/lib/rbac";
 import {
   bolehMembacaArsip,
   bolehMembacaPelunasan,
@@ -86,6 +86,19 @@ describe("menu Piutang & Pelunasan mengikuti pagar halaman", () => {
       }
     });
   }
+
+  // proxy.ts menguji ROUTE_PERMISSIONS SEBELUM `page.tsx` jalan: rute yang dipetakan ke satu izin memantulkan
+  // pemegang izin kedua yang diterima pagar halamannya, padahal menunya terlihat. Itu yang terjadi pada
+  // `/backoffice/finance/collections` (dipetakan ke collections:manage) bagi pemegang payments:verify saja.
+  it("setiap gabungan yang lolos pagar halaman juga lolos ROUTE_PERMISSIONS rutenya", () => {
+    for (const anak of grup?.children ?? []) {
+      const rute = getRequiredPermission(anak.href);
+      if (!rute) continue;
+      for (const izin of GABUNGAN.filter((g) => PAGAR[anak.href](g))) {
+        expect({ href: anak.href, izin, lolos: hasPermission(izin, rute) }).toEqual({ href: anak.href, izin, lolos: true });
+      }
+    }
+  });
 
   it("pemeriksa pembayaran (payments:verify) menemukan BKM, nota retur, pelunasan toko, dan setoran penagih — bukan buku piutang", () => {
     const pemeriksa = ["dashboard:view", "payments:verify"];

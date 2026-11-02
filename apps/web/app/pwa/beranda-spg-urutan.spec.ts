@@ -141,3 +141,27 @@ describe("beranda SPG — tugas pesanan untuk toko", () => {
     expect(html).not.toContain("taskOrdersComing");
   });
 });
+
+describe("beranda SPG — kartu gaji memakai bulan pembayaran, bulan penjualan sebagai catatan", () => {
+  const TERAKHIR = { bulanJualLabel: "Oktober 2026", bulanBayarLabel: "November 2026", total: 500_000, dibayar: false };
+
+  it("pembayaran resmi terakhir: bulan pembayarannya di baris utama, bulan penjualannya di catatan", () => {
+    const html = gambar({ gaji: { perkiraan: null, terakhir: TERAKHIR } });
+    expect(html).toContain("payLastUnpaid");
+    expect(html).toContain("salesMonthNote");
+    expect(html).not.toContain("payLastPending");
+  });
+
+  it("laporannya dibuka lagi kantor (tanpa bulan pembayaran): disebut menunggu, catatan bulan penjualan tetap ada", () => {
+    const html = gambar({ gaji: { perkiraan: null, terakhir: { ...TERAKHIR, bulanBayarLabel: null } } });
+    expect(html).toContain("payLastPending");
+    expect(html).not.toContain("payLastUnpaid");
+    expect(html).toContain("salesMonthNote");
+  });
+
+  it("selama ada perkiraan bulan berjalan, kartu hanya menyebut perkiraannya", () => {
+    const html = gambar({ gaji: { perkiraan: { totalToko: 0, bagianSaya: 120_000 }, terakhir: TERAKHIR } });
+    expect(html).toContain("payEstimate");
+    expect(html).not.toContain("salesMonthNote");
+  });
+});

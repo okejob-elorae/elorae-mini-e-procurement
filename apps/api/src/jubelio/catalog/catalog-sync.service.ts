@@ -241,10 +241,11 @@ export class JubelioCatalogSyncService {
       return { action: existing ? "update" : "create", warnings };
     }
 
-    const sellingPrice = sellingPriceToDecimal(draft.sellingPrice);
     const variantsJson = draft.variants as Prisma.InputJsonValue;
 
     if (!existing) {
+      /* Only a new item takes Jubelio's sell_price; see the update branch below. */
+      const sellingPrice = sellingPriceToDecimal(draft.sellingPrice);
       let createdItemId = "";
       await this.prisma.$transaction(
         async (tx) => {
@@ -280,6 +281,11 @@ export class JubelioCatalogSyncService {
       );
     }
 
+    /*
+     * No sellingPrice here: an existing item's price is typed by hand (owner decision
+     * 2026-11-01), this runs on every Jubelio product webhook, it writes no
+     * ItemPriceChangeLog, and an empty sell_price would reset the price to NULL.
+     */
     await this.prisma.$transaction(
       async (tx) => {
         await updateItemFromIngest(tx, { id: existing.id }, {
@@ -287,7 +293,6 @@ export class JubelioCatalogSyncService {
           nameEn: draft.nameEn,
           description: draft.description ?? existing.description,
           variants: draft.variantless ? [] : (merged as Prisma.InputJsonValue),
-          sellingPrice,
         });
         await ensureInventoryRows(tx, existing.id, draft);
         await this.upsertMappings(tx, existing.id, draft);

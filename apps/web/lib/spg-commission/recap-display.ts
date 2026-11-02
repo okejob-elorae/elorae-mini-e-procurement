@@ -66,6 +66,24 @@ export function sumRecapRows(rows: readonly RecapRow[]): RecapGrandTotals {
   );
 }
 
+export type PayoutGrandTotals = { pieces: number; setAmount: number; unsetAmount: number; paidAmount: number; net: number };
+
+/** A payout month's totals: the stored, not-yet-set and paid figures, and the computation's pieces and figure (`net`). */
+export function sumPayoutRows(
+  rows: ReadonlyArray<{ pieces: number; setAmount: number; unsetAmount: number; paidAmount: number; net: number }>,
+): PayoutGrandTotals {
+  return rows.reduce<PayoutGrandTotals>(
+    (sum, row) => ({
+      pieces: sum.pieces + row.pieces,
+      setAmount: sum.setAmount + row.setAmount,
+      unsetAmount: sum.unsetAmount + row.unsetAmount,
+      paidAmount: sum.paidAmount + row.paidAmount,
+      net: sum.net + row.net,
+    }),
+    { pieces: 0, setAmount: 0, unsetAmount: 0, paidAmount: 0, net: 0 },
+  );
+}
+
 /** Whole rupiah, id-ID grouped, with the minus ahead of the currency so a reversal reads as one. */
 export function formatSignedRupiah(amount: number): string {
   const sign = amount < 0 ? "-" : "";

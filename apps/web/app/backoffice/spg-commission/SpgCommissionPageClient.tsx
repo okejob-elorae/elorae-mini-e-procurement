@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Coins, Loader2, RotateCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,9 +30,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { dinamis } from "@/lib/i18n/dinamis";
 import { cn } from "@/lib/utils";
 import type { RecapDetailRow } from "@/lib/spg-commission/compute";
 import type { CommissionRecap } from "@/lib/spg-commission/queries";
+import type { PayoutLine, PayoutStatus } from "@/lib/spg-commission/recap-payout";
 import { compareYearMonth } from "@/lib/spg-commission/month";
 import {
   detailKey,
@@ -40,7 +43,7 @@ import {
   recapMonthOptions,
   shiftYearMonth,
   storeLabel,
-  sumRecapRows,
+  sumPayoutRows,
   type DetailRates,
 } from "@/lib/spg-commission/recap-display";
 import { formatYearMonth } from "@/app/backoffice/settings/spg-commission/format";
@@ -48,9 +51,11 @@ import { SpgCommissionExportButtons } from "./SpgCommissionExportButtons";
 
 const BASE_PATH = "/backoffice/spg-commission";
 const RATES_SETTINGS_PATH = "/backoffice/settings/spg-commission";
+/* Komisi SPG opens by the same payout month (`?bulan=`), where the office sets, re-sets and pays. */
+const KOMISI_SPG_PATH = "/backoffice/komisi-spg";
 /* Two years back covers a payroll correction; an older month still opens by URL and joins the list. */
 const MONTH_OPTION_COUNT = 24;
-const COLUMN_COUNT = 7;
+const COLUMN_COUNT = 6;
 
 type Props = {
   recap: CommissionRecap | null;
@@ -60,6 +65,7 @@ type Props = {
 };
 
 const NEGATIVE_CLASS = "text-red-600 dark:text-red-400";
+const WARNING_CLASS = "text-amber-700 dark:text-amber-400";
 
 function signedClass(value: number): string {
   return value < 0 ? NEGATIVE_CLASS : "";
@@ -69,8 +75,15 @@ function formatPieces(pieces: number): string {
   return pieces.toLocaleString("id-ID");
 }
 
+const STATUS_VARIANT: Record<PayoutStatus, "outline" | "secondary" | "default"> = {
+  BELUM_DITETAPKAN: "outline",
+  DITETAPKAN: "secondary",
+  DIBAYAR: "default",
+};
+
 export function SpgCommissionPageClient({ recap, month, currentMonth, canManageRates }: Props) {
   const t = useTranslations("spgCommission");
+  const tStatus = dinamis(t);
   const locale = useLocale();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -89,16 +102,24 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
     }
     return bySpg;
   }, [recap]);
+  const linesBySpg = useMemo(() => {
+    const bySpg = new Map<string, PayoutLine[]>();
+    for (const line of recap?.payoutLines ?? []) {
+      const list = bySpg.get(line.salesmanId) ?? [];
+      list.push(line);
+      bySpg.set(line.salesmanId, list);
+    }
+    return bySpg;
+  }, [recap]);
   const rates = useMemo(() => ratesByDetail(recap?.events ?? []), [recap]);
-  const totals = useMemo(() => sumRecapRows(recap?.rows ?? []), [recap]);
+  const totals = useMemo(() => sumPayoutRows(recap?.rows ?? []), [recap]);
   /* The sales months each SPG's payout this month comes from — the "Komisi penjualan …" note. */
   const salesMonthsBySpg = useMemo(() => {
     const bySpg = new Map<string, Set<string>>();
-    for (const event of recap?.events ?? []) {
-      if (!event.salesMonth) continue;
-      const set = bySpg.get(event.salesmanId) ?? new Set<string>();
-      set.add(event.salesMonth);
-      bySpg.set(event.salesmanId, set);
+    for (const line of recap?.payoutLines ?? []) {
+      const set = bySpg.get(line.salesmanId) ?? new Set<string>();
+      set.add(line.salesMonth);
+      bySpg.set(line.salesmanId, set);
     }
     return bySpg;
   }, [recap]);
@@ -106,6 +127,8 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
   const monthLabel = formatYearMonth(month, locale);
   const isLatestMonth = compareYearMonth(month, currentMonth) >= 0;
   const hasRows = recap !== null && recap.rows.length > 0;
+  const anyUnset = (recap?.rows ?? []).some((r) => r.hasUnset);
+  const differCount = (recap?.rows ?? []).filter((r) => r.differs).length;
 
   function goToMonth(next: string): void {
     if (next === month) return;
@@ -140,6 +163,7 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
   }
 
   const spgName = (salesmanId: string) => recap?.spgNames[salesmanId] ?? salesmanId;
+  const storeName = (storeId: string) => recap?.storeNames[storeId] ?? storeId;
   const hasUncategorized = (recap?.noRate ?? []).some((r) => r.categoryId === null);
 
   return (
@@ -209,6 +233,26 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
         </Card>
       ) : (
         <>
+          {!isPending && (differCount > 0 || anyUnset) && (
+            <Card className="border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
+                  <AlertTriangle className="h-5 w-5 shrink-0" />
+                  {t("attention.title")}
+                </CardTitle>
+                <CardDescription className="space-y-1">
+                  {differCount > 0 && <span className="block">{t("attention.differs", { count: differCount })}</span>}
+                  {anyUnset && <span className="block">{t("attention.unset", { amount: formatSignedRupiah(totals.unsetAmount) })}</span>}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button asChild variant="outline" className="h-10">
+                  <Link href={`${KOMISI_SPG_PATH}?bulan=${month}`}>{t("openKomisiSpg")}</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+
           {!isPending && recap.noRate.length > 0 && (
             <Card className="border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
               <CardHeader>
@@ -277,9 +321,8 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                         <TableHead>{t("colSpg")}</TableHead>
                         <TableHead>{t("colStores")}</TableHead>
                         <TableHead className="text-right">{t("colPieces")}</TableHead>
-                        <TableHead className="text-right">{t("colEarned")}</TableHead>
-                        <TableHead className="text-right">{t("colReversed")}</TableHead>
-                        <TableHead className="text-right">{t("colNet")}</TableHead>
+                        <TableHead className="text-right">{t("colSet")}</TableHead>
+                        <TableHead className="text-right">{t("colComputed")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -290,6 +333,7 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                         const detailId = `spg-commission-detail-${row.salesmanId}`;
                         const toggleLabel = t(isOpen ? "collapse" : "expand", { name });
                         const breakdown = detailBySpg.get(row.salesmanId) ?? [];
+                        const lines = linesBySpg.get(row.salesmanId) ?? [];
                         const noRateLabel = t("rowNoRate", { count: formatPieces(row.noRatePieces) });
                         const salesMonths = Array.from(salesMonthsBySpg.get(row.salesmanId) ?? [])
                           .sort((a, b) => compareYearMonth(a, b))
@@ -317,7 +361,7 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                                   <ChevronRight className={cn("h-4 w-4 transition-transform", isOpen && "rotate-90")} />
                                 </Button>
                               </TableCell>
-                              <TableCell className="max-w-[200px]">
+                              <TableCell className="max-w-[220px]">
                                 <span className="block truncate font-medium" title={name}>
                                   {name}
                                 </span>
@@ -326,10 +370,16 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                                     {t("rowSalesMonths", { months: salesMonths })}
                                   </span>
                                 )}
-                                {row.noRatePieces > 0 && (
-                                  <span className="block truncate text-xs text-amber-700 dark:text-amber-400">
-                                    {noRateLabel}
+                                {row.differs && (
+                                  <span className={cn("block whitespace-normal text-xs", WARNING_CLASS)}>{t("rowDiffers")}</span>
+                                )}
+                                {row.hasUnset && (
+                                  <span className={cn("block whitespace-normal text-xs", WARNING_CLASS)}>
+                                    {t("rowUnset", { amount: formatSignedRupiah(row.unsetAmount) })}
                                   </span>
+                                )}
+                                {row.noRatePieces > 0 && (
+                                  <span className={cn("block truncate text-xs", WARNING_CLASS)}>{noRateLabel}</span>
                                 )}
                               </TableCell>
                               <TableCell className="max-w-[220px] truncate" title={stores}>
@@ -338,14 +388,14 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                               <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(row.pieces))}>
                                 {formatPieces(row.pieces)}
                               </TableCell>
-                              <TableCell className="whitespace-nowrap text-right tabular-nums">
-                                {formatSignedRupiah(row.earned)}
-                              </TableCell>
-                              <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(row.reversed))}>
-                                {formatSignedRupiah(row.reversed)}
+                              <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
+                                {formatSignedRupiah(row.setAmount)}
                               </TableCell>
                               <TableCell
-                                className={cn("whitespace-nowrap text-right font-medium tabular-nums", signedClass(row.net))}
+                                className={cn(
+                                  "whitespace-nowrap text-right tabular-nums",
+                                  row.differs ? WARNING_CLASS : "text-muted-foreground",
+                                )}
                               >
                                 {formatSignedRupiah(row.net)}
                               </TableCell>
@@ -353,63 +403,108 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                             {isOpen && (
                               <TableRow id={detailId} className="bg-muted/30 hover:bg-muted/30">
                                 <TableCell colSpan={COLUMN_COUNT} className="p-0">
-                                  <div className="px-4 py-3 sm:pl-14">
-                                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                      {t("breakdownTitle")}
-                                    </p>
-                                    <Table>
-                                      <TableHeader>
-                                        <TableRow>
-                                          <TableHead>{t("colCategory")}</TableHead>
-                                          <TableHead className="text-right">{t("colPieces")}</TableHead>
-                                          <TableHead className="text-right">{t("colRate")}</TableHead>
-                                          <TableHead className="text-right">{t("colEarned")}</TableHead>
-                                          <TableHead className="text-right">{t("colReversed")}</TableHead>
-                                          <TableHead className="text-right">{t("colNet")}</TableHead>
-                                        </TableRow>
-                                      </TableHeader>
-                                      <TableBody>
-                                        {breakdown.map((line) => {
-                                          const key = detailKey(line.salesmanId, line.categoryId);
-                                          const category = categoryLabel(line.categoryId);
-                                          const rate = rates.get(key);
-                                          const isUnrated = !rate || rate.unrated;
-                                          return (
-                                            <TableRow key={key}>
-                                              <TableCell className="max-w-[200px] truncate" title={category}>
-                                                {category}
-                                              </TableCell>
-                                              <TableCell
-                                                className={cn("whitespace-nowrap text-right tabular-nums", signedClass(line.pieces))}
-                                              >
-                                                {formatPieces(line.pieces)}
-                                              </TableCell>
-                                              <TableCell
-                                                className={cn(
-                                                  "whitespace-nowrap text-right tabular-nums",
-                                                  isUnrated && "text-amber-700 dark:text-amber-400",
-                                                )}
-                                              >
-                                                {rateLabel(rate)}
-                                              </TableCell>
-                                              <TableCell className="whitespace-nowrap text-right tabular-nums">
-                                                {formatSignedRupiah(line.earned)}
-                                              </TableCell>
-                                              <TableCell
-                                                className={cn("whitespace-nowrap text-right tabular-nums", signedClass(line.reversed))}
-                                              >
-                                                {formatSignedRupiah(line.reversed)}
-                                              </TableCell>
-                                              <TableCell
-                                                className={cn("whitespace-nowrap text-right tabular-nums", signedClass(line.net))}
-                                              >
-                                                {formatSignedRupiah(line.net)}
-                                              </TableCell>
+                                  <div className="space-y-4 px-4 py-3 sm:pl-14">
+                                    <div>
+                                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                        {t("reportsTitle")}
+                                      </p>
+                                      <Table>
+                                        <TableHeader>
+                                          <TableRow>
+                                            <TableHead>{t("colReport")}</TableHead>
+                                            <TableHead>{t("colSalesMonth")}</TableHead>
+                                            <TableHead>{t("colStatus")}</TableHead>
+                                            <TableHead className="text-right">{t("colSet")}</TableHead>
+                                            <TableHead className="text-right">{t("colComputed")}</TableHead>
+                                          </TableRow>
+                                        </TableHeader>
+                                        <TableBody>
+                                          {lines.map((line) => {
+                                            const store = storeName(line.storeId);
+                                            const docNo = recap.reportDocNos[line.reportKey];
+                                            return (
+                                              <TableRow key={`${line.reportKey}\u0000${line.salesmanId}`}>
+                                                <TableCell className="max-w-[220px]">
+                                                  <span className="block truncate" title={store}>
+                                                    {store}
+                                                  </span>
+                                                  <span className="block truncate text-xs text-muted-foreground">
+                                                    {line.kind === "KONSI"
+                                                      ? t("kindKonsi", { doc: docNo ?? line.reportKey })
+                                                      : t("kindPutus")}
+                                                  </span>
+                                                </TableCell>
+                                                <TableCell className="whitespace-nowrap">
+                                                  {formatYearMonth(line.salesMonth, locale)}
+                                                </TableCell>
+                                                <TableCell>
+                                                  <Badge variant={STATUS_VARIANT[line.status]}>{tStatus(`status.${line.status}`)}</Badge>
+                                                </TableCell>
+                                                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                                                  {line.setAmount === null ? "—" : formatSignedRupiah(line.setAmount)}
+                                                </TableCell>
+                                                <TableCell
+                                                  className={cn(
+                                                    "whitespace-nowrap text-right tabular-nums",
+                                                    line.differs && WARNING_CLASS,
+                                                  )}
+                                                >
+                                                  {formatSignedRupiah(line.computedAmount)}
+                                                  {line.differs && <span className="block text-xs">{t("lineDiffers")}</span>}
+                                                </TableCell>
+                                              </TableRow>
+                                            );
+                                          })}
+                                        </TableBody>
+                                      </Table>
+                                    </div>
+                                    {breakdown.length > 0 && (
+                                      <div>
+                                        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                          {t("breakdownTitle")}
+                                        </p>
+                                        <Table>
+                                          <TableHeader>
+                                            <TableRow>
+                                              <TableHead>{t("colCategory")}</TableHead>
+                                              <TableHead className="text-right">{t("colPieces")}</TableHead>
+                                              <TableHead className="text-right">{t("colRate")}</TableHead>
+                                              <TableHead className="text-right">{t("colComputed")}</TableHead>
                                             </TableRow>
-                                          );
-                                        })}
-                                      </TableBody>
-                                    </Table>
+                                          </TableHeader>
+                                          <TableBody>
+                                            {breakdown.map((line) => {
+                                              const key = detailKey(line.salesmanId, line.categoryId);
+                                              const category = categoryLabel(line.categoryId);
+                                              const rate = rates.get(key);
+                                              const isUnrated = !rate || rate.unrated;
+                                              return (
+                                                <TableRow key={key}>
+                                                  <TableCell className="max-w-[200px] truncate" title={category}>
+                                                    {category}
+                                                  </TableCell>
+                                                  <TableCell
+                                                    className={cn("whitespace-nowrap text-right tabular-nums", signedClass(line.pieces))}
+                                                  >
+                                                    {formatPieces(line.pieces)}
+                                                  </TableCell>
+                                                  <TableCell
+                                                    className={cn("whitespace-nowrap text-right tabular-nums", isUnrated && WARNING_CLASS)}
+                                                  >
+                                                    {rateLabel(rate)}
+                                                  </TableCell>
+                                                  <TableCell
+                                                    className={cn("whitespace-nowrap text-right tabular-nums", signedClass(line.net))}
+                                                  >
+                                                    {formatSignedRupiah(line.net)}
+                                                  </TableCell>
+                                                </TableRow>
+                                              );
+                                            })}
+                                          </TableBody>
+                                        </Table>
+                                      </div>
+                                    )}
                                   </div>
                                 </TableCell>
                               </TableRow>
@@ -427,15 +522,10 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                         <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(totals.pieces))}>
                           {formatPieces(totals.pieces)}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-right tabular-nums">
-                          {formatSignedRupiah(totals.earned)}
+                        <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">
+                          {formatSignedRupiah(totals.setAmount)}
                         </TableCell>
-                        <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(totals.reversed))}>
-                          {formatSignedRupiah(totals.reversed)}
-                        </TableCell>
-                        <TableCell
-                          className={cn("whitespace-nowrap text-right font-semibold tabular-nums", signedClass(totals.net))}
-                        >
+                        <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
                           {formatSignedRupiah(totals.net)}
                         </TableCell>
                       </TableRow>

@@ -11,7 +11,8 @@ const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.s
 
 /**
  * Baris Beranda "komisi SPG toko putus bulan lalu belum ditetapkan": toko putus yang punya nota
- * SPG bulan lalu dan laporannya belum dicek, atau sudah dicek tapi belum ditetapkan. Definisinya
+ * SPG bulan lalu yang masih mengonfirmasi potong (bukan yang seluruhnya dikembalikan pembeli) dan
+ * laporannya belum dicek, atau sudah dicek tapi belum ditetapkan. Definisinya
  * sama dengan antrean "menunggu dicek" di halaman Komisi SPG, dan tokonya keluar begitu keuangan
  * menetapkannya. Data uji diseed di sini dan dihapus lewat `seededId(s)`.
  */
@@ -71,6 +72,7 @@ d("antrean komisi SPG toko putus (test bed only)", () => {
     await prisma.auditLog.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
     await prisma.spgCommission.deleteMany({ where: { storeId: { in: tokoIds() } } });
     await prisma.spgSalesCheck.deleteMany({ where: { storeId: { in: tokoIds() } } });
+    await prisma.spgSaleReturn.deleteMany({ where: { spgSaleId: { in: seededIds(nota) } } });
     await prisma.spgSale.deleteMany({ where: { id: { in: seededIds(nota) } } });
     nota.length = 0;
   });
@@ -86,7 +88,7 @@ d("antrean komisi SPG toko putus (test bed only)", () => {
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
   });
 
-  const jual = async (salesmanId: string, storeId: string) => {
+  const jual = async (salesmanId: string, storeId: string, qty = 2) => {
     const s = await prisma.spgSale.create({
       data: {
         docNo: `${tag}-${nomor++}`,
@@ -98,11 +100,26 @@ d("antrean komisi SPG toko putus (test bed only)", () => {
         changeGiven: 0,
         createdById: salesmanId,
         createdAt: tengahBulanLalu,
-        lines: { create: [{ itemId: kaos, productName: "uji", qty: 2, unitPrice: 50_000, lineTotal: 100_000 }] },
+        lines: { create: [{ itemId: kaos, productName: "uji", qty, unitPrice: 50_000, lineTotal: 50_000 * qty }] },
       },
-      select: { id: true },
+      select: { id: true, lines: { select: { id: true } } },
     });
     nota.push(s.id);
+    return s;
+  };
+  /** Pembeli mengembalikan `qty` potong dari nota itu, di bulan yang sama dengan penjualannya. */
+  const kembalikan = async (sale: { id: string; lines: { id: string }[] }, storeId: string, qty: number) => {
+    await prisma.spgSaleReturn.create({
+      data: {
+        spgSaleId: sale.id,
+        storeId,
+        createdById: kantor,
+        reason: "uji",
+        idempotencyKey: `${tag}-r${nomor++}`,
+        createdAt: new Date(tengahBulanLalu.getTime() + 3_600_000),
+        lines: { create: [{ spgSaleLineId: sale.lines[0].id, itemId: kaos, qty }] },
+      },
+    });
   };
   const milikUji = (ids: Iterable<string>) => [...ids].filter((id) => tokoIds().includes(id)).sort();
   /** Toko putus × bulan lalu yang menunggu dicek menurut halaman Komisi SPG. */
@@ -128,5 +145,22 @@ d("antrean komisi SPG toko putus (test bed only)", () => {
     expect(milikUji(await tokoKomisiPutusBelumDitetapkan(periode))).toEqual([]);
     expect((await getAntreanKantor(["*"])).spgCommissionsUnset).toBe(sebelum - 1);
     expect(await jumlahKomisiPutusBelumDitetapkan(sekarang)).toBe(sebelum - 1);
+  });
+
+  it("toko putus yang seluruh penjualannya dikembalikan di bulan yang sama tidak masuk antrean maupun Beranda — dicek pun ditolak", async () => {
+    const sebelum = await jumlahKomisiPutusBelumDitetapkan(sekarang);
+    const nota3 = await jual(spgDiam, putusTanpaJual, 3);
+    await kembalikan(nota3, putusTanpaJual, 3);
+
+    expect(milikUji(await tokoKomisiPutusBelumDitetapkan(periode))).toEqual([]);
+    expect(milikUji(await menungguMenurutHalaman())).toEqual([]);
+    expect(await jumlahKomisiPutusBelumDitetapkan(sekarang)).toBe(sebelum);
+    // Satu definisi dengan penulisnya: tombol "Tandai laporan dicek" memang akan gagal di sini.
+    expect(await tandaiLaporanDicek({ storeId: putusTanpaJual, periode, olehUserId: kantor, sekarang })).toEqual({ ok: false, code: "TANPA_PENJUALAN" });
+
+    // Satu potong saja yang tersisa: toko itu kembali menunggu dicek.
+    await jual(spgDiam, putusTanpaJual, 1);
+    expect(milikUji(await tokoKomisiPutusBelumDitetapkan(periode))).toEqual([putusTanpaJual]);
+    expect(milikUji(await menungguMenurutHalaman())).toEqual([putusTanpaJual]);
   });
 });

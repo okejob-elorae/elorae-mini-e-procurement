@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   BAWAAN_PESANAN_LAMA_SEBELUM,
   bacaBatasPesananLama,
+  opnameTokoTerakhirSesudah,
   penerimaDiharapkan,
   peranPenerimaLama,
   periksaHitunganSampai,
+  saatHitungOpnameToko,
   sisaBarisLama,
 } from "./pesanan-lama-aturan";
 
@@ -127,5 +129,32 @@ describe("hitungan sampai", () => {
         { lineId: "lain", qty: 0 },
       ]),
     ).toEqual({ ok: false, alasan: "JUMLAH_TIDAK_VALID" });
+  });
+});
+
+describe("opname toko sesudah pesanan lama disetujui (peringatan di HP)", () => {
+  const disetujui = new Date("2026-08-01T03:00:00.000Z");
+
+  it("saat hitung opname tim = countFinishedAt, atau approvedAt untuk hitungan lama; bukan saat dokumen dibuka", () => {
+    const selesai = new Date("2026-08-10T05:00:00.000Z");
+    const disahkan = new Date("2026-08-12T05:00:00.000Z");
+    expect(saatHitungOpnameToko({ countFinishedAt: selesai, approvedAt: disahkan })).toBe(selesai);
+    expect(saatHitungOpnameToko({ countFinishedAt: null, approvedAt: disahkan })).toBe(disahkan);
+    expect(saatHitungOpnameToko({ countFinishedAt: null, approvedAt: null })).toBeNull();
+  });
+
+  it("yang paling akhir dari kedua jenis opname, hanya yang SESUDAH pesanan disetujui", () => {
+    const opnameSpg = new Date("2026-08-05T03:00:00.000Z");
+    const opnameTim = new Date("2026-09-02T03:00:00.000Z");
+    expect(opnameTokoTerakhirSesudah(disetujui, [opnameSpg, opnameTim])).toBe(opnameTim);
+    expect(opnameTokoTerakhirSesudah(disetujui, [opnameTim, opnameSpg])).toBe(opnameTim);
+    expect(opnameTokoTerakhirSesudah(disetujui, [null, undefined, opnameSpg])).toBe(opnameSpg);
+  });
+
+  it("sebelum atau tepat saat disetujui, kosong, atau tanggal rusak: tidak ada peringatan", () => {
+    expect(opnameTokoTerakhirSesudah(disetujui, [])).toBeNull();
+    expect(opnameTokoTerakhirSesudah(disetujui, [null, undefined])).toBeNull();
+    expect(opnameTokoTerakhirSesudah(disetujui, [new Date("2026-07-31T03:00:00.000Z"), new Date(disetujui.getTime())])).toBeNull();
+    expect(opnameTokoTerakhirSesudah(disetujui, [new Date("bukan tanggal")])).toBeNull();
   });
 });

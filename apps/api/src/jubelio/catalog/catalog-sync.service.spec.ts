@@ -1,5 +1,7 @@
+import { Logger } from "@nestjs/common";
 import { JubelioCatalogSyncService, ensureInventoryRows } from "./catalog-sync.service";
-import type { CatalogItemDraft } from "./catalog.types";
+import type { CatalogItemDraft, JubelioItemGroup } from "./catalog.types";
+import { buildCatalogDrafts } from "./map-catalog";
 
 describe("ensureInventoryRows", () => {
   let tx: any;
@@ -97,5 +99,97 @@ describe("JubelioCatalogSyncService.syncCatalog paging", () => {
     expect(http.get).toHaveBeenNthCalledWith(1, "/inventory/items/", { query: { page: 1, pageSize: 200 } });
     expect(http.get).toHaveBeenNthCalledWith(2, "/inventory/items/", { query: { page: 2, pageSize: 200 } });
     expect(result.dryRun).toBe(true);
+  });
+});
+
+/*
+ * Every Jubelio product webhook runs this sync. A selling price is typed by hand in the ERP
+ * (owner decision 2026-11-01), so re-ingesting an item must never touch it; only an item the
+ * ERP does not have yet may take Jubelio's sell_price.
+ */
+describe("JubelioCatalogSyncService.syncCatalog selling price", () => {
+  let prisma: any;
+  let tx: any;
+  let http: { get: jest.Mock };
+  let service: JubelioCatalogSyncService;
+  let warn: jest.SpyInstance;
+
+  function group(sellPrice: string | number | undefined): JubelioItemGroup {
+    return {
+      item_group_id: 7,
+      item_name: "Cargo Pants",
+      sell_price: sellPrice,
+      variants: [
+        { item_group_id: 7, item_id: 1, item_code: "27000015P-L", variation_values: [{ label: "Ukuran", value: "L" }] },
+        { item_group_id: 7, item_id: 2, item_code: "27000015P-S", variation_values: [{ label: "Ukuran", value: "S" }] },
+      ],
+    };
+  }
+
+  function serveGroup(sellPrice: string | number | undefined) {
+    http.get.mockImplementation((path: string) =>
+      path === "/inventory/items/"
+        ? Promise.resolve({ data: [group(sellPrice)], totalCount: 1 })
+        : Promise.reject(new Error("no image detail in this test")),
+    );
+  }
+
+  const itemSku = buildCatalogDrafts({ data: [group("1")] }).drafts[0].itemSku;
+
+  beforeEach(() => {
+    tx = {
+      item: {
+        create: jest.fn().mockResolvedValue({ id: "item-new" }),
+        update: jest.fn().mockResolvedValue({ id: "item-1" }),
+      },
+      inventoryValue: { findFirst: jest.fn(), createMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      jubelioProductMapping: { upsert: jest.fn().mockResolvedValue({}) },
+    };
+    prisma = {
+      jubelioCategoryMapping: { findMany: jest.fn().mockResolvedValue([]) },
+      uOM: { findUnique: jest.fn().mockResolvedValue({ id: "uom-pcs" }) },
+      item: { findMany: jest.fn().mockResolvedValue([]) },
+      $transaction: jest.fn((fn: (client: unknown) => Promise<unknown>) => fn(tx)),
+    };
+    http = { get: jest.fn() };
+    service = new JubelioCatalogSyncService(prisma, http as any);
+    warn = jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it.each([
+    ["a different", "150000"],
+    ["an empty", ""],
+    ["no", undefined],
+  ])("re-ingesting an existing item with %s sell_price leaves its selling price unchanged", async (_label, sellPrice) => {
+    prisma.item.findMany.mockResolvedValue([{ id: "item-1", sku: itemSku, description: null, variants: [] }]);
+    serveGroup(sellPrice);
+
+    const result = await service.syncCatalog({ itemGroupIds: [7] });
+
+    expect(result.summary.updated).toBe(1);
+    expect(result.summary.errors).toBe(0);
+    expect(tx.item.create).not.toHaveBeenCalled();
+    expect(tx.item.update).toHaveBeenCalledTimes(1);
+    const { where, data } = tx.item.update.mock.calls[0][0];
+    expect(where).toEqual({ id: "item-1" });
+    expect(data).not.toHaveProperty("sellingPrice");
+    expect(data.nameId).toBe("Cargo Pants");
+  });
+
+  it("a new item still takes Jubelio's sell_price", async () => {
+    serveGroup("150000");
+
+    const result = await service.syncCatalog({ itemGroupIds: [7] });
+
+    expect(result.summary.created).toBe(1);
+    expect(tx.item.update).not.toHaveBeenCalled();
+    expect(tx.item.create).toHaveBeenCalledTimes(1);
+    const { data } = tx.item.create.mock.calls[0][0];
+    expect(data.sku).toBe(itemSku);
+    expect(String(data.sellingPrice)).toBe("150000");
   });
 });
