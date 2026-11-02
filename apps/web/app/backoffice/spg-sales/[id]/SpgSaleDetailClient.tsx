@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, CloudOff, ExternalLink, MapPin, Printer } from "lucide-react";
+import { ArrowLeft, ArrowRight, CloudOff, ExternalLink, MapPin, Printer } from "lucide-react";
 import type { SpgSaleDetail } from "@/lib/spg/sale-queries";
 import { roundCents } from "@elorae/db/pricing";
-import type { KembaliPerNota } from "@/lib/spg/retur-pembeli";
-import { dinamis } from "@/lib/i18n/dinamis";
+import type { KembaliPerNota, ReturPembeliRingkas } from "@/lib/spg/retur-pembeli";
+import type { StatusReturPembeli } from "@/lib/spg/retur-pembeli-status";
+import { dinamis, type TerjemahDinamis } from "@/lib/i18n/dinamis";
+import { StatusPill, type StatusTone } from "@/components/ui/status-pill";
 import { rincianNotaSpg, spgSaleNotaHtml } from "@/lib/print/spg-sale-nota-html";
 import { logPrintQuietly } from "@/lib/audit/log-print-quietly";
 import { formatDisplayDateTime } from "@/lib/date-only";
@@ -73,13 +75,39 @@ function tampilHp(hp: string): string {
   return hp.startsWith("62") ? `0${hp.slice(2)}` : hp;
 }
 
+/** Nada status laporan retur pembeli: menunggu kuning, disetujui hijau, ditolak merah, ditarik abu-abu. */
+const NADA_RETUR_PEMBELI: Record<StatusReturPembeli, StatusTone> = {
+  MENUNGGU: "waiting",
+  DISETUJUI: "settled",
+  DITOLAK: "attention",
+  DIBATALKAN: "inactive",
+};
+
+/**
+ * Baris keputusan di bawah satu laporan. Laporan lama (dicatat sebelum ada persetujuan kantor)
+ * berlaku saat dicatat dan tidak punya pemutus; laporan MENUNGGU belum berpengaruh apa pun.
+ */
+function teksKeputusan(r: ReturPembeliRingkas, tk: TerjemahDinamis, locale: string): string | null {
+  if (r.langsungBerlaku) return tk("berlakuLangsung");
+  if (r.status === "MENUNGGU") return tk("belumBerpengaruh");
+  if (!r.diputuskanOleh && !r.diputuskanPada) return null;
+  return tk(`putusan${r.status}`, {
+    oleh: r.diputuskanOleh ?? "—",
+    waktu: formatDisplayDateTime(r.diputuskanPada, locale),
+  });
+}
+
 export function SpgSaleDetailClient({ sale, kembali }: Props) {
   const t = useTranslations("spgSale.backoffice.detail");
   const tSpgSale = useTranslations("spgSale");
   const tk = useTranslations("spgRetur.kantor");
+  const tkd = dinamis(tk);
   const tKondisi = dinamis(useTranslations("spgRetur"));
   const locale = useLocale();
+  // Riwayat memuat SEMUA laporan (juga yang menunggu, ditolak, atau ditarik); hanya yang disetujui
+  // masuk kolom "Kembali" dan mengurangi "Bersih".
   const adaKembali = (kembali?.riwayat.length ?? 0) > 0;
+  const pcsMenunggu = kembali?.perBaris.reduce((n, b) => n + b.menunggu, 0) ?? 0;
   const rincian = rincianNotaSpg(sale);
   // total is the whole-rupiah CHARGED figure; subtotal less every discount is the exact 2dp amount.
   // Nonzero only when a fractional line price left a sub-rupiah remainder rounded off at the cash
@@ -241,6 +269,7 @@ export function SpgSaleDetailClient({ sale, kembali }: Props) {
                   <TableHead className="text-right">{tk("terjual")}</TableHead>
                   <TableHead className="text-right">{tk("kembali")}</TableHead>
                   <TableHead className="text-right">{tk("bersih")}</TableHead>
+                  <TableHead className="text-right">{tk("menunggu")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -251,25 +280,42 @@ export function SpgSaleDetailClient({ sale, kembali }: Props) {
                     <TableCell className="text-right">{b.qty}</TableCell>
                     <TableCell className="text-right">{b.returnedQty > 0 ? b.returnedQty : "—"}</TableCell>
                     <TableCell className="text-right">{b.qty - b.returnedQty}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{b.menunggu > 0 ? b.menunggu : "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
+          {pcsMenunggu > 0 && <p className="text-xs text-muted-foreground">{tk("menungguCatatan", { n: pcsMenunggu })}</p>}
           <ul className="space-y-3">
-            {kembali.riwayat.map((r) => (
-              <li key={r.id} className="space-y-1 border-t pt-3 text-sm">
-                <p className="font-medium">
-                  {formatDisplayDateTime(r.waktu, locale)} · {r.oleh}
-                </p>
-                <p className="text-muted-foreground">{tk("alasan", { alasan: r.alasan })}</p>
-                <p>
-                  {r.baris
-                    .map((x) => `${x.qty}× ${x.productName}${x.variantSku ? ` (${x.variantSku})` : ""} — ${tKondisi(`kondisi${x.condition}`)}`)
-                    .join("; ")}
-                </p>
-              </li>
-            ))}
+            {kembali.riwayat.map((r) => {
+              const keputusan = teksKeputusan(r, tkd, locale);
+              return (
+                <li key={r.id} className="space-y-1 border-t pt-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill tone={NADA_RETUR_PEMBELI[r.status]}>{tkd(`status${r.status}`)}</StatusPill>
+                      <span className="font-medium">
+                        {tk("dilaporkan", { oleh: r.oleh, waktu: formatDisplayDateTime(r.waktu, locale) })}
+                      </span>
+                    </div>
+                    <Link href={`/backoffice/retur-spg/${r.id}`} className="inline-flex items-center gap-1 text-tautan hover:underline">
+                      {tk("bukaLaporan")}
+                      <ArrowRight className="h-3 w-3" aria-hidden />
+                    </Link>
+                  </div>
+                  <p>
+                    {r.baris
+                      .map((x) => `${x.qty}× ${x.productName}${x.variantSku ? ` (${x.variantSku})` : ""} — ${tKondisi(`kondisi${x.condition}`)}`)
+                      .join("; ")}
+                  </p>
+                  <p className="text-muted-foreground">{tk("alasanPembeli", { alasan: r.alasan })}</p>
+                  {keputusan && <p className="text-muted-foreground">{keputusan}</p>}
+                  {r.alasanTolak && r.status === "DITOLAK" && <p>{tk("alasanTolak", { alasan: r.alasanTolak })}</p>}
+                  {r.alasanTolak && r.status === "DIBATALKAN" && <p>{tk("alasanTarik", { alasan: r.alasanTolak })}</p>}
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}

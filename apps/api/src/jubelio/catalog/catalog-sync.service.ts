@@ -1,5 +1,13 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { ItemType, Prisma, createItemFromIngest, pruneJubelioOrphans, updateItemFromIngest, upsertJubelioImage } from "@elorae/db";
+import {
+  ItemType,
+  Prisma,
+  createItemFromIngest,
+  pruneJubelioOrphans,
+  recordJubelioPriceOnMapping,
+  updateItemFromIngest,
+  upsertJubelioImage,
+} from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../db/prisma.module";
 import { JubelioHttpService } from "../http.service";
 import { fetchItemGroups } from "../inventory/fetch-item-groups";
@@ -242,10 +250,14 @@ export class JubelioCatalogSyncService {
     }
 
     const variantsJson = draft.variants as Prisma.InputJsonValue;
+    const sellingPrice = sellingPriceToDecimal(draft.sellingPrice);
 
     if (!existing) {
-      /* Only a new item takes Jubelio's sell_price; see the update branch below. */
-      const sellingPrice = sellingPriceToDecimal(draft.sellingPrice);
+      /*
+       * Only a new item takes Jubelio's sell_price, and createItemFromIngest records that price as
+       * the confirmed Jubelio price too (owner decision 2026-11-02): it is what Jubelio shows. See
+       * the update branch below for an existing item.
+       */
       let createdItemId = "";
       await this.prisma.$transaction(
         async (tx) => {
@@ -282,9 +294,15 @@ export class JubelioCatalogSyncService {
     }
 
     /*
-     * No sellingPrice here: an existing item's price is typed by hand (owner decision
-     * 2026-11-01), this runs on every Jubelio product webhook, it writes no
+     * No sellingPrice here: an existing item's price is typed by hand (owner decisions
+     * 2026-11-01/02), this runs on every Jubelio product webhook, it writes no
      * ItemPriceChangeLog, and an empty sell_price would reset the price to NULL.
+     * IngestItemUpdateData Omits it, so writing it here is a type error.
+     *
+     * What Jubelio holds is recorded instead, and only when the ERP has no confirmed Jubelio price
+     * for the item yet (an ERP item this sync is mapping for the first time, or one created by an
+     * older build): the confirmation list then compares the typed price against the price Jubelio
+     * really shows, and the item's other pushes are not held back for a price Jubelio already has.
      */
     await this.prisma.$transaction(
       async (tx) => {
@@ -296,6 +314,9 @@ export class JubelioCatalogSyncService {
         });
         await ensureInventoryRows(tx, existing.id, draft);
         await this.upsertMappings(tx, existing.id, draft);
+        if (draft.sourceVariants.length > 0) {
+          await recordJubelioPriceOnMapping(tx, existing.id, sellingPrice);
+        }
       },
       CATALOG_PERSIST_TX_OPTIONS,
     );

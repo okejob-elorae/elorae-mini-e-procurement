@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatIDR } from "@/lib/sales-orders/format";
 import type { PayloadGajiHp } from "@/lib/spg/komisi-hp";
+import { formatKoreksi } from "@/lib/spg/koreksi";
 import { TautanKembali } from "@/app/pwa/TautanKembali";
 import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
 
@@ -18,11 +19,18 @@ import { TombolBantuanHp } from "@/app/pwa/TombolBantuanHp";
  * penjualannya dicek. Hanya yang resmi yang dibayar, di bulan laporannya dicek; setiap baris
  * menyebut bulan penjualannya ("Komisi penjualan Oktober 2026"). Beban barang hilang yang
  * ditetapkan kantor ke SPG ini dipotong dari angka resmi saat dikunci/ditetapkan — barisnya
- * menyebut potongan dan yang diterima.
+ * menyebut potongan. Koreksi komisi bulan yang sudah dibayar (+ atau −) ikut pembayaran
+ * berikutnya, sekali, tidak pernah di bawah Rp 0. Baris terakhir setiap pembayaran adalah
+ * "Diterima" (sudah dibayar) atau "Akan diterima" — angka yang sama dengan kartu beranda — kecuali
+ * pembayaran yang menunggu keputusan kantor (`ditahan`) atau yang siklusnya dibuka lagi
+ * (`belumPasti`): angkanya belum pasti, jadi tidak ada rupiah yang dijanjikan, di sini maupun di
+ * beranda. Bulan toko putus aturan lama yang belum dicek tampil dengan komisi per SPG yang akan
+ * dibayar sesudah dicek, angka lamanya disebut sebagai "sebelumnya".
  */
 export function GajiSpgClient({
   perkiraan,
   resmi,
+  koreksiMenunggu,
   bebanHilang,
 }: PayloadGajiHp & { bebanHilang: { sisa: number; maksPotongPersen: number } | null }) {
   const t = useTranslations("pwa.spgGaji");
@@ -116,22 +124,48 @@ export function GajiSpgClient({
                     </dt>
                     <dd className="whitespace-nowrap tabular-nums">{formatIDR(r.komisi)}</dd>
                   </div>
+                  {r.komisiLama !== null ? (
+                    <div className="text-xs text-muted-foreground">{t("commissionReplaced", { old: formatIDR(r.komisiLama) })}</div>
+                  ) : null}
                   <div className="flex items-baseline justify-between gap-3 border-t pt-1">
                     <dt className="font-medium">{t("total")}</dt>
                     <dd className="whitespace-nowrap font-semibold tabular-nums">{formatIDR(r.total)}</dd>
                   </div>
                   {r.potonganHilang > 0 ? (
-                    <>
-                      <div className="flex items-baseline justify-between gap-3">
-                        <dt className="text-muted-foreground">{t("lossDeduction")}</dt>
-                        <dd className="whitespace-nowrap tabular-nums text-destructive">−{formatIDR(r.potonganHilang)}</dd>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-3 border-t pt-1">
-                        <dt className="font-medium">{t("received")}</dt>
-                        <dd className="whitespace-nowrap font-semibold tabular-nums">{formatIDR(r.diterima)}</dd>
-                      </div>
-                    </>
+                    <div className="flex items-baseline justify-between gap-3">
+                      <dt className="text-muted-foreground">{t("lossDeduction")}</dt>
+                      <dd className="whitespace-nowrap tabular-nums text-destructive">−{formatIDR(r.potonganHilang)}</dd>
+                    </div>
                   ) : null}
+                  {r.koreksi.map((k, i) => (
+                    <div key={`${r.kunci}-k${i}`} className="space-y-0.5">
+                      {k.jumlah !== 0 ? (
+                        <div className="flex items-baseline justify-between gap-3">
+                          <dt className="min-w-0 text-muted-foreground">
+                            {t("correctionLine", { month: k.bulanLabel, store: k.toko })}
+                            {!k.diterapkan ? <span className="block text-xs">{t("correctionWith")}</span> : null}
+                          </dt>
+                          <dd className={`whitespace-nowrap tabular-nums ${k.jumlah < 0 ? "text-destructive" : ""}`}>{formatKoreksi(k.jumlah)}</dd>
+                        </div>
+                      ) : null}
+                      {k.dibawa !== 0 ? (
+                        <div className="text-xs text-muted-foreground">
+                          {k.jumlah === 0 ? `${t("correctionLine", { month: k.bulanLabel, store: k.toko })}: ` : ""}
+                          {t("correctionCarried", { amount: formatKoreksi(k.dibawa) })}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                  {r.ditahan ? (
+                    <div className="border-t pt-1 text-xs text-muted-foreground">{t("payoutHeld")}</div>
+                  ) : r.belumPasti ? (
+                    <div className="border-t pt-1 text-xs text-muted-foreground">{t("payoutNotFinal")}</div>
+                  ) : (
+                    <div className="flex items-baseline justify-between gap-3 border-t pt-1">
+                      <dt className="font-medium">{r.dibayarLabel ? t("received") : t("toReceive")}</dt>
+                      <dd className="whitespace-nowrap font-semibold tabular-nums">{formatIDR(r.diterima)}</dd>
+                    </div>
+                  )}
                 </dl>
                 {r.jenis === "PUTUS" || r.aturanLama ? (
                   <p className="text-xs text-muted-foreground">
@@ -144,6 +178,21 @@ export function GajiSpgClient({
           </ul>
         )}
       </section>
+
+      {koreksiMenunggu.length > 0 ? (
+        <section className="beranda-kartu space-y-2">
+          <h2 className="beranda-judul">{t("correctionsWaitingTitle")}</h2>
+          <p className="text-xs text-muted-foreground">{t("correctionsWaitingNote")}</p>
+          <dl className="space-y-1 text-sm">
+            {koreksiMenunggu.map((k, i) => (
+              <div key={`tunggu-${i}`} className="flex items-baseline justify-between gap-3">
+                <dt className="min-w-0 text-muted-foreground">{t("correctionLine", { month: k.bulanLabel, store: k.toko })}</dt>
+                <dd className={`whitespace-nowrap tabular-nums ${k.jumlah < 0 ? "text-destructive" : ""}`}>{formatKoreksi(k.jumlah)}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ) : null}
     </div>
   );
 }

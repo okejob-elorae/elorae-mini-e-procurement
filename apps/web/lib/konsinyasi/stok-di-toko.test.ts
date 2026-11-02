@@ -325,20 +325,17 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
       select: { id: true, lines: { select: { id: true } } },
     });
     notaId = nota.id;
-    await prisma.storeStockMovement.createMany({
-      data: [
-        { storeId: tokoId, itemId: barangId, variantSku: "", qty: 10, kind: "OPNAME", createdById: orangId, createdAt: hariLalu(40) },
-        { storeId: tokoId, itemId: barangId, variantSku: "", qty: -3, kind: "JUAL", refType: "SpgSale", refId: nota.id, createdById: orangId, createdAt: hariLalu(5) },
-        { storeId: tokoId, itemId: barangId, variantSku: "", qty: 1, kind: "RETUR_PEMBELI", createdById: orangId, createdAt: hariLalu(4) },
-      ],
-    });
-    await prisma.spgSaleReturn.create({
+    // Retur dulu: baris buku RETUR_PEMBELI menunjuk laporannya (refType `SpgSaleReturn`, refId = id
+    // retur), seperti yang ditulis `setujuiReturPembeli`. Tanpa penunjuk itu baris LAYAK terbaca
+    // "tanpa baris buku" dan dikurangkan sekali lagi dari laku.
+    const retur = await prisma.spgSaleReturn.create({
       data: {
         spgSaleId: nota.id,
         storeId: tokoId,
         createdById: orangId,
         reason: "uji",
         idempotencyKey: `${tag}-RET`,
+        status: "DISETUJUI",
         createdAt: hariLalu(4),
         lines: {
           create: [
@@ -347,6 +344,14 @@ describe("stokDiToko / nilaiStokToko (basis data)", () => {
           ],
         },
       },
+      select: { id: true },
+    });
+    await prisma.storeStockMovement.createMany({
+      data: [
+        { storeId: tokoId, itemId: barangId, variantSku: "", qty: 10, kind: "OPNAME", createdById: orangId, createdAt: hariLalu(40) },
+        { storeId: tokoId, itemId: barangId, variantSku: "", qty: -3, kind: "JUAL", refType: "SpgSale", refId: nota.id, createdById: orangId, createdAt: hariLalu(5) },
+        { storeId: tokoId, itemId: barangId, variantSku: "", qty: 1, kind: "RETUR_PEMBELI", refType: "SpgSaleReturn", refId: retur.id, createdById: orangId, createdAt: hariLalu(4) },
+      ],
     });
     const s = await stokDiToko(tokoId, SEKARANG);
     // Rak: 10 − 3 + 1 = 8 (yang rusak tidak kembali ke rak); laku bersih 3 − 1 − 1 = 1.

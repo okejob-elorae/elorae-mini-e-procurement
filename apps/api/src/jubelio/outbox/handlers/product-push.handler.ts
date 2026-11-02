@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import type { JubelioOutbox } from "@elorae/db";
+import { markJubelioCreateRequested, type JubelioOutbox } from "@elorae/db";
 import { PRISMA, type PrismaService } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
 import { JubelioImageUploadService } from "../../image-upload.service";
@@ -7,6 +7,7 @@ import { OUTBOX_SKIP_REASONS } from "../outbox-status";
 import type { HandlerOutcome, OutboxHandler } from "./handler.types";
 import {
   buildCreateProductRequest,
+  resolvePushPrice,
   type MappingSlice,
 } from "./product-push.payload";
 
@@ -42,6 +43,25 @@ export class ProductPushHandler implements OutboxHandler {
 
     if (mappings.length === 0 && item.source !== "ERP") {
       return { kind: "skipped", reason: OUTBOX_SKIP_REASONS.CANNOT_CREATE_FROM_INGESTED };
+    }
+
+    /*
+     * Jubelio only ever receives the price confirmed in the ERP (owner decision 2026-11-02): a
+     * product without one is not pushed, and a new product is not created until its price is
+     * confirmed. A create push that reaches here with neither a confirmed price nor a request is
+     * turned into a request (one guarded UPDATE), so it waits on Jubelio -> Konfirmasi harga.
+     */
+    const pushPrice = resolvePushPrice({
+      mapped: mappings.length > 0,
+      source: item.source,
+      jubelioConfirmedPrice: item.jubelioConfirmedPrice == null ? null : Number(item.jubelioConfirmedPrice),
+      jubelioCreateRequestedAt: item.jubelioCreateRequestedAt,
+    });
+    if (!pushPrice.ok) {
+      if (pushPrice.stampRequest) {
+        await markJubelioCreateRequested(this.prisma, item.id, row.enqueuedById);
+      }
+      return { kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_NOT_CONFIRMED };
     }
 
     if (!item.categoryId) {
@@ -81,7 +101,7 @@ export class ProductPushHandler implements OutboxHandler {
         nameEn: item.nameEn,
         description: item.description,
         variants: variantsArr,
-        sellingPrice: item.sellingPrice == null ? null : Number(item.sellingPrice),
+        jubelioPrice: pushPrice.price,
         isActive: item.isActive,
       },
       defaults: {

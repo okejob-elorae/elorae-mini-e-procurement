@@ -56,6 +56,7 @@ import { TagihanKonsiCard } from "./TagihanKonsiCard";
 import { PencocokanBukuCard } from "./PencocokanBukuCard";
 import { alasanTolakBukaKunci } from "./buka-kunci";
 import { formatYearMonth } from "@/app/backoffice/settings/spg-commission/format";
+import { formatKoreksi, type RencanaBayarKomisi } from "@/lib/spg/koreksi";
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -115,6 +116,8 @@ export function RincianSiklusClient({
   const [gajiPokok, setGajiPokok] = useState('0');
 
   const [nomorTerbuka, setNomorTerbuka] = useState<'NOTA' | 'PAJAK' | null>(null);
+  // Konfirmasi "Tandai dibayar": yang dibayarkan dan rinciannya, persis rencana penulisnya.
+  const [bayarTerbuka, setBayarTerbuka] = useState<{ id: string; nama: string; bayar: RencanaBayarKomisi } | null>(null);
   const [bukaKunciTerbuka, setBukaKunciTerbuka] = useState(false);
   const [nomor, setNomor] = useState('');
 
@@ -426,20 +429,34 @@ export function RincianSiklusClient({
                 : t("salaryCommissionNoteUnlocked", { salesMonth: formatYearMonth(data.komisiBulan.bulanJual, locale) })}
             </p>
             <p className="text-xs text-muted-foreground">{t("salaryCommissionRule")}</p>
+            {data.komisiReturMenunggu > 0 ? (
+              <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+                {t("returPendingCommission", { n: data.komisiReturMenunggu })}
+              </p>
+            ) : null}
           </CardHeader>
           <CardContent className="px-0">
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>{t('colSpgName')}</TableHead>
                   <TableHead className="text-right">{t('colBase')}</TableHead>
                   <TableHead className="text-right">{t('colCommission')}</TableHead>
+                  <TableHead>{t('colCorrection')}</TableHead>
                   <TableHead className="text-right">{t('colTotal')}</TableHead>
+                  <TableHead className="text-right">{t('colPaidOut')}</TableHead>
                   <TableHead className="text-right">{t('colAction')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {data.komisi.map((k) => (
+                {data.komisi.map((k) => {
+                  const p = k.dibayarPada ? null : k.bayar;
+                  const diganti = p !== null && p.berubah && !p.ditahan && Math.round(p.komisiLama * 100) !== Math.round(p.komisiBaru * 100);
+                  const garis = p && !p.ditahan ? p.koreksi.filter((x) => x.diterapkan !== 0 || x.dibawa !== 0) : [];
+                  const potongan = p && !p.ditahan ? p.potonganHilang : k.potonganHilang;
+                  const total = p && !p.ditahan ? p.gajiPokok + p.komisiBaru : k.total;
+                  return (
                   <TableRow key={k.id} className={cn(!k.dibayarPada && b.gajiTerlambat && 'bg-destructive/[0.06]')}>
                     <TableCell className="font-medium">
                       {k.spgNama ?? '—'}
@@ -457,46 +474,133 @@ export function RincianSiklusClient({
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{rupiah(k.gajiPokok)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{rupiah(k.komisi)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {rupiah(p && !p.ditahan ? p.komisiBaru : k.komisi)}
+                      {diganti && p ? (
+                        <span className="mt-0.5 block text-xs text-amber-700 dark:text-amber-400">
+                          {t("commissionReplaced", { old: rupiah(p.komisiLama) })}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="min-w-[12rem] text-xs">
+                      {k.koreksiDiterapkan.length > 0 ? (
+                        <ul className="space-y-0.5">
+                          {k.koreksiDiterapkan.map((x, i) => (
+                            <li key={i}>{t("correctionLine", { month: formatYearMonth(x.bulanJual, locale), store: x.toko, amount: formatKoreksi(x.jumlah) })}</li>
+                          ))}
+                        </ul>
+                      ) : garis.length > 0 || p?.koreksiDiBarisLain ? (
+                        <ul className="space-y-0.5">
+                          {garis.map((x, i) => (
+                            <li key={i}>
+                              {x.diterapkan !== 0
+                                ? t("correctionLine", { month: formatYearMonth(x.bulanJual, locale), store: x.namaToko, amount: formatKoreksi(x.diterapkan) })
+                                : null}
+                              {x.dibawa !== 0 ? (
+                                <span className="block text-muted-foreground">{t("correctionCarried", { amount: formatKoreksi(x.dibawa) })}</span>
+                              ) : null}
+                            </li>
+                          ))}
+                          {p?.koreksiDiBarisLain ? (
+                            <li className="text-muted-foreground">{t("correctionElsewhere", { amount: formatKoreksi(p.koreksiDiBarisLain.jumlah) })}</li>
+                          ) : null}
+                        </ul>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right font-semibold tabular-nums">
-                      {rupiah(k.total)}
-                      {k.potonganHilang > 0 && (
+                      {rupiah(total)}
+                      {potongan > 0 && (
                         <span className="mt-0.5 block text-xs font-normal text-amber-700 dark:text-amber-400">
                           {t('lossDeducted', {
-                            value: rupiah(k.potonganHilang),
-                            paid: rupiah(Math.max(0, k.total - k.potonganHilang)),
+                            value: rupiah(potongan),
+                            paid: rupiah(Math.max(0, total - potongan)),
                           })}
                         </span>
                       )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {k.dibayarkan !== null ? rupiah(k.dibayarkan) : p && !p.ditahan ? rupiah(p.dibayar) : '—'}
                     </TableCell>
                     <TableCell className="text-right">
                       {k.dibayarPada ? (
                         <StatusPill tone="settled">
                           {t('paidOn', { date: tanggal(k.dibayarPada) })}
                         </StatusPill>
-                      ) : bolehBayarGaji && data.terkunci ? (
-                        // Gaji baru boleh dibayar sesudah angkanya dikunci (penulis menolak BELUM_DIKUNCI).
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={pending}
-                          onClick={() =>
-                            jalankan(() => bayarKomisiAction(k.id), t('okPaid'), () => {})
-                          }
-                        >
-                          {t('markPaid')}
-                        </Button>
+                      ) : bolehBayarGaji && data.terkunci && p ? (
+                        p.ditahan ? (
+                          <span className="block max-w-[12rem] text-right text-xs text-amber-700 dark:text-amber-400">{td(`err${p.ditahan}`)}</span>
+                        ) : (
+                          // Gaji baru boleh dibayar sesudah angkanya dikunci (penulis menolak BELUM_DIKUNCI);
+                          // yang dibayar = komisi per SPG sekarang + koreksi, dikonfirmasi lebih dulu.
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={pending}
+                            onClick={() => setBayarTerbuka({ id: k.id, nama: k.spgNama ?? '—', bayar: p })}
+                          >
+                            {t('markPaid')}
+                          </Button>
+                        )
                       ) : (
                         <StatusPill tone="attention">{t('unpaid')}</StatusPill>
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}
+
+      <AlertDialog open={bayarTerbuka !== null} onOpenChange={(v) => !pending && !v && setBayarTerbuka(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("payConfirmTitle", { name: bayarTerbuka?.nama ?? "" })}</AlertDialogTitle>
+            <AlertDialogDescription>{t("payConfirmBody", { amount: rupiah(bayarTerbuka?.bayar.dibayar ?? 0) })}</AlertDialogDescription>
+          </AlertDialogHeader>
+          {bayarTerbuka && bayarTerbuka.bayar.berubah && Math.round(bayarTerbuka.bayar.komisiLama * 100) !== Math.round(bayarTerbuka.bayar.komisiBaru * 100) ? (
+            <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200">
+              {t("commissionReplaced", { old: rupiah(bayarTerbuka.bayar.komisiLama) })}
+            </p>
+          ) : null}
+          {data.komisiReturMenunggu > 0 ? (
+            <p className="text-sm text-muted-foreground">{t("returPendingCommission", { n: data.komisiReturMenunggu })}</p>
+          ) : null}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>{t("payCancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending || bayarTerbuka === null}
+              onClick={(e) => {
+                e.preventDefault();
+                const x = bayarTerbuka;
+                if (!x) return;
+                startTransition(async () => {
+                  const hasil = await bayarKomisiAction(x.id, undefined, x.bayar.dibayar);
+                  if (hasil.ok) {
+                    toast.success(t("okPaid"));
+                    setBayarTerbuka(null);
+                    router.refresh();
+                  } else {
+                    toast.error(td(`err${hasil.kode}`));
+                    if (hasil.kode === "ANGKA_BERUBAH" || hasil.kode === "SUDAH_DIBAYAR") {
+                      setBayarTerbuka(null);
+                      router.refresh();
+                    }
+                  }
+                });
+              }}
+            >
+              {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {t("markPaid")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Card>
         <CardHeader className="pb-3">
@@ -746,6 +850,10 @@ export function RincianSiklusClient({
                 {resmiTanpaBarang > 0 && <p>{t('lockTanpaBarang', { n: resmiTanpaBarang })}</p>}
                 {resmiTanpaHarga > 0 && <p>{t('lockTanpaHarga', { n: resmiTanpaHarga })}</p>}
               </div>
+            )}
+            {/* Retur pembeli yang belum disetujui: kalau disetujui sesudah gajinya dibayar, jadi koreksi minus. */}
+            {data.komisiReturMenunggu > 0 && (
+              <p className="text-xs text-amber-600 dark:text-amber-500">{t("returPendingCommission", { n: data.komisiReturMenunggu })}</p>
             )}
             <p className="text-xs text-muted-foreground">{t('commissionFromMaster')}</p>
           </div>

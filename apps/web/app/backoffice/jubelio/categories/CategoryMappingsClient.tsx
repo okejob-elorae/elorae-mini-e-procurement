@@ -32,9 +32,11 @@ import {
 
 type Props = {
   initialRows: CategoryMappingRow[];
+  /** settings_security:manage — the same permission saveJubelioCategoryMappings enforces. */
+  bolehUbah: boolean;
 };
 
-export function CategoryMappingsClient({ initialRows }: Props) {
+export function CategoryMappingsClient({ initialRows, bolehUbah }: Props) {
   const t = useTranslations("jubelio.categories");
   const pesanGalat = usePesanGalatJubelio();
   const [rows, setRows] = useState<CategoryMappingRow[]>(initialRows);
@@ -116,6 +118,10 @@ export function CategoryMappingsClient({ initialRows }: Props) {
         }
       />
 
+      {!bolehUbah && (
+        <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("hanyaLihat")}</p>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -163,7 +169,7 @@ export function CategoryMappingsClient({ initialRows }: Props) {
                             placeholder={options.length === 0 ? t("placeholderNoOptions") : t("placeholder")}
                             searchPlaceholder={t("searchPlaceholder")}
                             emptyMessage={t("noMatches")}
-                            disabled={options.length === 0}
+                            disabled={!bolehUbah || options.length === 0}
                             triggerClassName="w-full"
                           />
                         </TableCell>
@@ -182,7 +188,7 @@ export function CategoryMappingsClient({ initialRows }: Props) {
           <p className="text-xs text-muted-foreground">
             {dirtyEntries.length === 0 ? t("noUnsaved") : t("unsaved", { count: dirtyEntries.length })}
           </p>
-          <Button onClick={() => void handleSave()} disabled={isSaving || dirtyEntries.length === 0}>
+          <Button onClick={() => void handleSave()} disabled={!bolehUbah || isSaving || dirtyEntries.length === 0}>
             {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
             {t("save")}
           </Button>

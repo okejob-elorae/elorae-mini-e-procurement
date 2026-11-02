@@ -22,12 +22,18 @@ import { kaitBayarKomisiSpg, kaitKomisiSpg } from "@/lib/finance/operasional/kai
  * menandai dibayar = `spg_commission:pay` (keputusan pemilik 2026-11-01), izin
  * yang sama dengan menandai gaji & komisi konsinyasi dibayar — bawaannya hanya
  * admin. Tombol di halaman memakai izin yang sama.
+ *
+ * Membayar selalu membayar komisi per SPG saat ini (bukan angka tersimpan yang basi) dan menerapkan
+ * koreksi SPG itu yang ikut pembayaran tersebut; `jumlahDiharapkan` = yang dilihat di layar, dan
+ * angka yang berubah sejak halaman dibuka ditolak `ANGKA_BERUBAH` tanpa menulis apa pun.
  */
 
 type Gagal<K extends string> = { ok: false; code: "UNAUTHORIZED" | "FORBIDDEN" | "INVALID" | K };
 
 export type HasilTetapkanKomisiAction = { ok: true; ulang: boolean; ditulis: number; dihapus: number } | Gagal<KodeTolakTetapkan>;
-export type HasilBayarKomisiAction = { ok: true } | Gagal<KodeTolakBayar>;
+export type HasilBayarKomisiAction =
+  | { ok: true; dibayar: number; koreksi: number }
+  | (Gagal<KodeTolakBayar> & { jumlah?: number });
 export type HasilCekLaporanAction = { ok: true; bulanBayar: string } | Gagal<KodeTolakCek>;
 export type HasilBatalCekAction = { ok: true; dihapus: number } | Gagal<KodeTolakBatalCek>;
 
@@ -84,14 +90,23 @@ export async function tetapkanKomisiSpgAction(isi: { storeId: unknown; periode: 
   return { ok: true, ulang: h.ulang, ditulis: h.ditulis, dihapus: h.dihapus };
 }
 
-export async function tandaiKomisiSpgDibayarAction(isi: { commissionId: unknown; catatan?: unknown }): Promise<HasilBayarKomisiAction> {
+export async function tandaiKomisiSpgDibayarAction(isi: {
+  commissionId: unknown;
+  catatan?: unknown;
+  jumlahDiharapkan: unknown;
+}): Promise<HasilBayarKomisiAction> {
   const g = await penggunaKeuangan(PERMISSIONS.SPG_COMMISSION_PAY);
   if (!g.ok) return g;
   if (typeof isi?.commissionId !== "string" || !isi.commissionId) return { ok: false, code: "INVALID" };
   if (isi.catatan !== undefined && isi.catatan !== null && typeof isi.catatan !== "string") return { ok: false, code: "INVALID" };
-  const h = await tandaiKomisiDibayar({ commissionId: isi.commissionId, olehUserId: g.userId, catatan: isi.catatan });
+  // Yang dilihat kantor wajib ikut: tanpa itu angka yang berubah sejak halaman dibuka lolos dibayar.
+  const jumlah = isi.jumlahDiharapkan;
+  if (typeof jumlah !== "number" || !Number.isFinite(jumlah) || jumlah < 0) return { ok: false, code: "INVALID" };
+  const h = await tandaiKomisiDibayar({ commissionId: isi.commissionId, olehUserId: g.userId, catatan: isi.catatan, jumlahDiharapkan: jumlah });
   if (!h.ok) return h;
+  // Akrual toko × bulan diselaraskan dulu (pembayaran bisa menghitung ulang barisnya), lalu jurnal
+  // pembayarannya dengan koreksi yang dibawanya — keduanya di `kaitBayarKomisiSpg`.
   await kaitBayarKomisiSpg(isi.commissionId, g.userId);
   segarkan();
-  return { ok: true };
+  return { ok: true, dibayar: h.dibayar, koreksi: h.koreksi };
 }

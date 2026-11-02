@@ -114,34 +114,6 @@ export function bandingkanLaporan(
   return [...peta.values()];
 }
 
-export type BarisTerjual = { qty: number; commissionPerPcs: number };
-
-/**
- * Bagi komisi antar SPG satu toko — ATURAN LAMA, bukan lagi sumber angka komisi.
- *
- * Sejak keputusan pemilik 2026-11-01 komisi SPG dihitung satu cara untuk semua
- * toko (`lib/spg-commission/payout.ts`): tarif per kategori × potong yang dijual
- * masing-masing SPG, bukan tarif barang dibagi rata. `kunciAngka` tidak lagi
- * memanggil fungsi ini; ia tinggal karena perkiraan lama di `lib/spg/stok.ts`
- * masih mengimpornya. Jangan dipakai untuk angka baru.
- *
- * Sisa pembagian yang tidak habis diberikan ke SPG pertama, bukan dibuang.
- */
-export function bagiKomisi(
-  terjual: BarisTerjual[],
-  jumlahSpg: number,
-): { totalKomisi: number; perSpg: number[] } {
-  const totalKomisi = terjual.reduce((s, b) => s + b.qty * b.commissionPerPcs, 0);
-  if (jumlahSpg <= 0) return { totalKomisi, perSpg: [] };
-
-  const dasar = Math.floor(totalKomisi / jumlahSpg);
-  const sisa = totalKomisi - dasar * jumlahSpg;
-  return {
-    totalKomisi,
-    perSpg: Array.from({ length: jumlahSpg }, (_, i) => (i === 0 ? dasar + sisa : dasar)),
-  };
-}
-
 /** Stok titipan = dikirim − terjual. Dihitung, tidak disimpan. */
 export function stokTitipan(
   dikirim: { itemName: string; qty: number }[],

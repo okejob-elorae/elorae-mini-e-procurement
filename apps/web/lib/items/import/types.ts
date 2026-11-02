@@ -141,7 +141,7 @@ export type ItemImportCommitResult =
       status: "created";
       items: Array<{ id: string; sku: string; nameId: string }>;
       variantCount: number;
+      /** True = every created product was requested for Jubelio and waits for price confirmation. */
       jubelioRequested: boolean;
-      jubelioFailed: number;
     }
   | { status: "failed" };

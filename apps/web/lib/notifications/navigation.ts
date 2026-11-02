@@ -91,6 +91,7 @@ export const NOTIFICATION_TYPES = [
   "PESANAN_DIKIRIM",
   "PESANAN_DITUTUP",
   "PESANAN_PORTAL",
+  "RETUR_PEMBELI_MENUNGGU",
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -351,6 +352,11 @@ export function getNotificationHref(
       const id = typeof data?.lossId === 'string' ? data.lossId : null;
       return id ? `/backoffice/barang-hilang/${encodeURIComponent(id)}` : '/backoffice/barang-hilang';
     }
+    case "RETUR_PEMBELI_MENUNGGU": {
+      // Laporan retur pembeli SPG yang menunggu disetujui; tanpa id → tab "Menunggu" daftarnya.
+      const id = idAman(data, "returnId");
+      return id ? `/backoffice/retur-spg/${id}` : "/backoffice/retur-spg?status=MENUNGGU";
+    }
     case 'PENDING_ORDER_APPROVAL': {
       const id = idAman(data, 'orderId');
       return id ? `/backoffice/field-sales-orders/${id}` : '/backoffice/field-sales-orders';
@@ -575,6 +581,7 @@ const TUJUAN_HP: Record<NotificationType, TujuanHp> = {
   SPG_SHIFT_SWAP: DI_KANTOR,
   SPG_STOCK_REQUEST_UNHELD: DI_KANTOR,
   STOCK_LOSS_OPEN: DI_KANTOR,
+  RETUR_PEMBELI_MENUNGGU: DI_KANTOR,
 };
 
 /**

@@ -1,4 +1,5 @@
-import { prisma, type Prisma } from "@elorae/db";
+import { Prisma, prisma, sqlId } from "@elorae/db";
+import { returPembeliBerlaku } from "@/lib/spg/retur-pembeli-berlaku";
 import type { CommissionRate } from "./compute";
 import { isYearMonth } from "./month";
 import { konsiReportKey, putusReportKey, type SalesReport, type SpgSaleMovement } from "./payout";
@@ -36,12 +37,20 @@ export async function commissionRates(client: Client = prisma): Promise<Commissi
 }
 
 /**
- * Every SPG sale line (+qty) and shopper-return line (−qty) of the given stores in one WIB month,
+ * Every SPG sale (+qty) and APPROVED shopper return (−qty) of the given stores in one WIB month,
  * per store, each credited to the SPG who wrote the original note. A sale counts in the month of
- * its note and a return in the month of the return, so a month whose report was checked is not
- * changed by a return that comes later; a return of an earlier month's note only reduces the same
- * SPG's same item this month, never below zero (`toCommissionReport`). The category is the item's
- * category as it stands now.
+ * its note and a return in the month it was reported (`SpgSaleReturn.createdAt`), and only once the
+ * office has approved it (`returPembeliBerlaku`, the one spelling of "approved", owned by the
+ * shopper-return module): a reported return changes nothing until then, a rejected or withdrawn one
+ * never. A return approved after its month's commission was paid lowers that month's per-SPG figure;
+ * the difference reaches the SPG as a correction on her next payout (`lib/spg/koreksi.ts`), never by
+ * changing what was paid. A return of an earlier month's note only reduces the same SPG's same item
+ * this month, never below zero (`toCommissionReport`). The category is the item's category as it
+ * stands now.
+ *
+ * Sales are read AGGREGATED per store × seller × item in the database (one row each, not one per
+ * line): the commission pages, the payment writers and the SPG phone all read many store-months,
+ * and only these sums enter the computation. Returns are rare and read per line.
  */
 export async function spgSaleMovements(
   client: Client,
@@ -53,17 +62,21 @@ export async function spgSaleMovements(
   const { start, end } = wibMonthRange(salesMonth);
   const ids = [...new Set(storeIds)];
   const [sales, returns] = await Promise.all([
-    client.spgSaleLine.findMany({
-      where: { spgSale: { storeId: { in: ids }, createdAt: { gte: start, lt: end } } },
-      select: {
-        itemId: true,
-        qty: true,
-        item: { select: { categoryId: true } },
-        spgSale: { select: { storeId: true, salesmanId: true } },
-      },
-    }),
+    client.$queryRaw<{ storeId: string; salesmanId: string; itemId: string; categoryId: string | null; qty: unknown }[]>(Prisma.sql`
+      SELECT s.${sqlId("storeId")} AS ${sqlId("storeId")},
+             s.${sqlId("salesmanId")} AS ${sqlId("salesmanId")},
+             l.${sqlId("itemId")} AS ${sqlId("itemId")},
+             i.${sqlId("categoryId")} AS ${sqlId("categoryId")},
+             SUM(l.${sqlId("qty")}) AS ${sqlId("qty")}
+      FROM ${sqlId("SpgSaleLine")} l
+      JOIN ${sqlId("SpgSale")} s ON s.${sqlId("id")} = l.${sqlId("spgSaleId")}
+      JOIN ${sqlId("Item")} i ON i.${sqlId("id")} = l.${sqlId("itemId")}
+      WHERE s.${sqlId("storeId")} IN (${Prisma.join(ids)})
+        AND s.${sqlId("createdAt")} >= ${start} AND s.${sqlId("createdAt")} < ${end}
+      GROUP BY s.${sqlId("storeId")}, s.${sqlId("salesmanId")}, l.${sqlId("itemId")}, i.${sqlId("categoryId")}
+    `),
     client.spgSaleReturnLine.findMany({
-      where: { saleReturn: { storeId: { in: ids }, createdAt: { gte: start, lt: end } } },
+      where: { saleReturn: returPembeliBerlaku({ storeId: { in: ids }, createdAt: { gte: start, lt: end } }) },
       select: {
         itemId: true,
         qty: true,
@@ -73,7 +86,9 @@ export async function spgSaleMovements(
     }),
   ]);
   for (const s of sales) {
-    result.get(s.spgSale.storeId)?.push({ salesmanId: s.spgSale.salesmanId, itemId: s.itemId, categoryId: s.item.categoryId, qty: s.qty });
+    const qty = Number(s.qty ?? 0);
+    if (!Number.isFinite(qty) || qty === 0) continue;
+    result.get(s.storeId)?.push({ salesmanId: s.salesmanId, itemId: s.itemId, categoryId: s.categoryId ?? null, qty });
   }
   for (const r of returns) {
     result.get(r.saleReturn.storeId)?.push({
@@ -101,7 +116,13 @@ async function movementsFor(client: Client, pairs: ReadonlyArray<{ storeId: stri
   return (storeId: string, salesMonth: string): SpgSaleMovement[] => byMonth.get(salesMonth)?.get(storeId) ?? [];
 }
 
-export type KonsiSalesReport = SalesReport & { kind: "KONSI"; cycleId: string; noKonsi: string };
+export type KonsiSalesReport = SalesReport & {
+  kind: "KONSI";
+  cycleId: string;
+  noKonsi: string;
+  /* Σ qty of the official lines typed without an item: they count for no SPG. */
+  officialItemlessQty: number;
+};
 
 /**
  * Consignment cycles whose official figures are locked, as sales reports: the cycle's month is the
@@ -129,6 +150,8 @@ export async function lockedKonsiReports(
       sold: { select: { itemId: true, qty: true } },
     },
   });
+  const itemlessQty = (sold: ReadonlyArray<{ itemId: string | null; qty: number }>) =>
+    sold.reduce((n, s) => n + (s.itemId === null && Number.isFinite(s.qty) && s.qty > 0 ? s.qty : 0), 0);
   const locked = cycles.flatMap((c) => (c.lockedAt ? [{ ...c, lockedAt: c.lockedAt }] : []));
   const movements = await movementsFor(
     client,
@@ -146,6 +169,7 @@ export async function lockedKonsiReports(
       movements: movements(c.storeId, salesMonth),
       cycleId: c.id,
       noKonsi: c.noKonsi,
+      officialItemlessQty: itemlessQty(c.sold),
     };
   });
 }

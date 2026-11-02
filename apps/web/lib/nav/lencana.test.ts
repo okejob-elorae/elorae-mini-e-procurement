@@ -36,6 +36,27 @@ describe('bagiLencana', () => {
     expect(halaman['/backoffice/purchase-orders']).toBe(2);
   });
 
+  it('membuang jangkar (#…) supaya cocok dengan href di menu', () => {
+    // Tunggakan komisi SPG menaut ke `#tunggakan`, sedangkan menu Komisi SPG
+    // ber-href tanpa jangkar. Dulu hanya `?` yang dibuang: grup SPG berlencana,
+    // halaman di dalamnya tidak — total grup ≠ jumlah halamannya.
+    const { grup, halaman } = bagiLencana(
+      [{ key: 'spgCommissionsUnpaidPast', href: '/backoffice/komisi-spg#tunggakan', count: 3 }],
+      () => '/backoffice/spg',
+    );
+    expect(halaman['/backoffice/komisi-spg']).toBe(3);
+    expect(halaman['/backoffice/komisi-spg#tunggakan']).toBeUndefined();
+    expect(grup['/backoffice/spg']).toBe(halaman['/backoffice/komisi-spg']);
+  });
+
+  it('membuang query string dan jangkar sekaligus', () => {
+    const { halaman } = bagiLencana(
+      [{ key: 'x', href: '/backoffice/retur-spg?status=MENUNGGU#atas', count: 1 }],
+      () => null,
+    );
+    expect(halaman['/backoffice/retur-spg']).toBe(1);
+  });
+
   it('TIDAK menaruh total grup ke peta halaman', () => {
     /*
      * Inti bug kedua. Induk "Produksi" dan anak "Plan Kerja" dua-duanya

@@ -15,7 +15,15 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "navGroupSpg",
     judul: "Rincian nota SPG",
     isi: "Satu nota penjualan SPG: toko, waktu, lokasi saat dicatat, barang per baris dengan promo dan potongannya, serta total bersih sesudah promo konter dan diskon manual. Nota lama yang mencatat uang tunai masih menampilkan uang diterima dan kembaliannya.",
-    kartu: [{ judul: { kunci: "spgRetur.kantor.judul" }, isi: { kunci: "spgRetur.kantor.penjelasan" } }],
+    kartu: [
+      {
+        judul: { kunci: "spgRetur.kantor.judul" },
+        isi: [
+          { kunci: "spgRetur.kantor.penjelasan" },
+          "Bagian ini menampilkan setiap laporan retur pembeli atas nota ini beserta statusnya (menunggu, disetujui, ditolak, ditarik SPG); hanya yang disetujui mengurangi jumlah bersih. Kolom Menunggu menyebut potong yang masih menunggu keputusan kantor — belum mengurangi penjualan bersih, stok toko, maupun komisi. Setiap laporan bisa dibuka untuk diputuskan di SPG → Retur pembeli.",
+        ],
+      },
+    ],
   },
   {
     rute: "/backoffice/kinerja-spg",
@@ -64,6 +72,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "spgTutupHari.kantor.deskripsi" },
       "Tampilan per hari menunjukkan setiap toko yang punya SPG: sudah atau belum tutup, angka laporannya, pengunjung, konversi, total kasir, dan selisihnya. Tampilan rentang merekap beberapa hari per toko.",
       "Setiap hari pukul 21.30 WIB, SPG di toko yang hari itu sudah punya nota tetapi belum mengirim laporan tutup hari mendapat pengingat.",
+      "Retur pembeli dihitung pada hari dilaporkan dan hanya bila sudah disetujui kantor.",
       "Angka pengunjung, seperti di Kinerja SPG, dari penghitung +1 di HP SPG; hari yang tidak dihitung memakai angka yang diketik di laporan tutup hari (ditandai \"dari laporan tutup hari\"). Bila SPG mengetik angka lain di laporannya, angka itu tampil di bawahnya sebagai \"Laporan\". Kinerja SPG membagi kelebihan angka laporan ke SPG yang hadir tetapi tidak menghitung, jadi totalnya bisa lebih besar daripada angka penghitung di sini. Konversi = nota ÷ pengunjung; di tampilan rentang konversinya dari laporan tutup hari.",
     ],
   },
@@ -247,14 +256,29 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "komisiSpg.judul" },
     isi: [
       { kunci: "komisiSpg.deskripsi" },
-      "Satu hitungan untuk toko putus dan konsinyasi (keputusan pemilik 2026-11-01): tarif per kategori barang bulan penjualannya (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG sendiri, dikurangi retur pembeli dari notanya. Barang yang kategorinya belum bertarif bulan itu tidak menghasilkan komisi.",
+      "Satu hitungan untuk toko putus dan konsinyasi (keputusan pemilik 2026-11-01): tarif per kategori barang bulan penjualannya (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG sendiri, dikurangi retur pembeli dari notanya yang sudah disetujui kantor. Tidak ada bagi rata (keputusan pemilik 2026-11-02). Barang yang kategorinya belum bertarif bulan itu tidak menghasilkan komisi.",
       "Halaman disusun per BULAN PEMBAYARAN: komisi dibayar di bulan laporannya dicek, dengan catatan bulan penjualannya — penjualan Oktober yang dicek awal November tampil di November sebagai Komisi penjualan Oktober 2026.",
-      "Toko putus, tiga langkah: Tandai laporan dicek (hanya untuk bulan penjualan yang sudah selesai), Tetapkan, lalu Tandai dibayar. Mengecek, membatalkan tanda dicek, dan menetapkan butuh izin mengelola piutang; menandai dibayar butuh izin membayar gaji & komisi SPG, yang bawaannya hanya dipegang admin. Tanda dicek boleh dibatalkan dengan alasan selama belum ada komisi toko × bulan itu yang dibayar — baris yang sudah ditetapkan ikut terhapus. Menetapkan boleh diulang selama belum ada yang dibayar. Baris yang ditetapkan dengan aturan lama (tarif per barang atau dibagi rata) harus ditetapkan ulang sebelum bisa dibayar, dan bulan yang sudah dibayar dengan aturan lama tidak bisa dicek lagi.",
-      "Toko konsinyasi: laporannya dicek saat kantor mengunci angka resmi siklusnya (Konsinyasi), dan dibayar di siklus itu; di sini tampil angkanya. Kartunya memperingatkan bila hitungan sekarang berbeda dari angka yang dikunci.",
-      "Beban barang hilang yang ditanggung SPG dipotong dari komisinya saat ditetapkan; batas potongannya diatur di Pengaturan → SPG.",
-      "Komisi tidak terbentuk sendiri: baris resminya baru ada setelah laporan dicek dan ditetapkan. Beranda mengingatkan pemegang izin mengelola piutang dengan jumlah toko putus ber-SPG yang laporan bulan lalunya belum dicek atau belum ditetapkan; tautannya membuka halaman ini.",
+      "Toko putus, tiga langkah: Tandai laporan dicek (hanya untuk bulan penjualan yang sudah selesai), Tetapkan, lalu Tandai dibayar. Mengecek, membatalkan tanda dicek, dan menetapkan butuh izin mengelola piutang; menandai dibayar butuh izin membayar gaji & komisi SPG, yang bawaannya hanya dipegang admin. Tanda dicek boleh dibatalkan dengan alasan selama belum ada komisi toko × bulan itu yang dibayar — baris yang sudah ditetapkan ikut terhapus. Menetapkan boleh diulang selama belum ada yang dibayar. Bulan yang sebagian sudah dibayar dengan aturan lama (tarif per barang atau dibagi rata) tidak bisa dicek lagi, tetapi baris yang belum dibayar di bulan itu tetap bisa dibayar.",
+      "Yang belum dibayar selalu dibayar dengan komisi per SPG SAAT ditandai dibayar, bukan angka yang tersimpan: angka lama yang berbeda dicoret di layar dan tercatat di jejak audit, dan dialog bayarnya menyebut jumlah persis yang dibayarkan. Bila angkanya berubah sejak halaman dibuka (nota, pengembalian, atau pembayaran lain masuk), pembayaran ditolak dan halaman dimuat ulang supaya angkanya diperiksa lagi.",
+      "Koreksi: komisi per SPG sekarang − yang sudah dibayar − koreksi yang sudah diterapkan, untuk laporan yang sudah dibayar (pembayaran lama yang dibagi rata, pengembalian pembeli yang disetujui sesudah dibayar, atau nota HP yang masuk sesudah dibayar). Koreksi tidak disimpan sebelum dibayar: ia diterapkan sekali, di pembayaran SPG itu yang paling lama di antara yang belum dibayar dan sudah boleh dibayar (12 bulan terakhir), dan baru tercatat saat pembayaran itu ditandai dibayar. Pembayaran tidak pernah di bawah Rp 0 — sisa koreksi minus dibawa ke pembayaran sesudahnya.",
+      "Laporan aturan lama yang tidak bisa dibandingkan jujur — sebagian potongnya tanpa tarif kategori, atau (konsinyasi) angka resminya tidak seluruhnya tercatat di HP SPG — tidak dikoreksi dan tidak dibayar otomatis: barisnya menunggu keputusan pemilik.",
+      "Toko konsinyasi: laporannya dicek saat kantor mengunci angka resmi siklusnya (Konsinyasi). Gaji & komisinya bisa ditandai dibayar di sini atau di siklus konsinyasinya, dengan izin membayar gaji & komisi SPG, tanpa membuka kunci. Kartunya memperingatkan bila hitungan sekarang berbeda dari angka yang dikunci.",
+      "Beban barang hilang yang ditanggung SPG dipotong dari komisinya saat ditetapkan; batas potongannya diatur di Pengaturan → SPG. Bila komisinya turun saat dibayar, potongannya ikut diturunkan sampai batas yang baru.",
+      "Komisi tidak terbentuk sendiri: baris resminya baru ada setelah laporan dicek dan ditetapkan. Beranda mengingatkan pemegang izin mengelola piutang dengan jumlah toko putus ber-SPG yang laporan bulan lalunya belum dicek atau belum ditetapkan (bulan yang seluruh penjualannya dikembalikan pembeli tidak dihitung — tidak ada komisi yang bisa dicek atau ditetapkan); tautannya membuka halaman ini. Pemegang izin membayar gaji & komisi SPG juga diingatkan dengan jumlah baris yang tertunggak dari bulan pembayaran sebelumnya.",
     ],
-    kartu: [{ judul: { kunci: "komisiSpg.konsi.judul" }, isi: { kunci: "komisiSpg.konsi.isi" } }],
+    kartu: [
+      {
+        judul: "Belum dibayar dari bulan pembayaran sebelumnya",
+        isi: [
+          "Komisi yang laporannya sudah dicek, atau siklusnya sudah dikunci, di bulan pembayaran sebelumnya tetapi belum ditandai dibayar. Kartunya bertiga: yang bisa dibayar sekarang (dihitung di Beranda), yang menunggu keputusan pemilik (tidak bisa dibayar, tidak dihitung), dan yang lebih tua dari 12 bulan (tidak dihitung).",
+        ],
+      },
+      {
+        judul: "Koreksi komisi",
+        isi: "Koreksi yang menunggu, per SPG, beserta pembayaran yang akan membawanya. SPG yang belum punya pembayaran berikutnya ditulis menunggu — koreksinya diterapkan begitu ada.",
+      },
+      { judul: { kunci: "komisiSpg.konsi.judul" }, isi: { kunci: "komisiSpg.konsi.isi" } },
+    ],
   },
   {
     rute: "/backoffice/spg-commission",
@@ -263,7 +287,9 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       { kunci: "spgCommission.subtitle" },
       "Halaman ini hanya membaca, dari hitungan yang sama dengan Komisi SPG: siklus konsinyasi yang dikunci dan laporan toko putus yang dicek di bulan pembayaran yang dipilih. Angka resmi, penetapan, dan pembayaran tetap di SPG → Komisi SPG dan di siklus konsinyasi.",
-      "Setiap baris SPG bisa dibuka untuk rincian per kategori barang beserta tarifnya. Potong dari barang yang kategorinya belum bertarif di bulan penjualannya disebut terpisah dan tidak menghasilkan komisi; tarifnya diatur di Pengaturan → Komisi SPG oleh pemegang izin mengatur tarif. Ekspor mengikuti bulan pembayaran yang sama.",
+      "Satu baris per SPG: potong, komisi per SPG (tarif kategori bulan penjualan × potong bersih yang dijual SPG itu sendiri), dibayar, koreksi diterapkan (selisih bulan sebelumnya yang ikut dibayar bulan ini), belum dibayar, dan selisih ke pembayaran berikutnya (komisi per SPG dikurangi yang sudah dibayar). Membuka baris menampilkan setiap laporannya dengan bulan penjualan, status (ditetapkan, belum ditetapkan, atau tanpa baris — lewat koreksi), angka yang ditetapkan, dan koreksi yang berasal darinya. Laporan toko putus yang sudah dicek tetapi belum ditetapkan tidak dihitung dibayar.",
+      "Rincian per kategori barang menyebut tarifnya. Potong dari barang yang kategorinya belum bertarif di bulan penjualannya disebut terpisah dan tidak menghasilkan komisi; tarifnya diatur di Pengaturan → Komisi SPG oleh pemegang izin mengatur tarif. Daftar koreksi yang dibayar di bulan ini ada di bawahnya.",
+      "Ekspor mengikuti bulan pembayaran yang sama, dengan empat lembar: Ringkasan (per SPG), Per laporan (bulan pembayaran dan bulan penjualan), Koreksi, dan Per kategori.",
     ],
   },
   {
@@ -305,6 +331,27 @@ export const ENTRI: EntriBantuan[] = [
     isi: [
       "Satu mutasi: toko asal dan tujuan, barang dan jumlahnya, dan riwayat setiap langkahnya. Surat jalan bisa dicetak atau disimpan sebagai PDF dari sini; sebelum barang dikirim, surat jalan tercetak dengan cap DRAF.",
       "Bila barang diterima kurang dari yang dikirim, kantor memutuskan selisihnya: hilang (hanya dicatat, stok tidak berubah, dan catatan barang hilang dibuka untuk toko asal di SPG → Barang hilang) atau kembali (stok toko asal ditambah sebesar kekurangannya). Memutuskannya butuh izin memutuskan selisih transfer.",
+    ],
+  },
+  {
+    rute: "/backoffice/retur-spg",
+    bagian: "navGroupSpg",
+    judul: { kunci: "spgReturPembeli.kantor.judul" },
+    isi: [
+      { kunci: "spgReturPembeli.kantor.deskripsi" },
+      "Laporan datang dari HP SPG, lewat tombol Laporkan retur pembeli di nota penjualan. Selama Menunggu, laporan itu tidak mengubah apa pun: stok rak toko, penjualan bersih, komisi SPG, laporan konsinyasi, dan riwayat penjualan tetap seperti sebelum retur. Barang yang masih menunggu tetap mengurangi jumlah yang bisa dilaporkan dari baris nota itu, jadi potong yang sama tidak bisa dilaporkan dua kali.",
+      "Pengawas SPG bisa melihat daftar ini. Menyetujui dan menolak butuh izin Setujui retur pembeli SPG — bawaannya admin dan Admin Penjualan (keputusan pemilik 2026-11-02), dan bisa diberikan ke peran lain di Peran & izin. Tidak ada yang bisa memutuskan laporan yang ia buat sendiri.",
+      "Tab memilih status (bawaannya Menunggu); saringan toko dan nomor nota tersimpan di alamat halaman. Beranda menghitung laporan yang menunggu untuk pemegang izin menyetujui, dan tautannya membuka tab Menunggu.",
+    ],
+  },
+  {
+    rute: "/backoffice/retur-spg/[id]",
+    bagian: "navGroupSpg",
+    judul: { kunci: "spgReturPembeli.rincian.judul" },
+    isi: [
+      "Satu laporan: SPG pelapor, toko, nota asal, barang per baris dengan kondisinya, alasan pembeli, dan riwayat keputusannya.",
+      "Menyetujui menerapkan retur sekaligus: jumlah kembali di nota bertambah, barang layak masuk lagi ke stok rak toko (barang rusak tidak), dan penjualan bersih, komisi SPG, laporan konsinyasi, serta riwayat penjualan berkurang. Semuanya dihitung pada tanggal retur DILAPORKAN, bukan tanggal disetujui. Barang yang sudah dihitung opname toko sesudah dilaporkan tidak ditambahkan lagi ke stok rak.",
+      "Bila komisi bulan itu sudah dicek, atau angka konsinyasinya sudah dikunci, angka yang tersimpan tidak berubah; selisih komisinya dikoreksi di pembayaran berikutnya. Menolak wajib disertai alasan, yang dikirim ke HP SPG, dan laporan yang ditolak tidak mengubah apa pun. Laporan lama yang dicatat sebelum ada persetujuan kantor tertulis Berlaku langsung.",
     ],
   },
   {

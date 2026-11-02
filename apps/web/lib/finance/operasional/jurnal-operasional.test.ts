@@ -47,8 +47,11 @@ import { SUMBER_LAPANGAN } from "@/lib/finance/lapangan/aturan";
 import { sumberSapuanTerdaftar } from "@/lib/finance/sapuan/semua";
 import { batalkanPembayaranToko, bayarKomisi, bukaKunci, catatPembayaranToko, kirimTitipan, kunciAngka } from "@/lib/konsinyasi/writer";
 import { catatHitunganGudang } from "@/lib/receivables/return-writer";
+import { konsiReportKey, putusReportKey } from "@/lib/spg-commission/payout";
 import { putuskanGudangRusak } from "@/lib/spg/gudang-rusak-writer";
+import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "@/lib/spg/hilang";
 import { batalkanBarangHilang, buatBarangHilang, putuskanBarangHilang } from "@/lib/spg/hilang-writer";
+import { JEJAK_KOMISI_SPG } from "@/lib/spg/komisi";
 import { idKomisiSpg, SEMUA_SUMBER_OPERASIONAL, SUMBER_OPERASIONAL } from "./aturan";
 import {
   postJurnalBayarBiayaPerjalanan,
@@ -70,11 +73,23 @@ import {
   selaraskanJurnalReturKonsi,
   selaraskanJurnalSiklusKonsi,
 } from "./jurnal";
-import { kaitKirimTitipan, kaitPindahKonsiPengiriman, kaitPindahKonsiTransfer, kaitReturLapanganKonsi, kaitSiklusKonsi } from "./kait";
+import {
+  kaitBayarGajiKonsi,
+  kaitBayarKomisiSpg,
+  kaitKirimTitipan,
+  kaitPindahKonsiPengiriman,
+  kaitPindahKonsiTransfer,
+  kaitReturLapanganKonsi,
+  kaitSiklusKonsi,
+} from "./kait";
 import { putarBarangRusak } from "./nilai-rusak-queries";
 import { rekonsiliasiPersediaan } from "./rekonsiliasi-persediaan-queries";
 import {
+  cariBayarGajiKonsiTanpaJurnal,
+  cariBayarKomisiSpgTanpaJurnal,
   cariKirimKonsiTanpaJurnal,
+  cariKomisiKonsiTanpaJurnal,
+  cariKomisiSpgTanpaJurnal,
   cariPesananKonsiTanpaJurnal,
   cariPindahKonsiTanpaJurnal,
   cariReturLapanganKonsiTanpaJurnal,
@@ -210,6 +225,7 @@ afterEach(async () => {
   const bayar = siklusIds.length ? await prisma.consignmentPayment.findMany({ where: { cycleId: { in: seededIds(siklusIds) } }, select: { id: true } }) : [];
   const gerakRusak = barangIds.length ? await prisma.damagedStockMovement.findMany({ where: { itemId: { in: seededIds(barangIds) } }, select: { id: true } }) : [];
   const komisiSpg = tokoIds.length ? await prisma.spgCommission.findMany({ where: { storeId: { in: seededIds(tokoIds) } }, select: { id: true } }) : [];
+  const koreksi = spgId ? await prisma.spgCommissionCorrection.findMany({ where: { spgUserId: seededId(spgId) }, select: { id: true } }) : [];
   const retur = pemasokId ? await prisma.vendorReturn.findMany({ where: { vendorId: seededId(pemasokId) }, select: { id: true } }) : [];
   const klaim = spgId ? await prisma.expenseClaim.findMany({ where: { userId: seededId(spgId) }, select: { id: true } }) : [];
   const adj = barangIds.length ? await prisma.stockAdjustment.findMany({ where: { itemId: { in: seededIds(barangIds) } }, select: { id: true } }) : [];
@@ -280,6 +296,7 @@ afterEach(async () => {
   }
   if (nri.length) await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(nri.map((n) => n.id)) } } });
   if (tokoIds.length) await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: seededIds(tokoIds) } } });
+  if (koreksi.length) await prisma.spgCommissionCorrection.deleteMany({ where: { id: { in: seededIds(koreksi.map((k) => k.id)) } } });
   if (komisiSpg.length) await prisma.spgCommission.deleteMany({ where: { id: { in: seededIds(komisiSpg.map((k) => k.id)) } } });
   if (retur.length) await prisma.vendorReturn.deleteMany({ where: { id: { in: seededIds(retur.map((r) => r.id)) } } });
   if (klaim.length) await prisma.expenseClaim.deleteMany({ where: { id: { in: seededIds(klaim.map((k) => k.id)) } } });
@@ -448,7 +465,7 @@ describe("konsinyasi: kiriman, siklus, pembayaran toko, gaji SPG", () => {
 
     // Gaji dibayar: hutang komisi lunas dari bank.
     const [k] = await prisma.consignmentCommission.findMany({ where: { cycleId: siklusId }, select: { id: true } });
-    expect(await bayarKomisi({ commissionId: k.id, olehUserId: adminId })).toEqual({ ok: true });
+    expect(await bayarKomisi({ commissionId: k.id, olehUserId: adminId, jumlahDiharapkan: 1_004_000 })).toMatchObject({ ok: true, dibayar: 1_004_000, koreksi: 0 });
     expect(await postJurnalBayarGajiKonsi(k.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toEqual({ COMMISSION_PAYABLE: 1_004_000, BANK: -1_004_000 });
   });
@@ -1020,6 +1037,260 @@ describe("komisi SPG toko putus dan potongan beban sales", () => {
     });
     expect(await postJurnalPotongSales(d.id, adminId)).toMatchObject({ ok: true, created: true });
     expect(await saldoPeran(SUMBER_OPERASIONAL.POTONG_SALES, d.id)).toEqual({ SALES_COMMISSION_EXPENSE: 40_000, LOSS_RECOVERY: -40_000 });
+  });
+});
+
+/**
+ * Koreksi komisi SPG yang diterapkan pada satu pembayaran, ditanam langsung: penurunannya
+ * (selisih angka sekarang vs yang dulu dibayar bagi rata) dites di `lib/spg/koreksi*`; di sini
+ * hanya jurnalnya. Bawaannya dua laporan asal: +17.500 dari toko konsinyasi, −2.500 dari toko putus.
+ */
+type AsalKoreksiUji = { sourceKind: "KONSI" | "PUTUS"; sourceKey: string; sourceStoreId: string; sourceSalesMonth: string; amount: number };
+
+async function tanamKoreksi(paidRefType: typeof REF_KOMISI_SPG_PUTUS | typeof REF_KOMISI_KONSI, paidRefId: string, payoutMonth: string, asalLain?: AsalKoreksiUji[]) {
+  const asal: AsalKoreksiUji[] = asalLain ?? [
+    { sourceKind: "KONSI", sourceKey: konsiReportKey(`${tag}-lama-${urut}`), sourceStoreId: tokoId, sourceSalesMonth: "2004-01", amount: 17_500 },
+    { sourceKind: "PUTUS", sourceKey: putusReportKey(tokoPutusId, "2004-02"), sourceStoreId: tokoPutusId, sourceSalesMonth: "2004-02", amount: -2_500 },
+  ];
+  for (const a of asal) {
+    await prisma.spgCommissionCorrection.create({
+      data: {
+        spgUserId: spgId,
+        ...a,
+        difference: a.amount,
+        figure: 0,
+        paidBefore: 0,
+        appliedBefore: 0,
+        paidRefType,
+        paidRefId,
+        payoutMonth,
+        note: `Koreksi komisi uji ${a.sourceKey}`,
+        appliedById: adminId,
+        appliedAt: new Date(),
+      },
+    });
+  }
+}
+
+/** Beban komisi di jurnal pembayaran, per toko × kanal (debit +). */
+async function bebanKoreksi(sourceType: string, id: string) {
+  const baris = await prisma.journalLine.findMany({
+    where: { journal: { sourceType, sourceId: id }, chartAccountId: h.akun.get("SPG_COMMISSION_EXPENSE") },
+    select: { debit: true, credit: true, channel: true, storeId: true },
+  });
+  return baris.map((l) => ({ nilai: Number(l.debit) - Number(l.credit), channel: l.channel, storeId: l.storeId })).sort((x, y) => y.nilai - x.nilai);
+}
+
+describe("koreksi komisi SPG pada pembayaran", () => {
+  it("toko putus: akrual diselaraskan ke angka yang dihitung ulang saat bayar; koreksi jadi beban di toko + kanal asalnya, bank sebesar yang keluar; tidak berlipat", async () => {
+    const a = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-03", unitsSold: 10, commission: 300_000, deduction: 50_000, basis: "PER_SPG", lockedById: adminId },
+    });
+    const akrual = idKomisiSpg(tokoPutusId, "2004-03");
+    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-03", adminId)).toMatchObject({ ok: true, created: true });
+
+    // Pembayaran yang menghitung ulang angka barisnya (300.000 → 320.000) dan membawa dua koreksi.
+    await prisma.spgCommission.update({ where: { id: a.id }, data: { commission: 320_000, paidAt: wib("2004-04-05"), paidById: adminId } });
+    await tanamKoreksi(REF_KOMISI_SPG_PUTUS, a.id, "2004-04");
+    await kaitBayarKomisiSpg(a.id, adminId);
+
+    expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toEqual({ SPG_COMMISSION_EXPENSE: 320_000, COMMISSION_PAYABLE: -270_000, LOSS_RECOVERY: -50_000 });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toBe(2);
+    // Hutang komisi lunas sebesar akrualnya (270.000); bank = 270.000 + 17.500 − 2.500.
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toEqual({ SPG_COMMISSION_EXPENSE: 15_000, COMMISSION_PAYABLE: 270_000, BANK: -285_000 });
+    expect(await bebanKoreksi(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toEqual([
+      { nilai: 17_500, channel: "KONSINYASI", storeId: tokoId },
+      { nilai: -2_500, channel: "PUTUS", storeId: tokoPutusId },
+    ]);
+    const jurnal = await prisma.journal.findFirst({ where: { sourceType: SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, sourceId: a.id }, select: { description: true } });
+    expect(jurnal?.description).toMatch(/ \+ koreksi$/);
+
+    // Diulang (kait lagi, posting langsung): tidak ada generasi baru di keduanya.
+    await kaitBayarKomisiSpg(a.id, adminId);
+    expect(await postJurnalBayarKomisiSpg(a.id, adminId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toBe(2);
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toBe(1);
+  });
+
+  it("toko konsinyasi: akrual gaji SPG siklusnya diselaraskan saat bayar; koreksi ikut jurnal pembayaran gaji", async () => {
+    await siklusDenganLaporan(1);
+    expect(await kunci(1)).toMatchObject({ ok: true });
+    expect(await selaraskanJurnalKomisiKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: true });
+    const [k] = await prisma.consignmentCommission.findMany({ where: { cycleId: siklusId }, select: { id: true, total: true, deduction: true } });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({ SPG_COMMISSION_EXPENSE: Number(k.total), COMMISSION_PAYABLE: -Number(k.total) });
+
+    // Pembayaran menghitung ulang angkanya (+4.000) dan membawa dua koreksi.
+    const baru = Number(k.total) + 4_000;
+    await prisma.consignmentCommission.update({ where: { id: k.id }, data: { total: baru, paidAt: wib("2004-10-10"), paidById: adminId } });
+    await tanamKoreksi(REF_KOMISI_KONSI, k.id, "2004-10");
+    await kaitBayarGajiKonsi(k.id, adminId);
+
+    expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({ SPG_COMMISSION_EXPENSE: baru, COMMISSION_PAYABLE: -baru });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toBe(2);
+    const neto = baru - Number(k.deduction);
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toEqual({ SPG_COMMISSION_EXPENSE: 15_000, COMMISSION_PAYABLE: neto, BANK: -(neto + 15_000) });
+    expect(await bebanKoreksi(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toEqual([
+      { nilai: 17_500, channel: "KONSINYASI", storeId: tokoId },
+      { nilai: -2_500, channel: "PUTUS", storeId: tokoPutusId },
+    ]);
+    const jurnal = await prisma.journal.findFirst({ where: { sourceType: SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, sourceId: k.id }, select: { description: true } });
+    expect(jurnal?.description).toMatch(/ \+ koreksi$/);
+
+    await kaitBayarGajiKonsi(k.id, adminId);
+    expect(await postJurnalBayarGajiKonsi(k.id, adminId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toBe(2);
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toBe(1);
+  });
+
+  it("sapuan: pembayaran yang neto barisnya sendiri nol tetap dicari bila membawa koreksi, dan diposting lewat jalur sapuan", async () => {
+    const sapuan = (s: string) => sumberSapuanTerdaftar().find((x) => x.sourceType === s)!;
+
+    // Toko putus: laporan tanpa penjualan (komisi nol), dibayar hanya karena membawa koreksi.
+    const a = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-05", unitsSold: 0, commission: 0, basis: "PER_SPG", lockedById: adminId, paidAt: wib("2004-06-05"), paidById: adminId },
+    });
+    const opsiPutus = { sejak: wib("2004-06-01"), sampai: wib("2004-06-30"), batas: 500, ids: [a.id] };
+    expect(await cariBayarKomisiSpgTanpaJurnal(opsiPutus)).toEqual([]);
+    await tanamKoreksi(REF_KOMISI_SPG_PUTUS, a.id, "2004-06");
+    expect((await cariBayarKomisiSpgTanpaJurnal(opsiPutus)).map((x) => x.id)).toEqual([a.id]);
+    expect(await sapuan(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG).posting(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toEqual({ SPG_COMMISSION_EXPENSE: 15_000, BANK: -15_000 });
+    expect(await cariBayarKomisiSpgTanpaJurnal(opsiPutus)).toEqual([]);
+
+    // Koreksi yang saling menghapus di toko + kanal yang sama tidak menghasilkan baris: tidak dicari.
+    const b = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-04", unitsSold: 0, commission: 0, basis: "PER_SPG", lockedById: adminId, paidAt: wib("2004-06-06"), paidById: adminId },
+    });
+    await tanamKoreksi(REF_KOMISI_SPG_PUTUS, b.id, "2004-06", [
+      { sourceKind: "PUTUS", sourceKey: putusReportKey(tokoPutusId, "2004-01"), sourceStoreId: tokoPutusId, sourceSalesMonth: "2004-01", amount: 2_500 },
+      { sourceKind: "PUTUS", sourceKey: putusReportKey(tokoPutusId, "2004-02"), sourceStoreId: tokoPutusId, sourceSalesMonth: "2004-02", amount: -2_500 },
+    ]);
+    expect(await cariBayarKomisiSpgTanpaJurnal({ ...opsiPutus, ids: [b.id] })).toEqual([]);
+    expect(await sapuan(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG).posting(b.id, adminId)).toEqual({ ok: false, code: "NOTHING_TO_POST" });
+
+    // Toko konsinyasi: seluruh gajinya habis dipotong, dibayar hanya sebesar koreksinya.
+    await siklusDenganLaporan(1);
+    expect(await kunci(1)).toMatchObject({ ok: true });
+    const [k] = await prisma.consignmentCommission.findMany({ where: { cycleId: siklusId }, select: { id: true, total: true } });
+    await prisma.consignmentCommission.update({ where: { id: k.id }, data: { deduction: k.total, paidAt: wib("2004-10-10"), paidById: adminId } });
+    const opsiKonsi = { sejak: wib("2004-10-01"), sampai: wib("2004-10-31"), batas: 500, ids: [k.id] };
+    expect(await cariBayarGajiKonsiTanpaJurnal(opsiKonsi)).toEqual([]);
+    await tanamKoreksi(REF_KOMISI_KONSI, k.id, "2004-10");
+    expect((await cariBayarGajiKonsiTanpaJurnal(opsiKonsi)).map((x) => x.id)).toEqual([k.id]);
+    expect(await sapuan(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI).posting(k.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toEqual({ SPG_COMMISSION_EXPENSE: 15_000, BANK: -15_000 });
+    expect(await cariBayarGajiKonsiTanpaJurnal(opsiKonsi)).toEqual([]);
+  });
+
+  it("kait mati sesudah pembayaran yang menghitung ulang angkanya: sapuan menyelaraskan akrualnya dulu, hutang komisi tanpa sisa", async () => {
+    const sapuan = (s: string) => sumberSapuanTerdaftar().find((x) => x.sourceType === s)!;
+    const hutang = async (...sumber: Array<[string, string]>) => {
+      let n = 0;
+      for (const [s, id] of sumber) n += (await saldoPeran(s, id)).COMMISSION_PAYABLE ?? 0;
+      return n;
+    };
+
+    // Toko putus: 22.500 (bagi rata dulu) dihitung ulang menjadi 40.000 saat dibayar; kaitnya tidak pernah jalan.
+    const a = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-07", unitsSold: 10, commission: 22_500, basis: "PER_SPG", lockedById: adminId },
+    });
+    const akrual = idKomisiSpg(tokoPutusId, "2004-07");
+    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-07", adminId)).toMatchObject({ ok: true, created: true });
+    await prisma.spgCommission.update({ where: { id: a.id }, data: { commission: 40_000, paidAt: wib("2004-08-05"), paidById: adminId } });
+    const opsiPutus = { sejak: wib("2004-08-01"), sampai: wib("2004-08-31"), batas: 500, ids: [a.id] };
+    expect((await cariBayarKomisiSpgTanpaJurnal(opsiPutus)).map((x) => x.id)).toEqual([a.id]);
+    expect(await sapuan(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG).posting(a.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toEqual({ SPG_COMMISSION_EXPENSE: 40_000, COMMISSION_PAYABLE: -40_000 });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toBe(2);
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toEqual({ COMMISSION_PAYABLE: 40_000, BANK: -40_000 });
+    expect(await hutang([SUMBER_OPERASIONAL.KOMISI_SPG, akrual], [SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id])).toBe(0);
+    // "Posting ulang" dari JOURNAL_PENDING sesudahnya: tidak ada generasi baru.
+    expect(await postingJurnalOperasionalAman(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id, adminId)).toMatchObject({ ok: true, created: false });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toBe(2);
+
+    // Toko konsinyasi: pembayaran menambah 17.500 pada angka gaji SPG siklusnya; kaitnya tidak pernah jalan.
+    await siklusDenganLaporan(1);
+    expect(await kunci(1)).toMatchObject({ ok: true });
+    expect(await selaraskanJurnalKomisiKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: true });
+    const [k] = await prisma.consignmentCommission.findMany({ where: { cycleId: siklusId }, select: { id: true, total: true } });
+    const baru = Number(k.total) + 17_500;
+    await prisma.consignmentCommission.update({ where: { id: k.id }, data: { total: baru, paidAt: wib("2004-10-10"), paidById: adminId } });
+    expect(await sapuan(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI).posting(k.id, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({ SPG_COMMISSION_EXPENSE: baru, COMMISSION_PAYABLE: -baru });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toBe(2);
+    expect(await saldoPeran(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toEqual({ COMMISSION_PAYABLE: baru, BANK: -baru });
+    expect(await hutang([SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId], [SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id])).toBe(0);
+  });
+
+  it("kait mati sesudah pembayaran yang menghitung ulang angkanya menjadi neto nol tanpa koreksi: akrualnya ditemukan lewat jejak hitung ulang, diselaraskan sekali", async () => {
+    const sapuan = (s: string) => sumberSapuanTerdaftar().find((x) => x.sourceType === s)!;
+    // Jejak yang ditulis `catatHitungUlangSaatBayar` di transaksi pembayaran, ditanam langsung. Sedetik
+    // ke depan: jurnal akrual yang sudah ada selalu lebih tua; generasi penyesuaiannya boleh lebih tua
+    // atau lebih muda — pencarinya tetap membandingkan isi.
+    const jejakHitungUlang = (entityType: typeof REF_KOMISI_SPG_PUTUS | typeof REF_KOMISI_KONSI, entityId: string, sebelum: number) =>
+      prisma.auditLog.create({
+        data: {
+          userId: adminId,
+          action: JEJAK_KOMISI_SPG.DIHITUNG_ULANG_SAAT_BAYAR,
+          entityType,
+          entityId,
+          changes: { before: { komisi: sebelum }, after: { komisi: 0 } },
+          createdAt: new Date(Date.now() + 1_000),
+        },
+      });
+    const sekitarSekarang = () => ({ sejak: mulaiTes, sampai: new Date(Date.now() + 60_000), batas: 500 });
+
+    // Toko putus: bagi rata 22.500 untuk SPG tanpa penjualan di HP, dihitung ulang menjadi 0, dibayar Rp 0.
+    const a = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-06", unitsSold: 3, commission: 22_500, basis: "BAGI_RATA", lockedById: adminId },
+    });
+    const akrual = idKomisiSpg(tokoPutusId, "2004-06");
+    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-06", adminId)).toMatchObject({ ok: true, created: true });
+    await prisma.spgCommission.update({ where: { id: a.id }, data: { commission: 0, unitsSold: 0, paidAt: wib("2004-07-05"), paidById: adminId } });
+    // Pembayarannya tidak berjurnal, jadi pencari pembayaran diam; tanpa jejak hitung ulang, pencari akrual juga.
+    expect(await cariBayarKomisiSpgTanpaJurnal({ sejak: wib("2004-07-01"), sampai: wib("2004-07-31"), batas: 500, ids: [a.id] })).toEqual([]);
+    expect(await cariKomisiSpgTanpaJurnal({ ...sekitarSekarang(), ids: [akrual] })).toEqual([]);
+    await jejakHitungUlang(REF_KOMISI_SPG_PUTUS, a.id, 22_500);
+    const temuan = await cariKomisiSpgTanpaJurnal({ ...sekitarSekarang(), ids: [akrual] });
+    expect(temuan.map((x) => x.id)).toEqual([akrual]);
+    expect(temuan[0].label).toContain("penyesuaian saat dibayar");
+    expect(await sapuan(SUMBER_OPERASIONAL.KOMISI_SPG).posting(akrual, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toEqual({});
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toBe(2);
+    // Sudah selaras: tidak dicari lagi; pembayarannya tetap tanpa jurnal (tidak ada uang keluar).
+    expect(await cariKomisiSpgTanpaJurnal({ ...sekitarSekarang(), ids: [akrual] })).toEqual([]);
+    expect(await postingJurnalOperasionalAman(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id, adminId)).toMatchObject({ ok: false, code: "NOTHING_TO_POST" });
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_SPG, akrual)).toBe(2);
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, a.id)).toBe(0);
+
+    // Dihitung ulang pada dasar lama tetapi angkanya tetap: akrualnya sudah sama, tidak pernah dicari.
+    const b = await prisma.spgCommission.create({
+      data: { userId: spgId, storeId: tokoPutusId, period: "2004-08", unitsSold: 2, commission: 10_000, basis: "BAGI_RATA", lockedById: adminId },
+    });
+    const akrualB = idKomisiSpg(tokoPutusId, "2004-08");
+    expect(await selaraskanJurnalKomisiSpg(tokoPutusId, "2004-08", adminId)).toMatchObject({ ok: true, created: true });
+    await prisma.spgCommission.update({ where: { id: b.id }, data: { basis: "TARIF_KATEGORI", paidAt: wib("2004-09-05"), paidById: adminId } });
+    await jejakHitungUlang(REF_KOMISI_SPG_PUTUS, b.id, 10_000);
+    expect(await cariKomisiSpgTanpaJurnal({ ...sekitarSekarang(), ids: [akrualB] })).toEqual([]);
+
+    // Toko konsinyasi: baris tanpa gaji pokok yang komisinya dihitung ulang menjadi 0, dibayar Rp 0.
+    await siklusDenganLaporan(1);
+    expect(await kunci(1)).toMatchObject({ ok: true });
+    expect(await selaraskanJurnalKomisiKonsi(siklusId, adminId)).toMatchObject({ ok: true, created: true });
+    const [k] = await prisma.consignmentCommission.findMany({ where: { cycleId: siklusId }, select: { id: true, total: true } });
+    await prisma.consignmentCommission.update({
+      where: { id: k.id },
+      data: { salaried: false, baseSalary: 0, commission: 0, total: 0, deduction: 0, paidAt: wib("2004-10-10"), paidById: adminId },
+    });
+    expect(await cariBayarGajiKonsiTanpaJurnal({ sejak: wib("2004-10-01"), sampai: wib("2004-10-31"), batas: 500, ids: [k.id] })).toEqual([]);
+    expect(await cariKomisiKonsiTanpaJurnal({ ...sekitarSekarang(), ids: [siklusId] })).toEqual([]);
+    await jejakHitungUlang(REF_KOMISI_KONSI, k.id, Number(k.total));
+    expect((await cariKomisiKonsiTanpaJurnal({ ...sekitarSekarang(), ids: [siklusId] })).map((x) => x.id)).toEqual([siklusId]);
+    expect(await sapuan(SUMBER_OPERASIONAL.KOMISI_KONSI).posting(siklusId, adminId)).toMatchObject({ ok: true, created: true });
+    expect(await saldoPeran(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toEqual({});
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.KOMISI_KONSI, siklusId)).toBe(2);
+    expect(await cariKomisiKonsiTanpaJurnal({ ...sekitarSekarang(), ids: [siklusId] })).toEqual([]);
+    expect(await jumlahGenerasi(SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, k.id)).toBe(0);
   });
 });
 

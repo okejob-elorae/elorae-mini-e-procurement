@@ -27,4 +27,6 @@ export const OUTBOX_SKIP_REASONS = {
   NO_PUSHABLE_LINES: "no_pushable_lines",
   HANDLER_NOT_WIRED: "handler_not_wired",
   STOCK_PUSH_DISABLED: "stock_push_disabled",
+  /** No confirmed Jubelio price, or a new product still waiting for one (owner decision 2026-11-02). */
+  PRICE_NOT_CONFIRMED: "price_not_confirmed",
 } as const;

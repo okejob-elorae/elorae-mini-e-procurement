@@ -110,6 +110,7 @@ export function DetailPesananClient({
   salinanWa = null,
   terimaTokoKonsi = null,
   pesananLama = null,
+  tokoBerSpg = true,
 }: {
   pesanan: DetailPesananView;
   /** Pengiriman + bukti terimanya (PUTUS saja); tanggalnya sudah diformat server. */
@@ -124,6 +125,8 @@ export function DetailPesananClient({
   salinanWa?: { tautan: string; adaNomor: boolean } | null;
   /** KONSI lama yang cadangannya masih ditahan: dikonfirmasi di toko, tidak dikirim; null = bukan. */
   pesananLama?: PesananLamaTampil | null;
+  /** KONSI: toko ini punya SPG yang menghitung setiap antaran (`muatPenerimaToko`); false = tanpa SPG. */
+  tokoBerSpg?: boolean;
 }) {
   const t = useTranslations("pwa.pesananSaya");
   const td = useTranslations("pwa.pesananSaya.detail");
@@ -177,7 +180,7 @@ export function DetailPesananClient({
       {pesananLama ? (
         <KeteranganKonsiLama lama={pesananLama} />
       ) : (
-        <Keterangan p={p} alasanTolak={alasanTolak} alasanTutup={alasanTutup} />
+        <Keterangan p={p} alasanTolak={alasanTolak} alasanTutup={alasanTutup} tokoBerSpg={tokoBerSpg} />
       )}
 
       {salinanWa || alamatUbah || bisaBatal ? (
@@ -308,10 +311,12 @@ function Keterangan({
   p,
   alasanTolak,
   alasanTutup,
+  tokoBerSpg,
 }: {
   p: DetailPesananView;
   alasanTolak: string | undefined;
   alasanTutup: string | undefined;
+  tokoBerSpg: boolean;
 }) {
   const td = useTranslations("pwa.pesananSaya.detail");
   const kotak = (nada: keyof typeof NADA_KOTAK, isi: React.ReactNode) => (
@@ -349,7 +354,8 @@ function Keterangan({
         </>,
       );
     case "KONSI_DISETUJUI":
-      return kotak("jalan", <p>{td("noticeKonsi")}</p>);
+      // Toko tanpa SPG: tidak ada yang menghitung setiap antaran di toko — jangan menyebut SPG.
+      return kotak("jalan", <p>{td(tokoBerSpg ? "noticeKonsi" : "noticeKonsiTanpaSpg")}</p>);
     default:
       return null;
   }

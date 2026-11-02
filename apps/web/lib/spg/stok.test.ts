@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cocokkanKode, hampirHabis, kunciBaris, perkiraanKomisi, rencanaOpname, saldoDariGerakan } from "./stok";
+import { cocokkanKode, hampirHabis, kunciBaris, rencanaOpname, saldoDariGerakan } from "./stok";
 
 describe("saldoDariGerakan", () => {
   it("sums signed movements per item + variant", () => {
@@ -93,21 +93,3 @@ describe("hampirHabis", () => {
   });
 });
 
-describe("perkiraanKomisi", () => {
-  it("multiplies units sold by each item's commission and splits it between the store's SPGs", () => {
-    expect(
-      perkiraanKomisi(
-        [
-          { qty: 3, commissionPerPcs: 5_000 },
-          { qty: 2, commissionPerPcs: 2_500 },
-        ],
-        2,
-      ),
-    ).toEqual({ totalToko: 20_000, bagianSaya: 10_000 });
-  });
-
-  it("gives the whole amount to a lone SPG and nothing when nobody is counted", () => {
-    expect(perkiraanKomisi([{ qty: 1, commissionPerPcs: 7_000 }], 1).bagianSaya).toBe(7_000);
-    expect(perkiraanKomisi([{ qty: 1, commissionPerPcs: 7_000 }], 0).bagianSaya).toBe(0);
-  });
-});

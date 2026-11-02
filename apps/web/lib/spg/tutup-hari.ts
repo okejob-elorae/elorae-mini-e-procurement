@@ -11,8 +11,11 @@
  * - nota/potong/nilai kotor/potongan = nota yang DIBUAT pada hari itu (waktu jual,
  *   termasuk nota dari antrean HP yang bertanggal waktu jualnya);
  * - potong & nilai retur = barang yang DIKEMBALIKAN pembeli pada hari itu (dari
- *   nota kapan pun), dinilai dengan harga BERSIH per potong baris notanya
- *   (`lineTotal / qty`) — sama dengan dasbor (`nilaiBersihSpg`);
+ *   nota kapan pun) dan laporan returnya SUDAH DISETUJUI kantor, dinilai dengan
+ *   harga BERSIH per potong baris notanya (`lineTotal / qty`) — sama dengan
+ *   dasbor (`nilaiBersihSpg`). Retur yang masih menunggu kantor tidak mengurangi
+ *   apa pun; jumlah potongnya dibawa terpisah (`potongReturMenunggu`), di luar
+ *   laporan yang disimpan;
  * - nilai bersih = Σ total nota hari itu − nilai retur hari itu. Bisa negatif
  *   pada hari tanpa penjualan tapi ada pengembalian — itu memang uang yang
  *   keluar di kasir hari itu, jadi tidak dijepit ke nol.
@@ -165,6 +168,8 @@ export type BahanTutupHari = {
   spg: { id: string; nama: string }[];
   /** Nama penjual lain (SPG yang sudah dipindah toko, dsb.). */
   namaPengguna: Record<string, string>;
+  /** Potong retur pembeli hari itu yang laporannya masih menunggu kantor (belum mengurangi apa pun). */
+  potongReturMenunggu: number;
 };
 
 export type RingkasanTutupHari = AngkaPenjualan & {
@@ -175,6 +180,11 @@ export type RingkasanTutupHari = AngkaPenjualan & {
   kiriman: KirimanTutup[];
   dicari: DicariTutup[];
   perSpg: PerSpgTutup[];
+  /**
+   * Potong retur pembeli hari itu yang masih menunggu kantor — hanya keterangan
+   * di HP; BUKAN bagian laporan yang disimpan (`nilaiLaporan`) dan tidak masuk teks WA.
+   */
+  potongReturMenunggu: number;
 };
 
 /**
@@ -231,6 +241,7 @@ export function susunRingkasanTutupHari(b: BahanTutupHari): RingkasanTutupHari {
     kiriman: b.kiriman,
     dicari: b.dicari,
     perSpg,
+    potongReturMenunggu: b.potongReturMenunggu ?? 0,
   };
 }
 

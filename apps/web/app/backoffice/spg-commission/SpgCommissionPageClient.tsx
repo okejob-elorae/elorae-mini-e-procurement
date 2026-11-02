@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Coins, Loader2, RotateCw } from "lucide-react";
+import { AlertCircle, AlertTriangle, ChevronLeft, ChevronRight, Coins, Loader2, RotateCw, Scale } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,7 +55,7 @@ const RATES_SETTINGS_PATH = "/backoffice/settings/spg-commission";
 const KOMISI_SPG_PATH = "/backoffice/komisi-spg";
 /* Two years back covers a payroll correction; an older month still opens by URL and joins the list. */
 const MONTH_OPTION_COUNT = 24;
-const COLUMN_COUNT = 6;
+const COLUMN_COUNT = 9;
 
 type Props = {
   recap: CommissionRecap | null;
@@ -79,6 +79,7 @@ const STATUS_VARIANT: Record<PayoutStatus, "outline" | "secondary" | "default"> 
   BELUM_DITETAPKAN: "outline",
   DITETAPKAN: "secondary",
   DIBAYAR: "default",
+  TANPA_BARIS: "outline",
 };
 
 export function SpgCommissionPageClient({ recap, month, currentMonth, canManageRates }: Props) {
@@ -113,22 +114,14 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
   }, [recap]);
   const rates = useMemo(() => ratesByDetail(recap?.events ?? []), [recap]);
   const totals = useMemo(() => sumPayoutRows(recap?.rows ?? []), [recap]);
-  /* The sales months each SPG's payout this month comes from — the "Komisi penjualan …" note. */
-  const salesMonthsBySpg = useMemo(() => {
-    const bySpg = new Map<string, Set<string>>();
-    for (const line of recap?.payoutLines ?? []) {
-      const set = bySpg.get(line.salesmanId) ?? new Set<string>();
-      set.add(line.salesMonth);
-      bySpg.set(line.salesmanId, set);
-    }
-    return bySpg;
-  }, [recap]);
-
   const monthLabel = formatYearMonth(month, locale);
   const isLatestMonth = compareYearMonth(month, currentMonth) >= 0;
-  const hasRows = recap !== null && recap.rows.length > 0;
+  const hasRows = recap !== null && (recap.rows.length > 0 || recap.corrections.length > 0);
   const anyUnset = (recap?.rows ?? []).some((r) => r.hasUnset);
+  /* Checked putus months not set yet: their per-SPG figure, paid only once set. */
+  const unsetAmount = (recap?.payoutLines ?? []).filter((l) => l.status === "BELUM_DITETAPKAN").reduce((n, l) => n + l.figure, 0);
   const differCount = (recap?.rows ?? []).filter((r) => r.differs).length;
+  const anyPending = Math.round(totals.pendingDifference * 100) !== 0 || (recap?.rows ?? []).some((r) => Math.round(r.pendingDifference * 100) !== 0);
 
   function goToMonth(next: string): void {
     if (next === month) return;
@@ -233,7 +226,7 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
         </Card>
       ) : (
         <>
-          {!isPending && (differCount > 0 || anyUnset) && (
+          {!isPending && (differCount > 0 || anyUnset || anyPending) && (
             <Card className="border-amber-300 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-amber-900 dark:text-amber-200">
@@ -242,7 +235,8 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                 </CardTitle>
                 <CardDescription className="space-y-1">
                   {differCount > 0 && <span className="block">{t("attention.differs", { count: differCount })}</span>}
-                  {anyUnset && <span className="block">{t("attention.unset", { amount: formatSignedRupiah(totals.unsetAmount) })}</span>}
+                  {anyUnset && <span className="block">{t("attention.unset", { amount: formatSignedRupiah(unsetAmount) })}</span>}
+                  {anyPending && <span className="block">{t("attention.pending", { amount: formatSignedRupiah(totals.pendingDifference) })}</span>}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -321,8 +315,11 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                         <TableHead>{t("colSpg")}</TableHead>
                         <TableHead>{t("colStores")}</TableHead>
                         <TableHead className="text-right">{t("colPieces")}</TableHead>
-                        <TableHead className="text-right">{t("colSet")}</TableHead>
                         <TableHead className="text-right">{t("colComputed")}</TableHead>
+                        <TableHead className="text-right">{t("colPaid")}</TableHead>
+                        <TableHead className="text-right">{t("colCorrections")}</TableHead>
+                        <TableHead className="text-right">{t("colUnpaid")}</TableHead>
+                        <TableHead className="text-right">{t("colPending")}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -335,10 +332,7 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                         const breakdown = detailBySpg.get(row.salesmanId) ?? [];
                         const lines = linesBySpg.get(row.salesmanId) ?? [];
                         const noRateLabel = t("rowNoRate", { count: formatPieces(row.noRatePieces) });
-                        const salesMonths = Array.from(salesMonthsBySpg.get(row.salesmanId) ?? [])
-                          .sort((a, b) => compareYearMonth(a, b))
-                          .map((m) => formatYearMonth(m, locale))
-                          .join(", ");
+                        const salesMonths = row.salesMonths.map((m) => formatYearMonth(m, locale)).join(", ");
                         return (
                           <Fragment key={row.salesmanId}>
                             <TableRow
@@ -374,9 +368,7 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                                   <span className={cn("block whitespace-normal text-xs", WARNING_CLASS)}>{t("rowDiffers")}</span>
                                 )}
                                 {row.hasUnset && (
-                                  <span className={cn("block whitespace-normal text-xs", WARNING_CLASS)}>
-                                    {t("rowUnset", { amount: formatSignedRupiah(row.unsetAmount) })}
-                                  </span>
+                                  <span className={cn("block whitespace-normal text-xs", WARNING_CLASS)}>{t("rowUnsetShort")}</span>
                                 )}
                                 {row.noRatePieces > 0 && (
                                   <span className={cn("block truncate text-xs", WARNING_CLASS)}>{noRateLabel}</span>
@@ -388,16 +380,21 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                               <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(row.pieces))}>
                                 {formatPieces(row.pieces)}
                               </TableCell>
-                              <TableCell className="whitespace-nowrap text-right font-medium tabular-nums">
-                                {formatSignedRupiah(row.setAmount)}
+                              <TableCell className={cn("whitespace-nowrap text-right font-medium tabular-nums", row.differs && WARNING_CLASS)}>
+                                {formatSignedRupiah(row.figure)}
                               </TableCell>
+                              <TableCell className="whitespace-nowrap text-right tabular-nums">{formatSignedRupiah(row.paidAmount)}</TableCell>
+                              <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(row.correctionsApplied))}>
+                                {formatSignedRupiah(row.correctionsApplied)}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-right tabular-nums">{formatSignedRupiah(row.unpaidAmount)}</TableCell>
                               <TableCell
                                 className={cn(
                                   "whitespace-nowrap text-right tabular-nums",
-                                  row.differs ? WARNING_CLASS : "text-muted-foreground",
+                                  Math.round(row.pendingDifference * 100) !== 0 ? WARNING_CLASS : "text-muted-foreground",
                                 )}
                               >
-                                {formatSignedRupiah(row.net)}
+                                {formatSignedRupiah(row.pendingDifference)}
                               </TableCell>
                             </TableRow>
                             {isOpen && (
@@ -414,8 +411,11 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                                             <TableHead>{t("colReport")}</TableHead>
                                             <TableHead>{t("colSalesMonth")}</TableHead>
                                             <TableHead>{t("colStatus")}</TableHead>
-                                            <TableHead className="text-right">{t("colSet")}</TableHead>
                                             <TableHead className="text-right">{t("colComputed")}</TableHead>
+                                            <TableHead className="text-right">{t("colSet")}</TableHead>
+                                            <TableHead className="text-right">{t("colPaid")}</TableHead>
+                                            <TableHead className="text-right">{t("colCorrectionsFromThis")}</TableHead>
+                                            <TableHead className="text-right">{t("colPending")}</TableHead>
                                           </TableRow>
                                         </TableHeader>
                                         <TableBody>
@@ -439,18 +439,26 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                                                 </TableCell>
                                                 <TableCell>
                                                   <Badge variant={STATUS_VARIANT[line.status]}>{tStatus(`status.${line.status}`)}</Badge>
+                                                  {line.held && <span className={cn("block whitespace-normal text-xs", WARNING_CLASS)}>{t("lineHeld")}</span>}
+                                                </TableCell>
+                                                <TableCell className={cn("whitespace-nowrap text-right tabular-nums", line.differs && WARNING_CLASS)}>
+                                                  {formatSignedRupiah(line.figure)}
+                                                  {line.differs && <span className="block whitespace-normal text-xs">{t("rowDiffers")}</span>}
                                                 </TableCell>
                                                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                                                   {line.setAmount === null ? "—" : formatSignedRupiah(line.setAmount)}
                                                 </TableCell>
+                                                <TableCell className="whitespace-nowrap text-right tabular-nums">{formatSignedRupiah(line.paidAmount)}</TableCell>
+                                                <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(line.correctionsFromThis))}>
+                                                  {formatSignedRupiah(line.correctionsFromThis)}
+                                                </TableCell>
                                                 <TableCell
                                                   className={cn(
                                                     "whitespace-nowrap text-right tabular-nums",
-                                                    line.differs && WARNING_CLASS,
+                                                    Math.round(line.pendingDifference * 100) !== 0 ? WARNING_CLASS : "text-muted-foreground",
                                                   )}
                                                 >
-                                                  {formatSignedRupiah(line.computedAmount)}
-                                                  {line.differs && <span className="block text-xs">{t("lineDiffers")}</span>}
+                                                  {formatSignedRupiah(line.pendingDifference)}
                                                 </TableCell>
                                               </TableRow>
                                             );
@@ -523,11 +531,12 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
                           {formatPieces(totals.pieces)}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">
-                          {formatSignedRupiah(totals.setAmount)}
+                          {formatSignedRupiah(totals.figure)}
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
-                          {formatSignedRupiah(totals.net)}
-                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{formatSignedRupiah(totals.paidAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{formatSignedRupiah(totals.correctionsApplied)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{formatSignedRupiah(totals.unpaidAmount)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">{formatSignedRupiah(totals.pendingDifference)}</TableCell>
                       </TableRow>
                     </TableFooter>
                   </Table>
@@ -535,6 +544,48 @@ export function SpgCommissionPageClient({ recap, month, currentMonth, canManageR
               )}
             </CardContent>
           </Card>
+
+          {!isPending && recap.corrections.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex min-w-0 items-center gap-2">
+                  <Scale className="h-5 w-5 shrink-0" />
+                  <span className="truncate">{t("correctionsTitle", { month: monthLabel })}</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("colSpg")}</TableHead>
+                        <TableHead>{t("colCorrectionSource")}</TableHead>
+                        <TableHead>{t("colCorrectionAppliedTo")}</TableHead>
+                        <TableHead className="text-right">{t("colCorrectionAmount")}</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {recap.corrections.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell className="max-w-[200px] truncate font-medium" title={spgName(c.salesmanId)}>
+                            {spgName(c.salesmanId)}
+                          </TableCell>
+                          <TableCell className="min-w-[14rem] whitespace-normal">
+                            {c.note}
+                            <span className="block text-xs text-muted-foreground">{c.sourceDocNo}</span>
+                          </TableCell>
+                          <TableCell className="min-w-[12rem] whitespace-normal text-sm">{t("correctionAppliedTo", { laporan: c.appliedToLabel })}</TableCell>
+                          <TableCell className={cn("whitespace-nowrap text-right tabular-nums", signedClass(c.amount))}>
+                            {formatSignedRupiah(c.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>

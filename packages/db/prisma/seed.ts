@@ -240,6 +240,10 @@ async function main() {
     { code: "store_transfers:approve", module: "store_transfers", action: "approve", description: "Approve, reject, redirect or cancel an inter-store transfer, and set the transfer rules (manager decision)" },
     { code: "store_transfers:decide_shortfall", module: "store_transfers", action: "decide_shortfall", description: "Decide an inter-store transfer shortfall: lost or returned (manager decision)" },
     { code: "spg_commission:pay", module: "spg_commission", action: "pay", description: "Mark SPG base pay and commission as paid" },
+    // Approvals added by the owner's 2026-11-02 decisions (prod rows: seed-owner-2026-11-02-permissions.sql).
+    // spg_returns:approve is the one approval an office role holds by default (ADMIN_PENJUALAN, below).
+    { code: "spg_returns:approve", module: "spg_returns", action: "approve", description: "Approve or reject an SPG's report of goods a shopper returned at the counter (manager decision, admin and sales admin by default)" },
+    { code: "jubelio_prices:confirm", module: "jubelio_prices", action: "confirm", description: "Confirm selling prices before they are sent to Jubelio" },
   ];
 
   // Upsert all permissions
@@ -536,7 +540,9 @@ async function main() {
   }
 
   // Office roles: the work each role exists for plus the views it needs, and NO approval codes —
-  // approvals stay with ADMIN until the owner grants them in Peran & izin. Same lists as
+  // approvals stay with ADMIN until the owner grants them in Peran & izin — except the ones the
+  // owner decided himself, listed in PERSETUJUAN_BAWAAN_PERAN_KANTOR (apps/web/lib/rbac/penjelasan-izin.ts):
+  // ADMIN_PENJUALAN approves SPG shopper returns (owner 2026-11-02). Same lists as
   // seed-office-roles-permissions.sql (apps/web/lib/rbac/peran-kantor.test.ts compares them).
   // Re-running never revokes a code the owner added on screen.
   const officeRolePermissions: { roleId: string; codes: string[] }[] = [
@@ -558,6 +564,7 @@ async function main() {
         "consignment:view", "consignment:note_number",
         "field_sales_orders:view", "stores:view", "promos:view", "spg_sales:view",
         "sales_orders:view", "sales_returns:view", "items:view",
+        "spg_returns:approve",
       ],
     },
     {

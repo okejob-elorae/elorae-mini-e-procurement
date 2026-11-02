@@ -20,6 +20,7 @@ import { prisma, seededId, seededIds } from "@elorae/db";
 import {
   JEJAK_KIRIMAN_BERANGKAT,
   hitungPesananDiproses,
+  hitungTugasPesanan,
   kabarkanKirimanBerangkat,
   pesananMenujuToko,
   pesananMenujuUntukHp,
@@ -202,6 +203,24 @@ describe("susunPesananMenuju (murni)", () => {
     ]);
     expect(daftar).toHaveLength(3);
     expect(hitungPesananDiproses(daftar)).toBe(3);
+  });
+
+  it("the home task rows split an old konsi order awaiting confirmation from the rest — no order is counted twice", () => {
+    const daftar = susunPesananMenuju([
+      baris({ id: "tunggu", lines: [kemeja("KL-M", 1)] }),
+      baris({ id: "setuju", status: "APPROVED", lines: [kemeja("KL-M", 1)] }),
+      baris({
+        id: "lama",
+        orderType: "KONSI",
+        status: "APPROVED",
+        approvedAt: new Date("2026-08-01T03:00:00.000Z"),
+        lines: [kemeja("KL-M", 5, { id: "l1" })],
+        sisaLama: { l1: 5 },
+      }),
+    ]);
+    expect(daftar.map((p) => p.status).filter((s) => s === "PESANAN_LAMA")).toHaveLength(1);
+    expect(hitungTugasPesanan(daftar)).toEqual({ diproses: 2, lama: 1 });
+    expect(hitungTugasPesanan([])).toEqual({ diproses: 0, lama: 0 });
   });
 
   it("an old konsi order still holding its reservation reads 'confirm it arrived', first, with nothing split into warehouse or road", () => {

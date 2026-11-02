@@ -10,11 +10,18 @@ import {
   type JenisGerakRusak,
   type KondisiRusak,
 } from "./gudang-rusak";
+import { returPembeliBerlaku } from "./retur-pembeli-berlaku";
 
 /**
  * Bacaan gudang barang rusak — layar kantor, layar HP SPG (barang rusak dari
  * pembeli yang belum dikirim balik), dan formulir nota retur yang diisi dari
  * retur pembeli (`?dariReturPembeli=`).
+ *
+ * Barang rusak dari pembeli hanya muncul setelah kantor MENYETUJUI laporan
+ * returnya (`returPembeliBerlaku`): laporan yang masih menunggu, ditolak, atau
+ * ditarik SPG tidak pernah membawa barangnya ke toko, jadi tidak ada yang bisa
+ * dikirim balik. Penulis nota retur memeriksa hal yang sama
+ * (`RETUR_PEMBELI_TIDAK_SAH`).
  *
  * Hanya untuk server (menarik Prisma). Komponen klien hanya boleh
  * `import type` dari sini; nilai yang aman ada di `gudang-rusak.ts`.
@@ -304,12 +311,13 @@ async function bentukRusakPembeli(klien: Klien, rows: RusakPembeliMentah[]): Pro
 
 /**
  * Barang rusak dari pembeli di toko ini yang BELUM dikirim balik — untuk HP
- * SPG (layar Terima kiriman). Milik toko, bukan milik SPG yang mencatat: rekan
- * setoko boleh mengirimnya balik. Tanpa harga. Terlama dulu.
+ * SPG (layar Terima kiriman). Hanya dari retur yang sudah disetujui kantor.
+ * Milik toko, bukan milik SPG yang mencatat: rekan setoko boleh mengirimnya
+ * balik. Tanpa harga. Terlama dulu.
  */
 export async function rusakPembeliUntukSpg(storeId: string): Promise<RusakPembeliHp[]> {
   const rows = await prisma.spgSaleReturnLine.findMany({
-    where: { condition: { in: ["RUSAK", "EXPIRED"] }, saleReturn: { storeId } },
+    where: { condition: { in: ["RUSAK", "EXPIRED"] }, saleReturn: returPembeliBerlaku({ storeId }) },
     orderBy: [{ saleReturn: { createdAt: "asc" } }, { id: "asc" }],
     select: PILIH_RUSAK_PEMBELI,
   });
@@ -318,13 +326,14 @@ export async function rusakPembeliUntukSpg(storeId: string): Promise<RusakPembel
 
 /**
  * Baris retur pembeli yang boleh mengisi nota retur SPG
- * (`/pwa/retur/baru?dariReturPembeli=`): milik toko ini, RUSAK/EXPIRED, dan
- * masih bersisa. Penulis nota retur memeriksa ulang semuanya di transaksinya.
+ * (`/pwa/retur/baru?dariReturPembeli=`): milik toko ini, dari retur yang sudah
+ * disetujui kantor, RUSAK/EXPIRED, dan masih bersisa. Penulis nota retur
+ * memeriksa ulang semuanya di transaksinya.
  */
 export async function barisReturPembeliUntukRetur(storeId: string, ids: string[]): Promise<RusakPembeliHp[]> {
   if (ids.length === 0) return [];
   const rows = await prisma.spgSaleReturnLine.findMany({
-    where: { id: { in: ids }, condition: { in: ["RUSAK", "EXPIRED"] }, saleReturn: { storeId } },
+    where: { id: { in: ids }, condition: { in: ["RUSAK", "EXPIRED"] }, saleReturn: returPembeliBerlaku({ storeId }) },
     orderBy: [{ saleLine: { productName: "asc" } }, { id: "asc" }],
     select: PILIH_RUSAK_PEMBELI,
   });

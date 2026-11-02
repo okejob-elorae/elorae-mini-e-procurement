@@ -99,6 +99,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await prisma.spgCommissionCorrection.deleteMany({ where: { spgUserId: { in: seededIds([spgA, spgB, spgC].filter(Boolean)) } } });
   const komisi = await prisma.consignmentCommission.findMany({ where: { cycleId: seededId(siklusId) }, select: { id: true } });
   await prisma.auditLog.deleteMany({ where: { userId: { in: seededIds([adminId].filter(Boolean)) } } });
   await prisma.stockLossDeduction.deleteMany({ where: { refId: { in: seededIds(komisi.map((k) => k.id)) } } });
@@ -148,7 +149,7 @@ const komisiSiklus = () =>
 
 async function bayarSemuaKomisi() {
   for (const k of await komisiSiklus()) {
-    expect(await bayarKomisi({ commissionId: k.id, olehUserId: adminId })).toEqual({ ok: true });
+    expect(await bayarKomisi({ commissionId: k.id, olehUserId: adminId })).toMatchObject({ ok: true });
   }
 }
 
@@ -169,7 +170,34 @@ describe("bayarKomisi hanya untuk siklus terkunci", () => {
     await kunci();
     const [k] = await komisiSiklus();
     expect(Number(k.total)).toBe(1_010_000);
-    expect(await bayarKomisi({ commissionId: k.id, olehUserId: adminId })).toEqual({ ok: true });
+    expect(await bayarKomisi({ commissionId: k.id, olehUserId: adminId, jumlahDiharapkan: 1_010_000 })).toMatchObject({
+      ok: true,
+      cycleId: siklusId,
+      diubah: false,
+      dibayar: 1_010_000,
+      koreksi: 0,
+    });
+  });
+
+  it("yang dibayarkan berbeda dari yang dilihat kantor: ANGKA_BERUBAH, tidak ada yang tertulis", async () => {
+    await kunci();
+    const [k] = await komisiSiklus();
+    expect(await bayarKomisi({ commissionId: k.id, olehUserId: adminId, jumlahDiharapkan: 1_000_000 })).toEqual({ ok: false, alasan: "ANGKA_BERUBAH" });
+    const tetap = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: k.id }, select: { paidAt: true, commission: true, total: true } });
+    expect([tetap.paidAt, Number(tetap.commission), Number(tetap.total)]).toEqual([null, 10_000, 1_010_000]);
+    expect(await prisma.auditLog.count({ where: { action: JEJAK.KONSI_GAJI_DIBAYAR, entityId: seededId(k.id) } })).toBe(0);
+  });
+
+  it("dua klik bersamaan pada baris yang sama: satu dibayar, satu SUDAH_DIBAYAR, satu jejak", async () => {
+    await kunci();
+    const [k] = await komisiSiklus();
+    const hasil = await Promise.all([
+      bayarKomisi({ commissionId: k.id, olehUserId: adminId, jumlahDiharapkan: 1_010_000 }),
+      bayarKomisi({ commissionId: k.id, olehUserId: adminId, jumlahDiharapkan: 1_010_000 }),
+    ]);
+    expect(hasil.filter((h) => h.ok)).toHaveLength(1);
+    expect(hasil.filter((h) => !h.ok)).toEqual([{ ok: false, alasan: "SUDAH_DIBAYAR" }]);
+    expect(await prisma.auditLog.count({ where: { action: JEJAK.KONSI_GAJI_DIBAYAR, entityId: seededId(k.id) } })).toBe(1);
   });
 });
 
@@ -186,7 +214,7 @@ describe("balapan buka kunci", () => {
       expect((await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: k.id } })).paidAt).toBeNull();
     } else {
       expect(buka).toEqual({ ok: false, alasan: "ADA_GAJI_SUDAH_DIBAYAR" });
-      expect(bayarGaji).toEqual({ ok: true });
+      expect(bayarGaji).toMatchObject({ ok: true });
       expect((await prisma.consignmentCycle.findUniqueOrThrow({ where: { id: siklusId } })).lockedAt).not.toBeNull();
     }
   });
@@ -335,10 +363,16 @@ describe("kunciAngka — komisi SPG dari satu hitungan (tarif kategori × penjua
     ]);
 
     // Siklus yang dikunci dengan aturan lama (tarif barang, dibagi rata) menyimpan angka lain.
-    await prisma.consignmentCommission.updateMany({ where: { cycleId: seededId(siklusId) }, data: { commission: 38_885 } });
+    await prisma.consignmentCommission.updateMany({ where: { cycleId: seededId(siklusId) }, data: { commission: 38_885, total: 1_038_885 } });
     const lama = await kartu();
     expect(lama).toMatchObject({ totalHitung: 20_000, totalTersimpan: 77_770, berbeda: true });
     expect(lama?.baris.map((b) => b.komisiHitung)).toEqual([10_000, 10_000]);
+    // Yang AKAN dibayar adalah komisi per SPG sekarang — kunci tidak perlu dibuka.
+    const [baris] = lama!.baris;
+    expect(baris.bayar).toMatchObject({ berubah: true, komisiLama: 38_885, komisiBaru: 10_000, dibayar: 1_010_000 });
+    expect(await bayarKomisi({ commissionId: baris.id, olehUserId: adminId, jumlahDiharapkan: 1_010_000 })).toMatchObject({ ok: true, diubah: true, dibayar: 1_010_000 });
+    const dibayar = await prisma.consignmentCommission.findUniqueOrThrow({ where: { id: baris.id }, select: { commission: true, total: true, paidAt: true } });
+    expect([Number(dibayar.commission), Number(dibayar.total), dibayar.paidAt !== null]).toEqual([10_000, 1_010_000, true]);
   });
 });
 

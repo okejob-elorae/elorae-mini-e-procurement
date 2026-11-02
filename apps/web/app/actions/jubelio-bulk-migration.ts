@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@elorae/db";
 import { auth } from "@/lib/auth";
 import { PERMISSIONS, requirePermission } from "@/lib/rbac";
+import { ajukanKeJubelio } from "@/lib/jubelio/harga/pengajuan";
 import {
   gagalJubelio,
   jalankanAksiJubelio,
@@ -19,6 +20,8 @@ export type EligibleItem = {
   categoryName: string | null;
   variantCount: number;
   hasJubelioCategoryMapping: boolean;
+  /** ISO; set = already requested, waiting on Jubelio → Konfirmasi harga. */
+  jubelioCreateRequestedAt: string | null;
 };
 
 export type MigrationSummary = {
@@ -29,6 +32,8 @@ export type MigrationSummary = {
   skipped: number;
   total: number;
   windowStart: string;
+  /** Unmapped ERP finished goods whose request waits for price confirmation (any requester). */
+  awaitingPriceConfirmation: number;
 };
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -51,6 +56,7 @@ export async function getEligibleItems(): Promise<EligibleItem[]> {
       nameEn: true,
       categoryId: true,
       variants: true,
+      jubelioCreateRequestedAt: true,
       category: { select: { name: true } },
     },
     orderBy: { sku: "asc" },
@@ -72,19 +78,26 @@ export async function getEligibleItems(): Promise<EligibleItem[]> {
       categoryName: it.category?.name ?? null,
       variantCount: variants.length,
       hasJubelioCategoryMapping: it.categoryId ? mappedCatSet.has(it.categoryId) : false,
+      jubelioCreateRequestedAt: it.jubelioCreateRequestedAt?.toISOString() ?? null,
     };
   });
 }
 
-export async function enqueueBulkMigration(
+/**
+ * Bulk migration REQUESTS the selected products; it creates nothing in Jubelio (owner decision
+ * 2026-11-02). Each requested product waits on Jubelio → Konfirmasi harga and is created there
+ * once its price is confirmed. Same gate as before: viewing the page is settings_security:view,
+ * requesting is settings_security:manage — the page disables its controls for view-only users.
+ */
+export async function requestBulkMigration(
   itemIds: string[],
-): Promise<HasilJubelio<{ enqueued: number; skipped: number }>> {
+): Promise<HasilJubelio<{ requested: number; skipped: number }>> {
   return jalankanAksiJubelio(async () => {
     const session = await auth();
     if (!session) return gagalJubelio("TANPA_AKSES");
     requirePermission(session.user.permissions, PERMISSIONS.SETTINGS_SECURITY_MANAGE);
 
-    if (itemIds.length === 0) {
+    if (!Array.isArray(itemIds) || itemIds.length === 0 || itemIds.some((id) => typeof id !== "string")) {
       return gagalJubelio("ISIAN_TIDAK_SAH", "No items selected");
     }
 
@@ -108,35 +121,13 @@ export async function enqueueBulkMigration(
       );
     }
 
-    /* Same in-flight rule as the item page's "Buat di Jubelio" button: a push already PENDING or PROCESSING is not queued again. */
-    const inFlight = new Set(
-      (
-        await prisma.jubelioOutbox.findMany({
-          where: {
-            entityType: "product_push",
-            entityId: { in: itemIds },
-            status: { in: ["PENDING", "PROCESSING"] },
-          },
-          select: { entityId: true },
-        })
-      ).map((row) => row.entityId),
-    );
-    const toEnqueue = itemIds.filter((id) => !inFlight.has(id));
-    const skipped = itemIds.length - toEnqueue.length;
-
-    if (toEnqueue.length > 0) {
-      await prisma.jubelioOutbox.createMany({
-        data: toEnqueue.map((id) => ({
-          entityType: "product_push",
-          entityId: id,
-          payload: {},
-          enqueuedById: session.user.id,
-        })),
-      });
-    }
+    /* Same rules as the item page's "Ajukan ke Jubelio": already requested or a push in flight is skipped. */
+    const hasil = await ajukanKeJubelio(itemIds, session.user.id);
+    const requested = hasil.filter((h) => h.hasil === "DIAJUKAN").length;
 
     revalidatePath("/backoffice/jubelio/migration");
-    return { ok: true, data: { enqueued: toEnqueue.length, skipped } };
+    revalidatePath("/backoffice/jubelio/harga");
+    return { ok: true, data: { requested, skipped: hasil.length - requested } };
   });
 }
 
@@ -147,15 +138,26 @@ export async function getMigrationSummary(): Promise<MigrationSummary> {
 
   const windowStart = new Date(Date.now() - TWENTY_FOUR_HOURS_MS);
 
-  const grouped = await prisma.jubelioOutbox.groupBy({
-    by: ["status"],
-    where: {
-      entityType: "product_push",
-      enqueuedById: session.user.id,
-      createdAt: { gte: windowStart },
-    },
-    _count: { _all: true },
-  });
+  const [grouped, awaitingPriceConfirmation] = await Promise.all([
+    prisma.jubelioOutbox.groupBy({
+      by: ["status"],
+      where: {
+        entityType: "product_push",
+        enqueuedById: session.user.id,
+        createdAt: { gte: windowStart },
+      },
+      _count: { _all: true },
+    }),
+    /* The same set as the "Produk baru" rows of Jubelio → Konfirmasi harga. */
+    prisma.item.count({
+      where: {
+        type: "FINISHED_GOOD",
+        source: "ERP",
+        jubelioCreateRequestedAt: { not: null },
+        jubelioProductMappings: { none: {} },
+      },
+    }),
+  ]);
 
   const counts: Record<string, number> = { DONE: 0, PENDING: 0, PROCESSING: 0, DEAD: 0, SKIPPED: 0 };
   for (const row of grouped) {
@@ -170,5 +172,6 @@ export async function getMigrationSummary(): Promise<MigrationSummary> {
     skipped: counts.SKIPPED,
     total: counts.DONE + counts.PENDING + counts.PROCESSING + counts.DEAD + counts.SKIPPED,
     windowStart: windowStart.toISOString(),
+    awaitingPriceConfirmation,
   };
 }

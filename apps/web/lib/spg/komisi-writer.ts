@@ -1,11 +1,11 @@
-import { Prisma } from "@elorae/db";
+import { Prisma, prisma } from "@elorae/db";
 import { runSerializable } from "@/lib/db/tx-retry";
 import { formatIDR } from "@/lib/sales-orders/format";
 import { bulanWib } from "@/lib/salesman/pengaturan";
 import { JENIS_KABAR, kabariPengguna, type Kabar } from "@/lib/notifications/kabar-pengguna";
-import { confirmsAnyPiece, payoutMonth, salesMonthLabelId, salesMonthNoteId } from "@/lib/spg-commission/payout";
+import { commissionRates, putusReportOf } from "@/lib/spg-commission/laporan-queries";
+import { commissionPerSpg, confirmsAnyPiece, payoutMonth, putusReportKey, salesMonthLabelId, salesMonthNoteId } from "@/lib/spg-commission/payout";
 import {
-  aturanLama,
   bulanSudahSelesai,
   DASAR_TARIF_KATEGORI,
   JEJAK_KOMISI_SPG,
@@ -16,7 +16,11 @@ import {
 } from "./komisi";
 import { hitunganPutus, keBarisResmi } from "./komisi-queries";
 import { REF_KOMISI_SPG_PUTUS } from "./hilang";
+import { bacaAturanHilang } from "./hilang-db";
 import { lepasPotonganHilang, potongBebanHilang } from "./hilang-potong";
+import { kalimatKoreksiKabar, type AlasanTahanKoreksi } from "./koreksi";
+import { unitKomisiSpg } from "./koreksi-queries";
+import { catatHitungUlangSaatBayar, catatKoreksiDiterapkan, KomisiBerubahError, siapkanBayarKomisi } from "./koreksi-writer";
 
 /**
  * Laporan penjualan SPG toko putus: dicek, ditetapkan komisinya, dibayar (`SpgSalesCheck`,
@@ -30,9 +34,17 @@ import { lepasPotonganHilang, potongBebanHilang } from "./hilang-potong";
  *   komisi yang boleh dibayar. Setiap langkah menulis jejak di transaksi yang sama.
  * - Menetapkan butuh laporan yang sudah dicek; boleh diulang selama belum ada baris toko × bulan
  *   itu yang dibayar; setiap baris yang tergantikan hidup di jejaknya (before/after).
- * - Membayar butuh laporan yang sudah dicek DAN baris yang ditetapkan dengan tarif kategori: baris
- *   aturan lama (tarif barang / dibagi rata) ditolak sampai ditetapkan ulang — tidak ada uang baru
- *   yang keluar dari sumber angka yang sudah dipensiunkan. Penjaganya `paidAt = null` di dalam
+ * - Membayar butuh laporan yang sudah dicek, ATAU toko × bulan yang sebagian barisnya sudah dibayar
+ *   (aturan lama, tanpa tanda dicek — bulan seperti itu tidak bisa dicek lagi). Yang dibayar SELALU
+ *   komisi per SPG saat ini, dihitung di transaksi pembayarannya (`lib/spg/koreksi.ts`): angka
+ *   tersimpan yang berbeda — aturan lama, atau nota/pengembalian yang menyusul — diganti di
+ *   transaksi yang sama dengan jejak `SPG_COMMISSION_RECOMPUTED_AT_PAYMENT`; angka tersimpan yang
+ *   basi tidak pernah dibayar. Baris aturan lama yang potongnya sebagian tanpa tarif kategori
+ *   (`alasanTahan` → `TANPA_TARIF`: bulan sebelum tabel tarif ada terbaca Rp 0) DITOLAK — tidak
+ *   dibayar dengan angka lama maupun Rp 0 — sampai pemilik memutuskan, atau bulan itu ditetapkan
+ *   ulang selama belum ada yang dibayar. Koreksi SPG itu yang menunggu ikut kalau baris ini sasarannya
+ *   (`SpgCommissionCorrection` + jejak, di transaksi yang sama). `jumlahDiharapkan` = yang dilihat
+ *   kantor; berbeda → `ANGKA_BERUBAH`, tidak ada yang tertulis. Penjaganya `paidAt = null` di dalam
  *   `runSerializable` — dua klik bersamaan tidak membayar dua kali.
  * - Mencek ditolak kalau toko × bulan itu sudah punya komisi yang dibayar (aturan lama): rekap
  *   akan menghitung bulan itu lagi dengan hitungan baru, padahal uangnya sudah keluar.
@@ -76,10 +88,14 @@ export type KodeTolakBayar =
   | "SUDAH_DIBAYAR"
   | "CATATAN_TERLALU_PANJANG"
   | "LAPORAN_BELUM_DICEK"
-  /** Ditetapkan dengan aturan lama (tarif barang / dibagi rata) — tetapkan ulang dulu. */
-  | "ATURAN_LAMA";
+  /** Yang dibayarkan berbeda dari yang dilihat kantor — halaman dimuat ulang. */
+  | "ANGKA_BERUBAH"
+  /** Angka aturan lama yang tidak bisa dibandingkan jujur dengan hitungan sekarang (`alasanTahan`) — menunggu keputusan. */
+  | AlasanTahanKoreksi;
 
-export type HasilBayarKomisi = { ok: true } | { ok: false; code: KodeTolakBayar };
+export type HasilBayarKomisi =
+  | { ok: true; storeId: string; periode: string; diubah: boolean; dibayar: number; koreksi: number }
+  | { ok: false; code: KodeTolakBayar; jumlah?: number };
 
 const BATAS_CATATAN = 500;
 
@@ -390,67 +406,152 @@ export async function tetapkanKomisiToko(input: {
   return hasil;
 }
 
-export async function tandaiKomisiDibayar(input: { commissionId: string; olehUserId: string; catatan?: unknown }): Promise<HasilBayarKomisi> {
+export async function tandaiKomisiDibayar(input: {
+  commissionId: string;
+  olehUserId: string;
+  catatan?: unknown;
+  /** Yang dilihat kantor di layar; tidak diisi = tanpa penjaga (hanya tes). */
+  jumlahDiharapkan?: number;
+}): Promise<HasilBayarKomisi> {
   const catatan = typeof input.catatan === "string" ? input.catatan.trim() : "";
   if (catatan.length > BATAS_CATATAN) return { ok: false, code: "CATATAN_TERLALU_PANJANG" };
 
-  let kabar: KabarTertunda[] = [];
-  const hasil = await runSerializable(async (tx): Promise<HasilBayarKomisi> => {
-    kabar = [];
-    const b = await tx.spgCommission.findUnique({
-      where: { id: input.commissionId },
-      select: { id: true, userId: true, storeId: true, period: true, commission: true, deduction: true, basis: true, paidAt: true },
-    });
-    if (!b) return { ok: false, code: "TIDAK_DITEMUKAN" };
-    if (b.paidAt) return { ok: false, code: "SUDAH_DIBAYAR" };
-    // Tanpa laporan yang dicek tidak ada komisi yang boleh dibayar — termasuk baris aturan lama,
-    // yang dicek lalu ditetapkan ulang dengan tarif kategori lebih dulu.
-    const cek = await tx.spgSalesCheck.findUnique({
-      where: { storeId_period: { storeId: b.storeId, period: b.period } },
-      select: { checkedAt: true },
-    });
-    if (!cek) return { ok: false, code: "LAPORAN_BELUM_DICEK" };
-    // Laporannya sudah dicek, tapi angkanya masih dari tarif barang / dibagi rata: tetapkan ulang.
-    if (aturanLama(b.basis)) return { ok: false, code: "ATURAN_LAMA" };
-    const waktu = new Date();
-    const r = await tx.spgCommission.updateMany({
-      where: { id: b.id, paidAt: null },
-      data: { paidAt: waktu, paidById: input.olehUserId, ...(catatan ? { note: catatan } : {}) },
-    });
-    if (r.count !== 1) return { ok: false, code: "SUDAH_DIBAYAR" };
-    await jejak(tx, {
-      userId: input.olehUserId,
-      action: JEJAK_KOMISI_SPG.DIBAYAR,
-      entityId: b.id,
-      before: { paidAt: null },
-      after: { paidAt: waktu.toISOString() },
-      metadata: {
-        storeId: b.storeId,
-        period: b.period,
-        spgUserId: b.userId,
-        commission: Number(b.commission),
-        deduction: Number(b.deduction),
-        bulanBayar: payoutMonth(cek.checkedAt),
-        catatan: salesMonthNoteId(b.period),
-      },
-      reason: catatan || null,
-    });
-    const toko = await tx.store.findUnique({ where: { id: b.storeId }, select: { name: true } });
-    kabar.push({
-      userId: b.userId,
-      kabar: {
-        jenis: JENIS_KABAR.KOMISI_SPG,
-        judul: `${salesMonthNoteId(b.period)} dibayar`,
-        isi:
-          Number(b.deduction) > 0
-            ? `${toko?.name ?? "Toko"}: ${formatIDR(Math.max(0, Number(b.commission) - Number(b.deduction)))} sudah dibayar (komisi ${formatIDR(Number(b.commission))} dipotong beban barang hilang ${formatIDR(Number(b.deduction))}).`
-            : `${toko?.name ?? "Toko"}: komisi ${formatIDR(Number(b.commission))} sudah dibayar.`,
-        data: { period: b.period },
-      },
-    });
-    return { ok: true };
-  });
+  const pemilik = await prisma.spgCommission.findUnique({ where: { id: input.commissionId }, select: { userId: true } });
+  if (!pemilik) return { ok: false, code: "TIDAK_DITEMUKAN" };
+  // Laporan lain SPG ini dimuat sebelum transaksi (tidak menahan kunci lama di nota); keadaan
+  // baris, tanda dicek, dan koreksinya dibaca ulang di dalam transaksi.
+  const [praMuat, aturan] = await Promise.all([
+    unitKomisiSpg(prisma, [pemilik.userId]).then((m) => m.get(pemilik.userId) ?? []),
+    bacaAturanHilang(prisma),
+  ]);
 
-  if (hasil.ok) await kirimKabar(kabar);
-  return hasil;
+  let kabar: KabarTertunda[] = [];
+  try {
+    const hasil = await runSerializable(async (tx): Promise<HasilBayarKomisi> => {
+      kabar = [];
+      const b = await tx.spgCommission.findUnique({
+        where: { id: input.commissionId },
+        select: { id: true, userId: true, storeId: true, period: true, unitsSold: true, commission: true, deduction: true, basis: true, paidAt: true },
+      });
+      if (!b) return { ok: false, code: "TIDAK_DITEMUKAN" };
+      if (b.paidAt) return { ok: false, code: "SUDAH_DIBAYAR" };
+      const cek = await tx.spgSalesCheck.findUnique({
+        where: { storeId_period: { storeId: b.storeId, period: b.period } },
+        select: { checkedAt: true },
+      });
+      const sepasang = await tx.spgCommission.findMany({
+        where: { storeId: b.storeId, period: b.period },
+        select: { id: true, paidAt: true, lockedAt: true },
+      });
+      const sebagianDibayar = sepasang.some((r) => r.id !== b.id && r.paidAt !== null);
+      // Tanpa tanda dicek hanya bulan yang sebagian sudah dibayar (aturan lama) — bulan seperti itu
+      // tidak bisa dicek lagi, dan baris lainnya tidak boleh terkunci selamanya.
+      if (!cek && !sebagianDibayar) return { ok: false, code: "LAPORAN_BELUM_DICEK" };
+      const terakhirDitetapkan = sepasang.reduce<Date | null>((t, r) => (t === null || r.lockedAt > t ? r.lockedAt : t), null);
+      const waktuLaporan = cek?.checkedAt ?? terakhirDitetapkan ?? new Date();
+
+      const [rates, laporan] = await Promise.all([commissionRates(tx), putusReportOf(tx, b.storeId, b.period, waktuLaporan)]);
+      const sendiri = commissionPerSpg(laporan, rates).find((r) => r.salesmanId === b.userId);
+      const kunci = putusReportKey(b.storeId, b.period);
+      const rencana = await siapkanBayarKomisi(tx, {
+        userId: b.userId,
+        kunci,
+        praMuat,
+        angkaSendiri: { komisi: sendiri?.amount ?? 0, potong: sendiri?.pieces ?? 0, potongTanpaTarif: sendiri?.noRatePieces ?? 0 },
+        maksPotongPersen: aturan.maksPotongPersen,
+      });
+      if (rencana.ditahan) return { ok: false, code: rencana.ditahan };
+      // Sebelum menulis apa pun: yang dibayarkan harus yang dilihat kantor.
+      if (input.jumlahDiharapkan !== undefined && !samaRupiah(rencana.dibayar, input.jumlahDiharapkan)) {
+        throw new KomisiBerubahError(rencana.dibayar);
+      }
+
+      const waktu = new Date();
+      const r = await tx.spgCommission.updateMany({
+        where: { id: b.id, paidAt: null },
+        data: { paidAt: waktu, paidById: input.olehUserId, ...(catatan ? { note: catatan } : {}) },
+      });
+      if (r.count !== 1) return { ok: false, code: "SUDAH_DIBAYAR" };
+
+      const potonganLama = Number(b.deduction);
+      let potongan = potonganLama;
+      // Potongan yang dipakai rencana lebih kecil dari yang tersimpan — komisinya turun, atau batas
+      // potong diturunkan sesudah ditetapkan: lepas lalu potong lagi tepat sampai batasnya, berubah
+      // atau tidak komisinya. Tanpa ini baris, jurnal, dan kabar memakai potongan yang lebih besar
+      // dari yang dilihat kantor.
+      const potonganTurun = Math.round(rencana.potonganHilang * 100) < Math.round(potonganLama * 100);
+      if (potonganTurun) {
+        await lepasPotonganHilang(tx, { refType: REF_KOMISI_SPG_PUTUS, refId: b.id, userId: input.olehUserId });
+        potongan = await potongBebanHilang(tx, {
+          userId: b.userId,
+          bruto: rencana.komisiBaru,
+          refType: REF_KOMISI_SPG_PUTUS,
+          refId: b.id,
+          createdById: input.olehUserId,
+          note: `${salesMonthNoteId(b.period)} · dihitung ulang saat dibayar`,
+        });
+        if (!samaRupiah(potongan, rencana.potonganHilang)) throw new KomisiBerubahError(rencana.dibayar);
+      }
+      if (rencana.berubah || potonganTurun) {
+        await tx.spgCommission.update({
+          where: { id: b.id },
+          data: { commission: rencana.komisiBaru, unitsSold: rencana.potongBaru, basis: DASAR_TARIF_KATEGORI, deduction: potongan },
+        });
+        await catatHitungUlangSaatBayar(tx, {
+          olehUserId: input.olehUserId,
+          entityType: REF_KOMISI_SPG_PUTUS,
+          entityId: b.id,
+          spgUserId: b.userId,
+          storeId: b.storeId,
+          kunci,
+          sebelum: { komisi: Number(b.commission), potong: b.unitsSold, dasar: b.basis, potonganHilang: potonganLama },
+          sesudah: { komisi: rencana.komisiBaru, potong: rencana.potongBaru, dasar: DASAR_TARIF_KATEGORI, potonganHilang: potongan },
+        });
+      }
+
+      const bulanBayar = payoutMonth(waktuLaporan);
+      const koreksi = await catatKoreksiDiterapkan(tx, { userId: b.userId, rencana, bulanBayar, olehUserId: input.olehUserId, waktu });
+      await jejak(tx, {
+        userId: input.olehUserId,
+        action: JEJAK_KOMISI_SPG.DIBAYAR,
+        entityId: b.id,
+        before: { paidAt: null },
+        after: { paidAt: waktu.toISOString() },
+        metadata: {
+          storeId: b.storeId,
+          period: b.period,
+          spgUserId: b.userId,
+          commission: rencana.komisiBaru,
+          deduction: potongan,
+          diubah: rencana.berubah,
+          koreksi: koreksi.map((k) => ({ id: k.id, sumber: k.sumber, jumlah: k.jumlah })),
+          dibayar: rencana.dibayar,
+          bulanBayar,
+          catatan: salesMonthNoteId(b.period),
+        },
+        reason: catatan || null,
+      });
+      const toko = await tx.store.findUnique({ where: { id: b.storeId }, select: { name: true } });
+      const tambahan = kalimatKoreksiKabar(rencana.koreksi);
+      kabar.push({
+        userId: b.userId,
+        kabar: {
+          jenis: JENIS_KABAR.KOMISI_SPG,
+          judul: `${salesMonthNoteId(b.period)} dibayar`,
+          isi:
+            `${toko?.name ?? "Toko"}: diterima ${formatIDR(rencana.dibayar)} (komisi ${formatIDR(rencana.komisiBaru)}` +
+            (potongan > 0 ? `, dipotong beban barang hilang ${formatIDR(potongan)}` : "") +
+            `).` +
+            (tambahan ? ` ${tambahan}` : ""),
+          data: { period: b.period },
+        },
+      });
+      return { ok: true, storeId: b.storeId, periode: b.period, diubah: rencana.berubah, dibayar: rencana.dibayar, koreksi: rencana.jumlahKoreksi };
+    });
+    if (hasil.ok) await kirimKabar(kabar);
+    return hasil;
+  } catch (e) {
+    if (e instanceof KomisiBerubahError) return { ok: false, code: "ANGKA_BERUBAH", jumlah: e.jumlah };
+    throw e;
+  }
 }

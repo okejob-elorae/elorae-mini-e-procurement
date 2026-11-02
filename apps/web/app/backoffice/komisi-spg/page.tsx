@@ -5,7 +5,7 @@ import { hasPermission, PERMISSIONS } from "@/lib/rbac";
 import { daftarBulanTerakhir } from "@/lib/salesman/komisi";
 import { bacaBulanBayar } from "@/lib/spg/komisi";
 import { daftarKomisiKantor } from "@/lib/spg/komisi-queries";
-import { KomisiSpgClient, type KonsiTampil, type LaporanPutusTampil } from "./KomisiSpgClient";
+import { KomisiSpgClient, type KonsiTampil, type LaporanPutusTampil, type TunggakanTampil } from "./KomisiSpgClient";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +18,10 @@ const JUMLAH_BULAN = 12;
  * × potong yang dijual masing-masing SPG, `lib/spg-commission/payout.ts`). Semua pemegang
  * `spg_sales:view` bisa melihat. Setiap tombol memakai izin yang SAMA dengan aksinya
  * (app/actions/spg-komisi.ts): menandai laporan dicek, membatalkannya, dan menetapkan =
- * `receivables:manage`; menandai dibayar = `spg_commission:pay`. Toko konsinyasi dicek dan
- * dibayar di siklusnya; di sini tampil angkanya.
+ * `receivables:manage`; menandai dibayar = `spg_commission:pay` — juga baris gaji & komisi toko
+ * konsinyasi (aksi dan izin yang sama dengan di siklusnya, supaya pemegang izin bayar tanpa
+ * `consignment:view` tetap bisa membayar). Setiap baris yang belum dibayar memperlihatkan yang AKAN
+ * dibayarkan — komisi per SPG sekarang dan koreksi yang ikut (`lib/spg/koreksi.ts`).
  */
 export default async function KomisiSpgPage({ searchParams }: { searchParams: Promise<{ bulan?: string | string[] }> }) {
   const session = await auth();
@@ -48,6 +50,7 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
     semuaDibayar: l.semuaDibayar,
     berbeda: l.berbeda,
     aturanLama: l.aturanLama,
+    returMenunggu: l.returMenunggu,
     baris: l.baris.map((b) => ({
       userId: b.userId,
       nama: b.nama,
@@ -70,6 +73,9 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
           }
         : null,
       bebanHilangSisa: b.bebanHilangSisa,
+      bayar: b.bayar,
+      koreksiDiterapkan: b.koreksiDiterapkan,
+      dibayarkan: b.dibayarkan,
     })),
   }));
   const konsi: KonsiTampil[] = data.konsi.map((k) => ({
@@ -85,6 +91,7 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
     berbeda: k.berbeda,
     adaDibayar: k.adaDibayar,
     semuaDibayar: k.semuaDibayar,
+    returMenunggu: k.returMenunggu,
     baris: k.baris.map((b) => ({
       id: b.id,
       nama: b.nama,
@@ -95,8 +102,26 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
       total: b.total,
       potonganHilang: b.potonganHilang,
       dibayarLabel: b.dibayarPada ? formatDisplayDate(b.dibayarPada) : null,
+      bayar: b.bayar,
+      koreksiDiterapkan: b.koreksiDiterapkan,
+      dibayarkan: b.dibayarkan,
     })),
   }));
+  const tunggakan = (daftar: typeof data.tunggakan): TunggakanTampil[] =>
+    daftar.map((t) => ({
+      refType: t.refType,
+      refId: t.refId,
+      jenis: t.jenis,
+      nama: t.nama,
+      namaToko: t.namaToko,
+      bulanJual: t.bulanJual,
+      bulanBayar: t.bulanBayar,
+      cycleId: t.cycleId,
+      noKonsi: t.noKonsi,
+      bayar: t.bayar,
+      returMenunggu: t.returMenunggu,
+      ditahan: t.ditahan,
+    }));
 
   return (
     <KomisiSpgClient
@@ -110,6 +135,11 @@ export default async function KomisiSpgPage({ searchParams }: { searchParams: Pr
       konsi={konsi}
       menungguCek={data.menungguCek}
       konsiMenungguKunci={data.konsiMenungguKunci}
+      tunggakan={tunggakan(data.tunggakan)}
+      tunggakanDitahan={tunggakan(data.tunggakanDitahan)}
+      tunggakanLama={tunggakan(data.tunggakanLama)}
+      koreksiMenunggu={data.koreksiMenunggu}
+      koreksiDitahan={data.koreksiDitahan}
       ringkas={data.ringkas}
     />
   );

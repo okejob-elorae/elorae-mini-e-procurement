@@ -29,6 +29,9 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // spg_sales:view; menetapkan penanggung = receivables:decide_bearer (barang-hilang.ts) — jadi
   // izin keputusan saja sudah membuka dan memutuskan.
   stockLossOpen: ["receivables:decide_bearer"],
+  // /backoffice/retur-spg: ROUTE_PERMISSIONS + penjaga halaman spg_sales:view; menyetujui dan
+  // menolak = spg_returns:approve (spg-retur.ts).
+  spgReturnsPending: ["spg_sales:view", "spg_returns:approve"],
   storeProposalsPending: ["stores:view", "stores:manage"],
   fieldPromisesUnconfirmed: ["receivables:manage"],
   damagedDeliveriesOpen: ["inventory:manage"],
@@ -40,6 +43,8 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   stockRequestsUnheld: ["spg_sales:view", "stores:manage"],
   // /backoffice/komisi-spg: ROUTE_PERMISSIONS + penjaga halaman spg_sales:view; menetapkan = receivables:manage.
   spgCommissionsUnset: ["spg_sales:view", "receivables:manage"],
+  // Sama halamannya; menandai dibayar = spg_commission:pay (spg-komisi.ts, konsinyasi.ts bayarKomisiAction).
+  spgCommissionsUnpaidPast: ["spg_sales:view", "spg_commission:pay"],
   // /backoffice/production/follow-up: penjaga halaman production_planning:view; tindak lanjutnya
   // menanyai pemasok, jadi izin lihat juga izin bertindak.
   productionStepsOverdue: ["production_planning:view"],
@@ -51,6 +56,9 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   taxOverdue: ["journals:view", "journals:manage"],
   // /backoffice/finance/journals: penjaga halaman journals:view; menyetujui draf = journals:manage.
   manualJournalsPendingApproval: ["journals:view", "journals:manage"],
+  // /backoffice/jubelio/harga: ROUTE_PERMISSIONS + penjaga halaman jubelio_prices:confirm, dan aksinya
+  // (jubelio-harga.ts) memeriksa izin yang sama.
+  jubelioPricesPending: ["jubelio_prices:confirm"],
 };
 
 /** Saringan yang WAJIB ada di tautan tiap baris — angka Beranda dihitung dengan saringan ini. */
@@ -63,6 +71,7 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   transfersPendingApproval: { status: "DIAJUKAN" },
   transferShortfallsOpen: { selisih: "1" },
   stockLossOpen: { status: "TERBUKA" },
+  spgReturnsPending: { status: "MENUNGGU" },
   storeProposalsPending: { status: "PENDING" },
   fieldPromisesUnconfirmed: { saring: "belum" },
   damagedDeliveriesOpen: { tab: "terbuka" },
@@ -72,12 +81,16 @@ const SARINGAN: Record<KunciAntrean, Record<string, string>> = {
   shiftSwapsPending: { tab: "tukar" },
   stockRequestsUnheld: { status: "BARU", pemegang: "tanpa" },
   spgCommissionsUnset: { bulan: "lalu" },
+  // Jangkar #tunggakan, bukan saringan: kartunya tidak bergantung pada bulan yang dibuka.
+  spgCommissionsUnpaidPast: {},
   productionStepsOverdue: { saring: "terlambat" },
   productionStepsDueToday: { saring: "hari-ini" },
   ledgerDocsWithoutJournal: { tanpaJurnal: "diam" },
   taxDueSoon: { saring: "segera" },
   taxOverdue: { saring: "lewat" },
   manualJournalsPendingApproval: { status: "draf" },
+  // Daftar tanpa saringan = semua yang menunggu konfirmasi, persis hitungannya.
+  jubelioPricesPending: {},
 };
 
 const nol: BuildActionItemsInput = {
@@ -158,6 +171,36 @@ describe("ANTREAN_KANTOR — izin lama tidak lagi cukup untuk keputusan manager"
   });
 });
 
+/*
+ * Tiga baris keputusan pemilik 2026-11-02. Masing-masing memakai kode yang SAMA dengan tombol dan
+ * aksi servernya — membuka halamannya saja tidak cukup.
+ */
+describe("ANTREAN_KANTOR — baris keputusan pemilik 2026-11-02", () => {
+  it("retur pembeli SPG: pengawas SPG membuka daftarnya, tetapi barisnya hanya untuk yang bisa menyetujui", () => {
+    expect(bolehLihatAntrean("spgReturnsPending", ["dashboard:view", "spg_sales:view"])).toBe(false);
+    expect(bolehLihatAntrean("spgReturnsPending", ["dashboard:view", "spg_returns:approve"])).toBe(false);
+    expect(bolehLihatAntrean("spgReturnsPending", ["dashboard:view", "spg_sales:view", "spg_returns:approve"])).toBe(true);
+    // Mencatat penjualan SPG (izin HP SPG) bukan izin memutuskan retur.
+    expect(bolehLihatAntrean("spgReturnsPending", ["dashboard:view", "spg_sales:view", "spg_sales:record"])).toBe(false);
+  });
+
+  it("komisi SPG tertunggak: mengelola piutang (cek & tetapkan) tidak membayar", () => {
+    expect(bolehLihatAntrean("spgCommissionsUnpaidPast", ["dashboard:view", "spg_sales:view", "receivables:manage"])).toBe(false);
+    expect(bolehLihatAntrean("spgCommissionsUnpaidPast", ["dashboard:view", "spg_sales:view", "spg_commission:pay"])).toBe(true);
+  });
+
+  it("harga Jubelio: izin Pengaturan Jubelio (lihat maupun kelola) tidak mengonfirmasi harga", () => {
+    const pengaturan = ["dashboard:view", "settings_security:view", "settings_security:manage", "jubelio_admin:view"];
+    expect(bolehLihatAntrean("jubelioPricesPending", pengaturan)).toBe(false);
+    expect(bolehLihatAntrean("jubelioPricesPending", ["dashboard:view", "jubelio_prices:confirm"])).toBe(true);
+  });
+
+  it("jangkar di tautan tidak ikut jalur halaman", () => {
+    expect(jalurTautan(ANTREAN_KANTOR.spgCommissionsUnpaidPast.href)).toBe("/backoffice/komisi-spg");
+    expect(jalurTautan("/backoffice/retur-spg?status=MENUNGGU#atas")).toBe("/backoffice/retur-spg");
+  });
+});
+
 describe("buildActionItems — baris antrean kantor", () => {
   const semua = Object.fromEntries(KUNCI_ANTREAN.map((k, i) => [k, i + 1]));
 
@@ -204,6 +247,11 @@ const TANPA_SARINGAN: Record<string, string> = {
   journalPending: "daftar jurnal tertunda belum ada",
   // Antrean pemenuhan menyaring fulfillmentStatus, bukan status pesanan.
   unshippedOrders: "antrean pemenuhan belum bisa disaring per status pesanan",
+  // Bukan baris tanpa saringan: daftarnya TANPA saringan sudah tepat yang dihitung
+  // (`hitungHargaMenungguKonfirmasi` = `daftarHargaMenunggu` tanpa `jenis`/`cari`).
+  jubelioPricesPending: "daftar konfirmasi harga tanpa saringan = seluruh hitungannya",
+  // Kartu #tunggakan dihitung dari hari ini, bukan dari bulan yang dibuka; tautannya membawa jangkar.
+  spgCommissionsUnpaidPast: "kartu tunggakan tidak bergantung pada saringan bulan; tautannya berjangkar #tunggakan",
 };
 
 describe("buildActionItems — setiap baris membawa saringan halaman tujuannya", () => {

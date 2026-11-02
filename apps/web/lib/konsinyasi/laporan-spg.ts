@@ -1,4 +1,5 @@
 import { prisma } from "@elorae/db";
+import { returPembeliBerlaku } from "@/lib/spg/retur-pembeli-berlaku";
 
 /**
  * Bahan laporan SPG satu siklus konsinyasi, dari catatan penjualan harian SPG.
@@ -12,8 +13,8 @@ export type BarisBahan = { itemId: string; itemName: string; qty: number };
 
 /**
  * Jumlahkan baris penjualan per barang (varian dilebur — laporan konsi per barang).
- * Barang kembali dari pembeli masuk sebagai qty negatif; barang yang bersihnya
- * nol atau kurang tidak dilaporkan.
+ * Barang kembali dari pembeli (yang disetujui kantor) masuk sebagai qty negatif;
+ * barang yang bersihnya nol atau kurang tidak dilaporkan.
  */
 export function susunBahanLaporan(baris: { itemId: string; itemName: string; qty: number }[]): BarisBahan[] {
   const peta = new Map<string, BarisBahan>();
@@ -48,10 +49,12 @@ export async function bahanLaporanSpg(cycleId: string): Promise<BarisBahan[] | n
       select: { itemId: true, qty: true, item: { select: { nameId: true } } },
     }),
     // Laku BERSIH: barang yang dikembalikan pembeli di bulan itu mengurangi
-    // barang yang sama. Dibaca menurut tanggal returnya, supaya bulan yang
+    // barang yang sama — hanya retur yang SUDAH DISETUJUI kantor; laporan yang
+    // masih menunggu, ditolak, atau ditarik SPG tidak mengurangi apa pun.
+    // Dibaca menurut tanggal returnya (saat dilaporkan), supaya bulan yang
     // laporannya sudah dikunci tidak berubah oleh retur sesudahnya.
     prisma.spgSaleReturnLine.findMany({
-      where: { saleReturn: { storeId: siklus.storeId, createdAt: { gte: awal, lt: akhir } } },
+      where: { saleReturn: returPembeliBerlaku({ storeId: siklus.storeId, createdAt: { gte: awal, lt: akhir } }) },
       select: { itemId: true, qty: true, saleLine: { select: { item: { select: { nameId: true } } } } },
     }),
   ]);

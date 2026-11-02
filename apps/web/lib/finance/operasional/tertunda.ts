@@ -1,7 +1,7 @@
 import { JournalError, prisma, type AdminNotification } from "@elorae/db";
 import { dokumenJurnal, metadataNotifikasi, tandaiJurnalTertundaSelesai } from "@/lib/finance/jurnal-tertunda";
 import { fanOutAdminNotification } from "@/lib/notifications/admin-fanout";
-import { bacaIdKomisiSpg, JENIS_TERTUNDA_OPERASIONAL, NAMA_SUMBER_OPERASIONAL, SUMBER_OPERASIONAL, type SumberOperasional } from "./aturan";
+import { bacaIdKomisiSpg, idKomisiSpg, JENIS_TERTUNDA_OPERASIONAL, NAMA_SUMBER_OPERASIONAL, SUMBER_OPERASIONAL, type SumberOperasional } from "./aturan";
 import { jurnalOperasional, KODE_BUKAN_GAGAL_OPERASIONAL, type HasilJurnalOperasional, type KodeGagalOperasional } from "./jurnal";
 
 /*
@@ -123,8 +123,58 @@ async function catatTertunda(sumber: SumberOperasional, docId: string, sebab: st
   if (baris) void fanOutAdminNotification(baris);
 }
 
-/** Posting/selaraskan jurnal satu dokumen operasional. Tidak pernah melempar. */
+/**
+ * Akrual yang diselaraskan SEBELUM jurnal pembayaran gaji/komisi SPG. Pembayaran bisa
+ * menghitung ulang angka barisnya (angka aturan atau dasar lama diganti angka sekarang,
+ * `bayarKomisi` / `tandaiKomisiDibayar`), dan jurnal pembayarannya melunasi hutang komisi
+ * sebesar angka BARU: akrual yang masih memuat angka lama meninggalkan sisa debit permanen
+ * di hutang komisi, dan bebannya kurang sebesar selisih itu. Ditaruh di sini, bukan di
+ * kait, karena setiap jalan yang MEMPOSTING jurnal pembayaran lewat sini — kait
+ * pasca-commit, sapuan terjadwal (yang menyelamatkan kait yang mati sesudah commit),
+ * "Posting ulang" dari `JOURNAL_PENDING`, dan posting massal. Pembayaran yang tidak punya
+ * jurnal sama sekali (dihitung ulang menjadi neto nol tanpa koreksi) tidak pernah dicari
+ * sapuan pembayaran; bila kaitnya mati, akrualnya ditemukan pencari akrual sendiri lewat
+ * jejak hitung ulangnya (`akrualTertinggal` di `sapuan.ts`). Sumber lain: null, tanpa
+ * membaca apa pun.
+ */
+async function akrualPembayaran(sumber: SumberOperasional, docId: string): Promise<{ sumber: SumberOperasional; id: string } | null> {
+  switch (sumber) {
+    case SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI: {
+      const k = await prisma.consignmentCommission.findUnique({ where: { id: docId }, select: { cycleId: true } });
+      return k ? { sumber: SUMBER_OPERASIONAL.KOMISI_KONSI, id: k.cycleId } : null;
+    }
+    case SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG: {
+      const k = await prisma.spgCommission.findUnique({ where: { id: docId }, select: { storeId: true, period: true } });
+      return k ? { sumber: SUMBER_OPERASIONAL.KOMISI_SPG, id: idKomisiSpg(k.storeId, k.period) } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+/**
+ * Selaraskan akrual pembayaran (bila ada). Tidak pernah melempar, dan tidak menahan
+ * jurnal pembayarannya: akrual yang gagal ditandai `JOURNAL_PENDING` atas sumber
+ * akrualnya SENDIRI, dan posting ulang dari tanda itu menutup selisihnya. Tanpa
+ * perubahan tidak menulis apa pun, jadi diulang (kait lalu sapuan) aman.
+ */
+async function selaraskanAkrualPembayaran(sumber: SumberOperasional, docId: string, olehUserId: string): Promise<void> {
+  let akrual: { sumber: SumberOperasional; id: string } | null;
+  try {
+    akrual = await akrualPembayaran(sumber, docId);
+  } catch (e) {
+    console.error(`[jurnal-operasional] akrual untuk ${sumber} ${docId} tidak terbaca`, e);
+    return;
+  }
+  if (akrual) await postingJurnalOperasionalAman(akrual.sumber, akrual.id, olehUserId);
+}
+
+/**
+ * Posting/selaraskan jurnal satu dokumen operasional. Tidak pernah melempar.
+ * Pembayaran gaji/komisi SPG menyelaraskan akrual barisnya dulu (`akrualPembayaran`).
+ */
 export async function postingJurnalOperasionalAman(sumber: SumberOperasional, docId: string, olehUserId: string): Promise<HasilPostingOperasional> {
+  await selaraskanAkrualPembayaran(sumber, docId, olehUserId);
   let r: HasilJurnalOperasional;
   try {
     r = await jurnalOperasional(sumber, docId, olehUserId);

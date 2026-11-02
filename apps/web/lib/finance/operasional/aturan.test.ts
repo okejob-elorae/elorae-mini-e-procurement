@@ -11,6 +11,7 @@ import {
   barisBiayaPerjalanan,
   barisGudangRusak,
   barisKomisi,
+  barisKoreksiKomisi,
   barisPindahKonsi,
   barisPindahKonsiPengiriman,
   barisPotongSales,
@@ -234,6 +235,30 @@ describe("komisi", () => {
   it("dibayar: hutang ke bank", () => {
     expect(per(barisBayarKomisi(1_300_000))).toEqual({ COMMISSION_PAYABLE: 130_000_000, BANK: -130_000_000 });
     expect(barisBayarKomisi(0)).toEqual([]);
+  });
+  it("koreksi pada pembayaran: beban bertanda di toko + kanal ASALNYA melawan hutang komisi; nol dibuang", () => {
+    const b = barisKoreksiKomisi([
+      { jumlah: 17_500, storeId: "konsi", kanal: "KONSINYASI" },
+      { jumlah: -2_500, storeId: "putus", kanal: "PUTUS" },
+      { jumlah: 0, storeId: "lain", kanal: "PUTUS" },
+    ]);
+    expect(b).toEqual([
+      { role: "SPG_COMMISSION_EXPENSE", sen: 1_750_000, channel: "KONSINYASI", storeId: "konsi" },
+      { role: "COMMISSION_PAYABLE", sen: -1_500_000, channel: null, storeId: null },
+      { role: "SPG_COMMISSION_EXPENSE", sen: -250_000, channel: "PUTUS", storeId: "putus" },
+    ]);
+    expect(seimbang(b)).toBe(0);
+    // Dua koreksi dari laporan toko × kanal yang sama menyatu jadi satu baris beban.
+    expect(
+      barisKoreksiKomisi([
+        { jumlah: 10_000, storeId: "s1", kanal: "PUTUS" },
+        { jumlah: -2_500, storeId: "s1", kanal: "PUTUS" },
+      ]),
+    ).toEqual([
+      { role: "SPG_COMMISSION_EXPENSE", sen: 750_000, channel: "PUTUS", storeId: "s1" },
+      { role: "COMMISSION_PAYABLE", sen: -750_000, channel: null, storeId: null },
+    ]);
+    expect(barisKoreksiKomisi([])).toEqual([]);
   });
   it("potongan beban sales", () => {
     expect(per(barisPotongSales(50_000))).toEqual({ SALES_COMMISSION_EXPENSE: 5_000_000, LOSS_RECOVERY: -5_000_000 });

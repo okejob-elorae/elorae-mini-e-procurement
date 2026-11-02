@@ -12,7 +12,11 @@ import type { PenandaCocok } from "./pencocokan";
 import { promoEloraeSiklus } from "./promo-elorae-queries";
 import { keSen, totalTagihanKonsi } from "./promo-elorae";
 import { stokDiToko, type SumberStokToko } from "./stok-di-toko";
-import { payoutMonth } from "@/lib/spg-commission/payout";
+import { konsiReportKey, payoutMonth } from "@/lib/spg-commission/payout";
+import { REF_KOMISI_KONSI } from "@/lib/spg/hilang";
+import { bacaAturanHilang } from "@/lib/spg/hilang-db";
+import { rencanaBayarKomisi, type RencanaBayarKomisi, type UnitKomisiSpg } from "@/lib/spg/koreksi";
+import { koreksiPadaPembayaran, kunciReturMenunggu, returMenungguPerLaporan, unitKomisiSpg } from "@/lib/spg/koreksi-queries";
 
 const angka = (v: unknown): number => Number(v ?? 0);
 
@@ -234,7 +238,19 @@ export type RincianSiklus = {
      * menganggur di layar lain yang tidak pernah dibuka bersamaan.
      */
     bebanTerbuka: number;
+    /**
+     * Yang AKAN dibayarkan baris yang belum dibayar di siklus terkunci — komisi per SPG sekarang,
+     * potongan, koreksi yang ikut (`lib/spg/koreksi.ts`); sama dengan yang dibayar penulis. Null
+     * untuk baris yang sudah dibayar atau siklus yang belum dikunci.
+     */
+    bayar: RencanaBayarKomisi | null;
+    /** Koreksi komisi bulan lain yang diterapkan pada baris yang sudah dibayar. */
+    koreksiDiterapkan: { bulanJual: string; toko: string; jumlah: number }[];
+    /** Yang dibayarkan baris yang sudah dibayar: total − potongan + koreksi; null kalau belum dibayar. */
+    dibayarkan: number | null;
   }[];
+  /** Retur pembeli bulan siklus ini yang masih menunggu persetujuan kantor. */
+  komisiReturMenunggu: number;
   /**
    * Stok barang yang sekarang ada di toko, per barang × ukuran — hitungan yang
    * sama dengan halaman toko (`stokDiToko`): buku stok SPG kalau ada, kalau
@@ -409,6 +425,27 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
     bebanPerOrang.set(b.bearerUserId, (bebanPerOrang.get(b.bearerUserId) ?? 0) + angka(b.amount));
   }
 
+  /*
+   * Gaji & komisi: yang belum dibayar dibayar dengan komisi per SPG SEKARANG (keputusan pemilik
+   * 2026-11-02) — rencana yang sama dengan penulisnya, jadi layar ini dan Komisi SPG menyebut
+   * angka yang sama dengan yang dibayar. Yang sudah dibayar membawa koreksi yang diterapkan padanya.
+   */
+  const bulanKomisi = `${c.periodYear}-${String(c.periodMonth).padStart(2, "0")}`;
+  const belumDibayar = c.commissions.filter((k) => k.paidAt === null);
+  const [petaUnit, aturanHilang, terapanKonsi, returMenunggu] = await Promise.all([
+    c.lockedAt && belumDibayar.length > 0 ? unitKomisiSpg(prisma, belumDibayar.map((k) => k.spgUserId)) : Promise.resolve(new Map<string, UnitKomisiSpg[]>()),
+    bacaAturanHilang(prisma),
+    koreksiPadaPembayaran(
+      prisma,
+      c.commissions.filter((k) => k.paidAt !== null).map((k) => ({ refType: REF_KOMISI_KONSI, refId: k.id })),
+    ),
+    returMenungguPerLaporan(prisma, [{ storeId: c.storeId, bulanJual: bulanKomisi }]),
+  ]);
+  const tokoKoreksi = [...new Set([...terapanKonsi.values()].flat().map((x) => x.storeId))];
+  const namaTokoKoreksi = new Map(
+    (tokoKoreksi.length ? await prisma.store.findMany({ where: { id: { in: tokoKoreksi } }, select: { id: true, name: true } }) : []).map((t) => [t.id, t.name]),
+  );
+
   // Nama pencatat/pembatal pembayaran. `ConsignmentPayment` sengaja tidak
   // berelasi ke `User` (skema dua basis data), jadi dicari terpisah.
   const idOrangBayar = [
@@ -517,7 +554,21 @@ export async function rincianSiklus(id: string): Promise<RincianSiklus | null> {
       potonganHilang: angka(k.deduction),
       dibayarPada: k.paidAt?.toISOString() ?? null,
       bebanTerbuka: bebanPerOrang.get(k.spgUserId) ?? 0,
+      bayar:
+        k.paidAt === null && c.lockedAt
+          ? rencanaBayarKomisi({ units: petaUnit.get(k.spgUserId) ?? [], kunci: konsiReportKey(c.id), maksPotongPersen: aturanHilang.maksPotongPersen })
+          : null,
+      koreksiDiterapkan: (terapanKonsi.get(k.id) ?? []).map((x) => ({
+        bulanJual: x.bulanJual,
+        toko: namaTokoKoreksi.get(x.storeId) ?? x.storeId,
+        jumlah: x.jumlah,
+      })),
+      dibayarkan:
+        k.paidAt !== null
+          ? Math.round((Math.max(0, angka(k.total) - angka(k.deduction)) + (terapanKonsi.get(k.id) ?? []).reduce((n, x) => n + x.jumlah, 0)) * 100) / 100
+          : null,
     })),
+    komisiReturMenunggu: returMenunggu.get(kunciReturMenunggu(c.storeId, bulanKomisi)) ?? 0,
     stokToko: {
       sumber: stok.source,
       baris: stok.baris.map((b) => ({

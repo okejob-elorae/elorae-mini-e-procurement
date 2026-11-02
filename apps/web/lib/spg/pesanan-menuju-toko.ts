@@ -159,6 +159,16 @@ export function hitungPesananDiproses(daftar: readonly Pick<PesananMenujuToko, "
   return daftar.length;
 }
 
+/**
+ * Dua baris tugas beranda SPG dari daftar yang sama: pesanan konsi LAMA yang menunggu SPG
+ * mengonfirmasi sampai (`PESANAN_LAMA` — tindakan SPG sendiri), dan sisanya yang masih diproses
+ * kantor. Tidak ada pesanan yang terhitung dua kali.
+ */
+export function hitungTugasPesanan(daftar: readonly Pick<PesananMenujuToko, "status">[]): { diproses: number; lama: number } {
+  const lama = daftar.filter((p) => p.status === "PESANAN_LAMA").length;
+  return { diproses: daftar.length - lama, lama };
+}
+
 /** Murni: muatan HP — tanggal diformat di server, tidak ada kolom lain yang ditambahkan. */
 export function pesananMenujuUntukHp(daftar: readonly PesananMenujuToko[], formatTanggal: (d: Date) => string): PesananMenujuHp[] {
   return daftar.map((p) => ({

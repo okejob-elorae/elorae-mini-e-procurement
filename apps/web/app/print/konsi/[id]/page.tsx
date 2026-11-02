@@ -6,6 +6,7 @@ import { ambilCetakSiklus } from '@/app/actions/receivable-print';
 import type { RincianSiklus } from '@/lib/konsinyasi/queries';
 import { LembarCetak, TabelCetak } from '@/components/print/KopSurat';
 import { useCetakOtomatis } from '@/components/print/cetakOtomatis';
+import { susunGajiCetak } from './gaji-cetak';
 
 const rupiah = (n: number) => `Rp ${Math.round(n).toLocaleString('id-ID')}`;
 const tanggal = (iso: string | null) =>
@@ -42,10 +43,15 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
   }
 
   const b = data.baris;
-  const totalKomisi = data.komisi.reduce((s, k) => s + k.total, 0);
-  // Kolom potongan barang hilang hanya dicetak kalau ada yang dipotong.
-  const totalPotonganHilang = data.komisi.reduce((s, k) => s + k.potonganHilang, 0);
+  // Angka yang sama dengan layar siklus dan yang dibayar penulis; baris belum dibayar tanpa angka
+  // bayar (ditahan, atau kunci siklus dibuka lagi) dicetak "—" dan tidak ikut dijumlah (`gaji-cetak.ts`).
+  const { baris, adaBelumPasti, totalKomisi, totalPotonganHilang, totalKoreksi, adaKoreksi, totalDibayarkan } = susunGajiCetak(
+    data.komisi,
+    data.terkunci,
+  );
+  // Kolom potongan barang hilang dan koreksi hanya dicetak kalau ada isinya.
   const adaPotonganHilang = totalPotonganHilang > 0;
+  const tandaKoreksi = (n: number) => (n < 0 ? `−${rupiah(-n)}` : `+${rupiah(n)}`);
 
   return (
     <LembarCetak
@@ -136,35 +142,35 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
             kepala={[
               { teks: 'SPG' },
               { teks: 'Gaji pokok', kanan: true },
-              { teks: 'Komisi', kanan: true },
+              { teks: 'Komisi per SPG', kanan: true },
               { teks: 'Total', kanan: true },
-              ...(adaPotonganHilang
-                ? [
-                    { teks: 'Potongan barang hilang', kanan: true },
-                    { teks: 'Dibayarkan', kanan: true },
-                  ]
-                : []),
+              ...(adaPotonganHilang ? [{ teks: 'Potongan barang hilang', kanan: true }] : []),
+              ...(adaKoreksi ? [{ teks: 'Koreksi', kanan: true }] : []),
+              { teks: 'Dibayarkan', kanan: true },
               { teks: 'Dibayar' },
             ]}
           >
-            {data.komisi.map((k) => (
+            {baris.map(({ k, angka, alasan }) => (
               <tr key={k.id} className="border-b border-neutral-300">
-                <td className="px-2 py-1.5">{k.spgNama ?? '—'}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(k.gajiPokok)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(k.komisi)}</td>
-                <td className="px-2 py-1.5 text-right font-semibold tabular-nums">
-                  {rupiah(k.total)}
+                <td className="px-2 py-1.5">
+                  {k.spgNama ?? '—'}
+                  {!k.bergaji ? (
+                    <span className="block text-[8pt] text-neutral-600">Bukan SPG toko ini — komisi dari penjualannya sendiri, tanpa gaji pokok.</span>
+                  ) : null}
+                  {alasan ? <span className="block text-[8pt] text-neutral-600">{alasan}</span> : null}
                 </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(k.gajiPokok)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{angka ? rupiah(angka.komisi) : '—'}</td>
+                <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{angka ? rupiah(angka.total) : '—'}</td>
                 {adaPotonganHilang && (
-                  <>
-                    <td className="px-2 py-1.5 text-right tabular-nums">
-                      {k.potonganHilang > 0 ? `−${rupiah(k.potonganHilang)}` : '—'}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums">
-                      {rupiah(Math.max(0, k.total - k.potonganHilang))}
-                    </td>
-                  </>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{angka && angka.potongan > 0 ? `−${rupiah(angka.potongan)}` : '—'}</td>
                 )}
+                {adaKoreksi && (
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {angka && Math.round(angka.koreksi * 100) !== 0 ? tandaKoreksi(angka.koreksi) : '—'}
+                  </td>
+                )}
+                <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{angka ? rupiah(angka.dibayarkan) : '—'}</td>
                 <td className="px-2 py-1.5">{tanggal(k.dibayarPada)}</td>
               </tr>
             ))}
@@ -173,42 +179,40 @@ export default function CetakSiklusPage({ params }: { params: Promise<{ id: stri
                 Total
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(totalKomisi)}</td>
-              {adaPotonganHilang && (
-                <>
-                  <td className="px-2 py-1.5 text-right tabular-nums">−{rupiah(totalPotonganHilang)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    {rupiah(Math.max(0, totalKomisi - totalPotonganHilang))}
-                  </td>
-                </>
-              )}
+              {adaPotonganHilang && <td className="px-2 py-1.5 text-right tabular-nums">−{rupiah(totalPotonganHilang)}</td>}
+              {adaKoreksi && <td className="px-2 py-1.5 text-right tabular-nums">{tandaKoreksi(totalKoreksi)}</td>}
+              <td className="px-2 py-1.5 text-right tabular-nums">{rupiah(totalDibayarkan)}</td>
               <td />
             </tr>
           </TabelCetak>
+          {adaBelumPasti ? (
+            <p className="mt-1 text-[8pt] text-neutral-600">
+              Baris bertanda — belum punya angka yang akan dibayar dan tidak ikut dijumlah.
+            </p>
+          ) : null}
         </>
       )}
 
-      {data.titipan.length > 0 && (
+      {/* Stok yang sekarang ada di toko — hitungan yang sama dengan halaman siklus (`stokDiToko`). */}
+      {data.stokToko.baris.length > 0 && (
         <>
           <h2 className="mb-1 mt-5 text-[10pt] font-semibold uppercase tracking-wide">
-            Stok titipan
+            Stok di toko
           </h2>
           <TabelCetak
             kepala={[
               { teks: 'Barang' },
-              { teks: 'Dikirim', kanan: true },
-              { teks: 'Terjual', kanan: true },
+              { teks: 'Ukuran' },
               { teks: 'Sisa', kanan: true },
             ]}
           >
-            {data.titipan.map((x) => (
-              <tr key={x.itemName} className="border-b border-neutral-300">
-                <td className="px-2 py-1.5">{x.itemName}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{x.dikirim}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{x.terjual}</td>
-                <td
-                  className={`px-2 py-1.5 text-right tabular-nums ${x.sisa < 0 ? 'font-bold' : ''}`}
-                >
+            {data.stokToko.baris.map((x) => (
+              <tr key={`${x.itemId}::${x.variantSku}`} className="border-b border-neutral-300">
+                <td className="px-2 py-1.5">{x.nama}</td>
+                <td className="px-2 py-1.5">{x.varian ?? '—'}</td>
+                <td className={`px-2 py-1.5 text-right tabular-nums ${x.sisa < 0 ? 'font-bold' : ''}`}>
                   {x.sisa}
+                  {x.perkiraan ? '*' : ''}
                 </td>
               </tr>
             ))}

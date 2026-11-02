@@ -1,10 +1,24 @@
 import { prisma, Prisma, sqlId } from "@elorae/db";
 import type { GenerateAutoJournalResult } from "@/lib/finance/journal";
+import { SARING_JURNAL_BERLAKU } from "@/lib/finance/journals/status-jurnal";
+import { generasiSourceId, selisihBaris, type BarisBertanda } from "@/lib/finance/lapangan/aturan";
+import { bacaJurnalTerposting } from "@/lib/finance/lapangan/selaras";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { daftarkanSumberSapuan, type DokumenTanpaJurnal, type OpsiCariSapuan } from "@/lib/finance/sapuan/registri";
 import { cariTanpaJurnalSql } from "@/lib/finance/sapuan/sql";
-import { akhirBulanWib, bacaPeriode, idKomisiSpg, NAMA_SUMBER_OPERASIONAL, SUMBER_OPERASIONAL, tanggalPeriode, type SumberOperasional } from "./aturan";
-import { AWALAN_STOK_AWAL_UMKM } from "./jurnal";
+import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "@/lib/spg/hilang";
+import { JEJAK_KOMISI_SPG } from "@/lib/spg/komisi";
+import {
+  akhirBulanWib,
+  bacaIdKomisiSpg,
+  bacaPeriode,
+  idKomisiSpg,
+  NAMA_SUMBER_OPERASIONAL,
+  SUMBER_OPERASIONAL,
+  tanggalPeriode,
+  type SumberOperasional,
+} from "./aturan";
+import { AWALAN_STOK_AWAL_UMKM, sasaranKomisiKonsi, sasaranKomisiSpg } from "./jurnal";
 import { postingJurnalOperasionalAman } from "./tertunda";
 
 /*
@@ -17,7 +31,14 @@ import { postingJurnalOperasionalAman } from "./tertunda";
  *
  * "Tanpa jurnal" = belum punya jurnal GENERASI PERTAMA (sourceId = id dokumen).
  * Jurnal bergenerasi yang tertinggal dari keadaan dokumennya diselaraskan oleh
- * kait pasca-commit dan tombol "Posting ulang", bukan oleh sapuan ini.
+ * kait pasca-commit dan tombol "Posting ulang", bukan oleh sapuan ini — kecuali
+ * akrual gaji/komisi SPG yang digeser pembayarannya:
+ *  - pembayaran yang disapu diposting lewat `postingJurnalOperasionalAman`,
+ *    yang menyelaraskan akrual barisnya DULU (pembayaran bisa menghitung ulang
+ *    angkanya), sama dengan kaitnya;
+ *  - pembayaran yang tidak berjurnal sama sekali (dihitung ulang menjadi neto
+ *    nol tanpa koreksi) tidak pernah disapu, jadi akrualnya dicari sendiri
+ *    (`akrualTertinggal`) lewat jejak hitung ulangnya.
  */
 
 const d = (kolom: string) => Prisma.sql`d.${sqlId(kolom)}`;
@@ -198,9 +219,130 @@ export function cariSiklusKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
   );
 }
 
-export function cariKomisiKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
-  return siklusTerkunci(opsi, { commissions: { some: { total: { gt: 0 } } } }, SUMBER_OPERASIONAL.KOMISI_KONSI);
+/**
+ * Akrual gaji/komisi SPG yang TERTINGGAL dari pembayaran yang menghitung ulang angka
+ * barisnya (jejak `SPG_COMMISSION_RECOMPUTED_AT_PAYMENT` bertanggal di rentang). Biasanya
+ * `postingJurnalOperasionalAman` atas pembayaran itu menyelaraskannya — lewat kait
+ * pasca-commit, atau sapuan pembayaran bila kaitnya mati. Tetapi pembayaran yang dihitung
+ * ulang menjadi neto nol tanpa koreksi (bagi rata 22.500 untuk SPG tanpa penjualan di HP,
+ * dibayar Rp 0) tidak berjurnal, jadi pencari pembayaran tidak pernah menemukannya: bila
+ * kaitnya mati, akrualnya memuat beban komisi yang tidak pernah terutang, tanpa tanda di
+ * mana pun. Akrualnya ditemukan di sini.
+ *
+ * Yang dikembalikan hanya akrual yang SUDAH berjurnal, tanpa jurnal sesudah jejak
+ * terakhirnya, dan yang sasarannya sekarang (penyusun yang sama dengan penyelarasnya)
+ * berbeda dari yang terposting. Dibandingkan ISINYA, bukan waktunya saja: pembayaran
+ * berdasar lama yang angkanya tetap, atau akrual yang sudah diselaraskan, tidak pernah
+ * tampil — jadi tidak ada yang "tanpa jurnal" selamanya. Akrual yang belum berjurnal sama
+ * sekali dicari jalur generasi pertama (tanggal periodenya), bukan di sini.
+ */
+async function akrualTertinggal(input: {
+  sourceType: typeof SUMBER_OPERASIONAL.KOMISI_SPG | typeof SUMBER_OPERASIONAL.KOMISI_KONSI;
+  refType: typeof REF_KOMISI_SPG_PUTUS | typeof REF_KOMISI_KONSI;
+  /** id baris yang dibayar → akrualnya (id sumber jurnal + label); baris yang sudah tidak ada dilewati. */
+  akrualBaris: (barisIds: string[]) => Promise<Map<string, { id: string; label: string }>>;
+  sasaran: (akrualId: string) => Promise<BarisBertanda[] | null>;
+  /** Akrual yang sudah dikembalikan jalur generasi pertama. */
+  kecuali: readonly DokumenTanpaJurnal[];
+  opsi: OpsiCariSapuan;
+}): Promise<DokumenTanpaJurnal[]> {
+  const { sourceType, opsi } = input;
+  const batas = opsi.batas - input.kecuali.length;
+  if (batas <= 0 || opsi.ids?.length === 0) return [];
+  const jejak = await prisma.auditLog.findMany({
+    where: { action: JEJAK_KOMISI_SPG.DIHITUNG_ULANG_SAAT_BAYAR, entityType: input.refType, createdAt: { gte: opsi.sejak, lte: opsi.sampai } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: { entityId: true, createdAt: true },
+  });
+  if (jejak.length === 0) return [];
+  const akrual = await input.akrualBaris([...new Set(jejak.map((j) => j.entityId))]);
+  const izinkan = opsi.ids ? new Set(opsi.ids) : null;
+  const sudah = new Set(input.kecuali.map((k) => k.id));
+  // Urut naik, jadi jejak yang lebih baru menimpa: akrual dibandingkan dengan pergeseran TERAKHIRNYA.
+  const kandidat = new Map<string, DokumenTanpaJurnal>();
+  for (const j of jejak) {
+    const a = akrual.get(j.entityId);
+    if (!a || sudah.has(a.id) || (izinkan && !izinkan.has(a.id))) continue;
+    kandidat.set(a.id, { id: a.id, tanggal: j.createdAt, label: a.label });
+  }
+
+  // Jurnal terakhir per akrual (semua generasi). Tanpa jurnal = urusan jalur generasi pertama;
+  // berjurnal SESUDAH jejaknya = sudah diselaraskan sesudah pembayaran itu.
+  const ids = [...kandidat.keys()];
+  const terakhir = new Map<string, number>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const potong = ids.slice(i, i + 100);
+    const jurnal = await prisma.journal.findMany({
+      where: { sourceType, ...SARING_JURNAL_BERLAKU, OR: potong.flatMap((id) => [{ sourceId: id }, { sourceId: { startsWith: `${id}#` } }]) },
+      select: { sourceId: true, createdAt: true },
+    });
+    for (const j of jurnal) {
+      const sourceId = j.sourceId;
+      const milik = sourceId ? potong.find((id) => generasiSourceId(id, sourceId) !== null) : undefined;
+      if (milik) terakhir.set(milik, Math.max(terakhir.get(milik) ?? 0, j.createdAt.getTime()));
+    }
+  }
+  const urut = [...kandidat.values()]
+    .filter((k) => {
+      const t = terakhir.get(k.id);
+      return t !== undefined && t < k.tanggal.getTime();
+    })
+    .sort((x, y) => x.tanggal.getTime() - y.tanggal.getTime() || x.id.localeCompare(y.id));
+
+  const hasil: DokumenTanpaJurnal[] = [];
+  for (const k of urut) {
+    if (hasil.length >= batas) break;
+    const [ada, sasaran] = await Promise.all([bacaJurnalTerposting(prisma, sourceType, k.id), input.sasaran(k.id)]);
+    if (sasaran && ada.sourceIds.length > 0 && selisihBaris(sasaran, ada.baris).length > 0) hasil.push(k);
+  }
+  return hasil;
 }
+
+/** Baris pembayaran → akrualnya, dibaca per potongan (daftar `in` tidak pernah tak terbatas). */
+async function petaPerPotong<T>(ids: string[], baca: (potong: string[]) => Promise<Array<[string, T]>>): Promise<Map<string, T>> {
+  const peta = new Map<string, T>();
+  for (let i = 0; i < ids.length; i += 500) for (const [k, v] of await baca(ids.slice(i, i + 500))) peta.set(k, v);
+  return peta;
+}
+
+const LABEL_TERTINGGAL = "penyesuaian saat dibayar";
+
+export async function cariKomisiKonsiTanpaJurnal(opsi: OpsiCariSapuan): Promise<DokumenTanpaJurnal[]> {
+  const pertama = await siklusTerkunci(opsi, { commissions: { some: { total: { gt: 0 } } } }, SUMBER_OPERASIONAL.KOMISI_KONSI);
+  const tertinggal = await akrualTertinggal({
+    sourceType: SUMBER_OPERASIONAL.KOMISI_KONSI,
+    refType: REF_KOMISI_KONSI,
+    akrualBaris: (barisIds) =>
+      petaPerPotong(barisIds, async (potong) =>
+        (
+          await prisma.consignmentCommission.findMany({
+            where: { id: { in: potong } },
+            select: { id: true, cycleId: true, cycle: { select: { noKonsi: true } } },
+          })
+        ).map((r): [string, { id: string; label: string }] => [r.id, { id: r.cycleId, label: `${r.cycle.noKonsi} (${LABEL_TERTINGGAL})` }]),
+      ),
+    sasaran: async (cycleId) => (await sasaranKomisiKonsi(prisma, cycleId, null)).sasaran,
+    kecuali: pertama,
+    opsi,
+  });
+  return [...pertama, ...tertinggal];
+}
+
+/**
+ * Pembayaran gaji/komisi SPG `d` yang membawa koreksi komisi berjurnal
+ * (`SpgCommissionCorrection` ber-`paidRefType`/`paidRefId` baris itu). Jurnal
+ * pembayarannya ada walau neto barisnya SENDIRI nol (gaji pokok nol, laporan
+ * tanpa penjualan di HP): beban koreksi di toko + kanal asalnya, bank sebesar
+ * Σ koreksi. Bersyarat per toko × jenis laporan asal (= toko × kanal baris
+ * bebannya), sama dengan `gabungBaris` di penulisnya: koreksi yang saling
+ * menghapus di toko + kanal yang sama tidak menghasilkan baris, jadi tidak dicari.
+ */
+const membawaKoreksi = (paidRefType: typeof REF_KOMISI_KONSI | typeof REF_KOMISI_SPG_PUTUS) => Prisma.sql`EXISTS (
+  SELECT 1 FROM ${sqlId("SpgCommissionCorrection")} c
+  WHERE c.${sqlId("paidRefType")} = ${paidRefType} AND c.${sqlId("paidRefId")} = d.${sqlId("id")}
+  GROUP BY c.${sqlId("sourceStoreId")}, c.${sqlId("sourceKind")}
+  HAVING SUM(c.${sqlId("amount")}) <> 0
+)`;
 
 export function cariBayarGajiKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
   return cariTanpaJurnalSql({
@@ -208,7 +350,7 @@ export function cariBayarGajiKonsiTanpaJurnal(opsi: OpsiCariSapuan) {
     sourceType: SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI,
     tanggal: d("paidAt"),
     kolomLabel: "id",
-    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND d.${sqlId("total")} - d.${sqlId("deduction")} > 0`,
+    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND (d.${sqlId("total")} - d.${sqlId("deduction")} > 0 OR ${membawaKoreksi(REF_KOMISI_KONSI)})`,
     opsi,
   });
 }
@@ -235,7 +377,27 @@ export async function cariKomisiSpgTanpaJurnal(opsi: OpsiCariSapuan): Promise<Do
     kandidat.push({ id: idKomisiSpg(g.storeId, g.period), tanggal, label: `Komisi SPG ${g.period}` });
   }
   kandidat.sort((a, b) => a.tanggal.getTime() - b.tanggal.getTime() || a.id.localeCompare(b.id));
-  return tanpaJurnalDari(SUMBER_OPERASIONAL.KOMISI_SPG, kandidat, opsi);
+  const pertama = await tanpaJurnalDari(SUMBER_OPERASIONAL.KOMISI_SPG, kandidat, opsi);
+  const tertinggal = await akrualTertinggal({
+    sourceType: SUMBER_OPERASIONAL.KOMISI_SPG,
+    refType: REF_KOMISI_SPG_PUTUS,
+    akrualBaris: (barisIds) =>
+      petaPerPotong(barisIds, async (potong) =>
+        (await prisma.spgCommission.findMany({ where: { id: { in: potong } }, select: { id: true, storeId: true, period: true } }))
+          .filter((r) => bacaPeriode(r.period) !== null)
+          .map((r): [string, { id: string; label: string }] => [
+            r.id,
+            { id: idKomisiSpg(r.storeId, r.period), label: `Komisi SPG ${r.period} (${LABEL_TERTINGGAL})` },
+          ]),
+      ),
+    sasaran: async (id) => {
+      const k = bacaIdKomisiSpg(id);
+      return k ? ((await sasaranKomisiSpg(prisma, k.storeId, k.periode, null))?.sasaran ?? null) : null;
+    },
+    kecuali: pertama,
+    opsi,
+  });
+  return [...pertama, ...tertinggal];
 }
 
 export function cariBayarKomisiSpgTanpaJurnal(opsi: OpsiCariSapuan) {
@@ -244,7 +406,7 @@ export function cariBayarKomisiSpgTanpaJurnal(opsi: OpsiCariSapuan) {
     sourceType: SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG,
     tanggal: d("paidAt"),
     kolomLabel: "period",
-    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND d.${sqlId("commission")} - d.${sqlId("deduction")} > 0`,
+    syarat: Prisma.sql`AND d.${sqlId("paidAt")} IS NOT NULL AND (d.${sqlId("commission")} - d.${sqlId("deduction")} > 0 OR ${membawaKoreksi(REF_KOMISI_SPG_PUTUS)})`,
     opsi,
   });
 }

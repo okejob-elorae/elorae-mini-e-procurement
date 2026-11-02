@@ -1,5 +1,3 @@
-import { bagiKomisi } from "@/lib/konsinyasi/aturan";
-
 /**
  * Aturan stok toko untuk SPG — murni, tanpa basis data.
  *
@@ -91,20 +89,4 @@ export function cocokkanKode(kode: string, katalog: BarisKatalogKode[]): HasilKo
 /** Baris yang stoknya di bawah atau sama dengan batas, paling sedikit dulu. */
 export function hampirHabis<T extends { qty: number }>(baris: T[], batas: number): T[] {
   return baris.filter((b) => b.qty <= batas).sort((a, b) => a.qty - b.qty);
-}
-
-/**
- * Perkiraan komisi bulan berjalan: unit terjual × tarif komisi barang, dibagi
- * rata antar SPG toko itu — aturan yang sama dengan hitungan resmi saat siklus
- * konsinyasi dikunci (`bagiKomisi`). Ini PERKIRAAN; yang dibayar tetap angka
- * siklus yang dikunci.
- */
-export function perkiraanKomisi(
-  terjual: { qty: number; commissionPerPcs: number }[],
-  jumlahSpg: number,
-): { totalToko: number; bagianSaya: number } {
-  const { totalKomisi, perSpg } = bagiKomisi(terjual, jumlahSpg);
-  // Bagian SPG yang MELIHAT layar: pembagian rata (sisa receh jatuh ke SPG
-  // pertama di hitungan resmi; perkiraan tidak mengklaim sisa itu).
-  return { totalToko: totalKomisi, bagianSaya: perSpg.length ? perSpg[perSpg.length - 1] : 0 };
 }

@@ -269,14 +269,21 @@ export async function bukaKunciAction(cycleId: string): Promise<HasilAksiKonsi> 
 
 export async function bayarKomisiAction(
   commissionId: string,
-  catatan?: string,
+  catatan: string | undefined,
+  jumlahDiharapkan: number,
 ): Promise<HasilAksiKonsi> {
   const userId = await butuhIzin(bolehMembayarKomisiSpg);
   if (!userId) return { ok: false, kode: 'TANPA_AKSES' };
+  // Yang dilihat kantor wajib ikut: angka yang berubah sejak halaman dibuka ditolak, bukan dibayar.
+  if (typeof jumlahDiharapkan !== "number" || !Number.isFinite(jumlahDiharapkan) || jumlahDiharapkan < 0) {
+    return { ok: false, kode: "NILAI_TIDAK_VALID" };
+  }
 
   try {
-    const hasil = await bayarKomisi({ commissionId, olehUserId: userId, catatan });
+    const hasil = await bayarKomisi({ commissionId, olehUserId: userId, catatan, jumlahDiharapkan });
     if (!hasil.ok) return { ok: false, kode: hasil.alasan };
+    // Akrual gaji SPG siklusnya diselaraskan dulu (pembayaran bisa menghitung ulang angkanya),
+    // lalu jurnal pembayarannya dengan koreksi yang dibawanya — keduanya di `kaitBayarGajiKonsi`.
     await kaitBayarGajiKonsi(commissionId, userId);
     segarkanKomisi();
     return { ok: true };

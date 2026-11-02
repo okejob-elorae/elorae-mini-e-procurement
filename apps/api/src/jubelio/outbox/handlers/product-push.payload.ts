@@ -42,9 +42,45 @@ export type ItemSlice = {
   nameEn: string;
   description: string | null;
   variants: Array<{ sku: string; barcode?: string | null }> | null;
-  sellingPrice: number | null;
+  /**
+   * The price CONFIRMED for Jubelio (`Item.jubelioConfirmedPrice`), never the raw ERP selling
+   * price (owner decision 2026-11-02). Non-nullable on purpose: `resolvePushPrice` refuses the
+   * push before a payload is built, so 0 or null can no longer be sent.
+   */
+  jubelioPrice: number;
   isActive: boolean;
 };
+
+export type PushPriceInput = {
+  mapped: boolean;
+  source: "ERP" | "JUBELIO_INGEST";
+  jubelioConfirmedPrice: number | null;
+  jubelioCreateRequestedAt: Date | null;
+};
+
+/**
+ * Which price a product push may send, or why it must not run.
+ *
+ * - A product Jubelio already has is pushed only with a confirmed price above 0. One without (a
+ *   mapped item that never had a price) is skipped instead of being sent sell_price 0 as before.
+ * - A new ERP product is created only once its price is confirmed AND no create request is still
+ *   waiting: confirming clears the request, so a request still set means the confirmation has not
+ *   happened yet (or a newer request came after it).
+ * - An unmapped ERP product with neither a confirmed price nor a request is a create push from
+ *   before the confirmation step (or a retried one): `stampRequest` tells the handler to stamp the
+ *   request, so the item lands on the confirmation list instead of disappearing.
+ */
+export function resolvePushPrice(
+  input: PushPriceInput,
+): { ok: true; price: number } | { ok: false; stampRequest: boolean } {
+  const confirmed = input.jubelioConfirmedPrice;
+  const price = confirmed != null && Number.isFinite(confirmed) && confirmed > 0 ? confirmed : null;
+  if (input.mapped) return price != null ? { ok: true, price } : { ok: false, stampRequest: false };
+  if (input.source !== "ERP") return { ok: false, stampRequest: false };
+  if (input.jubelioCreateRequestedAt != null) return { ok: false, stampRequest: false };
+  if (price == null) return { ok: false, stampRequest: true };
+  return { ok: true, price };
+}
 
 export type MappingSlice = Pick<
   JubelioProductMapping,
@@ -195,7 +231,8 @@ export function buildCreateProductRequest(opts: {
   const { item, defaults: d, categoryJubelioId, mappings } = opts;
 
   const groupId = mappings[0]?.jubelioItemGroupId ?? 0;
-  const sellPrice = item.sellingPrice ?? 0;
+  /* The same confirmed price on the group and on every SKU: the ERP keeps one price per article. */
+  const sellPrice = item.jubelioPrice;
   const mappingBySku = new Map(mappings.map((m) => [m.erpVariantSku, m]));
 
   const hasVariants = item.variants !== null && item.variants.length > 0;

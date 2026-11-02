@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { jumlahLakuPerKunci, returRusakBerbuku, type GerakLaku } from "./laku-bersih";
+import { jumlahLakuPerKunci, returRusakBerbuku, tanpaBarisBuku, type GerakLaku } from "./laku-bersih";
 
 const t = (iso: string) => new Date(iso);
 
@@ -74,5 +74,34 @@ describe("jumlahLakuPerKunci", () => {
     expect(peta.get("S")?.get("A::L")).toBe(-1);
     expect(peta.get("T")?.get("A::M")).toBe(-2);
     expect(peta.get("S")?.size).toBe(2);
+  });
+});
+
+describe("tanpaBarisBuku", () => {
+  const baris = (id: string, returnId: string, condition: string, itemId = "A", variantSku = "A-M") => ({ id, returnId, itemId, variantSku, condition });
+
+  it("retur LAYAK yang disetujui tanpa baris RETUR_PEMBELI (sudah terhitung opname) ikut mengurangi laku; yang berbuku tidak", () => {
+    const hasil = tanpaBarisBuku(
+      [baris("l1", "R1", "LAYAK"), baris("l2", "R2", "LAYAK"), baris("l3", "R2", "RUSAK")],
+      [{ refId: "R1", itemId: "A", variantSku: "A-M" }],
+    );
+    // R1 sudah kembali ke buku lewat RETUR_PEMBELI; R2 LAYAK dilewati buku; rusak selalu lewat.
+    expect(hasil.map((b) => b.id)).toEqual(["l2", "l3"]);
+  });
+
+  it("baris buku laporan lain atau ukuran lain tidak menutupi baris ini", () => {
+    const hasil = tanpaBarisBuku(
+      [baris("l1", "R1", "LAYAK"), baris("l2", "R1", "LAYAK", "A", "A-L")],
+      [
+        { refId: "R9", itemId: "A", variantSku: "A-M" },
+        { refId: "R1", itemId: "A", variantSku: "A-L" },
+        { refId: null, itemId: "A", variantSku: "A-M" },
+      ],
+    );
+    expect(hasil.map((b) => b.id)).toEqual(["l1"]);
+  });
+
+  it("varian kosong dan null dianggap sama (barang tanpa varian)", () => {
+    expect(tanpaBarisBuku([baris("l1", "R1", "LAYAK", "B", "")], [{ refId: "R1", itemId: "B", variantSku: null }])).toEqual([]);
   });
 });

@@ -98,4 +98,15 @@ describe("tautanKabar", () => {
     // Jenis yang bukan kiriman tidak pernah dirangkai ke alamat.
     expect(tautanKabar("KIRIMAN_DISERAHKAN", { sourceType: "../../backoffice", sourceId: "x" })).toBe("/pwa/spg/terima");
   });
+
+  it("keputusan kantor atas retur pembeli membawa SPG ke daftar laporan retur pembelinya", () => {
+    expect(JENIS_KABAR.RETUR_PEMBELI_DISETUJUI).toBe("RETUR_PEMBELI_DISETUJUI");
+    expect(JENIS_KABAR.RETUR_PEMBELI_DITOLAK).toBe("RETUR_PEMBELI_DITOLAK");
+    for (const jenis of ["RETUR_PEMBELI_DISETUJUI", "RETUR_PEMBELI_DITOLAK"]) {
+      expect(tautanKabar(jenis, { returnId: "r1", spgSaleId: "s1" }), jenis).toBe("/pwa/spg/retur-pembeli");
+      expect(tautanKabar(jenis, {}), jenis).toBe("/pwa/spg/retur-pembeli");
+    }
+    // Laporan yang MENUNGGU adalah kategori lonceng kantor, bukan kabar HP.
+    expect(tautanKabar("RETUR_PEMBELI_MENUNGGU", { returnId: "r1" })).toBeNull();
+  });
 });

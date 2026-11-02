@@ -1,4 +1,4 @@
-import type { CommissionEvent, RecapRow } from "./compute";
+import type { CommissionEvent } from "./compute";
 import { compareYearMonth } from "./month";
 
 /**
@@ -52,36 +52,41 @@ export function ratesByDetail(events: readonly CommissionEvent[]): Map<string, D
   return result;
 }
 
-export type RecapGrandTotals = { pieces: number; earned: number; reversed: number; net: number };
+export type PayoutGrandTotals = {
+  pieces: number;
+  figure: number;
+  setAmount: number;
+  paidAmount: number;
+  unpaidAmount: number;
+  correctionsApplied: number;
+  pendingDifference: number;
+};
 
-export function sumRecapRows(rows: readonly RecapRow[]): RecapGrandTotals {
-  return rows.reduce<RecapGrandTotals>(
+/** A payout month's totals over the per-SPG rows (`CommissionRecapRow`), in whole cents. */
+export function sumPayoutRows(rows: ReadonlyArray<Omit<PayoutGrandTotals, never>>): PayoutGrandTotals {
+  const c = (n: number) => Math.round(n * 100);
+  const t = rows.reduce(
     (sum, row) => ({
       pieces: sum.pieces + row.pieces,
-      earned: sum.earned + row.earned,
-      reversed: sum.reversed + row.reversed,
-      net: sum.net + row.net,
+      figure: sum.figure + c(row.figure),
+      setAmount: sum.setAmount + c(row.setAmount),
+      paidAmount: sum.paidAmount + c(row.paidAmount),
+      unpaidAmount: sum.unpaidAmount + c(row.unpaidAmount),
+      correctionsApplied: sum.correctionsApplied + c(row.correctionsApplied),
+      pendingDifference: sum.pendingDifference + c(row.pendingDifference),
     }),
-    { pieces: 0, earned: 0, reversed: 0, net: 0 },
+    { pieces: 0, figure: 0, setAmount: 0, paidAmount: 0, unpaidAmount: 0, correctionsApplied: 0, pendingDifference: 0 },
   );
-}
-
-export type PayoutGrandTotals = { pieces: number; setAmount: number; unsetAmount: number; paidAmount: number; net: number };
-
-/** A payout month's totals: the stored, not-yet-set and paid figures, and the computation's pieces and figure (`net`). */
-export function sumPayoutRows(
-  rows: ReadonlyArray<{ pieces: number; setAmount: number; unsetAmount: number; paidAmount: number; net: number }>,
-): PayoutGrandTotals {
-  return rows.reduce<PayoutGrandTotals>(
-    (sum, row) => ({
-      pieces: sum.pieces + row.pieces,
-      setAmount: sum.setAmount + row.setAmount,
-      unsetAmount: sum.unsetAmount + row.unsetAmount,
-      paidAmount: sum.paidAmount + row.paidAmount,
-      net: sum.net + row.net,
-    }),
-    { pieces: 0, setAmount: 0, unsetAmount: 0, paidAmount: 0, net: 0 },
-  );
+  const r = (n: number) => (n === 0 ? 0 : n / 100);
+  return {
+    pieces: t.pieces,
+    figure: r(t.figure),
+    setAmount: r(t.setAmount),
+    paidAmount: r(t.paidAmount),
+    unpaidAmount: r(t.unpaidAmount),
+    correctionsApplied: r(t.correctionsApplied),
+    pendingDifference: r(t.pendingDifference),
+  };
 }
 
 /** Whole rupiah, id-ID grouped, with the minus ahead of the currency so a reversal reads as one. */

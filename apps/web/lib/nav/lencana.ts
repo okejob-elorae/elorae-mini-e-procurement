@@ -32,8 +32,14 @@ export function bagiLencana(
      * ber-kunci href. Sebagian induk berbagi href dengan salah satu anaknya —
      * Produksi dan Plan Kerja dua-duanya `/backoffice/production/planning` —
      * dan satu peta membuat anak itu memakai lencana milik seluruh grupnya.
+     *
+     * Jangkar (`#…`) dibuang bersama query string, sama dengan `jalurTautan`
+     * (lib/dashboard/antrean-kantor — tidak diimpor karena menyeret prisma).
+     * Tunggakan komisi SPG menaut ke `/backoffice/komisi-spg#tunggakan`; tanpa
+     * ini angkanya mendarat di kunci yang tidak dimiliki menu mana pun, sehingga
+     * grupnya berlencana sementara halaman di dalamnya tidak.
      */
-    const h = b.href.split('?')[0];
+    const h = b.href.split(/[?#]/)[0];
     if (h) halaman[h] = (halaman[h] ?? 0) + b.count;
   }
   return { grup, halaman };

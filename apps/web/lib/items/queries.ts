@@ -96,6 +96,7 @@ export const KOLOM_DECIMAL_ITEM = [
   'reorderPoint',
   'overReceiveThreshold',
   'sellingPrice',
+  "jubelioConfirmedPrice",
   'targetMarginPercent',
   'additionalCost',
   'commissionPerPcs',

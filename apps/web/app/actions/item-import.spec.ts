@@ -7,7 +7,7 @@ vi.mock("@/lib/items/import/writer", async () => {
   class ItemImportSkuTakenError extends Error {}
   return { createItemsFromImport: vi.fn(), ItemImportSkuTakenError };
 });
-vi.mock("@/lib/jubelio/product-push", () => ({ enqueueProductPushOnCreate: vi.fn() }));
+vi.mock("@/lib/jubelio/product-push", () => ({ createProductPushRow: vi.fn(), fireProductPushNow: vi.fn() }));
 vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn().mockResolvedValue("Admin") }));
 vi.mock("@/lib/notifications/recipients", () => ({
   getUsersWithPermission: vi.fn().mockResolvedValue([]),
@@ -17,7 +17,7 @@ vi.mock("@/lib/notifications/recipients", () => ({
 import { auth } from "@/lib/auth";
 import { loadItemImportLookups } from "@/lib/items/import/lookups";
 import { createItemsFromImport, ItemImportSkuTakenError } from "@/lib/items/import/writer";
-import { enqueueProductPushOnCreate } from "@/lib/jubelio/product-push";
+import { createProductPushRow } from "@/lib/jubelio/product-push";
 import { commitItemImport, previewItemImport } from "./item-import";
 
 const lookups = (existing: string[] = []) => ({
@@ -68,32 +68,26 @@ describe("commitItemImport", () => {
     expect(await commitItemImport(rows, { pushToJubelio: true })).toEqual({ status: "forbidden" });
     expect(loadItemImportLookups).not.toHaveBeenCalled();
     expect(createItemsFromImport).not.toHaveBeenCalled();
-    expect(enqueueProductPushOnCreate).not.toHaveBeenCalled();
   });
 
-  it("creates the items and queues nothing for Jubelio unless asked", async () => {
+  it("creates the items and requests nothing for Jubelio unless asked", async () => {
     const r = await commitItemImport(rows, { pushToJubelio: false });
-    expect(r).toMatchObject({ status: "created", jubelioRequested: false, jubelioFailed: 0 });
-    expect(enqueueProductPushOnCreate).not.toHaveBeenCalled();
+    expect(r).toEqual(expect.objectContaining({ status: "created", jubelioRequested: false }));
+    expect(r).not.toHaveProperty("jubelioFailed");
+    expect(vi.mocked(createItemsFromImport).mock.calls[0][1]).toEqual({ ajukanKeJubelio: false, olehUserId: "u1" });
   });
 
-  it("queues one Jubelio push per created item without direct enqueue when asked", async () => {
-    await commitItemImport(rows, { pushToJubelio: true });
-    expect(vi.mocked(enqueueProductPushOnCreate).mock.calls).toEqual([
-      ["i1", "u1", { directEnqueue: false }],
-      ["i2", "u1", { directEnqueue: false }],
-    ]);
-  });
-
-  it("treats anything but a literal true as no push", async () => {
-    await commitItemImport(rows, { pushToJubelio: "yes" });
-    expect(enqueueProductPushOnCreate).not.toHaveBeenCalled();
-  });
-
-  it("counts failed Jubelio enqueues without failing the import", async () => {
-    vi.mocked(enqueueProductPushOnCreate).mockRejectedValueOnce(new Error("boom"));
+  /* Owner decision 2026-11-02: the Jubelio box requests the products; they wait for price confirmation. */
+  it("a ticked Jubelio box requests the products inside the import transaction and pushes nothing", async () => {
     const r = await commitItemImport(rows, { pushToJubelio: true });
-    expect(r).toMatchObject({ status: "created", jubelioFailed: 1 });
+    expect(r).toMatchObject({ status: "created", jubelioRequested: true });
+    expect(vi.mocked(createItemsFromImport).mock.calls[0][1]).toEqual({ ajukanKeJubelio: true, olehUserId: "u1" });
+    expect(createProductPushRow).not.toHaveBeenCalled();
+  });
+
+  it("treats anything but a literal true as no request", async () => {
+    await commitItemImport(rows, { pushToJubelio: "yes" });
+    expect(vi.mocked(createItemsFromImport).mock.calls[0][1]).toEqual({ ajukanKeJubelio: false, olehUserId: "u1" });
   });
 
   it("re-validates and writes nothing when the file has errors", async () => {

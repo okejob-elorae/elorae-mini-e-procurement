@@ -56,7 +56,7 @@ beforeEach(() => {
 const DITOLAK = { ok: false, kode: "TANPA_AKSES" };
 const kunci = () => aksi.kunciAngkaAction("c1", [], 0);
 const bukaKunci = () => aksi.bukaKunciAction("c1");
-const bayar = () => aksi.bayarKomisiAction("k1");
+const bayar = () => aksi.bayarKomisiAction("k1", undefined, 1_010_000);
 const nomor = (jenis: "NOTA" | "PAJAK") => aksi.catatNomorDokumenAction("c1", jenis, "NP-202607-0058");
 
 describe("mengunci dan membuka kunci angka: consignment:lock", () => {
@@ -88,6 +88,12 @@ describe("menandai gaji SPG dibayar: spg_commission:pay", () => {
     masuk(["spg_commission:pay"]);
     expect(await bayar()).toEqual({ ok: true });
     expect(state.dipanggil).toEqual(["bayarKomisi"]);
+    // Yang dilihat di layar wajib angka ≥ 0; selain itu ditolak sebelum menyentuh penulis.
+    state.dipanggil = [];
+    for (const salah of [Number.NaN, -1, "1010000" as unknown as number]) {
+      expect(await aksi.bayarKomisiAction("k1", undefined, salah)).toEqual({ ok: false, kode: "NILAI_TIDAK_VALID" });
+    }
+    expect(state.dipanggil).toEqual([]);
   });
 });
 

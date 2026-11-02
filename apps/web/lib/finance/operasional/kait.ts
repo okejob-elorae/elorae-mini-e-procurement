@@ -16,7 +16,9 @@ import { idKomisiSpg, SUMBER_OPERASIONAL, type SumberOperasional } from "./atura
  * - retur lapangan (`FieldReturn`) toko konsinyasi disetujui → jurnal kembali ke gudang;
  * - kunci/buka kunci siklus → jurnal siklus + gaji SPG siklus itu;
  * - gaji SPG dibayar, pembayaran toko dicatat/dibatalkan → jurnal masing-masing;
- * - komisi SPG toko putus ditetapkan/dibayar;
+ * - komisi SPG toko putus ditetapkan/dibayar (pembayaran gaji/komisi SPG: akrualnya
+ *   diselaraskan dulu oleh `postingJurnalOperasionalAman` — pembayaran bisa menghitung
+ *   ulang angkanya, dan sapuan yang menyelamatkan kait yang mati melakukan hal yang sama);
  * - keputusan barang hilang (putuskan/ubah/batal), potongan beban sales;
  * - keputusan gudang rusak, penyesuaian stok manual, retur pemasok selesai;
  * - biaya perjalanan disetujui/dibayar.
@@ -106,6 +108,12 @@ export function kaitSiklusKonsi(cycleId: string, userId: string): Promise<void> 
   });
 }
 
+/**
+ * Gaji SPG konsinyasi dibayar: jurnal pembayarannya, yang membawa koreksi komisi
+ * yang diterapkan padanya. Pembayaran bisa menghitung ulang angka komisinya, jadi
+ * akrual gaji SPG siklusnya diselaraskan DULU — oleh `postingJurnalOperasionalAman`
+ * sendiri, bukan di sini, supaya sapuan dan "Posting ulang" juga melakukannya.
+ */
 export function kaitBayarGajiKonsi(commissionId: string, userId: string): Promise<void> {
   return satu("gaji SPG konsinyasi", SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, commissionId, userId);
 }
@@ -120,6 +128,11 @@ export function kaitKomisiSpg(storeId: string, periode: string, userId: string):
   });
 }
 
+/**
+ * Komisi SPG toko putus dibayar — sama dengan `kaitBayarGajiKonsi`: jurnal pembayaran
+ * (dengan koreksi yang dibawanya); akrual toko × bulannya diselaraskan dulu oleh
+ * `postingJurnalOperasionalAman`.
+ */
 export function kaitBayarKomisiSpg(commissionId: string, userId: string): Promise<void> {
   return satu("bayar komisi SPG", SUMBER_OPERASIONAL.BAYAR_KOMISI_SPG, commissionId, userId);
 }

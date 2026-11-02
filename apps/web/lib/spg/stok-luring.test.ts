@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
+import { KATEGORI_NOTIF_RETUR_PEMBELI } from "./retur-pembeli-status";
 
 /*
  * Terima kiriman dan opname dari antrean HP (dicatat tanpa sinyal), terhadap
@@ -7,6 +8,11 @@ import { prisma, seededId, seededIds } from "@elorae/db";
  * pernah menggandakan buku stok, termasuk saat bersamaan), pekerjaan bertanggal
  * waktu tangkap, dan saldo sistem opname dinilai server per WAKTU HITUNG —
  * penjualan sesudah hitungan yang terkirim lebih dulu tidak dikembalikan ke buku.
+ *
+ * Retur pembeli MENUNGGU persetujuan kantor dulu (keputusan pemilik 2026-11-02):
+ * laporannya tidak menyentuh buku sampai disetujui, dan yang disetujui masuk
+ * buku bertanggal saat DILAPORKAN — bukan saat disetujui — supaya opname yang
+ * berurutan waktu tetap benar.
  *
  * Kait sesudah transaksi (titip pesan, barang hilang) ditirukan: yang dites di
  * sini hanya buku stok. Semua baris milik fixture bertag acak; teardown hanya
@@ -20,7 +26,7 @@ vi.mock("./hilang-sumber", () => ({
 }));
 
 const { catatOpname, terimaKiriman } = await import("./stok-writer");
-const { catatReturPembeli } = await import("./retur-pembeli");
+const { catatReturPembeli, setujuiReturPembeli } = await import("./retur-pembeli");
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -31,6 +37,8 @@ d("stok toko dari antrean HP (test bed only)", () => {
   let kemeja = "";
   let tokoId = "";
   let spgId = "";
+  /** Yang menyetujui retur: bukan pelapornya. */
+  let kantorId = "";
   let kirimKe = 0;
   const kiriman: string[] = [];
   const nota: string[] = [];
@@ -45,6 +53,7 @@ d("stok toko dari antrean HP (test bed only)", () => {
     // Toko PUTUS: opname yang kurang di sini tidak membuka barang hilang.
     tokoId = (await prisma.store.create({ data: { code: `${tag}-T`, name: `Toko ${tag}`, address: "uji", termsType: "PUTUS" } })).id;
     spgId = (await prisma.user.create({ data: { email: `${tag}-spg@test.local`.toLowerCase(), name: `SPG ${tag}`, assignedStoreId: tokoId } })).id;
+    kantorId = (await prisma.user.create({ data: { email: `${tag}-kantor@test.local`.toLowerCase(), name: `Kantor ${tag}` } })).id;
   });
 
   beforeEach(() => {
@@ -55,6 +64,19 @@ d("stok toko dari antrean HP (test bed only)", () => {
   afterEach(async () => {
     const retur = (await prisma.spgSaleReturn.findMany({ where: { spgSaleId: { in: seededIds([...nota]) } }, select: { id: true } })).map((r) => r.id);
     await prisma.auditLog.deleteMany({ where: { entityType: "SpgSaleReturn", entityId: { in: seededIds(retur) } } });
+    // Lonceng kantor setiap laporan retur (`catatReturPembeli`) — dicocokkan di JS lewat metadata
+    // (jalur JSON tidak andal lintas adaptor), seperti retur-pembeli.test.ts. Tanpa ini setiap run
+    // meninggalkan baris RETUR_PEMBELI_MENUNGGU di lonceng dan Beranda basis data uji.
+    if (retur.length) {
+      const lonceng = await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_PEMBELI }, select: { id: true, metadata: true } });
+      const milikUji = lonceng
+        .filter((n) => {
+          const m = n.metadata as Record<string, unknown> | null;
+          return typeof m?.returnId === "string" && retur.includes(m.returnId);
+        })
+        .map((n) => n.id);
+      await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(milikUji) } } });
+    }
     await prisma.spgSaleReturnLine.deleteMany({ where: { returnId: { in: seededIds(retur) } } });
     await prisma.spgSaleReturn.deleteMany({ where: { id: { in: seededIds(retur) } } });
     await prisma.spgSaleLine.deleteMany({ where: { spgSaleId: { in: seededIds([...nota]) } } });
@@ -67,7 +89,7 @@ d("stok toko dari antrean HP (test bed only)", () => {
   });
 
   afterAll(async () => {
-    await prisma.user.deleteMany({ where: { id: seededId(spgId) } });
+    await prisma.user.deleteMany({ where: { id: { in: seededIds([spgId, kantorId].filter(Boolean)) } } });
     await prisma.store.deleteMany({ where: { id: seededId(tokoId) } });
     await prisma.item.deleteMany({ where: { id: seededId(kemeja) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -251,15 +273,31 @@ d("stok toko dari antrean HP (test bed only)", () => {
       waktuTangkap,
     });
 
-  it("an offline shopper return is dated when it happened, so an offline opname counted after it does not count it twice", async () => {
+  const setujui = (returnId: string) => setujuiReturPembeli({ returnId, olehUserId: kantorId });
+
+  const statusRetur = async (id: string) => (await prisma.spgSaleReturn.findUniqueOrThrow({ where: { id }, select: { status: true } })).status;
+
+  /** Baris buku `RETUR_PEMBELI` laporan itu. */
+  const bukuRetur = (id: string) =>
+    prisma.storeStockMovement.findMany({ where: { storeId: tokoId, kind: "RETUR_PEMBELI", refId: id }, select: { qty: true, createdAt: true } });
+
+  it("an offline shopper return waits for approval, then lands on the book dated when it happened — an offline opname counted after it does not count it twice", async () => {
     await bukaBuku(3, new Date(Date.now() - 2 * 86_400_000));
     const n = await jualKemarin(2);
     const dikembalikan = new Date(Date.now() - 3 * 3_600_000);
     const r = await kembalikan(n, `${tag}-rp-1`, dikembalikan);
     if (!r.ok) throw new Error(r.alasan);
-    expect(await saldo()).toBe(4);
+    // Dilaporkan saja: belum berpengaruh apa pun.
+    expect(await statusRetur(r.returnId)).toBe("MENUNGGU");
+    expect(await saldo()).toBe(3);
     const dok = await prisma.spgSaleReturn.findUniqueOrThrow({ where: { id: r.returnId }, select: { createdAt: true } });
     expect(dok.createdAt).toEqual(dikembalikan);
+
+    expect((await setujui(r.returnId)).ok).toBe(true);
+    expect(await saldo()).toBe(4);
+    // Bertanggal saat dilaporkan, bukan saat disetujui.
+    expect((await bukuRetur(r.returnId)).map((m) => [m.qty, m.createdAt.getTime()])).toEqual([[1, dikembalikan.getTime()]]);
+
     // Opname tanpa sinyal SESUDAH retur itu: rak 4 (termasuk barang yang dikembalikan).
     const op = await catatOpname({
       storeId: tokoId,
@@ -272,25 +310,47 @@ d("stok toko dari antrean HP (test bed only)", () => {
     expect(await saldo()).toBe(4);
   });
 
-  it("an offline shopper return that arrives after a newer opname adds nothing to the book — the opname already saw it on the shelf", async () => {
+  it("a shopper return approved after a newer opname adds nothing to the book — the opname already saw it on the shelf", async () => {
     await bukaBuku(3, new Date(Date.now() - 2 * 86_400_000));
     const n = await jualKemarin(2);
+    const r = await kembalikan(n, `${tag}-rp-2`, new Date(Date.now() - 3 * 3_600_000));
+    if (!r.ok) throw new Error(r.alasan);
     const op = await catatOpname({ storeId: tokoId, userId: spgId, baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 4 }] });
     if (!op.ok) throw new Error(op.alasan);
     expect(await saldo()).toBe(4);
-    const r = await kembalikan(n, `${tag}-rp-2`, new Date(Date.now() - 3 * 3_600_000));
-    expect(r.ok).toBe(true);
+    expect((await setujui(r.returnId)).ok).toBe(true);
+    // Tidak ada +1 kedua: opname sudah menghitung barangnya di rak.
     expect(await saldo()).toBe(4);
     // Notanya tetap tahu barangnya kembali (komisi, laporan, target memakai angka bersih).
     const baris = await prisma.spgSaleLine.findUniqueOrThrow({ where: { id: n.baris }, select: { returnedQty: true } });
     expect(baris.returnedQty).toBe(1);
   });
 
-  it("a counter return (no capture time) still puts the piece back on the book now", async () => {
+  it("an opname counted after the report but synced after the approval ends exactly at the counted quantity", async () => {
+    await bukaBuku(3, new Date(Date.now() - 2 * 86_400_000));
+    const n = await jualKemarin(2);
+    const r = await kembalikan(n, `${tag}-rp-4`, new Date(Date.now() - 3 * 3_600_000));
+    if (!r.ok) throw new Error(r.alasan);
+    expect((await setujui(r.returnId)).ok).toBe(true);
+    expect(await saldo()).toBe(4);
+    const op = await catatOpname({
+      storeId: tokoId,
+      userId: spgId,
+      baris: [{ itemId: kemeja, variantSku: null, qtyCounted: 4 }],
+      idempotencyKey: `${tag}-op-sesudah-setuju`,
+      waktuTangkap: new Date(Date.now() - 2 * 3_600_000),
+    });
+    expect(op).toMatchObject({ ok: true, selisih: 0 });
+    expect(await saldo()).toBe(4);
+  });
+
+  it("a counter return (no capture time) waits for approval, then puts the piece back on the book", async () => {
     await bukaBuku(3, new Date(Date.now() - 2 * 86_400_000));
     const n = await jualKemarin(2);
     const r = await kembalikan(n, `${tag}-rp-3`);
-    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.alasan);
+    expect(await saldo()).toBe(3);
+    expect((await setujui(r.returnId)).ok).toBe(true);
     expect(await saldo()).toBe(4);
   });
 

@@ -16,6 +16,7 @@ import { bacaInfoProduk, periksaInfoProduk, type InfoProdukBarang } from "./info
 import { bacaKgPerRoll, periksaKgPerRoll } from "./kg-per-roll";
 import { bacaKomisiPerPcs, periksaKomisiPerPcs } from "./komisi-spg";
 import { MARGIN_MAKS } from "./rekomendasi-harga";
+import { dataPengajuanJubelio } from "@/lib/jubelio/harga/pengajuan";
 
 /** Batas kolom `Item.additionalCost` (Decimal(15,2)). */
 const BIAYA_TAMBAHAN_MAKS = 9_999_999_999_999.99;
@@ -242,7 +243,12 @@ async function assertColorsInMaster(
   }
 }
 
-export async function createItem(data: ItemFormData) {
+/**
+ * Barang jadi baru otomatis DIAJUKAN ke Jubelio di transaksi pembuatnya (keputusan pemilik
+ * 2026-11-02): ia menunggu di Jubelio → Konfirmasi harga dan baru dibuat di Jubelio sesudah
+ * harganya dikonfirmasi. Tidak ada kiriman produk dari sini.
+ */
+export async function createItem(data: ItemFormData, opsi: { olehUserId?: string | null } = {}) {
   const normalized = normalizeItemPayload(data);
   validateItemPayload(normalized);
   const { sku: inputSku, ...rest } = normalized;
@@ -287,6 +293,7 @@ export async function createItem(data: ItemFormData) {
         sellingPrice: rest.sellingPrice ?? null,
         // Kolom wajib: `null` dari isian sudah menjadi 0 di `normalizeItemPayload`.
         commissionPerPcs: rest.commissionPerPcs ?? undefined,
+        ...(rest.type === "FINISHED_GOOD" ? dataPengajuanJubelio(opsi.olehUserId ?? null) : {}),
       },
     });
 

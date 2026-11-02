@@ -114,6 +114,14 @@ describe("detail pesanan — konsinyasi lama yang cadangannya masih ditahan", ()
     expect(html).not.toContain("noticeKonsiLama");
   });
 
+  it("konsi alur baru di toko tanpa SPG: tidak menyebut SPG yang menghitung setiap antaran", () => {
+    const html = gambar({ tokoBerSpg: false });
+    expect(html).toContain(">noticeKonsiTanpaSpg<");
+    expect(html).not.toContain(">noticeKonsi<");
+    expect(html).not.toContain("noticeKonsiLama");
+    expect(html).toContain("stepNextDelivery");
+  });
+
   it("tidak ada harga konsinyasi di layar", () => {
     const html = gambar({ pesananLama: LAMA });
     expect(html).not.toContain("Rp");

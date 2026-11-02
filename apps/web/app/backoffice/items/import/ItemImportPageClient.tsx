@@ -190,11 +190,7 @@ export function ItemImportPageClient() {
 
   if (phase.kind === "done") {
     const { result } = phase;
-    const jubelioLine = !result.jubelioRequested
-      ? t("doneJubelioSkipped")
-      : result.jubelioFailed > 0
-        ? t("doneJubelioPartial", { failed: result.jubelioFailed })
-        : t("doneJubelioQueued");
+    const jubelioLine = result.jubelioRequested ? t("doneJubelioQueued") : t("doneJubelioSkipped");
     return (
       <div className="space-y-6">
         <PageHeader />

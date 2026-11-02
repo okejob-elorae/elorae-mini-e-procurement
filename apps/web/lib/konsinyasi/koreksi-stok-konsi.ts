@@ -20,7 +20,14 @@ import { runSerializable } from "@/lib/db/tx-retry";
  * berikutnya ditolak karena cadangannya sudah habis, atau memotong dua kali untuk baris yang
  * sebagian sudah dikirim. Baris yang masih menunggu tampil sebagai MENUNGGU_KIRIM; yang sudah
  * selesai (cadangan CONSUMED, atau dipotong penulis lama berkunci `konsi-transfer-line-<baris>`)
- * sebagai SUDAH_DIPOTONG. Untuk baris yang dikirim sebagian, ringkasan per barang memisahkan pcs
+ * sebagai SUDAH_DIPOTONG.
+ * MENUNGGU_KIRIM juga mencakup pesanan konsi LAMA yang cadangannya masih ditahan
+ * (`bacaPesananKonsiCadanganLama`, keputusan pemilik no. 9): barangnya tidak datang lewat
+ * pengiriman. SPG toko itu — atau salesman pemegang toko tanpa SPG — mengonfirmasinya sampai dari HP
+ * (`konfirmasiSampaiPesananLama` → `issueKonsiTransfer` dengan `oldOrderArrival`, yang memakai
+ * cadangan yang sama), dan sisanya dilepas lewat "Tidak jadi dikirim" (`batalKirimPesananLama`),
+ * bukan tutup sisa pesanan (yang menolak pesanan itu dengan `KONSI_PESANAN_LAMA`).
+ * Untuk baris yang dikirim sebagian, ringkasan per barang memisahkan pcs
  * yang sudah berangkat (`consumedQty` cadangannya: terkirim dan sudah dipotong) dari sisanya
  * (menunggu kirim, atau cadangan dilepas bila sisa pesanannya ditutup).
  *

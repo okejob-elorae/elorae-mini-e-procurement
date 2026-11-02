@@ -35,8 +35,15 @@ export default async function DetailPesananSayaPage({ params }: { params: Promis
    * salesman pemegang toko. Tanpa ini layarnya menyebut "menunggu pengiriman" yang tidak akan
    * pernah datang. Hanya hitungan pcs yang dikirim ke HP, tanpa harga konsinyasi.
    */
-  const lama = d.orderType === "KONSI" && d.status === "APPROVED" ? await muatPesananKonsiCadanganLama(prisma, d.id) : null;
-  const penerimaLama = lama ? await muatPenerimaToko(prisma, d.storeId) : null;
+  const konsiDisetujui = d.orderType === "KONSI" && d.status === "APPROVED";
+  const lama = konsiDisetujui ? await muatPesananKonsiCadanganLama(prisma, d.id) : null;
+  /*
+   * Siapa yang menerima barang di toko ini — satu definisi "toko ini punya SPG" (`muatPenerimaToko`)
+   * untuk pesanan lama maupun keterangan pesanan konsi alur baru: di toko tanpa SPG tidak ada yang
+   * menghitung setiap antaran, jadi keterangannya tidak boleh menyebut SPG.
+   */
+  const penerimaToko = konsiDisetujui ? await muatPenerimaToko(prisma, d.storeId) : null;
+  const penerimaLama = lama ? penerimaToko : null;
   const pesananLama: PesananLamaTampil | null =
     lama && penerimaLama
       ? {
@@ -108,6 +115,7 @@ export default async function DetailPesananSayaPage({ params }: { params: Promis
       }))}
       terimaTokoKonsi={d.orderType === "KONSI" ? terimaToko("KONSI_ORDER", d.id) : null}
       pesananLama={pesananLama}
+      tokoBerSpg={penerimaToko ? penerimaToko.penerima === "SPG" : true}
     />
   );
 }

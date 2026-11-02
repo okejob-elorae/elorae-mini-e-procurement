@@ -107,6 +107,8 @@ async function main() {
     );
 
     // ---------- Item ----------
+    // The confirmed Jubelio price state is copied too: without it every mapped
+    // item would read as "waiting to be sent to Jubelio" on the local bed.
     const items = await src.item.findMany();
     await batchInsert("Item", items, (batch) =>
       dst.item.createMany({
@@ -124,6 +126,11 @@ async function main() {
           reorderPoint: i.reorderPoint,
           overReceiveThreshold: i.overReceiveThreshold,
           sellingPrice: i.sellingPrice,
+          jubelioConfirmedPrice: i.jubelioConfirmedPrice,
+          jubelioConfirmedAt: i.jubelioConfirmedAt,
+          jubelioConfirmedById: i.jubelioConfirmedById,
+          jubelioCreateRequestedAt: i.jubelioCreateRequestedAt,
+          jubelioCreateRequestedById: i.jubelioCreateRequestedById,
           targetMarginPercent: i.targetMarginPercent,
           additionalCost: i.additionalCost,
           defaultPpnIncluded: i.defaultPpnIncluded,

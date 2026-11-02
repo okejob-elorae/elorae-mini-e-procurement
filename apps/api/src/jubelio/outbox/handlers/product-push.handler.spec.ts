@@ -1,9 +1,15 @@
 import { Test } from "@nestjs/testing";
+import { markJubelioCreateRequested } from "@elorae/db";
 import { ProductPushHandler } from "./product-push.handler";
 import { PRISMA } from "../../../db/prisma.module";
 import { JubelioHttpService } from "../../http.service";
 import { JubelioImageUploadService } from "../../image-upload.service";
 import { OUTBOX_SKIP_REASONS } from "../outbox-status";
+
+jest.mock("@elorae/db", () => ({
+  ...jest.requireActual("@elorae/db"),
+  markJubelioCreateRequested: jest.fn().mockResolvedValue(true),
+}));
 
 function row(overrides: any = {}) {
   return {
@@ -35,6 +41,8 @@ const baseItem = {
   categoryId: "cat_1",
   variants: null,
   sellingPrice: 100000,
+  jubelioConfirmedPrice: 100000,
+  jubelioCreateRequestedAt: null,
   isActive: true,
 };
 
@@ -64,6 +72,7 @@ describe("ProductPushHandler", () => {
     };
     http = { post: jest.fn(), delete: jest.fn() };
     imageUpload = { ensureUploaded: jest.fn().mockResolvedValue(undefined) };
+    jest.mocked(markJubelioCreateRequested).mockClear();
     const mod = await Test.createTestingModule({
       providers: [
         ProductPushHandler,
@@ -366,6 +375,106 @@ describe("ProductPushHandler", () => {
       expect(http.post.mock.calls[0][1].variation_images).toEqual([
         { item_id: 11, images: [expect.objectContaining({ url: "https://jubelio.example/red.jpg" })] },
       ]);
+    });
+
+    it("the variant-image re-push carries the confirmed price too", async () => {
+      prisma.item.findUnique.mockResolvedValue({
+        ...baseItem,
+        variants: [{ sku: "SKU-1-RED" }, { sku: "SKU-1-BLU" }],
+        sellingPrice: 175000,
+        jubelioConfirmedPrice: 150000,
+      });
+      prisma.jubelioProductMapping.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce(newMappings);
+      prisma.itemImage.findMany.mockResolvedValue([redImage]);
+
+      await handler.handle(row() as any);
+
+      expect(http.post).toHaveBeenCalledTimes(2);
+      for (const [, body] of http.post.mock.calls) {
+        expect(body.sell_price).toBe(150000);
+        expect(body.product_skus.map((s: { sell_price: number }) => s.sell_price)).toEqual([150000, 150000]);
+      }
+    });
+  });
+
+  /*
+   * Owner decision 2026-11-02: the ERP is the price master and Jubelio only ever receives the price
+   * confirmed in the ERP. A typed price waits on Jubelio -> Konfirmasi harga; a new product is not
+   * created in Jubelio until its price is confirmed.
+   */
+  describe("confirmed price only", () => {
+    const mapped = [{ id: "m1", erpVariantSku: "", jubelioItemId: 11, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1" }];
+
+    beforeEach(() => {
+      prisma.jubelioPushDefaults.findFirst.mockResolvedValue(baseDefaults);
+      prisma.jubelioCategoryMapping.findFirst.mockResolvedValue({ jubelioCategoryId: 454 });
+      http.post.mockResolvedValue({ status: "ok", id: 7, item_ids: [11] });
+    });
+
+    it("a non-price edit of a mapped item pushes the confirmed price, never the unconfirmed ERP price", async () => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, sellingPrice: 175000, jubelioConfirmedPrice: 150000 });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      const body = http.post.mock.calls[0][1];
+      expect(body.sell_price).toBe(150000);
+      expect(body.product_skus.map((s: { sell_price: number }) => s.sell_price)).toEqual([150000]);
+    });
+
+    it.each([
+      ["no", null],
+      ["a zero", 0],
+    ])("SKIPs a mapped item with %s confirmed price instead of pushing sell_price 0", async (_label, confirmed) => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, jubelioConfirmedPrice: confirmed });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue(mapped);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_NOT_CONFIRMED });
+      expect(http.post).not.toHaveBeenCalled();
+      expect(markJubelioCreateRequested).not.toHaveBeenCalled();
+    });
+
+    it("does not create an unconfirmed new product: it stamps the request instead, so the item waits on the list", async () => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, jubelioConfirmedPrice: null, jubelioCreateRequestedAt: null });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_NOT_CONFIRMED });
+      expect(markJubelioCreateRequested).toHaveBeenCalledWith(prisma, "item_1", "user_1");
+      expect(http.post).not.toHaveBeenCalled();
+      expect(prisma.jubelioProductMapping.upsert).not.toHaveBeenCalled();
+    });
+
+    it("does not create a product whose request is still waiting for confirmation, and stamps nothing", async () => {
+      prisma.item.findUnique.mockResolvedValue({
+        ...baseItem,
+        jubelioConfirmedPrice: 150000,
+        jubelioCreateRequestedAt: new Date("2026-11-02T03:00:00.000Z"),
+      });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "skipped", reason: OUTBOX_SKIP_REASONS.PRICE_NOT_CONFIRMED });
+      expect(markJubelioCreateRequested).not.toHaveBeenCalled();
+      expect(http.post).not.toHaveBeenCalled();
+    });
+
+    it("creates the product once its price is confirmed, at that price", async () => {
+      prisma.item.findUnique.mockResolvedValue({ ...baseItem, sellingPrice: 150000, jubelioConfirmedPrice: 150000, jubelioCreateRequestedAt: null });
+      prisma.jubelioProductMapping.findMany.mockResolvedValue([]);
+
+      const r = await handler.handle(row() as any);
+
+      expect(r).toEqual({ kind: "processed" });
+      expect(http.post).toHaveBeenCalledWith("/inventory/catalog/", expect.objectContaining({ item_group_id: 0, sell_price: 150000 }));
+      expect(http.post.mock.calls[0][1].product_skus[0].sell_price).toBe(150000);
+      expect(prisma.jubelioProductMapping.upsert).toHaveBeenCalledTimes(1);
+      expect(markJubelioCreateRequested).not.toHaveBeenCalled();
     });
   });
 });

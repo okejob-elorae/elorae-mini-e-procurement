@@ -50,7 +50,14 @@ const state = {
   /** Gerakan gudang barang rusak yang ditulis hitungan gudang. */
   gudangRusak: [] as Record<string, unknown>[],
   /** Baris retur pembeli (konter SPG) yang ditunjuk baris NRT. */
-  returPembeli: [] as { id: string; itemId: string; variantSku: string; qty: number; condition: string; saleReturn: { storeId: string } }[],
+  returPembeli: [] as {
+    id: string;
+    itemId: string;
+    variantSku: string;
+    qty: number;
+    condition: string;
+    saleReturn: { storeId: string; status: string };
+  }[],
   /** Yang sudah dikirim balik per baris retur pembeli (nota tidak batal). */
   returPembeliTerpakai: [] as { spgSaleReturnLineId: string; _sum: { qty: number } }[],
 };
@@ -917,7 +924,9 @@ describe('catatReturToko — barang rusak dari pembeli (retur konter SPG)', () =
     barisSpg: [{ itemId: 'brg1', variantSku: 'KMJ-M', qty: 2, condition: 'RUSAK' as const, spgSaleReturnLineId: 'rpl1' }],
   };
   beforeEach(() => {
-    state.returPembeli = [{ id: 'rpl1', itemId: 'brg1', variantSku: 'KMJ-M', qty: 3, condition: 'RUSAK', saleReturn: { storeId: 't1' } }];
+    state.returPembeli = [
+      { id: 'rpl1', itemId: 'brg1', variantSku: 'KMJ-M', qty: 3, condition: 'RUSAK', saleReturn: { storeId: 't1', status: 'DISETUJUI' } },
+    ];
   });
 
   it('menyimpan penunjuknya dan TIDAK menulis RETUR_KELUAR (barangnya tidak pernah kembali ke rak)', async () => {
@@ -938,6 +947,27 @@ describe('catatReturToko — barang rusak dari pembeli (retur konter SPG)', () =
     state.returPembeli[0].saleReturn.storeId = 't-lain';
     expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_TIDAK_SAH' });
     expect(state.nrtDibuat).toHaveLength(0);
+  });
+
+  it('menolak retur pembeli yang belum disetujui kantor — penulisnya yang menahan, bukan hanya layar', async () => {
+    state.returPembeli[0].saleReturn.status = 'MENUNGGU';
+    expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_TIDAK_SAH' });
+    expect(state.nrtDibuat).toHaveLength(0);
+    expect(state.jejak).toHaveLength(0);
+  });
+
+  it.each(['DITOLAK', 'DIBATALKAN'])('menolak retur pembeli berstatus %s — tidak pernah berlaku', async (status) => {
+    state.returPembeli[0].saleReturn.status = status;
+    expect(await catatReturToko(SPG)).toEqual({ ok: false, alasan: 'RETUR_PEMBELI_TIDAK_SAH' });
+    expect(state.nrtDibuat).toHaveLength(0);
+  });
+
+  it('memilih status laporan retur pembeli saat membaca barisnya', async () => {
+    await catatReturToko(SPG);
+    const a = tx.spgSaleReturnLine.findMany.mock.calls.at(-1)?.[0] as unknown as {
+      select: { saleReturn: { select: Record<string, boolean> } };
+    };
+    expect(a.select.saleReturn.select).toMatchObject({ storeId: true, status: true });
   });
 
   it('menolak retur pembeli yang LAYAK, atau baris NRT-nya LAYAK', async () => {

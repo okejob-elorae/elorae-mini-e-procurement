@@ -104,8 +104,10 @@ describe("JubelioCatalogSyncService.syncCatalog paging", () => {
 
 /*
  * Every Jubelio product webhook runs this sync. A selling price is typed by hand in the ERP
- * (owner decision 2026-11-01), so re-ingesting an item must never touch it; only an item the
- * ERP does not have yet may take Jubelio's sell_price.
+ * (owner decisions 2026-11-01/02), so re-ingesting an item must never touch it; only an item the
+ * ERP does not have yet may take Jubelio's sell_price, and that price is recorded as the
+ * confirmed Jubelio price. For an existing item, the sync may only record what Jubelio holds when
+ * no confirmed price exists yet (recordJubelioPriceOnMapping, one guarded raw UPDATE).
  */
 describe("JubelioCatalogSyncService.syncCatalog selling price", () => {
   let prisma: any;
@@ -144,6 +146,7 @@ describe("JubelioCatalogSyncService.syncCatalog selling price", () => {
       },
       inventoryValue: { findFirst: jest.fn(), createMany: jest.fn().mockResolvedValue({ count: 0 }) },
       jubelioProductMapping: { upsert: jest.fn().mockResolvedValue({}) },
+      $executeRaw: jest.fn().mockResolvedValue(0),
     };
     prisma = {
       jubelioCategoryMapping: { findMany: jest.fn().mockResolvedValue([]) },
@@ -177,10 +180,41 @@ describe("JubelioCatalogSyncService.syncCatalog selling price", () => {
     const { where, data } = tx.item.update.mock.calls[0][0];
     expect(where).toEqual({ id: "item-1" });
     expect(data).not.toHaveProperty("sellingPrice");
+    for (const kolom of ["jubelioConfirmedPrice", "jubelioConfirmedAt", "jubelioConfirmedById", "jubelioCreateRequestedAt", "jubelioCreateRequestedById"]) {
+      expect(data).not.toHaveProperty(kolom);
+    }
     expect(data.nameId).toBe("Cargo Pants");
   });
 
-  it("a new item still takes Jubelio's sell_price", async () => {
+  it("re-ingesting an existing item records Jubelio's price only through the guarded UPDATE, never on sellingPrice", async () => {
+    prisma.item.findMany.mockResolvedValue([{ id: "item-1", sku: itemSku, description: null, variants: [] }]);
+    serveGroup("150000");
+
+    await service.syncCatalog({ itemGroupIds: [7] });
+
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    const sql = tx.$executeRaw.mock.calls[0][0] as { sql: string; values: unknown[] };
+    expect(sql.values).toEqual(expect.arrayContaining(["150000.00", "item-1"]));
+    // The statement writes the confirmation columns only, and only when none is confirmed yet.
+    expect(sql.sql).toMatch(/jubelioConfirmedPrice/);
+    expect(sql.sql).not.toMatch(/sellingPrice/);
+    expect(sql.sql).toMatch(/IS NULL/);
+  });
+
+  it.each([
+    ["an empty", ""],
+    ["a zero", "0"],
+    ["no", undefined],
+  ])("re-ingesting an existing item with %s sell_price records nothing", async (_label, sellPrice) => {
+    prisma.item.findMany.mockResolvedValue([{ id: "item-1", sku: itemSku, description: null, variants: [] }]);
+    serveGroup(sellPrice);
+
+    await service.syncCatalog({ itemGroupIds: [7] });
+
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it("a new item still takes Jubelio's sell_price, recorded as the confirmed Jubelio price", async () => {
     serveGroup("150000");
 
     const result = await service.syncCatalog({ itemGroupIds: [7] });
@@ -191,5 +225,22 @@ describe("JubelioCatalogSyncService.syncCatalog selling price", () => {
     const { data } = tx.item.create.mock.calls[0][0];
     expect(data.sku).toBe(itemSku);
     expect(String(data.sellingPrice)).toBe("150000");
+    expect(String(data.jubelioConfirmedPrice)).toBe("150000");
+    expect(data.jubelioConfirmedAt).toBeInstanceOf(Date);
+    expect(data.jubelioConfirmedById).toBeNull();
+    expect(data).not.toHaveProperty("jubelioCreateRequestedAt");
+  });
+
+  it.each([
+    ["an empty", ""],
+    ["a zero", "0"],
+  ])("a new item with %s sell_price confirms nothing", async (_label, sellPrice) => {
+    serveGroup(sellPrice);
+
+    await service.syncCatalog({ itemGroupIds: [7] });
+
+    const { data } = tx.item.create.mock.calls[0][0];
+    expect(data.jubelioConfirmedPrice).toBeNull();
+    expect(data.jubelioConfirmedAt).toBeNull();
   });
 });

@@ -191,7 +191,9 @@ async function siapkanBuku() {
       },
     })
   ).id;
-  await gerak(barangA, 1, "RETUR_PEMBELI", "2026-08-12T03:00:00Z");
+  // Seperti yang ditulis persetujuan retur (`setujuiReturPembeli`): baris buku menunjuk laporannya.
+  // Retur LAYAK yang disetujui TANPA baris buku penunjuk dibaca laku bersih sebagai "sudah terhitung opname".
+  await gerak(barangA, 1, "RETUR_PEMBELI", "2026-08-12T03:00:00Z", { refType: "SpgSaleReturn", refId: returId });
 
   await gerak(barangA, -1, "OPNAME", "2026-08-20T03:00:00Z");
   // Nota retur ke gudang yang belum dihitung (tidak ada NRI sama sekali).

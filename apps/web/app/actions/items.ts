@@ -41,10 +41,7 @@ import {
   DuplicateVariantSkuError,
   ItemSkuExistsError,
 } from "@/lib/items/save-refusals";
-import {
-  enqueueProductPushOnCreate,
-  enqueueProductPushOnUpdate,
-} from '@/lib/jubelio/product-push';
+import { enqueueProductPushOnUpdate } from '@/lib/jubelio/product-push';
 import {
   parseVariantBarcodeFormat,
   VARIANT_BARCODE_FORMAT_KEY,
@@ -116,7 +113,9 @@ export async function createItem(data: ItemFormData): Promise<ItemSaveResult> {
 
   let created: Awaited<ReturnType<typeof createItemLib>>;
   try {
-    created = await createItemLib(data);
+    // A new finished good is REQUESTED for Jubelio inside its create transaction and waits on
+    // Jubelio → Konfirmasi harga; nothing is pushed from here (owner decision 2026-11-02).
+    created = await createItemLib(data, { olehUserId: session.user.id });
   } catch (error) {
     const refusal = toItemSaveRefusal(error);
     if (refusal) return refusal;
@@ -129,8 +128,6 @@ export async function createItem(data: ItemFormData): Promise<ItemSaveResult> {
       notifyItemCreated(item.id, item.nameEn || item.nameId || item.sku, triggeredByName)
     )
     .catch(() => {});
-
-  enqueueProductPushOnCreate(item.id, session.user.id).catch(() => {});
 
   revalidatePath('/backoffice/items');
   return { success: true, item: serialized };
@@ -149,7 +146,8 @@ export async function updateItem(id: string, data: ItemFormData): Promise<ItemSa
     throw error;
   }
 
-  // A typed selling price reaches Jubelio through the ordinary edit push (sellingPrice is in its diff).
+  // A typed price waits on Jubelio → Konfirmasi harga; only non-price edits push here, and the
+  // push carries the confirmed price (owner decision 2026-11-02).
   enqueueProductPushOnUpdate(id, txResult.updated.before, txResult.updated.after, session.user.id).catch(() => {});
 
   revalidatePath('/backoffice/items');
@@ -160,7 +158,8 @@ export async function updateItem(id: string, data: ItemFormData): Promise<ItemSa
 /*
  * The selling price changes ONLY because someone typed it (owner decision 2026-11-01): target
  * margin and additional cost are saved as inputs for the price recommendation on the item form
- * and never re-price the item. Every typed change is logged MANUAL_EDIT, whatever else changed.
+ * and never re-price the item. Every typed change is logged MANUAL_EDIT, whatever else changed;
+ * that log row is also the "changed by / at" of the item's row on Jubelio → Konfirmasi harga.
  */
 async function runItemUpdate(userId: string, id: string, data: ItemFormData) {
   return prisma.$transaction(async (tx) => {

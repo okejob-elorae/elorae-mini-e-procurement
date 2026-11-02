@@ -1,6 +1,7 @@
 import { prisma, type Prisma } from "@elorae/db";
 import { rentangBulanWib } from "./laporan-spg";
 import { hitungPromoElorae, type BarisKembaliPromo, type HasilPromoElorae } from "./promo-elorae";
+import { RETUR_PEMBELI_BERLAKU, returPembeliBerlaku } from "@/lib/spg/retur-pembeli-berlaku";
 
 /**
  * Potongan promo konter yang ditanggung Elorae untuk satu toko × satu bulan WIB.
@@ -9,6 +10,11 @@ import { hitungPromoElorae, type BarisKembaliPromo, type HasilPromoElorae } from
  * Menerima klien transaksi: `kunciAngka` memanggilnya DI DALAM transaksi kunci,
  * supaya angka yang dibekukan sama dengan nota yang terlihat transaksi itu.
  * Layar rincian memanggilnya dengan `prisma` biasa selama siklus belum dikunci.
+ *
+ * Retur pembeli hanya dihitung bila SUDAH DISETUJUI kantor
+ * (`returPembeliBerlaku`) — di jendela bulan itu DAN di hitungan kumulatif
+ * "sudah kembali sebelumnya": laporan yang menunggu, ditolak, atau ditarik
+ * tidak pernah mengembalikan bagian promo.
  */
 
 type Klien = Prisma.TransactionClient | typeof prisma;
@@ -28,7 +34,7 @@ export async function promoEloraeSiklus(
     }),
     klien.spgSaleReturnLine.findMany({
       where: {
-        saleReturn: { storeId: input.storeId, createdAt: { gte: awal, lt: akhir } },
+        saleReturn: returPembeliBerlaku({ storeId: input.storeId, createdAt: { gte: awal, lt: akhir } }),
         saleLine: { discount: { gt: 0 } },
       },
       select: {
@@ -46,7 +52,7 @@ export async function promoEloraeSiklus(
   const idBaris = [...new Set(kembali.map((k) => k.spgSaleLineId))];
   const semuaKembali = idBaris.length
     ? await klien.spgSaleReturnLine.findMany({
-        where: { spgSaleLineId: { in: idBaris } },
+        where: { spgSaleLineId: { in: idBaris }, saleReturn: RETUR_PEMBELI_BERLAKU },
         select: { id: true, qty: true, spgSaleLineId: true, saleReturn: { select: { createdAt: true } } },
       })
     : [];

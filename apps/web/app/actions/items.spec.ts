@@ -6,8 +6,14 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/internal-api", () => ({ apiFetch: vi.fn() }));
 vi.mock("@/lib/jubelio/product-push", () => ({
-  enqueueProductPushOnCreate: vi.fn().mockResolvedValue(undefined),
   enqueueProductPushOnUpdate: vi.fn().mockResolvedValue(undefined),
+  createProductPushRow: vi.fn(),
+  fireProductPushNow: vi.fn(),
+}));
+// The real module imports runSerializable, which reads Prisma at load and @elorae/db is faked here.
+vi.mock("@/lib/jubelio/harga/pengajuan", () => ({
+  dataPengajuanJubelio: vi.fn((olehUserId: string | null) => ({ jubelioCreateRequestedAt: new Date(), jubelioCreateRequestedById: olehUserId })),
+  ajukanKeJubelio: vi.fn(),
 }));
 vi.mock("@/lib/notifications/actor-name", () => ({ getActorName: vi.fn().mockResolvedValue("Admin") }));
 vi.mock("@/lib/notifications/events", () => ({ notifyItemCreated: vi.fn() }));
@@ -21,6 +27,7 @@ vi.mock("@/lib/items/mutations", async () => {
 });
 
 import { auth } from "@/lib/auth";
+import { createProductPushRow, fireProductPushNow } from "@/lib/jubelio/product-push";
 import {
   ColorsNotInMasterError,
   DuplicateVariantBarcodeError,
@@ -38,6 +45,14 @@ beforeEach(() => {
 });
 
 describe("createItem", () => {
+  it("passes the session user so a new finished good is requested for Jubelio, and pushes nothing", async () => {
+    mockCreate.mockResolvedValue({ item: { id: "i1", nameEn: "t", nameId: "t", sku: "S" }, serialized: { id: "i1" } });
+    expect(await createItem(data)).toEqual({ success: true, item: { id: "i1" } });
+    expect(mockCreate).toHaveBeenCalledWith(data, { olehUserId: "u1" });
+    expect(createProductPushRow).not.toHaveBeenCalled();
+    expect(fireProductPushNow).not.toHaveBeenCalled();
+  });
+
   it("returns a typed refusal for a taken variant barcode instead of throwing", async () => {
     mockCreate.mockRejectedValue(new VariantBarcodeTakenError(["899123"]));
     expect(await createItem(data)).toEqual({ success: false, code: "VARIANT_BARCODE_TAKEN", detail: "899123" });

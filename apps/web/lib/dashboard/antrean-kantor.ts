@@ -41,6 +41,7 @@ export const KUNCI_ANTREAN = [
   "transfersPendingApproval",
   "transferShortfallsOpen",
   "stockLossOpen",
+  "spgReturnsPending",
   "storeProposalsPending",
   "fieldPromisesUnconfirmed",
   "damagedDeliveriesOpen",
@@ -50,12 +51,14 @@ export const KUNCI_ANTREAN = [
   "shiftSwapsPending",
   "stockRequestsUnheld",
   "spgCommissionsUnset",
+  "spgCommissionsUnpaidPast",
   "productionStepsOverdue",
   "productionStepsDueToday",
   "ledgerDocsWithoutJournal",
   "taxDueSoon",
   "taxOverdue",
   "manualJournalsPendingApproval",
+  "jubelioPricesPending",
 ] as const;
 
 export type KunciAntrean = (typeof KUNCI_ANTREAN)[number];
@@ -133,6 +136,14 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: (izin) => bolehMengelola(izin) || bolehMemutuskanBeban(izin) || spgView(izin),
     bolehBertindak: bolehMemutuskanBeban,
   },
+  // Retur pembeli yang dilaporkan SPG dan menunggu keputusan kantor (keputusan pemilik
+  // 2026-11-02): pengawas SPG membuka daftarnya, menyetujui dan menolak =
+  // spg_returns:approve (`app/actions/spg-retur.ts`). Daftarnya membaca `?status=MENUNGGU`.
+  spgReturnsPending: {
+    href: "/backoffice/retur-spg?status=MENUNGGU",
+    bolehBuka: spgView,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_RETURNS_APPROVE),
+  },
   // Usulan toko baru dari lapangan.
   storeProposalsPending: {
     href: "/backoffice/stores/usulan?status=PENDING",
@@ -189,6 +200,17 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: spgView,
     bolehBertindak: receivablesManage,
   },
+  // Komisi SPG yang bulan pembayarannya sudah lewat dan sudah boleh dibayar, tetapi belum ditandai
+  // dibayar — satu definisi dengan bagian pertama kartu #tunggakan (`daftarTunggakanKomisi`);
+  // yang ditahan menunggu keputusan pemilik dan yang lebih tua dari jendela koreksi tidak ikut.
+  // Tanpa saringan URL: kartunya tidak bergantung pada bulan yang dibuka, jangkarnya yang membawa.
+  // Membayar = spg_commission:pay (`tandaiKomisiSpgDibayarAction` di `app/actions/spg-komisi.ts`;
+  // baris konsinyasi juga lewat `bayarKomisiAction` di `app/actions/konsinyasi.ts`).
+  spgCommissionsUnpaidPast: {
+    href: "/backoffice/komisi-spg#tunggakan",
+    bolehBuka: spgView,
+    bolehBertindak: izinTunggal(PERMISSIONS.SPG_COMMISSION_PAY),
+  },
   // Jadwal produksi per tahap: langkah yang belum selesai padahal targetnya
   // sudah lewat / jatuh hari ini. Tindak lanjutnya menanyai pemasok (WA dari
   // halaman follow-up), jadi izin lihat sudah cukup untuk bertindak.
@@ -229,11 +251,20 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
     bolehBuka: izinTunggal(PERMISSIONS.JOURNALS_VIEW),
     bolehBertindak: izinTunggal(PERMISSIONS.JOURNALS_MANAGE),
   },
+  // Harga jual dan produk baru yang menunggu dikonfirmasi sebelum sampai ke Jubelio (keputusan
+  // pemilik 2026-11-02). Satu definisi dengan daftar halamannya tanpa saringan
+  // (`hitungHargaMenungguKonfirmasi` dan `daftarHargaMenunggu` berbagi satu fragmen SQL). Halaman,
+  // tombol, dan aksinya memakai satu izin: jubelio_prices:confirm.
+  jubelioPricesPending: {
+    href: "/backoffice/jubelio/harga",
+    bolehBuka: izinTunggal(PERMISSIONS.JUBELIO_PRICES_CONFIRM),
+    bolehBertindak: izinTunggal(PERMISSIONS.JUBELIO_PRICES_CONFIRM),
+  },
 };
 
-/** Jalur halaman tanpa saringan — kunci `ROUTE_PERMISSIONS`. */
+/** Jalur halaman tanpa saringan dan tanpa jangkar (`#…`) — kunci `ROUTE_PERMISSIONS`. */
 export function jalurTautan(href: string): string {
-  return href.split("?")[0] ?? href;
+  return href.split(/[?#]/)[0] ?? href;
 }
 
 /**
@@ -311,6 +342,8 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   transfersPendingApproval: () => prisma.storeTransfer.count({ where: { status: "DIAJUKAN" } }),
   transferShortfallsOpen: () => prisma.storeTransfer.count({ where: { selisihStatus: "TERBUKA" } }),
   stockLossOpen: () => prisma.stockLoss.count({ where: { status: "TERBUKA" } }),
+  // Satu definisi dengan tab "Menunggu" retur pembeli SPG (`RETUR_PEMBELI_MENUNGGU`).
+  spgReturnsPending: async () => (await import("@/lib/spg/retur-pembeli-queries")).jumlahReturPembeliMenunggu(),
   // Hitungan milik modulnya sendiri, dimuat saat dipakai (rantai impornya berat).
   storeProposalsPending: async () => (await import("@/lib/stores/usulan-queries")).jumlahUsulanMenunggu(),
   // Sama dengan saringan "Belum dikonfirmasi" di Kontrabon: janji lapangan yang
@@ -326,6 +359,8 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   stockRequestsUnheld: () => prisma.stockRequest.count({ where: { status: "BARU", store: { salesmanId: null } } }),
   // Definisi yang sama dengan "belum ditetapkan" di halaman Komisi SPG.
   spgCommissionsUnset: async () => (await import("@/lib/spg/komisi-queries")).jumlahKomisiPutusBelumDitetapkan(),
+  // Bagian pertama kartu #tunggakan Komisi SPG: baris yang boleh dibayar sekarang, di jendela koreksi.
+  spgCommissionsUnpaidPast: async () => (await import("@/lib/spg/koreksi-queries")).jumlahKomisiSpgTertunggak(),
   // Satu definisi dengan tab "Terlambat"/"Hari ini" follow-up produksi (`whereFollowUp`).
   productionStepsOverdue: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahTelat(),
   productionStepsDueToday: async () => (await import("@/lib/production/jadwal-queries")).hitungLangkahHariIni(),
@@ -336,6 +371,8 @@ const HITUNG_ANTREAN: Readonly<Record<KunciAntrean, () => Promise<number>>> = {
   taxOverdue: async () => (await import("@/lib/finance/pajak/kalender-queries")).hitungKalenderPajak("lewat"),
   // Satu definisi dengan tab "Menunggu persetujuan" halaman Jurnal (`?status=draf`).
   manualJournalsPendingApproval: async () => (await import("@/lib/finance/jurnal-manual/queries")).hitungDrafJurnal(),
+  // Satu definisi dengan daftar Jubelio → Konfirmasi harga tanpa saringan.
+  jubelioPricesPending: async () => (await import("@/lib/jubelio/harga/queries")).hitungHargaMenungguKonfirmasi(),
 };
 
 export type AngkaAntrean = Partial<Record<KunciAntrean, number>>;
@@ -346,7 +383,7 @@ export type AngkaAntrean = Partial<Record<KunciAntrean, number>>;
  *
  * Satu hitungan yang gagal tidak menjatuhkan Beranda: kuncinya dibuang (baris
  * tanpa angka tidak tampil) dan galatnya dicatat. Beranda halaman pertama
- * semua orang; enam belas kueri lintas modul tidak boleh jadi enam belas
+ * semua orang; dua puluhan kueri lintas modul tidak boleh jadi dua puluhan
  * cara untuk membuatnya kosong.
  */
 export async function getAntreanKantor(izin: string[]): Promise<AngkaAntrean> {

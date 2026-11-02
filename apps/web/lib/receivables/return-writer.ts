@@ -11,6 +11,7 @@ import { bentrokPengganti, catatDiganti, periksaReturLama, type AlasanPengganti 
 import { computeStorePrice } from "@elorae/db/pricing";
 import { variantDetailForSku } from "@/lib/items/variants";
 import { masukkanGudangRusakDariNri } from "@/lib/spg/gudang-rusak-writer";
+import { returPembeliSudahBerlaku } from "@/lib/spg/retur-pembeli-status";
 import { kunciStokReturMasuk } from "@/lib/finance/lapangan/aturan";
 import { findExistingInventoryValueRow } from "@/lib/inventory/costing";
 import { fotoBolehDipakai } from "./foto-pencatat";
@@ -79,7 +80,8 @@ export type BarisReturSpg = {
    * Barang yang dikembalikan pembeli di konter dalam keadaan RUSAK/EXPIRED
    * (`SpgSaleReturnLine`) dan dikirim balik ke gudang barang rusak. Barang itu
    * tidak pernah kembali ke rak (retur pembeli rusak tidak menulis buku), jadi
-   * barisnya juga TIDAK menulis `RETUR_KELUAR`.
+   * barisnya juga TIDAK menulis `RETUR_KELUAR`. Hanya retur pembeli yang sudah
+   * disetujui kantor yang boleh ditunjuk (`periksaBarisReturPembeli`).
    */
   spgSaleReturnLineId?: string | null;
 };
@@ -533,12 +535,18 @@ async function periksaBarisRusakKiriman(
 
 /**
  * Baris NRT SPG yang mengirim balik barang rusak dari pembeli: setiap baris
- * retur pembeli yang ditunjuk harus milik retur pembeli DI TOKO INI, berkondisi
- * RUSAK/EXPIRED, barang + varian yang sama, baris NRT-nya bukan LAYAK, dan
- * jumlahnya tidak melebihi qty rusaknya dikurangi yang sudah ada di nota retur
- * lain yang TIDAK batal. Baris yang sekaligus menunjuk baris tanda terima
- * ditolak — satu barang hanya punya satu asal. Dibaca di dalam transaksi
- * serializable pemanggil (pola `periksaBarisRusakKiriman`).
+ * retur pembeli yang ditunjuk harus milik retur pembeli DI TOKO INI yang SUDAH
+ * BERLAKU (disetujui kantor — keputusan pemilik 2026-11-02; laporan yang masih
+ * menunggu, ditolak, atau ditarik SPG tidak pernah membawa barangnya ke toko),
+ * berkondisi RUSAK/EXPIRED, barang + varian yang sama, baris NRT-nya bukan
+ * LAYAK, dan jumlahnya tidak melebihi qty rusaknya dikurangi yang sudah ada di
+ * nota retur lain yang TIDAK batal. Baris yang sekaligus menunjuk baris tanda
+ * terima ditolak — satu barang hanya punya satu asal. Penolakan statusnya sama
+ * dengan retur pembeli toko lain (`RETUR_PEMBELI_TIDAK_SAH`): penulis ini yang
+ * menahannya, bukan hanya layar yang tidak menawarkannya. Dibaca di dalam
+ * transaksi serializable pemanggil (pola `periksaBarisRusakKiriman`); laporan
+ * yang sudah disetujui tidak pernah kembali menunggu, jadi bacaan ini tidak
+ * bisa usang sebelum NRT-nya tertulis.
  */
 async function periksaBarisReturPembeli(
   tx: Klien,
@@ -556,7 +564,14 @@ async function periksaBarisReturPembeli(
   const [baris, sudah] = await Promise.all([
     tx.spgSaleReturnLine.findMany({
       where: { id: { in: ids } },
-      select: { id: true, itemId: true, variantSku: true, qty: true, condition: true, saleReturn: { select: { storeId: true } } },
+      select: {
+        id: true,
+        itemId: true,
+        variantSku: true,
+        qty: true,
+        condition: true,
+        saleReturn: { select: { storeId: true, status: true } },
+      },
     }),
     tx.storeReturnItem.groupBy({
       by: ["spgSaleReturnLineId"],
@@ -569,7 +584,10 @@ async function periksaBarisReturPembeli(
   for (const b of items) {
     if (!b.spgSaleReturnLineId) continue;
     const l = perId.get(b.spgSaleReturnLineId);
-    if (!l || l.saleReturn.storeId !== storeId || l.condition === "LAYAK") return "RETUR_PEMBELI_TIDAK_SAH";
+    if (!l || l.saleReturn.storeId !== storeId || !returPembeliSudahBerlaku(l.saleReturn.status)) {
+      return "RETUR_PEMBELI_TIDAK_SAH";
+    }
+    if (l.condition === "LAYAK") return "RETUR_PEMBELI_TIDAK_SAH";
     if (l.itemId !== b.itemId || l.variantSku !== (b.variantSku?.trim() ?? "")) return "RETUR_PEMBELI_TIDAK_SAH";
   }
   for (const [id, qty] of perBaris) {

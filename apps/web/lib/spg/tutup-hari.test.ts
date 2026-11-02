@@ -141,6 +141,7 @@ describe("susunRingkasanTutupHari", () => {
       { id: "spg3", nama: "Citra" },
     ],
     namaPengguna: { lama: "Dewi" },
+    potongReturMenunggu: 2,
   };
 
   it("covers every SPG of the store, including one who sold nothing and one since moved away", () => {
@@ -168,6 +169,14 @@ describe("susunRingkasanTutupHari", () => {
     expect(hp.perSpg.find((x) => x.userId === "spg2")?.nilai).toBe(90_000);
     // Angka toko sendiri tetap ada: itulah yang dicocokkan dengan kasir.
     expect(hp.nilaiBersih).toBe(290_000);
+  });
+
+  it("carries the shopper returns still awaiting the office separately, without taking them off net sales", () => {
+    const r = susunRingkasanTutupHari(bahan);
+    expect(r.potongReturMenunggu).toBe(2);
+    expect(r.potongKembali).toBe(0);
+    expect(r.nilaiBersih).toBe(290_000);
+    expect(ringkasanUntukHp(r, "spg1").potongReturMenunggu).toBe(2);
   });
 });
 

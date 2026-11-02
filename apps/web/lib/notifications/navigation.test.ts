@@ -453,12 +453,46 @@ describe("getNotificationHref — kabar yang sampai ke lonceng kantor", () => {
     expect(getNotificationHref("PELUNASAN_DITOLAK", { claimId: "a/b" })).toBe("/backoffice/pelunasan/a%2Fb");
   });
 
-  it.each(["RINGKASAN_HARIAN", "JADWAL_KUNJUNGAN", "KIRIMAN_MENUNGGU", "TUKAR_SHIFT_DIMINTA", "KOMISI_SPG"])(
+  it.each([
+    "RINGKASAN_HARIAN",
+    "JADWAL_KUNJUNGAN",
+    "KIRIMAN_MENUNGGU",
+    "TUKAR_SHIFT_DIMINTA",
+    "KOMISI_SPG",
+    "RETUR_PEMBELI_DISETUJUI",
+    "RETUR_PEMBELI_DITOLAK",
+  ])(
     "kabar khusus HP %s tetap tanpa tautan kantor",
     (jenis) => {
       expect(getNotificationHref(jenis, { tanggal: "2026-10-06", storeId: "st-1" })).toBeNull();
     },
   );
+});
+
+/*
+ * Laporan retur pembeli SPG yang menunggu persetujuan kantor (keputusan pemilik 2026-11-02):
+ * lonceng penyetujunya membuka laporannya; HP tidak punya layar persetujuan.
+ */
+describe("getNotificationHref — retur pembeli SPG menunggu persetujuan", () => {
+  it("dengan returnId → rincian laporannya di kantor", () => {
+    expect(getNotificationHref("RETUR_PEMBELI_MENUNGGU", { returnId: "rp-1", spgSaleId: "s-1" })).toBe(
+      "/backoffice/retur-spg/rp-1",
+    );
+  });
+
+  it("tanpa returnId → tab Menunggu di daftarnya", () => {
+    expect(getNotificationHref("RETUR_PEMBELI_MENUNGGU", {})).toBe("/backoffice/retur-spg?status=MENUNGGU");
+    expect(getNotificationHref("RETUR_PEMBELI_MENUNGGU", { returnId: "  " })).toBe("/backoffice/retur-spg?status=MENUNGGU");
+    expect(getNotificationHref("RETUR_PEMBELI_MENUNGGU", null)).toBe("/backoffice/retur-spg?status=MENUNGGU");
+  });
+
+  it("id di-encode", () => {
+    expect(getNotificationHref("RETUR_PEMBELI_MENUNGGU", { returnId: "a/b" })).toBe("/backoffice/retur-spg/a%2Fb");
+  });
+
+  it("di HP tidak ke mana-mana (pekerjaan kantor)", () => {
+    expect(getNotificationHref("RETUR_PEMBELI_MENUNGGU", { returnId: "rp-1" }, "pwa")).toBeNull();
+  });
 });
 
 /*

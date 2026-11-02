@@ -8,13 +8,13 @@ import {
   bulanSebelum,
   bulanSudahSelesai,
   DASAR_TARIF_KATEGORI,
+  JEJAK_KOMISI_SPG,
   periodeSah,
   rencanaTetapkan,
   rentangBulanWib,
   statusResmi,
   sudahBerbeda,
   susunKomisiToko,
-  validasiAturanKomisiPutus,
   type BarisResmiAda,
   type OrangKomisi,
 } from "./komisi";
@@ -179,11 +179,12 @@ describe("sudahBerbeda / statusResmi / dasar", () => {
   });
 });
 
-describe("validasiAturanKomisiPutus (kartu lama)", () => {
-  it("accepts only a boolean switch and one of the two bases", () => {
-    expect(validasiAturanKomisiPutus({ aktif: false, dasar: "PER_SPG" })).toEqual({ aktif: false, dasar: "PER_SPG" });
-    expect(validasiAturanKomisiPutus({ aktif: "ya", dasar: "PER_SPG" })).toBeNull();
-    expect(validasiAturanKomisiPutus({ aktif: true, dasar: "SEMUA" })).toBeNull();
-    expect(validasiAturanKomisiPutus(null)).toBeNull();
+describe("JEJAK_KOMISI_SPG", () => {
+  it("names every audit action once, and no longer carries the dead putus setting", () => {
+    const nilai = Object.values(JEJAK_KOMISI_SPG);
+    expect(new Set(nilai).size).toBe(nilai.length);
+    expect(Object.keys(JEJAK_KOMISI_SPG)).not.toContain("PENGATURAN_DIUBAH");
+    expect(nilai).toContain("SPG_COMMISSION_RECOMPUTED_AT_PAYMENT");
+    expect(nilai).toContain("SPG_COMMISSION_CORRECTION_APPLIED");
   });
 });

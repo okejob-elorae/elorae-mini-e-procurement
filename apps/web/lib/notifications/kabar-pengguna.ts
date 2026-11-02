@@ -100,6 +100,10 @@ export const JENIS_KABAR = {
    * pesanan (putus/konsi), atau pemegang toko untuk titipan ({ orderId?, storeId, sourceType, sourceId }).
    */
   KIRIMAN_DITERIMA_SELISIH: "KIRIMAN_DITERIMA_SELISIH",
+  /** Kantor menyetujui laporan retur pembeli → SPG pelapornya ({ returnId, spgSaleId }). */
+  RETUR_PEMBELI_DISETUJUI: "RETUR_PEMBELI_DISETUJUI",
+  /** Kantor menolak laporan retur pembeli → SPG pelapornya ({ returnId, spgSaleId }). */
+  RETUR_PEMBELI_DITOLAK: "RETUR_PEMBELI_DITOLAK",
 } as const;
 
 export type JenisKabar = (typeof JENIS_KABAR)[keyof typeof JENIS_KABAR];

@@ -6,7 +6,7 @@ import { bacaTargetBulan, bulanWib, KUNCI_TARGET } from "@/lib/salesman/pengatur
 import { kirimanMenunggu } from "./kiriman";
 import { kunciKiriman } from "./beranda-spg";
 import { hampirHabis, kunciBaris } from "./stok";
-import { komisiResmiSaya, perkiraanKomisiHp, type KomisiResmiHp, type PerkiraanKomisiHp } from "./komisi-queries";
+import { perkiraanKomisiHp, ringkasGajiSaya, type KomisiResmiHp, type PerkiraanKomisiHp } from "./komisi-queries";
 
 /**
  * Kueri layar SPG. SEMUA dibatasi ke toko tetap SPG (`User.assignedStoreId`)
@@ -134,21 +134,24 @@ export type GajiKomisi = {
   /**
    * Angka resmi milik SPG ini, terbaru dulu menurut bulan PEMBAYARANNYA (bulan laporannya dicek
    * kantor): gaji + komisi siklus konsinyasi dan komisi toko putus. Dibaca dari kueri yang sama
-   * dengan layar Gaji & komisi (`komisiResmiSaya`), jadi beranda dan layar itu tidak pernah
-   * menyebut bulan yang berbeda untuk pembayaran yang sama. Setiap baris membawa `bulanBayar` dan
-   * `bulanJual` sebagai catatan — "komisi penjualan Oktober" dibayar November.
+   * dengan layar Gaji & komisi (`ringkasGajiSaya`), jadi beranda dan layar itu tidak pernah
+   * menyebut bulan atau rupiah yang berbeda untuk pembayaran yang sama — `diterima` termasuk
+   * potongan beban barang hilang dan koreksi. Setiap baris membawa `bulanBayar` dan `bulanJual`
+   * sebagai catatan — "komisi penjualan Oktober" dibayar November.
    */
   resmi: KomisiResmiHp[];
-  /** Perkiraan bulan berjalan — toko konsinyasi, dan toko putus selama komisinya aktif. */
+  /** Perkiraan bulan berjalan — dari penjualan SPG itu sendiri (`dasar` selalu `PER_SPG`). */
   perkiraan: PerkiraanKomisiHp | null;
+  /** Koreksi komisi bulan yang sudah dibayar yang menunggu pembayaran resmi berikutnya. */
+  koreksiMenunggu: Array<{ bulanJual: string; toko: string; jumlah: number }>;
 };
 
 export async function gajiKomisiSpg(userId: string, toko: TokoSpg | null, hariIni: Date): Promise<GajiKomisi> {
-  const [resmi, perkiraan] = await Promise.all([
-    komisiResmiSaya(userId, 6),
+  const [gaji, perkiraan] = await Promise.all([
+    ringkasGajiSaya(userId, 6),
     toko ? perkiraanKomisiHp(userId, toko, hariIni) : Promise.resolve(null),
   ]);
-  return { resmi, perkiraan };
+  return { resmi: gaji.resmi, perkiraan, koreksiMenunggu: gaji.koreksiMenunggu };
 }
 
 export type RingkasanSpg = {

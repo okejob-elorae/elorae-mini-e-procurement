@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  bagiKomisi,
   bandingkanLaporan,
   giliranTahap,
   stokTitipan,
@@ -116,40 +115,6 @@ describe('bandingkanLaporan', () => {
     expect(hasil.find((b) => b.itemName === "Blus")?.itemId).toBe("blus");
     expect(hasil.find((b) => b.itemName === "Rok")?.itemId).toBe("rok");
     expect(hasil.find((b) => b.itemName === "Syal")?.itemId).toBeNull();
-  });
-});
-
-describe('bagiKomisi', () => {
-  it('menghitung dari qty dikali tarif per barang', () => {
-    // Tarifnya melekat pada barang, berbeda tiap barang.
-    const { totalKomisi } = bagiKomisi(
-      [
-        { qty: 10, commissionPerPcs: 500 },
-        { qty: 4, commissionPerPcs: 100 },
-      ],
-      1,
-    );
-    expect(totalKomisi).toBe(5_400);
-  });
-
-  it('membagi rata antar SPG satu toko', () => {
-    const { perSpg } = bagiKomisi([{ qty: 10, commissionPerPcs: 300 }], 2);
-    expect(perSpg).toEqual([1_500, 1_500]);
-  });
-
-  it('memberikan sisa pembagian ke SPG pertama, tidak membuangnya', () => {
-    // Membuangnya membuat total yang dibayarkan tidak pernah sama dengan
-    // komisi yang dihitung, dan selisih receh itu kembali setiap bulan.
-    const { totalKomisi, perSpg } = bagiKomisi([{ qty: 10, commissionPerPcs: 100 }], 3);
-    expect(totalKomisi).toBe(1_000);
-    expect(perSpg).toEqual([334, 333, 333]);
-    expect(perSpg.reduce((a, b) => a + b, 0)).toBe(totalKomisi);
-  });
-
-  it('mengembalikan daftar kosong kalau tidak ada SPG', () => {
-    const { totalKomisi, perSpg } = bagiKomisi([{ qty: 10, commissionPerPcs: 100 }], 0);
-    expect(totalKomisi).toBe(1_000);
-    expect(perSpg).toEqual([]);
   });
 });
 

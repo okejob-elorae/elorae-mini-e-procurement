@@ -96,13 +96,17 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/spg-pelanggan': 'spg_sales:view',
   '/backoffice/jadwal-spg': 'spg_sales:view',
   '/backoffice/komisi-spg': 'spg_sales:view',
+  // Retur pembeli SPG: daftar dan rinciannya dibuka pengawas SPG; tombol
+  // Setujui/Tolak memeriksa `spg_returns:approve` di halaman dan aksinya.
+  "/backoffice/retur-spg": "spg_sales:view",
   '/backoffice/promo-konter': 'promos:view',
   '/backoffice/items/size-charts': 'items:view',
   '/backoffice/settings/spg': 'spg_sales:view',
   '/backoffice/kinerja-spg': 'spg_sales:view',
   // `/backoffice/barang-hilang` sengaja TIDAK dipetakan: terbuka untuk pengawas
-  // SPG (`spg_sales:view`) ATAU keuangan yang menetapkan beban
-  // (`receivables:manage`); halamannya memagari dirinya sendiri.
+  // SPG (`spg_sales:view`), keuangan yang mencatat dan menandai pelunasan
+  // (`receivables:manage`) ATAU yang menetapkan beban (`receivables:decide_bearer`);
+  // halamannya memagari dirinya sendiri.
   '/backoffice/items/labels': 'items:view',
   // `/backoffice/spg-kiriman-rusak` sengaja TIDAK dipetakan: terbuka untuk
   // pengawas SPG (`spg_sales:view`) ATAU gudang yang memutuskan (`inventory:manage`).
@@ -148,6 +152,8 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/jubelio/settings': 'settings_security:view',
   '/backoffice/jubelio/categories': 'settings_security:view',
   '/backoffice/jubelio/migration': 'settings_security:view',
+  // Konfirmasi harga sebelum dikirim ke Jubelio — halamannya dibuka izin persetujuannya sendiri.
+  "/backoffice/jubelio/harga": "jubelio_prices:confirm",
   '/backoffice/jubelio/couriers': 'settings_security:view',
   '/backoffice/finance/coa': 'coa:view',
   '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
@@ -236,6 +242,7 @@ const BACKOFFICE_ROUTES_ORDER: string[] = [
   '/backoffice/jubelio/settings',
   '/backoffice/jubelio/categories',
   '/backoffice/jubelio/migration',
+  "/backoffice/jubelio/harga",
   '/backoffice/jubelio/couriers',
   '/backoffice/settings/documents',
   '/backoffice/settings/item-codes',
@@ -399,6 +406,9 @@ export const PERMISSIONS = {
   // Jubelio admin — admin-only. Not granted to non-admin roles; only the
   // wildcard '*' (system/admin role) satisfies it.
   JUBELIO_ADMIN_VIEW: 'jubelio_admin:view',
+  // Confirming a selling price before it is sent to Jubelio (owner 2026-11-02: admin only by
+  // default, grantable in Peran & izin).
+  JUBELIO_PRICES_CONFIRM: "jubelio_prices:confirm",
   // Chart of Accounts
   COA_VIEW: 'coa:view',
   COA_MANAGE: 'coa:manage',
@@ -422,6 +432,9 @@ export const PERMISSIONS = {
   SPG_COMMISSION_MANAGE: "spg_commission:manage",
   // Marking SPG pay & commission paid (consignment and putus stores).
   SPG_COMMISSION_PAY: "spg_commission:pay",
+  // SPG shopper returns — approving a reported return (owner 2026-11-02: admin and ADMIN_PENJUALAN
+  // by default, grantable).
+  SPG_RETURNS_APPROVE: "spg_returns:approve",
   // Request Item (material requests -> PO)
   ITEM_REQUESTS_VIEW: "item_requests:view",
   ITEM_REQUESTS_MANAGE: "item_requests:manage",

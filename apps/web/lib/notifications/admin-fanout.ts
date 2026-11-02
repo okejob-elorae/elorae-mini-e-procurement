@@ -103,6 +103,8 @@ const CATEGORY_PERMISSION: Record<string, string> = {
   // Nota retur SPG di toko tanpa salesman pemegang — tidak ada orang lapangan
   // yang menindaklanjutinya, jadi pengelola retur/piutang yang diberi tahu.
   RETUR_SPG_TANPA_PEMEGANG: PERMISSIONS.RECEIVABLES_MANAGE,
+  // Laporan retur pembeli SPG — penyetujunya (admin, admin penjualan) yang diberi tahu.
+  RETUR_PEMBELI_MENUNGGU: PERMISSIONS.SPG_RETURNS_APPROVE,
 };
 
 /**

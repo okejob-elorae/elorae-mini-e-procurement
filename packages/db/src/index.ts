@@ -49,8 +49,11 @@ export { sqlId, nowMs, usePostgres } from "./sql-dialect";
 export {
   createItemFromIngest,
   updateItemFromIngest,
+  markJubelioCreateRequested,
+  recordJubelioPriceOnMapping,
   type IngestItemCreateData,
   type IngestItemUpdateData,
+  type JubelioPriceStateField,
 } from "./item-writer";
 export {
   applyJubelioStockAdjustment,

@@ -1,5 +1,4 @@
 import type { SpgReportCommission } from "@/lib/spg-commission/payout";
-import type { DasarKomisi } from "./pengaturan";
 
 /**
  * Komisi SPG — murni, tanpa basis data.
@@ -16,15 +15,23 @@ import type { DasarKomisi } from "./pengaturan";
  * bulan penjualannya: penjualan Oktober yang dicek 5 November dibayar November sebagai "Komisi
  * penjualan Oktober 2026". Toko putus dicek lewat "Tandai laporan dicek" (`SpgSalesCheck`), toko
  * konsinyasi saat angka resmi siklusnya dikunci.
+ *
+ * Tidak ada bagi rata di mana pun (keputusan pemilik 2026-11-02). Baris yang BELUM dibayar selalu
+ * dibayar dengan komisi per SPG saat ditandai dibayar (`lib/spg/koreksi.ts`, dihitung ulang di
+ * transaksi pembayarannya); baris yang SUDAH dibayar tidak diubah — selisihnya ikut SEKALI di
+ * pembayaran SPG itu berikutnya sebagai koreksi (`SpgCommissionCorrection`).
  */
 
 export const JEJAK_KOMISI_SPG = {
   DITETAPKAN: "SPG_COMMISSION_LOCKED",
   DITETAPKAN_ULANG: "SPG_COMMISSION_RELOCKED",
   DIBAYAR: "SPG_COMMISSION_PAID",
-  PENGATURAN_DIUBAH: "SPG_COMMISSION_SETTING_UPDATED",
   LAPORAN_DICEK: "SPG_SALES_REPORT_CHECKED",
   LAPORAN_BATAL_DICEK: "SPG_SALES_REPORT_UNCHECKED",
+  /** Baris yang belum dibayar diganti komisi per SPG sekarang di transaksi pembayarannya. */
+  DIHITUNG_ULANG_SAAT_BAYAR: "SPG_COMMISSION_RECOMPUTED_AT_PAYMENT",
+  /** Satu koreksi komisi diterapkan pada sebuah pembayaran (`SpgCommissionCorrection`). */
+  KOREKSI_DITERAPKAN: "SPG_COMMISSION_CORRECTION_APPLIED",
 } as const;
 
 export type NamaJejakKomisiSpg = (typeof JEJAK_KOMISI_SPG)[keyof typeof JEJAK_KOMISI_SPG];
@@ -36,7 +43,14 @@ export type NamaJejakKomisiSpg = (typeof JEJAK_KOMISI_SPG)[keyof typeof JEJAK_KO
  */
 export const DASAR_TARIF_KATEGORI = "TARIF_KATEGORI";
 
-export type DasarResmi = typeof DASAR_TARIF_KATEGORI | DasarKomisi;
+/**
+ * `SpgCommission.basis` baris toko putus yang ditetapkan SEBELUM 2026-11-01 (tarif barang:
+ * `PER_SPG` per penjual, `BAGI_RATA` dibagi rata). Hanya dibaca untuk baris lama itu; pengaturan
+ * `spg.komisiPutus` yang dulu memilihnya sudah tidak dibaca atau ditulis.
+ */
+export type DasarLama = "BAGI_RATA" | "PER_SPG";
+
+export type DasarResmi = typeof DASAR_TARIF_KATEGORI | DasarLama;
 
 export function bacaDasarResmi(basis: string): DasarResmi {
   if (basis === DASAR_TARIF_KATEGORI) return DASAR_TARIF_KATEGORI;
@@ -225,18 +239,17 @@ export function statusResmi(b: { paidAt: Date | string | null } | null | undefin
 }
 
 // ---------------------------------------------------------------------------
-// Isian pengaturan (lama)
+// Koreksi komisi
 // ---------------------------------------------------------------------------
 
 /**
- * Isian kartu lama Pengaturan → SPG → Komisi toko putus; null kalau bentuknya salah. Kartunya
- * sudah tidak ada (komisi toko putus selalu berlaku, dengan hitungan tarif kategori) — hanya
- * aksi lama `simpanKomisiPutusSpg` yang masih memanggilnya, dan nilainya tidak dibaca hitungan.
+ * Berapa bulan PENJUALAN ke belakang yang diperiksa untuk koreksi komisi (dan berapa bulan
+ * PEMBAYARAN ke belakang sebuah baris yang belum dibayar masih menjadi tempat koreksi ikut dan
+ * masuk daftar tunggakan). Keputusan sementara, ditanyakan ke pemilik: selisih yang lebih tua tidak
+ * dikoreksi lagi. Menggeser jendela tidak pernah menerapkan dua kali — jumlah yang sudah diterapkan
+ * dibaca dari tabelnya.
  */
-export function validasiAturanKomisiPutus(isi: unknown): { aktif: boolean; dasar: DasarKomisi } | null {
-  if (!isi || typeof isi !== "object") return null;
-  const o = isi as Record<string, unknown>;
-  if (typeof o.aktif !== "boolean") return null;
-  if (o.dasar !== "BAGI_RATA" && o.dasar !== "PER_SPG") return null;
-  return { aktif: o.aktif, dasar: o.dasar };
-}
+export const KOREKSI_JENDELA_BULAN = 12;
+
+/** `AuditLog.entityType` satu koreksi yang diterapkan. */
+export const ENTITAS_KOREKSI_KOMISI = "SpgCommissionCorrection";

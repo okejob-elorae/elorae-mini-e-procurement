@@ -1,22 +1,25 @@
 import type { SpgReportCommission } from "./payout";
 
 /**
- * What the recap shows as PAID next to what the computation reads today, per SPG per report.
+ * What the recap shows per SPG per report in one PAYOUT month, truthfully: the per-SPG figure the
+ * computation gives today (category rate of the sales month × her own confirmed pieces), what is
+ * stored, what was actually PAID, the corrections already applied from that report, and the
+ * difference still waiting for her next payout.
  *
- * The figure that is paid is the one the office stored when it set the commission: a consignment
- * cycle's `ConsignmentCommission.commission`, written when its official figures are locked, and a
- * putus month's `SpgCommission.commission`, written by "Tetapkan" on Komisi SPG. The computation
- * (`payout.ts`) re-reads the reports' current inputs, so it moves when a receipt or a shopper
- * return syncs after the lock or the set, and it never reproduces a cycle locked, or a month set,
- * under the old rule (item rate, equal split). The recap therefore never presents the computation
- * as the paid figure: it shows the stored one, the computation beside it, and flags a difference
- * the way Komisi SPG does. A checked putus month with no stored rows is "belum ditetapkan" — nothing
- * is set, so nothing is paid.
+ * Owner decision 2026-11-02: there is no equal split anywhere. A row not yet paid is paid at the
+ * per-SPG figure when it is marked paid (so a stored figure that differs "is replaced", `differs`),
+ * and a row already paid is never changed — its difference = figure − paid − corrections already
+ * applied rides once on the SPG's next payout (`lib/spg/koreksi.ts`). A unit is CLOSED when her row
+ * is paid, or when she has no row and the report is closed (a locked cycle; a putus month with a
+ * paid row); only closed units carry a difference. A unit HELD for an owner decision (`alasanTahan`:
+ * an old-rule report with pieces that have no category rate — rates exist only from 2026-10 and a
+ * past month cannot be given one — or a konsi cycle whose official figures were not all recorded on
+ * the phones, open question Q7) carries none either, and an unpaid row of it is not paid.
  *
  * Client-safe: plain values in, plain values out.
  */
 
-export type PayoutStatus = "BELUM_DITETAPKAN" | "DITETAPKAN" | "DIBAYAR";
+export type PayoutStatus = "BELUM_DITETAPKAN" | "DITETAPKAN" | "DIBAYAR" | "TANPA_BARIS";
 
 /** One SPG's stored commission on one report. */
 export type StoredSpgCommission = {
@@ -25,7 +28,7 @@ export type StoredSpgCommission = {
   commission: number;
   /* Pieces stored with it: putus only. Null for konsi, which stores no pieces per SPG. */
   pieces: number | null;
-  /* Set under the old rule (item rate, equal split): always a difference. */
+  /* Set or locked under the old rule (item rate, equal split). */
   oldRule: boolean;
   paid: boolean;
 };
@@ -35,10 +38,18 @@ export type PayoutReportInput = {
   kind: "KONSI" | "PUTUS";
   storeId: string;
   salesMonth: string;
+  /* The payout month the report belongs to (the month it was checked / locked). */
+  payoutMonth: string;
+  /* KONSI: the cycle is locked. PUTUS: some row of the store × month is paid. */
+  closed: boolean;
   /* The report's stored rows; null for a checked putus month the office has not set yet. */
   stored: readonly StoredSpgCommission[] | null;
   /* The computation of the same report (`commissionPerSpg`). */
   computed: readonly SpgReportCommission[];
+  /* Σ corrections already applied from this report, per SPG. */
+  appliedBySalesman: ReadonlyMap<string, number>;
+  /* SPGs whose unit on this report waits for an owner decision. */
+  heldSalesmen?: ReadonlySet<string>;
 };
 
 export type PayoutLine = {
@@ -46,41 +57,51 @@ export type PayoutLine = {
   kind: "KONSI" | "PUTUS";
   storeId: string;
   salesMonth: string;
+  payoutMonth: string;
   salesmanId: string;
   status: PayoutStatus;
-  /* The stored figure — what is paid. Null while the report is not set; 0 for an SPG the set report has no row for. */
+  /* The per-SPG figure today. */
+  figure: number;
+  pieces: number;
+  noRatePieces: number;
+  /* The stored figure; null while the report is not set, or for an SPG with no row on it. */
   setAmount: number | null;
-  /* The computation's figure for her today. */
-  computedAmount: number;
-  computedPieces: number;
-  computedNoRatePieces: number;
-  /* Stored and computed disagree; never true for a report that is not set yet (that is `BELUM_DITETAPKAN`). */
+  /* The stored figure of her row if it is paid, else 0. */
+  paidAmount: number;
+  /* Σ corrections already applied from this report to her. */
+  correctionsFromThis: number;
+  /* figure − paid − corrections applied, for a closed unit; else 0. */
+  pendingDifference: number;
+  /* An unpaid stored row that is replaced by the per-SPG figure when paid (never a held one). */
   differs: boolean;
+  /* Waits for an owner decision: no automatic difference, and an unpaid row of it is not paid. */
+  held: boolean;
 };
 
 export type PayoutTotals = {
-  /* Σ stored figures. */
+  figure: number;
   setAmount: number;
-  /* Σ computed figures of reports not set yet: paid only once the office sets them. */
-  unsetAmount: number;
-  /* Σ stored figures already marked paid. */
   paidAmount: number;
-  differs: boolean;
+  /* Σ figure − corrections already applied, over her unpaid and not-yet-set lines (a held line at its stored figure). */
+  unpaidAmount: number;
   hasUnset: boolean;
+  /* Σ corrections applied in this payout month. */
+  correctionsApplied: number;
+  pendingDifference: number;
+  differs: boolean;
 };
 
-const sameCents = (a: number, b: number) => Math.round(a * 100) === Math.round(b * 100);
+const cents = (n: number) => Math.round(n * 100);
+const rupiah = (c: number) => (c === 0 ? 0 : c / 100);
+const sameCents = (a: number, b: number) => cents(a) === cents(b);
 
 const compareId = (a: string, b: string) => (a === b ? 0 : a < b ? -1 : 1);
 
 /**
- * One line per SPG per report: every SPG the computation credits with a piece, plus every SPG
- * with a stored row — a konsi row only when its commission is not zero (a salaried SPG who sold
- * nothing has a Rp 0 row that is no commission), a putus row always (each one was set for pieces).
- * A konsi line differs when the amounts differ to the cent, as Komisi SPG compares a cycle; a putus
- * line also when only one side has her, the pieces differ, or the row was set under the old rule,
- * as `sudahBerbeda` does, so a report flagged there has at least one flagged line here. Lines keep the report order, then
- * salesman id.
+ * One line per SPG per report: every SPG the computation credits with a piece, every SPG with a
+ * stored row (a konsi row only when its commission is not zero or it is paid — a salaried SPG who
+ * sold nothing has a Rp 0 row that is no commission), and every SPG with a correction already
+ * applied from it. Lines keep the report order, then salesman id.
  */
 export function payoutLinesOf(reports: readonly PayoutReportInput[]): PayoutLine[] {
   const lines: PayoutLine[] = [];
@@ -88,50 +109,79 @@ export function payoutLinesOf(reports: readonly PayoutReportInput[]): PayoutLine
     const computed = new Map(report.computed.filter((c) => c.pieces > 0).map((c) => [c.salesmanId, c]));
     const stored = new Map((report.stored ?? []).map((s) => [s.salesmanId, s]));
     const relevantStored = [...stored.values()].filter((s) => report.kind === "PUTUS" || !sameCents(s.commission, 0));
-    const ids = [...new Set([...computed.keys(), ...relevantStored.map((s) => s.salesmanId)])].sort(compareId);
+    const applied = [...report.appliedBySalesman].filter(([, n]) => cents(n) !== 0).map(([id]) => id);
+    const ids = [...new Set([...computed.keys(), ...relevantStored.map((s) => s.salesmanId), ...applied])].sort(compareId);
     for (const salesmanId of ids) {
       const c = computed.get(salesmanId);
       const s = stored.get(salesmanId);
-      const computedAmount = c?.amount ?? 0;
-      const computedPieces = c?.pieces ?? 0;
-      const base = {
+      const figure = c?.amount ?? 0;
+      const pieces = c?.pieces ?? 0;
+      const correctionsFromThis = rupiah(cents(report.appliedBySalesman.get(salesmanId) ?? 0));
+      const status: PayoutStatus = report.stored === null ? "BELUM_DITETAPKAN" : s ? (s.paid ? "DIBAYAR" : "DITETAPKAN") : "TANPA_BARIS";
+      const paidAmount = s?.paid ? s.commission : 0;
+      const held = report.heldSalesmen?.has(salesmanId) ?? false;
+      const closedUnit = s ? s.paid : report.closed;
+      const pendingDifference = closedUnit && !held ? rupiah(cents(figure) - cents(paidAmount) - cents(correctionsFromThis)) : 0;
+      // A held row is not replaced when paid — it is not paid at all until the owner decides.
+      const differs =
+        !held &&
+        status === "DITETAPKAN" &&
+        s !== undefined &&
+        (!sameCents(s.commission, figure) || (report.kind === "PUTUS" && (s.oldRule || s.pieces !== pieces)));
+      lines.push({
         reportKey: report.key,
         kind: report.kind,
         storeId: report.storeId,
         salesMonth: report.salesMonth,
+        payoutMonth: report.payoutMonth,
         salesmanId,
-        computedAmount,
-        computedPieces,
-        computedNoRatePieces: c?.noRatePieces ?? 0,
-      };
-      if (report.stored === null) {
-        lines.push({ ...base, status: "BELUM_DITETAPKAN", setAmount: null, differs: false });
-        continue;
-      }
-      const setAmount = s?.commission ?? 0;
-      const differs =
-        !sameCents(setAmount, computedAmount) ||
-        (report.kind === "PUTUS" && (s === undefined || c === undefined || s.oldRule || s.pieces !== computedPieces));
-      lines.push({ ...base, status: s?.paid ? "DIBAYAR" : "DITETAPKAN", setAmount, differs });
+        status,
+        figure,
+        pieces,
+        noRatePieces: c?.noRatePieces ?? 0,
+        setAmount: s ? s.commission : null,
+        paidAmount,
+        correctionsFromThis,
+        pendingDifference,
+        differs,
+        held,
+      });
     }
   }
   return lines;
 }
 
-/** Each SPG's totals over her lines. */
-export function payoutTotalsBySpg(lines: readonly PayoutLine[]): Map<string, PayoutTotals> {
+/** Each SPG's totals over her lines, plus the corrections applied to her in this payout month. */
+export function payoutTotalsBySpg(
+  lines: readonly PayoutLine[],
+  corrections: ReadonlyArray<{ salesmanId: string; amount: number }> = [],
+): Map<string, PayoutTotals> {
   const bySpg = new Map<string, PayoutTotals>();
-  for (const line of lines) {
-    const t = bySpg.get(line.salesmanId) ?? { setAmount: 0, unsetAmount: 0, paidAmount: 0, differs: false, hasUnset: false };
-    if (line.status === "BELUM_DITETAPKAN") {
-      t.unsetAmount += line.computedAmount;
-      t.hasUnset = true;
-    } else {
-      t.setAmount += line.setAmount ?? 0;
-      if (line.status === "DIBAYAR") t.paidAmount += line.setAmount ?? 0;
+  const of = (id: string) => {
+    let t = bySpg.get(id);
+    if (!t) {
+      t = { figure: 0, setAmount: 0, paidAmount: 0, unpaidAmount: 0, hasUnset: false, correctionsApplied: 0, pendingDifference: 0, differs: false };
+      bySpg.set(id, t);
     }
+    return t;
+  };
+  for (const line of lines) {
+    const t = of(line.salesmanId);
+    t.figure = rupiah(cents(t.figure) + cents(line.figure));
+    t.setAmount = rupiah(cents(t.setAmount) + cents(line.setAmount ?? 0));
+    t.paidAmount = rupiah(cents(t.paidAmount) + cents(line.paidAmount));
+    if (line.status === "BELUM_DITETAPKAN" || line.status === "DITETAPKAN") {
+      // A held row waits for an owner decision: the only figure known for it is the stored one.
+      const owed = line.held && line.setAmount !== null ? line.setAmount : line.figure;
+      t.unpaidAmount = rupiah(cents(t.unpaidAmount) + cents(owed) - cents(line.correctionsFromThis));
+    }
+    if (line.status === "BELUM_DITETAPKAN") t.hasUnset = true;
+    t.pendingDifference = rupiah(cents(t.pendingDifference) + cents(line.pendingDifference));
     if (line.differs) t.differs = true;
-    bySpg.set(line.salesmanId, t);
+  }
+  for (const c of corrections) {
+    const t = of(c.salesmanId);
+    t.correctionsApplied = rupiah(cents(t.correctionsApplied) + cents(c.amount));
   }
   return bySpg;
 }

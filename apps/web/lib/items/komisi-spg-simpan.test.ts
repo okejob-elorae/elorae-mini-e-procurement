@@ -4,14 +4,16 @@ import { getItemById } from "./queries";
 import { createItem, updateItem } from "./mutations";
 
 /*
- * Komisi SPG per pcs tersimpan lewat formulir barang, sampai ke klien sebagai
- * angka (bukan Decimal), dan perubahannya tercatat di jejak — terhadap basis
- * data uji. Barang, satuan, dan pengguna milik tes sendiri.
+ * Komisi SPG per pcs LAMA (`Item.commissionPerPcs`) lewat jalur simpan barang di server
+ * (`createItem`/`updateItem`): tidak dikirim = kolom tidak disentuh, sampai ke klien sebagai angka
+ * (bukan Decimal), perubahannya tercatat di jejak — terhadap basis data uji. Formulir barang tidak
+ * lagi mengirim isian ini (hanya menampilkannya sebagai riwayat) dan tidak ada komisi yang dihitung
+ * darinya sejak 2026-11-01. Barang, satuan, dan pengguna milik tes sendiri.
  */
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes(":3306") || url.includes("api.elorae.cloud") ? describe.skip : describe;
 
-d("komisi SPG per pcs di formulir barang (test bed only)", () => {
+d("komisi SPG per pcs lama di jalur simpan barang (test bed only)", () => {
   const token = Math.random().toString(36).slice(2, 10);
   let uomId = "";
   let itemId = "";

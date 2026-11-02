@@ -24,6 +24,9 @@ const data = vi.hoisted(() => ({
   permintaan: [] as Permintaan[],
   biaya: [] as Biaya[],
   retur: [] as { jenis: string; id: string }[],
+  /** Saringan yang diterima kueri daftar halaman tujuan, terakhir kali dipanggil. */
+  saringanReturPembeli: null as null | { status: string },
+  opsiHargaJubelio: null as null | { jenis?: string; cari?: string },
 }));
 
 vi.mock("@/lib/auth", () => ({ auth: vi.fn(async () => ({ user: { id: "u-admin", permissions: ["*"] } })) }));
@@ -154,6 +157,23 @@ vi.mock("@/lib/receivables/return-queries", () => ({
   ringkasKerjaRetur: vi.fn(() => ({})),
 }));
 
+// Retur pembeli SPG (keputusan pemilik 2026-11-02): daftarnya disaring di server per status.
+vi.mock("@/lib/spg/retur-pembeli-queries", () => ({
+  daftarReturPembeliKantor: vi.fn(async (s: { status: string }) => {
+    data.saringanReturPembeli = s;
+    return { baris: [], total: 0, perStatus: {} };
+  }),
+  pilihanTokoReturPembeli: vi.fn(async () => []),
+}));
+// Konfirmasi harga Jubelio: daftar tanpa saringan = hitungan Beranda.
+vi.mock("@/lib/jubelio/harga/queries", () => ({
+  daftarHargaMenunggu: vi.fn(async (opsi: { jenis?: string; cari?: string }) => {
+    data.opsiHargaJubelio = opsi;
+    return { baris: [], total: 0, terpotong: false };
+  }),
+  hitungBarangJubelioTanpaHarga: vi.fn(async () => 0),
+}));
+
 // Komponen klien tidak dirender — yang diuji props yang dikirim halaman.
 vi.mock("@/app/backoffice/pelunasan/PelunasanClient", () => ({ PelunasanClient: () => null }));
 vi.mock("@/app/backoffice/pelunasan/[id]/putusan-klaim", () => ({ pemeriksaSamaKlaim: () => false }));
@@ -162,6 +182,8 @@ vi.mock("@/app/backoffice/spg-requests/PermintaanKirimanClient", () => ({ Permin
 vi.mock("@/app/backoffice/biaya-perjalanan/BiayaPerjalananClient", () => ({ BiayaPerjalananClient: () => null }));
 vi.mock("@/app/backoffice/kontrabon/KontrabonClient", () => ({ KontrabonClient: () => null }));
 vi.mock("@/app/backoffice/retur-toko/ReturTokoClient", () => ({ ReturTokoClient: () => null }));
+vi.mock("@/app/backoffice/retur-spg/DaftarReturPembeliClient", () => ({ DaftarReturPembeliClient: () => null }));
+vi.mock("@/app/backoffice/jubelio/harga/HargaJubelioClient", () => ({ HargaJubelioClient: () => null }));
 
 const { ANTREAN_KANTOR } = await import("@/lib/dashboard/antrean-kantor");
 const { buildActionItems } = await import("@/lib/dashboard/action-items");
@@ -236,6 +258,8 @@ beforeEach(() => {
     { jenis: "NRT", id: "n2" },
     { jenis: "GUDANG_YATIM", id: "g1" },
   ];
+  data.saringanReturPembeli = null;
+  data.opsiHargaJubelio = null;
 });
 
 describe("tujuan tautan Beranda — halaman menerapkan saringan yang sama dengan angkanya", () => {
@@ -295,6 +319,18 @@ describe("tujuan tautan Beranda — halaman menerapkan saringan yang sama dengan
     expect((p.stores as Toko[]).map((t) => t.id).sort()).toEqual(["t2", "t3"]);
     expect(p.totalCount).toBe(2);
     expect(p.jumlahPerubahan).toBe(2);
+  });
+
+  it("Retur pembeli SPG menunggu persetujuan → daftar disaring MENUNGGU", async () => {
+    const p = await buka(ANTREAN_KANTOR.spgReturnsPending.href, "@/app/backoffice/retur-spg/page");
+    expect(data.saringanReturPembeli).toMatchObject({ status: "MENUNGGU" });
+    expect(p.saringan).toMatchObject({ status: "MENUNGGU" });
+  });
+
+  it("Harga menunggu konfirmasi Jubelio → daftar tanpa saringan jenis maupun cari", async () => {
+    const p = await buka(ANTREAN_KANTOR.jubelioPricesPending.href, "@/app/backoffice/jubelio/harga/page");
+    expect(data.opsiHargaJubelio).toEqual({ jenis: undefined, cari: undefined });
+    expect(p.jenis).toBeNull();
   });
 
   it("Daftar toko tanpa saringan perubahan tetap hanya toko aktif", async () => {

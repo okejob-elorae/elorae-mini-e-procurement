@@ -47,6 +47,8 @@ export function tabAktifSpg(path: string): TabSpg | null {
     [
       "/pwa/spg/lainnya",
       "/pwa/spg/gaji",
+      // Laporan retur pembeli saya — dibuka dari Lainnya (Di konter); tanpa bilah bawah, jadi bermenu.
+      "/pwa/spg/retur-pembeli",
       "/pwa/tampilan",
       "/pwa/retur",
       "/pwa/absen",

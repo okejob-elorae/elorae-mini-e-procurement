@@ -189,7 +189,8 @@ export const ENTRI: EntriBantuan[] = [
       "Varian: tambahkan atribut (mis. Warna, Ukuran) beserta nilainya; setiap kombinasi menjadi satu varian. SKU varian harus diawali kode kategori (bila kategorinya berkode) atau SKU barang; dibiarkan kosong, SKU varian dibuat otomatis saat disimpan dengan bentuk awalan-nilai1-nilai2 (mis. KAOS-MERAH-S). Barcode varian dibuat menurut format di Pengaturan → Kode barang.",
       "Resep bahan (BOM) hanya untuk barang jadi: bahan, kebutuhan per pcs, dan susut dalam persen.",
       "Kg per roll muncul untuk bahan (bukan barang jadi) yang satuannya kg. Isinya dipakai formulir dan cetak PO untuk menghitung jumlah roll: qty ÷ kg per roll, dibulatkan ke atas.",
-      "Komisi SPG per pcs (barang jadi saja) tidak lagi dipakai menghitung komisi SPG sejak 2026-11-01: komisi SPG toko konsinyasi maupun putus dihitung dari tarif per kategori barang di Pengaturan → Komisi SPG, dikali potong yang dijual masing-masing SPG. Angka yang terisi hanya disimpan sebagai riwayat.",
+      "Formulir barang tidak lagi punya isian Komisi SPG per pcs: komisi SPG toko konsinyasi maupun putus dihitung dari tarif per kategori barang di Pengaturan → Komisi SPG, dikali potong yang dijual masing-masing SPG.",
+      "Barang jadi baru otomatis diajukan ke Jubelio dan menunggu konfirmasi harga (Jubelio → Konfirmasi harga) sebelum dibuat di Jubelio — tidak langsung dikirim (keputusan pemilik 2026-11-02).",
     ],
     kartu: [
       {
@@ -206,7 +207,7 @@ export const ENTRI: EntriBantuan[] = [
       { kunci: "itemImport.subtitle" },
       { kunci: "itemImport.step1Body" },
       "Setelah file diunggah, setiap baris diperiksa lebih dulu. Selama masih ada error (disebut per baris dan kolom), tidak ada produk yang dibuat; perbaiki filenya lalu unggah ulang. Pratinjau menunjukkan SKU yang akan disimpan, termasuk yang dibuat otomatis atau diubah dari yang diketik.",
-      "Centang Buat juga produk ini di Jubelio untuk memasukkan produknya ke antrean Jubelio. Artikel tanpa kategori, atau yang kategorinya belum dipetakan ke kategori Jubelio, dilewati dan bisa dibuat di Jubelio nanti dari halaman item.",
+      "Centang Jubelio berarti produk DIAJUKAN — menunggu di Jubelio → Konfirmasi harga — bukan langsung dibuat di Jubelio; produknya baru dibuat setelah harganya dikonfirmasi. Artikel tanpa kategori, atau yang kategorinya belum dipetakan ke kategori Jubelio, baru bisa dikonfirmasi setelah kategorinya dipetakan. Tanpa centang, produk hanya dibuat di Elorae dan bisa diajukan nanti dari halaman barang.",
       "Dibuka dari tombol Import Excel di daftar item, dan butuh izin membuat item.",
     ],
   },
@@ -216,12 +217,13 @@ export const ENTRI: EntriBantuan[] = [
     judul: "Rincian barang",
     isi: [
       "Mengubah data barang dan foto galerinya (foto produk dan foto per varian). Gambar disimpan dengan tombol Simpan gambar di kartu galeri, terpisah dari Simpan barang; selama ada gambar yang belum disimpan, kartu galeri memperingatkannya dan Simpan barang tidak meninggalkan halaman. Tab Riwayat HPP mencatat setiap penerimaan barang jadi dan pembelian barang ini: tanggal (WIB), dokumen (tertaut ke WO atau GRN/PO), varian, jumlah, HPP per satuan peristiwa itu sebagaimana dibukukan, dan rata-rata stok sesudahnya bila buku stok mencatatnya (50 terbaru, Muat lagi untuk yang lebih lama sampai habis). Tab Riwayat harga jual mencatat setiap perubahan harga jual: siapa, kapan, dari berapa ke berapa. Sejak 2026-10-08 harga jual hanya berubah lewat isian manual; baris dengan pemicu penerimaan barang jadi, perubahan margin, atau perubahan default berasal dari sebelum tanggal itu, ketika harga masih dihitung otomatis.",
-      "Harga jual selalu diketik sendiri (keputusan pemilik 2026-10-08, ditegaskan 2026-11-01). Sistem memberi rekomendasi harga = HPP terbaru × (1 + margin ÷ 100) + biaya tambahan per pcs; margin dan biaya dari barang ini, bila kosong dari bawaan Pengaturan Jubelio. Pakai rekomendasi hanya mengisi kolom; harga berubah hanya saat Simpan ditekan, tercatat Edit manual di Riwayat harga jual dan, untuk barang yang tersambung, terkirim ke Jubelio. Mengubah target margin atau biaya tambahan tidak pernah mengubah harga jual. Biaya tambahan di sini adalah biaya DI LUAR HPP — biaya tambahan per pcs di WO sudah termasuk HPP.",
+      "Harga jual selalu diketik sendiri (keputusan pemilik 2026-10-08, ditegaskan 2026-11-01). Sistem memberi rekomendasi harga = HPP terbaru × (1 + margin ÷ 100) + biaya tambahan per pcs; margin dan biaya dari barang ini, bila kosong dari bawaan Pengaturan Jubelio. Pakai rekomendasi hanya mengisi kolom; harga berubah hanya saat Simpan ditekan dan tercatat Edit manual di Riwayat harga jual. Di ERP harga baru langsung berlaku; ke Jubelio baru terkirim setelah dikonfirmasi di Jubelio → Konfirmasi harga (keputusan pemilik 2026-11-02). Mengubah target margin atau biaya tambahan tidak pernah mengubah harga jual. Biaya tambahan di sini adalah biaya DI LUAR HPP — biaya tambahan per pcs di WO sudah termasuk HPP.",
       "Tombol Label barcode membuka cetak label untuk barang ini. Admin juga punya tombol Kirim stok ke Jubelio, yang memasukkan stok barang ini ke antrean kiriman ke Jubelio setelah dikonfirmasi.",
+      "Tombol Ajukan ke Jubelio (barang jadi buatan ERP yang belum di Jubelio) hanya MENGAJUKAN: produknya baru dibuat di Jubelio setelah harganya dikonfirmasi di Jubelio → Konfirmasi harga.",
       "Tombol Simpan barang menyimpan isian formulir. Galeri produk di bawahnya punya tombol Simpan gambar sendiri — gambar yang ditambah atau digeser belum tersimpan sebelum tombol itu ditekan.",
       "Nama Inggris tidak wajib: bila dikosongkan, nama Indonesia yang dipakai.",
       "Kg per roll (bahan bersatuan kg) dipakai formulir dan cetak PO untuk kolom Roll. Varian warna bahan yang ditambah dari formulir PO tampil di sini sebagai atribut warna; kode Pantone-nya ikut tersimpan dan tidak menjadi atribut kombinasi.",
-      "Komisi SPG per pcs (barang jadi saja) tidak lagi dipakai menghitung komisi SPG sejak 2026-11-01: komisi SPG toko konsinyasi maupun putus dihitung dari tarif per kategori barang di Pengaturan → Komisi SPG, dikali potong yang dijual masing-masing SPG. Angka yang terisi hanya disimpan sebagai riwayat.",
+      "Komisi SPG per pcs lama (barang jadi) hanya tampil bila pernah diisi, sebagai riwayat yang tidak bisa diubah: sejak 2026-11-01 komisi SPG toko konsinyasi maupun putus dihitung dari tarif per kategori barang di Pengaturan → Komisi SPG, dikali potong yang dijual masing-masing SPG.",
     ],
     kartu: [
       {
@@ -230,6 +232,13 @@ export const ENTRI: EntriBantuan[] = [
           "HPP (harga pokok penjualan) = biaya yang sudah keluar untuk membuat satu pcs barang ini: bahan, ongkos jahit dan jasa langkah perintah kerja lain, serta biaya tambahan per pcs (kemasan, dll.). Angkanya hanya dibaca dan tidak pernah mengubah harga jual — harga jual tetap diisi sendiri.",
           "Angka utama = HPP per pcs peristiwa biaya TERBARU (penerimaan barang jadi atau pembelian), bukan rata-rata — penerimaan ber-HPP 50.000 tampak 50.000, yang berikutnya ber-HPP 55.000 tampak 55.000. Penerimaan lebih produksi yang tidak memikul bahan dan GRN yang ditolak pemilik dilewati. Rata-rata stok sekarang tampil di bawahnya sebagai pembanding. Belum ada penerimaan maupun pembelian → \"Belum ada HPP\".",
           "Baris kecil di bawahnya merinci penerimaan barang jadi terakhir yang memikul bahan: bahan, jahit, dan tambahan per pcs, beserta nomor perintah kerja dan tanggal penerimaannya. Jahit = nilai persediaan penerimaan − bahan − tambahan, jadi bila Elorae PKP, PPN jasa (PPN Masukan) tidak ikut. Penerimaan dari sebelum ongkos jahit masuk HPP hanya menampilkan bahan. Setoran lebih produksi yang tidak memikul bahan dilewati, karena rinciannya tidak menggambarkan biaya barang.",
+        ],
+      },
+      {
+        judul: "Harga di Jubelio",
+        isi: [
+          "Harga yang terakhir dikonfirmasi untuk Jubelio, siapa yang mengonfirmasi dan kapan, serta apakah ada harga ERP baru yang masih menunggu konfirmasi — sampai dikonfirmasi, Jubelio tetap memakai harga lama.",
+          "Barang yang sudah di Jubelio tetapi belum punya harga yang dikonfirmasi tidak menerima perubahan apa pun dari ERP (nama, foto, varian) sampai harganya diisi dan dikonfirmasi. Bila kiriman terakhir ke Jubelio gagal atau dilewati, kartunya menyebut sebabnya. Pemegang izin Konfirmasi harga Jubelio mendapat tautan ke daftar konfirmasinya.",
         ],
       },
       {

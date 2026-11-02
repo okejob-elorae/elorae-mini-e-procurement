@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { CloudOff, Minus, Plus } from "lucide-react";
+import { ClipboardList, CloudOff, Hourglass, Minus, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,8 +29,13 @@ type Kondisi = (typeof KONDISI)[number];
 
 /**
  * Barang yang dikembalikan pembeli ke counter. Kasir toko yang mengembalikan
- * uangnya — layar ini hanya mencatat barang, jumlah, kondisi, dan alasannya.
- * Barang layak kembali ke stok rak toko; yang rusak tercatat tanpa masuk rak.
+ * uangnya — layar ini hanya MELAPORKAN barang, jumlah, kondisi, dan alasannya.
+ * Laporannya menunggu persetujuan kantor (keputusan pemilik 2026-11-02); baru
+ * sesudah disetujui barang layak kembali ke stok rak toko (yang rusak tercatat
+ * tanpa masuk rak) dan penjualan bersih serta komisinya berkurang.
+ *
+ * `sisa` dari server sudah dikurangi potong yang masih menunggu kantor di
+ * laporan mana pun, jadi potong yang sama tidak bisa dilaporkan dua kali.
  */
 export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; storeId: string }) {
   const t = useTranslations("spgRetur.pembeli");
@@ -70,7 +76,7 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
     };
   }, [nota.id]);
   const potongTertahan = [...tertahan.values()].reduce((a, b) => a + b, 0);
-  /** Sisa yang masih bisa dikembalikan, sesudah yang sudah tercatat di HP. */
+  /** Sisa yang masih bisa dilaporkan: sisa server (sudah tanpa yang menunggu kantor) dikurangi yang tercatat di HP. */
   const sisaDari = (b: { saleLineId: string; sisa: number }) => Math.max(0, b.sisa - (tertahan.get(b.saleLineId) ?? 0));
 
   const ubah = (id: string, sisa: number, qty: number) =>
@@ -135,7 +141,7 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
         return;
       }
       toast.success(t("ok"));
-      router.replace(`/pwa/spg/${nota.id}/nota`);
+      router.replace("/pwa/spg/retur-pembeli");
     });
   };
 
@@ -156,6 +162,13 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
           {nota.docNo} · {formatDisplayDateTime(nota.waktu, locale)}
         </p>
         <p className="text-sm text-muted-foreground">{t("penjelasan")}</p>
+        <Link
+          href="/pwa/spg/retur-pembeli"
+          className="inline-flex min-h-11 items-center gap-1 text-sm font-medium underline decoration-primary decoration-2 underline-offset-4"
+        >
+          <ClipboardList className="h-4 w-4" aria-hidden />
+          {t("lihatLaporan")}
+        </Link>
       </div>
 
       {potongTertahan > 0 ? (
@@ -178,9 +191,15 @@ export function KembaliClient({ nota, storeId }: { nota: NotaUntukKembali; store
                   <p className="text-xs text-muted-foreground">
                     {t("terjualKembali", { terjual: b.qty, kembali: b.returnedQty })}
                   </p>
+                  {b.menunggu > 0 ? (
+                    <p className="flex items-center gap-1 text-xs text-amber-800 dark:text-amber-300">
+                      <Hourglass className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                      {t("menungguKantor", { n: b.menunggu })}
+                    </p>
+                  ) : null}
                 </div>
                 {sisa === 0 ? (
-                  <p className="text-sm text-muted-foreground">{t("sudahSemua")}</p>
+                  <p className="text-sm text-muted-foreground">{t(b.menunggu > 0 ? "semuaDilaporkan" : "sudahSemua")}</p>
                 ) : (
                   <div className="flex items-center gap-2">
                     <Button

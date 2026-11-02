@@ -78,6 +78,7 @@ d("komisi SPG toko putus (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.spgCommissionCorrection.deleteMany({ where: { spgUserId: { in: seededIds([spgA, spgB, spgK].filter(Boolean)) } } });
     const audit = await prisma.auditLog.findMany({
       where: { entityType: { in: ["SpgCommission", "SpgSalesCheck"] } },
       select: { id: true, metadata: true },
@@ -134,6 +135,8 @@ d("komisi SPG toko putus (test bed only)", () => {
         reason: "uji",
         idempotencyKey: `${tag}-r${nomor++}`,
         createdAt: waktu,
+        // Hanya retur yang disetujui kantor mengurangi komisi (keputusan pemilik 2026-11-02).
+        status: "DISETUJUI",
         lines: { create: [{ spgSaleLineId: sale.lines[0].id, itemId: sale.lines[0].itemId, qty }] },
       },
     });
@@ -212,22 +215,33 @@ d("komisi SPG toko putus (test bed only)", () => {
     ]);
   });
 
-  it("baris aturan lama yang laporannya sudah dicek tetap ditolak dibayar sampai ditetapkan ulang dengan tarif kategori", async () => {
+  it("baris aturan lama yang laporannya sudah dicek dibayar dengan komisi per SPG sekarang, tidak pernah dengan angka tersimpannya", async () => {
     await bulanJual();
     const lama = await prisma.spgCommission.create({
       data: { userId: spgA, storeId: putus, period: PERIODE, unitsSold: 4, commission: 7_500, basis: "BAGI_RATA", lockedById: kantor },
     });
     expect((await cek()).ok).toBe(true);
-    // Dicek saja belum cukup: angkanya masih dari tarif barang / dibagi rata.
-    expect(await tandaiKomisiDibayar({ commissionId: lama.id, olehUserId: kantor })).toEqual({ ok: false, code: "ATURAN_LAMA" });
+    // Layar yang masih menyebut angka lama ditolak tanpa menulis apa pun.
+    expect(await tandaiKomisiDibayar({ commissionId: lama.id, olehUserId: kantor, jumlahDiharapkan: 7_500 })).toMatchObject({
+      ok: false,
+      code: "ANGKA_BERUBAH",
+      jumlah: 8_500,
+    });
     expect((await prisma.spgCommission.findUniqueOrThrow({ where: { id: lama.id } })).paidAt).toBeNull();
     expect((await jejak()).some((x) => x.action === JEJAK_KOMISI_SPG.DIBAYAR)).toBe(false);
 
-    expect(await tetapkan()).toMatchObject({ ok: true, ulang: true });
-    const ani = (await baris()).find((x) => x.userId === spgA)!;
-    expect(ani.id).toBe(lama.id);
-    expect([Number(ani.commission), ani.basis]).toEqual([8_500, DASAR_TARIF_KATEGORI]);
-    expect(await tandaiKomisiDibayar({ commissionId: ani.id, olehUserId: kantor })).toEqual({ ok: true });
+    expect(await tandaiKomisiDibayar({ commissionId: lama.id, olehUserId: kantor, jumlahDiharapkan: 8_500 })).toMatchObject({
+      ok: true,
+      diubah: true,
+      dibayar: 8_500,
+    });
+    const ani = await prisma.spgCommission.findUniqueOrThrow({ where: { id: lama.id } });
+    expect([Number(ani.commission), ani.unitsSold, ani.basis, ani.paidAt !== null]).toEqual([8_500, 4, DASAR_TARIF_KATEGORI, true]);
+    // Satu jejak hitung ulang untuk baris itu (dicari lewat id barisnya; metadatanya menyebut SPG-nya).
+    expect(
+      await prisma.auditLog.count({ where: { action: JEJAK_KOMISI_SPG.DIHITUNG_ULANG_SAAT_BAYAR, entityId: seededId(lama.id) } }),
+    ).toBe(1);
+    await prisma.auditLog.deleteMany({ where: { action: JEJAK_KOMISI_SPG.DIHITUNG_ULANG_SAAT_BAYAR, entityId: seededId(lama.id) } });
   });
 
   it("menolak mencek toko × bulan yang komisinya sudah dibayar dengan aturan lama — bulan itu tidak dihitung dua kali", async () => {
@@ -251,6 +265,20 @@ d("komisi SPG toko putus (test bed only)", () => {
     // Antrean "menunggu dicek" tidak menawarkannya.
     const kantorBulanIni = await daftarKomisiKantor(BULAN_INI, new Date());
     expect(kantorBulanIni.menungguCek.some((m) => m.storeId === putus && m.bulanJual === PERIODE)).toBe(false);
+
+    // Baris Budi yang belum dibayar tidak terkunci selamanya: dibayar tanpa tanda dicek, dengan komisi
+    // per SPG-nya sendiri (3 kaos × 2.500 = 7.500), bukan angka aturan lamanya.
+    const budi = await prisma.spgCommission.create({
+      data: { userId: spgB, storeId: putus, period: PERIODE, unitsSold: 4, commission: 9_000, basis: "BAGI_RATA", lockedById: kantor },
+    });
+    expect(await tandaiKomisiDibayar({ commissionId: budi.id, olehUserId: kantor, jumlahDiharapkan: 7_500 })).toMatchObject({
+      ok: true,
+      diubah: true,
+      dibayar: 7_500,
+    });
+    const b = await prisma.spgCommission.findUniqueOrThrow({ where: { id: budi.id } });
+    expect([Number(b.commission), b.unitsSold, b.basis]).toEqual([7_500, 3, DASAR_TARIF_KATEGORI]);
+    await prisma.auditLog.deleteMany({ where: { action: JEJAK_KOMISI_SPG.DIHITUNG_ULANG_SAAT_BAYAR, entityId: seededId(budi.id) } });
   });
 
   it("tandai dicek menolak bulan berjalan, toko konsinyasi, toko tanpa penjualan, dan dicek dua kali — juga bersamaan", async () => {
@@ -290,7 +318,7 @@ d("komisi SPG toko putus (test bed only)", () => {
     expect(await prisma.spgSalesCheck.count({ where: { storeId: seededId(putus), period: PERIODE } })).toBe(1);
 
     const [ani] = await baris();
-    expect(await tandaiKomisiDibayar({ commissionId: ani.id, olehUserId: kantor })).toEqual({ ok: true });
+    expect(await tandaiKomisiDibayar({ commissionId: ani.id, olehUserId: kantor, jumlahDiharapkan: 8_500 })).toMatchObject({ ok: true, dibayar: 8_500 });
     expect(await batalkanTandaDicek({ storeId: putus, periode: PERIODE, olehUserId: kantor, alasan: "terlambat" })).toEqual({ ok: false, code: "SUDAH_DIBAYAR" });
     expect(await prisma.spgSalesCheck.count({ where: { storeId: seededId(putus), period: PERIODE } })).toBe(1);
   });

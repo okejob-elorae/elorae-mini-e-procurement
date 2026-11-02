@@ -2,13 +2,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { catatHitunganGudang, catatReturToko, batalkanRetur } from "@/lib/receivables/return-writer";
 import { pindahkanReturKeToko } from "@/lib/receivables/koreksi";
-import { catatReturPembeli } from "./retur-pembeli";
+import { catatReturPembeli, setujuiReturPembeli, tolakReturPembeli } from "./retur-pembeli";
+import { KATEGORI_NOTIF_RETUR_PEMBELI } from "./retur-pembeli-status";
 import { putuskanGudangRusak } from "./gudang-rusak-writer";
 import { barisReturPembeliUntukRetur, riwayatGudangRusak, rusakPembeliUntukSpg, saldoGudangRusak } from "./gudang-rusak-queries";
 import { JEJAK_GUDANG_RUSAK } from "./gudang-rusak";
 
 /*
- * Gudang barang rusak, terhadap basis data uji: retur pembeli RUSAK di konter →
+ * Gudang barang rusak, terhadap basis data uji: retur pembeli RUSAK di konter
+ * (dilaporkan SPG, disetujui kantor — keputusan pemilik 2026-11-02) →
  * SPG mengirim balik lewat NRT yang barisnya menunjuk retur pembeli (tanpa
  * RETUR_KELUAR) → gudang menghitung NRI, baris RUSAK masuk gudang barang rusak →
  * kantor memutuskan (PERBAIKI / JUAL_OBRAL / MUSNAHKAN) dengan penjaga saldo di
@@ -110,6 +112,15 @@ d("gudang barang rusak (test bed only)", () => {
       })
       .map((c) => c.id);
     await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(loncengUji) } } });
+    // Laporan retur pembeli uji membunyikan lonceng persetujuan — juga dicocokkan di JS.
+    const loncengRetur = await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_PEMBELI }, select: { id: true, metadata: true } });
+    const loncengReturUji = loncengRetur
+      .filter((c) => {
+        const m = c.metadata as Record<string, unknown> | null;
+        return typeof m?.returnId === "string" && returPembeliIds.includes(m.returnId);
+      })
+      .map((c) => c.id);
+    await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(loncengReturUji) } } });
     await prisma.warehouseReturn.deleteMany({ where: { id: { in: seededIds(idNri) } } });
     await prisma.storeReturn.deleteMany({ where: { id: { in: seededIds(idNota) } } });
     await prisma.storeStockMovement.deleteMany({ where: { storeId: { in: tokoIds() } } });
@@ -126,8 +137,12 @@ d("gudang barang rusak (test bed only)", () => {
     if (uomId) await prisma.uOM.delete({ where: { id: seededId(uomId) } });
   });
 
-  /** Nota SPG di toko A, lalu pembeli mengembalikan `rusak` potong dalam keadaan RUSAK. */
-  async function rusakDariPembeli(rusak: number, toko = tokoA, spg = spgA) {
+  /**
+   * Nota SPG di toko A, lalu pembeli mengembalikan `rusak` potong dalam keadaan
+   * RUSAK: SPG melaporkannya dan — kecuali `putusan` berkata lain — kantor
+   * (pengguna gudang uji, bukan pelapornya) menyetujuinya.
+   */
+  async function rusakDariPembeli(rusak: number, toko = tokoA, spg = spgA, putusan: "SETUJUI" | "MENUNGGU" | "TOLAK" = "SETUJUI") {
     nota += 1;
     const sale = await prisma.spgSale.create({
       data: {
@@ -154,6 +169,13 @@ d("gudang barang rusak (test bed only)", () => {
     });
     if (!h.ok) throw new Error(`retur pembeli gagal: ${h.alasan}`);
     returPembeliIds.push(h.returnId);
+    if (putusan === "SETUJUI") {
+      const p = await setujuiReturPembeli({ returnId: h.returnId, olehUserId: gudang });
+      if (!p.ok) throw new Error(`persetujuan retur pembeli gagal: ${p.alasan}`);
+    } else if (putusan === "TOLAK") {
+      const p = await tolakReturPembeli({ returnId: h.returnId, olehUserId: gudang, alasan: "pembeli tidak membawa barangnya" });
+      if (!p.ok) throw new Error(`penolakan retur pembeli gagal: ${p.alasan}`);
+    }
     const line = await prisma.spgSaleReturnLine.findFirstOrThrow({ where: { returnId: seededId(h.returnId) }, select: { id: true } });
     return line.id;
   }
@@ -247,6 +269,23 @@ d("gudang barang rusak (test bed only)", () => {
       ok: false,
       alasan: "RETUR_PEMBELI_TIDAK_SAH",
     });
+  });
+
+  it("retur pembeli yang masih menunggu kantor atau ditolak tidak bisa dikirim balik — layar dan penulisnya sama-sama menolak", async () => {
+    const menunggu = await rusakDariPembeli(1, tokoA, spgA, "MENUNGGU");
+    const ditolak = await rusakDariPembeli(1, tokoA, spgA, "TOLAK");
+    for (const rp of [menunggu, ditolak]) {
+      expect(await kirimBalik([{ itemId: kaos, variantSku: varian(), qty: 1, condition: "RUSAK", spgSaleReturnLineId: rp }])).toEqual({
+        ok: false,
+        alasan: "RETUR_PEMBELI_TIDAK_SAH",
+      });
+      expect((await rusakPembeliUntukSpg(tokoA)).some((r) => r.id === rp)).toBe(false);
+      expect(await barisReturPembeliUntukRetur(tokoA, [rp])).toEqual([]);
+    }
+    // Begitu disetujui, yang tadi menunggu bisa dikirim balik.
+    const id = (await prisma.spgSaleReturnLine.findUniqueOrThrow({ where: { id: seededId(menunggu) }, select: { returnId: true } })).returnId;
+    expect((await setujuiReturPembeli({ returnId: id, olehUserId: gudang })).ok).toBe(true);
+    expect((await kirimBalik([{ itemId: kaos, variantSku: varian(), qty: 1, condition: "RUSAK", spgSaleReturnLineId: menunggu }])).ok).toBe(true);
   });
 
   it("dua NRT bersamaan untuk retur pembeli yang sama: hanya satu yang lolos", async () => {

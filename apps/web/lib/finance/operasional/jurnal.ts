@@ -1,14 +1,16 @@
 import { JournalError, konsiTransferKeyForLine, postJournal, prisma, type Prisma, type PrismaClient } from "@elorae/db";
 import type { PostingRole } from "@/lib/constants/journal-roles";
 import { generateAutoJournal, type AutoJournalLine } from "@/lib/finance/journal";
+import { KANAL_JURNAL, type KanalJurnal } from "@/lib/finance/journals/kanal";
 import { resolveAccount, UnmappedRoleError } from "@/lib/finance/journals/mapping";
-import { gabungBaris, type BarisBertanda } from "@/lib/finance/lapangan/aturan";
+import { gabungBaris, keSen, type BarisBertanda } from "@/lib/finance/lapangan/aturan";
 import { bacaBahanRetur } from "@/lib/finance/lapangan/jurnal";
 import { selaraskanJurnal, type HasilSelaras, type SasaranDokumen } from "@/lib/finance/lapangan/selaras";
 import { bacaPengaturanPpn } from "@/lib/finance/pajak/ppn-pengaturan";
 import { readGlCutover } from "@/lib/finance/sales/sweep";
 import { gerakStokPerDokumen } from "@/lib/inventory/kartu-stok-queries";
 import { hitungKreditRetur } from "@/lib/purchase-orders/kredit-retur";
+import { REF_KOMISI_KONSI, REF_KOMISI_SPG_PUTUS } from "@/lib/spg/hilang";
 import { parseVendorReturnLines } from "@/lib/vendor-returns/baris-retur";
 import {
   akhirBulanWib,
@@ -21,6 +23,7 @@ import {
   barisBiayaPerjalanan,
   barisGudangRusak,
   barisKomisi,
+  barisKoreksiKomisi,
   barisPindahKonsi,
   barisPindahKonsiPengiriman,
   barisPotongSales,
@@ -50,7 +53,8 @@ import { nilaiKeluarGerak } from "./nilai-rusak-queries";
  * - SEKALI POSTING (`postSekali`): dokumen yang tidak berubah lagi sesudah
  *   sah (kiriman titipan, pindah barang konsinyasi per pengiriman, pesanan
  *   konsinyasi lama yang stoknya pindah saat disetujui, retur lapangan toko
- *   konsinyasi disetujui, pembayaran gaji/komisi, potongan beban sales,
+ *   konsinyasi disetujui, pembayaran gaji/komisi — termasuk koreksi komisi SPG
+ *   yang diterapkan padanya —, potongan beban sales,
  *   keputusan gudang rusak, penyesuaian stok manual, retur pemasok selesai,
  *   biaya perjalanan disetujui/dibayar).
  * - DISELARASKAN (`selaraskanJurnal`, generasi `<id>`, `<id>#2`, …): dokumen
@@ -469,35 +473,78 @@ export async function selaraskanJurnalSiklusKonsi(cycleId: string, postedById: s
   });
 }
 
+/**
+ * Sasaran akrual gaji + komisi SPG satu siklus (semua barisnya), selama siklusnya dikunci.
+ * Satu penyusun untuk penyelarasnya dan pencari akrual yang tertinggal dari pembayaran
+ * (`akrualTertinggal` di `sapuan.ts`), jadi yang dicari = yang akan diposting.
+ */
+export async function sasaranKomisiKonsi(client: Klien, cycleId: string, mulai: Date | null): Promise<SasaranDokumen> {
+  const c = await client.consignmentCycle.findUnique({
+    where: { id: cycleId },
+    select: {
+      noKonsi: true,
+      storeId: true,
+      periodYear: true,
+      periodMonth: true,
+      lockedAt: true,
+      store: { select: { name: true } },
+      commissions: { select: { total: true, deduction: true } },
+    },
+  });
+  if (!c) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Gaji SPG konsinyasi ${cycleId}` };
+  const tanggal = tanggalPeriode(c.periodYear, c.periodMonth, c.lockedAt);
+  const deskripsi = `Gaji & komisi SPG ${c.noKonsi} — ${c.store.name}`;
+  if (!c.lockedAt) return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
+  const sasaran = barisKomisi({
+    peranBeban: "SPG_COMMISSION_EXPENSE",
+    bruto: c.commissions.reduce((n, k) => n + angka(k.total), 0),
+    potongan: c.commissions.reduce((n, k) => n + angka(k.deduction), 0),
+    storeId: c.storeId,
+    kanal: "KONSINYASI",
+  });
+  return { sasaran, bolehMulai: bolehMulai(mulai, tanggal), tanggal, deskripsi };
+}
+
 /** Gaji + komisi SPG satu siklus (semua barisnya), selama siklusnya dikunci. */
 export async function selaraskanJurnalKomisiKonsi(cycleId: string, postedById: string): Promise<HasilJurnalOperasional> {
-  return selaras(SUMBER_OPERASIONAL.KOMISI_KONSI, cycleId, postedById, async (tx, _t, mulai) => {
-    const c = await tx.consignmentCycle.findUnique({
-      where: { id: cycleId },
-      select: {
-        noKonsi: true,
-        storeId: true,
-        periodYear: true,
-        periodMonth: true,
-        lockedAt: true,
-        store: { select: { name: true } },
-        commissions: { select: { total: true, deduction: true } },
-      },
-    });
-    if (!c) return { sasaran: [], bolehMulai: false, tanggal: new Date(), deskripsi: `Gaji SPG konsinyasi ${cycleId}` };
-    const tanggal = tanggalPeriode(c.periodYear, c.periodMonth, c.lockedAt);
-    const deskripsi = `Gaji & komisi SPG ${c.noKonsi} — ${c.store.name}`;
-    if (!c.lockedAt) return { sasaran: [], bolehMulai: false, tanggal, deskripsi };
-    const sasaran = barisKomisi({
-      peranBeban: "SPG_COMMISSION_EXPENSE",
-      bruto: c.commissions.reduce((n, k) => n + angka(k.total), 0),
-      potongan: c.commissions.reduce((n, k) => n + angka(k.deduction), 0),
-      storeId: c.storeId,
-      kanal: "KONSINYASI",
-    });
-    return { sasaran, bolehMulai: bolehMulai(mulai, tanggal), tanggal, deskripsi };
-  });
+  return selaras(SUMBER_OPERASIONAL.KOMISI_KONSI, cycleId, postedById, (tx, _t, mulai) => sasaranKomisiKonsi(tx, cycleId, mulai));
 }
+
+// ── Koreksi komisi SPG pada pembayaran ──────────────────────────────────────
+
+type KoreksiBayar = { jumlah: number; storeId: string; kanal: KanalJurnal };
+
+/**
+ * Koreksi komisi SPG yang diterapkan pada SATU pembayaran (`SpgCommissionCorrection`,
+ * ditulis di transaksi pembayarannya; `paidRefType` = `REF_KOMISI_SPG_PUTUS` atau
+ * `REF_KOMISI_KONSI`, `paidRefId` = baris yang dibayar). Toko dan kanal yang dibebani
+ * = laporan ASAL koreksinya, bukan baris yang membawanya.
+ */
+async function koreksiPembayaran(client: Klien, paidRefType: typeof REF_KOMISI_SPG_PUTUS | typeof REF_KOMISI_KONSI, paidRefId: string): Promise<KoreksiBayar[]> {
+  const rows = await client.spgCommissionCorrection.findMany({
+    where: { paidRefType, paidRefId },
+    select: { amount: true, sourceKind: true, sourceStoreId: true },
+  });
+  return rows
+    .map((r) => ({
+      jumlah: angka(r.amount),
+      storeId: r.sourceStoreId,
+      kanal: r.sourceKind === "KONSI" ? KANAL_JURNAL.KONSINYASI : KANAL_JURNAL.PUTUS,
+    }))
+    .filter((k) => keSen(k.jumlah) !== 0);
+}
+
+/**
+ * Jurnal pembayaran gaji/komisi SPG: koreksi yang dibawanya (beban di toko + kanal
+ * asalnya, `barisKoreksiKomisi`) lalu bank sebesar yang benar-benar keluar
+ * (neto + Σ koreksi). Hutang komisi tetap lunas sebesar akrual barisnya sendiri.
+ */
+function barisBayarDenganKoreksi(neto: number, koreksi: readonly KoreksiBayar[]): BarisBertanda[] {
+  const senKoreksi = koreksi.reduce((n, k) => n + keSen(k.jumlah), 0);
+  return gabungBaris([...barisKoreksiKomisi(koreksi), ...barisBayarKomisi(Math.max(0, keSen(neto) + senKoreksi) / 100)]);
+}
+
+const tandaKoreksi = (koreksi: readonly KoreksiBayar[]) => (koreksi.length > 0 ? " + koreksi" : "");
 
 export function postJurnalBayarGajiKonsi(commissionId: string, postedById: string, client: Klien = prisma): Promise<HasilJurnalOperasional> {
   return postSekali(client, SUMBER_OPERASIONAL.BAYAR_GAJI_KONSI, commissionId, postedById, async () => {
@@ -506,10 +553,11 @@ export function postJurnalBayarGajiKonsi(commissionId: string, postedById: strin
       select: { paidAt: true, total: true, deduction: true, spgUser: { select: { name: true } }, cycle: { select: { noKonsi: true } } },
     });
     if (!k?.paidAt) return null;
+    const koreksi = await koreksiPembayaran(client, REF_KOMISI_KONSI, commissionId);
     return {
       tanggal: k.paidAt,
-      deskripsi: `Pembayaran gaji & komisi SPG ${k.spgUser.name ?? ""} — ${k.cycle.noKonsi}`.replace(/\s+—/, " —"),
-      baris: barisBayarKomisi(Math.max(0, angka(k.total) - angka(k.deduction))),
+      deskripsi: `Pembayaran gaji & komisi SPG ${k.spgUser.name ?? ""} — ${k.cycle.noKonsi}`.replace(/\s+—/, " —") + tandaKoreksi(koreksi),
+      baris: barisBayarDenganKoreksi(angka(k.total) - angka(k.deduction), koreksi),
     };
   });
 }
@@ -533,23 +581,36 @@ export async function selaraskanJurnalBayarTokoKonsi(paymentId: string, postedBy
 
 // ── Komisi SPG toko putus (per toko × bulan) ────────────────────────────────
 
-export async function selaraskanJurnalKomisiSpg(storeId: string, periode: string, postedById: string): Promise<HasilJurnalOperasional> {
+/**
+ * Sasaran akrual komisi SPG toko putus satu toko × bulan. Satu penyusun untuk penyelarasnya
+ * dan pencari akrual yang tertinggal dari pembayaran (`akrualTertinggal` di `sapuan.ts`).
+ * Periode yang tidak terbaca: null.
+ */
+export async function sasaranKomisiSpg(client: Klien, storeId: string, periode: string, mulai: Date | null): Promise<SasaranDokumen | null> {
   const p = bacaPeriode(periode);
-  if (!p) return { ok: false, code: "NOTHING_TO_POST" };
+  if (!p) return null;
+  const [rows, toko] = await Promise.all([
+    client.spgCommission.findMany({ where: { storeId, period: periode }, select: { commission: true, deduction: true } }),
+    client.store.findUnique({ where: { id: storeId }, select: { name: true } }),
+  ]);
+  const tanggal = akhirBulanWib(p[0], p[1]);
+  const sasaran = barisKomisi({
+    peranBeban: "SPG_COMMISSION_EXPENSE",
+    bruto: rows.reduce((n, r) => n + angka(r.commission), 0),
+    potongan: rows.reduce((n, r) => n + angka(r.deduction), 0),
+    storeId,
+    kanal: "PUTUS",
+  });
+  return { sasaran, bolehMulai: rows.length > 0 && bolehMulai(mulai, tanggal), tanggal, deskripsi: `Komisi SPG ${periode} — ${toko?.name ?? storeId}` };
+}
+
+export async function selaraskanJurnalKomisiSpg(storeId: string, periode: string, postedById: string): Promise<HasilJurnalOperasional> {
+  if (!bacaPeriode(periode)) return { ok: false, code: "NOTHING_TO_POST" };
   return selaras(SUMBER_OPERASIONAL.KOMISI_SPG, idKomisiSpg(storeId, periode), postedById, async (tx, _t, mulai) => {
-    const [rows, toko] = await Promise.all([
-      tx.spgCommission.findMany({ where: { storeId, period: periode }, select: { commission: true, deduction: true } }),
-      tx.store.findUnique({ where: { id: storeId }, select: { name: true } }),
-    ]);
-    const tanggal = akhirBulanWib(p[0], p[1]);
-    const sasaran = barisKomisi({
-      peranBeban: "SPG_COMMISSION_EXPENSE",
-      bruto: rows.reduce((n, r) => n + angka(r.commission), 0),
-      potongan: rows.reduce((n, r) => n + angka(r.deduction), 0),
-      storeId,
-      kanal: "PUTUS",
-    });
-    return { sasaran, bolehMulai: rows.length > 0 && bolehMulai(mulai, tanggal), tanggal, deskripsi: `Komisi SPG ${periode} — ${toko?.name ?? storeId}` };
+    const s = await sasaranKomisiSpg(tx, storeId, periode, mulai);
+    // Periodenya sudah dibaca di atas. Sasaran kosong di sini akan MEMBALIK akrualnya, jadi lempar.
+    if (!s) throw new Error(`Periode komisi SPG tidak terbaca: ${periode}`);
+    return s;
   });
 }
 
@@ -560,14 +621,15 @@ export function postJurnalBayarKomisiSpg(commissionId: string, postedById: strin
       select: { paidAt: true, commission: true, deduction: true, period: true, storeId: true, userId: true },
     });
     if (!k?.paidAt) return null;
-    const [orang, toko] = await Promise.all([
+    const [orang, toko, koreksi] = await Promise.all([
       client.user.findUnique({ where: { id: k.userId }, select: { name: true } }),
       client.store.findUnique({ where: { id: k.storeId }, select: { name: true } }),
+      koreksiPembayaran(client, REF_KOMISI_SPG_PUTUS, commissionId),
     ]);
     return {
       tanggal: k.paidAt,
-      deskripsi: `Pembayaran komisi SPG ${orang?.name ?? ""} ${k.period} — ${toko?.name ?? ""}`.replace(/\s+/g, " ").trim(),
-      baris: barisBayarKomisi(Math.max(0, angka(k.commission) - angka(k.deduction))),
+      deskripsi: `Pembayaran komisi SPG ${orang?.name ?? ""} ${k.period} — ${toko?.name ?? ""}`.replace(/\s+/g, " ").trim() + tandaKoreksi(koreksi),
+      baris: barisBayarDenganKoreksi(angka(k.commission) - angka(k.deduction), koreksi),
     };
   });
 }

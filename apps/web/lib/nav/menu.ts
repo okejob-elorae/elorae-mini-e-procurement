@@ -254,6 +254,10 @@ export const navItems: NavItem[] = [
       { labelKey: "navSpgLostSales", href: "/backoffice/spg-lost-sales", permission: PERMISSIONS.SPG_SALES_VIEW },
       // Mutasi antar toko oleh SPG — barang KONSI berpindah rak, bukan dokumen penjualan.
       { labelKey: "navSpgTransfers", href: "/backoffice/spg-transfers", permission: PERMISSIONS.SPG_SALES_VIEW },
+      // Retur pembeli yang dilaporkan SPG (keputusan pemilik 2026-11-02). Pengawas SPG melihat
+      // (sama dengan ROUTE_PERMISSIONS dan pagar `retur-spg/page.tsx`); menyetujui dan menolak =
+      // spg_returns:approve, diperiksa di halaman rincian dan aksinya.
+      { labelKey: "navSpgReturPembeli", href: "/backoffice/retur-spg", permission: PERMISSIONS.SPG_SALES_VIEW },
       // Pengawas SPG melihat, gudang (`inventory:manage`) yang memutuskan.
       {
         labelKey: "navSpgKirimanRusak",
@@ -470,6 +474,9 @@ export const navItems: NavItem[] = [
       { labelKey: "navJubelioSettings", href: "/backoffice/jubelio/settings", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: "navJubelioCategories", href: "/backoffice/jubelio/categories", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: "navJubelioMigration", href: "/backoffice/jubelio/migration", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
+      // Harga dan produk baru menunggu konfirmasi sebelum sampai ke Jubelio (keputusan pemilik
+      // 2026-11-02). Izin yang sama dengan halaman, tombol, aksi, dan baris Beranda.
+      { labelKey: "navJubelioHarga", href: "/backoffice/jubelio/harga", permission: PERMISSIONS.JUBELIO_PRICES_CONFIRM },
       { labelKey: "navJubelioCouriers", href: "/backoffice/jubelio/couriers", permission: PERMISSIONS.SETTINGS_SECURITY_VIEW },
       { labelKey: "navJubelioAdmin", href: "/backoffice/jubelio/admin", permission: PERMISSIONS.JUBELIO_ADMIN_VIEW },
     ],

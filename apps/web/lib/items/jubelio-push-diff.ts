@@ -1,13 +1,16 @@
 /**
- * Isian barang yang ikut terkirim ke Jubelio lewat push produk. Harga jual di
- * sini SELALU isian manual pemilik — margin target dan biaya tambahan barang
- * tidak lagi menentukan harga (keputusan pemilik 2026-10-08), jadi tidak ikut.
+ * Isian barang yang perubahannya langsung dikirim ke Jubelio lewat push produk (barang yang
+ * sudah di Jubelio saja).
+ *
+ * Harga jual TIDAK termasuk (keputusan pemilik 2026-11-02): harga yang diketik baru sampai ke
+ * Jubelio setelah dikonfirmasi di Jubelio → Konfirmasi harga (`lib/jubelio/harga`), dan setiap
+ * push — termasuk yang dipicu isian di bawah — membawa harga terkonfirmasi, bukan harga jual
+ * mentah. Margin target dan biaya tambahan hanya bahan rekomendasi harga, jadi tidak ikut juga.
  */
 export type PushableSnapshot = {
   nameId: string;
   nameEn: string;
   description: string | null;
-  sellingPrice: number | null;
   variants: Array<Record<string, string>> | null;
   isActive: boolean;
 };
@@ -30,7 +33,6 @@ export function hasPushableChange(before: PushableSnapshot, after: PushableSnaps
   if (before.nameId !== after.nameId) return true;
   if (before.nameEn !== after.nameEn) return true;
   if ((before.description ?? "") !== (after.description ?? "")) return true;
-  if ((before.sellingPrice ?? null) !== (after.sellingPrice ?? null)) return true;
   if (before.isActive !== after.isActive) return true;
   if (normalizeVariants(before.variants) !== normalizeVariants(after.variants)) return true;
   return false;

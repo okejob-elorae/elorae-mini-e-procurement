@@ -1,4 +1,4 @@
-import { buildCreateProductRequest } from "./product-push.payload";
+import { buildCreateProductRequest, resolvePushPrice } from "./product-push.payload";
 
 const defaults = {
   sellTaxId: -1, buyTaxId: -1, salesAcctId: 28, cogsAcctId: 30, invtAcctId: 4,
@@ -17,7 +17,7 @@ function item(overrides: Partial<any> = {}) {
     nameEn: "Shirt",
     description: "long enough description that passes the 30-char minimum threshold",
     variants: null,
-    sellingPrice: 100000,
+    jubelioPrice: 100000,
     isActive: true,
     ...overrides,
   };
@@ -122,14 +122,70 @@ describe("buildCreateProductRequest", () => {
     expect(body.brand_name).toBe("Elorae");
   });
 
-  it("falls sell_price to 0 when sellingPrice null", () => {
+  it("sends the confirmed Jubelio price on the group and every product_sku (variantless)", () => {
     const body = buildCreateProductRequest({
-      item: item({ sellingPrice: null }),
+      item: item({ jubelioPrice: 150000 }),
       defaults,
       categoryJubelioId: 454,
       mappings: [],
     });
-    expect(body.sell_price).toBe(0);
+    expect(body.sell_price).toBe(150000);
+    expect(body.product_skus.map((s) => s.sell_price)).toEqual([150000]);
+  });
+
+  it("sends the confirmed Jubelio price on the group and every product_sku (variants)", () => {
+    const body = buildCreateProductRequest({
+      item: item({ jubelioPrice: 150000, variants: [{ sku: "SKU-1-RED" }, { sku: "SKU-1-BLU" }, { sku: "SKU-1-GRN" }] }),
+      defaults,
+      categoryJubelioId: 454,
+      mappings: [{ id: "m1", erpVariantSku: "SKU-1-RED", jubelioItemId: 11, jubelioItemGroupId: 7, jubelioItemCode: "SKU-1-RED" }],
+    });
+    expect(body.sell_price).toBe(150000);
+    expect(body.product_skus.map((s) => s.sell_price)).toEqual([150000, 150000, 150000]);
+  });
+});
+
+/*
+ * Owner decision 2026-11-02: a product push sends only the price confirmed in the ERP, and a new
+ * ERP product is created only after its price is confirmed.
+ */
+describe("resolvePushPrice", () => {
+  const base = { mapped: true, source: "ERP" as const, jubelioConfirmedPrice: 150000, jubelioCreateRequestedAt: null };
+
+  it("a mapped item with a confirmed price pushes that price", () => {
+    expect(resolvePushPrice(base)).toEqual({ ok: true, price: 150000 });
+  });
+
+  it.each([
+    ["no", null],
+    ["a zero", 0],
+    ["a negative", -1],
+  ])("a mapped item with %s confirmed price is not pushed, and no request is stamped", (_label, confirmed) => {
+    expect(resolvePushPrice({ ...base, jubelioConfirmedPrice: confirmed })).toEqual({ ok: false, stampRequest: false });
+  });
+
+  it("an unmapped ERP item whose request still waits is not created", () => {
+    const requested = new Date("2026-11-02T03:00:00.000Z");
+    expect(resolvePushPrice({ ...base, mapped: false, jubelioCreateRequestedAt: requested })).toEqual({ ok: false, stampRequest: false });
+    expect(resolvePushPrice({ ...base, mapped: false, jubelioConfirmedPrice: null, jubelioCreateRequestedAt: requested })).toEqual({
+      ok: false,
+      stampRequest: false,
+    });
+  });
+
+  it("an unmapped ERP item confirmed and no longer requested is created at its confirmed price", () => {
+    expect(resolvePushPrice({ ...base, mapped: false })).toEqual({ ok: true, price: 150000 });
+  });
+
+  it("an unmapped ERP item with neither a confirmed price nor a request is turned into a request", () => {
+    expect(resolvePushPrice({ ...base, mapped: false, jubelioConfirmedPrice: null })).toEqual({ ok: false, stampRequest: true });
+  });
+
+  it("an unmapped ingest item is never created and never stamped", () => {
+    expect(resolvePushPrice({ ...base, mapped: false, source: "JUBELIO_INGEST", jubelioConfirmedPrice: null })).toEqual({
+      ok: false,
+      stampRequest: false,
+    });
   });
 });
 

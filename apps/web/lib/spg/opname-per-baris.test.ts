@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma, seededId, seededIds } from "@elorae/db";
 import { muatanOpname } from "@/lib/pwa/offline/luring-muatan";
+import { KATEGORI_NOTIF_RETUR_PEMBELI } from "./retur-pembeli-status";
 
 /*
  * "Sudah terhitung opname" dinilai per BARIS (waktu barang itu dihitung di HP),
@@ -12,6 +13,10 @@ import { muatanOpname } from "@/lib/pwa/offline/luring-muatan";
  * "disimpan" jam 10.00 — buku terlalu tinggi, dan opname berikutnya
  * menunjukkan kekurangan yang dibebankan ke SPG. Sebaliknya penjualan jam 08.30
  * (sebelum dihitung) tetap dilewati: opname sudah melihat rak tanpanya.
+ *
+ * Retur pembeli kini MENUNGGU persetujuan kantor (keputusan pemilik
+ * 2026-11-02): melapor tidak mengubah buku; aturan "sudah terhitung opname"
+ * berlaku saat disetujui, dengan jam laporannya di HP.
  *
  * Kait sesudah transaksi (titip pesan, barang hilang) ditirukan. Teardown
  * hanya lewat id yang diseed.
@@ -25,7 +30,7 @@ vi.mock("./hilang-sumber", () => ({
 
 const { catatOpname } = await import("./stok-writer");
 const { recordSpgSale } = await import("./sale-writer");
-const { catatReturPembeli } = await import("./retur-pembeli");
+const { catatReturPembeli, setujuiReturPembeli } = await import("./retur-pembeli");
 
 const url = process.env.DATABASE_URL ?? "";
 const d = url.includes(":3307") || url.includes("api.elorae.cloud") ? describe.skip : describe;
@@ -37,6 +42,7 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
   let kemeja = "";
   let tokoId = "";
   let spgId = "";
+  let kantorId = "";
   const nota: string[] = [];
 
   beforeAll(async () => {
@@ -49,6 +55,8 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
     // Toko PUTUS: kekurangan opname di sini tidak membuka barang hilang (yang tetap ditirukan).
     tokoId = (await prisma.store.create({ data: { code: `${tag}-T`, name: `Toko ${tag}`, address: "uji", termsType: "PUTUS" } })).id;
     spgId = (await prisma.user.create({ data: { email: `${tag}-spg@test.local`.toLowerCase(), name: `SPG ${tag}`, assignedStoreId: tokoId } })).id;
+    // Yang menyetujui laporan retur — bukan pelapornya.
+    kantorId = (await prisma.user.create({ data: { email: `${tag}-kantor@test.local`.toLowerCase(), name: `Kantor ${tag}` } })).id;
   });
 
   beforeEach(() => {
@@ -59,6 +67,14 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
     const semuaNota = (await prisma.spgSale.findMany({ where: { storeId: seededId(tokoId) }, select: { id: true } })).map((n) => n.id);
     const retur = (await prisma.spgSaleReturn.findMany({ where: { spgSaleId: { in: seededIds(semuaNota) } }, select: { id: true } })).map((r) => r.id);
     await prisma.auditLog.deleteMany({ where: { entityType: "SpgSaleReturn", entityId: { in: seededIds(retur) } } });
+    // Catatan kantor "retur pembeli menunggu" dari laporan yang diseed — dicocokkan di JS lewat metadata.
+    const notif = (await prisma.adminNotification.findMany({ where: { category: KATEGORI_NOTIF_RETUR_PEMBELI }, select: { id: true, metadata: true } }))
+      .filter((n) => {
+        const m = n.metadata as Record<string, unknown> | null;
+        return typeof m?.returnId === "string" && retur.includes(m.returnId);
+      })
+      .map((n) => n.id);
+    await prisma.adminNotification.deleteMany({ where: { id: { in: seededIds(notif) } } });
     await prisma.spgSaleReturnLine.deleteMany({ where: { returnId: { in: seededIds(retur) } } });
     await prisma.spgSaleReturn.deleteMany({ where: { id: { in: seededIds(retur) } } });
     await prisma.salesHistory.deleteMany({ where: { itemId: seededId(kemeja) } });
@@ -70,7 +86,7 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
   });
 
   afterAll(async () => {
-    await prisma.user.deleteMany({ where: { id: seededId(spgId) } });
+    await prisma.user.deleteMany({ where: { id: { in: seededIds([spgId, kantorId].filter(Boolean)) } } });
     await prisma.store.deleteMany({ where: { id: seededId(tokoId) } });
     await prisma.item.deleteMany({ where: { id: seededId(kemeja) } });
     await prisma.uOM.deleteMany({ where: { id: seededId(uomId) } });
@@ -189,7 +205,14 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
     expect(await saldo()).toBe(9);
   });
 
-  it("retur pembeli tanpa sinyal SESUDAH rak dihitung kembali ke buku: 3 → 4, bukan tetap 3", async () => {
+  /** Kantor menyetujui laporan retur — baru di sini bukunya bergerak. */
+  async function setujui(returnId: string) {
+    const h = await setujuiReturPembeli({ returnId, olehUserId: kantorId });
+    if (!h.ok) throw new Error(h.alasan);
+    return h;
+  }
+
+  it("retur pembeli tanpa sinyal SESUDAH rak dihitung kembali ke buku saat disetujui: 3 → 4, bukan tetap 3", async () => {
     const sekarang = new Date();
     await bukaBuku(3, new Date(sekarang.getTime() - 2 * 86_400_000));
     const n = await notaKemarin();
@@ -198,6 +221,12 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
 
     const r = await kembalikan(n, new Date(sekarang.getTime() - 30 * MENIT));
     if (!r.ok) throw new Error(r.alasan);
+    // Laporan saja: menunggu kantor, buku dan nota belum berubah.
+    expect(await saldo()).toBe(3);
+    expect((await prisma.spgSaleReturn.findUniqueOrThrow({ where: { id: r.returnId }, select: { status: true } })).status).toBe("MENUNGGU");
+    expect((await prisma.spgSaleLine.findUniqueOrThrow({ where: { id: n.baris }, select: { returnedQty: true } })).returnedQty).toBe(0);
+
+    await setujui(r.returnId);
     expect(await saldo()).toBe(4);
   });
 
@@ -212,6 +241,11 @@ d("opname toko: sudah terhitung per baris (test bed only)", () => {
 
     const r = await kembalikan(n, new Date(sekarang.getTime() - 90 * MENIT));
     if (!r.ok) throw new Error(r.alasan);
+    expect(await saldo()).toBe(4);
+    expect((await prisma.spgSaleLine.findUniqueOrThrow({ where: { id: n.baris }, select: { returnedQty: true } })).returnedQty).toBe(0);
+
+    // Disetujui sesudah opname: jam laporannya (sebelum rak dihitung) yang menentukan — tidak ditambah lagi.
+    await setujui(r.returnId);
     expect(await saldo()).toBe(4);
     // Notanya tetap tahu barangnya kembali.
     expect((await prisma.spgSaleLine.findUniqueOrThrow({ where: { id: n.baris }, select: { returnedQty: true } })).returnedQty).toBe(1);

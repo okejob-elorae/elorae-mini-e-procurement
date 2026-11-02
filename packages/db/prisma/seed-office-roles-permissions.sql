@@ -5,8 +5,9 @@
 --   mariadb --skip-ssl -u<user> -p <db> < seed-office-roles-permissions.sql
 --
 -- Urutan: jalankan SESUDAH seed-max-features-permissions.sql (izin piutang, konsinyasi, dan izin
--- hasil pemecahan 2026-11-01), seed-tax-invoice-permissions.sql, dan
--- seed-finance-reports-permissions.sql. Berkas ini hanya MENAUTKAN izin yang sudah ada; kalau satu
+-- hasil pemecahan 2026-11-01), seed-owner-2026-11-02-permissions.sql (spg_returns:approve),
+-- seed-tax-invoice-permissions.sql, dan seed-finance-reports-permissions.sql. Berkas ini hanya
+-- MENAUTKAN izin yang sudah ada; kalau satu
 -- saja belum ada, pemeriksaan pertama di bawah menghentikan berkas (ERROR 1242) SEBELUM menulis apa
 -- pun — dulu tautannya terlewat diam-diam. Klien mariadb berhenti di galat pertama; jangan pakai
 -- --force. Untuk melihat izin mana yang belum ada:
@@ -18,11 +19,14 @@
 --
 -- Isi bawaan: pekerjaan yang menjadi alasan peran itu ada, ditambah izin lihat yang dibutuhkannya.
 -- TIDAK ADA izin persetujuan (kunci angka konsi, beban selisih, opname toko, mutasi antar toko,
--- bayar gaji SPG, setujui pesanan, dst.) — bawaannya hanya admin; pemilik memberikannya sendiri.
+-- bayar gaji SPG, setujui pesanan, dst.) — bawaannya hanya admin; pemilik memberikannya sendiri —
+-- kecuali spg_returns:approve untuk ADMIN_PENJUALAN (keputusan pemilik 2026-11-02: retur pembeli SPG
+-- disetujui admin dan admin penjualan; PERSETUJUAN_BAWAAN_PERAN_KANTOR di penjelasan-izin.ts).
 --   KEUANGAN        — periksa pembayaran (BKM, giro) ke mutasi bank, jurnal, laporan keuangan,
 --                     pembayaran pemasok. Tidak mencatat BKM (tidak memegang receivables:manage),
 --                     jadi tidak pernah memeriksa catatannya sendiri; penulisnya pun menolak itu.
---   ADMIN_PENJUALAN — nomor nota di siklus konsinyasi, ditambah izin lihat penjualan.
+--   ADMIN_PENJUALAN — nomor nota di siklus konsinyasi dan persetujuan retur pembeli SPG, ditambah
+--                     izin lihat penjualan.
 --   ADMIN_PAJAK     — nomor faktur pajak: antrean nota tagihan dan siklus konsinyasi.
 --
 -- Idempoten — aman dijalankan ulang. Menjalankan ulang tidak mencabut izin yang ditambahkan pemilik
@@ -39,8 +43,8 @@ SELECT IF(
     'supplier_payments:view', 'supplier_payments:create', 'supplier_payments:edit', 'purchase_orders:view',
     'consignment:view', 'consignment:note_number', 'consignment:tax_number', 'sales_orders:view',
     'field_sales_orders:view', 'stores:view', 'promos:view', 'spg_sales:view', 'sales_returns:view',
-    'items:view'
-  )) = 23
+    'items:view', 'spg_returns:approve'
+  )) = 24
   AND NOT EXISTS (
     SELECT 1 FROM RoleDefinition
     WHERE name IN ('KEUANGAN', 'ADMIN_PENJUALAN', 'ADMIN_PAJAK') AND isSystem <> 0
@@ -77,7 +81,7 @@ SELECT REPLACE(UUID(), '-', ''), r.id, p.id
 FROM RoleDefinition r
 CROSS JOIN Permission p
 WHERE r.name = 'ADMIN_PENJUALAN'
-  AND p.code IN ('dashboard:view', 'consignment:view', 'consignment:note_number', 'field_sales_orders:view', 'stores:view', 'promos:view', 'spg_sales:view', 'sales_orders:view', 'sales_returns:view', 'items:view')
+  AND p.code IN ('dashboard:view', 'consignment:view', 'consignment:note_number', 'field_sales_orders:view', 'stores:view', 'promos:view', 'spg_sales:view', 'sales_orders:view', 'sales_returns:view', 'items:view', 'spg_returns:approve')
   AND NOT EXISTS (
     SELECT 1 FROM RolePermission rp
     WHERE rp.roleId = r.id AND rp.permissionId = p.id
@@ -113,7 +117,8 @@ ORDER BY name;
 
 -- Cek: izin persetujuan atau izin kelola yang lebar pada ketiga peran ini. Bawaannya KOSONG; baris
 -- yang muncul ditambahkan pemilik di layar (biarkan) atau ditulis versi lama berkas ini (cabut di
--- Pengaturan → Peran & izin bila tidak dikehendaki).
+-- Pengaturan → Peran & izin bila tidak dikehendaki). spg_returns:approve sengaja tidak dicantumkan:
+-- ADMIN_PENJUALAN memegangnya secara bawaan.
 SELECT r.name AS peran, p.code AS izin
 FROM RoleDefinition r
 JOIN RolePermission rp ON rp.roleId = r.id
@@ -123,5 +128,6 @@ WHERE r.name IN ('KEUANGAN', 'ADMIN_PENJUALAN', 'ADMIN_PAJAK')
                  'store_transfers:approve', 'store_transfers:decide_shortfall', 'spg_commission:pay',
                  'field_sales_orders:approve', 'field_sales_orders:credit_override', 'purchase_orders:approve',
                  'suppliers:approve', 'inventory_opname:approve', 'sales_returns:decide', 'field_returns:writeoff',
-                 'receivables:manage', 'consignment:manage', 'stores:manage', 'promos:manage', 'payments:manage')
+                 'receivables:manage', 'consignment:manage', 'stores:manage', 'promos:manage', 'payments:manage',
+                 'jubelio_prices:confirm')
 ORDER BY r.name, p.code;

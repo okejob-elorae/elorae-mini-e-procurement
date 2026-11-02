@@ -10,7 +10,6 @@
 
 export const KUNCI_DISKON_MANUAL = "spg.diskonManual";
 export const KUNCI_SHIFT = "spg.shift";
-export const KUNCI_KOMISI_PUTUS = "spg.komisiPutus";
 export const KUNCI_TITIP_PESAN = "spg.titipPesan";
 export const KUNCI_TUTUP_HARI = "spg.tutupHari";
 export const KUNCI_BARANG_HILANG = "spg.barangHilang";
@@ -96,29 +95,6 @@ export function bacaAturanShift(nilai: string | null | undefined): AturanShift {
   return {
     daftar: unik.length > 0 ? unik.map((s) => ({ ...s, label: s.label.trim() })) : SHIFT_BAWAAN.daftar,
     toleransiTerlambatMenit: angkaDalam(o.toleransiTerlambatMenit, 0, 240) ?? SHIFT_BAWAAN.toleransiTerlambatMenit,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Komisi SPG di toko PUTUS
-// ---------------------------------------------------------------------------
-
-/**
- * Keputusan pemilik 2026-10-03: SPG di toko putus juga mendapat komisi, sebesar
- * potong yang IA SENDIRI jual (`PER_SPG`, bawaan) × `Item.commissionPerPcs`,
- * bersih dari barang yang dikembalikan pembeli. `BAGI_RATA` (komisi toko dibagi
- * rata antar SPG, aturan konsinyasi) tetap bisa dipilih kantor.
- */
-export type DasarKomisi = "BAGI_RATA" | "PER_SPG";
-export type AturanKomisiPutus = { aktif: boolean; dasar: DasarKomisi };
-export const KOMISI_PUTUS_BAWAAN: AturanKomisiPutus = { aktif: true, dasar: "PER_SPG" };
-
-export function bacaKomisiPutus(nilai: string | null | undefined): AturanKomisiPutus {
-  const o = bacaObjek(nilai);
-  if (!o) return KOMISI_PUTUS_BAWAAN;
-  return {
-    aktif: o.aktif !== false,
-    dasar: o.dasar === "BAGI_RATA" ? "BAGI_RATA" : "PER_SPG",
   };
 }
 

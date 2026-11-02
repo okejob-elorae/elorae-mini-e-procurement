@@ -291,7 +291,9 @@
     "navKolPerforma": "Performa video",
     "navKolBrand": "Brand",
     "navKolPeriksa": "Periksa data",
-    "navSpgCommissionSellThrough": "Rekap komisi SPG"
+    "navSpgCommissionSellThrough": "Rekap komisi SPG",
+    "navJubelioHarga": "Konfirmasi harga",
+    "navSpgReturPembeli": "Retur pembeli"
   },
   "notifications": {
     "title": "Notifikasi",
@@ -1945,7 +1947,7 @@
       "spg": "SPG"
     },
     "trendDefinitionMarketplace": "Dihitung per tanggal pesanan Jubelio, tanpa pesanan yang batal atau retur.",
-    "trendDefinitionField": "Putus dihitung per tanggal kirim; van dan SPG per tanggal jual, bersih dari barang yang dikembalikan pembeli. Transfer konsinyasi bukan penjualan.",
+    "trendDefinitionField": "Putus dihitung per tanggal kirim; van dan SPG per tanggal jual, bersih dari retur pembeli yang sudah disetujui kantor. Transfer konsinyasi bukan penjualan.",
     "trendShowOnly": "Lihat {saluran} saja",
     "trendBackTo": "← {saluran}",
     "trendTooltipTotal": "Jumlah",
@@ -2420,11 +2422,11 @@
     "pushToJubelioQueued": "Masuk antrean. Push dalam ~5 detik.",
     "pushToJubelioFailed": "Push gagal. Hanya admin yang dapat push stok.",
     "pushToJubelioUnexpectedFailed": "Push gagal. Coba lagi.",
-    "createInJubelio": "Buat di Jubelio",
-    "createInJubelioConfirm": "Buat produk ini di katalog Jubelio?",
-    "createInJubelioQueued": "Masuk antrean Jubelio.",
-    "createInJubelioAlready": "Produk ini sudah ada atau sudah dalam antrean Jubelio.",
-    "createInJubelioFailed": "Gagal memasukkan ke antrean Jubelio. Coba lagi.",
+    "createInJubelio": "Ajukan ke Jubelio",
+    "createInJubelioConfirm": "Ajukan produk ini ke Jubelio? Produk dibuat di Jubelio setelah harganya dikonfirmasi.",
+    "createInJubelioQueued": "Diajukan. Produk dibuat di Jubelio setelah harganya dikonfirmasi.",
+    "createInJubelioAlready": "Produk ini sudah ada di Jubelio, sudah diajukan, atau sedang dikirim.",
+    "createInJubelioFailed": "Gagal mengajukan ke Jubelio. Coba lagi.",
     "createInJubelioNeedsCategory": "Petakan kategori item ke kategori Jubelio dulu.",
     "pricing": {
       "section": "Harga",
@@ -2607,9 +2609,9 @@
     "rewritten": "diubah dari {typed}",
     "skuRewritten": "SKU diubah",
     "generated": "otomatis",
-    "jubelioLabel": "Buat juga produk ini di Jubelio",
-    "jubelioHint": "Jika tidak dicentang, produk hanya dibuat di Elorae dan bisa dibuat di Jubelio nanti dari halaman item.",
-    "jubelioNoCategory": "{count} artikel tanpa Kategori tidak akan dibuat di Jubelio. Kategori juga harus sudah dipetakan ke kategori Jubelio.",
+    "jubelioLabel": "Ajukan juga produk ini ke Jubelio",
+    "jubelioHint": "Produk yang diajukan menunggu di Jubelio → Konfirmasi harga dan baru dibuat di Jubelio setelah harganya dikonfirmasi. Jika tidak dicentang, produk hanya dibuat di Elorae dan bisa diajukan nanti dari halaman barang.",
+    "jubelioNoCategory": "{count} artikel tanpa Kategori belum bisa dikonfirmasi untuk Jubelio. Kategori juga harus sudah dipetakan ke kategori Jubelio.",
     "commit": "Buat {count} produk",
     "committing": "Membuat produk…",
     "commitFailed": "Import gagal. File masih dimuat, coba lagi.",
@@ -2618,9 +2620,8 @@
     "templateFailed": "Template gagal diunduh. Muat ulang halaman lalu coba lagi.",
     "forbidden": "Anda tidak punya izin membuat item.",
     "doneTitle": "{count} produk, {variants} varian dibuat",
-    "doneJubelioQueued": "Produk masuk antrean Jubelio. Produk tanpa kategori Jubelio akan dilewati — petakan Kategori-nya ke kategori Jubelio dulu, lalu gunakan tombol Buat di Jubelio di halaman item.",
-    "doneJubelioPartial": "{failed} produk gagal masuk antrean Jubelio — gunakan tombol Buat di Jubelio di halaman item.",
-    "doneJubelioSkipped": "Produk belum dibuat di Jubelio. Petakan Kategori-nya ke kategori Jubelio dulu, lalu gunakan tombol Buat di Jubelio di halaman item.",
+    "doneJubelioQueued": "Produk diajukan ke Jubelio dan menunggu konfirmasi harga. Produk tanpa kategori Jubelio baru bisa dikonfirmasi setelah Kategori-nya dipetakan.",
+    "doneJubelioSkipped": "Produk belum diajukan ke Jubelio. Ajukan nanti dari halaman barang (tombol Ajukan ke Jubelio).",
     "importAnother": "Import file lain",
     "err": {
       "NOT_XLSX": "File harus berformat .xlsx.",
@@ -7035,8 +7036,8 @@
       "notesEmpty": "Belum ada nota hari ini.",
       "payTitle": "Gaji & komisi",
       "payEstimate": "Perkiraan komisi bulan ini {amount}",
-      "payLastPaid": "{period}: {amount} — sudah dibayar",
-      "payLastUnpaid": "{period}: {amount} — belum dibayar",
+      "payLastPaid": "{period}: diterima {amount} — sudah dibayar",
+      "payLastUnpaid": "{period}: akan diterima {amount} — belum dibayar",
       "payNone": "Belum ada data gaji & komisi.",
       "noStore": "Toko Anda belum diatur atau tidak ditemukan. Hubungi admin untuk mengatur toko Anda.",
       "checkInReturns": "Sesudah check-in, Anda dibawa kembali ke layar tadi.",
@@ -7049,7 +7050,9 @@
       "shiftOff": "Hari ini jadwal Anda libur",
       "taskOrdersComing": "Pesanan untuk toko sedang diproses",
       "checkoutTitle": "Selesai bekerja",
-      "payLastPending": "{amount} — laporannya sedang diperiksa ulang kantor"
+      "payLastPending": "Menunggu kantor — angka pembayarannya belum pasti",
+      "payCorrectionsWaiting": "Koreksi komisi menunggu pembayaran berikutnya: {amount}",
+      "taskOldOrdersConfirm": "Pesanan konsi lama — konfirmasi barangnya sudah sampai"
     },
     "spgLainnya": {
       "title": "Lainnya",
@@ -7153,6 +7156,10 @@
       "bantuan": {
         "label": "Bantuan",
         "hint": "Penjelasan setiap layar aplikasi"
+      },
+      "returPembeli": {
+        "label": "Barang kembali dari pembeli",
+        "hint": "Laporan retur pembeli Anda dan statusnya"
       }
     },
     "spgGaji": {
@@ -7168,7 +7175,7 @@
       "commission": "Komisi",
       "total": "Total",
       "basisOwn": "Dari penjualan Anda",
-      "estimateOwnPcs": "Dari {pcs} potong yang Anda jual sendiri bulan ini, sesudah dikurangi barang yang dikembalikan pembeli.",
+      "estimateOwnPcs": "Dari {pcs} potong yang Anda jual sendiri bulan ini, sesudah dikurangi barang kembali dari pembeli yang sudah disetujui kantor.",
       "estimateNoSales": "Belum ada penjualan bulan ini.",
       "lockedOn": "Ditetapkan {date}",
       "kindPutus": "Komisi toko putus",
@@ -7184,7 +7191,16 @@
       "salesMonthNote": "Komisi penjualan {month}",
       "payoutMonth": "Pembayaran {month}",
       "payoutPending": "Laporannya sedang diperiksa ulang kantor",
-      "oldRule": "Dihitung dengan aturan lama (tarif barang)"
+      "oldRule": "Dihitung dengan aturan lama (tarif barang)",
+      "correctionLine": "Koreksi komisi penjualan {month} — {store}",
+      "correctionWith": "ikut dibayar bersama pembayaran ini",
+      "correctionCarried": "{amount} dibawa ke pembayaran berikutnya",
+      "commissionReplaced": "Dihitung dari penjualan Anda sendiri (sebelumnya {old})",
+      "toReceive": "Akan diterima",
+      "payoutHeld": "Pembayarannya menunggu keputusan kantor — angkanya belum pasti",
+      "payoutNotFinal": "Angkanya ditetapkan lagi saat kantor selesai memeriksa laporannya",
+      "correctionsWaitingTitle": "Koreksi menunggu pembayaran berikutnya",
+      "correctionsWaitingNote": "Selisih komisi bulan yang sudah dibayar. Ditambahkan atau dikurangkan sekali di pembayaran resmi Anda berikutnya, dan tidak pernah membuat pembayaran di bawah Rp 0."
     },
     "spgJual": {
       "back": "Beranda",
@@ -7387,7 +7403,7 @@
         "shareText": "Nota {docNo} - Total {total}",
         "shareFailed": "Gagal membagikan nota.",
         "sellAgain": "Jual lagi",
-        "returnGoods": "Pembeli mengembalikan barang",
+        "returnGoods": "Laporkan retur pembeli",
         "offlineBadge": "Dicatat tanpa sinyal",
         "syncedAt": "terkirim {time}",
         "buyer": "Pembeli",
@@ -7958,7 +7974,8 @@
           "TANPA_PENERIMA": "Toko ini belum punya SPG maupun pemegang — minta kantor menetapkan pemegang toko."
         },
         "stepNextKonsiLama": "Menunggu konfirmasi barang sampai di toko",
-        "arrived": "Sudah sampai {qty}"
+        "arrived": "Sudah sampai {qty}",
+        "noticeKonsiTanpaSpg": "Disetujui. Gudang mengirim barangnya per pengiriman; barang setiap antaran masuk stok toko saat diserahkan ke toko."
       },
       "rowInden": "Inden · {nama}",
       "rowIndenTanpaNama": "Inden",
@@ -9010,7 +9027,7 @@
       "note": "Target dalam rupiah dihitung dari pengiriman putus dan penjualan van bulan ini — sama dengan omzet di beranda. Target dalam pcs ikut menghitung konsinyasi yang laku di toko. Barang bonus tidak dihitung.",
       "pcs": "{n} pcs",
       "tanpaKonsi": "Nilai dari penjualan putus dan van — konsinyasi tidak dihitung di sini.",
-      "noteSpg": "Dihitung dari nota penjualan Anda bulan ini, dikurangi barang yang dikembalikan pembeli. Retur dihitung pada bulan notanya."
+      "noteSpg": "Dihitung dari nota penjualan Anda bulan ini, dikurangi barang kembali dari pembeli yang sudah disetujui kantor. Retur dihitung pada bulan notanya."
     },
     "ubahPesanan": {
       "bannerJudul": "Mengubah pesanan {orderNo}",
@@ -9216,7 +9233,7 @@
       "homeLink": "Lihat jadwal"
     },
     "peringkatSpg": {
-      "subjudul": "Penjualan bersih SPG {month} — nota dikurangi barang yang dikembalikan pembeli. Penjualan rekan tidak ditampilkan.",
+      "subjudul": "Penjualan bersih SPG {month} — nota dikurangi barang kembali dari pembeli yang sudah disetujui kantor. Penjualan rekan tidak ditampilkan.",
       "dariTotal": "dari {total} SPG",
       "penjualanAnda": "Penjualan bersih Anda {amount}",
       "pcsAnda": "{n} pcs terjual",
@@ -11177,15 +11194,15 @@
   "spgCommission": {
     "loading": "Memuat rekap komisi SPG…",
     "pageTitle": "Rekap komisi SPG",
-    "subtitle": "spgCommission.subtitle",
+    "subtitle": "Komisi per bulan pembayaran: laporan toko putus yang dicek dan siklus konsinyasi yang dikunci di bulan ini, dengan bulan penjualannya. Komisi per SPG = tarif kategori bulan penjualan × potong bersih yang dijual SPG itu sendiri. Dibayar = yang sudah ditandai dibayar; Koreksi diterapkan = selisih bulan sebelumnya yang ikut dibayar bulan ini; Selisih ke pembayaran berikutnya = beda komisi per SPG dengan yang sudah dibayar.",
     "prevMonth": "Bulan sebelumnya",
     "nextMonth": "Bulan berikutnya",
     "monthLabel": "Bulan pembayaran",
     "loadErrorTitle": "Gagal memuat rekap komisi",
     "loadErrorMessage": "Terjadi kesalahan saat membaca bulan ini. Coba lagi.",
     "retry": "Coba lagi",
-    "listTitle": "Komisi per SPG — dibayar {month}",
-    "emptyTitle": "Tidak ada komisi yang dibayar {month}",
+    "listTitle": "Komisi per SPG — pembayaran {month}",
+    "emptyTitle": "Tidak ada komisi untuk pembayaran {month}",
     "emptyBody": "Komisi muncul di sini setelah laporan penjualan SPG toko putus dicek, atau angka resmi siklus konsinyasi dikunci, di bulan ini.",
     "colExpand": "Rincian",
     "colSpg": "SPG",
@@ -11219,9 +11236,8 @@
     "rowSalesMonths": "Penjualan {months}",
     "subtitle#id": "Komisi per bulan pembayaran: laporan toko putus yang dicek dan siklus konsinyasi yang dikunci di bulan ini. Ditetapkan = angka yang dibayar (dikunci di siklus atau ditetapkan di Komisi SPG); Komisi (hitungan) = hitungan ulang dari nota dan pengembalian yang ada sekarang, sebagai pembanding. Bulan penjualannya tercatat di bawah nama SPG.",
     "colSet": "Ditetapkan",
-    "colComputed": "Komisi (hitungan)",
-    "rowDiffers": "Hitungan berbeda dari yang ditetapkan",
-    "rowUnset": "Belum ditetapkan — hitungan {amount}",
+    "colComputed": "Komisi per SPG",
+    "rowDiffers": "Angka yang ditetapkan diganti komisi per SPG saat dibayar",
     "reportsTitle": "Per laporan",
     "colReport": "Toko / laporan",
     "colSalesMonth": "Bulan penjualan",
@@ -11231,15 +11247,28 @@
     "status": {
       "BELUM_DITETAPKAN": "Belum ditetapkan",
       "DITETAPKAN": "Ditetapkan",
-      "DIBAYAR": "Dibayar"
+      "DIBAYAR": "Dibayar",
+      "TANPA_BARIS": "Tanpa baris — lewat koreksi"
     },
-    "lineDiffers": "Berbeda",
     "attention": {
       "title": "Perlu ditindaklanjuti di Komisi SPG",
-      "differs": "{count} SPG punya hitungan yang berbeda dari angka yang ditetapkan: ada nota atau pengembalian yang masuk sesudahnya, atau angkanya ditetapkan dengan aturan lama. Yang dibayar tetap angka yang ditetapkan; membetulkannya dilakukan di Komisi SPG (toko putus) atau di siklusnya (konsinyasi).",
-      "unset": "Ada laporan toko putus yang sudah dicek tetapi komisinya belum ditetapkan (hitungan {amount}). Komisinya baru bisa dibayar sesudah ditetapkan."
+      "differs": "{count} SPG punya angka yang ditetapkan berbeda dari komisi per SPG sekarang. Saat ditandai dibayar, yang dibayar komisi per SPG sekarang; yang sudah dibayar dikoreksi di pembayaran berikutnya.",
+      "unset": "Ada laporan toko putus yang sudah dicek tetapi komisinya belum ditetapkan (hitungan {amount}). Komisinya baru bisa dibayar sesudah ditetapkan.",
+      "pending": "Ada selisih {amount} pada komisi yang sudah dibayar — masuk koreksi pembayaran berikutnya SPG-nya."
     },
-    "openKomisiSpg": "Buka Komisi SPG"
+    "openKomisiSpg": "Buka Komisi SPG",
+    "colPaid": "Dibayar",
+    "colCorrections": "Koreksi diterapkan",
+    "colUnpaid": "Belum dibayar",
+    "colPending": "Selisih ke pembayaran berikutnya",
+    "colCorrectionsFromThis": "Koreksi dari laporan ini",
+    "correctionsTitle": "Koreksi yang dibayar {month}",
+    "correctionAppliedTo": "Ikut {laporan}",
+    "colCorrectionSource": "Keterangan",
+    "colCorrectionAppliedTo": "Diterapkan pada",
+    "colCorrectionAmount": "Jumlah",
+    "rowUnsetShort": "Ada laporan yang belum ditetapkan",
+    "lineHeld": "Menunggu keputusan pemilik"
   },
   "financeSettlements": {
     "forecastInput": "Unggah setiap bulan: settlement inilah yang membuat forecast penjualan menghitung pesanan marketplace bulan itu.",
@@ -13957,7 +13986,10 @@
     "taxDueSoon": "Setoran pajak jatuh tempo ≤ 3 hari",
     "taxOverdue": "Setoran pajak lewat jatuh tempo",
     "ledgerDocsWithoutJournal": "Dokumen tanpa jurnal",
-    "manualJournalsPendingApproval": "Jurnal manual menunggu persetujuan"
+    "manualJournalsPendingApproval": "Jurnal manual menunggu persetujuan",
+    "jubelioPricesPending": "Harga menunggu konfirmasi Jubelio",
+    "spgCommissionsUnpaidPast": "Komisi SPG dari bulan pembayaran sebelumnya belum dibayar",
+    "spgReturnsPending": "Retur pembeli SPG menunggu persetujuan"
   },
   "statuses": {
     "unknown": "Tidak diketahui",
@@ -14847,7 +14879,7 @@
     "errFOTO_WAJIB": "Ambil foto nota retur toko dulu.",
     "errRUSAK_TIDAK_SAH": "Barang rusak kiriman ini tidak bisa dikirim balik dari toko ini (belum diputuskan gudang, bukan milik toko ini, atau barangnya berbeda).",
     "errRUSAK_MELEBIHI": "Jumlah yang dikirim balik melebihi sisa barang rusak yang belum dikembalikan.",
-    "errRETUR_PEMBELI_TIDAK_SAH": "Barang rusak dari pembeli ini tidak bisa dikirim balik dari toko ini (bukan retur pembeli toko ini, barangnya berbeda, atau kondisinya layak).",
+    "errRETUR_PEMBELI_TIDAK_SAH": "Barang rusak dari pembeli ini tidak bisa dikirim balik dari toko ini (retur pembelinya belum disetujui kantor, bukan retur pembeli toko ini, barangnya berbeda, atau kondisinya layak).",
     "errRETUR_PEMBELI_MELEBIHI": "Jumlah yang dikirim balik melebihi barang rusak dari pembeli yang belum dikirim.",
     "errFOTO_BUKAN_MILIK": "Foto nota retur ini diunggah orang lain. Ambil foto nota Anda sendiri.",
     "dariSpg": "Dari SPG",
@@ -15022,7 +15054,7 @@
     "salaryNoDue": "Tidak ada tenggat khusus.",
     "colSpgName": "SPG",
     "colBase": "Gaji pokok",
-    "colCommission": "Komisi",
+    "colCommission": "Komisi per SPG",
     "colTotal": "Total",
     "colAction": "Tindakan",
     "markPaid": "Tandai dibayar",
@@ -15230,8 +15262,21 @@
     "stockSourceTitipan": "Sumber: hitungan titipan",
     "salaryCommissionNote": "Komisi penjualan {salesMonth} · dibayar {payoutMonth} (bulan angka resmi dikunci).",
     "salaryCommissionNoteUnlocked": "Komisi penjualan {salesMonth} · bulan pembayarannya ditentukan saat angka resmi dikunci lagi.",
-    "salaryCommissionRule": "Komisi = tarif per kategori barang (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG di kasir, paling banyak angka resmi. Gaji pokok utuh untuk setiap SPG yang bertugas.",
-    "salaryNotParticipant": "Bukan SPG toko ini — komisi dari penjualannya sendiri, tanpa gaji pokok."
+    "salaryCommissionRule": "Komisi = tarif per kategori barang (Pengaturan → Komisi SPG) × potong yang dijual masing-masing SPG di kasir, paling banyak angka resmi. Gaji pokok utuh untuk setiap SPG yang bertugas. Baris yang belum dibayar selalu dibayar dengan komisi per SPG sekarang; selisih sesudah dibayar masuk koreksi pembayaran berikutnya.",
+    "salaryNotParticipant": "Bukan SPG toko ini — komisi dari penjualannya sendiri, tanpa gaji pokok.",
+    "colCorrection": "Koreksi",
+    "colPaidOut": "Dibayarkan",
+    "commissionReplaced": "Dikunci {old} — dibayar dengan komisi per SPG sekarang",
+    "correctionLine": "Koreksi komisi penjualan {month} — {store}: {amount}",
+    "correctionCarried": "{amount} dibawa ke pembayaran berikutnya",
+    "correctionElsewhere": "Koreksi {amount} ikut pembayaran SPG ini yang lebih lama",
+    "payConfirmTitle": "Tandai gaji & komisi {name} dibayar?",
+    "payConfirmBody": "Yang dibayarkan {amount}.",
+    "payCancel": "Batal",
+    "errANGKA_BERUBAH": "Angkanya berubah sejak halaman dibuka. Muat ulang halaman, periksa angkanya, lalu tandai dibayar lagi.",
+    "errTANPA_TARIF": "Siklus aturan lama ini punya potong tanpa tarif kategori — pembayarannya menunggu keputusan pemilik.",
+    "errLAPORAN_TIDAK_LENGKAP": "Siklus aturan lama ini angka resminya tidak seluruhnya tercatat di HP SPG — pembayarannya menunggu keputusan pemilik, atau buka kunci lalu kunci ulang selama masih bisa.",
+    "returPendingCommission": "{n} retur pembeli bulan ini menunggu persetujuan kantor — kalau disetujui sesudah gajinya dibayar, jadi koreksi minus di pembayaran berikutnya."
   },
   "jenisPotongan": {
     "pageTitle": "Jenis potongan",
@@ -15807,7 +15852,17 @@
       "SPG_SALES_REPORT_CHECKED": "Laporan penjualan SPG ditandai dicek",
       "SPG_SALES_REPORT_UNCHECKED": "Tanda dicek laporan penjualan SPG dibatalkan",
       "KONSI_OLD_ORDER_ARRIVAL_CONFIRMED": "Barang pesanan konsinyasi lama dikonfirmasi sampai",
-      "KONSI_OLD_ORDER_REMAINDER_NOT_SENT": "Sisa pesanan konsinyasi lama tidak jadi dikirim"
+      "KONSI_OLD_ORDER_REMAINDER_NOT_SENT": "Sisa pesanan konsinyasi lama tidak jadi dikirim",
+      "JUBELIO_PRICE_CONFIRMED": "Harga Jubelio dikonfirmasi",
+      "JUBELIO_PRICE_REVERTED": "Harga ERP dikembalikan ke harga Jubelio",
+      "JUBELIO_CREATE_REQUEST_CANCELLED": "Pengajuan barang ke Jubelio dibatalkan",
+      "SPG_COMMISSION_CORRECTION_APPLIED": "Koreksi komisi SPG diterapkan",
+      "SPG_COMMISSION_RECOMPUTED_AT_PAYMENT": "Komisi SPG dihitung ulang saat dibayar",
+      "SPG_SALE_RETURN_RECORDED": "Retur pembeli dicatat (langsung berlaku)",
+      "SPG_SALE_RETURN_REPORTED": "Retur pembeli dilaporkan",
+      "SPG_SALE_RETURN_APPROVED": "Retur pembeli disetujui",
+      "SPG_SALE_RETURN_REJECTED": "Retur pembeli ditolak",
+      "SPG_SALE_RETURN_WITHDRAWN": "Retur pembeli ditarik SPG"
     },
     "entities": {
       "ChainTemplate": "Templat rantai proses",
@@ -15919,7 +15974,9 @@
       "KolTugasPantau": "Antrean pemantauan",
       "KolBrandCollab": "Riwayat brand KOL",
       "KolCalendarFeed": "Langganan Kalender Kreatif",
-      "SpgSalesCheck": "Laporan penjualan SPG"
+      "SpgSalesCheck": "Laporan penjualan SPG",
+      "SpgCommissionCorrection": "Koreksi komisi SPG",
+      "SpgSaleReturn": "Retur pembeli SPG"
     },
     "fields": {
       "value": "Nilai",
@@ -16111,7 +16168,7 @@
       },
       "catalog": {
         "title": "Sinkron katalog",
-        "description": "Tarik barang dari Jubelio, cocokkan ke draf katalog ERP, lalu simpan barang beserta pemetaan produk Jubelio-nya.",
+        "description": "Tarik barang dari Jubelio, cocokkan ke draf katalog ERP, lalu simpan barang beserta pemetaan produknya. Harga jual barang yang sudah ada di ERP tidak pernah diubah; barang yang baru dibuat memakai harga Jubelio sebagai harga yang sudah dikonfirmasi.",
         "preview": "Pratinjau sinkron (uji coba)",
         "import": "Impor katalog",
         "lastRun": "Terakhir dijalankan: {mode}",
@@ -16212,11 +16269,12 @@
       "noUnsaved": "Tidak ada perubahan yang belum disimpan",
       "unsaved": "{count} perubahan belum disimpan",
       "save": "Simpan pemetaan",
-      "saved": "{count} pemetaan disimpan"
+      "saved": "{count} pemetaan disimpan",
+      "hanyaLihat": "Anda hanya bisa melihat. Mengubah dan menyimpan pemetaan kategori butuh izin Kelola pengguna & keamanan."
     },
     "migration": {
       "title": "Migrasi massal ke Jubelio",
-      "subtitle": "Kirim barang jadi buatan ERP ke Jubelio sekaligus. Hanya barang yang belum terhubung ke Jubelio yang tampil. Antrean diproses bertahap — pantau kemajuannya di <link>dasbor outbox</link>.",
+      "subtitle": "Ajukan barang jadi buatan ERP ke Jubelio sekaligus. Barang yang diajukan menunggu di <harga>Konfirmasi harga</harga> dan baru dibuat di Jubelio setelah harganya dikonfirmasi. Pantau kirimannya di <link>dasbor outbox</link>.",
       "done": "Selesai (24 jam)",
       "pending": "Menunggu",
       "processing": "Sedang diproses",
@@ -16224,7 +16282,7 @@
       "dead": "Gagal permanen",
       "eligibleTitle": "Barang yang bisa dimigrasi",
       "candidates": "{count} kandidat",
-      "migrateSelected": "Migrasikan {count} terpilih",
+      "migrateSelected": "Ajukan {count} terpilih",
       "empty": "Tidak ada barang untuk dimigrasi. Semua barang jadi dari ERP sudah terhubung.",
       "selectAll": "Pilih semua",
       "selectOne": "Pilih {sku}",
@@ -16238,13 +16296,16 @@
       "unmappedHint": "Kategori belum dipetakan ke Jubelio — barang ini akan dilewati",
       "window": "Sejak {when} — total {total}",
       "openOutbox": "Buka dasbor outbox",
-      "confirmTitle": "Kirim {count} barang ke Jubelio?",
-      "confirmBody": "Ini membuat listing produk sungguhan di akun Jubelio produksi. Barang dengan kategori yang belum dipetakan akan dilewati — perbaiki dulu di <categories>halaman kategori Jubelio</categories> supaya tidak ada yang dilewati. Penghapusan per barang tersedia di halaman <settings>pengaturan Jubelio</settings> (bagian Zona berbahaya).",
+      "confirmTitle": "Ajukan {count} barang ke Jubelio?",
+      "confirmBody": "Barang yang dipilih masuk daftar Konfirmasi harga Jubelio; belum ada yang dibuat di Jubelio sampai harganya dikonfirmasi. Barang dengan kategori yang belum dipetakan baru bisa dikonfirmasi setelah kategorinya dipetakan di <categories>halaman kategori Jubelio</categories>. Penghapusan per barang tersedia di <settings>pengaturan Jubelio</settings> (Zona berbahaya).",
       "cancel": "Batal",
-      "confirm": "Ya, migrasikan",
-      "queued": "{count} barang masuk antrean. Selesai diproses dalam ~5 menit.",
+      "confirm": "Ya, ajukan",
+      "queued": "{count} barang diajukan dan menunggu konfirmasi harga.",
       "noCategory": "Belum punya kategori",
-      "queuedSkipped": "{count} barang masuk antrean; {skipped} dilewati karena masih ada di antrean. Selesai diproses dalam ~5 menit."
+      "queuedSkipped": "{count} barang diajukan; {skipped} sudah diajukan atau sedang dikirim.",
+      "requested": "Menunggu konfirmasi harga",
+      "awaitingPrice": "Menunggu konfirmasi harga",
+      "hanyaLihat": "Anda hanya bisa melihat. Mengajukan barang ke Jubelio butuh izin Kelola pengguna & keamanan."
     },
     "galat": {
       "TANPA_AKSES": "Anda tidak punya izin untuk tindakan ini, atau sesi Anda sudah berakhir. Masuk ulang lalu coba lagi.",
@@ -16254,6 +16315,66 @@
       "ISIAN_TIDAK_SAH": "Isian tidak bisa diproses. Periksa lagi pilihan atau nomor yang Anda masukkan.",
       "GAGAL": "Terjadi kesalahan. Coba lagi; kalau tetap gagal, hubungi pengelola sistem.",
       "rincian": "Rincian"
+    },
+    "harga": {
+      "title": "Konfirmasi harga Jubelio",
+      "subtitle": "Harga jual baru dan produk baru menunggu di sini sampai dikonfirmasi. Jubelio tetap memakai harga yang terakhir dikonfirmasi.",
+      "cardTitle": "Menunggu konfirmasi",
+      "filterSemua": "Semua",
+      "filterBaru": "Produk baru",
+      "filterUbah": "Perubahan harga",
+      "cari": "Cari SKU atau nama",
+      "colSku": "SKU",
+      "colNama": "Nama",
+      "colJenis": "Jenis",
+      "colHargaJubelio": "Harga Jubelio",
+      "colHargaErp": "Harga ERP baru",
+      "colSelisih": "Selisih",
+      "colDiubah": "Diubah oleh",
+      "colKeterangan": "Keterangan",
+      "jenisBaru": "Belum di Jubelio — menunggu konfirmasi harga",
+      "jenisUbah": "Perubahan harga menunggu konfirmasi",
+      "belumAda": "—",
+      "nonaktif": "Nonaktif",
+      "alasan": {
+        "HARGA_KOSONG": "Harga ERP kosong — isi harga di halaman barang, atau kembalikan ke harga Jubelio.",
+        "KATEGORI_BELUM_DIPETAKAN": "Kategori belum dipetakan ke Jubelio — petakan dulu di Jubelio → Kategori."
+      },
+      "setujui": "Setujui & kirim ke Jubelio ({count})",
+      "pilihSemua": "Pilih semua yang bisa dikirim",
+      "konfirmasiJudul": "Kirim {count} harga ke Jubelio?",
+      "konfirmasiIsi": "Harga yang dipilih menjadi harga di Jubelio dan langsung dikirim; produk baru dibuat di Jubelio. Baris yang harganya berubah sejak halaman dibuka tidak dikirim.",
+      "kirim": "Ya, kirim",
+      "batal": "Batal",
+      "kembalikan": "Kembalikan ke harga Jubelio",
+      "kembalikanJudul": "Kembalikan harga ERP {sku} ke {harga}?",
+      "kembalikanIsi": "Harga jual di ERP diganti kembali menjadi harga yang ada di Jubelio, tercatat di riwayat harga jual, dan harga itu dikirim ulang ke Jubelio.",
+      "batalkan": "Batalkan pengajuan",
+      "batalkanJudul": "Batalkan pengajuan {sku} ke Jubelio?",
+      "batalkanIsi": "Barang ini keluar dari daftar dan tidak dibuat di Jubelio. Bisa diajukan lagi dari halaman barang.",
+      "hasil": {
+        "DIKONFIRMASI": "{count} harga dikonfirmasi dan dikirim ke Jubelio.",
+        "HARGA_BERUBAH": "{count} harga berubah sejak halaman dibuka — muat ulang lalu periksa lagi.",
+        "TIDAK_MENUNGGU": "{count} sudah tidak menunggu konfirmasi.",
+        "HARGA_KOSONG": "{count} tanpa harga ERP — tidak dikirim.",
+        "KATEGORI_BELUM_DIPETAKAN": "{count} kategorinya belum dipetakan ke Jubelio — tidak dikirim.",
+        "TIDAK_DITEMUKAN": "{count} barang tidak ditemukan.",
+        "BUKAN_BARANG_JADI": "{count} bukan barang jadi."
+      },
+      "kembalikanBerhasil": "Harga ERP dikembalikan ke harga Jubelio.",
+      "batalkanBerhasil": "Pengajuan dibatalkan.",
+      "galat": {
+        "HARGA_BERUBAH": "Harga berubah sejak halaman dibuka — muat ulang.",
+        "SUDAH_SAMA": "Harga ERP sudah sama dengan harga Jubelio.",
+        "TIDAK_BISA_DIKEMBALIKAN": "Barang ini belum punya harga Jubelio.",
+        "PENGAJUAN_BERUBAH": "Pengajuan berubah sejak halaman dibuka — muat ulang.",
+        "SUDAH_TIDAK_DIAJUKAN": "Barang ini sudah tidak diajukan.",
+        "SUDAH_DI_JUBELIO": "Barang ini sudah ada di Jubelio.",
+        "TIDAK_DITEMUKAN": "Barang tidak ditemukan."
+      },
+      "kosong": "Tidak ada harga yang menunggu konfirmasi.",
+      "tanpaHargaInfo": "{count} barang sudah di Jubelio tetapi belum punya harga yang dikonfirmasi — perubahan nama, foto, atau varian barang itu tidak dikirim sampai harganya diisi dan dikonfirmasi.",
+      "terpotong": "Menampilkan {shown} dari {total}. Konfirmasi dulu, lalu muat ulang untuk melihat sisanya."
     }
   },
   "pwaMenuSpg": {
@@ -18935,15 +19056,15 @@
     "kurangCatatan": "Tulis catatan: ada barang melebihi stok di buku.",
     "kirim": "Kirim retur",
     "pembeli": {
-      "judul": "Barang kembali dari pembeli",
-      "penjelasan": "Uangnya dikembalikan kasir toko. Di sini Anda mencatat barangnya saja: yang layak kembali ke stok rak. Tukar ukuran tidak dilayani di konter.",
+      "judul": "Laporkan retur pembeli",
+      "penjelasan": "Uangnya dikembalikan kasir toko. Di sini Anda melaporkan barangnya saja; laporan berlaku setelah disetujui kantor — baru saat itu barang yang layak kembali ke stok rak. Tukar ukuran tidak dilayani di konter.",
       "terjualKembali": "Terjual {terjual} · sudah kembali {kembali}",
-      "sudahSemua": "Sudah kembali semua.",
-      "rusakTidakKeRak": "Barang rusak dicatat, tapi tidak kembali ke stok rak.",
+      "sudahSemua": "Tidak ada lagi yang bisa dilaporkan dari baris ini.",
+      "rusakTidakKeRak": "Setelah disetujui, barang rusak dicatat tetapi tidak kembali ke stok rak.",
       "alasan": "Alasan pembeli",
       "alasanContoh": "mis. jahitan lepas",
-      "kirim": "Catat barang kembali",
-      "ok": "Barang kembali tercatat.",
+      "kirim": "Laporkan barang kembali",
+      "ok": "Laporan barang kembali terkirim. Menunggu persetujuan kantor.",
       "kurangBarang": "Isi jumlah barang yang dikembalikan.",
       "kurangAlasan": "Tulis alasan pembeli.",
       "butuhSinyal": "Butuh sinyal untuk mencatat barang kembali. Coba lagi sebentar.",
@@ -18956,17 +19077,82 @@
       "errJUMLAH_TIDAK_VALID": "Jumlahnya harus bilangan bulat.",
       "errNOTA_TIDAK_DITEMUKAN": "Nota tidak ditemukan di toko Anda.",
       "errBARIS_TIDAK_DITEMUKAN": "Ada barang yang tidak ada di nota ini.",
-      "errMELEBIHI_SISA": "Jumlahnya melebihi barang yang terjual di nota ini (atau sudah dikembalikan).",
+      "errMELEBIHI_SISA": "Jumlahnya melebihi barang yang terjual di nota ini, dikurangi yang sudah kembali atau masih menunggu kantor.",
       "errKUNCI_DIPAKAI": "Isian ini bentrok dengan catatan lain. Buka ulang halamannya.",
-      "errKUNCI_WAJIB": "Buka ulang halamannya, lalu coba lagi."
+      "errKUNCI_WAJIB": "Buka ulang halamannya, lalu coba lagi.",
+      "menungguKantor": "{n} pcs menunggu persetujuan kantor",
+      "semuaDilaporkan": "Semua sudah dilaporkan.",
+      "lihatLaporan": "Lihat laporan retur saya"
     },
     "kantor": {
       "judul": "Barang kembali dari pembeli",
-      "penjelasan": "Uangnya dikembalikan kasir toko; yang tercatat hanya barangnya. Jumlah bersih dipakai untuk komisi dan laporan konsinyasi.",
+      "penjelasan": "Uangnya dikembalikan kasir toko; yang tercatat hanya barangnya. Hanya retur yang disetujui kantor mengurangi jumlah bersih, komisi, dan laporan konsinyasi.",
       "terjual": "Terjual",
       "kembali": "Kembali",
       "bersih": "Bersih",
-      "alasan": "Alasan: {alasan}"
+      "alasan": "Alasan: {alasan}",
+      "menunggu": "Menunggu",
+      "menungguCatatan": "{n} pcs masih menunggu persetujuan kantor. Barang ini belum dihitung kembali dan belum mengurangi penjualan bersih, stok toko, atau komisi.",
+      "statusMENUNGGU": "Menunggu persetujuan",
+      "statusDISETUJUI": "Disetujui",
+      "statusDITOLAK": "Ditolak",
+      "statusDIBATALKAN": "Ditarik SPG",
+      "dilaporkan": "Dilaporkan {oleh} · {waktu}",
+      "bukaLaporan": "Buka laporan",
+      "alasanPembeli": "Alasan pembeli: {alasan}",
+      "berlakuLangsung": "Berlaku langsung saat dicatat (sebelum ada persetujuan kantor).",
+      "belumBerpengaruh": "Belum berpengaruh pada stok toko, penjualan bersih, dan komisi sampai disetujui kantor.",
+      "putusanDISETUJUI": "Disetujui {oleh} · {waktu}",
+      "putusanDITOLAK": "Ditolak {oleh} · {waktu}",
+      "putusanDIBATALKAN": "Ditarik {oleh} · {waktu}",
+      "alasanTolak": "Alasan ditolak: {alasan}",
+      "alasanTarik": "Alasan ditarik: {alasan}"
+    },
+    "pembeliSaya": {
+      "judul": "Laporan barang kembali",
+      "penjelasan": "Barang yang dikembalikan pembeli baru berpengaruh pada stok toko, penjualan bersih, dan komisi setelah kantor menyetujuinya.",
+      "tertahan": "{n} laporan masih di HP ini, belum terkirim.",
+      "lihatAntrean": "Lihat",
+      "kosong": "Belum ada laporan barang kembali.",
+      "nota": "Nota {docNo}",
+      "dilaporkan": "Dilaporkan {tanggal}",
+      "pcs": "{n} pcs",
+      "status": {
+        "MENUNGGU": "Menunggu kantor",
+        "DISETUJUI": "Disetujui",
+        "DITOLAK": "Ditolak",
+        "DIBATALKAN": "Ditarik"
+      },
+      "statusKet": {
+        "MENUNGGU": "Stok toko, penjualan bersih, dan komisi belum berubah sampai kantor menyetujuinya.",
+        "DISETUJUI": "Sudah berlaku: barang yang layak kembali ke stok toko.",
+        "DITOLAK": "Kantor menolak laporan ini; tidak ada yang berubah.",
+        "DIBATALKAN": "Anda menarik laporan ini; tidak ada yang berubah."
+      },
+      "alasanPembeli": "Alasan pembeli",
+      "alasanTolak": "Alasan kantor",
+      "alasanTarik": "Alasan ditarik",
+      "tarik": "Tarik laporan",
+      "tarikJudul": "Tarik laporan nota {docNo}?",
+      "tarikPenjelasan": "Laporannya tidak dihapus — kantor tetap melihatnya sebagai ditarik, dengan alasan Anda.",
+      "tarikAlasan": "Alasan",
+      "tarikAlasanContoh": "mis. salah pilih nota",
+      "tarikBatal": "Batal",
+      "tarikKonfirmasi": "Tarik laporan",
+      "tarikOk": "Laporan ditarik.",
+      "err": {
+        "TANPA_AKSES": "Anda tidak punya akses menarik laporan ini.",
+        "TANPA_TOKO": "Anda belum ditetapkan ke toko.",
+        "ISIAN_TIDAK_VALID": "Isiannya tidak terbaca. Coba lagi.",
+        "GAGAL": "Gagal menarik laporan. Coba lagi.",
+        "TIDAK_DITEMUKAN": "Laporan tidak ditemukan.",
+        "SUDAH_DIPUTUSKAN": "Laporan ini sudah diputuskan kantor dan tidak bisa ditarik lagi.",
+        "PELAPOR_SAMA": "Pelapor tidak boleh memutuskan laporannya sendiri.",
+        "BUKAN_MILIK": "Laporan ini bukan milik Anda di toko ini.",
+        "ALASAN_WAJIB": "Tulis alasannya.",
+        "ALASAN_TERLALU_PANJANG": "Alasannya terlalu panjang (paling banyak 500 karakter).",
+        "MELEBIHI_SISA": "Jumlahnya melebihi yang masih bisa dilaporkan dari nota ini."
+      }
     }
   },
   "pwaPenjualan": {
@@ -19040,7 +19226,7 @@
     },
     "sellTitle": "Laku vs dikirim",
     "sumber": {
-      "BUKU_TOKO": "Dari buku stok toko: penjualan SPG dikurangi barang yang dikembalikan pembeli.",
+      "BUKU_TOKO": "Dari buku stok toko: penjualan SPG dikurangi barang kembali dari pembeli yang sudah disetujui kantor.",
       "TITIPAN": "Dari laporan laku konsinyasi per bulan; ukurannya tidak dilaporkan."
     },
     "sent": "Dikirim",
@@ -19520,7 +19706,7 @@
     "wantedLine": "{qty} pcs · {count} kali ditanyakan",
     "wantedRequest": "Minta",
     "wantedRecord": "Catat barang dicari",
-    "netNote": "Laku bersih = barang terjual dikurangi yang dikembalikan pembeli. Semua angka dalam potong (pcs), tanpa rupiah."
+    "netNote": "Laku bersih = barang terjual dikurangi yang dikembalikan pembeli dan sudah disetujui kantor. Semua angka dalam potong (pcs), tanpa rupiah."
   },
   "pwaPermintaanSpg": {
     "title": "Permintaan SPG",
@@ -19854,22 +20040,23 @@
     "alasan": {
       "sudahDibayar": "Sudah ada yang dibayar — tidak bisa ditetapkan ulang.",
       "tanpaSpg": "Toko ini tidak punya SPG yang menerima komisi.",
-      "belumDicek": "Laporannya belum dicek.",
-      "aturanLamaBayar": "Ditetapkan dengan aturan lama — tetapkan ulang dulu sebelum membayar."
+      "belumDicek": "Laporannya belum dicek."
     },
-    "berbeda": "Hitungan sekarang berbeda dari yang ditetapkan — ada nota atau pengembalian yang masuk sesudahnya, atau komisinya ditetapkan dengan aturan lama. Tetapkan ulang sebelum membayar.",
-    "berbedaDibayar": "Hitungan sekarang berbeda dari yang ditetapkan, tapi sudah ada yang dibayar, jadi bulan ini tidak bisa ditetapkan ulang. Selisihnya perlu diselesaikan di luar sistem.",
+    "berbeda": "Hitungan sekarang berbeda dari yang ditetapkan — ada nota atau pengembalian yang masuk sesudahnya, atau komisinya ditetapkan dengan aturan lama. Saat ditandai dibayar, yang dibayar komisi per SPG sekarang; angka yang ditetapkan tetap tercatat di jejak audit.",
+    "berbedaDibayar": "Hitungan sekarang berbeda dari yang sudah dibayar. Selisih tiap SPG masuk koreksi di pembayaran berikutnya SPG itu; baris yang belum dibayar dibayar dengan komisi per SPG sekarang.",
     "kolom": {
       "spg": "SPG",
       "potong": "Potong bersih",
-      "hitungan": "Komisi (hitungan)",
+      "hitungan": "Komisi per SPG",
       "ditetapkan": "Ditetapkan",
       "status": "Status",
       "aksi": "Aksi",
       "toko": "Toko",
       "gaji": "Gaji pokok",
       "komisi": "Komisi dikunci",
-      "jumlah": "Total"
+      "jumlah": "Total",
+      "koreksi": "Koreksi",
+      "dibayarkan": "Dibayarkan"
     },
     "bukanSpgToko": "Tidak lagi bertugas di toko ini",
     "tidakMenerima": "Tidak mendapat bagian",
@@ -19887,19 +20074,19 @@
     "tetapkanUlangBerhasil": "Komisi ditetapkan ulang.",
     "tandaiDibayar": "Tandai dibayar",
     "bayarJudul": "Tandai komisi {nama} — {bulan} dibayar?",
-    "bayarIsi": "Sejumlah {jumlah}. Sesudah ada yang dibayar, bulan ini tidak bisa ditetapkan ulang untuk toko ini.",
-    "bayarBerbeda": "Perhatian: hitungan sekarang berbeda dari yang ditetapkan. Tetapkan ulang dulu kalau angka ini sudah tidak benar.",
+    "bayarIsi": "Yang dibayarkan {jumlah}. Sesudah ada yang dibayar, bulan ini tidak bisa ditetapkan ulang untuk toko ini; perubahan sesudahnya masuk koreksi pembayaran berikutnya.",
+    "bayarBerbeda": "Angka yang ditetapkan ({lama}) diganti komisi per SPG sekarang ({baru}) — itu yang dibayar.",
     "catatanLabel": "Catatan (tidak wajib)",
     "catatanContoh": "Mis. ditransfer bersama gaji 25 Oktober",
     "bayarBerhasil": "Komisi {nama} ditandai dibayar.",
     "konsi": {
       "judul": "Toko konsinyasi",
-      "isi": "Toko konsinyasi dicek saat angka resmi siklusnya dikunci, dan gaji & komisinya ditandai dibayar di siklus itu. Komisinya memakai hitungan yang sama: tarif per kategori × penjualan masing-masing SPG.",
+      "isi": "Toko konsinyasi dicek saat angka resmi siklusnya dikunci. Gaji & komisinya bisa ditandai dibayar di sini atau di siklus itu, dengan komisi per SPG saat dibayar. Komisinya memakai hitungan yang sama: tarif per kategori × penjualan masing-masing SPG.",
       "dikunci": "Angka resmi dikunci {tanggal} — itulah tanda laporannya dicek.",
-      "bayarDiSiklus": "Gaji & komisinya ditandai dibayar di siklus konsinyasinya.",
+      "bayarDiSiklus": "Gaji & komisinya bisa ditandai dibayar di sini atau di siklus konsinyasinya.",
       "tanpaBaris": "Siklus ini tidak punya baris gaji SPG.",
-      "berbeda": "Hitungan sekarang berbeda dari angka yang dikunci — ada nota atau pengembalian dari HP yang masuk sesudah dikunci, atau siklus ini dikunci dengan aturan lama (tarif barang, dibagi rata). Untuk membetulkannya, buka kunci lalu kunci ulang di siklusnya, selama belum ada gaji yang dibayar, nomor nota, faktur pajak, atau pembayaran toko.",
-      "berbedaDibayar": "Hitungan sekarang berbeda dari angka yang dikunci, tapi sudah ada gaji yang dibayar, jadi siklus ini tidak bisa dikunci ulang. Selisihnya perlu diselesaikan di luar sistem.",
+      "berbeda": "Hitungan sekarang berbeda dari angka yang dikunci — ada nota atau pengembalian dari HP yang masuk sesudah dikunci, atau siklus ini dikunci dengan aturan lama (tarif barang, dibagi rata). Baris yang belum dibayar dibayar dengan komisi per SPG sekarang; kunci tidak perlu dibuka.",
+      "berbedaDibayar": "Hitungan sekarang berbeda dari angka yang sudah dibayar. Selisih tiap SPG — termasuk penjual yang notanya masuk sesudah dikunci — masuk koreksi di pembayaran berikutnya SPG itu.",
       "bukanPeserta": "Bukan SPG toko ini — komisi dari penjualannya sendiri, tanpa gaji pokok."
     },
     "err": {
@@ -19915,19 +20102,21 @@
       "TIDAK_DITEMUKAN": "Komisi ini sudah tidak ada. Muat ulang halaman.",
       "CATATAN_TERLALU_PANJANG": "Catatan paling banyak 500 huruf.",
       "LAPORAN_BELUM_DICEK": "Laporan penjualan bulan itu belum dicek. Tandai laporan dicek dulu.",
-      "ATURAN_LAMA": "Komisi ini ditetapkan dengan aturan lama (tarif barang). Tetapkan ulang dengan tarif per kategori sebelum membayar.",
       "TANPA_PENJUALAN": "Tidak ada penjualan SPG di toko ini pada bulan itu.",
       "SUDAH_DICEK": "Laporan ini sudah dicek. Muat ulang halaman.",
       "BELUM_DICEK": "Laporan ini belum dicek. Muat ulang halaman.",
       "ALASAN_WAJIB": "Tulis alasannya.",
-      "ALASAN_TERLALU_PANJANG": "Alasan paling banyak 500 huruf."
+      "ALASAN_TERLALU_PANJANG": "Alasan paling banyak 500 huruf.",
+      "ANGKA_BERUBAH": "Angkanya berubah sejak halaman dibuka — ada nota, pengembalian, atau pembayaran lain yang masuk. Halaman dimuat ulang; periksa angkanya lalu tandai dibayar lagi.",
+      "TANPA_TARIF": "Komisi ini ditetapkan dengan aturan lama dan sebagian potongnya belum punya tarif kategori, jadi hitungan sekarang tidak bisa dipakai untuk membayarnya. Menunggu keputusan pemilik — atau tetapkan ulang bulan itu selama belum ada yang dibayar.",
+      "LAPORAN_TIDAK_LENGKAP": "Siklus ini dikunci dengan aturan lama dan angka resminya tidak seluruhnya tercatat di HP SPG, jadi hitungan sekarang tidak bisa dipakai untuk membayarnya. Menunggu keputusan pemilik — atau buka kunci lalu kunci ulang siklusnya selama masih bisa."
     },
     "bebanHilangSisa": "Beban barang hilang {jumlah} — dipotong saat komisi ditetapkan",
     "resmiPotonganHilang": "Dipotong beban barang hilang {potongan} · dibayar {dibayar}",
     "bayarPotonganHilang": "Sudah dipotong beban barang hilang {potongan}.",
-    "ringkasBayar": "Ditetapkan {resmi} · dibayar {dibayar} · {belum} laporan belum ditetapkan · {tunggu} menunggu dicek",
+    "ringkasBayar": "Ditetapkan {resmi} · dibayarkan {dibayar}, termasuk koreksi {koreksi} · {belum} laporan belum ditetapkan · {tunggu} menunggu dicek",
     "aturTarif": "Atur tarif per kategori",
-    "aturan": "Komisi SPG = tarif per kategori barang di bulan penjualan × potong yang dijual masing-masing SPG, untuk toko putus dan toko konsinyasi. Komisi dibayar di bulan laporan penjualannya dicek, dengan catatan bulan penjualannya.",
+    "aturan": "Komisi SPG = tarif per kategori barang di bulan penjualan × potong yang dijual masing-masing SPG, untuk toko putus dan toko konsinyasi. Komisi dibayar di bulan laporan penjualannya dicek, dengan catatan bulan penjualannya. Yang belum dibayar selalu dibayar dengan komisi per SPG saat ditandai dibayar; selisih sesudah dibayar masuk koreksi pembayaran berikutnya.",
     "bulanBerjalanBayar": "Ini bulan pembayaran berjalan: laporan yang dicek hari ini masuk ke sini.",
     "laporan": {
       "kosongJudul": "Belum ada komisi untuk dibayar {bulan}",
@@ -19943,7 +20132,7 @@
       "kosong": "Tidak ada laporan penjualan SPG yang menunggu dicek.",
       "bulanJual": "Bulan penjualan",
       "penerima": "{n} SPG",
-      "lama": "Sudah ditetapkan dengan aturan lama — cek laporannya, lalu tetapkan ulang."
+      "lama": "Ditetapkan dengan aturan lama — setelah dicek, dibayar dengan komisi per SPG."
     },
     "tanpaTarifCatatan": "{pcs} potong belum punya tarif komisi (barang tanpa kategori atau kategorinya belum bertarif), jadi komisinya 0.",
     "konsiTunggu": {
@@ -19962,11 +20151,49 @@
     "batalDicekIsi": "Komisi yang sudah ditetapkan dari laporan ini dihapus dan SPG-nya dikabari. Laporannya bisa dicek dan ditetapkan lagi sesudahnya.",
     "batalDicekAlasan": "Alasan",
     "batalDicekContoh": "Mis. ada nota dari HP yang belum masuk",
-    "batalDicekBerhasil": "Tanda dicek dibatalkan."
+    "batalDicekBerhasil": "Tanda dicek dibatalkan.",
+    "dibayarkanNanti": "akan dibayarkan",
+    "angkaLama": "Ditetapkan {lama} — saat dibayar diganti komisi per SPG {baru}",
+    "koreksiBaris": "Koreksi komisi penjualan {bulan} — {toko}: {jumlah}",
+    "koreksiDibawa": "{jumlah} dibawa ke pembayaran berikutnya",
+    "koreksiDiBarisLain": "Koreksi {jumlah} ikut pembayaran {laporan}",
+    "labelLaporan": "Komisi penjualan {bulan} — {toko}",
+    "bayarRincian": {
+      "gaji": "Gaji pokok {jumlah}",
+      "komisi": "Komisi per SPG {jumlah}",
+      "potongan": "Potongan beban barang hilang −{jumlah}"
+    },
+    "bayarJudulKonsi": "Tandai gaji & komisi {nama} — {bulan} dibayar?",
+    "ditahan": {
+      "TANPA_TARIF": "Tanpa tarif — perlu keputusan",
+      "LAPORAN_TIDAK_LENGKAP": "Laporan tidak tercatat di HP — perlu keputusan"
+    },
+    "tunggakan": {
+      "judul": "Belum dibayar dari bulan pembayaran sebelumnya",
+      "isi": "Komisi yang laporannya sudah dicek, atau siklusnya sudah dikunci, di bulan pembayaran sebelumnya tetapi belum ditandai dibayar. Koreksi seorang SPG selalu ikut pembayarannya yang paling lama.",
+      "kosong": "Tidak ada komisi yang tertunggak.",
+      "bulanBayar": "Pembayaran {bulan}",
+      "ditahanJudul": "Menunggu keputusan pemilik — tidak dihitung di Beranda",
+      "ditahanIsi": "Laporan aturan lama yang tidak bisa dibandingkan jujur dengan hitungan sekarang (lihat kartu Koreksi komisi). Penandaan dibayar ditolak sampai pemilik memutuskan, jadi baris ini tidak membuat Beranda menyala.",
+      "lamaJudul": "Belum dibayar, lebih dari 12 bulan",
+      "lamaIsi": "Baris ini tidak dihitung di Beranda dan tidak pernah menjadi tempat koreksi ikut. Masih bisa ditandai dibayar dengan komisi per SPG sekarang."
+    },
+    "koreksi": {
+      "judul": "Koreksi komisi",
+      "isi": "Selisih antara komisi per SPG sekarang dan yang sudah dibayar — dari pembayaran lama yang dibagi rata, pengembalian pembeli yang disetujui sesudah dibayar, atau nota HP yang masuk sesudah dibayar. Setiap koreksi diterapkan sekali, di pembayaran berikutnya SPG itu. Pembayaran tidak pernah di bawah Rp 0: sisa koreksi minus dibawa ke pembayaran sesudahnya.",
+      "ikut": "Ikut {laporan}",
+      "tanpaSasaran": "Belum ada pembayaran berikutnya untuk SPG ini — koreksinya menunggu.",
+      "kosong": "Tidak ada koreksi yang menunggu.",
+      "ditahanJudul": "Perlu keputusan pemilik — tidak dikoreksi otomatis",
+      "ditahanBaris": "{laporan}: {alasan} — selisih bila memakai hitungan sekarang {jumlah}.",
+      "belumDibayarDitahan": "Pembayarannya ditahan sampai diputuskan."
+    },
+    "returMenunggu": "{n} retur pembeli menunggu persetujuan",
+    "returMenungguCatatan": "{n} retur pembeli bulan ini masih menunggu persetujuan kantor. Kalau disetujui sesudah komisinya dibayar, selisihnya menjadi koreksi minus di pembayaran berikutnya SPG itu."
   },
   "pengaturanKomisiPutusSpg": {
     "judul": "Komisi SPG",
-    "penjelasan": "Komisi SPG — di toko putus dan toko konsinyasi — dihitung satu cara: tarif per kategori barang (Pengaturan → Komisi SPG) di bulan penjualan × potong yang dijual masing-masing SPG, sesudah dikurangi barang yang dikembalikan pembeli. Tarif komisi di master barang tidak dipakai lagi.",
+    "penjelasan": "Komisi SPG — di toko putus dan toko konsinyasi — dihitung satu cara: tarif per kategori barang (Pengaturan → Komisi SPG) di bulan penjualan × potong yang dijual masing-masing SPG, sesudah dikurangi barang yang pengembaliannya oleh pembeli sudah disetujui kantor. Tarif komisi di master barang tidak dipakai lagi.",
     "catatan": "Komisi dibayar di bulan laporan penjualannya dicek kantor, dengan catatan bulan penjualannya (mis. penjualan Oktober yang dicek 5 November dibayar November). Laporan toko putus dicek di SPG → Komisi SPG; toko konsinyasi saat angka siklusnya dikunci.",
     "bukaKomisi": "Buka Komisi SPG",
     "aturTarif": "Atur tarif per kategori"
@@ -20100,7 +20327,7 @@
       "kotor": "Nilai kotor",
       "potongan": "Potongan & diskon",
       "retur": "Dikembalikan pembeli ({pcs} pcs)",
-      "sistemCatatan": "Dihitung sistem dari nota semua SPG toko ini, dikurangi barang yang dikembalikan pembeli hari itu.",
+      "sistemCatatan": "Dihitung sistem dari nota semua SPG toko ini, dikurangi barang yang dikembalikan pembeli hari itu dan sudah disetujui kantor.",
       "terlarisJudul": "Terlaris",
       "terlarisKosong": "Belum ada barang terjual.",
       "pcs": "{n} pcs",
@@ -20134,7 +20361,8 @@
       "kirimUlang": "Perbarui laporan",
       "terkirim": "Laporan tutup hari terkirim.",
       "diperbarui": "Laporan tutup hari diperbarui.",
-      "pengunjungDariPenghitung": "Penghitung pengunjung mencatat {jumlah} orang hari itu. Ubah kalau perlu."
+      "pengunjungDariPenghitung": "Penghitung pengunjung mencatat {jumlah} orang hari itu. Ubah kalau perlu.",
+      "returMenunggu": "{pcs} pcs barang kembali masih menunggu persetujuan kantor — belum mengurangi angka di atas."
     },
     "err": {
       "NETWORK": "Tidak ada sinyal. Coba kirim lagi.",
@@ -20204,7 +20432,7 @@
         "nota": "Nota",
         "kotor": "Nilai kotor",
         "potongan": "Potongan & diskon",
-        "retur": "Dikembalikan pembeli",
+        "retur": "Dikembalikan pembeli (disetujui kantor)",
         "bersih": "Penjualan bersih",
         "konversi": "Konversi",
         "selisih": "Selisih kasir",
@@ -21626,13 +21854,13 @@
       "jadwal": "Jadwal kerja, Masuk, Terlambat, dan Tanpa izin dihitung sampai hari ini dari jadwal shift (SPG → Jadwal). Tanda — berarti jadwal belum disusun untuk SPG itu di toko itu, bukan nol.",
       "terlambat": "Terlambat: check-in pertama lebih dari jam mulai shift + {menit} menit; menitnya dihitung dari jam mulai.",
       "izin": "Izin: hari kerja yang izin, sakit, atau cutinya disetujui dan SPG tidak masuk.",
-      "nilai": "Nota, potong, dan nilai dari nota SPG itu di toko itu, bersih dari barang yang dikembalikan pembeli.",
+      "nilai": "Nota, potong, dan nilai dari nota SPG itu di toko itu, bersih dari retur pembeli yang sudah disetujui kantor.",
       "pengunjung": "Pengunjung dari penghitung di HP SPG. Hari tanpa hitungan memakai angka laporan tutup hari, dibagi rata antar SPG yang hadir — ditandai *.",
       "konversi": "Konversi: nota ÷ pengunjung, hanya pada hari yang angka pengunjungnya ada.",
       "target": "Capaian target: penjualan bersih SPG di semua tokonya ÷ target bulanannya (Pengaturan → Salesman → Target).",
       "tutup": "Tutup hari: hari yang punya laporan tutup hari ÷ hari SPG itu berjualan.",
       "titip": "Titip pesan: yang dibuat SPG bulan ini, dan berapa yang sudah selesai.",
-      "retur": "Retur pembeli: potong yang dikembalikan pembeli ÷ potong di nota bulan ini."
+      "retur": "Retur pembeli: potong yang dikembalikan pembeli dan sudah disetujui kantor ÷ potong di nota bulan ini."
     },
     "rincian": {
       "kembali": "Kinerja SPG",
@@ -22219,8 +22447,8 @@
       "tersimpanOpnameIsi": "{count, plural, other {# barang dihitung.}} Saldo sistem dan selisihnya dihitung server saat terkirim — bukan angka sistem di layar ini.",
       "catatanLuring": "Tanpa sinyal: hitungan disimpan di HP. Selisihnya dihitung server saat terkirim, per waktu Anda menghitung.",
       "dilewati": "{count, plural, other {# barang}} sudah dihitung di opname yang lebih baru — hitungan lama untuk barang itu tidak dipakai.",
-      "tersimpanKembali": "Tanpa sinyal — barang kembali dicatat di HP. Terkirim otomatis begitu ada sinyal.",
-      "kembaliTertahan": "{pcs, plural, other {# potong}} dari nota ini sudah dicatat kembali di HP dan menunggu sinyal.",
+      "tersimpanKembali": "Tanpa sinyal — laporan retur disimpan di HP. Terkirim otomatis begitu ada sinyal, lalu menunggu persetujuan kantor.",
+      "kembaliTertahan": "{pcs, plural, other {# potong}} dari nota ini sudah dilaporkan di HP dan menunggu sinyal.",
       "gagalSimpan": "Tidak bisa disimpan di HP ini. Coba lagi.",
       "lihatAntrean": "Lihat yang belum terkirim"
     },
@@ -22494,7 +22722,7 @@
       },
       "spg_sales_view": {
         "label": "Awasi SPG",
-        "keterangan": "Membuka penjualan SPG, kinerja, tutup hari, pelanggan, jadwal, komisi, permintaan kiriman, mutasi antar toko, barang rusak, barang hilang, dan Pengaturan → SPG."
+        "keterangan": "Membuka penjualan SPG, retur pembeli, kinerja, tutup hari, pelanggan, jadwal, komisi, permintaan kiriman, mutasi antar toko, barang rusak, barang hilang, dan Pengaturan → SPG."
       },
       "receivables_view": {
         "label": "Lihat piutang",
@@ -22818,7 +23046,7 @@
       },
       "spg_commission_pay": {
         "label": "Tandai gaji & komisi SPG dibayar",
-        "keterangan": "Menandai gaji pokok dan komisi SPG sudah dibayar, untuk toko konsinyasi maupun toko putus. Persetujuan — bawaannya hanya admin."
+        "keterangan": "Menandai gaji pokok dan komisi SPG sudah dibayar, untuk toko konsinyasi maupun toko putus — sekaligus menerapkan koreksi komisi SPG itu yang ikut pembayaran tersebut. Persetujuan — bawaannya hanya admin."
       },
       "field_sales_orders_credit_override": {
         "label": "Loloskan pesanan melewati batas kredit",
@@ -22891,10 +23119,18 @@
       "packer_edit": {
         "label": "Ganti video pengemasan",
         "keterangan": "Mengganti video pengemasan yang sudah ada."
+      },
+      "jubelio_prices_confirm": {
+        "label": "Konfirmasi harga Jubelio",
+        "keterangan": "Menyetujui harga jual sebelum dikirim ke Jubelio — perubahan harga dan produk baru yang menunggu dibuat di Jubelio — mengembalikan harga ERP ke harga Jubelio, dan membatalkan pengajuan produk baru. Membuka halaman Jubelio → Konfirmasi harga. Persetujuan — bawaannya hanya admin."
+      },
+      "spg_returns_approve": {
+        "label": "Setujui retur pembeli SPG",
+        "keterangan": "Menyetujui atau menolak laporan barang yang dikembalikan pembeli di konter SPG (SPG → Retur pembeli). Retur baru mengubah stok toko, penjualan bersih, komisi SPG, dan laporan konsinyasi setelah disetujui; menolak wajib dengan alasan, yang dikirim ke HP SPG. Tidak ada yang bisa memutuskan laporan yang ia buat sendiri. Halamannya dibuka lewat Awasi SPG. Persetujuan — bawaannya admin dan Admin Penjualan."
       }
     },
     "persetujuan": "Persetujuan",
-    "persetujuanJudul": "Izin persetujuan — bawaannya hanya admin. Berikan hanya kepada orang yang Anda percaya memutuskan atas nama Anda."
+    "persetujuanJudul": "Izin persetujuan — bawaannya hanya admin, kecuali peran yang disebut di keterangannya. Berikan hanya kepada orang yang Anda percaya memutuskan atas nama Anda."
   },
   "itemForm": {
     "basicInfo": "Informasi dasar",
@@ -23021,7 +23257,21 @@
     "gagalSimpan": "Barang gagal disimpan.",
     "dibuat": "Barang ditambahkan.",
     "gagalBuat": "Barang gagal ditambahkan.",
-    "tabRiwayatHpp": "Riwayat HPP"
+    "tabRiwayatHpp": "Riwayat HPP",
+    "hargaJubelio": {
+      "judul": "Harga di Jubelio",
+      "sama": "{harga} — sama dengan harga ERP.",
+      "dikonfirmasi": "Dikonfirmasi {nama}, {waktu}",
+      "hargaAwal": "Harga dari Jubelio — tercatat dari katalog Jubelio atau sebelum konfirmasi harga berlaku, bukan dikonfirmasi seseorang.",
+      "menungguUbah": "Harga ERP {baru} menunggu konfirmasi. Jubelio tetap {lama} sampai dikonfirmasi.",
+      "menungguBaru": "Belum di Jubelio — menunggu konfirmasi harga.",
+      "tanpaHarga": "Sudah di Jubelio tetapi belum punya harga yang dikonfirmasi — perubahan barang ini tidak dikirim sampai harganya dikonfirmasi.",
+      "belumDiJubelio": "Belum di Jubelio.",
+      "kirimanGagal": "Kiriman terakhir ke Jubelio {status} ({alasan}).",
+      "statusDEAD": "gagal permanen",
+      "statusSKIPPED": "dilewati",
+      "bukaDaftar": "Buka konfirmasi harga"
+    }
   },
   "spgTerkait": {
     "titip": "Titip pesan pembeli",
@@ -28357,6 +28607,104 @@
         "konsi": "Konsinyasi",
         "putus": "Putus"
       }
+    }
+  },
+  "spgReturPembeli": {
+    "kantor": {
+      "judul": "Retur pembeli SPG",
+      "deskripsi": "Laporan barang yang dikembalikan pembeli di konter SPG. Retur baru mengubah stok toko, penjualan bersih, komisi, dan laporan konsinyasi setelah disetujui.",
+      "ringkas": "{menunggu, plural, other {# laporan menunggu persetujuan}}",
+      "saringToko": "Saring toko",
+      "saringStatus": "Saring status",
+      "semuaToko": "Semua toko",
+      "cari": "Cari nomor nota",
+      "daftarJudul": "Laporan retur pembeli",
+      "menungguBoleh": "Laporan yang menunggu belum mengubah stok, penjualan bersih, atau komisi. Buka satu laporan untuk menyetujui atau menolaknya.",
+      "menungguLihat": "Laporan yang menunggu belum mengubah stok, penjualan bersih, atau komisi. Memutuskannya butuh izin Setujui retur pembeli SPG.",
+      "kosong": "Tidak ada laporan retur pembeli di tab ini.",
+      "kosongSaringJudul": "Tidak ada laporan yang cocok",
+      "kosongSaringIsi": "Ubah toko atau nomor nota yang dicari.",
+      "kolom": {
+        "dilaporkan": "Dilaporkan",
+        "toko": "Toko",
+        "spg": "SPG",
+        "nota": "Nota",
+        "barang": "Barang",
+        "alasan": "Alasan pembeli",
+        "status": "Status",
+        "diputuskan": "Diputuskan"
+      },
+      "pcs": "{n, plural, other {# potong}}",
+      "langsungBerlaku": "Berlaku langsung"
+    },
+    "status": {
+      "MENUNGGU": "Menunggu",
+      "DISETUJUI": "Disetujui",
+      "DITOLAK": "Ditolak",
+      "DIBATALKAN": "Ditarik SPG",
+      "SEMUA": "Semua"
+    },
+    "syarat": {
+      "PUTUS": "Putus",
+      "KONSI": "Konsinyasi"
+    },
+    "rincian": {
+      "judul": "Laporan retur pembeli",
+      "judulToko": "Retur pembeli — {toko}",
+      "ringkas": "{pcs, plural, other {# potong}} dari nota {docNo}",
+      "kembali": "Kembali ke daftar",
+      "pelapor": "Dilaporkan oleh",
+      "dilaporkanPada": "Dilaporkan pada",
+      "notaAsal": "Nota asal",
+      "ditarik": "Ditarik",
+      "langsungBerlaku": "Berlaku langsung — dicatat sebelum ada persetujuan kantor.",
+      "diputuskan": "{oleh}, {pada}",
+      "alasanTolakLabel": "Alasan ditolak",
+      "alasanTarikLabel": "Alasan ditarik",
+      "menungguBoleh": "Laporan ini menunggu keputusan Anda. Sampai disetujui, stok rak, penjualan bersih, komisi SPG, dan laporan konsinyasi belum berubah.",
+      "pelaporSendiri": "Anda yang melaporkan retur ini, jadi orang lain yang memutuskannya.",
+      "tanpaIzin": "Memutuskan butuh izin Setujui retur pembeli SPG.",
+      "peringatanKomisi": "Komisi SPG toko ini untuk penjualan {bulan} sudah dicek. Menyetujui retur ini mengubah hitungan bulan itu; selisihnya dikoreksi di pembayaran komisi berikutnya.",
+      "peringatanKonsi": "Angka resmi konsinyasi toko ini bulan {bulan} sudah dikunci. Angka resminya tidak berubah; komisinya dikoreksi di pembayaran berikutnya.",
+      "riwayat": "Riwayat",
+      "riwayatKosong": "Belum ada riwayat.",
+      "barangJudul": "Barang ({pcs, plural, other {# potong}})",
+      "kolom": {
+        "kondisi": "Kondisi",
+        "qty": "Dilaporkan",
+        "terjual": "Terjual di nota",
+        "sudahKembali": "Sudah kembali",
+        "menungguLain": "Menunggu (laporan lain)",
+        "nilai": "Nilai bersih"
+      },
+      "terhitungOpname": "Sudah dihitung opname toko sesudah dilaporkan — stok rak tidak ditambah lagi saat disetujui.",
+      "total": "Jumlah",
+      "setujui": "Setujui",
+      "setujuiJudul": "Setujui retur ini?",
+      "setujuiIsi": "{layak} potong layak masuk lagi ke stok rak toko dan {rusak} potong rusak tidak. Penjualan bersih, komisi SPG, dan laporan konsinyasi berkurang {pcs} potong pada bulan retur dilaporkan.",
+      "setujuiOpname": "{n, plural, other {# potong}} layak lainnya sudah dihitung opname toko sesudah dilaporkan, jadi tidak ditambahkan lagi ke stok rak.",
+      "batal": "Batal",
+      "menyimpan": "Menyimpan…",
+      "okSetujui": "Retur disetujui.",
+      "tolak": "Tolak",
+      "tolakJudul": "Tolak laporan retur",
+      "tolakIsi": "Tidak ada yang berubah: stok, penjualan bersih, dan komisi tetap. Alasannya dikirim ke HP SPG.",
+      "tolakLabel": "Alasan (dikirim ke HP SPG)",
+      "tolakKirim": "Tolak laporan",
+      "okTolak": "Laporan ditolak."
+    },
+    "err": {
+      "TIDAK_DITEMUKAN": "Laporan tidak ditemukan.",
+      "SUDAH_DIPUTUSKAN": "Laporan ini sudah diputuskan atau ditarik. Muat ulang halaman.",
+      "PELAPOR_SAMA": "Anda tidak bisa memutuskan laporan yang Anda buat sendiri.",
+      "BUKAN_MILIK": "Hanya pelapor, di tokonya sendiri, yang bisa menarik laporan ini.",
+      "ALASAN_WAJIB": "Tulis alasannya.",
+      "ALASAN_TERLALU_PANJANG": "Alasannya terlalu panjang (paling banyak 500 huruf).",
+      "MELEBIHI_SISA": "Jumlahnya melebihi barang yang masih bisa dikembalikan di nota ini. Tolak laporan ini.",
+      "TANPA_AKSES": "Anda tidak punya akses untuk ini.",
+      "TANPA_TOKO": "Anda belum ditetapkan ke toko.",
+      "ISIAN_TIDAK_VALID": "Isiannya tidak terbaca.",
+      "GAGAL": "Gagal menyimpan. Coba lagi."
     }
   }
 }

@@ -329,7 +329,8 @@ export async function pencocokanSiklus(cycleId: string): Promise<PencocokanSiklu
   const terjual = {
     buku: adaBuku ? (bukuPerBulan.get(periodeIni) ?? []) : null,
     // Nota SPG tanpa buku dan tanpa nota bulan ini = toko ini tidak punya SPG
-    // yang mencatat: tidak ada pembanding, bukan "terjual 0".
+    // yang mencatat: tidak ada pembanding, bukan "terjual 0". `returnedQty` =
+    // retur pembeli yang sudah disetujui kantor (laporan yang menunggu belum mengurangi).
     nota: adaBuku || nota.length > 0 ? nota.map((n) => ({ kunci: n.itemId, qty: n.qty - n.returnedQty })) : null,
     laporanSpg: laporanIni("SPG"),
     laporanToko: laporanIni("TOKO"),

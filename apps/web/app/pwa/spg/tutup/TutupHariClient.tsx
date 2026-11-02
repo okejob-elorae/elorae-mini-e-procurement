@@ -228,6 +228,10 @@ export function TutupHariClient({
               </div>
             ) : null}
           </dl>
+          {/* Laporan barang kembali yang belum disetujui kantor belum mengurangi angka di atas. */}
+          {data.potongReturMenunggu > 0 ? (
+            <p className="mt-1 text-xs opacity-80">{t("returMenunggu", { pcs: data.potongReturMenunggu })}</p>
+          ) : null}
         </section>
 
         <section className="space-y-2" aria-labelledby="tutup-terlaris">

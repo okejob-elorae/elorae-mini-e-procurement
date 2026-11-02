@@ -143,6 +143,9 @@ const TAUTAN: Record<JenisKabar, Pembuat> = {
   // Hasil terima kiriman ke salesman: pesanannya (putus/konsi) — di sana tampil "Diterima toko";
   // titipan konsinyasi tidak punya pesanan, jadi ke halaman tokonya.
   KIRIMAN_DITERIMA_SELISIH: (d) => (id(d, "orderId") ? pesanan(d) : id(d, "storeId") ? toko(d) : "/pwa/orders"),
+  // Keputusan kantor atas laporan retur pembeli: ke daftar laporan SPG itu, tempat status dan alasannya tampil.
+  RETUR_PEMBELI_DISETUJUI: () => "/pwa/spg/retur-pembeli",
+  RETUR_PEMBELI_DITOLAK: () => "/pwa/spg/retur-pembeli",
 };
 
 /**

@@ -80,4 +80,22 @@ d("createItemsFromImport (test bed only)", () => {
     await expect(createItemsFromImport(plan())).rejects.toBeInstanceOf(ItemImportSkuTakenError);
     expect(await prisma.item.count({ where: { sku: skus[0] } })).toBe(0);
   });
+
+  it("a ticked Jubelio box requests every created product (no push), an unticked one requests none", async () => {
+    await createItemsFromImport(plan(), { ajukanKeJubelio: true, olehUserId: null });
+    const diajukan = await prisma.item.findMany({
+      where: { sku: { in: skus } },
+      select: { id: true, jubelioCreateRequestedAt: true, jubelioConfirmedPrice: true },
+    });
+    expect(diajukan).toHaveLength(2);
+    expect(diajukan.every((i) => i.jubelioCreateRequestedAt instanceof Date && i.jubelioConfirmedPrice === null)).toBe(true);
+    expect(await prisma.jubelioOutbox.count({ where: { entityId: { in: diajukan.map((i) => i.id) } } })).toBe(0);
+
+    await prisma.inventoryValue.deleteMany({ where: { itemId: { in: diajukan.map((i) => seededId(i.id)) } } });
+    await prisma.item.deleteMany({ where: { sku: { in: skus.map(seededId) } } });
+
+    await createItemsFromImport(plan());
+    const tanpa = await prisma.item.findMany({ where: { sku: { in: skus } }, select: { jubelioCreateRequestedAt: true } });
+    expect(tanpa.every((i) => i.jubelioCreateRequestedAt === null)).toBe(true);
+  });
 });

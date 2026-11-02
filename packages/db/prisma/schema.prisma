@@ -1431,6 +1431,11 @@ model Item {
   reorderPoint     Decimal?          @db.Decimal(10,2)
   overReceiveThreshold Decimal?      @db.Decimal(10,2)
   sellingPrice     Decimal?          @db.Decimal(14,2)
+  jubelioConfirmedPrice      Decimal?          @db.Decimal(14,2)
+  jubelioConfirmedAt         DateTime?
+  jubelioConfirmedById       String?
+  jubelioCreateRequestedAt   DateTime?
+  jubelioCreateRequestedById String?
   targetMarginPercent Decimal?       @db.Decimal(5,2)
   additionalCost   Decimal?          @db.Decimal(15,2)
   defaultPpnIncluded Boolean         @default(true)
@@ -3741,12 +3746,17 @@ model SpgSaleReturn {
   reason         String   @db.Text
   idempotencyKey String   @unique
   createdAt      DateTime @default(now())
+  status         SpgSaleReturnStatus @default(DISETUJUI)
+  decidedById    String?
+  decidedAt      DateTime?
+  rejectReason   String?  @db.Text
 
   spgSale        SpgSale  @relation(fields: [spgSaleId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines          SpgSaleReturnLine[]
 
   @@index([spgSaleId])
   @@index([storeId, createdAt])
+  @@index([status, createdAt])
 }
 
 model SpgSaleReturnLine {
@@ -3763,6 +3773,13 @@ model SpgSaleReturnLine {
 
   @@index([returnId])
   @@index([spgSaleLineId])
+}
+
+enum SpgSaleReturnStatus {
+  MENUNGGU
+  DISETUJUI
+  DITOLAK
+  DIBATALKAN
 }
 
 // ==========================================
@@ -6072,6 +6089,31 @@ model SpgSalesCheck {
 
   @@unique([storeId, period])
   @@index([checkedAt])
+}
+
+model SpgCommissionCorrection {
+  id               String   @id @default(cuid())
+  spgUserId        String
+  sourceKind       String   @db.VarChar(10)
+  sourceKey        String   @db.VarChar(191)
+  sourceStoreId    String
+  sourceSalesMonth String   @db.VarChar(7)
+  amount           Decimal  @db.Decimal(15, 2)
+  difference       Decimal  @db.Decimal(15, 2)
+  figure           Decimal  @db.Decimal(15, 2)
+  paidBefore       Decimal  @db.Decimal(15, 2)
+  appliedBefore    Decimal  @db.Decimal(15, 2)
+  paidRefType      String   @db.VarChar(40)
+  paidRefId        String
+  payoutMonth      String   @db.VarChar(7)
+  note             String   @db.Text
+  appliedById      String
+  appliedAt        DateTime
+  createdAt        DateTime @default(now())
+
+  @@unique([paidRefType, paidRefId, sourceKey])
+  @@index([spgUserId, sourceKey])
+  @@index([payoutMonth])
 }
 
 model DamagedStockMovement {

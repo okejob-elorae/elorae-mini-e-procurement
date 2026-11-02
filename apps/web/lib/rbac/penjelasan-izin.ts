@@ -58,8 +58,9 @@ export type PenjelasanIzin = {
   butuh?: KodeIzin;
   /**
    * Izin persetujuan/keputusan manager. "Manager" = admin (keputusan pemilik
-   * 2026-10-29), jadi tidak ada peran bawaan yang memegangnya — pemilik yang
-   * memberikannya di Peran & izin.
+   * 2026-10-29), jadi bawaannya hanya admin, kecuali yang diputuskan pemilik di
+   * `PERSETUJUAN_BAWAAN_PERAN_KANTOR` — selebihnya pemilik yang memberikannya
+   * di Peran & izin.
    */
   persetujuan?: true;
 };
@@ -105,6 +106,9 @@ const ISIAN: Record<KodeIzin, Isian> = {
     butuh: P.SALES_ORDERS_VIEW,
   },
   [P.SALES_RETURNS_DECIDE]: { grup: "marketplace", butuh: P.SALES_RETURNS_VIEW, persetujuan: true },
+  // Harga baru masuk Jubelio hanya sesudah dikonfirmasi (keputusan pemilik 2026-11-02). Izinnya
+  // sendiri membuka halamannya, jadi tanpa `butuh`. Persetujuan — bawaannya hanya admin.
+  [P.JUBELIO_PRICES_CONFIRM]: { grup: "marketplace", halaman: ["/backoffice/jubelio/harga"], persetujuan: true },
 
   // ── Pesanan lapangan & toko ──
   [P.FIELD_SALES_ORDERS_VIEW]: {
@@ -179,6 +183,8 @@ const ISIAN: Record<KodeIzin, Isian> = {
     halaman: [
       "/backoffice/spg-sales",
       "/backoffice/spg-sales/[id]",
+      "/backoffice/retur-spg",
+      "/backoffice/retur-spg/[id]",
       "/backoffice/kinerja-spg",
       "/backoffice/spg-tutup-hari",
       "/backoffice/spg-pelanggan",
@@ -206,6 +212,9 @@ const ISIAN: Record<KodeIzin, Isian> = {
   // jadi prasyarat kedua ditulis di keterangannya.
   [P.STORE_TRANSFERS_APPROVE]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
   [P.STORE_TRANSFERS_DECIDE_SHORTFALL]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
+  // Retur pembeli yang dilaporkan SPG baru berlaku sesudah disetujui. Persetujuan — bawaannya admin
+  // DAN Admin Penjualan (keputusan pemilik 2026-11-02, `PERSETUJUAN_BAWAAN_PERAN_KANTOR`).
+  [P.SPG_RETURNS_APPROVE]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
 
   // ── Piutang & pelunasan ──
   [P.RECEIVABLES_VIEW]: {
@@ -504,6 +513,23 @@ const URUTAN_KODE = new Map(Object.keys(ISIAN).map((kode, i) => [kode, i]));
 export const IZIN_PERSETUJUAN: readonly KodeIzin[] = (Object.keys(ISIAN) as KodeIzin[]).filter(
   (kode) => ISIAN[kode].persetujuan === true,
 );
+
+/**
+ * Izin persetujuan yang SENGAJA dipegang peran kantor sejak awal, karena pemilik
+ * memutuskannya sendiri — selebihnya persetujuan bawaannya hanya admin. Retur pembeli
+ * SPG disetujui admin dan Admin Penjualan (keputusan pemilik 2026-11-02).
+ *
+ * `peran-kantor.test.ts` mewajibkan izin persetujuan tiap peran kantor di `seed.ts` dan
+ * di kedua `seed-office-roles-permissions.sql` sama PERSIS dengan daftar ini, jadi
+ * pengecualian baru harus ditulis di sini dulu — tidak bisa menyelinap lewat seed.
+ */
+export const PERSETUJUAN_BAWAAN_PERAN_KANTOR: Readonly<
+  Record<"KEUANGAN" | "ADMIN_PENJUALAN" | "ADMIN_PAJAK", readonly KodeIzin[]>
+> = {
+  KEUANGAN: [],
+  ADMIN_PENJUALAN: [P.SPG_RETURNS_APPROVE],
+  ADMIN_PAJAK: [],
+};
 
 export function penjelasanIzin(kode: string): PenjelasanIzin | null {
   return Object.prototype.hasOwnProperty.call(PENJELASAN_IZIN, kode)

@@ -91,6 +91,7 @@ d("getCommissionRecap by payout month (test bed only)", () => {
   });
 
   afterEach(async () => {
+    await prisma.spgCommissionCorrection.deleteMany({ where: { spgUserId: { in: seededIds([ani, sari, dewi].filter(Boolean)) } } });
     if (cekId) await prisma.spgSalesCheck.deleteMany({ where: { id: seededId(cekId) } });
     cekId = "";
     await prisma.spgCommission.deleteMany({ where: { storeId: { in: toko() } } });
@@ -119,7 +120,7 @@ d("getCommissionRecap by payout month (test bed only)", () => {
   };
 
   const baris = (recap: Awaited<ReturnType<typeof getCommissionRecap>>) =>
-    recap.rows.map((r) => [r.salesmanId, r.pieces, r.net]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    recap.rows.map((r) => [r.salesmanId, r.pieces, r.figure]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
   it("pays October's konsi cycle locked in November and October's putus month checked in November in November, at the category rate, per SPG", async () => {
     await cek("2026-11-06T09:00:00+07:00");
@@ -163,13 +164,14 @@ d("getCommissionRecap by payout month (test bed only)", () => {
     expect((await getCommissionRecap("2026-11", prisma, { storeIds: [] })).rows).toEqual([]);
   });
 
+  /** [SPG, ditetapkan, komisi per SPG, dibayar, belum dibayar, diganti saat dibayar, selisih ke pembayaran berikutnya]. */
   const bayar = (recap: Awaited<ReturnType<typeof getCommissionRecap>>) =>
     recap.rows
-      .map((r) => [r.salesmanId, r.setAmount, r.net, r.paidAmount, r.unsetAmount, r.differs])
+      .map((r) => [r.salesmanId, r.setAmount, r.figure, r.paidAmount, r.unpaidAmount, r.differs, r.pendingDifference])
       .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   const urut = <T extends unknown[]>(rows: T[]) => rows.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
-  it("pays the figures STORED at the lock and at Tetapkan, with the computation beside them — the same figures Komisi SPG shows", async () => {
+  it("shows the per-SPG figure, what was stored and what was PAID apart; a paid old-rule figure leaves a difference for the next payout", async () => {
     // October's cycle was locked under the old rule (item rate, equal split): 45 000 each, Ani's already paid.
     await prisma.consignmentCommission.create({
       data: { cycleId: siklusId, spgUserId: ani, commission: 45_000, total: 45_000, paidAt: new Date("2026-11-20T10:00:00+07:00") },
@@ -183,13 +185,52 @@ d("getCommissionRecap by payout month (test bed only)", () => {
     const nov = await getCommissionRecap("2026-11", prisma, { storeIds: toko() });
     expect(bayar(nov)).toEqual(
       urut([
-        [ani, 45_000, 40_000, 45_000, 0, true],
-        [sari, 45_000, 20_000, 0, 0, true],
-        [dewi, 14_000, 14_000, 0, 0, false],
+        // Ani dibayar 45.000 (bagi rata), angkanya 40.000: −5.000 menunggu pembayarannya berikutnya.
+        [ani, 45_000, 40_000, 45_000, 0, false, -5_000],
+        // Sari belum dibayar: dibayar dengan 20.000 saat ditandai dibayar (yang tersimpan diganti).
+        [sari, 45_000, 20_000, 0, 20_000, true, 0],
+        [dewi, 14_000, 14_000, 0, 14_000, false, 0],
       ]),
     );
-    expect(nov.payoutLines.find((l) => l.salesmanId === ani)).toMatchObject({ status: "DIBAYAR", setAmount: 45_000, computedAmount: 40_000 });
+    expect(nov.payoutLines.find((l) => l.salesmanId === ani)).toMatchObject({
+      status: "DIBAYAR",
+      setAmount: 45_000,
+      figure: 40_000,
+      paidAmount: 45_000,
+      pendingDifference: -5_000,
+      payoutMonth: "2026-11",
+      salesMonth: "2026-10",
+    });
     expect(nov.payoutLines.find((l) => l.salesmanId === dewi)).toMatchObject({ status: "DITETAPKAN", setAmount: 14_000, differs: false });
+    expect(nov.rows.find((r) => r.salesmanId === ani)?.salesMonths).toEqual(["2026-10"]);
+
+    // Koreksi yang sudah diterapkan dari laporan itu menutup selisihnya.
+    await prisma.spgCommissionCorrection.create({
+      data: {
+        spgUserId: ani,
+        sourceKind: "KONSI",
+        sourceKey: konsiReportKey(siklusId),
+        sourceStoreId: tokoKonsi,
+        sourceSalesMonth: "2026-10",
+        amount: -5_000,
+        difference: -5_000,
+        figure: 40_000,
+        paidBefore: 45_000,
+        appliedBefore: 0,
+        paidRefType: "ConsignmentCommission",
+        paidRefId: `${tag}-baris-lain`,
+        payoutMonth: "2026-12",
+        note: "uji",
+        appliedById: "uji",
+        appliedAt: new Date("2026-12-05T10:00:00+07:00"),
+      },
+    });
+    const sesudah = await getCommissionRecap("2026-11", prisma, { storeIds: toko() });
+    expect(sesudah.payoutLines.find((l) => l.salesmanId === ani)).toMatchObject({ correctionsFromThis: -5_000, pendingDifference: 0 });
+    const des = await getCommissionRecap("2026-12", prisma, { storeIds: toko() });
+    expect(des.corrections.map((c) => [c.salesmanId, c.amount, c.sourceDocNo])).toEqual([[ani, -5_000, `${tag}/K`]]);
+    expect(des.rows.find((r) => r.salesmanId === ani)).toMatchObject({ correctionsApplied: -5_000 });
+    await prisma.spgCommissionCorrection.deleteMany({ where: { spgUserId: seededId(ani) } });
 
     // Komisi SPG reads the same stored figures for the same reports.
     const kantor = await daftarKomisiKantor("2026-11", new Date());
@@ -208,17 +249,17 @@ d("getCommissionRecap by payout month (test bed only)", () => {
   it("a checked putus month with no stored row is 'belum ditetapkan': nothing set, nothing paid, its computation counted apart", async () => {
     await cek("2026-11-06T09:00:00+07:00");
     const nov = await getCommissionRecap("2026-11", prisma, { storeIds: [tokoPutus] });
-    expect(bayar(nov)).toEqual([[dewi, 0, 14_000, 0, 14_000, false]]);
+    expect(bayar(nov)).toEqual([[dewi, 0, 14_000, 0, 14_000, false, 0]]);
     expect(nov.rows[0].hasUnset).toBe(true);
-    expect(nov.payoutLines).toEqual([expect.objectContaining({ salesmanId: dewi, status: "BELUM_DITETAPKAN", setAmount: null, computedAmount: 14_000 })]);
+    expect(nov.payoutLines).toEqual([expect.objectContaining({ salesmanId: dewi, status: "BELUM_DITETAPKAN", setAmount: null, figure: 14_000, paidAmount: 0 })]);
   });
 
-  it("a putus month set under the old rule without a check is paid in the month it was set, at its stored figure, as on Komisi SPG", async () => {
+  it("a putus month set under the old rule without a check belongs to the month it was set; its per-SPG figure replaces the stored one when paid", async () => {
     await prisma.spgCommission.create({
       data: { userId: dewi, storeId: tokoPutus, period: "2026-10", unitsSold: 7, commission: 9_999, basis: "PER_SPG", lockedById: "uji", lockedAt: new Date("2026-11-03T10:00:00+07:00") },
     });
     const nov = await getCommissionRecap("2026-11", prisma, { storeIds: [tokoPutus] });
-    expect(bayar(nov)).toEqual([[dewi, 9_999, 14_000, 0, 0, true]]);
+    expect(bayar(nov)).toEqual([[dewi, 9_999, 14_000, 0, 14_000, true, 0]]);
     expect(nov.reportDocNos[putusReportKey(tokoPutus, "2026-10")]).toBe("Penjualan Oktober 2026");
     // One month only: neither the sales month nor the next payout month lists it.
     expect((await getCommissionRecap("2026-10", prisma, { storeIds: [tokoPutus] })).rows).toEqual([]);

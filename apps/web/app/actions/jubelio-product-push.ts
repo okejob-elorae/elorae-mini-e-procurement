@@ -1,14 +1,20 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/rbac";
-import { enqueueProductPushOnCreate } from "@/lib/jubelio/product-push";
+import { ajukanKeJubelio } from "@/lib/jubelio/harga/pengajuan";
 import {
   jubelioCreateEligibility,
   type JubelioCreateEligibility,
 } from "@/lib/items/jubelio-create-eligibility";
 
-/* The item page's "Buat di Jubelio" button — for ERP finished goods that never reached Jubelio (e.g. imported with the Jubelio box unticked). */
+/*
+ * The item page's "Ajukan ke Jubelio" button — for ERP finished goods that never reached Jubelio
+ * (e.g. imported with the Jubelio box unticked, or a request someone cancelled). It REQUESTS
+ * creation and pushes nothing: the product waits on Jubelio → Konfirmasi harga and is created in
+ * Jubelio once its price is confirmed (owner decision 2026-11-02). Name kept for its callers.
+ */
 export async function createItemInJubelio(
   itemId: string,
 ): Promise<{ ok: true } | { ok: false; reason: "forbidden" | Exclude<JubelioCreateEligibility, "eligible"> }> {
@@ -19,6 +25,22 @@ export async function createItemInJubelio(
   if (typeof itemId !== "string") return { ok: false, reason: "not_found" };
   const eligibility = await jubelioCreateEligibility(itemId);
   if (eligibility !== "eligible") return { ok: false, reason: eligibility };
-  await enqueueProductPushOnCreate(itemId, session.user.id);
-  return { ok: true };
+
+  const [hasil] = await ajukanKeJubelio([itemId], session.user.id);
+  revalidatePath(`/backoffice/items/${itemId}`);
+  revalidatePath("/backoffice/jubelio/harga");
+  switch (hasil?.hasil) {
+    case "DIAJUKAN":
+      return { ok: true };
+    case "SUDAH_DIAJUKAN":
+      return { ok: false, reason: "already_requested" };
+    case "SEDANG_DIKIRIM":
+      return { ok: false, reason: "already_queued" };
+    case "SUDAH_DI_JUBELIO":
+      return { ok: false, reason: "already_mapped" };
+    case "BUKAN_BARANG_JADI_ERP":
+      return { ok: false, reason: "not_erp_finished_good" };
+    default:
+      return { ok: false, reason: "not_found" };
+  }
 }

@@ -135,6 +135,8 @@ describe("fanOutAdminNotification", () => {
     ["STOCK_LOSS_OPEN", "receivables:decide_bearer"],
     ["STORE_TRANSFER_PROPOSED", "store_transfers:approve"],
     ["STORE_TRANSFER_DISCREPANCY", "store_transfers:decide_shortfall"],
+    // Owner 2026-11-02: an SPG's shopper-return report waits for whoever may approve it.
+    ["RETUR_PEMBELI_MENUNGGU", "spg_returns:approve"],
     ["CREDIT_LIMIT_HOLD", "field_sales_orders:credit_override"],
     // Unchanged on purpose: retur-toko actions still check receivables:manage, and receiving a
     // transfer on the store's behalf is still stores:manage.

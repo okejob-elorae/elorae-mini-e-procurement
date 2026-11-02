@@ -14,6 +14,7 @@ describe("tampilkanMenuSpg", () => {
       "/pwa/spg/mutasi/abc123",
       "/pwa/retur",
       "/pwa/tampilan",
+      "/pwa/spg/retur-pembeli",
     ]) {
       expect(tampilkanMenuSpg(p), p).toBe(true);
     }
@@ -83,9 +84,16 @@ describe("tabAktifSpg", () => {
       "/pwa/peringkat",
       "/pwa/stores/abc123",
       "/pwa/stores/abc123/checklist",
+      "/pwa/spg/retur-pembeli",
     ]) {
       expect(tabAktifSpg(p), p).toBe("lainnya");
     }
+  });
+
+  it("keeps the shopper-return report LIST under Lainnya while the report form (from a receipt) has no menu", () => {
+    expect(tabAktifSpg("/pwa/spg/retur-pembeli")).toBe("lainnya");
+    expect(tampilkanMenuSpg("/pwa/spg/retur-pembeli")).toBe(true);
+    expect(tampilkanMenuSpg("/pwa/spg/abc123/kembali")).toBe(false);
   });
 
   it("no longer lists the salesman's order screen", () => {

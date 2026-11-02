@@ -37,7 +37,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaSpg",
     judul: { kunci: "pwa.spgNota.detail.title" },
     isi: [
-      "Nota satu penjualan yang Anda catat. Dari sini nota bisa dicetak atau dibagikan ke pembeli, Anda bisa kembali menjual, atau mencatat barang yang dikembalikan pembeli lewat tombol Pembeli mengembalikan barang.",
+      "Nota satu penjualan yang Anda catat. Dari sini nota bisa dicetak atau dibagikan ke pembeli, Anda bisa kembali menjual, atau melaporkan barang yang dikembalikan pembeli lewat tombol Laporkan retur pembeli.",
       "Di atas kertas nota (tidak ikut tercetak) tampil keterangan bila ada: nota yang dicatat tanpa sinyal dan kapan terkirim, data pembeli, diskon SPG beserta alasannya, dan selisih bila total tercatat berbeda dari layar saat dijual karena harga atau promo dihitung ulang server. Total nota adalah yang dibayar pembeli di kasir toko, sesudah semua potongan.",
     ],
   },
@@ -47,8 +47,18 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgRetur.pembeli.judul" },
     isi: [
       { kunci: "spgRetur.pembeli.penjelasan" },
-      "Dibuka dari nota penjualan. Jumlah yang dikembalikan tidak bisa melebihi yang terjual di nota itu dikurangi yang sudah kembali, dan alasan pembeli wajib diisi. Barang layak jual masuk lagi ke stok rak toko; barang rusak dicatat tetapi tidak kembali ke rak — kirim balik ke gudang lewat nota retur dari layar Terima kiriman.",
-      "Target, komisi, dan laporan memakai penjualan bersih sesudah barang kembali. Tanpa sinyal, catatan ini disimpan di HP dan terkirim sendiri.",
+      "Dibuka dari nota penjualan. Jumlah yang dilaporkan tidak bisa melebihi yang terjual di nota itu dikurangi yang sudah kembali dan yang masih menunggu kantor, dan alasan pembeli wajib diisi. Laporan dikirim ke kantor dan baru berlaku setelah disetujui (keputusan pemilik 2026-11-02): barang layak jual masuk lagi ke stok rak toko, sedangkan barang rusak dicatat tetapi tidak kembali ke rak — kirim balik ke gudang lewat nota retur dari layar Terima kiriman setelah disetujui.",
+      "Target, komisi, dan laporan memakai penjualan bersih sesudah retur yang disetujui. Tanpa sinyal, laporan disimpan di HP, terkirim sendiri, lalu menunggu persetujuan kantor. Status setiap laporan Anda ada di layar laporan retur pembeli (Lainnya, kelompok Di konter).",
+    ],
+  },
+  {
+    rute: "/pwa/spg/retur-pembeli",
+    bagian: "pwaSpg",
+    judul: { kunci: "spgRetur.pembeliSaya.judul" },
+    isi: [
+      "Laporan barang yang dikembalikan pembeli yang Anda kirim, dengan statusnya: Menunggu persetujuan kantor, Disetujui, Ditolak (beserta alasan kantor), atau Ditarik.",
+      "Selama menunggu, stok rak, penjualan bersih, dan komisi belum berubah, dan potong yang sudah dilaporkan tidak bisa dilaporkan lagi dari nota yang sama. Laporan yang masih menunggu bisa Anda tarik sendiri dengan alasan bila salah catat — laporannya tidak dihapus, kantor tetap melihatnya sebagai ditarik — lalu barangnya bisa dilaporkan ulang dari nota.",
+      "Laporan yang dicatat tanpa sinyal baru muncul di sini setelah terkirim; sebelum itu ada di Lainnya → Belum terkirim.",
     ],
   },
   {
@@ -115,7 +125,7 @@ export const ENTRI: EntriBantuan[] = [
     bagian: "pwaSpg",
     judul: { kunci: "pwa.spgStok.title" },
     isi: [
-      "Saldo setiap barang di toko Anda menurut buku stok toko. Saldo bertambah saat Anda menerima kiriman atau barang layak jual kembali dari pembeli, berkurang saat barang terjual, dikirim ke toko lain, diretur ke gudang, atau dicatat hilang oleh kantor, dan disesuaikan oleh opname. Saringan Hampir habis menampilkan barang dengan saldo 2 potong atau kurang.",
+      "Saldo setiap barang di toko Anda menurut buku stok toko. Saldo bertambah saat Anda menerima kiriman atau barang layak jual dari retur pembeli yang sudah disetujui kantor, berkurang saat barang terjual, dikirim ke toko lain, diretur ke gudang, atau dicatat hilang oleh kantor, dan disesuaikan oleh opname. Saringan Hampir habis menampilkan barang dengan saldo 2 potong atau kurang.",
       "Saldo boleh minus: penjualan tidak pernah ditolak karena saldo kosong, dan opname yang membetulkannya. Ubin di atas membuka Terima kiriman, Opname, Minta kiriman, dan Kirim ke toko lain.",
     ],
     kartu: [
@@ -267,7 +277,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "pwa.spgNota.title" },
     isi: [
       { kunci: "pwa.spgNota.subtitle" },
-      "Nota dikelompokkan per hari, dan di atasnya tampil jumlah serta total penjualan hari ini. Ketuk sebuah nota untuk mencetak, membagikan, atau mencatat barang yang dikembalikan pembeli. Nota yang dicatat tanpa sinyal baru muncul di sini setelah terkirim; sebelum itu ada di Belum terkirim.",
+      "Nota dikelompokkan per hari, dan di atasnya tampil jumlah serta total penjualan hari ini. Ketuk sebuah nota untuk mencetak, membagikan, atau melaporkan barang yang dikembalikan pembeli. Nota yang dicatat tanpa sinyal baru muncul di sini setelah terkirim; sebelum itu ada di Belum terkirim.",
     ],
   },
   {
@@ -281,7 +291,7 @@ export const ENTRI: EntriBantuan[] = [
     kartu: [
       {
         judul: { kunci: "pwa.spgLainnya.grupKonter" },
-        isi: "Pekerjaan dengan pembeli: Pelanggan, Titip pesan, Info produk, Hitung pengunjung, Barang dicari, dan Belum terkirim.",
+        isi: "Pekerjaan dengan pembeli: Pelanggan, Titip pesan, Info produk, Hitung pengunjung, Barang dicari, Belum terkirim, dan laporan retur pembeli Anda beserta statusnya.",
       },
       {
         judul: { kunci: "pwa.spgLainnya.grupStok" },
@@ -480,6 +490,7 @@ export const ENTRI: EntriBantuan[] = [
     judul: { kunci: "spgTutupHari.hp.judul" },
     isi: [
       "Laporan penutupan hari toko Anda, dikirim sebelum pulang. Angka penjualan dihitung sistem; Anda menambahkan jumlah pengunjung, total kasir toko untuk merek kita, kendala hari itu, dan foto, sesuai yang diatur kantor.",
+      "Retur pembeli dihitung pada hari dilaporkan dan hanya bila sudah disetujui kantor; yang masih menunggu kantor ditulis terpisah dan belum mengurangi penjualan bersih.",
       "Satu laporan per toko per hari: kalau Anda atau rekan mengirim lagi, laporan hari itu diperbarui. Laporan kemarin masih bisa dikirim lewat tombol Kemarin. Pukul 21.30 WIB, SPG yang check-in hari itu menerima pengingat kalau tokonya sudah punya nota tetapi belum punya laporan. Laporan yang terkirim bisa dibagikan lewat WhatsApp.",
     ],
     kartu: [
@@ -532,7 +543,7 @@ export const ENTRI: EntriBantuan[] = [
       {
         judul: "Perkiraan komisi bulan ini",
         isi: [
-          "Perkiraan = tarif komisi per kategori barang × potong yang Anda jual sendiri bulan berjalan, sesudah dikurangi barang yang dikembalikan pembeli dari nota Anda. Sama untuk toko konsinyasi dan toko putus; barang yang kategorinya belum bertarif tidak menghasilkan komisi.",
+          "Perkiraan = tarif komisi per kategori barang × potong yang Anda jual sendiri bulan berjalan, sesudah dikurangi barang kembali dari nota Anda yang pengembaliannya sudah disetujui kantor. Sama untuk toko konsinyasi dan toko putus; barang yang kategorinya belum bertarif tidak menghasilkan komisi.",
           "Yang dibayar hanya angka resmi, di bulan kantor mengecek laporannya, dengan catatan bulan penjualannya — misalnya penjualan Oktober yang dicek awal November dibayar November sebagai Komisi penjualan Oktober. Di toko konsinyasi laporannya dicek saat kantor mengunci bulan itu, di toko putus saat kantor menandai laporannya dicek sesudah bulan selesai.",
           "Komisi tetap milik bulan penjualannya: tarif yang dipakai adalah tarif bulan penjualan itu, kapan pun laporannya dicek.",
         ],
@@ -543,7 +554,12 @@ export const ENTRI: EntriBantuan[] = [
       },
       {
         judul: { kunci: "pwa.spgGaji.officialTitle" },
-        isi: "Gaji dan komisi yang sudah dicatat kantor per bulan pembayaran, masing-masing dengan bulan penjualannya: gaji & komisi konsinyasi dari bulan yang dikunci, atau komisi toko putus yang ditetapkan kantor. Bila ada potongan beban barang hilang, barisnya menyebut potongan dan jumlah yang diterima; lencananya menunjukkan sudah dibayar atau belum.",
+        isi: [
+          "Gaji dan komisi yang sudah dicatat kantor per bulan pembayaran, masing-masing dengan bulan penjualannya: gaji & komisi konsinyasi dari bulan yang dikunci, atau komisi toko putus yang ditetapkan kantor. Bila ada potongan beban barang hilang, barisnya menyebut potongan; lencananya menunjukkan sudah dibayar atau belum.",
+          "Pembayaran memakai komisi dari penjualan Anda sendiri pada saat dibayar (keputusan pemilik 2026-11-02, tanpa bagi rata). Bila angka yang dulu dicatat berbeda, angka lama ditulis sebagai \"sebelumnya\". Diterima = yang Anda terima sesudah potongan beban barang hilang dan koreksi; Akan diterima = yang akan Anda terima bila belum dibayar.",
+          "Koreksi (+ atau −) untuk bulan yang sudah dibayar — misalnya dulu dibayar dibagi rata, atau ada pengembalian yang disetujui sesudah dibayar — ditambahkan sekali ke pembayaran resmi Anda berikutnya dan tidak pernah membuat pembayaran di bawah Rp 0; sisanya dibawa ke pembayaran sesudahnya. Koreksi yang belum punya pembayaran tampil di bagian Koreksi menunggu pembayaran berikutnya.",
+          "Bulan toko putus lama yang belum dicek kantor menampilkan angka yang akan dibayar sesudah dicek. Pembayaran yang menunggu keputusan kantor, atau siklus yang kuncinya dibuka lagi, belum menampilkan jumlah sampai angkanya pasti.",
+        ],
       },
     ],
   },

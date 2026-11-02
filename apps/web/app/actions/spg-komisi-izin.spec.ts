@@ -22,7 +22,7 @@ vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/spg/komisi-writer", () => ({
   tandaiKomisiDibayar: vi.fn(async () => {
     state.dipanggil.push("tandaiKomisiDibayar");
-    return { ok: true };
+    return { ok: true, storeId: "s1", periode: "2026-10", diubah: false, dibayar: 20_000, koreksi: 0 };
   }),
   tetapkanKomisiToko: vi.fn(async () => {
     state.dipanggil.push("tetapkanKomisiToko");
@@ -53,7 +53,7 @@ beforeEach(() => {
   state.dipanggil = [];
 });
 
-const bayar = () => aksi.tandaiKomisiSpgDibayarAction({ commissionId: "k1" });
+const bayar = () => aksi.tandaiKomisiSpgDibayarAction({ commissionId: "k1", jumlahDiharapkan: 20_000 });
 
 describe("menandai komisi SPG toko putus dibayar: spg_commission:pay", () => {
   it("pengelola piutang dan pengatur tarif komisi ditolak sebelum menyentuh penulis", async () => {
@@ -66,8 +66,19 @@ describe("menandai komisi SPG toko putus dibayar: spg_commission:pay", () => {
 
   it("pemegang izin bayar menandai dibayar", async () => {
     masuk(["spg_commission:pay"]);
-    expect(await bayar()).toEqual({ ok: true });
+    expect(await bayar()).toEqual({ ok: true, dibayar: 20_000, koreksi: 0 });
     expect(state.dipanggil).toEqual(["tandaiKomisiDibayar"]);
+  });
+
+  it("yang dilihat di layar wajib ikut: tanpa, bukan angka, atau minus ditolak INVALID sebelum menyentuh penulis", async () => {
+    masuk(["spg_commission:pay"]);
+    for (const jumlahDiharapkan of [undefined, null, "20000", Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      expect(await aksi.tandaiKomisiSpgDibayarAction({ commissionId: "k1", jumlahDiharapkan })).toEqual({ ok: false, code: "INVALID" });
+    }
+    expect(state.dipanggil).toEqual([]);
+    // Tanpa izin tetap FORBIDDEN lebih dulu, apa pun isiannya.
+    masuk(["receivables:manage"]);
+    expect(await aksi.tandaiKomisiSpgDibayarAction({ commissionId: "k1", jumlahDiharapkan: -1 })).toEqual({ ok: false, code: "FORBIDDEN" });
   });
 
   it("menetapkan komisi tetap milik pengelola piutang, bukan pemegang izin bayar", async () => {

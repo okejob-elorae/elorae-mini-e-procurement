@@ -27,7 +27,6 @@ vi.mock("@elorae/db", () => ({
     PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error {},
   },
   moveMainStock: vi.fn(),
-  recalcItemSellingPrice: vi.fn(),
   prisma: {
     workOrder: { findUnique: mockWoFindUnique },
     item: { findMany: mockItemFindMany },

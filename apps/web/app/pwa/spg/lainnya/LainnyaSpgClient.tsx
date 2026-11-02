@@ -53,6 +53,7 @@ function kelompokLainnya(tokoId: string): { kunci: string; baris: BarisLainnya[]
         { href: "/pwa/spg/pengunjung", ikon: Footprints, kunci: "pengunjung" },
         { href: "/pwa/spg/dicari", ikon: SearchX, kunci: "lost" },
         { href: "/pwa/spg/antrean", ikon: CloudOff, kunci: "antrean" },
+        { href: "/pwa/spg/retur-pembeli", ikon: Undo2, kunci: "returPembeli" },
       ],
     },
     {

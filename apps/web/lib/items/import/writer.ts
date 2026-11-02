@@ -1,4 +1,5 @@
 import { prisma, Prisma } from "@elorae/db";
+import { dataPengajuanJubelio } from "@/lib/jubelio/harga/pengajuan";
 import type { ItemImportPlan } from "./types";
 
 export class ItemImportSkuTakenError extends Error {
@@ -17,14 +18,20 @@ const IMPORT_TRANSACTION_TIMEOUT_MS = 60_000;
  * stock movement — no ledger entry — which is why this file sits on the balance-write guard's
  * ALLOWED list; it must never gain a quantity move. A unique violation means a concurrent create
  * took one of the SKUs after validation; the caller re-validates to say which.
+ *
+ * `ajukanKeJubelio` (the import's Jubelio box) REQUESTS every created product for Jubelio inside
+ * the same all-or-nothing transaction; nothing is pushed — each waits on Jubelio → Konfirmasi
+ * harga until its price is confirmed (owner decision 2026-11-02).
  */
 export async function createItemsFromImport(
   plan: ItemImportPlan,
+  opsi: { ajukanKeJubelio?: boolean; olehUserId?: string | null } = {},
 ): Promise<Array<{ id: string; sku: string; nameId: string }>> {
   try {
     return await prisma.$transaction(
       async (tx) => {
         const created: Array<{ id: string; sku: string; nameId: string }> = [];
+        const pengajuan = opsi.ajukanKeJubelio ? dataPengajuanJubelio(opsi.olehUserId ?? null) : {};
         for (const planned of plan.items) {
           const item = await tx.item.create({
             data: {
@@ -40,6 +47,7 @@ export async function createItemsFromImport(
               variants: planned.variants,
               reorderPoint: 0,
               overReceiveThreshold: 0,
+              ...pengajuan,
             },
             select: { id: true, sku: true, nameId: true },
           });

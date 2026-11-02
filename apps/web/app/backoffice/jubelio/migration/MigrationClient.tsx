@@ -37,7 +37,7 @@ import { ExternalLink, Loader2, UploadCloud } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { usePesanGalatJubelio } from "../RincianGalat";
 import {
-  enqueueBulkMigration,
+  requestBulkMigration,
   type EligibleItem,
   type MigrationSummary,
 } from "@/app/actions/jubelio-bulk-migration";
@@ -45,14 +45,18 @@ import {
 type Props = {
   initialItems: EligibleItem[];
   initialSummary: MigrationSummary;
+  /** settings_security:manage — the same permission requestBulkMigration enforces. */
+  bolehUbah: boolean;
+  /** jubelio_prices:confirm — only then do the "awaiting price" figures link to Konfirmasi harga. */
+  bolehKonfirmasiHarga: boolean;
 };
 
-export function MigrationClient({ initialItems, initialSummary }: Props) {
+export function MigrationClient({ initialItems, initialSummary, bolehUbah, bolehKonfirmasiHarga }: Props) {
   const t = useTranslations("jubelio.migration");
   const pesanGalat = usePesanGalatJubelio();
   const locale = useLocale();
   const [items, setItems] = useState<EligibleItem[]>(initialItems);
-  const [summary] = useState<MigrationSummary>(initialSummary);
+  const [summary, setSummary] = useState<MigrationSummary>(initialSummary);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -66,8 +70,9 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
     });
   };
 
-  // Barang tanpa pemetaan kategori pasti dilewati Jubelio, jadi tidak bisa dicentang.
-  const siap = items.filter((it) => it.hasJubelioCategoryMapping);
+  // Barang tanpa pemetaan kategori tidak bisa dikonfirmasi untuk Jubelio, dan barang yang sudah
+  // diajukan tinggal menunggu konfirmasi harga — keduanya tidak bisa dicentang.
+  const siap = items.filter((it) => it.hasJubelioCategoryMapping && !it.jubelioCreateRequestedAt);
 
   const toggleAll = () => {
     if (selected.size === siap.length) {
@@ -80,7 +85,7 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
   const handleConfirm = () => {
     startTransition(async () => {
       const ids = Array.from(selected);
-      const r = await enqueueBulkMigration(ids);
+      const r = await requestBulkMigration(ids);
       setConfirmOpen(false);
       if (!r.ok) {
         toast.error(pesanGalat(r));
@@ -88,10 +93,14 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
       }
       toast.success(
         r.data.skipped > 0
-          ? t("queuedSkipped", { count: r.data.enqueued, skipped: r.data.skipped })
-          : t("queued", { count: r.data.enqueued }),
+          ? t("queuedSkipped", { count: r.data.requested, skipped: r.data.skipped })
+          : t("queued", { count: r.data.requested }),
       );
-      setItems((prev) => prev.filter((it) => !selected.has(it.id)));
+      const sekarang = new Date().toISOString();
+      setItems((prev) =>
+        prev.map((it) => (selected.has(it.id) && !it.jubelioCreateRequestedAt ? { ...it, jubelioCreateRequestedAt: sekarang } : it)),
+      );
+      setSummary((prev) => ({ ...prev, awaitingPriceConfirmation: prev.awaitingPriceConfirmation + r.data.requested }));
       setSelected(new Set());
     });
   };
@@ -102,7 +111,25 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
     <div className="space-y-6">
       <PageHeader title={t("title")} />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {!bolehUbah && (
+        <p className="rounded-md border bg-muted/40 p-3 text-sm text-muted-foreground">{t("hanyaLihat")}</p>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>{t("awaitingPrice")}</CardDescription>
+            <CardTitle className="text-3xl tabular-nums">
+              {bolehKonfirmasiHarga ? (
+                <Link href="/backoffice/jubelio/harga?jenis=BARU" className="underline-offset-4 hover:underline">
+                  {summary.awaitingPriceConfirmation}
+                </Link>
+              ) : (
+                summary.awaitingPriceConfirmation
+              )}
+            </CardTitle>
+          </CardHeader>
+        </Card>
         <SummaryStat label={t("done")} value={summary.done} />
         <SummaryStat label={t("pending")} value={summary.pending} />
         <SummaryStat label={t("processing")} value={summary.processing} />
@@ -118,7 +145,7 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
               <CardDescription>{t("candidates", { count: items.length })}</CardDescription>
             </div>
             <Button
-              disabled={selected.size === 0 || isPending}
+              disabled={!bolehUbah || selected.size === 0 || isPending}
               onClick={() => setConfirmOpen(true)}
             >
               <UploadCloud className="mr-2 h-4 w-4" />
@@ -140,7 +167,7 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
                       <Checkbox
                         checked={allSelected}
                         onCheckedChange={toggleAll}
-                        disabled={siap.length === 0}
+                        disabled={!bolehUbah || siap.length === 0}
                         aria-label={t("selectAll")}
                       />
                     </TableHead>
@@ -158,7 +185,7 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
                         <Checkbox
                           checked={selected.has(it.id)}
                           onCheckedChange={() => toggle(it.id)}
-                          disabled={!it.hasJubelioCategoryMapping}
+                          disabled={!bolehUbah || !it.hasJubelioCategoryMapping || Boolean(it.jubelioCreateRequestedAt)}
                           aria-label={t("selectOne", { sku: it.sku })}
                         />
                       </TableCell>
@@ -171,7 +198,15 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
                       </TableCell>
                       <TableCell className="text-right">{it.variantCount}</TableCell>
                       <TableCell>
-                        {it.hasJubelioCategoryMapping ? (
+                        {it.jubelioCreateRequestedAt ? (
+                          bolehKonfirmasiHarga ? (
+                            <Link href={`/backoffice/jubelio/harga?cari=${encodeURIComponent(it.sku)}`}>
+                              <Badge variant="secondary">{t("requested")}</Badge>
+                            </Link>
+                          ) : (
+                            <Badge variant="secondary">{t("requested")}</Badge>
+                          )
+                        ) : it.hasJubelioCategoryMapping ? (
                           <Badge variant="default">{t("ready")}</Badge>
                         ) : !it.categoryId ? (
                           <Link
@@ -232,7 +267,7 @@ export function MigrationClient({ initialItems, initialSummary }: Props) {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending}>{t("cancel")}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirm} disabled={isPending}>
+            <AlertDialogAction onClick={handleConfirm} disabled={!bolehUbah || isPending}>
               {isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {t("confirm")}
             </AlertDialogAction>

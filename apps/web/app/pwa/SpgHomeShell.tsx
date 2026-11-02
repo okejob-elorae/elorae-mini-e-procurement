@@ -39,6 +39,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatIDR } from "@/lib/sales-orders/format";
+import { formatKoreksi } from "@/lib/spg/koreksi";
 import { CheckInButton } from "./stores/[id]/CheckInButton";
 import { kunjunganLokalSah } from "@/lib/pwa/offline/luring-kunjungan";
 import { useKunjunganLokal } from "@/lib/pwa/offline/luring-kunjungan-hook";
@@ -85,14 +86,28 @@ export type DataBerandaSpg = {
   kirimanMenungguKunci?: string[];
   /** Pesanan untuk toko ini yang masih diproses kantor (belum berangkat). */
   pesananDiproses: number;
+  /** Pesanan konsi lama yang menunggu SPG mengonfirmasi barangnya sudah sampai (bagian Pesanan untuk toko ini di Terima kiriman). */
+  pesananLama?: number;
   notaHariIni: { id: string; docNo: string; jam: string; total: number; jumlahBarang: number }[];
   gaji: {
     perkiraan: { totalToko: number; bagianSaya: number } | null;
     /**
-     * Pembayaran resmi terbaru menurut bulan PEMBAYARANNYA — sama dengan layar Gaji & komisi.
-     * Nama bulan sudah diformat server; `bulanBayarLabel` null selama kantor membuka lagi laporannya.
+     * Pembayaran resmi terbaru menurut bulan PEMBAYARANNYA — sama dengan layar Gaji & komisi, dan
+     * `diterima` angka yang sama dengan baris "Diterima"/"Akan diterima" di sana (sesudah potongan
+     * beban barang hilang dan koreksi). Nama bulan sudah diformat server; `bulanBayarLabel` null
+     * selama kantor membuka lagi laporannya. Yang `ditahan` (menunggu keputusan kantor) atau
+     * `belumPasti` (siklusnya dibuka lagi) tidak menyebut rupiah — layar Gaji & komisi pun tidak.
      */
-    terakhir: { bulanJualLabel: string; bulanBayarLabel: string | null; total: number; dibayar: boolean } | null;
+    terakhir: {
+      bulanJualLabel: string;
+      bulanBayarLabel: string | null;
+      diterima: number;
+      dibayar: boolean;
+      ditahan?: boolean;
+      belumPasti?: boolean;
+    } | null;
+    /** Σ koreksi yang menunggu pembayaran resmi berikutnya; null kalau tidak ada. */
+    koreksiMenunggu?: number | null;
   };
   /** Shift hari ini dari jadwal kantor; null = belum dijadwalkan. */
   shift: { jenis: "KERJA"; label: string; mulai: string; selesai: string } | { jenis: "LIBUR" } | null;
@@ -233,6 +248,7 @@ export function SpgHomeShell({
     { kunci: "antrean", jumlah: belumTerkirim, href: "/pwa/spg/antrean", label: t("taskQueue"), ikon: CloudOff, mendesak: true },
     { kunci: "titip", jumlah: data.titipDatang, href: "/pwa/spg/titip", label: t("taskHoldArrived"), ikon: BellRing },
     { kunci: "terima", jumlah: kirimanMenunggu, href: "/pwa/spg/terima", label: t("taskReceive"), ikon: PackageCheck },
+    { kunci: "pesananLama", jumlah: data.pesananLama ?? 0, href: "/pwa/spg/terima#pesanan-toko", label: t("taskOldOrdersConfirm"), ikon: PackageCheck },
     { kunci: "pesanan", jumlah: data.pesananDiproses, href: "/pwa/spg/terima#pesanan-toko", label: t("taskOrdersComing"), ikon: ClipboardList },
     { kunci: "tukar", jumlah: data.tukarMasuk, href: "/pwa/spg/jadwal", label: t("taskSwap"), ikon: CalendarClock },
     { kunci: "tutup", jumlah: data.tutupPerlu ? 1 : 0, href: "/pwa/spg/tutup", label: t("taskClose"), ikon: MoonStar },
@@ -469,22 +485,33 @@ export function SpgHomeShell({
         </span>
         <span className="min-w-0 flex-1">
           <span className="beranda-judul block">{t("payTitle")}</span>
-          <span className="block text-sm">
-            {data.gaji.perkiraan
-              ? t("payEstimate", { amount: formatIDR(data.gaji.perkiraan.bagianSaya) })
-              : data.gaji.terakhir
-                ? data.gaji.terakhir.bulanBayarLabel
+          {data.gaji.perkiraan ? (
+            <span className="block text-sm">{t("payEstimate", { amount: formatIDR(data.gaji.perkiraan.bagianSaya) })}</span>
+          ) : null}
+          {/* Pembayaran resmi terbaru dengan angka yang DITERIMA — sama dengan layar Gaji & komisi.
+              Yang menunggu kantor (ditahan, atau siklusnya dibuka lagi) tidak menyebut rupiah:
+              angkanya belum pasti, dan layar Gaji & komisi pun tidak menyebutnya. */}
+          {data.gaji.terakhir ? (
+            <>
+              <span className="block text-sm">
+                {data.gaji.terakhir.bulanBayarLabel && !data.gaji.terakhir.ditahan && !data.gaji.terakhir.belumPasti
                   ? t(data.gaji.terakhir.dibayar ? "payLastPaid" : "payLastUnpaid", {
                       period: tGaji("payoutMonth", { month: data.gaji.terakhir.bulanBayarLabel }),
-                      amount: formatIDR(data.gaji.terakhir.total),
+                      amount: formatIDR(data.gaji.terakhir.diterima),
                     })
-                  : t("payLastPending", { amount: formatIDR(data.gaji.terakhir.total) })
-                : t("payNone")}
-          </span>
-          {/* Bulan penjualannya sebagai catatan — dibayar di bulan laporannya dicek kantor. */}
-          {!data.gaji.perkiraan && data.gaji.terakhir ? (
+                  : t("payLastPending")}
+              </span>
+              {/* Bulan penjualannya sebagai catatan — dibayar di bulan laporannya dicek kantor. */}
+              <span className="block text-xs text-muted-foreground">
+                {tGaji("salesMonthNote", { month: data.gaji.terakhir.bulanJualLabel })}
+              </span>
+            </>
+          ) : !data.gaji.perkiraan ? (
+            <span className="block text-sm">{t("payNone")}</span>
+          ) : null}
+          {data.gaji.koreksiMenunggu ? (
             <span className="block text-xs text-muted-foreground">
-              {tGaji("salesMonthNote", { month: data.gaji.terakhir.bulanJualLabel })}
+              {t("payCorrectionsWaiting", { amount: formatKoreksi(data.gaji.koreksiMenunggu) })}
             </span>
           ) : null}
         </span>

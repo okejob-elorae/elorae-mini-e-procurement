@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CommissionEvent, RecapRow } from "./compute";
+import type { CommissionEvent } from "./compute";
 import {
   detailKey,
   formatSignedRupiah,
@@ -8,7 +8,6 @@ import {
   shiftYearMonth,
   storeLabel,
   sumPayoutRows,
-  sumRecapRows,
 } from "./recap-display";
 
 function event(overrides: Partial<CommissionEvent>): CommissionEvent {
@@ -24,10 +23,6 @@ function event(overrides: Partial<CommissionEvent>): CommissionEvent {
     amount: 1000,
     ...overrides,
   };
-}
-
-function row(overrides: Partial<RecapRow>): RecapRow {
-  return { salesmanId: "u1", storeIds: [], pieces: 0, earned: 0, reversed: 0, net: 0, noRatePieces: 0, ...overrides };
 }
 
 describe("shiftYearMonth", () => {
@@ -83,33 +78,29 @@ describe("ratesByDetail", () => {
   });
 });
 
-describe("sumRecapRows", () => {
-  it("sums signed figures without flooring", () => {
-    expect(
-      sumRecapRows([
-        row({ pieces: 3, earned: 3000, reversed: 0, net: 3000 }),
-        row({ salesmanId: "u2", pieces: -2, earned: 0, reversed: -2000, net: -2000 }),
-      ]),
-    ).toEqual({ pieces: 1, earned: 3000, reversed: -2000, net: 1000 });
-  });
-
-  it("is all zeros for no rows", () => {
-    expect(sumRecapRows([])).toEqual({ pieces: 0, earned: 0, reversed: 0, net: 0 });
-  });
-});
-
 describe("sumPayoutRows", () => {
-  it("sums the stored, unset, paid and computed figures apart", () => {
+  it("sums the per-SPG figure, stored, paid, unpaid, corrections and pending difference apart, to the cent", () => {
     expect(
       sumPayoutRows([
-        { pieces: 20, setAmount: 45_000, unsetAmount: 0, paidAmount: 45_000, net: 40_000 },
-        { pieces: 7, setAmount: 0, unsetAmount: 14_000, paidAmount: 0, net: 14_000 },
+        // Ani: September dibayar 22.500 (bagi rata), hitungan per SPG 40.000 → selisih +17.500.
+        { pieces: 20, figure: 40_000, setAmount: 22_500, paidAmount: 22_500, unpaidAmount: 0, correctionsApplied: 0, pendingDifference: 17_500 },
+        // Sari: dibayar 22.500, hitungan 20.000 → −2.500; koreksi 0,10 dari bulan lain.
+        { pieces: 10, figure: 20_000, setAmount: 22_500, paidAmount: 22_500, unpaidAmount: 0, correctionsApplied: 0.1, pendingDifference: -2_500 },
+        { pieces: 7, figure: 14_000, setAmount: 0, paidAmount: 0, unpaidAmount: 14_000, correctionsApplied: 0.2, pendingDifference: 0 },
       ]),
-    ).toEqual({ pieces: 27, setAmount: 45_000, unsetAmount: 14_000, paidAmount: 45_000, net: 54_000 });
+    ).toEqual({
+      pieces: 37,
+      figure: 74_000,
+      setAmount: 45_000,
+      paidAmount: 45_000,
+      unpaidAmount: 14_000,
+      correctionsApplied: 0.3,
+      pendingDifference: 15_000,
+    });
   });
 
   it("is all zeros for no rows", () => {
-    expect(sumPayoutRows([])).toEqual({ pieces: 0, setAmount: 0, unsetAmount: 0, paidAmount: 0, net: 0 });
+    expect(sumPayoutRows([])).toEqual({ pieces: 0, figure: 0, setAmount: 0, paidAmount: 0, unpaidAmount: 0, correctionsApplied: 0, pendingDifference: 0 });
   });
 });
 

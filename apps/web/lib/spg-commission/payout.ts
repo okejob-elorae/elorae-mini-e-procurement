@@ -35,7 +35,10 @@ import { isYearMonth, wibYearMonth } from "./month";
  * putus store the weights ARE the pieces. A sale whose item has no category, or whose category has
  * no rate for the month, earns 0 and is reported as unrated.
  *
- * `Item.commissionPerPcs` and the old equal split (`bagiKomisi`) are no source of any figure here.
+ * `Item.commissionPerPcs` is no source of any figure here, and the old equal split is gone (owner,
+ * 2026-11-02: "jangan ada harga rata-rata"). A row not yet paid is paid at this figure; a row
+ * already paid is never changed — its difference reaches the SPG as a correction on her next
+ * payout (`lib/spg/koreksi.ts`).
  *
  * Client-safe: plain values in, plain values out; `laporan-queries.ts` loads the rows.
  */

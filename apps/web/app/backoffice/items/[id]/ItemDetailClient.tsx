@@ -30,6 +30,7 @@ import { useTranslations } from 'next-intl';
 import { ItemType } from '@/lib/constants/enums';
 import { PriceHistoryTable } from './PriceHistoryTable';
 import { RiwayatHppTable } from './RiwayatHppTable';
+import { KartuHargaJubelio, type HargaJubelioTampil } from "./KartuHargaJubelio";
 import { alamatLabel } from "@/lib/items/label";
 import { GaleriBelumSimpanContext } from '@/components/items/ItemGalleryEditor';
 import type { HppBarang } from "@/lib/items/hpp-barang";
@@ -55,6 +56,10 @@ type ItemDetailClientProps = {
   jubelioStockPushEnabled: boolean;
   /* null when the viewer lacks items:edit; only `eligible` and `category_unmapped` render anything. */
   jubelioCreateState: JubelioCreateEligibility | null;
+  /** Kartu "Harga di Jubelio" (barang jadi, items:view); null = tidak ditampilkan. */
+  hargaJubelio?: HargaJubelioTampil | null;
+  /** jubelio_prices:confirm — hanya pemegangnya yang mendapat tautan ke daftar konfirmasi. */
+  bolehKonfirmasiHarga?: boolean;
 };
 
 export function ItemDetailClient({
@@ -71,6 +76,8 @@ export function ItemDetailClient({
   gallerySlot,
   jubelioStockPushEnabled,
   jubelioCreateState,
+  hargaJubelio = null,
+  bolehKonfirmasiHarga = false,
 }: ItemDetailClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -114,9 +121,11 @@ export function ItemDetailClient({
     try {
       const r = await createItemInJubelio(initialData.id);
       if (r.ok) {
+        // Diajukan, belum dibuat: produknya menunggu konfirmasi harga (keputusan pemilik 2026-11-02).
         setJubelioCreated(true);
         toast.success(tItems("createInJubelioQueued"));
-      } else if (r.reason === "already_queued" || r.reason === "already_mapped") {
+        router.refresh();
+      } else if (r.reason === "already_queued" || r.reason === "already_mapped" || r.reason === "already_requested") {
         setJubelioCreated(true);
         toast.info(tItems("createInJubelioAlready"));
       } else if (r.reason === "category_unmapped") {
@@ -240,6 +249,10 @@ export function ItemDetailClient({
           <Badge variant={isActive ? 'default' : 'secondary'}>{itemTypeLabel}</Badge>
         </div>
       </div>
+
+      {itemType === ItemType.FINISHED_GOOD && hargaJubelio ? (
+        <KartuHargaJubelio data={hargaJubelio} sku={initialData?.sku ?? ""} bolehKonfirmasiHarga={bolehKonfirmasiHarga} />
+      ) : null}
 
       <Tabs defaultValue="details" className="space-y-4">
         <TabsList>

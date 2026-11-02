@@ -55,6 +55,26 @@ vi.mock("@/lib/finance/integritas/queries", () => ({
     return 6;
   }),
 }));
+// Tiga hitungan keputusan pemilik 2026-11-02 — modulnya membawa SQL mentah (harga Jubelio) atau
+// rantai impor yang berat (komisi, retur pembeli), jadi ditiru di tingkat modulnya.
+vi.mock("@/lib/jubelio/harga/queries", () => ({
+  hitungHargaMenungguKonfirmasi: vi.fn(async () => {
+    catatan.dipanggil.push("hargaJubelio");
+    return 7;
+  }),
+}));
+vi.mock("@/lib/spg/koreksi-queries", () => ({
+  jumlahKomisiSpgTertunggak: vi.fn(async () => {
+    catatan.dipanggil.push("komisiTertunggak");
+    return 8;
+  }),
+}));
+vi.mock("@/lib/spg/retur-pembeli-queries", () => ({
+  jumlahReturPembeliMenunggu: vi.fn(async () => {
+    catatan.dipanggil.push("returPembeli");
+    return 9;
+  }),
+}));
 vi.mock("@/lib/receivables/koreksi", () => ({
   koreksiTertunda: vi.fn(async () => {
     catatan.dipanggil.push("koreksi");
@@ -117,6 +137,22 @@ describe("getAntreanKantor", () => {
     expect(Object.keys(hasil).sort()).toEqual([...KUNCI_ANTREAN].sort());
     expect(hasil.storeProposalsPending).toBe(4);
     expect(hasil.shiftSwapsPending).toBe(5);
+    expect(hasil.jubelioPricesPending).toBe(7);
+    expect(hasil.spgCommissionsUnpaidPast).toBe(8);
+    expect(hasil.spgReturnsPending).toBe(9);
+  });
+
+  it("pengawas SPG tanpa izin memutuskan: retur pembeli dan komisi tertunggak tidak dihitung", async () => {
+    const hasil = await getAntreanKantor(["dashboard:view", "spg_sales:view"]);
+    expect(hasil).toEqual({});
+    expect(catatan.dipanggil).not.toContain("returPembeli");
+    expect(catatan.dipanggil).not.toContain("komisiTertunggak");
+  });
+
+  it("pemegang konfirmasi harga Jubelio saja: hanya hitungan harga yang berjalan", async () => {
+    const hasil = await getAntreanKantor(["dashboard:view", "jubelio_prices:confirm"]);
+    expect(hasil).toEqual({ jubelioPricesPending: 7 });
+    expect(catatan.dipanggil).toEqual(["hargaJubelio"]);
   });
 
   it("satu hitungan gagal (ditolak atau galat sinkron) tidak menjatuhkan Beranda: barisnya saja yang hilang", async () => {

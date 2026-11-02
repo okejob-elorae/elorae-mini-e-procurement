@@ -49,10 +49,21 @@ export const JEJAK = {
   /** Sales meminta kantor membetulkan laporan yang sudah diproses (terverifikasi / dihitung gudang). */
   KOREKSI_DIMINTA: 'CORRECTION_REQUESTED',
   /**
-   * Pembeli mengembalikan barang ke counter SPG (`SpgSaleReturn`). Uangnya
-   * dikembalikan kasir toko — yang dicatat di sini hanya barang dan jumlahnya.
+   * Baris lama: retur pembeli di counter SPG (`SpgSaleReturn`) yang langsung
+   * berlaku sebelum 2026-11-02; penulis baru tidak memakainya. Uangnya
+   * dikembalikan kasir toko — yang dicatat hanya barang dan jumlahnya.
    */
   RETUR_PEMBELI_DICATAT: "SPG_SALE_RETURN_RECORDED",
+  /**
+   * Retur pembeli sejak 2026-11-02 (keputusan pemilik): SPG MELAPORKAN, dan
+   * laporannya baru berpengaruh (buku stok toko, penjualan bersih, komisi)
+   * setelah kantor menyetujui. Ditolak kantor atau ditarik SPG = tidak pernah
+   * berpengaruh. Setiap keputusan membawa pasangan status sebelum/sesudah.
+   */
+  RETUR_PEMBELI_DILAPORKAN: "SPG_SALE_RETURN_REPORTED",
+  RETUR_PEMBELI_DISETUJUI: "SPG_SALE_RETURN_APPROVED",
+  RETUR_PEMBELI_DITOLAK: "SPG_SALE_RETURN_REJECTED",
+  RETUR_PEMBELI_DITARIK: "SPG_SALE_RETURN_WITHDRAWN",
   BEBAN_DIPUTUSKAN: 'RETURN_CHARGE_ASSIGNED',
   BEBAN_LUNAS: 'RETURN_CHARGE_SETTLED',
 

@@ -10,6 +10,8 @@ import { ItemDetailClient } from './ItemDetailClient';
 import { ItemGalleryEditor } from '@/components/items/ItemGalleryEditor';
 import { bacaHppBarang } from "@/lib/items/hpp-barang-queries";
 import { bacaHppTerbaru, bacaRiwayatHpp } from "@/lib/items/riwayat-hpp-queries";
+import { bacaHargaJubelioBarang } from "@/lib/jubelio/harga/queries";
+import { formatDisplayDateTime } from "@/lib/date-only";
 
 export const dynamic = 'force-dynamic';
 
@@ -108,6 +110,17 @@ export default async function ItemDetailPage({
   const jubelioCreateState = hasPermission(perms, PERMISSIONS.ITEMS_EDIT)
     ? await jubelioCreateEligibility(item.id)
     : null;
+  // Kartu "Harga di Jubelio" (keputusan pemilik 2026-11-02): harga yang terakhir dikonfirmasi untuk
+  // Jubelio dan apakah ada harga baru yang menunggu. Tanggal diformat di server.
+  const hargaJubelioBaca = barangJadi && bolehLihatHpp ? await bacaHargaJubelioBarang(item.id) : null;
+  const hargaJubelio = hargaJubelioBaca
+    ? {
+        ...hargaJubelioBaca,
+        dikonfirmasiPadaTampil: hargaJubelioBaca.dikonfirmasiPada ? formatDisplayDateTime(hargaJubelioBaca.dikonfirmasiPada) : null,
+        kirimanTerakhirTampil: hargaJubelioBaca.kirimanTerakhir ? formatDisplayDateTime(hargaJubelioBaca.kirimanTerakhir.waktu) : null,
+      }
+    : null;
+  const bolehKonfirmasiHarga = hasPermission(perms, PERMISSIONS.JUBELIO_PRICES_CONFIRM);
   const itemVariants = (item.variants as Array<Record<string, string>> | null | undefined) ?? [];
   const variantSkus = itemVariants
     .map((v) => v["sku"])
@@ -128,6 +141,8 @@ export default async function ItemDetailPage({
       isActive={Boolean(item.isActive)}
       jubelioStockPushEnabled={jubelioStockPushEnabled}
       jubelioCreateState={jubelioCreateState}
+      hargaJubelio={hargaJubelio}
+      bolehKonfirmasiHarga={bolehKonfirmasiHarga}
       gallerySlot={
         <ItemGalleryEditor
           itemId={item.id}

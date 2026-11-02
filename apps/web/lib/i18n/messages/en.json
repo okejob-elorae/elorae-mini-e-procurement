@@ -291,7 +291,9 @@
     "navKolPerforma": "Video performance",
     "navKolBrand": "Brands",
     "navKolPeriksa": "Data check",
-    "navSpgCommissionSellThrough": "SPG commission recap"
+    "navSpgCommissionSellThrough": "SPG commission recap",
+    "navJubelioHarga": "Price confirmation",
+    "navSpgReturPembeli": "Shopper returns"
   },
   "notifications": {
     "title": "Notifications",
@@ -1945,7 +1947,7 @@
       "spg": "SPG"
     },
     "trendDefinitionMarketplace": "Counted by Jubelio order date, excluding cancelled or returned orders.",
-    "trendDefinitionField": "Outright orders count on delivery date; van and SPG on sale date, net of goods returned by shoppers. Consignment transfers are not sales.",
+    "trendDefinitionField": "Outright orders count on delivery date; van and SPG on sale date, net of shopper returns the office has approved. Consignment transfers are not sales.",
     "trendShowOnly": "Show {saluran} only",
     "trendBackTo": "← {saluran}",
     "trendTooltipTotal": "Total",
@@ -2420,11 +2422,11 @@
     "pushToJubelioQueued": "Queued. Pushes within ~5 seconds.",
     "pushToJubelioFailed": "Push failed. Only admins can push stock.",
     "pushToJubelioUnexpectedFailed": "Push failed. Try again.",
-    "createInJubelio": "Create in Jubelio",
-    "createInJubelioConfirm": "Create this product in the Jubelio catalog?",
-    "createInJubelioQueued": "Queued for Jubelio.",
-    "createInJubelioAlready": "This product already exists in, or is already queued for, Jubelio.",
-    "createInJubelioFailed": "Could not queue it for Jubelio. Try again.",
+    "createInJubelio": "Request in Jubelio",
+    "createInJubelioConfirm": "Request this product for Jubelio? It is created in Jubelio once its price is confirmed.",
+    "createInJubelioQueued": "Requested. The product is created in Jubelio once its price is confirmed.",
+    "createInJubelioAlready": "This product is already in Jubelio, already requested, or being sent.",
+    "createInJubelioFailed": "Could not request it for Jubelio. Try again.",
     "createInJubelioNeedsCategory": "Map the item's category to a Jubelio category first.",
     "pricing": {
       "section": "Pricing",
@@ -2607,9 +2609,9 @@
     "rewritten": "changed from {typed}",
     "skuRewritten": "SKU changed",
     "generated": "generated",
-    "jubelioLabel": "Also create these products in Jubelio",
-    "jubelioHint": "If unticked, products are created in Elorae only and can be created in Jubelio later from each item's page.",
-    "jubelioNoCategory": "{count, plural, one {# artikel} other {# artikel}} without a Kategori will not be created in Jubelio. The Kategori must also be mapped to a Jubelio category.",
+    "jubelioLabel": "Also request these products for Jubelio",
+    "jubelioHint": "Requested products wait in Jubelio → Price confirmation and are created in Jubelio once their price is confirmed. If unticked, they are created in Elorae only and can be requested later from each product page.",
+    "jubelioNoCategory": "{count, plural, one {# artikel} other {# artikel}} without a Kategori cannot be confirmed for Jubelio yet. The Kategori must also be mapped to a Jubelio category.",
     "commit": "Create {count, plural, one {# product} other {# products}}",
     "committing": "Creating products…",
     "commitFailed": "The import failed. The file is still loaded — try again.",
@@ -2618,9 +2620,8 @@
     "templateFailed": "The template could not be downloaded. Reload the page and try again.",
     "forbidden": "You are not allowed to create items.",
     "doneTitle": "{count, plural, one {# product} other {# products}}, {variants, plural, one {# variant} other {# variants}} created",
-    "doneJubelioQueued": "Products are queued for Jubelio. Products without a mapped Jubelio category are skipped — map the Kategori to a Jubelio category first, then use Create in Jubelio on the item page.",
-    "doneJubelioPartial": "{failed, plural, one {# product} other {# products}} could not be queued for Jubelio — use Create in Jubelio on the item page.",
-    "doneJubelioSkipped": "Products were not created in Jubelio. Map each Kategori to a Jubelio category first, then use Create in Jubelio on the item page.",
+    "doneJubelioQueued": "Products are requested for Jubelio and await price confirmation. Products without a mapped Jubelio category can be confirmed once their Kategori is mapped.",
+    "doneJubelioSkipped": "Products were not requested for Jubelio. Request them later from each product page (Request in Jubelio).",
     "importAnother": "Import another file",
     "err": {
       "NOT_XLSX": "The file must be an .xlsx workbook.",
@@ -7035,8 +7036,8 @@
       "notesEmpty": "No receipts today yet.",
       "payTitle": "Pay & commission",
       "payEstimate": "Estimated commission this month {amount}",
-      "payLastPaid": "{period}: {amount} — paid",
-      "payLastUnpaid": "{period}: {amount} — not paid yet",
+      "payLastPaid": "{period}: received {amount} — paid",
+      "payLastUnpaid": "{period}: {amount} to be received — not paid yet",
       "payNone": "No pay & commission data yet.",
       "noStore": "Your store has not been set or no longer exists. Ask an admin to set your store.",
       "checkInReturns": "After checking in, you'll be taken back to the screen you came from.",
@@ -7049,7 +7050,9 @@
       "shiftOff": "You are scheduled off today",
       "taskOrdersComing": "Orders for this store in progress",
       "checkoutTitle": "Done for the day",
-      "payLastPending": "{amount} — the office is re-checking this report"
+      "payLastPending": "Waiting for the office — the payment amount is not final yet",
+      "payCorrectionsWaiting": "Commission correction waiting for your next payout: {amount}",
+      "taskOldOrdersConfirm": "Old consignment orders — confirm the goods arrived"
     },
     "spgLainnya": {
       "title": "More",
@@ -7153,6 +7156,10 @@
       "bantuan": {
         "label": "Help",
         "hint": "What each screen of the app is for"
+      },
+      "returPembeli": {
+        "label": "Returned by shoppers",
+        "hint": "Your shopper return reports and their status"
       }
     },
     "spgGaji": {
@@ -7168,7 +7175,7 @@
       "commission": "Commission",
       "total": "Total",
       "basisOwn": "From your sales",
-      "estimateOwnPcs": "From {pcs} pieces you sold yourself this month, after shopper returns.",
+      "estimateOwnPcs": "From the {pcs} pieces you sold yourself this month, after shopper returns the office has approved.",
       "estimateNoSales": "No sales this month yet.",
       "lockedOn": "Locked {date}",
       "kindPutus": "Outright-store commission",
@@ -7182,9 +7189,18 @@
       "estimateNoRate": "{pcs} pieces have no commission rate yet — the office needs to set their category's rate.",
       "estimateRule": "This month's commission rate per item category, on your own sales. It is paid in the month the office checks the sales report.",
       "salesMonthNote": "Commission on {month} sales",
-      "payoutMonth": "Paid with {month}",
+      "payoutMonth": "Payout {month}",
       "payoutPending": "The office is re-checking this report",
-      "oldRule": "Calculated under the old rule (item rate)"
+      "oldRule": "Calculated under the old rule (item rate)",
+      "correctionLine": "Correction to commission on {month} sales — {store}",
+      "correctionWith": "paid with this payment",
+      "correctionCarried": "{amount} carried to your next payment",
+      "commissionReplaced": "Calculated from your own sales (was {old})",
+      "toReceive": "To be received",
+      "payoutHeld": "This payment is waiting for the office's decision — the amount is not final yet",
+      "payoutNotFinal": "The amount is set again once the office has finished checking the report",
+      "correctionsWaitingTitle": "Corrections waiting for your next payment",
+      "correctionsWaitingNote": "Commission differences on months already paid. They are added or taken off once, on your next official payment, and never take a payment below Rp 0."
     },
     "spgJual": {
       "back": "Home",
@@ -7387,7 +7403,7 @@
         "shareText": "Receipt {docNo} - Total {total}",
         "shareFailed": "Couldn't share the receipt.",
         "sellAgain": "Sell again",
-        "returnGoods": "Shopper is returning goods",
+        "returnGoods": "Report a shopper return",
         "offlineBadge": "Recorded without signal",
         "syncedAt": "sent {time}",
         "buyer": "Shopper",
@@ -7958,7 +7974,8 @@
           "TANPA_PENERIMA": "This store has neither an SPG nor a holder yet — ask the office to assign a holder."
         },
         "stepNextKonsiLama": "Waiting for the store to confirm the goods arrived",
-        "arrived": "Arrived {qty}"
+        "arrived": "Arrived {qty}",
+        "noticeKonsiTanpaSpg": "Approved. The warehouse sends the goods shipment by shipment; each shipment's goods enter the store's stock when they are handed over to the store."
       },
       "rowInden": "Inden · {nama}",
       "rowIndenTanpaNama": "Inden",
@@ -9010,7 +9027,7 @@
       "note": "Targets in rupiah count outright deliveries and van sales this month — the same as the turnover on your home screen. Targets in pcs also count consignment sold in store. Bonus items are not counted.",
       "pcs": "{n} pcs",
       "tanpaKonsi": "Value from outright and van sales — consignment is not counted here.",
-      "noteSpg": "Counted from your sales receipts this month, minus items returned by shoppers. A return counts in the month of its receipt."
+      "noteSpg": "Counted from your sales receipts this month, minus shopper returns the office has approved. A return counts in the month of its receipt."
     },
     "ubahPesanan": {
       "bannerJudul": "Editing order {orderNo}",
@@ -9216,7 +9233,7 @@
       "homeLink": "View schedule"
     },
     "peringkatSpg": {
-      "subjudul": "SPG net sales for {month} — receipts minus items returned by shoppers. Colleagues' sales are not shown.",
+      "subjudul": "SPG net sales for {month} — receipts minus shopper returns the office has approved. Colleagues' sales are not shown.",
       "dariTotal": "of {total} SPGs",
       "penjualanAnda": "Your net sales {amount}",
       "pcsAnda": "{n} pcs sold",
@@ -11177,15 +11194,15 @@
   "spgCommission": {
     "loading": "Loading SPG commission recap…",
     "pageTitle": "SPG commission recap",
-    "subtitle": "Commission by payout month: putus store reports checked and consignment cycles locked this month. Locked = the figure paid (locked in the cycle or on SPG commission); Commission (calculated) = recomputed from today's receipts and returns, for comparison. The sales month is shown under each SPG's name.",
+    "subtitle": "Commission by payout month: putus store reports checked and consignment cycles locked this month, with their sales months. Commission per SPG = the sales month's category rate × the net pieces the SPG sold herself. Paid = already marked paid; Corrections applied = differences from earlier months paid this month; Difference for the next payout = per-SPG commission minus what was already paid.",
     "prevMonth": "Previous month",
     "nextMonth": "Next month",
     "monthLabel": "Payout month",
     "loadErrorTitle": "Failed to load the commission recap",
     "loadErrorMessage": "Something went wrong reading this month. Try again.",
     "retry": "Try again",
-    "listTitle": "Commission per SPG — paid in {month}",
-    "emptyTitle": "No commission paid in {month}",
+    "listTitle": "Commission per SPG — {month} payout",
+    "emptyTitle": "No commission in the {month} payout",
     "emptyBody": "Commission appears here once a putus store's SPG sales report is checked, or a consignment cycle's official figures are locked, in this month.",
     "colExpand": "Details",
     "colSpg": "SPG",
@@ -11218,10 +11235,9 @@
     },
     "rowSalesMonths": "Sales of {months}",
     "subtitle#id": "(Indonesian text for spgCommission.subtitle — see the 'id' field of this entry; the entry above carries the English)",
-    "colSet": "Locked",
-    "colComputed": "Commission (calculated)",
-    "rowDiffers": "Calculation differs from the locked figure",
-    "rowUnset": "Not locked yet — calculated {amount}",
+    "colSet": "Set",
+    "colComputed": "Commission per SPG",
+    "rowDiffers": "The set figure is replaced by the per-SPG commission when paid",
     "reportsTitle": "Per report",
     "colReport": "Store / report",
     "colSalesMonth": "Sales month",
@@ -11229,17 +11245,30 @@
     "kindKonsi": "Consignment {doc}",
     "kindPutus": "Putus store",
     "status": {
-      "BELUM_DITETAPKAN": "Not locked yet",
-      "DITETAPKAN": "Locked",
-      "DIBAYAR": "Paid"
+      "BELUM_DITETAPKAN": "Not set yet",
+      "DITETAPKAN": "Set",
+      "DIBAYAR": "Paid",
+      "TANPA_BARIS": "No row — through corrections"
     },
-    "lineDiffers": "Differs",
     "attention": {
       "title": "Needs follow-up on SPG commission",
-      "differs": "{count} SPG have a calculation that differs from the locked figure: receipts or returns came in afterwards, or the figure was locked under the old rule. What is paid stays the locked figure; correct it on SPG commission (putus stores) or in its cycle (consignment).",
-      "unset": "Some checked putus store reports have no commission locked yet (calculated {amount}). It can only be paid once locked."
+      "differs": "{count} SPG have a set figure that differs from today's per-SPG commission. When marked paid, today's per-SPG commission is paid; anything already paid is corrected on the next payout.",
+      "unset": "Some checked putus store reports have no commission locked yet (calculated {amount}). It can only be paid once locked.",
+      "pending": "There is a difference of {amount} on commission already paid — it goes into each SPG's next payout as a correction."
     },
-    "openKomisiSpg": "Open SPG commission"
+    "openKomisiSpg": "Open SPG commission",
+    "colPaid": "Paid",
+    "colCorrections": "Corrections applied",
+    "colUnpaid": "Not paid yet",
+    "colPending": "Difference for the next payout",
+    "colCorrectionsFromThis": "Corrections from this report",
+    "correctionsTitle": "Corrections paid in the {month} payout",
+    "correctionAppliedTo": "With {laporan}",
+    "colCorrectionSource": "Correction",
+    "colCorrectionAppliedTo": "Applied to",
+    "colCorrectionAmount": "Amount",
+    "rowUnsetShort": "A report is not set yet",
+    "lineHeld": "Waiting for the owner's decision"
   },
   "financeSettlements": {
     "forecastInput": "Upload every month: a settlement is what lets the sales forecast count that month's marketplace orders.",
@@ -13957,7 +13986,10 @@
     "taxDueSoon": "Tax payments due within 3 days",
     "taxOverdue": "Tax payments overdue",
     "ledgerDocsWithoutJournal": "Documents without a journal",
-    "manualJournalsPendingApproval": "Manual journals awaiting approval"
+    "manualJournalsPendingApproval": "Manual journals awaiting approval",
+    "jubelioPricesPending": "Prices awaiting Jubelio confirmation",
+    "spgCommissionsUnpaidPast": "SPG commission from an earlier payout month not paid yet",
+    "spgReturnsPending": "SPG shopper returns awaiting approval"
   },
   "statuses": {
     "unknown": "Unknown",
@@ -14847,7 +14879,7 @@
     "errFOTO_WAJIB": "Take a photo of the store's return note first.",
     "errRUSAK_TIDAK_SAH": "These damaged delivery goods cannot be sent back from this store (not yet decided by the warehouse, not this store's, or a different item).",
     "errRUSAK_MELEBIHI": "The quantity sent back exceeds the damaged pieces not yet returned.",
-    "errRETUR_PEMBELI_TIDAK_SAH": "This shopper-returned damaged item cannot be sent back from this store (not this store's shopper return, a different item, or its condition is sellable).",
+    "errRETUR_PEMBELI_TIDAK_SAH": "This shopper-returned damaged item cannot be sent back from this store (the shopper return has not been approved by the office yet, it is not this store's shopper return, it is a different item, or its condition is sellable).",
     "errRETUR_PEMBELI_MELEBIHI": "The quantity sent back exceeds the shopper-returned damaged pieces not yet sent.",
     "errFOTO_BUKAN_MILIK": "This return note photo was uploaded by someone else. Take your own photo of the note.",
     "dariSpg": "From SPG",
@@ -15022,7 +15054,7 @@
     "salaryNoDue": "No specific date.",
     "colSpgName": "SPG",
     "colBase": "Base salary",
-    "colCommission": "Commission",
+    "colCommission": "Commission per SPG",
     "colTotal": "Total",
     "colAction": "Action",
     "markPaid": "Mark paid",
@@ -15230,8 +15262,21 @@
     "stockSourceTitipan": "Source: consignment count",
     "salaryCommissionNote": "Commission on {salesMonth} sales · paid in {payoutMonth} (the month the official figures were locked).",
     "salaryCommissionNoteUnlocked": "Commission on {salesMonth} sales · its payout month is set when the official figures are locked again.",
-    "salaryCommissionRule": "Commission = rate per item category (Settings → SPG commission) × the pieces each SPG sold at the till, capped at the official figure. Each assigned SPG keeps her full base salary.",
-    "salaryNotParticipant": "Not this store's SPG — commission on her own sales, no base salary."
+    "salaryCommissionRule": "Commission = rate per item category (Settings → SPG commission) × the pieces each SPG sold at the till, capped at the official figure. Each assigned SPG keeps her full base salary. Rows not yet paid are always paid at today's per-SPG commission; differences after payment go into the next payout as a correction.",
+    "salaryNotParticipant": "Not this store's SPG — commission on her own sales, no base salary.",
+    "colCorrection": "Corrections",
+    "colPaidOut": "Paid out",
+    "commissionReplaced": "Locked at {old} — paid at today's per-SPG commission",
+    "correctionLine": "Correction to commission on {month} sales — {store}: {amount}",
+    "correctionCarried": "{amount} carried to the next payout",
+    "correctionElsewhere": "Corrections of {amount} go with this SPG's older payout",
+    "payConfirmTitle": "Mark {name}'s salary & commission paid?",
+    "payConfirmBody": "Paid out: {amount}.",
+    "payCancel": "Cancel",
+    "errANGKA_BERUBAH": "The figure changed since the page was opened. Reload the page, check the figure, then mark it paid again.",
+    "errTANPA_TARIF": "This old-rule cycle has pieces without a category rate — its payment waits for the owner's decision.",
+    "errLAPORAN_TIDAK_LENGKAP": "This old-rule cycle's official figures were not all recorded on the SPG phones — its payment waits for the owner's decision, or unlock and lock again while that is still possible.",
+    "returPendingCommission": "{n} shopper returns of this month are waiting for the office's approval — if approved after the pay is marked paid, they become a negative correction on the next payout."
   },
   "jenisPotongan": {
     "pageTitle": "Deduction types",
@@ -15807,7 +15852,17 @@
       "SPG_SALES_REPORT_CHECKED": "SPG sales report marked checked",
       "SPG_SALES_REPORT_UNCHECKED": "SPG sales report check undone",
       "KONSI_OLD_ORDER_ARRIVAL_CONFIRMED": "Older consignment order goods confirmed as arrived",
-      "KONSI_OLD_ORDER_REMAINDER_NOT_SENT": "Older consignment order remainder marked not sent"
+      "KONSI_OLD_ORDER_REMAINDER_NOT_SENT": "Older consignment order remainder marked not sent",
+      "JUBELIO_PRICE_CONFIRMED": "Jubelio price confirmed",
+      "JUBELIO_PRICE_REVERTED": "ERP price reverted to the Jubelio price",
+      "JUBELIO_CREATE_REQUEST_CANCELLED": "Jubelio product request cancelled",
+      "SPG_COMMISSION_CORRECTION_APPLIED": "SPG commission correction applied",
+      "SPG_COMMISSION_RECOMPUTED_AT_PAYMENT": "SPG commission recalculated at payment",
+      "SPG_SALE_RETURN_RECORDED": "Shopper return recorded (took effect at once)",
+      "SPG_SALE_RETURN_REPORTED": "Shopper return reported",
+      "SPG_SALE_RETURN_APPROVED": "Shopper return approved",
+      "SPG_SALE_RETURN_REJECTED": "Shopper return rejected",
+      "SPG_SALE_RETURN_WITHDRAWN": "Shopper return withdrawn by SPG"
     },
     "entities": {
       "ChainTemplate": "Chain template",
@@ -15919,7 +15974,9 @@
       "KolTugasPantau": "Monitoring queue",
       "KolBrandCollab": "KOL brand history",
       "KolCalendarFeed": "Creative calendar subscription",
-      "SpgSalesCheck": "SPG sales report"
+      "SpgSalesCheck": "SPG sales report",
+      "SpgCommissionCorrection": "SPG commission correction",
+      "SpgSaleReturn": "SPG shopper return"
     },
     "fields": {
       "value": "Value",
@@ -16111,7 +16168,7 @@
       },
       "catalog": {
         "title": "Catalog sync",
-        "description": "Pull Jubelio items, map to ERP catalog drafts, upsert Items + JubelioProductMapping.",
+        "description": "Pull items from Jubelio, match them to ERP catalog drafts, then save the items with their product mappings. The selling price of an item already in the ERP is never changed; a newly created item takes the Jubelio price as its confirmed price.",
         "preview": "Preview sync (dry run)",
         "import": "Import catalog",
         "lastRun": "Last run: {mode}",
@@ -16212,11 +16269,12 @@
       "noUnsaved": "No unsaved changes",
       "unsaved": "{count} unsaved change(s)",
       "save": "Save mappings",
-      "saved": "Saved {count, plural, one {# mapping} other {# mappings}}"
+      "saved": "Saved {count, plural, one {# mapping} other {# mappings}}",
+      "hanyaLihat": "You can only view this page. Changing and saving category mappings needs the Manage users & security permission."
     },
     "migration": {
       "title": "Bulk migration",
-      "subtitle": "Push ERP-source FINISHED_GOOD items to Jubelio in bulk. Only items without an existing Jubelio mapping are shown. Worker drains queued rows over time — watch progress on the <link>outbox dashboard</link>.",
+      "subtitle": "Request ERP finished goods for Jubelio in bulk. Requested products wait in <harga>Price confirmation</harga> and are created in Jubelio once their price is confirmed. Track the pushes on the <link>outbox dashboard</link>.",
       "done": "Done (24h)",
       "pending": "Pending",
       "processing": "Processing",
@@ -16224,7 +16282,7 @@
       "dead": "Dead",
       "eligibleTitle": "Eligible items",
       "candidates": "{count} candidate(s)",
-      "migrateSelected": "Migrate {count} selected",
+      "migrateSelected": "Request {count} selected",
       "empty": "No items to migrate. All ERP-source finished goods are already mapped.",
       "selectAll": "Select all",
       "selectOne": "Select {sku}",
@@ -16238,13 +16296,16 @@
       "unmappedHint": "Category lacks Jubelio mapping — will SKIP",
       "window": "Window since {when} — total {total}",
       "openOutbox": "Open outbox dashboard",
-      "confirmTitle": "Push {count} item(s) to Jubelio?",
-      "confirmBody": "This creates real product listings on the production Jubelio account. Items with unmapped categories will SKIP — fix them on <categories>/backoffice/jubelio/categories</categories> first to avoid SKIP rows. Rollback for individual items is available on the <settings>Jubelio settings</settings> page (Test cleanup card).",
+      "confirmTitle": "Request {count} products for Jubelio?",
+      "confirmBody": "The selected products join the Jubelio price confirmation list; nothing is created in Jubelio until their price is confirmed. Products with an unmapped category can be confirmed once it is mapped on the <categories>Jubelio categories page</categories>. Per-product deletion is in <settings>Jubelio settings</settings> (Danger zone).",
       "cancel": "Cancel",
-      "confirm": "Confirm migrate",
-      "queued": "Queued {count} item(s). Worker drains over ~5 min.",
+      "confirm": "Yes, request",
+      "queued": "{count} products requested and awaiting price confirmation.",
       "noCategory": "No category yet",
-      "queuedSkipped": "Queued {count} item(s); {skipped} already queued, skipped. Worker drains over ~5 min."
+      "queuedSkipped": "{count} products requested; {skipped} were already requested or being sent.",
+      "requested": "Awaiting price confirmation",
+      "awaitingPrice": "Awaiting price confirmation",
+      "hanyaLihat": "You can only view this page. Requesting products for Jubelio needs the Manage users & security permission."
     },
     "galat": {
       "TANPA_AKSES": "You do not have permission for this, or your session has ended. Sign in again and retry.",
@@ -16254,6 +16315,66 @@
       "ISIAN_TIDAK_SAH": "This input cannot be processed. Check the selection or number you entered.",
       "GAGAL": "Something went wrong. Try again; if it keeps failing, contact the system administrator.",
       "rincian": "Details"
+    },
+    "harga": {
+      "title": "Jubelio price confirmation",
+      "subtitle": "New selling prices and new products wait here until confirmed. Jubelio keeps the last confirmed price.",
+      "cardTitle": "Awaiting confirmation",
+      "filterSemua": "All",
+      "filterBaru": "New products",
+      "filterUbah": "Price changes",
+      "cari": "Search SKU or name",
+      "colSku": "SKU",
+      "colNama": "Name",
+      "colJenis": "Kind",
+      "colHargaJubelio": "Jubelio price",
+      "colHargaErp": "New ERP price",
+      "colSelisih": "Difference",
+      "colDiubah": "Changed by",
+      "colKeterangan": "Note",
+      "jenisBaru": "Not in Jubelio yet — awaiting price confirmation",
+      "jenisUbah": "Price change awaiting confirmation",
+      "belumAda": "—",
+      "nonaktif": "Inactive",
+      "alasan": {
+        "HARGA_KOSONG": "The ERP price is empty — enter a price on the product page, or revert to the Jubelio price.",
+        "KATEGORI_BELUM_DIPETAKAN": "The category is not mapped to Jubelio — map it first in Jubelio → Categories."
+      },
+      "setujui": "Approve & send to Jubelio ({count})",
+      "pilihSemua": "Select all sendable rows",
+      "konfirmasiJudul": "Send {count} prices to Jubelio?",
+      "konfirmasiIsi": "The selected prices become the Jubelio prices and are sent now; new products are created in Jubelio. Rows whose price changed since the page opened are not sent.",
+      "kirim": "Yes, send",
+      "batal": "Cancel",
+      "kembalikan": "Revert to the Jubelio price",
+      "kembalikanJudul": "Revert the ERP price of {sku} to {harga}?",
+      "kembalikanIsi": "The ERP selling price is set back to the Jubelio price, recorded in the selling-price history, and that price is sent to Jubelio again.",
+      "batalkan": "Cancel request",
+      "batalkanJudul": "Cancel the Jubelio request for {sku}?",
+      "batalkanIsi": "This product leaves the list and is not created in Jubelio. It can be requested again from its product page.",
+      "hasil": {
+        "DIKONFIRMASI": "{count} prices confirmed and sent to Jubelio.",
+        "HARGA_BERUBAH": "{count} prices changed since the page opened — reload and check again.",
+        "TIDAK_MENUNGGU": "{count} are no longer awaiting confirmation.",
+        "HARGA_KOSONG": "{count} have no ERP price — not sent.",
+        "KATEGORI_BELUM_DIPETAKAN": "{count} have an unmapped category — not sent.",
+        "TIDAK_DITEMUKAN": "{count} products not found.",
+        "BUKAN_BARANG_JADI": "{count} are not finished goods."
+      },
+      "kembalikanBerhasil": "ERP price reverted to the Jubelio price.",
+      "batalkanBerhasil": "Request cancelled.",
+      "galat": {
+        "HARGA_BERUBAH": "The price changed since the page opened — reload.",
+        "SUDAH_SAMA": "The ERP price already equals the Jubelio price.",
+        "TIDAK_BISA_DIKEMBALIKAN": "This product has no Jubelio price yet.",
+        "PENGAJUAN_BERUBAH": "The request changed since the page opened — reload.",
+        "SUDAH_TIDAK_DIAJUKAN": "This product is no longer requested.",
+        "SUDAH_DI_JUBELIO": "This product is already in Jubelio.",
+        "TIDAK_DITEMUKAN": "Product not found."
+      },
+      "kosong": "No prices are awaiting confirmation.",
+      "tanpaHargaInfo": "{count} products are in Jubelio but have no confirmed price — their name, photo or variant changes are not sent until a price is entered and confirmed.",
+      "terpotong": "Showing {shown} of {total}. Confirm these, then reload to see the rest."
     }
   },
   "pwaMenuSpg": {
@@ -18935,15 +19056,15 @@
     "kurangCatatan": "Write a note: some goods exceed the stock in the book.",
     "kirim": "Send return",
     "pembeli": {
-      "judul": "Goods returned by a shopper",
-      "penjelasan": "The store cashier refunds the money. Here you only record the goods: those in good condition go back to the shelf stock. Size exchanges are not handled at the counter.",
+      "judul": "Report a shopper return",
+      "penjelasan": "The store cashier refunds the money. Here you only report the goods; the report takes effect once the office approves it — only then do goods in good condition go back to the shelf stock. Size exchanges are not handled at the counter.",
       "terjualKembali": "Sold {terjual} · returned {kembali}",
-      "sudahSemua": "All returned.",
-      "rusakTidakKeRak": "Damaged goods are recorded but do not go back into shelf stock.",
+      "sudahSemua": "Nothing left to report on this line.",
+      "rusakTidakKeRak": "Once approved, damaged goods are recorded but do not go back into shelf stock.",
       "alasan": "Shopper's reason",
       "alasanContoh": "e.g. a seam came loose",
-      "kirim": "Record returned goods",
-      "ok": "Returned goods recorded.",
+      "kirim": "Report returned goods",
+      "ok": "Return report sent. Waiting for office approval.",
       "kurangBarang": "Enter how many items came back.",
       "kurangAlasan": "Write the shopper's reason.",
       "butuhSinyal": "Recording returned goods needs a signal. Try again shortly.",
@@ -18956,17 +19077,82 @@
       "errJUMLAH_TIDAK_VALID": "Quantities must be whole numbers.",
       "errNOTA_TIDAK_DITEMUKAN": "Receipt not found at your store.",
       "errBARIS_TIDAK_DITEMUKAN": "Some goods are not on this receipt.",
-      "errMELEBIHI_SISA": "More than was sold on this receipt (or already returned).",
+      "errMELEBIHI_SISA": "More than was sold on this receipt, minus what was already returned or is still awaiting the office.",
       "errKUNCI_DIPAKAI": "This entry clashes with another record. Reopen the page.",
-      "errKUNCI_WAJIB": "Reopen the page, then try again."
+      "errKUNCI_WAJIB": "Reopen the page, then try again.",
+      "menungguKantor": "{n} pcs waiting for office approval",
+      "semuaDilaporkan": "All already reported.",
+      "lihatLaporan": "See my return reports"
     },
     "kantor": {
       "judul": "Goods returned by shoppers",
-      "penjelasan": "The store's cashier refunds the money; only the goods are recorded. Net quantities feed commission and consignment reports.",
+      "penjelasan": "The store's cashier refunds the money; only the goods are recorded. Only returns the office approved reduce net quantities, commission and consignment reports.",
       "terjual": "Sold",
       "kembali": "Returned",
       "bersih": "Net",
-      "alasan": "Reason: {alasan}"
+      "alasan": "Reason: {alasan}",
+      "menunggu": "Pending",
+      "menungguCatatan": "{n} pcs are still awaiting office approval. They are not counted as returned yet and do not reduce net sales, store stock or commission.",
+      "statusMENUNGGU": "Awaiting approval",
+      "statusDISETUJUI": "Approved",
+      "statusDITOLAK": "Rejected",
+      "statusDIBATALKAN": "Withdrawn by SPG",
+      "dilaporkan": "Reported by {oleh} · {waktu}",
+      "bukaLaporan": "Open report",
+      "alasanPembeli": "Shopper's reason: {alasan}",
+      "berlakuLangsung": "Took effect when recorded (before office approval existed).",
+      "belumBerpengaruh": "No effect on store stock, net sales or commission until the office approves it.",
+      "putusanDISETUJUI": "Approved by {oleh} · {waktu}",
+      "putusanDITOLAK": "Rejected by {oleh} · {waktu}",
+      "putusanDIBATALKAN": "Withdrawn by {oleh} · {waktu}",
+      "alasanTolak": "Reason for rejection: {alasan}",
+      "alasanTarik": "Reason for withdrawal: {alasan}"
+    },
+    "pembeliSaya": {
+      "judul": "Shopper return reports",
+      "penjelasan": "Goods returned by shoppers only affect the store's stock, net sales and commission after the office approves them.",
+      "tertahan": "{n, plural, one {# report is} other {# reports are}} still on this phone, not sent yet.",
+      "lihatAntrean": "View",
+      "kosong": "No return reports yet.",
+      "nota": "Receipt {docNo}",
+      "dilaporkan": "Reported {tanggal}",
+      "pcs": "{n} pcs",
+      "status": {
+        "MENUNGGU": "Waiting for the office",
+        "DISETUJUI": "Approved",
+        "DITOLAK": "Rejected",
+        "DIBATALKAN": "Withdrawn"
+      },
+      "statusKet": {
+        "MENUNGGU": "Store stock, net sales and commission stay unchanged until the office approves it.",
+        "DISETUJUI": "In effect: goods in good condition are back in the store's stock.",
+        "DITOLAK": "The office rejected this report; nothing changed.",
+        "DIBATALKAN": "You withdrew this report; nothing changed."
+      },
+      "alasanPembeli": "Shopper's reason",
+      "alasanTolak": "Office's reason",
+      "alasanTarik": "Reason for withdrawing",
+      "tarik": "Withdraw report",
+      "tarikJudul": "Withdraw the report for receipt {docNo}?",
+      "tarikPenjelasan": "The report is not deleted — the office still sees it as withdrawn, with your reason.",
+      "tarikAlasan": "Reason",
+      "tarikAlasanContoh": "e.g. picked the wrong receipt",
+      "tarikBatal": "Cancel",
+      "tarikKonfirmasi": "Withdraw",
+      "tarikOk": "Report withdrawn.",
+      "err": {
+        "TANPA_AKSES": "You do not have access to withdraw this report.",
+        "TANPA_TOKO": "You have not been assigned to a store.",
+        "ISIAN_TIDAK_VALID": "The form could not be read. Try again.",
+        "GAGAL": "Could not withdraw the report. Try again.",
+        "TIDAK_DITEMUKAN": "Report not found.",
+        "SUDAH_DIPUTUSKAN": "The office has already decided on this report; it can no longer be withdrawn.",
+        "PELAPOR_SAMA": "The reporter cannot decide on their own report.",
+        "BUKAN_MILIK": "This report is not yours at this store.",
+        "ALASAN_WAJIB": "Write the reason.",
+        "ALASAN_TERLALU_PANJANG": "The reason is too long (500 characters at most).",
+        "MELEBIHI_SISA": "More than can still be reported from this receipt."
+      }
     }
   },
   "pwaPenjualan": {
@@ -19040,7 +19226,7 @@
     },
     "sellTitle": "Sold vs sent",
     "sumber": {
-      "BUKU_TOKO": "From the store stock book: SPG sales net of shopper returns.",
+      "BUKU_TOKO": "From the store stock book: SPG sales net of shopper returns the office has approved.",
       "TITIPAN": "From monthly consignment sales reports; sizes are not reported."
     },
     "sent": "Sent",
@@ -19520,7 +19706,7 @@
     "wantedLine": "{qty} pcs · asked {count, plural, one {# time} other {# times}}",
     "wantedRequest": "Request",
     "wantedRecord": "Record a missing product",
-    "netNote": "Net sold = units sold minus shopper returns. All figures are in pieces (pcs), never rupiah."
+    "netNote": "Net sold = units sold minus shopper returns the office has approved. All figures are in pieces (pcs), never rupiah."
   },
   "pwaPermintaanSpg": {
     "title": "SPG requests",
@@ -19854,22 +20040,23 @@
     "alasan": {
       "sudahDibayar": "Some commission is already paid — cannot be locked again.",
       "tanpaSpg": "This store has no SPG who receives commission.",
-      "belumDicek": "The report has not been checked.",
-      "aturanLamaBayar": "Set under the old rule — set it again before paying."
+      "belumDicek": "The report has not been checked."
     },
-    "berbeda": "The current calculation differs from the set figures — receipts or returns came in afterwards, or the commission was set under the old rule. Set it again before paying.",
-    "berbedaDibayar": "The current calculation differs from the locked figures, but some commission is already paid, so this month cannot be locked again. The difference has to be settled outside the system.",
+    "berbeda": "Today's calculation differs from the set figure — receipts or returns came in afterwards, or it was set under the old rule. When marked paid, today's per-SPG commission is what is paid; the set figure stays in the audit trail.",
+    "berbedaDibayar": "Today's calculation differs from what was paid. Each SPG's difference goes into her next payout as a correction; rows not yet paid are paid at today's per-SPG commission.",
     "kolom": {
       "spg": "SPG",
       "potong": "Net pieces",
-      "hitungan": "Commission (calculated)",
-      "ditetapkan": "Locked",
+      "hitungan": "Commission per SPG",
+      "ditetapkan": "Set",
       "status": "Status",
       "aksi": "Action",
       "toko": "Store",
       "gaji": "Base salary",
       "komisi": "Locked commission",
-      "jumlah": "Total"
+      "jumlah": "Total",
+      "koreksi": "Corrections",
+      "dibayarkan": "Paid out"
     },
     "bukanSpgToko": "No longer assigned to this store",
     "tidakMenerima": "Receives no share",
@@ -19887,19 +20074,19 @@
     "tetapkanUlangBerhasil": "Commission locked again.",
     "tandaiDibayar": "Mark paid",
     "bayarJudul": "Mark {nama}'s commission for {bulan} as paid?",
-    "bayarIsi": "Amount {jumlah}. Once anything is paid, this store's month cannot be locked again.",
-    "bayarBerbeda": "Note: the current calculation differs from the locked figures. Lock again first if this amount is no longer right.",
+    "bayarIsi": "Paid out: {jumlah}. Once anything is paid, this month can no longer be set again for this store; later changes go into the next payout as a correction.",
+    "bayarBerbeda": "The set figure ({lama}) is replaced by today's per-SPG commission ({baru}) — that is what is paid.",
     "catatanLabel": "Note (optional)",
     "catatanContoh": "E.g. transferred with the 25 October salary",
     "bayarBerhasil": "{nama}'s commission marked paid.",
     "konsi": {
       "judul": "Consignment stores",
-      "isi": "A consignment store is checked when its cycle's official figures are locked, and its pay and commission are marked paid in that cycle. Its commission uses the same calculation: rate per category × each SPG's own sales.",
+      "isi": "A consignment store is checked when its cycle's official figures are locked. Salary & commission can be marked paid here or in that cycle, at the per-SPG commission at the time of payment. The commission uses the same calculation: rate per category × each SPG's own sales.",
       "dikunci": "Official figures locked {tanggal} — that is the report's check.",
-      "bayarDiSiklus": "Its pay and commission are marked paid in the consignment cycle.",
+      "bayarDiSiklus": "Salary & commission can be marked paid here or in its consignment cycle.",
       "tanpaBaris": "This cycle has no SPG pay rows.",
-      "berbeda": "The current calculation differs from the locked figures — receipts or returns from a phone came in after the lock, or this cycle was locked under the old rule (item rate, split evenly). To correct it, unlock and lock the cycle again, as long as no pay has been marked paid and no nota number, tax invoice or store payment has been recorded.",
-      "berbedaDibayar": "The current calculation differs from the locked figures, but some pay has already been marked paid, so this cycle cannot be locked again. The difference has to be settled outside the system.",
+      "berbeda": "Today's calculation differs from the locked figures — phone receipts or returns came in after the lock, or the cycle was locked under the old rule (item rate, equal split). Rows not yet paid are paid at today's per-SPG commission; there is no need to unlock.",
+      "berbedaDibayar": "Today's calculation differs from what was paid. Each SPG's difference — including a seller whose receipts came in after the lock — goes into her next payout as a correction.",
       "bukanPeserta": "Not this store's SPG — commission on her own sales, no base salary."
     },
     "err": {
@@ -19915,19 +20102,21 @@
       "TIDAK_DITEMUKAN": "This commission no longer exists. Reload the page.",
       "CATATAN_TERLALU_PANJANG": "The note can be at most 500 characters.",
       "LAPORAN_BELUM_DICEK": "That month's sales report has not been checked. Mark it checked first.",
-      "ATURAN_LAMA": "This commission was set under the old rule (item rate). Set it again with the per-category rates before paying.",
       "TANPA_PENJUALAN": "There are no SPG sales at this store in that month.",
       "SUDAH_DICEK": "This report is already checked. Reload the page.",
       "BELUM_DICEK": "This report is not checked. Reload the page.",
       "ALASAN_WAJIB": "Write the reason.",
-      "ALASAN_TERLALU_PANJANG": "The reason can be at most 500 characters."
+      "ALASAN_TERLALU_PANJANG": "The reason can be at most 500 characters.",
+      "ANGKA_BERUBAH": "The figure changed since the page was opened — a receipt, return or another payment came in. The page has been reloaded; check the figure and mark it paid again.",
+      "TANPA_TARIF": "This commission was set under the old rule and some of its pieces have no category rate, so today's calculation cannot be used to pay it. It waits for the owner's decision — or set that month again while nothing in it is paid.",
+      "LAPORAN_TIDAK_LENGKAP": "This cycle was locked under the old rule and its official figures were not all recorded on the SPG phones, so today's calculation cannot be used to pay it. It waits for the owner's decision — or unlock and lock the cycle again while that is still possible."
     },
     "bebanHilangSisa": "Lost goods owed {jumlah} — deducted when the commission is set",
     "resmiPotonganHilang": "Lost goods deduction {potongan} · paid out {dibayar}",
     "bayarPotonganHilang": "Lost goods deduction of {potongan} already taken off.",
-    "ringkasBayar": "Set {resmi} · paid {dibayar} · {belum} reports not set yet · {tunggu} waiting to be checked",
+    "ringkasBayar": "Set {resmi} · paid out {dibayar}, including corrections {koreksi} · {belum} reports not set · {tunggu} waiting to be checked",
     "aturTarif": "Set rates per category",
-    "aturan": "SPG commission = the rate per item category in the sales month × the pieces each SPG sold herself, at putus and consignment stores alike. Commission is paid in the month its sales report is checked, noted with the sales month.",
+    "aturan": "SPG commission = the rate per item category in the sales month × the pieces each SPG sold herself, at putus and consignment stores alike. Commission is paid in the month its sales report is checked, noted with the sales month. Anything not yet paid is always paid at today's per-SPG commission; differences after payment go into the next payout as a correction.",
     "bulanBerjalanBayar": "This is the current payout month: reports checked today land here.",
     "laporan": {
       "kosongJudul": "No commission to pay in {bulan} yet",
@@ -19943,7 +20132,7 @@
       "kosong": "No SPG sales report is waiting to be checked.",
       "bulanJual": "Sales month",
       "penerima": "{n} SPG(s)",
-      "lama": "Already set under the old rule — check the report, then set it again."
+      "lama": "Set under the old rule — once checked, it is paid at the per-SPG commission."
     },
     "tanpaTarifCatatan": "{pcs} pieces have no commission rate yet (item without a category, or a category without a rate), so they earn 0.",
     "konsiTunggu": {
@@ -19962,11 +20151,49 @@
     "batalDicekIsi": "Commission already set from this report is removed and its SPGs are notified. The report can be checked and set again afterwards.",
     "batalDicekAlasan": "Reason",
     "batalDicekContoh": "E.g. receipts from a phone have not synced yet",
-    "batalDicekBerhasil": "Check undone."
+    "batalDicekBerhasil": "Check undone.",
+    "dibayarkanNanti": "to be paid out",
+    "angkaLama": "Set at {lama} — replaced by the per-SPG commission {baru} when paid",
+    "koreksiBaris": "Correction to commission on {bulan} sales — {toko}: {jumlah}",
+    "koreksiDibawa": "{jumlah} carried to the next payout",
+    "koreksiDiBarisLain": "Corrections of {jumlah} go with the payout {laporan}",
+    "labelLaporan": "Commission on {bulan} sales — {toko}",
+    "bayarRincian": {
+      "gaji": "Base salary {jumlah}",
+      "komisi": "Commission per SPG {jumlah}",
+      "potongan": "Lost goods deduction −{jumlah}"
+    },
+    "bayarJudulKonsi": "Mark {nama}'s salary & commission for {bulan} paid?",
+    "ditahan": {
+      "TANPA_TARIF": "No rate — needs a decision",
+      "LAPORAN_TIDAK_LENGKAP": "Report not recorded on the phone — needs a decision"
+    },
+    "tunggakan": {
+      "judul": "Not paid from earlier payout months",
+      "isi": "Commission whose report was checked, or whose cycle was locked, in an earlier payout month but is not marked paid yet. An SPG's corrections always go with her oldest payout.",
+      "kosong": "No overdue commission.",
+      "bulanBayar": "Payout {bulan}",
+      "ditahanJudul": "Waiting for the owner's decision — not counted on Beranda",
+      "ditahanIsi": "Old-rule reports that cannot be compared honestly with today's calculation (see the Commission corrections card). Marking them paid is refused until the owner decides, so these rows do not light up Beranda.",
+      "lamaJudul": "Not paid, older than 12 months",
+      "lamaIsi": "These rows are not counted on Beranda and never carry corrections. They can still be marked paid at today's per-SPG commission."
+    },
+    "koreksi": {
+      "judul": "Commission corrections",
+      "isi": "The difference between today's per-SPG commission and what was already paid — from old equal-split payments, shopper returns approved after payment, or phone receipts that synced after payment. Each correction is applied once, on that SPG's next payout. A payout never goes below Rp 0: a negative remainder carries to the payout after it.",
+      "ikut": "Goes with {laporan}",
+      "tanpaSasaran": "This SPG has no next payout yet — the correction waits.",
+      "kosong": "No corrections waiting.",
+      "ditahanJudul": "Needs the owner's decision — not corrected automatically",
+      "ditahanBaris": "{laporan}: {alasan} — the difference if today's calculation were used is {jumlah}.",
+      "belumDibayarDitahan": "Its payment is held until decided."
+    },
+    "returMenunggu": "{n} shopper returns waiting for approval",
+    "returMenungguCatatan": "{n} shopper returns of this month are still waiting for the office's approval. If one is approved after the commission is paid, the difference becomes a negative correction on that SPG's next payout."
   },
   "pengaturanKomisiPutusSpg": {
     "judul": "SPG commission",
-    "penjelasan": "SPG commission — at putus and consignment stores alike — is calculated one way: the rate per item category (Settings → SPG commission) in the sales month × the pieces each SPG sold herself, net of shopper returns. The commission rate on the item master is no longer used.",
+    "penjelasan": "SPG commission — at putus and consignment stores alike — is calculated one way: the rate per item category (Settings → SPG commission) in the sales month × the pieces each SPG sold herself, net of shopper returns the office has approved. The commission rate on the item master is no longer used.",
     "catatan": "Commission is paid in the month the office checks its sales report, noted with the sales month (e.g. October sales checked on 5 November are paid in November). Putus-store reports are checked in SPG → SPG commission; consignment stores when their cycle's figures are locked.",
     "bukaKomisi": "Open SPG commission",
     "aturTarif": "Set rates per category"
@@ -20100,7 +20327,7 @@
       "kotor": "Gross value",
       "potongan": "Discounts",
       "retur": "Returned by shoppers ({pcs} pcs)",
-      "sistemCatatan": "Calculated by the system from every SPG's receipts at this store, minus goods shoppers returned that day.",
+      "sistemCatatan": "Calculated by the system from every SPG's receipts at this store, minus goods shoppers returned that day that the office has approved.",
       "terlarisJudul": "Best sellers",
       "terlarisKosong": "Nothing sold yet.",
       "pcs": "{n} pcs",
@@ -20134,7 +20361,8 @@
       "kirimUlang": "Update report",
       "terkirim": "Day-close report sent.",
       "diperbarui": "Day-close report updated.",
-      "pengunjungDariPenghitung": "The visitor counter recorded {jumlah} people that day. Change it if needed."
+      "pengunjungDariPenghitung": "The visitor counter recorded {jumlah} people that day. Change it if needed.",
+      "returMenunggu": "{pcs} pcs returned by shoppers are still waiting for office approval — not deducted above yet."
     },
     "err": {
       "NETWORK": "No signal. Try sending again.",
@@ -20204,7 +20432,7 @@
         "nota": "Receipts",
         "kotor": "Gross value",
         "potongan": "Discounts",
-        "retur": "Returned by shoppers",
+        "retur": "Returned by shoppers (approved by the office)",
         "bersih": "Net sales",
         "konversi": "Conversion",
         "selisih": "Cashier difference",
@@ -21626,13 +21854,13 @@
       "jadwal": "Scheduled, Present, Late and Absent count up to today from the shift schedule (SPG → Schedule). A dash means no schedule was made for that SPG at that store, not zero.",
       "terlambat": "Late: first check-in more than the shift start + {menit} minutes; minutes are counted from the shift start.",
       "izin": "Leave: working days with approved leave, sick leave or annual leave on which the SPG did not come in.",
-      "nilai": "Receipts, pieces and value from that SPG's receipts at that store, net of goods shoppers returned.",
+      "nilai": "Receipts, pieces and value from that SPG's receipts at that store, net of shopper returns the office has approved.",
       "pengunjung": "Visitors from the counter on the SPG phone. Days without a count use the day-closing figure, split evenly among the SPGs present — marked *.",
       "konversi": "Conversion: receipts ÷ visitors, only on days with a visitor figure.",
       "target": "Target reached: the SPG's net sales at all their stores ÷ their monthly target (Settings → Salesman → Target).",
       "tutup": "Day closing: days with a day-closing report ÷ days the SPG sold.",
       "titip": "Customer requests: created by the SPG this month, and how many are done.",
-      "retur": "Shopper returns: pieces returned by shoppers ÷ pieces on this month's receipts."
+      "retur": "Shopper returns: pieces returned by shoppers and approved by the office ÷ pieces on this month's receipts."
     },
     "rincian": {
       "kembali": "SPG performance",
@@ -22219,8 +22447,8 @@
       "tersimpanOpnameIsi": "{count, plural, one {# item counted.} other {# items counted.}} The system balance and the difference are worked out by the server when it is sent — not the system figure on this screen.",
       "catatanLuring": "No signal: the count is saved on this phone. The difference is worked out by the server when it is sent, as of the time you counted.",
       "dilewati": "{count, plural, one {# item was} other {# items were}} already counted in a newer stock count — the older count was not used for them.",
-      "tersimpanKembali": "No signal — returned goods saved on this phone. Sent automatically once there is signal.",
-      "kembaliTertahan": "{pcs, plural, one {# piece} other {# pieces}} from this receipt are already recorded as returned on this phone, waiting for signal.",
+      "tersimpanKembali": "No signal — the return report is saved on this phone. It is sent automatically once there is signal, then waits for office approval.",
+      "kembaliTertahan": "{pcs, plural, one {# piece} other {# pieces}} from this receipt are already reported on this phone, waiting for signal.",
       "gagalSimpan": "Could not be saved on this phone. Try again.",
       "lihatAntrean": "See what has not been sent"
     },
@@ -22494,7 +22722,7 @@
       },
       "spg_sales_view": {
         "label": "Supervise SPGs",
-        "keterangan": "Opens SPG sales, performance, day close, customers, schedules, commission, stock requests, store transfers, damaged and lost goods, and Settings → SPG."
+        "keterangan": "Opens SPG sales, shopper returns, performance, day close, customers, schedules, commission, stock requests, store transfers, damaged and lost goods, and Settings → SPG."
       },
       "receivables_view": {
         "label": "View receivables",
@@ -22818,7 +23046,7 @@
       },
       "spg_commission_pay": {
         "label": "Mark SPG pay as paid",
-        "keterangan": "Marks SPG base pay and commission as paid, for consignment and putus stores. Approval — admin only by default."
+        "keterangan": "Marks SPG base pay and commission as paid, for consignment and putus stores — applying that SPG's commission corrections that go with the payment. Approval — admin only by default."
       },
       "field_sales_orders_credit_override": {
         "label": "Override credit limits",
@@ -22891,10 +23119,18 @@
       "packer_edit": {
         "label": "Replace packing videos",
         "keterangan": "Replaces an existing packing video."
+      },
+      "jubelio_prices_confirm": {
+        "label": "Confirm Jubelio prices",
+        "keterangan": "Approves selling prices before they are sent to Jubelio — price changes and new products waiting to be created in Jubelio — reverts an ERP price to the Jubelio price, and cancels a new-product request. Opens Jubelio → Price confirmation. Approval — admin only by default."
+      },
+      "spg_returns_approve": {
+        "label": "Approve SPG shopper returns",
+        "keterangan": "Approves or rejects an SPG's report of goods a shopper returned at the counter (SPG → Shopper returns). A return changes store stock, net sales, SPG commission and consignment reports only once approved; rejecting needs a reason, which is sent to the SPG's phone. Nobody can decide a report they made themselves. The page opens through Supervise SPGs. Approval — admin and Sales admin by default."
       }
     },
     "persetujuan": "Approval",
-    "persetujuanJudul": "Approval permission — admin only by default. Grant it only to someone you trust to decide on your behalf."
+    "persetujuanJudul": "Approval permission — admin only by default, unless its description names another role. Grant it only to someone you trust to decide on your behalf."
   },
   "itemForm": {
     "basicInfo": "Basic information",
@@ -23021,7 +23257,21 @@
     "gagalSimpan": "The item could not be saved.",
     "dibuat": "Item added.",
     "gagalBuat": "The item could not be added.",
-    "tabRiwayatHpp": "Cost history"
+    "tabRiwayatHpp": "Cost history",
+    "hargaJubelio": {
+      "judul": "Price in Jubelio",
+      "sama": "{harga} — same as the ERP price.",
+      "dikonfirmasi": "Confirmed by {nama}, {waktu}",
+      "hargaAwal": "Price from Jubelio — recorded from the Jubelio catalog or before price confirmation started, not confirmed by a person.",
+      "menungguUbah": "ERP price {baru} is awaiting confirmation. Jubelio stays at {lama} until confirmed.",
+      "menungguBaru": "Not in Jubelio yet — awaiting price confirmation.",
+      "tanpaHarga": "In Jubelio but without a confirmed price — changes to this product are not sent until its price is confirmed.",
+      "belumDiJubelio": "Not in Jubelio.",
+      "kirimanGagal": "The last push to Jubelio {status} ({alasan}).",
+      "statusDEAD": "failed permanently",
+      "statusSKIPPED": "was skipped",
+      "bukaDaftar": "Open price confirmation"
+    }
   },
   "spgTerkait": {
     "titip": "Shopper requests",
@@ -28357,6 +28607,104 @@
         "konsi": "Consignment",
         "putus": "Outright purchase"
       }
+    }
+  },
+  "spgReturPembeli": {
+    "kantor": {
+      "judul": "SPG shopper returns",
+      "deskripsi": "Reports of goods shoppers returned at the SPG counter. A return changes store stock, net sales, commission and consignment reports only once approved.",
+      "ringkas": "{menunggu, plural, one {# report awaiting approval} other {# reports awaiting approval}}",
+      "saringToko": "Filter by store",
+      "saringStatus": "Filter by status",
+      "semuaToko": "All stores",
+      "cari": "Search receipt number",
+      "daftarJudul": "Shopper return reports",
+      "menungguBoleh": "Pending reports have not changed stock, net sales or commission yet. Open a report to approve or reject it.",
+      "menungguLihat": "Pending reports have not changed stock, net sales or commission yet. Deciding them needs the Approve SPG shopper returns permission.",
+      "kosong": "No shopper return reports in this tab.",
+      "kosongSaringJudul": "No matching reports",
+      "kosongSaringIsi": "Change the store or the receipt number you searched for.",
+      "kolom": {
+        "dilaporkan": "Reported",
+        "toko": "Store",
+        "spg": "SPG",
+        "nota": "Receipt",
+        "barang": "Goods",
+        "alasan": "Shopper's reason",
+        "status": "Status",
+        "diputuskan": "Decided"
+      },
+      "pcs": "{n, plural, one {# piece} other {# pieces}}",
+      "langsungBerlaku": "Took effect at once"
+    },
+    "status": {
+      "MENUNGGU": "Pending",
+      "DISETUJUI": "Approved",
+      "DITOLAK": "Rejected",
+      "DIBATALKAN": "Withdrawn by SPG",
+      "SEMUA": "All"
+    },
+    "syarat": {
+      "PUTUS": "Outright",
+      "KONSI": "Consignment"
+    },
+    "rincian": {
+      "judul": "Shopper return report",
+      "judulToko": "Shopper return — {toko}",
+      "ringkas": "{pcs, plural, one {# piece} other {# pieces}} from receipt {docNo}",
+      "kembali": "Back to the list",
+      "pelapor": "Reported by",
+      "dilaporkanPada": "Reported on",
+      "notaAsal": "Original receipt",
+      "ditarik": "Withdrawn",
+      "langsungBerlaku": "Took effect at once — recorded before office approval existed.",
+      "diputuskan": "{oleh}, {pada}",
+      "alasanTolakLabel": "Rejection reason",
+      "alasanTarikLabel": "Withdrawal reason",
+      "menungguBoleh": "This report awaits your decision. Until it is approved, shelf stock, net sales, SPG commission and consignment reports are unchanged.",
+      "pelaporSendiri": "You reported this return, so someone else must decide it.",
+      "tanpaIzin": "Deciding needs the Approve SPG shopper returns permission.",
+      "peringatanKomisi": "SPG commission for this store's {bulan} sales has already been checked. Approving this return changes that month's figure; the difference is corrected in the next commission payment.",
+      "peringatanKonsi": "This store's official consignment figures for {bulan} are already locked. They do not change; commission is corrected in the next payment.",
+      "riwayat": "History",
+      "riwayatKosong": "No history yet.",
+      "barangJudul": "Goods ({pcs, plural, one {# piece} other {# pieces}})",
+      "kolom": {
+        "kondisi": "Condition",
+        "qty": "Reported",
+        "terjual": "Sold on receipt",
+        "sudahKembali": "Already returned",
+        "menungguLain": "Pending (other reports)",
+        "nilai": "Net value"
+      },
+      "terhitungOpname": "Counted by a store count after it was reported — shelf stock is not raised again on approval.",
+      "total": "Total",
+      "setujui": "Approve",
+      "setujuiJudul": "Approve this return?",
+      "setujuiIsi": "{layak} sellable pieces go back to the store's shelf stock and {rusak} damaged pieces do not. Net sales, SPG commission and consignment reports drop by {pcs} pieces in the month the return was reported.",
+      "setujuiOpname": "{n, plural, one {# more sellable piece was} other {# more sellable pieces were}} already counted by a store count after the report, so shelf stock is not raised again.",
+      "batal": "Cancel",
+      "menyimpan": "Saving…",
+      "okSetujui": "Return approved.",
+      "tolak": "Reject",
+      "tolakJudul": "Reject the return report",
+      "tolakIsi": "Nothing changes: stock, net sales and commission stay as they are. The reason is sent to the SPG's phone.",
+      "tolakLabel": "Reason (sent to the SPG's phone)",
+      "tolakKirim": "Reject report",
+      "okTolak": "Report rejected."
+    },
+    "err": {
+      "TIDAK_DITEMUKAN": "Report not found.",
+      "SUDAH_DIPUTUSKAN": "This report was already decided or withdrawn. Reload the page.",
+      "PELAPOR_SAMA": "You cannot decide a report you made yourself.",
+      "BUKAN_MILIK": "Only the reporter, at their own store, can withdraw this report.",
+      "ALASAN_WAJIB": "Write the reason.",
+      "ALASAN_TERLALU_PANJANG": "The reason is too long (500 characters at most).",
+      "MELEBIHI_SISA": "More than can still be returned on this receipt. Reject this report.",
+      "TANPA_AKSES": "You do not have access to this.",
+      "TANPA_TOKO": "You have not been assigned to a store.",
+      "ISIAN_TIDAK_VALID": "The form could not be read.",
+      "GAGAL": "Could not save. Try again."
     }
   }
 }

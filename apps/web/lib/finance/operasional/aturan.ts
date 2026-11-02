@@ -324,7 +324,8 @@ export function barisKomisi(b: {
 }
 
 /**
- * Gaji/komisi DIBAYAR (yang diterima = bruto − potongan):
+ * Gaji/komisi DIBAYAR (yang diterima = bruto − potongan, ditambah koreksi
+ * yang diterapkan pada pembayaran ini — `barisKoreksiKomisi`):
  *   DR COMMISSION_PAYABLE / CR BANK.
  * Keputusan sementara: komisi dibayar lewat bank — dokumennya tidak menyimpan rekening.
  */
@@ -335,6 +336,27 @@ export function barisBayarKomisi(nilai: number): BarisBertanda[] {
     { role: "COMMISSION_PAYABLE", sen },
     { role: "BANK", sen: -sen },
   ]);
+}
+
+/**
+ * Koreksi komisi SPG yang DITERAPKAN pada sebuah pembayaran
+ * (`SpgCommissionCorrection`; keputusan pemilik 2026-11-02: komisi yang dulu
+ * dibayar dengan bagi rata dikoreksi di pembayaran berikutnya). Barisnya ikut
+ * jurnal PEMBAYARAN itu, tanpa jurnal sendiri — koreksi baru ada saat
+ * pembayarannya dicatat. Per koreksi, bertanda (positif = SPG menerima lebih):
+ *   DR SPG_COMMISSION_EXPENSE (toko + kanal laporan ASALNYA) / CR COMMISSION_PAYABLE
+ * Bank dikredit sebesar yang benar-benar keluar (`barisBayarKomisi(neto + Σ koreksi)`
+ * di penulisnya), jadi hutang komisi tetap lunas tepat sebesar akrualnya.
+ */
+export function barisKoreksiKomisi(koreksi: ReadonlyArray<{ jumlah: number; storeId: string; kanal: KanalJurnal }>): BarisBertanda[] {
+  const baris: BarisBertanda[] = [];
+  for (const k of koreksi) {
+    const sen = keSen(k.jumlah);
+    if (sen === 0) continue;
+    baris.push({ role: "SPG_COMMISSION_EXPENSE", sen, channel: k.kanal, storeId: k.storeId });
+    baris.push({ role: "COMMISSION_PAYABLE", sen: -sen });
+  }
+  return gabungBaris(baris);
 }
 
 /** Peran kas untuk cara bayar toko: tunai → kas, transfer/giro → bank. */

@@ -12,7 +12,6 @@ import {
   type ItemImportPreviewResult,
   type ItemImportValidatedResult,
 } from "@/lib/items/import/types";
-import { enqueueProductPushOnCreate } from "@/lib/jubelio/product-push";
 import { getActorName } from "@/lib/notifications/actor-name";
 import { getUsersWithPermission, sendNotificationToUsers } from "@/lib/notifications/recipients";
 
@@ -54,7 +53,9 @@ export async function commitItemImport(rawRows: unknown, options: unknown): Prom
 
   let created: Array<{ id: string; sku: string; nameId: string }>;
   try {
-    created = await createItemsFromImport(v.plan);
+    // The Jubelio box REQUESTS the products in the import's own transaction; each waits on
+    // Jubelio → Konfirmasi harga and nothing is pushed from here (owner decision 2026-11-02).
+    created = await createItemsFromImport(v.plan, { ajukanKeJubelio: pushToJubelio, olehUserId: user.id });
   } catch (e) {
     if (e instanceof ItemImportSkuTakenError) {
       const again = validateItemImport(rows, await loadItemImportLookups());
@@ -65,21 +66,10 @@ export async function commitItemImport(rawRows: unknown, options: unknown): Prom
     return { status: "failed" };
   }
 
-  let jubelioFailed = 0;
-  if (pushToJubelio) {
-    for (const item of created) {
-      try {
-        await enqueueProductPushOnCreate(item.id, user.id, { directEnqueue: false });
-      } catch (e) {
-        jubelioFailed += 1;
-        console.error("[item-import] jubelio enqueue failed", item.id, e);
-      }
-    }
-  }
-
   void notifyItemsImported(user.id, created.length, v.variantCount).catch(() => {});
   revalidatePath("/backoffice/items");
-  return { status: "created", items: created, variantCount: v.variantCount, jubelioRequested: pushToJubelio, jubelioFailed };
+  if (pushToJubelio) revalidatePath("/backoffice/jubelio/harga");
+  return { status: "created", items: created, variantCount: v.variantCount, jubelioRequested: pushToJubelio };
 }
 
 /**
