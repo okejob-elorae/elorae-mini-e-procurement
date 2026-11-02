@@ -143,6 +143,8 @@ export class CreditLimitExceededError extends Error {
     public exposure: { receivableOutstanding: number; undeliveredOrderResidual: number; total: number },
     public creditLimit: number,
     public orderTotal: number,
+    /** Where the limit came from (`batasKreditBerlaku`): the store's own figure or the Settings default. */
+    public sumber?: "TOKO" | "BAWAAN",
   ) {
     super("CREDIT_LIMIT_EXCEEDED");
     this.name = "CreditLimitExceededError";

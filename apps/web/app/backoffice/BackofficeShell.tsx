@@ -184,15 +184,12 @@ function PilihBahasa() {
 function Sidebar({
   className,
   permissions,
-  userRole,
   onClose,
   collapsed = false,
   onToggleCollapse,
 }: {
   className?: string;
   permissions: string[];
-  /** Entri `adminOnly` hanya tampil bagi peran lama ADMIN. */
-  userRole?: Role;
   onClose?: () => void;
   /** Menu samping ciut: ikon saja, grup dibuka sebagai menu tarik-turun. */
   collapsed?: boolean;
@@ -265,7 +262,6 @@ function Sidebar({
   const terizinkan = useMemo(
     () =>
       navItems.filter((item) => {
-        if (item.adminOnly && userRole !== Role.ADMIN) return false;
         if (item.children?.length) {
           const anakTerlihat = item.children.filter(
             (child) => bolehAnak(permissions, child.permission),
@@ -278,7 +274,7 @@ function Sidebar({
         }
         return bolehAnak(permissions, item.permission);
       }),
-    [permissions, userRole],
+    [permissions],
   );
 
   /*
@@ -835,7 +831,6 @@ export function BackofficeShell({
       >
         <Sidebar
           permissions={session.user.permissions}
-          userRole={userRole}
           collapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapsed}
         />
@@ -861,7 +856,6 @@ export function BackofficeShell({
                 <SheetDescription className="sr-only">{tNav('keteranganMenuSamping')}</SheetDescription>
                 <Sidebar
                   permissions={session.user.permissions}
-                  userRole={userRole}
                   onClose={() => setMobileMenuOpen(false)}
                 />
               </SheetContent>

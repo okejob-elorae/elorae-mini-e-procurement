@@ -7,7 +7,7 @@ import type { Role } from "@/lib/constants/enums";
  *
  * Kolom itu sisa sebelum ada manajemen peran, tetapi beberapa layar masih
  * membacanya lewat `session.user.role` (tab HPP Work Order, markup HPP,
- * laporan HPP, menu khusus admin). Dulu hanya Akun Profil (versi tim) yang
+ * laporan HPP). Dulu hanya Akun Profil (versi tim) yang
  * mengisinya, dan dari NAMA peran; Pengaturan → Pengguna tidak mengisinya sama
  * sekali. Akibatnya orang yang diangkat menjadi admin lewat Pengguna tetap USER
  * di kolom lama — tidak bisa membuka Peran & izin dan tab HPP — dan admin yang

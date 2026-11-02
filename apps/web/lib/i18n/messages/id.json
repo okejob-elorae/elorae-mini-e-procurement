@@ -4176,8 +4176,7 @@
         "MELEBIHI_UANG_MUKA": "Melebihi uang muka yang tersisa.",
         "FOTO_TIDAK_SAH": "Foto bukti tidak sah. Unggah ulang fotonya.",
         "TANPA_AKSES": "Anda tidak berizin melakukan ini.",
-        "GAGAL": "Gagal menyimpan. Coba lagi.",
-        "DIBAYAR_LEWAT_TAGIHAN_VENDOR": "Dokumen itu ada di tagihan Vendor Billing yang sudah dibayar lewat Pembayaran Vendor Billing. Bayar sisanya di sana, atau batalkan pembayaran vendornya dulu."
+        "GAGAL": "Gagal menyimpan. Coba lagi."
       },
       "uangMukaBelumDipotong": "Uang muka {nilai} belum dipotong PPh — ikut dasar potongan",
       "uangMukaDiterapkanPotong": "Uang muka diterapkan. PPh {nilai} atas uang muka dipotong lewat {nomor}.",
@@ -22510,11 +22509,11 @@
       },
       "supplier_payments_create": {
         "label": "Catat pembayaran pemasok",
-        "keterangan": "Belum dipakai layar mana pun; menandai PO sudah dibayar memakai izin Kelola jurnal & verifikasi uang masuk."
+        "keterangan": "Mencatat pembayaran ke pemasok (termasuk uang muka) di Pembayaran pemasok — satu-satunya jalur membayar pemasok — dan membatalkan pembayaran lama di Vendor Billing. Menandai PO lunas memakai izin Ubah & batalkan PO."
       },
       "supplier_payments_edit": {
         "label": "Ubah pembayaran pemasok",
-        "keterangan": "Belum dipakai layar mana pun; menandai PO sudah dibayar memakai izin Kelola jurnal & verifikasi uang masuk."
+        "keterangan": "Membatalkan pembayaran pemasok dan menerapkan uang muka ke tagihan di Pembayaran pemasok. Menandai PO lunas memakai izin Ubah & batalkan PO."
       },
       "vendor_returns_view": {
         "label": "Lihat retur ke pemasok",
@@ -22742,7 +22741,7 @@
       },
       "consignment_lock": {
         "label": "Kunci angka konsinyasi",
-        "keterangan": "Mengunci angka terjual resmi siklus konsinyasi, dan membuka kuncinya lagi selama belum ada nomor dokumen, gaji dibayar, atau pembayaran toko. Persetujuan — bawaannya hanya admin."
+        "keterangan": "Mengunci angka terjual resmi siklus konsinyasi, dan membuka kuncinya lagi selama belum ada nomor dokumen, gaji dibayar, atau pembayaran toko. Juga menyetujui dan membatalkan (void) Laporan Sell-Through, yang menerbitkan tagihannya (halamannya butuh izin Lihat toko). Persetujuan — bawaannya hanya admin."
       },
       "store_stocktakes_approve": {
         "label": "Setujui opname toko",
@@ -22750,7 +22749,7 @@
       },
       "store_transfers_approve": {
         "label": "Setujui mutasi antar toko",
-        "keterangan": "Menyetujui, menolak, membatalkan, atau mengalihkan tujuan mutasi barang antar toko, dan mengatur aturan mutasi di Pengaturan → SPG, termasuk arah yang boleh dikirim tanpa persetujuan. Persetujuan — bawaannya hanya admin."
+        "keterangan": "Menyetujui, menolak, membatalkan, atau mengalihkan tujuan mutasi barang antar toko, dan mengatur aturan mutasi di Pengaturan → SPG, termasuk arah yang boleh dikirim tanpa persetujuan. Mutasi SPG dibuka lewat Awasi SPG; Transfer Toko di Penjualan Konsinyasi juga butuh Lihat toko. Persetujuan — bawaannya hanya admin."
       },
       "store_transfers_decide_shortfall": {
         "label": "Putuskan selisih mutasi",

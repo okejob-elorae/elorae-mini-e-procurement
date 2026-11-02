@@ -268,6 +268,15 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
         "MaterialIssue",
         wo.issues.map((i) => i.id),
       );
+      // Pengeluaran yang nilainya tidak tercatat (null) tetap tahu variannya di buku besar stok:
+      // dipakai memilih baris gudang tujuan bila harganya dari dokumen.
+      const idTanpaNilai = wo.issues.filter((i) => gerakPengeluaran.get(i.id) == null).map((i) => i.id);
+      const varianTanpaNilai = idTanpaNilai.length
+        ? await tx.stockLedgerEntry.findMany({
+            where: { refType: "MaterialIssue", refId: { in: idTanpaNilai }, locationType: "MAIN" },
+            select: { itemId: true, variantSku: true, qty: true },
+          })
+        : [];
       const perBaris: Array<{
         itemId: string;
         qty: Decimal;
@@ -325,11 +334,19 @@ export async function kembalikanBahanWo(m: MasukanKembaliBahan): Promise<HasilKe
         // (bukan bila batas sudah menekannya menjadi 0).
         const hargaDariDokumen = pb.dariDokumen && harga.gt(0);
 
-        // Baris gudang tujuan: varian yang paling banyak dikeluarkan ke WO ini;
+        // Baris gudang tujuan: varian yang paling banyak dikeluarkan ke WO ini (kartu stok
+        // bernilai, atau baris buku besar tanpa nilai bila harganya dari dokumen);
         // tanpa varian → baris gabungan null/"" (pencarian toleran keduanya).
         const perVarian = new Map<string, Decimal>();
         for (const g of gerakan) {
           perVarian.set(g.variantSku, (perVarian.get(g.variantSku) ?? new Decimal(0)).plus(g.qty));
+        }
+        if (perVarian.size === 0) {
+          for (const g of varianTanpaNilai) {
+            if (g.itemId !== b.itemId) continue;
+            const v = g.variantSku ?? "";
+            perVarian.set(v, (perVarian.get(v) ?? new Decimal(0)).plus(new Decimal(String(g.qty)).abs()));
+          }
         }
         const varian = [...perVarian.entries()].sort((a, z) => z[1].comparedTo(a[1]))[0]?.[0] ?? "";
         // Pencari baku (tie-break sama dengan `moveMainStock`), jadi baris kembar

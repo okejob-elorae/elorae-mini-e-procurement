@@ -109,6 +109,7 @@ const ERROR_CODE_MAP: Record<StoreStocktakeErrorCode, Exclude<StoreStocktakeActi
   DUPLICATE_LINE: "DUPLICATE_LINE",
   TRANSFER_PENDING: "TRANSFER_PENDING",
   RETUR_PENDING: "RETUR_PENDING",
+  FORBIDDEN: "FORBIDDEN",
 };
 
 /**
@@ -475,8 +476,9 @@ export async function approveAction(stocktakeId: string): Promise<StoreStocktake
  * `stores:manage`'s to abandon. A count already submitted for approval (PENDING_VERIFICATION) is
  * not: cancelling it discards the SPG's count before the approver ever sees it, which is the
  * reject half of the approval, so it takes `store_stocktakes:approve` like approving does (owner,
- * 2026-11-01). The status is read before the writer's transaction, so a count submitted in the
- * gap between the two can still be cancelled on `stores:manage` alone.
+ * 2026-11-01). The status is read here only to fail fast and to find the store to revalidate; the
+ * writer re-checks both permissions against the status it reads inside its transaction, so a count
+ * submitted in between is refused (FORBIDDEN).
  */
 export async function cancelAction(input: { stocktakeId: string; reason: string }): Promise<StoreStocktakeActionResult> {
   let stocktakeId = "";
@@ -495,7 +497,13 @@ export async function cancelAction(input: { stocktakeId: string; reason: string 
     if (!doc) return { ok: false, code: "NOT_FOUND" };
     if (doc.status === "PENDING_VERIFICATION" ? !canApprove : !canManage) return { ok: false, code: "FORBIDDEN" };
     storeIdForRevalidate = doc.storeId;
-    await cancelStoreStocktake({ stocktakeId, cancelledById: session.user.id, reason: input.reason });
+    await cancelStoreStocktake({
+      stocktakeId,
+      cancelledById: session.user.id,
+      reason: input.reason,
+      allowDraft: canManage,
+      allowPendingVerification: canApprove,
+    });
   } catch (e) {
     return toResult(e);
   }

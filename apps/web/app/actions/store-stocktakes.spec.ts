@@ -693,6 +693,7 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       const res = await cancelAction({ stocktakeId: "st1", reason: "lost sack" });
       expect(res.ok).toBe(true);
       expect(mockHasPermission).toHaveBeenCalledWith(expect.anything(), "stores:manage");
+      expect(mockCancel).toHaveBeenCalledWith(expect.objectContaining({ allowPendingVerification: false }));
     });
 
     /*
@@ -712,11 +713,24 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       mockFindStocktakeUnique.mockResolvedValue({ storeId: "s1", status: "PENDING_VERIFICATION" });
       expect(await cancelAction({ stocktakeId: "st1", reason: "lost sack" })).toEqual({ ok: true, id: "st1" });
       expect(mockCancel).toHaveBeenCalledTimes(1);
+      expect(mockCancel).toHaveBeenCalledWith(expect.objectContaining({ allowPendingVerification: true }));
 
       mockCancel.mockClear();
       mockFindStocktakeUnique.mockResolvedValue({ storeId: "s1", status: "DRAFT" });
       expect(await cancelAction({ stocktakeId: "st1", reason: "lost sack" })).toEqual({ ok: false, code: "FORBIDDEN" });
       expect(mockCancel).not.toHaveBeenCalled();
+    });
+
+    /*
+     * The status read above is only a fast refusal: a count submitted between it and the writer's
+     * transaction is caught by the writer, which re-checks the same two permissions there.
+     */
+    it("hands the writer what each permission allows, and maps its in-transaction refusal to FORBIDDEN", async () => {
+      mockHasPermission.mockImplementation((_p: unknown, code: string) => code === "stores:manage");
+      mockFindStocktakeUnique.mockResolvedValue({ storeId: "s1", status: "DRAFT" });
+      mockCancel.mockRejectedValue(new StoreStocktakeError("FORBIDDEN"));
+      expect(await cancelAction({ stocktakeId: "st1", reason: "lost sack" })).toEqual({ ok: false, code: "FORBIDDEN" });
+      expect(mockCancel).toHaveBeenCalledWith(expect.objectContaining({ allowDraft: true, allowPendingVerification: false }));
     });
 
     it("returns INVALID_REQUEST for a non-string reason without calling the writer", async () => {
@@ -761,7 +775,13 @@ describe("store stocktake actions (unit — writers mocked)", () => {
       mockFindStocktakeUnique.mockResolvedValue({ storeId: "store-def" });
       const res = await cancelAction({ stocktakeId: "st1", reason: "lost sack" });
       expect(res).toEqual({ ok: true, id: "st1" });
-      expect(mockCancel).toHaveBeenCalledWith({ stocktakeId: "st1", cancelledById: "user-1", reason: "lost sack" });
+      expect(mockCancel).toHaveBeenCalledWith({
+        stocktakeId: "st1",
+        cancelledById: "user-1",
+        reason: "lost sack",
+        allowDraft: true,
+        allowPendingVerification: true,
+      });
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/store-stocktakes/st1");
       expect(mockRevalidatePath).toHaveBeenCalledWith("/backoffice/stores/store-def");

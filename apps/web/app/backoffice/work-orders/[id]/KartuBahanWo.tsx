@@ -102,13 +102,25 @@ export function KartuBahanWo({
             toast.error(t(`tolak.${hasil.code}`, { barang: namaBarang(hasil.itemId) }));
           } else if (hasil.code === "TANPA_BARIS" || hasil.code === "CATATAN_TERLALU_PANJANG") {
             toast.error(t(`tolak.${hasil.code}`));
+          } else if (hasil.code === "HARGA_KELUAR_TIDAK_DIKETAHUI") {
+            toast.error(
+              hasil.dokumen && hasil.dokumen.length > 0
+                ? t("tolak.HARGA_KELUAR_TIDAK_DIKETAHUI", { barang: namaBarang(hasil.itemId), dokumen: hasil.dokumen.join(", ") })
+                : tTolak("HARGA_KELUAR_TIDAK_DIKETAHUI"),
+            );
           } else {
             toast.error(tTolak.has(hasil.code) ? tTolak(hasil.code) : t("gagal"));
           }
           muat();
           return;
         }
-        toast.success(t(hasil.dibatasi ? "berhasilDibatasi" : "berhasil", { nilai: formatRupiah(hasil.totalNilai) }));
+        const keterangan =
+          hasil.barangHargaDokumen.length > 0
+            ? t("hargaDariDokumen", { barang: hasil.barangHargaDokumen.map((id) => namaBarang(id)).join(", ") })
+            : undefined;
+        toast.success(t(hasil.dibatasi ? "berhasilDibatasi" : "berhasil", { nilai: formatRupiah(hasil.totalNilai) }), {
+          description: keterangan,
+        });
         setBuka(false);
         setIsian({});
         setCatatan("");
@@ -194,7 +206,8 @@ export function KartuBahanWo({
                     {r.catatan ? <span className="text-muted-foreground"> · {r.catatan}</span> : null}
                   </span>
                   <span className="text-muted-foreground">
-                    {formatRupiah(r.nilai)} · {formatDisplayDateTime(r.createdAt, locale)}
+                    {formatRupiah(r.nilai)}
+                    {r.hargaDariDokumen ? ` · ${t("riwayatHargaDokumen")}` : ""} · {formatDisplayDateTime(r.createdAt, locale)}
                     {r.oleh ? ` · ${r.oleh}` : ""}
                   </span>
                 </li>

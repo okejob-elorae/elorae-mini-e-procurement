@@ -15,7 +15,9 @@ const CUTOVER = "2026-06-01";
  * Every call to postPendingSalesJournals below is scoped with `orderIds` to this
  * spec's own seeded rows. The sweep is DB-wide by default and the test bed is the
  * shared :3308 dev database — an unscoped call would journal real orders against
- * the throwaway chart accounts created here.
+ * the throwaway chart accounts created here. The poster is pinned to the spec's
+ * own user (`postedById: userId`), so the journal teardown
+ * (`postedById: seededId(userId)`) finds every journal it posted.
  */
 d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
   let token: number;
@@ -184,21 +186,21 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
 
   it("no cutover configured → selects nothing, posts nothing, reports NO_CUTOVER", async () => {
     await prisma.systemSetting.deleteMany({ where: { key: GL_CUTOVER_SETTING_KEY } });
-    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after] });
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after], postedById: userId });
     expect(res).toEqual({ posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: "NO_CUTOVER" });
     expect(await journalCount(orderIds.after)).toBe(0);
   });
 
   it("unparseable cutover → posts nothing, reports NO_CUTOVER", async () => {
     await setCutover("bukan-tanggal");
-    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after] });
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after], postedById: userId });
     expect(res).toEqual({ posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: "NO_CUTOVER" });
     expect(await journalCount(orderIds.after)).toBe(0);
   });
 
   it("empty cutover → posts nothing, reports NO_CUTOVER", async () => {
     await setCutover("   ");
-    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after] });
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after], postedById: userId });
     expect(res.skipped).toBe("NO_CUTOVER");
     expect(await journalCount(orderIds.after)).toBe(0);
   });
@@ -217,6 +219,7 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
     const res = await postPendingSalesJournals({
       limit: 100,
       orderIds: [orderIds.before, orderIds.after],
+      postedById: userId,
     });
     expect(res).toEqual({ posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: "NO_CUTOVER" });
     expect(await journalCount(orderIds.before)).toBe(0);
@@ -224,13 +227,13 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
   });
 
   it("order shipped before the cutover is skipped", async () => {
-    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.before] });
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.before], postedById: userId });
     expect(res).toEqual({ posted: 0, revenue: 0, cogs: 0, pending: 0, skipped: null });
     expect(await journalCount(orderIds.before)).toBe(0);
   });
 
   it("order shipped exactly at WIB midnight on the cutover date is posted", async () => {
-    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.boundary] });
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.boundary], postedById: userId });
     expect(res.skipped).toBeNull();
     expect(res.revenue).toBe(1);
     expect(res.cogs).toBe(1);
@@ -238,14 +241,14 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
   });
 
   it("order shipped after the cutover is posted", async () => {
-    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after] });
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.after], postedById: userId });
     expect(res.revenue).toBe(1);
     expect(res.cogs).toBe(1);
     expect(await journalCount(orderIds.after)).toBe(2);
   });
 
   it("a scoped orderIds call cannot smuggle a pre-cutover order past the floor", async () => {
-    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.before, orderIds.after] });
+    const res = await postPendingSalesJournals({ limit: 100, orderIds: [orderIds.before, orderIds.after], postedById: userId });
     expect(res.revenue).toBe(1);
     expect(res.cogs).toBe(1);
     expect(await journalCount(orderIds.before)).toBe(0);
@@ -256,6 +259,7 @@ d("postPendingSalesJournals — GL cutover floor (test bed only)", () => {
     const res = await postPendingSalesJournals({
       limit: 100,
       orderIds: [orderIds.nullBefore, orderIds.nullAfter],
+      postedById: userId,
     });
     expect(res.revenue).toBe(1);
     expect(res.cogs).toBe(1);

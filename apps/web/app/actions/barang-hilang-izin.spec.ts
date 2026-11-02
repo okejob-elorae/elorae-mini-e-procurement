@@ -98,6 +98,28 @@ describe("membatalkan: yang terbuka milik pengelola, yang sudah diputuskan milik
     expect(state.dipanggil).toEqual(["batalkanBarangHilang"]);
   });
 
+  it("menyerahkan izinnya ke penulis, yang memeriksanya lagi di dalam transaksinya", async () => {
+    const penulis = await import("@/lib/spg/hilang-writer");
+    masuk(["receivables:manage"]);
+    await batalkan();
+    expect(vi.mocked(penulis.batalkanBarangHilang)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bolehBatalkanTerbuka: true, bolehBatalkanKeputusan: false }),
+    );
+    masuk(["receivables:decide_bearer"]);
+    state.status = "DITETAPKAN";
+    await batalkan();
+    expect(vi.mocked(penulis.batalkanBarangHilang)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ bolehBatalkanTerbuka: false, bolehBatalkanKeputusan: true }),
+    );
+  });
+
+  it("keputusan yang masuk di antara baca dan tulis: penolakan penulis dilaporkan FORBIDDEN", async () => {
+    const penulis = await import("@/lib/spg/hilang-writer");
+    vi.mocked(penulis.batalkanBarangHilang).mockResolvedValueOnce({ ok: false, kode: "TANPA_IZIN" });
+    masuk(["receivables:manage"]);
+    expect(await batalkan()).toEqual(DITOLAK);
+  });
+
   it("tanpa kedua izin ditolak; catatan yang tak ada tidak sampai ke penulis", async () => {
     masuk(["spg_sales:view"]);
     expect(await batalkan()).toEqual(DITOLAK);

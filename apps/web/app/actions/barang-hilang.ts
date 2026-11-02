@@ -132,9 +132,11 @@ export async function ubahKeputusanHilangAction(input: IsianKeputusan): Promise<
  * SUDAH diputuskan menghapus seluruh bagian penanggungnya dan membalik jurnalnya,
  * jadi itu membatalkan keputusan manager: `receivables:decide_bearer`, sama
  * dengan memutuskannya. Tanpa ini pemegang izin kelola bisa menganulir keputusan
- * yang tidak boleh ia buat. Statusnya dibaca SEBELUM transaksi penulis: keputusan
- * yang masuk tepat di antara keduanya masih lolos, sampai `batalkanBarangHilang`
- * sendiri menerima izin ini dan memeriksanya di dalam transaksinya.
+ * yang tidak boleh ia buat. Status dibaca dulu di sini hanya untuk menolak cepat
+ * (dan supaya catatan yang tak ada tidak sampai ke penulis); penentunya penulis,
+ * yang menerima kedua izin dan memeriksanya lagi DI DALAM transaksinya
+ * (TANPA_IZIN → FORBIDDEN), jadi keputusan yang masuk tepat di antara keduanya
+ * tidak bisa dibatalkan dengan izin kelola saja.
  */
 export async function batalkanBarangHilangAction(input: { lossId: string; alasan: string }): Promise<{ ok: true } | Gagal> {
   const session = await auth();
@@ -149,8 +151,14 @@ export async function batalkanBarangHilangAction(input: { lossId: string; alasan
     return { ok: false, code: "FORBIDDEN" };
   }
   const userId = session.user.id;
-  const r = await batalkanBarangHilang({ lossId: input.lossId, alasan: input.alasan, olehUserId: userId });
-  if (!r.ok) return { ok: false, code: r.kode };
+  const r = await batalkanBarangHilang({
+    lossId: input.lossId,
+    alasan: input.alasan,
+    olehUserId: userId,
+    bolehBatalkanTerbuka: bolehMengelola(izin),
+    bolehBatalkanKeputusan: bolehMemutuskanBeban(izin),
+  });
+  if (!r.ok) return { ok: false, code: r.kode === "TANPA_IZIN" ? "FORBIDDEN" : r.kode };
   // Keputusan yang dibatalkan: jurnalnya dibalik (generasi penyesuaian), tidak dihapus.
   await kaitBarangHilang(r.id, userId);
   segarkan(r.id);

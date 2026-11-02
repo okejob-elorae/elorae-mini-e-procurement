@@ -97,7 +97,8 @@ const cents = (v: Prisma.Decimal | number) => Math.round(Number(v) * 100);
  * (`lib/purchasing/pembayaran-hutang-queries.ts`) and the step part as paid on that step
  * (`daftarHutangJasa`), so it stays equal to the general ledger. The step part also covers payments
  * of step work the bill booked itself (`bill-journal.ts`), whose payable no finished-goods receipt
- * holds; `billBookedByWoStep` gives the sub-ledger that payable.
+ * holds; `billBookedByWoStep` gives the sub-ledger that payable. `byPoItem` is the same PO split
+ * keyed per PO item, which the payable sub-ledger credits to the GRNs that brought that item in.
  *
  * Vendor payments take no new payments since 2026-11-01 (`payment-writer.ts`); these are the ones
  * made before. Because the sub-ledger counts them as paid, Supplier payments → Pay can settle what
@@ -106,16 +107,17 @@ const cents = (v: Prisma.Decimal | number) => Math.round(Number(v) * 100);
 export async function vendorPaidBySource(
   db: Db,
   scope: { poIds: string[]; woStepIds: string[] }
-): Promise<{ byPo: Map<string, number>; byWoStep: Map<string, number> }> {
+): Promise<{ byPo: Map<string, number>; byPoItem: Map<string, number>; byWoStep: Map<string, number> }> {
   const byPo = new Map<string, number>();
+  const byPoItem = new Map<string, number>();
   const byWoStep = new Map<string, number>();
   const or = linesOf(scope);
-  if (or.length === 0) return { byPo, byWoStep };
+  if (or.length === 0) return { byPo, byPoItem, byWoStep };
   const bills = await db.vendorBill.findMany({
     where: { status: { not: "VOID" }, lines: { some: { OR: or } }, allocations: { some: { payment: { voidedAt: null } } } },
     select: {
       allocations: { where: { payment: { voidedAt: null } }, select: { amount: true } },
-      lines: { orderBy: { id: "asc" }, select: { amount: true, woStepId: true, poItem: { select: { poId: true } } } },
+      lines: { orderBy: { id: "asc" }, select: { amount: true, woStepId: true, poItemId: true, poItem: { select: { poId: true } } } },
     },
   });
   const pos = new Set(scope.poIds);
@@ -126,10 +128,11 @@ export async function vendorPaidBySource(
     b.lines.forEach((l, i) => {
       const poId = l.poItem?.poId;
       if (poId && pos.has(poId)) byPo.set(poId, (byPo.get(poId) ?? 0) + parts[i]);
+      if (poId && pos.has(poId) && l.poItemId) byPoItem.set(l.poItemId, (byPoItem.get(l.poItemId) ?? 0) + parts[i]);
       if (l.woStepId && steps.has(l.woStepId)) byWoStep.set(l.woStepId, (byWoStep.get(l.woStepId) ?? 0) + parts[i]);
     });
   }
-  return { byPo, byWoStep };
+  return { byPo, byPoItem, byWoStep };
 }
 
 /** What one bill's standing `VENDOR_BILL` journal booked on one WO step: signed `cents` of AP, and `qty` pieces while it stands. */
@@ -228,27 +231,6 @@ export async function billBookedByWoStep(db: Db, woStepIds: string[]): Promise<M
     result.set(s.woStepId, cur);
   }
   return result;
-}
-
-/**
- * Of the given POs and WO steps, the ones Supplier payments → Pay must refuse because a vendor
- * payment paid them — none, since 2026-11-01. Until then the two pages refused each other's
- * receipts whole, a step or PO partly paid on one page being unpayable on the other; now that
- * vendor payments take no new payments, Supplier payments is the only path and may pay what an old
- * vendor payment left open. It cannot pay that part twice: the payable sub-ledger it allocates
- * against already counts those payments as paid (`vendorPaidBySource`), and its writer refuses an
- * allocation above what is left.
- *
- * @deprecated Kept only so `lib/purchasing/pembayaran-writer.ts` (`tolakDibayarLewatTagihanVendor`)
- * still compiles; delete it with that caller.
- */
-export async function paidThroughVendorPayments(
-  db: Db,
-  scope: { poIds: string[]; woStepIds: string[] }
-): Promise<{ poIds: Set<string>; woStepIds: Set<string> }> {
-  void db;
-  void scope;
-  return { poIds: new Set(), woStepIds: new Set() };
 }
 
 /**

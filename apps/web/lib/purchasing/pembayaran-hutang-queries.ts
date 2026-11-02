@@ -12,6 +12,7 @@ import { bacaSkbPemasok, type SkbPemasok } from "@/lib/finance/pajak/pemotongan"
 import { ID_SALDO_AWAL, kunciDokumenHutang, type SisaDokumen } from "./pembayaran-aturan";
 import { SARING_PEMBAYARAN_DOKUMEN } from "./pembayaran-dokumen-po";
 import { oldestBookedBillDateByWo, vendorPaidBySource } from "@/lib/vendor-billing/billable";
+import { grnLineKey, readGrnLines } from "@/lib/vendor-billing/bill-paid-rule";
 import { terapkanFifo } from "./pembayaran-umur";
 import { hitungUangMukaBelumDipotong, susunJejakUangMuka, type DataUangMukaPembayaran } from "./pembayaran-uang-muka";
 
@@ -27,13 +28,15 @@ type Klien = Prisma.TransactionClient | typeof prisma;
  * - Kredit per PO = retur pemasok SELESAI (baris hutang usaha jurnal
  *   `VENDOR_RETURN`-nya — sama dengan yang dibaca tombol lama) +
  *   pembayaran tombol lama "Tandai lunas" yang masih berdiri (jurnal
- *   `SUPPLIER_PAYMENT` `<poId>#<gen>` tanpa pembaliknya) + pembayaran Vendor
- *   Billing yang berlaku (bagian baris PO tagihannya, `vendorPaidBySource` —
- *   jurnal `VENDOR_PAYMENT`-nya mendebit hutang usaha sebesar itu juga),
- *   diterapkan FIFO dari GRN tertua PO itu. Pembayaran Vendor Billing tidak
- *   menerima pembayaran baru sejak 2026-11-01; yang lama tetap dihitung di
- *   sini, jadi sisanya dibayar lewat halaman ini dan bagian yang sudah dibayar
- *   di sana tidak terbayar dua kali.
+ *   `SUPPLIER_PAYMENT` `<poId>#<gen>` tanpa pembaliknya), diterapkan FIFO dari
+ *   GRN tertua PO itu. Pembayaran Vendor Billing yang berlaku (jurnal
+ *   `VENDOR_PAYMENT`-nya mendebit hutang usaha sebesar itu juga) dikreditkan
+ *   per BARIS PO tagihannya (`vendorPaidBySource().byPoItem`) ke GRN PO itu
+ *   yang membawa barang baris itu (kunci barang + varian, GRN tertua dulu,
+ *   sampai hutang tiap GRN); sisanya ikut kredit PO yang diterapkan FIFO.
+ *   Pembayaran Vendor Billing tidak menerima pembayaran baru sejak 2026-11-01;
+ *   yang lama tetap dihitung di sini, jadi sisanya dibayar lewat halaman ini
+ *   dan bagian yang sudah dibayar di sana tidak terbayar dua kali.
  * - Dibayar per dokumen = Σ alokasi pembayaran pemasok yang BERLAKU, kecuali
  *   pembayaran cermin "Tandai lunas" (nilainya sudah terbaca dari jurnalnya).
  * - Hutang jasa produksi per langkah WO dari `daftarHutangJasa` (jurnal
@@ -137,6 +140,7 @@ type GrnBaris = {
   supplierId: string;
   totalAmount: Prisma.Decimal;
   ownerDeclinedAt: Date | null;
+  items: Prisma.JsonValue;
   po: { docNumber: string } | null;
 };
 
@@ -153,20 +157,36 @@ async function susunHutangGrn(
   dokumen: Array<DokumenHutang & { supplierId: string }>;
   belumBerjurnal: Map<string, number>;
   lebihBayar: Map<string, number>;
-  /** Kredit per PO (semua sumber) dan bagian tombol lama di dalamnya — untuk `bacaLunasPemasokPerGrn`. */
+  /**
+   * Kredit per PO yang diterapkan FIFO (retur, tombol lama, sisa Vendor Billing yang tidak
+   * terserap GRN barangnya) dan bagian tombol lama di dalamnya — untuk `bacaLunasPemasokPerGrn`.
+   */
   kreditPo: Map<string, number>;
   tandaiPo: Map<string, number>;
+  /** Per GRN: bagian kredit PO FIFO yang terserap GRN itu (tanpa kredit Vendor Billing per barang). */
+  kreditFifoGrn: Map<string, number>;
 }> {
   const grns: GrnBaris[] = await klien.gRN.findMany({
     where,
-    select: { id: true, docNumber: true, grnDate: true, poId: true, supplierId: true, totalAmount: true, ownerDeclinedAt: true, po: { select: { docNumber: true } } },
+    select: {
+      id: true,
+      docNumber: true,
+      grnDate: true,
+      poId: true,
+      supplierId: true,
+      totalAmount: true,
+      ownerDeclinedAt: true,
+      items: true,
+      po: { select: { docNumber: true } },
+    },
     orderBy: [{ grnDate: "asc" }, { docNumber: "asc" }],
   });
   const belumBerjurnal = new Map<string, number>();
   const lebihBayar = new Map<string, number>();
   const kreditPo = new Map<string, number>();
   const tandaiPo = new Map<string, number>();
-  if (grns.length === 0) return { dokumen: [], belumBerjurnal, lebihBayar, kreditPo, tandaiPo };
+  const kreditFifoGrn = new Map<string, number>();
+  if (grns.length === 0) return { dokumen: [], belumBerjurnal, lebihBayar, kreditPo, tandaiPo, kreditFifoGrn };
 
   const hutangPerGrn = new Map<string, number>();
   const berjurnal = new Set<string>();
@@ -188,8 +208,10 @@ async function susunHutangGrn(
     }
   }
 
-  // Kredit per PO: retur pemasok selesai + pembayaran tombol lama yang berdiri + pembayaran Vendor Billing.
+  // Kredit per PO: retur pemasok selesai + pembayaran tombol lama yang berdiri; pembayaran
+  // Vendor Billing per barang (`vendorBarang`), diterapkan ke GRN barangnya lebih dulu.
   const poIds = [...new Set(grns.map((g) => g.poId).filter((x): x is string => Boolean(x)))];
+  const vendorBarang = new Map<string, Array<{ key: string; sen: number }>>();
   if (poIds.length > 0) {
     // Retur ke pemasok: dibaca dari jurnal `VENDOR_RETURN`-nya (DR hutang usaha
     // sebesar kredit PO), bukan dari `poCreditAmount`, supaya buku pembantu =
@@ -224,10 +246,26 @@ async function susunHutangGrn(
       tandaiPo.set(po, (tandaiPo.get(po) ?? 0) + n);
     }
     // Pembayaran Vendor Billing: dialokasikan per TAGIHAN, dibagi ke baris tagihan
-    // sebanding nilainya; bagian baris PO menjadi kredit PO itu, seperti tombol lama.
+    // sebanding nilainya; bagian tiap baris PO dikreditkan ke GRN PO itu yang membawa
+    // barang baris itu (barang + varian, GRN tertua dulu, sampai hutang tiap GRN) — dasar
+    // yang sama dengan aturan lunas per potong (`bill-paid-rule.ts`). Yang tidak terserap
+    // GRN mana pun ikut kredit PO yang diterapkan FIFO, seperti tombol lama.
     for (const ids of potong(poIds, 500)) {
-      const { byPo } = await vendorPaidBySource(klien, { poIds: ids, woStepIds: [] });
-      for (const [po, n] of byPo) kreditPo.set(po, (kreditPo.get(po) ?? 0) + n);
+      const { byPoItem } = await vendorPaidBySource(klien, { poIds: ids, woStepIds: [] });
+      for (const itemIds of potong([...byPoItem.keys()], 500)) {
+        const barisPo = await klien.pOItem.findMany({
+          where: { id: { in: itemIds } },
+          select: { id: true, poId: true, itemId: true, variantSku: true },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        });
+        for (const it of barisPo) {
+          const n = byPoItem.get(it.id) ?? 0;
+          if (n <= 0) continue;
+          const daftar = vendorBarang.get(it.poId) ?? [];
+          daftar.push({ key: grnLineKey(it.itemId, it.variantSku), sen: n });
+          vendorBarang.set(it.poId, daftar);
+        }
+      }
     }
   }
 
@@ -272,11 +310,31 @@ async function susunHutangGrn(
       dokumen.push(d);
     }
   }
-  for (const [poId, daftar] of perPo) {
+  const itemsGrn = new Map(grns.map((g) => [g.id, g.items]));
+  for (const [poId, asli] of perPo) {
+    // Urutan sama dengan `terapkanFifo` (tanggal, lalu kunci), pada salinan dokumennya.
+    const daftar = [...asli].sort((a, b) => a.tanggal.localeCompare(b.tanggal) || a.kunci.localeCompare(b.kunci)).map((d) => ({ ...d }));
+    const vendor = vendorBarang.get(poId) ?? [];
+    if (vendor.length > 0) {
+      const kunciGrn = new Map(daftar.map((d) => [d.id, new Set(readGrnLines(itemsGrn.get(d.id)).map((l) => l.key))]));
+      for (const { key, sen: n } of vendor) {
+        let sisa = n;
+        for (const d of daftar) {
+          if (sisa <= 0) break;
+          if (d.sisaSen <= 0 || !kunciGrn.get(d.id)?.has(key)) continue;
+          const pakai = Math.min(sisa, d.sisaSen);
+          d.sisaSen -= pakai;
+          sisa -= pakai;
+        }
+        if (sisa > 0) kreditPo.set(poId, (kreditPo.get(poId) ?? 0) + sisa);
+      }
+    }
+    const sebelumFifo = new Map(daftar.map((d) => [d.id, d.sisaSen]));
     const r = terapkanFifo(daftar, kreditPo.get(poId) ?? 0);
     for (const d of r.dokumen) {
       const { kunci, ...isi } = d;
       void kunci;
+      kreditFifoGrn.set(isi.id, (sebelumFifo.get(isi.id) ?? isi.sisaSen) - isi.sisaSen);
       dokumen.push({ ...isi, kreditSen: isi.hutangSen - isi.sisaSen });
     }
     if (r.sisaKreditSen > 0) {
@@ -289,7 +347,7 @@ async function susunHutangGrn(
     d.dibayarSen = bayar;
     d.sisaSen = d.sisaSen - bayar;
   }
-  return { dokumen, belumBerjurnal, lebihBayar, kreditPo, tandaiPo };
+  return { dokumen, belumBerjurnal, lebihBayar, kreditPo, tandaiPo, kreditFifoGrn };
 }
 
 export type LunasPemasokGrn = { poId: string | null; hutangSen: number; lunasPemasokSen: number };
@@ -297,10 +355,11 @@ export type LunasPemasokGrn = { poId: string | null; hutangSen: number; lunasPem
 /**
  * Per GRN berjurnal milik PO-PO ini: hutang barangnya dan bagian yang SUDAH dilunasi lewat
  * Pembayaran pemasok — alokasi dokumen ke GRN itu + bagiannya dari pembayaran tombol lama
- * "Tandai lunas" yang masih berdiri. Kredit PO diterapkan FIFO dari GRN tertua seperti di buku
- * pembantu; bagian tombol lama dari kredit satu GRN sebanding porsinya di kredit PO itu. Retur
- * pemasok dan pembayaran Vendor Billing lama tidak ikut: retur bukan pembayaran, dan pembayaran
- * Vendor Billing tercatat di tagihannya sendiri. Dibaca Vendor Billing
+ * "Tandai lunas" yang masih berdiri. Hanya bagian kredit PO yang berlaku untuk seluruh PO yang
+ * diterapkan FIFO dari GRN tertua seperti di buku pembantu (kredit Vendor Billing per barang
+ * lebih dulu masuk GRN barangnya); bagian tombol lama dari kredit FIFO satu GRN sebanding porsinya
+ * di kredit PO itu. Retur pemasok dan pembayaran Vendor Billing lama tidak ikut: retur bukan
+ * pembayaran, dan pembayaran Vendor Billing tercatat di tagihannya sendiri. Dibaca Vendor Billing
  * (`lib/vendor-billing/supplier-paid.ts`) untuk menandai invoice lunas per penerimaan. GRN tanpa
  * jurnal tidak ada di peta; AP belum dipetakan = peta kosong.
  */
@@ -320,7 +379,10 @@ export async function bacaLunasPemasokPerGrn(poIds: string[], klien: Klien = pri
     for (const d of g.dokumen) {
       const kredit = d.poId ? (g.kreditPo.get(d.poId) ?? 0) : 0;
       const tandai = d.poId ? (g.tandaiPo.get(d.poId) ?? 0) : 0;
-      const bagianTandai = kredit > 0 && tandai > 0 && d.kreditSen > 0 ? Math.round((d.kreditSen * Math.min(tandai, kredit)) / kredit) : 0;
+      // Hanya bagian FIFO: kredit Vendor Billing per barang tetap di luar `lunasPemasokSen`,
+      // karena tagihannya sudah menghitungnya lewat `lineRooms`.
+      const fifo = g.kreditFifoGrn.get(d.id) ?? 0;
+      const bagianTandai = kredit > 0 && tandai > 0 && fifo > 0 ? Math.round((fifo * Math.min(tandai, kredit)) / kredit) : 0;
       hasil.set(d.id, { poId: d.poId, hutangSen: d.hutangSen, lunasPemasokSen: d.dibayarSen + bagianTandai });
     }
   }

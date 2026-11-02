@@ -1,3 +1,8 @@
+-- DIGANTIKAN (2026-11-01) — JANGAN jalankan berkas ini lagi. Isinya sudah termuat di
+-- seed-max-features-permissions.sql, bersama izin konsinyasi, kreatif, palet, dan izin hasil
+-- pemecahan 2026-11-01 (payments:verify, receivables:decide_bearer, …). Jalankan berkas itu saja,
+-- lalu seed-office-roles-permissions.sql. Disimpan hanya sebagai riwayat — sumber berkas gabungan itu.
+--
 -- Izin piutang & pelunasan (MariaDB, pola prod). Idempoten — aman dijalankan ulang.
 -- Setara postgres/seed-receivables-permissions.sql. Jalankan di prod SESUDAH migrate:deploy
 -- (pipeline deploy memigrasi tapi tidak pernah men-seed), dan SEBELUM

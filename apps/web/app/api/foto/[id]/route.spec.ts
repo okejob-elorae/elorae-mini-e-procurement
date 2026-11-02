@@ -124,12 +124,19 @@ describe("GET /api/foto/[id]", () => {
     expect((await minta()).status).toBe(200);
   });
 
-  it("bukti transfer BKM: keuangan (journals:manage) dicari tanpa saringan pemilik → 200", async () => {
-    sesi.permissions = ["journals:manage"];
+  it("bukti transfer BKM: pemeriksa pembayaran (payments:verify) dicari tanpa saringan pemilik → 200", async () => {
+    sesi.permissions = ["payments:verify"];
     dokumenMenunjuk("paymentClaim");
     expect((await minta()).status).toBe(200);
     const where = JSON.stringify(db.delegasi.paymentClaim.findMany.mock.calls[0][0]);
     expect(where).not.toContain("salesmanId");
+  });
+
+  it("bukti transfer BKM: pekerjaan jurnal saja (journals:manage) hanya dicari di BKM miliknya → 403", async () => {
+    sesi.permissions = ["journals:manage"];
+    expect((await minta()).status).toBe(403);
+    const where = JSON.stringify(db.delegasi.paymentClaim.findMany.mock.calls[0][0]);
+    expect(where).toContain('"salesmanId":"penonton"');
   });
 
   it("nota retur: gudang yang menghitung (inventory_opname:count) boleh", async () => {
@@ -146,7 +153,7 @@ describe("GET /api/foto/[id]", () => {
   });
 
   it("id yang hanya awalan dari foto lain tidak dianggap cocok", async () => {
-    sesi.permissions = ["journals:manage"];
+    sesi.permissions = ["payments:verify"];
     dokumenMenunjuk("paymentClaim", `${URL_FOTO}9`);
     expect((await minta()).status).toBe(403);
   });

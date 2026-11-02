@@ -7,6 +7,7 @@ import { Loader2, Search } from "lucide-react";
 import { createRole, updateRolePermissions, type KodeGalatPeran } from "@/app/actions/rbac";
 import { navItems } from "@/app/backoffice/BackofficeShell";
 import { useTeksBantuan } from "@/components/bantuan/teks";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -51,6 +52,8 @@ type Baris = {
   menu: string[];
   /** Id izin yang perlu ikut dipilih, dan labelnya. */
   butuh: { id: string; label: string } | null;
+  /** Izin persetujuan (`persetujuan: true` di lib/rbac/penjelasan-izin.ts): bawaannya hanya admin. */
+  persetujuan: boolean;
 };
 
 /**
@@ -138,6 +141,7 @@ export function EditorPeran({
           keterangan: e ? t(e.keterangan as never) : izin.code,
           menu: e ? [...new Set(halamanRingkas(e.halaman).map(namaHalaman))] : [],
           butuh: butuhIzin ? { id: butuhIzin.id, label: labelKode(butuhIzin.code) } : null,
+          persetujuan: e?.persetujuan === true,
         };
       });
   }, [semuaIzin, idDariKode, bantuan, t, tNav, teksBantuan]);
@@ -341,9 +345,16 @@ export function EditorPeran({
                               onCheckedChange={(v) => ubahPilihan([b.izin.id], v === true)}
                             />
                             <div className="min-w-0 flex-1 space-y-1">
-                              <Label htmlFor={id} className="cursor-pointer leading-snug font-medium">
-                                {b.label}
-                              </Label>
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <Label htmlFor={id} className="cursor-pointer leading-snug font-medium">
+                                  {b.label}
+                                </Label>
+                                {b.persetujuan ? (
+                                  <Badge variant="outline" title={t("persetujuanJudul")}>
+                                    {t("persetujuan")}
+                                  </Badge>
+                                ) : null}
+                              </div>
                               <p className="text-sm text-muted-foreground">{b.keterangan}</p>
                               {b.menu.length > 0 ? (
                                 <p className="text-xs text-muted-foreground">{t("membuka", { daftar: b.menu.join(", ") })}</p>

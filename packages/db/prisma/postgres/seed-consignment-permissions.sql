@@ -1,3 +1,9 @@
+-- DIGANTIKAN (2026-11-01) — JANGAN dijalankan. Deskripsi consignment:manage di bawah adalah versi
+-- LAMA, dari sebelum mengunci angka, nomor nota, nomor faktur pajak, dan membayar komisi dipecah ke
+-- izin sendiri (consignment:lock, consignment:note_number, consignment:tax_number, spg_commission:pay).
+-- Di PostgreSQL seluruh izin ini dibuat seed.ts (`pnpm -F @elorae/db seed`); di produksi (MariaDB)
+-- seed-max-features-permissions.sql.
+--
 -- Izin konsinyasi (PostgreSQL / Supabase). Idempoten — aman dijalankan ulang.
 --
 -- Sebelum ini halaman konsinyasi dan arsip retur digantungkan pada

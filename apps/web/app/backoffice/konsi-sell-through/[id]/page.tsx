@@ -22,13 +22,15 @@ export default async function SellThroughDetailPage({ params }: PageProps) {
   if (!report) notFound();
 
   const canManage = hasPermission(perms, PERMISSIONS.STORES_MANAGE);
+  const canDecide = hasPermission(perms, PERMISSIONS.CONSIGNMENT_LOCK);
   /* Loaded here rather than fetched by the dialog: the candidate query reads the db barrel, which a client file must not import. */
-  const salesmanCandidates = canManage && report.status === "DRAFT" ? await listSellThroughSalesmanCandidates() : [];
+  const salesmanCandidates = canDecide && report.status === "DRAFT" ? await listSellThroughSalesmanCandidates() : [];
 
   return (
     <SellThroughDetailClient
       report={report}
       canManage={canManage}
+      canDecide={canDecide}
       canPrint={canManage}
       salesmanCandidates={salesmanCandidates}
     />

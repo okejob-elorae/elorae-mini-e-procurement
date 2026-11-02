@@ -183,7 +183,9 @@ export async function buatKlaimPembayaran(input: {
 
         /*
          * Foto bukti harus unggahan pencatatnya sendiri — kecuali orang kantor
-         * (pengelola piutang atau keuangan) yang menyalin foto laporan sales.
+         * (pengelola piutang atau keuangan — keuangan = pemeriksa pembayaran
+         * `payments:verify`, bukan lagi `journals:manage` (pemecahan izin
+         * 2026-11-01)) yang menyalin foto laporan sales.
          * Tanpa ini bukti transfer sales lain bisa dilaporkan ulang sebagai
          * bukti sendiri. Sesudah kunci kiriman: kiriman ulang dari HP sudah
          * tercatat dan dikembalikan apa adanya.
@@ -191,7 +193,7 @@ export async function buatKlaimPembayaran(input: {
         const fotoSah = await fotoBolehDipakai(tx, {
           urls: [fotoTransfer, input.breakdownPhotoUrl],
           userId: input.createdById,
-          izinKantor: [PERMISSIONS.RECEIVABLES_MANAGE, PERMISSIONS.JOURNALS_MANAGE],
+          izinKantor: [PERMISSIONS.RECEIVABLES_MANAGE, PERMISSIONS.PAYMENTS_VERIFY],
         });
         if (!fotoSah) return { ok: false as const, alasan: 'FOTO_BUKAN_MILIK' as const };
         // Unggahan ulang bukti orang lain yang sudah dipakai laporan lain.

@@ -40,7 +40,10 @@ vi.mock("@/lib/finance/ar/post-ar-journal-safely", () => ({ postArJournalSafely:
 vi.mock("@/lib/finance/ar/payment-journal", () => ({ postPaymentReceiptJournal: mockPostPaymentReceiptJournal }));
 vi.mock("@/lib/finance/ar-settlement/approval-notice", () => ({ notifySalesmanOfApproval: mockNotifySalesman }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
-vi.mock("@elorae/db", () => ({ prisma: { storeSettlement: { findUnique: mockFindSettlement } } }));
+vi.mock("@elorae/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@elorae/db")>();
+  return { ...actual, prisma: { storeSettlement: { findUnique: mockFindSettlement } } };
+});
 
 import { SettlementError } from "@/lib/finance/ar-settlement/errors";
 import { PaymentError } from "@/lib/finance/ar/errors";

@@ -25,9 +25,10 @@ const IZIN_TERKECIL: Record<KunciAntrean, string[]> = {
   // store_transfers:approve, memutuskan selisih = store_transfers:decide_shortfall (spg-mutasi.ts).
   transfersPendingApproval: ["spg_sales:view", "store_transfers:approve"],
   transferShortfallsOpen: ["spg_sales:view", "store_transfers:decide_shortfall"],
-  // /backoffice/barang-hilang: halaman = receivables:manage ATAU spg_sales:view; menetapkan
-  // penanggung = receivables:decide_bearer (barang-hilang.ts).
-  stockLossOpen: ["spg_sales:view", "receivables:decide_bearer"],
+  // /backoffice/barang-hilang: halaman = receivables:manage ATAU receivables:decide_bearer ATAU
+  // spg_sales:view; menetapkan penanggung = receivables:decide_bearer (barang-hilang.ts) — jadi
+  // izin keputusan saja sudah membuka dan memutuskan.
+  stockLossOpen: ["receivables:decide_bearer"],
   storeProposalsPending: ["stores:view", "stores:manage"],
   fieldPromisesUnconfirmed: ["receivables:manage"],
   damagedDeliveriesOpen: ["inventory:manage"],
@@ -148,6 +149,8 @@ describe("ANTREAN_KANTOR — izin lama tidak lagi cukup untuk keputusan manager"
   it("barang hilang: receivables:manage membuka halamannya tetapi tidak lagi menetapkan penanggung", () => {
     expect(bolehLihatAntrean("stockLossOpen", ["dashboard:view", "receivables:manage"])).toBe(false);
     expect(bolehLihatAntrean("stockLossOpen", ["dashboard:view", "receivables:manage", "receivables:decide_bearer"])).toBe(true);
+    // Pengawas SPG membuka halamannya, tetapi tidak menetapkan penanggung.
+    expect(bolehLihatAntrean("stockLossOpen", ["dashboard:view", "spg_sales:view"])).toBe(false);
   });
 
   it("koreksi BKM: journals:manage tidak lagi memeriksa pembayaran", () => {

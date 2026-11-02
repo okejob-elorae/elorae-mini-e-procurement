@@ -4,7 +4,7 @@ import { runSerializable } from "@/lib/db/tx-retry";
 import { periksaAlokasiTerhadapSisa } from "@/lib/purchasing/pembayaran-aturan";
 import { bacaHutangPemasok, petaSisaDokumen } from "@/lib/purchasing/pembayaran-hutang-queries";
 import { createVendorBill, voidVendorBill, VOID_WOULD_OVERPAY } from "./bill-writer";
-import { listBillableSources, oldestBookedBillDateByWo, paidThroughVendorPayments } from "./billable";
+import { listBillableSources, oldestBookedBillDateByWo } from "./billable";
 import { createVendorPayment, VENDOR_PAYMENTS_CLOSED } from "./payment-writer";
 import { getVendorBillDetail, listVendorBills } from "./queries";
 import { snapshotMappings, restoreMappings, type MappingSnapshot } from "../finance/journals/mapping-test-fixture";
@@ -393,30 +393,10 @@ d("Vendor bill writer (test bed only)", () => {
     return b ? [b.status, b.paidAmount, b.vendorPaidAmount, b.supplierPaidAmount] : null;
   };
 
-  it("takes no vendor payment any more, and no longer blocks Supplier payments on a bill a vendor payment paid", async () => {
-    const stepBill = await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user);
+  it("takes no vendor payment any more", async () => {
+    await createVendorBill({ ...base(), lines: [{ type: "WO_STEP", sourceId: ids.step, qty: 10, price: 12_000 }] }, ids.user);
     await expect(createVendorPayment()).rejects.toMatchObject({ code: VENDOR_PAYMENTS_CLOSED });
     expect(await prisma.vendorPayment.count({ where: { supplierId: ids.supplier } })).toBe(0);
-
-    // An old vendor payment on the bill: Supplier payments may still pay what it left, so nothing is refused whole.
-    const old = await prisma.vendorPayment.create({
-      data: {
-        docNumber: `VPAY5-${tag}`,
-        supplierId: ids.supplier,
-        paidAt: new Date("2026-10-21"),
-        method: "BANK",
-        amount: 1_000,
-        createdById: ids.user,
-        allocations: { create: { billId: stepBill.id, amount: 1_000 } },
-      },
-      select: { id: true },
-    });
-    try {
-      expect(await paidThroughVendorPayments(prisma, { poIds: [ids.po], woStepIds: [ids.step] })).toEqual({ poIds: new Set(), woStepIds: new Set() });
-    } finally {
-      await prisma.vendorPaymentAllocation.deleteMany({ where: { paymentId: seededId(old.id) } });
-      await prisma.vendorPayment.deleteMany({ where: { id: seededId(old.id) } });
-    }
   });
 
   it("reads a bill as paid from what Supplier payments paid on its receipts, and still voids a bill that booked nothing", async () => {
@@ -502,6 +482,64 @@ d("Vendor bill writer (test bed only)", () => {
       expect(await readBill(billA.id)).toEqual(["PAID", 4_500_000, 0, 4_500_000]);
     } finally {
       await dropSupplierPayments(paid);
+    }
+  });
+
+  it("credits an old vendor payment to the GRN of the item it paid, so Supplier payments settle every bill on the PO", async () => {
+    const itemB = await prisma.pOItem.create({
+      data: { poId: ids.po, itemId: ids.fabric2, qty: 50, price: 60_000, uomId: ids.uom, receivedQty: 50 },
+      select: { id: true },
+    });
+    // GRN-1 (older) brought kain A, GRN-2 brought kain B.
+    const grn1 = await grnWithJournal("1", [{ itemId: ids.fabric, qty: 100 }], 4_500_000);
+    const grn2 = await grnWithJournal("2", [{ itemId: ids.fabric2, qty: 50 }], 3_000_000);
+    const billB = await createVendorBill(
+      { ...base(), vendorInvoiceNo: `INVB2-${tag}`, lines: [{ type: "PO_ITEM", sourceId: itemB.id, qty: 50, price: 60_000 }] },
+      ids.user
+    );
+    // 1.500.000 of bill B (kain B) was paid through Vendor Billing before it closed.
+    const old = await prisma.vendorPayment.create({
+      data: {
+        docNumber: `VPAYB-${tag}`,
+        supplierId: ids.supplier,
+        paidAt: new Date("2026-10-21"),
+        method: "BANK",
+        amount: 1_500_000,
+        createdById: ids.user,
+        allocations: { create: { billId: billB.id, amount: 1_500_000 } },
+      },
+      select: { id: true },
+    });
+    await prisma.vendorBill.update({ where: { id: billB.id }, data: { paidAmount: 1_500_000, status: "PARTIAL" } });
+    const billA = await createVendorBill({ ...base(), lines: [{ type: "PO_ITEM", sourceId: ids.poItem, qty: 100, price: 45_000 }] }, ids.user);
+    const sisaGrn = async () => {
+      const h = await bacaHutangPemasok({ supplierIds: [ids.supplier], ruangSaldoAwal: `uji-vb-${tag}` });
+      const dok = h.pemasok[0]?.dokumen ?? [];
+      return [grn1, grn2].map((id) => dok.find((x) => x.jenis === "GRN" && x.id === id)?.sisaSen);
+    };
+    const paid: string[] = [];
+    try {
+      // The old payment lands on the GRN that brought kain B, not FIFO on the oldest GRN of the PO.
+      expect(await sisaGrn()).toEqual([450_000_000, 150_000_000]);
+      // Bill B reads it through its stored columns only; bill A never sees it: nothing counted twice.
+      expect(await readBill(billB.id)).toEqual(["PARTIAL", 1_500_000, 1_500_000, 0]);
+      expect(await readBill(billA.id)).toEqual(["UNPAID", 0, 0, 0]);
+
+      // Supplier payments pay exactly what the sub-ledger leaves open, and both bills read paid.
+      paid.push(
+        (
+          await supplierPayment("VB2", [
+            { targetType: "GRN", targetId: grn1, amount: 4_500_000 },
+            { targetType: "GRN", targetId: grn2, amount: 1_500_000 },
+          ])
+        ).id
+      );
+      expect(await readBill(billA.id)).toEqual(["PAID", 4_500_000, 0, 4_500_000]);
+      expect(await readBill(billB.id)).toEqual(["PAID", 3_000_000, 1_500_000, 1_500_000]);
+    } finally {
+      await dropSupplierPayments(paid);
+      await prisma.vendorPaymentAllocation.deleteMany({ where: { paymentId: seededId(old.id) } });
+      await prisma.vendorPayment.deleteMany({ where: { id: seededId(old.id) } });
     }
   });
 

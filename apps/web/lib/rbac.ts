@@ -153,7 +153,10 @@ export const ROUTE_PERMISSIONS: Record<string, string> = {
   '/backoffice/finance/faktur-pajak': 'tax_invoices:view',
   '/backoffice/finance/piutang': 'receivables:view',
   '/backoffice/finance/payments': 'payments:manage',
-  '/backoffice/finance/collections': 'collections:manage',
+  // `/backoffice/finance/collections` sengaja TIDAK dipetakan: halamannya
+  // terbuka untuk `collections:manage` ATAU `payments:verify` (keputusan
+  // pemilik 2026-11-01) dan memagari dirinya sendiri; peta ini hanya bisa
+  // menguji satu izin.
   '/backoffice/settings/piutang': 'collections:manage',
   "/backoffice/settings/purchasing": "purchase_orders:edit",
   "/backoffice/settings/spg-commission": "spg_commission:manage",

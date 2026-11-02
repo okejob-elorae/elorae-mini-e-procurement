@@ -1664,5 +1664,34 @@ d("store stocktake writer (test bed only)", () => {
 
       await expect(cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "too late" })).rejects.toMatchObject({ code: "INVALID_STATE" });
     });
+
+    // Separate cases: mkStocktake defaults openKey to the store, and only one open count per store is allowed.
+    it("refuses FORBIDDEN inside the transaction when the caller may not cancel a count awaiting approval, and leaves it open", async () => {
+      const id = await mkStocktake({ status: "PENDING_VERIFICATION", lines: [] });
+      await expect(
+        cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: true, allowPendingVerification: false }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(st.status).toBe("PENDING_VERIFICATION");
+      expect(st.openKey).not.toBeNull();
+
+      // The permission matching the status read inside the transaction cancels it.
+      await cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: false, allowPendingVerification: true });
+      expect((await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("CANCELLED");
+    });
+
+    it("refuses FORBIDDEN inside the transaction when the caller may not cancel a DRAFT, and leaves it open", async () => {
+      const id = await mkStocktake({ lines: [] });
+      await expect(
+        cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: false, allowPendingVerification: true }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      const st = await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } });
+      expect(st.status).toBe("DRAFT");
+      expect(st.openKey).not.toBeNull();
+
+      // A caller without the approval permission can still cancel a DRAFT.
+      await cancelStoreStocktake({ stocktakeId: id, cancelledById: adminId, reason: "x", allowDraft: true, allowPendingVerification: false });
+      expect((await prisma.storeStocktake.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("CANCELLED");
+    });
   });
 });

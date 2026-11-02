@@ -125,9 +125,12 @@ export const ANTREAN_KANTOR: Readonly<Record<KunciAntrean, DefinisiAntrean>> = {
   // Barang hilang yang belum ditetapkan penanggungnya. Menetapkannya =
   // receivables:decide_bearer (`bolehMemutuskanBeban`, keputusan manager);
   // receivables:manage tetap mencatat, tapi tidak lagi memutuskan bebannya.
+  // Halamannya terbuka untuk receivables:manage, receivables:decide_bearer, dan
+  // spg_sales:view (pagar `barang-hilang/page.tsx` dan menunya), jadi pemegang
+  // izin keputusan saja — penerima kabar STOCK_LOSS_OPEN — tetap mendapat barisnya.
   stockLossOpen: {
     href: "/backoffice/barang-hilang?status=TERBUKA",
-    bolehBuka: (izin) => bolehMengelola(izin) || spgView(izin),
+    bolehBuka: (izin) => bolehMengelola(izin) || bolehMemutuskanBeban(izin) || spgView(izin),
     bolehBertindak: bolehMemutuskanBeban,
   },
   // Usulan toko baru dari lapangan.

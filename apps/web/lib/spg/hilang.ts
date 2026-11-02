@@ -63,7 +63,7 @@ export const JEJAK_HILANG = {
 } as const;
 
 export const ENTITAS_HILANG = "StockLoss";
-/** Kategori catatan kantor (`AdminNotification`) — penerimanya `receivables:manage`. */
+/** Kategori catatan kantor (`AdminNotification`) — penerimanya `receivables:decide_bearer`, yang memutuskan penanggungnya (`CATEGORY_PERMISSION` di lib/notifications/admin-fanout.ts). */
 export const KATEGORI_NOTIF_HILANG = "STOCK_LOSS_OPEN";
 
 /** `StockLossDeduction.refType` milik modul ini. Pemanggil lain memakai nama dokumennya sendiri. */

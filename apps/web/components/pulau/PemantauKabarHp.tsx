@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { KABAR_BERUBAH } from "@/app/pwa/kabar/peristiwa";
-import { tautanKabar } from "@/lib/notifications/tautan-kabar";
+import { getNotificationHref } from "@/lib/notifications/navigation";
 import { kabarBaru, type ButirKabar, type PenandaKabar } from "@/lib/pulau/kabar-baru";
 import { kabarNotifikasi } from "@/lib/pulau/pulau";
 
@@ -71,7 +71,7 @@ export function PemantauKabarHp() {
         const terbaru = hasil.baru[0];
         kabarNotifikasi({
           judul: terbaru.title,
-          tautan: tautanKabar(terbaru.type, terbaru.data) ?? "/pwa/kabar",
+          tautan: getNotificationHref(terbaru.type, terbaru.data, "pwa") ?? "/pwa/kabar",
           jumlah: hasil.baru.length,
           // Kapsul yang menyebut lebih dari satu kabar membuka daftar kabarnya.
           semua: { tautan: "/pwa/kabar" },

@@ -37,14 +37,27 @@ export type SellThroughActionResult = { ok: true } | SellThroughActionFailure;
 export type CreateSellThroughActionResult = { ok: true; id: string; docNo: string } | SellThroughActionFailure;
 
 /**
- * A single ADMIN-facing gate for every action in this module. Page reads are gated on
- * `stores:view` in the backoffice pages themselves; the one read action here,
+ * The gate for every action in this module except approve and void (`guardDecide`). Page reads
+ * are gated on `stores:view` in the backoffice pages themselves; the one read action here,
  * `getSellThroughNotaAction`, still takes this gate because it only serves the print button,
  * which only a `stores:manage` holder is offered.
  */
 async function guard(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
   const session = await auth();
   if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.STORES_MANAGE)) {
+    return { ok: false, reason: "FORBIDDEN" };
+  }
+  return { userId: session.user.id };
+}
+
+/**
+ * Approving a report fixes the sold konsi figures and raises its invoice; voiding one takes that
+ * back — the manager decision `consignment:lock` keeps admin-only on the consignment cycle (owner,
+ * 2026-10-29 / 2026-11-01). Everything else on this screen stays on `stores:manage`.
+ */
+async function guardDecide(): Promise<{ userId: string } | { ok: false; reason: "FORBIDDEN" }> {
+  const session = await auth();
+  if (!session?.user?.id || !hasPermission(session.user.permissions ?? [], PERMISSIONS.CONSIGNMENT_LOCK)) {
     return { ok: false, reason: "FORBIDDEN" };
   }
   return { userId: session.user.id };
@@ -177,7 +190,7 @@ async function postSellThroughJournals(id: string, userId: string, kinds: readon
  * revalidation runs in its `finally`, so the page refreshes either way.
  */
 export async function approveSellThroughAction(input: unknown): Promise<SellThroughActionResult> {
-  const g = await guard();
+  const g = await guardDecide();
   if ("ok" in g) return g;
   const req = parseApproveRequest(input);
   if (!req) return { ok: false, reason: "INVALID_REQUEST" };
@@ -260,7 +273,7 @@ export async function cancelSellThroughAction(id: unknown, reason: unknown): Pro
  * its `finally`, so the page refreshes either way.
  */
 export async function voidSellThroughAction(id: unknown, reason: unknown): Promise<SellThroughActionResult> {
-  const g = await guard();
+  const g = await guardDecide();
   if ("ok" in g) return g;
   if (typeof id !== "string" || id === "") return { ok: false, reason: "INVALID_REQUEST" };
   if (typeof reason !== "string") return { ok: false, reason: "INVALID_REQUEST" };

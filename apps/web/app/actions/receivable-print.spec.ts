@@ -59,14 +59,14 @@ const CETAK: { nama: string; ambil: () => Promise<unknown>; sah: string[][]; tid
   {
     nama: "BKM",
     ambil: () => ambilCetakKlaim("bkm1"),
-    sah: [["receivables:view"], ["receivables:manage"], ["journals:manage"]],
-    tidakSah: [["inventory_opname:count"], ["consignment:view"]],
+    sah: [["receivables:view"], ["receivables:manage"], ["payments:verify"]],
+    tidakSah: [["inventory_opname:count"], ["consignment:view"], ["journals:manage"]],
   },
   {
     nama: "nota retur",
     ambil: () => ambilCetakRetur("nrt1"),
-    sah: [["receivables:view"], ["inventory_opname:count"], ["journals:manage"]],
-    tidakSah: [["consignment:view"]],
+    sah: [["receivables:view"], ["inventory_opname:count"], ["payments:verify"]],
+    tidakSah: [["consignment:view"], ["journals:manage"]],
   },
   {
     nama: "faktur",

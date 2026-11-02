@@ -1,7 +1,11 @@
 -- Permission rows for the features that came in with Max's branch (receivables, consignment,
 -- creative/KOL, production palette). The deploy workflow migrates but never seeds, so run this
 -- by hand on prod ONCE, after the 20261031100000_merge_max_features migration has deployed.
--- Every statement is NOT EXISTS-guarded: re-running it is a no-op.
+-- Every INSERT is NOT EXISTS-guarded, so a re-run creates no duplicate rows — but it is NOT a no-op
+-- for role links: the derivations below (consignment from receivables:manage / receivables:view,
+-- production_colors:manage for PRODUCTION) grant again to any role holding the source, bringing back
+-- a link the owner removed in Peran & izin. The payments:verify carry-over and the session refresh are
+-- one-shot: they run only on the run that creates payments:verify. Run this file once.
 --
 --   mariadb --skip-ssl -u<user> -p <db> < seed-max-features-permissions.sql
 --
@@ -155,6 +159,7 @@ WHERE r.`name` IN ('ADMIN', 'PRODUCTION')
 --   consignment:note_number          <- consignment:manage   (sales-note number on a locked cycle)
 --   consignment:tax_number           <- consignment:manage   (tax-invoice number on a locked cycle)
 --   consignment:lock                 <- consignment:manage   (lock / unlock the official sold figures)
+--                                    <- stores:manage        (approve / void a konsi sell-through report)
 --   store_stocktakes:approve         <- stores:manage        (approve a store stock count, or cancel one
 --                                                              awaiting approval)
 --   store_transfers:approve          <- field_sales_orders:approve (SPG transfers: approve, reject, redirect,
@@ -171,6 +176,11 @@ WHERE r.`name` IN ('ADMIN', 'PRODUCTION')
 -- journals:manage today, so no finance role loses BKM verification the day this deploys. It is NOT
 -- carried over to payments:manage or collections:manage holders: that would hand BKM verification to
 -- people who record payments or assign collectors. The check at the end lists them.
+
+-- Captured BEFORE payments:verify is created: the carry-over and the session refresh below run only
+-- on the run that creates it, so re-running this file never hands BKM verification back to a role
+-- the owner has since taken it from (e.g. an accountant who keeps journals:manage).
+SET @payments_verify_is_new = (SELECT COUNT(*) FROM `Permission` WHERE `code` = 'payments:verify') = 0;
 
 INSERT INTO `Permission` (`id`, `code`, `module`, `action`, `description`)
 SELECT REPLACE(UUID(), '-', ''), 'payments:verify', 'payments', 'verify',
@@ -240,13 +250,15 @@ WHERE r.`name` = 'ADMIN'
     WHERE rp.`roleId` = r.`id` AND rp.`permissionId` = p.`id`
   );
 
--- The one carry-over: whoever verifies BKM today (through journals:manage) keeps verifying.
+-- The one carry-over, ONE-SHOT: whoever verifies BKM today (through journals:manage) keeps
+-- verifying — only on the run that created payments:verify.
 INSERT INTO `RolePermission` (`id`, `roleId`, `permissionId`)
 SELECT REPLACE(UUID(), '-', ''), rp_ada.`roleId`, p.`id`
 FROM `RolePermission` rp_ada
 JOIN `Permission` p_ada ON p_ada.`id` = rp_ada.`permissionId` AND p_ada.`code` = 'journals:manage'
 CROSS JOIN `Permission` p
 WHERE p.`code` = 'payments:verify'
+  AND @payments_verify_is_new = 1
   AND NOT EXISTS (
     SELECT 1 FROM `RolePermission` rp
     WHERE rp.`roleId` = rp_ada.`roleId` AND rp.`permissionId` = p.`id`
@@ -255,12 +267,15 @@ WHERE p.`code` = 'payments:verify'
 -- Users already signed in pick the new code up without logging out (lib/auth.ts compares the version).
 UPDATE `RoleDefinition`
 SET `permissionsVersion` = `permissionsVersion` + 1
-WHERE `name` = 'ADMIN'
-   OR `id` IN (
-     SELECT rp.`roleId` FROM `RolePermission` rp
-     JOIN `Permission` p ON p.`id` = rp.`permissionId`
-     WHERE p.`code` = 'payments:verify'
-   );
+WHERE @payments_verify_is_new = 1
+  AND (
+    `name` = 'ADMIN'
+    OR `id` IN (
+      SELECT rp.`roleId` FROM `RolePermission` rp
+      JOIN `Permission` p ON p.`id` = rp.`permissionId`
+      WHERE p.`code` = 'payments:verify'
+    )
+  );
 
 COMMIT;
 
@@ -280,7 +295,7 @@ SELECT r.`name` AS `role`, p.`code` AS `held_code`,
        CASE p.`code`
          WHEN 'receivables:manage' THEN 'receivables:decide_bearer (incl. cancelling a decided lost-goods record), spg_commission:pay (putus)'
          WHEN 'consignment:manage' THEN 'consignment:lock, consignment:note_number, consignment:tax_number, spg_commission:pay (konsi)'
-         WHEN 'stores:manage' THEN 'store_stocktakes:approve (incl. cancelling a count awaiting approval), store_transfers:approve (team store transfers, incl. cancelling one someone else created)'
+         WHEN 'stores:manage' THEN 'store_stocktakes:approve (incl. cancelling a count awaiting approval), store_transfers:approve (team store transfers, incl. cancelling one someone else created), consignment:lock (approve / void konsi sell-through reports)'
          WHEN 'field_sales_orders:approve' THEN 'store_transfers:approve (SPG transfers and the transfer rules), store_transfers:decide_shortfall'
          WHEN 'payments:manage' THEN 'payments:verify (verify / reject collector submissions)'
          WHEN 'collections:manage' THEN 'payments:verify (approve / reject store settlements)'

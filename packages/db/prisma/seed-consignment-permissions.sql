@@ -1,3 +1,11 @@
+-- DIGANTIKAN (2026-11-01) — JANGAN jalankan berkas ini lagi. Isinya sudah termuat di
+-- seed-max-features-permissions.sql, yang juga membuat izin hasil pemecahan 2026-11-01 dan
+-- membetulkan deskripsi consignment:manage. Deskripsi consignment:manage di bawah adalah versi LAMA
+-- ("lock the figures, pay commission, record the tax invoice number"): kunci angka, nomor nota, nomor
+-- faktur pajak, dan bayar gaji/komisi SPG kini izin sendiri (consignment:lock /
+-- consignment:note_number / consignment:tax_number / spg_commission:pay). Jalankan berkas gabungan itu
+-- saja, lalu seed-office-roles-permissions.sql. Disimpan hanya sebagai riwayat — sumber berkas gabungan itu.
+--
 -- Izin konsinyasi (MariaDB, pola prod). Idempoten — aman dijalankan ulang.
 -- Setara postgres/seed-consignment-permissions.sql; alasan pemisahannya ditulis di sana.
 -- Jalankan di prod SESUDAH migrate:deploy dan SESUDAH seed-receivables-permissions.sql:

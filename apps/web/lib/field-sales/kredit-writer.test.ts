@@ -248,6 +248,7 @@ d("createFieldSalesOrder — kredit toko (test bed only)", () => {
     const err = await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CreditLimitExceededError);
     expect((err as CreditLimitExceededError).creditLimit).toBe(100_000);
+    expect((err as CreditLimitExceededError).sumber).toBe("BAWAAN");
 
     await approveFieldSalesOrder({ orderId: res.orderId, approvedById: salesmanId, creditOverrideReason: "Toko langganan" });
     const disetujui = await prisma.fieldSalesOrder.findUniqueOrThrow({ where: { id: res.orderId } });

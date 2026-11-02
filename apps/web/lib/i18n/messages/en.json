@@ -4176,8 +4176,7 @@
         "MELEBIHI_UANG_MUKA": "More than the advance left.",
         "FOTO_TIDAK_SAH": "The proof photo is invalid. Upload it again.",
         "TANPA_AKSES": "You do not have permission to do this.",
-        "GAGAL": "Could not save. Try again.",
-        "DIBAYAR_LEWAT_TAGIHAN_VENDOR": "That document is on a vendor bill already paid through Vendor Bill Payments. Pay the rest there, or void that vendor payment first."
+        "GAGAL": "Could not save. Try again."
       },
       "uangMukaBelumDipotong": "Advance {nilai} not yet withheld — included in the withholding base",
       "uangMukaDiterapkanPotong": "Advance applied. {nilai} tax withheld on the advance via {nomor}.",
@@ -22510,11 +22509,11 @@
       },
       "supplier_payments_create": {
         "label": "Record supplier payments",
-        "keterangan": "Not used by any screen yet; marking a PO as paid uses the Manage journals & verify incoming money permission."
+        "keterangan": "Records payments to suppliers (advances included) in Supplier payments — the only way to pay a supplier — and voids old Vendor Billing payments. Marking a PO as paid uses the Edit & cancel POs permission."
       },
       "supplier_payments_edit": {
         "label": "Edit supplier payments",
-        "keterangan": "Not used by any screen yet; marking a PO as paid uses the Manage journals & verify incoming money permission."
+        "keterangan": "Cancels supplier payments and applies advances to bills in Supplier payments. Marking a PO as paid uses the Edit & cancel POs permission."
       },
       "vendor_returns_view": {
         "label": "View returns to suppliers",
@@ -22742,7 +22741,7 @@
       },
       "consignment_lock": {
         "label": "Lock consignment figures",
-        "keterangan": "Locks a consignment cycle's official sold figures, and unlocks them while no document number, paid salary or store payment exists. Approval — admin only by default."
+        "keterangan": "Locks a consignment cycle's official sold figures, and unlocks them while no document number, paid salary or store payment exists. Also approves and voids Sell-Through Reports, which raise their invoice (the page needs View stores). Approval — admin only by default."
       },
       "store_stocktakes_approve": {
         "label": "Approve store counts",
@@ -22750,7 +22749,7 @@
       },
       "store_transfers_approve": {
         "label": "Approve store transfers",
-        "keterangan": "Approves, rejects, cancels or redirects a transfer of goods between stores, and sets the transfer rules in Settings → SPG, including which directions may ship without approval. Approval — admin only by default."
+        "keterangan": "Approves, rejects, cancels or redirects a transfer of goods between stores, and sets the transfer rules in Settings → SPG, including which directions may ship without approval. SPG transfers open through Supervise SPGs; Store Transfers under Consignment Sales also needs View stores. Approval — admin only by default."
       },
       "store_transfers_decide_shortfall": {
         "label": "Decide transfer shortfalls",

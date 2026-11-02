@@ -646,20 +646,22 @@ async function enforceApproveCreditLimit(
     creditOverrideReason?: string;
   },
 ): Promise<CreditOverrideStamp | null> {
-  const creditLimit = batasKreditBerlaku(
+  const batas = batasKreditBerlaku(
     {
       creditLimit: input.store.creditLimit === null ? null : Number(input.store.creditLimit),
       noCreditLimit: input.store.noCreditLimit,
       termsType: input.orderType,
     },
     await bacaAturanKreditTx(tx),
-  ).nilai.nilai;
-  if (creditLimit === null) return null;
+  ).nilai;
+  if (batas.nilai === null) return null;
+  const creditLimit = batas.nilai;
+  const sumber = batas.sumber === "BAWAAN" ? "BAWAAN" : "TOKO";
   const exposure = await computeStoreCreditExposure(tx, input.storeId);
   if (exposure.total + input.orderTotal > creditLimit) {
     const reason = input.creditOverrideReason?.trim();
     if (!reason) {
-      throw new CreditLimitExceededError(exposure, creditLimit, input.orderTotal);
+      throw new CreditLimitExceededError(exposure, creditLimit, input.orderTotal, sumber);
     }
     await tx.auditLog.create({
       data: {

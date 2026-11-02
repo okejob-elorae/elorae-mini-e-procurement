@@ -75,7 +75,7 @@ export async function pesananSaya(salesmanId: string, hariIni: Date): Promise<Pe
   const [menunggu, siapKirim, terkirimBulanIni, ditolak7Hari] = await Promise.all([
     prisma.fieldSalesOrder.count({ where: { salesmanId, status: 'PENDING_APPROVAL' } }),
     prisma.fieldSalesOrder.count({
-      where: { salesmanId, status: 'APPROVED', orderType: 'PUTUS', deliveryStatus: { in: ['PENDING', 'PARTIAL'] } },
+      where: { salesmanId, status: 'APPROVED', deliveryStatus: { in: ['PENDING', 'PARTIAL'] } },
     }),
     prisma.fieldSalesDelivery.count({ where: { deliveredAt: { gte: awalBulan }, order: { salesmanId } } }),
     // Ditolak KANTOR saja — pesanan yang dibatalkan salesman sendiri (cancelledById) bukan penolakan.

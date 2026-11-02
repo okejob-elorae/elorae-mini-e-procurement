@@ -3,13 +3,14 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { PERMISSIONS } from "@/lib/rbac";
 import { bolehMelapor, bolehMembacaArsip, bolehMemverifikasi, bolehMencatatNomorKonsi } from "@/lib/receivables/izin";
-import { IZIN_PERSETUJUAN, penjelasanIzin } from "./penjelasan-izin";
+import { DESKRIPSI_PERAN_BAWAAN, IZIN_PERSETUJUAN, penjelasanIzin } from "./penjelasan-izin";
 
 /**
  * Tiga peran kantor (keputusan pemilik 2026-11-01): KEUANGAN, ADMIN_PENJUALAN,
- * ADMIN_PAJAK. Isinya ditulis DUA kali — `seed.ts` (basis data uji) dan
- * `seed-office-roles-permissions.sql` (produksi, dijalankan tangan) — dan tidak
- * ada yang membandingkannya selain tes ini. Juga dijaga di sini: tidak ada izin
+ * ADMIN_PAJAK. Isinya ditulis TIGA kali — `seed.ts` (basis data uji),
+ * `seed-office-roles-permissions.sql` (produksi MariaDB, dijalankan tangan), dan
+ * salinan PostgreSQL lokalnya `postgres/seed-office-roles-permissions.sql` — dan
+ * tidak ada yang membandingkannya selain tes ini. Juga dijaga di sini: tidak ada izin
  * persetujuan bawaan, dan setiap izin hasil pemecahan benar-benar punya baris
  * `Permission` (izin tanpa baris tidak bisa diberikan di Peran & izin).
  */
@@ -17,6 +18,7 @@ import { IZIN_PERSETUJUAN, penjelasanIzin } from "./penjelasan-izin";
 const PRISMA = path.resolve(__dirname, "../../../../packages/db/prisma");
 const seedTs = readFileSync(path.join(PRISMA, "seed.ts"), "utf8");
 const sqlPeran = readFileSync(path.join(PRISMA, "seed-office-roles-permissions.sql"), "utf8");
+const sqlPeranPg = readFileSync(path.join(PRISMA, "postgres", "seed-office-roles-permissions.sql"), "utf8");
 const sqlIzin = readFileSync(path.join(PRISMA, "seed-max-features-permissions.sql"), "utf8");
 
 const PERAN = ["KEUANGAN", "ADMIN_PENJUALAN", "ADMIN_PAJAK"] as const;
@@ -35,9 +37,9 @@ function dariSeedTs(peran: Peran): string[] {
   return kodeDalam(m[1]);
 }
 
-function dariSql(peran: Peran): string[] {
-  const m = new RegExp(`WHERE r\\.name = '${peran}'\\s*AND p\\.code IN \\(([^)]*)\\)`).exec(sqlPeran);
-  if (!m) throw new Error(`daftar izin ${peran} tidak ditemukan di seed-office-roles-permissions.sql`);
+function dariSql(peran: Peran, teks = sqlPeran, berkas = "seed-office-roles-permissions.sql"): string[] {
+  const m = new RegExp(`WHERE r\\.name = '${peran}'\\s*AND p\\.code IN \\(([^)]*)\\)`).exec(teks);
+  if (!m) throw new Error(`daftar izin ${peran} tidak ditemukan di ${berkas}`);
   return kodeDalam(m[1]);
 }
 
@@ -63,6 +65,11 @@ describe("tiga peran kantor", () => {
 
       it("seed.ts dan berkas SQL produksi memberi izin yang sama", () => {
         expect(urut(dariSql(peran))).toEqual(urut(izin));
+      });
+
+      it("salinan PostgreSQL memberi izin yang sama, keterangan yang sama, dan bukan peran sistem", () => {
+        expect(urut(dariSql(peran, sqlPeranPg, "postgres/seed-office-roles-permissions.sql"))).toEqual(urut(izin));
+        expect(new RegExp(`'${peran}', '([^']*)', false,`).exec(sqlPeranPg)?.[1]).toBe(DESKRIPSI_PERAN_BAWAAN[peran]);
       });
 
       it("tidak memegang izin persetujuan apa pun secara bawaan", () => {
@@ -113,6 +120,14 @@ describe("tiga peran kantor", () => {
     expect(urut(kodeDalam(m![1]))).toEqual(gabungan);
     expect(Number(m![2])).toBe(gabungan.length);
   });
+
+  it("pemeriksaan awal salinan PostgreSQL juga menghitung persis gabungan izin ketiga peran", () => {
+    const m = /SELECT COUNT\(\*\) FROM "Permission" WHERE code IN \(([^)]*)\)\s*\)\s*<> (\d+)/.exec(sqlPeranPg);
+    expect(m).not.toBeNull();
+    const gabungan = urut(PERAN.flatMap(dariSeedTs));
+    expect(urut(kodeDalam(m![1]))).toEqual(gabungan);
+    expect(Number(m![2])).toBe(gabungan.length);
+  });
 });
 
 describe("izin hasil pemecahan 2026-11-01", () => {
@@ -136,5 +151,12 @@ describe("izin hasil pemecahan 2026-11-01", () => {
     for (const kode of [PERMISSIONS.PAYMENTS_VERIFY, PERMISSIONS.CONSIGNMENT_NOTE_NUMBER, PERMISSIONS.CONSIGNMENT_TAX_NUMBER]) {
       expect(penjelasanIzin(kode)?.persetujuan, kode).toBeUndefined();
     }
+  });
+
+  it("pewarisan periksa pembayaran hanya sekali — pada run yang membuat baris payments:verify", () => {
+    const penanda = sqlIzin.indexOf("SET @payments_verify_is_new");
+    expect(penanda).toBeGreaterThan(-1);
+    expect(penanda).toBeLessThan(sqlIzin.indexOf("'payments:verify', 'payments', 'verify'"));
+    expect(sqlIzin).toMatch(/p_ada\.`code` = 'journals:manage'[\s\S]*?WHERE p\.`code` = 'payments:verify'\s*AND @payments_verify_is_new = 1/);
   });
 });

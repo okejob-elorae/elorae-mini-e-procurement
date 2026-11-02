@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getRequiredPermission } from "@/lib/rbac";
 
 /*
  * Gate of Finance → Collections (the collector-deposit verification queue). Opened by the
@@ -60,5 +61,9 @@ describe("Finance → Collections gate", () => {
   it("admin wildcard opens and verifies", async () => {
     sesi.permissions = ["*"];
     expect((await buka()).props.canVerify).toBe(true);
+  });
+
+  it("is not gated by the proxy on one code, so the payment verifier reaches the page's own gate", () => {
+    expect(getRequiredPermission("/backoffice/finance/collections")).toBeNull();
   });
 });

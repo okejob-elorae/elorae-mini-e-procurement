@@ -514,7 +514,7 @@ export function ubahKeputusanHilang(input: IsianTetapkan & { catatan: unknown })
   return tetapkan("UBAH", input);
 }
 
-export type KodeTolakBatalHilang = "TIDAK_DITEMUKAN" | "SUDAH_DIBATALKAN" | "SUDAH_ADA_POTONGAN" | "ALASAN_WAJIB" | "TEKS_TERLALU_PANJANG" | "BERUBAH";
+export type KodeTolakBatalHilang = "TIDAK_DITEMUKAN" | "SUDAH_DIBATALKAN" | "SUDAH_ADA_POTONGAN" | "ALASAN_WAJIB" | "TEKS_TERLALU_PANJANG" | "BERUBAH" | "TANPA_IZIN";
 
 /**
  * Batalkan catatan (mis. ternyata terjual tanpa nota, atau ketemu). Alasan
@@ -526,6 +526,9 @@ export async function batalkanBarangHilang(input: {
   alasan: unknown;
   olehUserId: string;
   sekarang?: Date;
+  /** Izin pemanggil, diperiksa DI DALAM transaksi terhadap status yang dibaca di sana: membatalkan yang masih TERBUKA = receivables:manage, membatalkan yang sudah diputuskan (DITETAPKAN/SELESAI) = receivables:decide_bearer. Aksi kantor WAJIB mengisi keduanya; kosong (= boleh) hanya untuk pemanggil tepercaya (tes, skrip). */
+  bolehBatalkanTerbuka?: boolean;
+  bolehBatalkanKeputusan?: boolean;
 }): Promise<{ ok: true; id: string } | { ok: false; kode: KodeTolakBatalHilang }> {
   const alasan = rapikanTeksHilang(input.alasan, true);
   if (!alasan.ok) return { ok: false, kode: alasan.kode };
@@ -548,6 +551,10 @@ export async function batalkanBarangHilang(input: {
     });
     if (!loss) return { ok: false, kode: "TIDAK_DITEMUKAN" };
     if (loss.status === "DIBATALKAN") return { ok: false, kode: "SUDAH_DIBATALKAN" };
+    // Keputusan yang masuk di antara baca aksi dan transaksi ini tetap tertolak di sini.
+    if (loss.status === "TERBUKA" ? input.bolehBatalkanTerbuka === false : input.bolehBatalkanKeputusan === false) {
+      return { ok: false, kode: "TANPA_IZIN" };
+    }
     if (await adaPotongan(tx, loss.id)) return { ok: false, kode: "SUDAH_ADA_POTONGAN" };
 
     const cas = await tx.stockLoss.updateMany({

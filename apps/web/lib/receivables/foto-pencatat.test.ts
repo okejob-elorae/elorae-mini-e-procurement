@@ -23,6 +23,7 @@ let salesA = "";
 let salesB = "";
 let kantor = "";
 let keuangan = "";
+let jurnal = "";
 let admin = "";
 let fotoA = "";
 let fotoB = "";
@@ -61,6 +62,7 @@ beforeEach(async () => {
   salesB = "";
   kantor = "";
   keuangan = "";
+  jurnal = "";
   admin = "";
   fotoA = "";
   fotoB = "";
@@ -103,7 +105,7 @@ beforeEach(async () => {
 afterEach(async () => {
   const entitas = [...klaimIds, ...notaIds, ...nrtIds].filter(Boolean).map(seededId);
   if (entitas.length) await prisma.auditLog.deleteMany({ where: { entityId: { in: seededIds(entitas) } } });
-  const pengguna = seededIds([salesA, salesB, kantor, keuangan, admin].filter(Boolean));
+  const pengguna = seededIds([salesA, salesB, kantor, keuangan, admin, jurnal].filter(Boolean));
   if (pengguna.length) await prisma.auditLog.deleteMany({ where: { userId: { in: seededIds(pengguna) } } });
   if (klaimIds.length) await prisma.paymentClaim.deleteMany({ where: { id: { in: klaimIds.filter(Boolean).map(seededId) } } });
   if (notaIds.length) await prisma.collectionNote.deleteMany({ where: { id: { in: notaIds.filter(Boolean).map(seededId) } } });
@@ -194,8 +196,8 @@ describe("BKM — foto bukti milik pencatat", () => {
     }
   });
 
-  it("pemegang journals:manage termasuk kantor untuk BKM, tetapi tidak untuk NRT", async () => {
-    const peranKeuangan = await peran("KEUANGAN", ["journals:manage"]);
+  it("pemegang payments:verify termasuk kantor untuk BKM, tetapi tidak untuk NRT", async () => {
+    const peranKeuangan = await peran("KEUANGAN", ["payments:verify"]);
     keuangan = (
       await prisma.user.create({ data: { email: `${tagEmail}-f@uji.local`, name: `${tag} f`, roleId: peranKeuangan } })
     ).id;
@@ -207,6 +209,15 @@ describe("BKM — foto bukti milik pencatat", () => {
     const retur = await nrt(keuangan, url(fotoB));
     if (retur.ok) nrtIds.push(retur.id);
     expect(retur).toEqual({ ok: false, alasan: "FOTO_BUKAN_MILIK" });
+  });
+
+  it("pekerjaan jurnal saja (journals:manage) bukan lagi kantor untuk BKM", async () => {
+    const p = await peran("JURNAL", ["journals:manage"]);
+    jurnal = (await prisma.user.create({ data: { email: `${tagEmail}-j@uji.local`, name: `${tag} j`, roleId: p } })).id;
+
+    const bkm = await klaim(jurnal, { transfer: url(fotoB) });
+    if (bkm.ok) klaimIds.push(bkm.id);
+    expect(bkm).toEqual({ ok: false, alasan: "FOTO_BUKAN_MILIK" });
   });
 
   it("peran sistem (admin) termasuk kantor tanpa tautan izin apa pun, sama seperti `*` di lib/auth.ts", async () => {

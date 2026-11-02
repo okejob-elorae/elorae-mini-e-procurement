@@ -93,7 +93,7 @@ d("konsi sell-through actions (test bed only)", () => {
     await mapRole("INVENTORY_VARIANCE", inventoryVarianceId);
 
     mockAuth.mockReset();
-    mockAuth.mockResolvedValue({ user: { id: state.userId, permissions: ["stores:manage"] } });
+    mockAuth.mockResolvedValue({ user: { id: state.userId, permissions: ["stores:manage", "consignment:lock"] } });
     mockFanOut.mockReset();
     mockLogPrint.mockReset();
     mockLogPrint.mockResolvedValue(undefined);
@@ -229,6 +229,16 @@ d("konsi sell-through actions (test bed only)", () => {
     expect(doc).toMatchObject({ status: "DRAFT", approvedAt: null, invoiceDate: null, total: null });
     expect(doc.receivable).toBeNull();
     expect(doc.taxInvoice).toBeNull();
+  }, SLOW);
+
+  it("refuses an approval from a stores:manage holder without consignment:lock, and leaves the report DRAFT", async () => {
+    const id = await billingDraft();
+    const expectedTotal = await previewTotal(id);
+    mockAuth.mockResolvedValueOnce({ user: { id: state.userId, permissions: ["stores:manage"] } });
+    await expect(
+      approveSellThroughAction({ id, mode: "INVOICE", invoiceDate: today(), salesmanId: state.salesmanId, expectedTotal }),
+    ).resolves.toEqual({ ok: false, reason: "FORBIDDEN" });
+    expect((await prisma.konsiSellThrough.findUniqueOrThrow({ where: { id: seededId(id) } })).status).toBe("DRAFT");
   }, SLOW);
 
   it("refuses PRICE_CHANGED, naming the live total, when the sent total differs from it, and invoices nothing", async () => {
@@ -537,9 +547,9 @@ d("konsi sell-through actions (test bed only)", () => {
     await expect(retrySellThroughJournalsAction(id)).resolves.toEqual({ ok: false, reason: "NOT_RETRYABLE" });
   }, SLOW);
 
-  it("refuses a void without stores:manage, and malformed input with INVALID_REQUEST", async () => {
+  it("refuses a void from a stores:manage holder without consignment:lock, and malformed input with INVALID_REQUEST", async () => {
     const id = await approvedInvoicedReport();
-    mockAuth.mockResolvedValueOnce({ user: { id: state.userId, permissions: ["stores:view"] } });
+    mockAuth.mockResolvedValueOnce({ user: { id: state.userId, permissions: ["stores:manage"] } });
     await expect(voidSellThroughAction(id, "x")).resolves.toEqual({ ok: false, reason: "FORBIDDEN" });
     await expect(voidSellThroughAction("", "x")).resolves.toEqual({ ok: false, reason: "INVALID_REQUEST" });
     await expect(voidSellThroughAction(id, 42)).resolves.toEqual({ ok: false, reason: "INVALID_REQUEST" });

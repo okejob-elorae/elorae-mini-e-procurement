@@ -786,8 +786,11 @@ export async function getPOStats() {
  * - `STANDING_PAYMENT_JOURNAL`: refused BEFORE the compare-and-swap while the PO
  *   reads unpaid with a payment journal still standing at its current
  *   generation, so no post is reached at all.
- * - `BILLED_VIA_VENDOR_BILL`: the PO has lines on a live vendor bill, which is
- *   paid from the bill (Vendor Bills → payments); refused before the
+ * - `BILLED_VIA_VENDOR_BILL`: the PO has lines on a live vendor bill. Such a PO
+ *   is paid per receipt through Supplier payments → Pay (Vendor Billing takes no
+ *   new payments since 2026-11-01, `VENDOR_PAYMENTS_CLOSED`), whose sub-ledger
+ *   already nets any old Vendor Billing payment on the bill; this toggle pays the
+ *   PO's whole booked payable and would pay that part again. Refused before the
  *   compare-and-swap.
  * - `ADA_PEMBAYARAN_DOKUMEN`: the PO is already (partly) paid through supplier
  *   payment documents (Supplier payments → Pay). This button pays the PO's WHOLE
@@ -972,10 +975,12 @@ export async function setPOPaidAt(poId: string, paidAt: Date | null): Promise<Se
       }
 
       /**
-       * A PO billed through Vendor Billing is paid from the bill, whose vendor payment debits AP
-       * itself; marking it paid here too would debit AP twice for the same receipt. Read in this
-       * transaction so a bill saved concurrently aborts one of the two. Mark only: unmark stays
-       * available.
+       * A PO billed through Vendor Billing is paid per receipt through Supplier payments → Pay
+       * (Vendor Billing takes no new payments since 2026-11-01). An old vendor payment on its bill
+       * has already debited AP, and this toggle pays the PO's whole booked payable
+       * (`poBookedPayable` does not net vendor payments), so marking it paid here could debit AP
+       * twice for the same receipt. Read in this transaction so a bill saved concurrently aborts one
+       * of the two. Mark only: unmark stays available.
        */
       if (
         paidAt != null &&

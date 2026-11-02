@@ -1,7 +1,8 @@
 import { Decimal } from "decimal.js";
-import { moveMainStock, Role, SalesHistoryStatus, type PrismaClient } from "@elorae/db";
+import { moveMainStock, SalesHistoryStatus, type PrismaClient } from "@elorae/db";
 import type { StockAdjustmentSource, StockLedgerRefType } from "@elorae/db";
 import { matchKey } from "@/lib/items/variant-rows";
+import { adminSistemTertua } from "@/lib/users/admin-sistem";
 import {
   aggregateUmkmExcelByParent,
   parseUmkmExcelFile,
@@ -650,13 +651,10 @@ export async function applyUmkmManifest(
 }
 
 export async function resolveScriptUserId(prisma: PrismaClient): Promise<string> {
-  const admin = await prisma.user.findFirst({
-    where: { role: Role.ADMIN },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, email: true },
-  });
+  // The system role, never the legacy `User.role` column — stale for anyone promoted or demoted in Settings → Users.
+  const admin = await adminSistemTertua(prisma);
   if (!admin) {
-    throw new Error("No active ADMIN user found. Pass --user-id explicitly.");
+    throw new Error("No system admin user found. Pass --user-id explicitly.");
   }
   return admin.id;
 }

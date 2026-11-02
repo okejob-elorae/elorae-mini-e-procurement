@@ -311,6 +311,29 @@ d("barang hilang — penulis, tagihan, potongan (test bed only)", () => {
     expect(await putuskan(id, [{ bearer: "ELORAE", amount: 80_000 }])).toEqual({ ok: false, kode: "SUDAH_DIBATALKAN" });
   });
 
+  it("batal: izin diperiksa DI DALAM transaksi — status yang dibaca di sana menentukan izinnya", async () => {
+    const id = await buka(tokoKonsi, [{ itemId: kemeja, variantSku: "", qty: 1 }]);
+    // Masih TERBUKA: izin keputusan saja tidak cukup.
+    expect(
+      await batalkanBarangHilang({ lossId: id, alasan: "x", olehUserId: kantor, bolehBatalkanTerbuka: false, bolehBatalkanKeputusan: true }),
+    ).toEqual({ ok: false, kode: "TANPA_IZIN" });
+    expect((await prisma.stockLoss.findUniqueOrThrow({ where: { id } })).status).toBe("TERBUKA");
+
+    // Sudah diputuskan: izin kelola saja tidak cukup — dan tidak ada yang tertulis.
+    await putuskan(id, [{ bearer: "ELORAE", amount: 80_000 }]);
+    expect(
+      await batalkanBarangHilang({ lossId: id, alasan: "x", olehUserId: kantor, bolehBatalkanTerbuka: true, bolehBatalkanKeputusan: false }),
+    ).toEqual({ ok: false, kode: "TANPA_IZIN" });
+    expect((await prisma.stockLoss.findUniqueOrThrow({ where: { id } })).status).toBe("SELESAI");
+    expect(await bagianDari(id)).toHaveLength(1);
+    expect(await prisma.auditLog.count({ where: { entityId: seededId(id), action: "STOCK_LOSS_CANCELLED" } })).toBe(0);
+
+    // Izin yang cocok dengan status yang dibaca membatalkannya.
+    expect(
+      await batalkanBarangHilang({ lossId: id, alasan: "x", olehUserId: kantor, bolehBatalkanTerbuka: false, bolehBatalkanKeputusan: true }),
+    ).toEqual({ ok: true, id });
+  });
+
   it("toko putus: kantor menandai sudah ditagih → SELESAI; toko konsinyasi ditolak (lewat siklus)", async () => {
     const id = await buka(tokoPutus, [{ itemId: kemeja, variantSku: "", qty: 1 }]);
     await putuskan(id, [{ bearer: "TOKO", amount: 80_000 }]);

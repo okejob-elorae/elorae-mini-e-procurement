@@ -453,6 +453,42 @@ d("kembalikan bahan WO (test bed only)", () => {
       expect(await stok(kainId)).toEqual([{ qty: 52, avg: 34_807.69, nilai: 1_810_000 }]);
     });
 
+    it("harga dokumen untuk bahan bervarian → kembali ke baris varian asal pengeluarannya, baris gabungan tidak bergerak", async () => {
+      const wo = await woKain10();
+      woId = wo.id;
+      // Pengeluaran ini tercatat keluar dari varian KAIN-HITAM (sisa 5 m @ 30.000 di gudang).
+      const pindah = await prisma.stockLedgerEntry.updateMany({
+        where: { refType: "MaterialIssue", refId: seededId(wo.issueId) },
+        data: { variantSku: "KAIN-HITAM" },
+      });
+      expect(pindah.count).toBeGreaterThan(0);
+      await prisma.inventoryValue.create({
+        data: { itemId: kainId, variantSku: "KAIN-HITAM", qtyOnHand: 5, avgCost: 30_000, totalValue: 150_000 },
+      });
+      await hapusNilaiKartuStok(wo.issueId);
+
+      const hasil = await kembalikanBahan({ woId, baris: [{ itemId: kainId, qty: 2 }], kunci: kunciBaru() });
+      expect(hasil).toMatchObject({
+        ok: true,
+        totalNilai: 60_000,
+        barangHargaDokumen: [kainId],
+        baris: [{ itemId: kainId, qty: 2, hargaSatuan: 30_000, nilai: 60_000, hargaDariDokumen: true }],
+      });
+
+      const baris = await prisma.inventoryValue.findMany({
+        where: { itemId: seededId(kainId) },
+        select: { variantSku: true, qtyOnHand: true, avgCost: true, totalValue: true },
+      });
+      const perVarian = Object.fromEntries(
+        baris.map((r) => [r.variantSku ?? "", { qty: Number(r.qtyOnHand), avg: Number(r.avgCost), nilai: Number(r.totalValue) }]),
+      );
+      // 5 m @ 30.000 + 2 m @ 30.000 → 7 m @ 30.000; baris gabungan tetap 50 m @ 35.000.
+      expect(perVarian).toEqual({
+        "": { qty: 50, avg: 35_000, nilai: 1_750_000 },
+        "KAIN-HITAM": { qty: 7, avg: 30_000, nilai: 210_000 },
+      });
+    });
+
     it("harga dokumen + catatan sepanjang batas (120 karakter) → catatan di riwayat utuh, alasan muat di kolomnya; yang dipendekkan nama CMT", async () => {
       const wo = await woKain10();
       woId = wo.id;

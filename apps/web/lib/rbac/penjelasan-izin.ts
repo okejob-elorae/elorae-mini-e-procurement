@@ -201,6 +201,9 @@ const ISIAN: Record<KodeIzin, Isian> = {
   },
   // Persetujuan dan pembayaran — bawaannya hanya admin (keputusan pemilik 2026-11-01).
   [P.SPG_COMMISSION_PAY]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
+  // Dua layar: mutasi SPG (/backoffice/spg-transfers, pagar spg_sales:view) dan Transfer Toko kantor
+  // (/backoffice/store-transfers, pagar stores:view). `butuh` hanya satu kode dan stores:view tidak selalu perlu,
+  // jadi prasyarat kedua ditulis di keterangannya.
   [P.STORE_TRANSFERS_APPROVE]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
   [P.STORE_TRANSFERS_DECIDE_SHORTFALL]: { grup: "spg", butuh: P.SPG_SALES_VIEW, persetujuan: true },
 
@@ -225,11 +228,28 @@ const ISIAN: Record<KodeIzin, Isian> = {
     ],
     butuh: P.RECEIVABLES_VIEW,
   },
-  // Persetujuan — bawaannya hanya admin (keputusan pemilik 2026-11-01).
-  [P.RECEIVABLES_DECIDE_BEARER]: { grup: "piutang", butuh: P.RECEIVABLES_VIEW, persetujuan: true },
+  // Persetujuan — bawaannya hanya admin (keputusan pemilik 2026-11-01). Barang
+  // hilang memagari dirinya dengan izin ini juga; `butuh` tetap receivables:view
+  // untuk beban selisih retur.
+  [P.RECEIVABLES_DECIDE_BEARER]: {
+    grup: "piutang",
+    halaman: ["/backoffice/barang-hilang"],
+    butuh: P.RECEIVABLES_VIEW,
+    persetujuan: true,
+  },
   // Periksa pembayaran (BKM, giro): admin dan keuangan. Pembaca BKM dan nota
   // retur (`bolehMembacaPelunasan`/`bolehMembacaRetur`, lib/receivables/izin.ts).
-  [P.PAYMENTS_VERIFY]: { grup: "piutang", halaman: ["/backoffice/pelunasan", "/backoffice/retur-toko"] },
+  // Juga memverifikasi setoran penagih dan menyetujui pelunasan toko (keduanya
+  // memagari dirinya).
+  [P.PAYMENTS_VERIFY]: {
+    grup: "piutang",
+    halaman: [
+      "/backoffice/pelunasan",
+      "/backoffice/retur-toko",
+      "/backoffice/finance/collections",
+      "/backoffice/finance/pelunasan",
+    ],
+  },
   [P.PAYMENTS_MANAGE]: { grup: "piutang", halaman: ["/backoffice/finance/payments"] },
   [P.COLLECTIONS_MANAGE]: {
     grup: "piutang",
